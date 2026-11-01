@@ -244,3 +244,45 @@ async def test_an_accepted_synonym_is_what_the_agent_understands(
     await drain()
     status, kind, text, *_ = answer_of(seed, q)
     assert (status, kind) == ("answered", "data") and "3.000" in text
+
+
+async def test_a_relationship_a_scheduled_scan_inferred_reaches_the_stewards_review(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A scan with nobody behind it (a schedule) leaves created_by empty. The handler used to drop
+    # such a relationship, so it stayed pending_review for good and no metric could join on it.
+    bank = build(seed, warehouse, monkeypatch)
+    loans = seed.one("SELECT id FROM catalog.dataset WHERE id = %s", bank.loans)
+    relationship = seed.row(
+        "context.relationship",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        from_dataset_id=loans,
+        from_columns="{branch_code}",
+        to_dataset_id=loans,
+        to_columns="{loan_id}",
+        cardinality="many_to_one",
+        origin="inferred",
+        status="pending_review",
+    )
+    seed.row(
+        "context.outbox",
+        org_id=bank.org,
+        aggregate_type="relationship",
+        aggregate_id=relationship,
+        event_type="relationship.created",
+        payload=json.dumps(
+            {"relationship_id": str(relationship), "data_space_id": str(bank.space)}
+        ),
+    )
+    await drain_all()
+    # build() makes bank.user the Data Space's steward.
+    assert (
+        seed.one(
+            "SELECT proposed_by FROM inbox.proposal WHERE target_ref = %s AND kind = 'relationship'",
+            relationship,
+        )
+        == bank.user
+    )

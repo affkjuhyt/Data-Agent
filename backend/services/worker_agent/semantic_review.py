@@ -28,6 +28,7 @@ from sqlalchemy import update
 from libs import clock
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, context
+from libs.dataagent_db.models import org as org_models
 from services.worker_agent import evaluation
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
@@ -161,6 +162,12 @@ async def relationship_created(event: Event) -> None:
             return
         actor = row.created_by or row.updated_by
         space_id = row.data_space_id
+        if actor is None:
+            # A relationship a scheduled scan inferred has nobody behind it. It is put to the Data
+            # Space's steward rather than dropped: dropped, it stayed pending_review for good and
+            # the compiler never joined on it.
+            space = await session.get(org_models.DataSpace, space_id)
+            actor = space.steward_id if space is not None else None
         diff = {
             "from_dataset_id": str(row.from_dataset_id),
             "from_columns": list(row.from_columns),

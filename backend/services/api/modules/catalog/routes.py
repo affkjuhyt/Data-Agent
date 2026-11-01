@@ -905,6 +905,9 @@ async def start_scan(
                 kind=run.kind,
                 trigger=run.trigger,
                 tables=body.tables,
+                # The relationships the scan infers are proposed in this person's name, so they
+                # reach a reviewer (worker_agent/semantic_review.relationship_created).
+                requested_by=principal.user_id,
             )
         )
     response.headers["Location"] = f"/v1/scan-runs/{run.id}"
