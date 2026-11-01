@@ -53,13 +53,17 @@
   ansible.builtin.set_fact:
     built: "{{ build.stdout_lines | default([]) | parse_build_results }}"
 
+# One shell, not a loop: a loop paid a task round trip per image (~0.3 s each).
 - name: Tag the images for the registry
-  ansible.builtin.command:
-    cmd: >-
-      docker tag {{ image_prefix }}/{{ item }}:{{ image_tag }}
-      {{ image_registry }}/{{ image_prefix }}/{{ item }}:{{ image_tag }}
-  loop: "{{ built.keys() | list }}"
-  when: (image_registry | length) > 0
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      for name in {{ built.keys() | map('quote') | join(' ') }}; do
+        docker tag "{{ image_prefix }}/$name:{{ image_tag }}" \
+          "{{ image_registry }}/{{ image_prefix }}/$name:{{ image_tag }}"
+      done
+    executable: /bin/bash
+  when: (image_registry | length) > 0 and (built | length) > 0
   changed_when: true
 
 # The registry is asked, rather than comparing with the ID before the build,

@@ -3,6 +3,8 @@
 FROM python:3.12-slim-bookworm
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app
 WORKDIR /app
+# Before any COPY: a code change then reuses this layer instead of rerunning it.
+RUN addgroup --system app && adduser --system --ingroup app app
 COPY backend/services/api/requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 # /app mirrors backend/: `libs.*` and `services.api.*` resolve as root packages.
@@ -13,5 +15,4 @@ COPY backend/libs/sql_guard/ ./libs/sql_guard/
 COPY backend/libs/cron/ ./libs/cron/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/api/ ./services/api/
-RUN addgroup --system app && adduser --system --ingroup app app
 USER app
