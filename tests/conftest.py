@@ -182,51 +182,6 @@ def redis_container() -> Iterator[dict[str, str]]:
         yield info
 
 
-@pytest.fixture(scope="session")
-def qdrant_container() -> Iterator[dict[str, str]]:
-    """Yield connection info for an ephemeral Qdrant container."""
-    if not _testcontainers_available():
-        pytest.skip("testcontainers not installed")
-
-    from testcontainers.qdrant import QdrantContainer
-
-    with QdrantContainer() as qc:
-        yield {"url": f"http://{qc.rest_host_address}"}
-
-
-@pytest.fixture(scope="session")
-def kafka_container() -> Iterator[dict[str, str]]:
-    """Yield bootstrap_servers for an ephemeral Kafka container.
-
-    Uses Confluent's Kafka image. Tests that publish/consume should use
-    aiokafka or kafka-python clients pointed at `bootstrap_servers`.
-    """
-    if not _testcontainers_available():
-        pytest.skip("testcontainers not installed")
-
-    from testcontainers.kafka import KafkaContainer
-
-    with KafkaContainer("confluentinc/cp-kafka:7.5.0") as kafka:
-        yield {"bootstrap_servers": kafka.get_bootstrap_server()}
-
-
-# ─── Env override fixture ──────────────────────────────────────────────────
-@pytest.fixture
-def patched_env(monkeypatch: pytest.MonkeyPatch) -> "_EnvPatcher":
-    """Helper for tests that need to override env vars without leaking state.
-
-    Usage:
-        def test_x(patched_env):
-            patched_env({"DATABASE_URL": "postgresql://..."})
-            ...
-    """
-    class _EnvPatcher:
-        def __call__(self, overrides: dict[str, str]) -> None:
-            for k, v in overrides.items():
-                monkeypatch.setenv(k, v)
-    return _EnvPatcher()
-
-
 # ─── Live-stack credentials ────────────────────────────────────────────────
 # The e2e tests log in to the dev cluster's Keycloak. Passwords come only from
 # the environment (CLAUDE.md §6): the literals these tests used to carry were
