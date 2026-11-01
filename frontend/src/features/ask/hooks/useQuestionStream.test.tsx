@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setDataSpace } from '../../../lib/v1/client';
@@ -92,6 +93,34 @@ describe('useQuestionStream', () => {
     expect(reopened.result.current.conversationId).toBe(conversationId);
     expect(reopened.result.current.messages[0].content).toContain('nợ xấu');
     expect(reopened.result.current.messages[1].answerId).toBe(answerId);
+  });
+
+  it('shows the question back of a clarifying turn, with a box to answer it', async () => {
+    const asked = 'Data Space không có chỉ số nào khớp đúng câu hỏi. Bạn muốn hỏi: 1. Doanh thu Internet?';
+    server.use(
+      http.get('*/v1/questions/:id/stream', () =>
+        new HttpResponse(
+          [
+            'id: 4\nevent: clarification\ndata: {"answer_id": "answer-ask-back"}\n\n',
+            'id: 7\nevent: done\ndata: {"status": "clarifying", "answer_id": "answer-ask-back"}\n\n',
+          ].join(''),
+          { headers: { 'Content-Type': 'text/event-stream' } },
+        ),
+      ),
+      http.get('*/v1/answers/answer-ask-back', () =>
+        HttpResponse.json({ id: 'answer-ask-back', kind: 'clarification', text: asked }),
+      ),
+    );
+    setDataSpace('ds-aw');
+    const { result } = renderHook(() => useQuestionStream());
+    await act(async () => {
+      await result.current.send('Doanh thu Internet năm 2013 là bao nhiêu?');
+    });
+    await waitFor(() => expect(result.current.messages[1].status).toBe('done'));
+    const back = result.current.messages[1];
+    expect(back.content).toBe(asked);
+    expect(back.answerId).toBe('answer-ask-back');
+    expect(back.clarification).toEqual({ kind: 'followup', questions: [{ text: '' }] });
   });
 });
 

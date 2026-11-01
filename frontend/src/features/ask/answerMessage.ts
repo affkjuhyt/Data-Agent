@@ -95,6 +95,11 @@ export function fromAnswer(answer: Answer): Partial<AskMessage> {
   if (answer.kind === 'refusal') {
     return { content: '', refusal: readRefusal(answer) };
   }
+  // The worker's question back carries its choices in its text; the card gives a box to answer
+  // it, and the answer is the next question of the conversation (UC-01-04).
+  if (answer.kind === 'clarification') {
+    return { content: answer.text, clarification: { kind: 'followup', questions: [{ text: '' }] } };
+  }
   const citations = citationsOf(answer);
   const verification = readVerification(answer.number_check);
   const drawn: Partial<AskMessage> = {

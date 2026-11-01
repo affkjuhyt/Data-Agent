@@ -203,6 +203,11 @@ export function useQuestionStream() {
                   })),
                 )
                 .catch(() => undefined);
+          } else if (e.event === 'clarification' && typeof data.answer_id === 'string') {
+            // Without this the turn closed on `done` with nothing in it: the question back is an
+            // answer of kind "clarification", sent on its own event rather than `answer`.
+            const answer = await getAnswer(data.answer_id);
+            patch(assistantId, (m) => ({ ...m, ...fromAnswer(answer), answerId: answer.id }));
           } else if (e.event === 'error') {
             patch(assistantId, (m) => ({
               ...m,
