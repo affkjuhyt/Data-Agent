@@ -217,8 +217,7 @@ class TestGatewayConfigMatchesTheClosedPorts:
             assert creates == 1, f"{service} is created {creates} times in kong-setup.sh"
 
     def test_the_retired_runtime_is_not_recreated(self):
-        """workflow_runtime was removed (2c1dac2c); kong-setup.sh only deletes its
-        leftover service and routes, so a stale PUT would route to nothing."""
+        """workflow_runtime was removed (2c1dac2c); a stale PUT would route to nothing."""
         setup = (REPO_ROOT / "deploy" / "docker" / "kong" / "kong-setup.sh").read_text(
             encoding="utf-8"
         )

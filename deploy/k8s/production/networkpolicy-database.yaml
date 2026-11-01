@@ -160,12 +160,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kafka-topics
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: prometheus
     # Temporal's own databases (ADR-33): the server and the Job that upgrades their schema.
     - namespaceSelector:
@@ -284,12 +278,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kafka-topics
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: prometheus
     # The V3 blocks that use it (KB-02): from the connections their code makes.
     - namespaceSelector:
@@ -396,12 +384,6 @@ spec:
       podSelector:
         matchLabels:
           app: minio-init
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kafka-topics
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -521,12 +503,6 @@ spec:
       podSelector:
         matchLabels:
           app: minio-init
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kafka-topics
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -657,12 +633,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kafka-topics
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: prometheus
     ports:
     - protocol: TCP
@@ -758,12 +728,6 @@ spec:
       podSelector:
         matchLabels:
           app: minio-init
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kafka-topics
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -887,12 +851,6 @@ spec:
       podSelector:
         matchLabels:
           app: minio-init
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kafka-topics
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1022,12 +980,6 @@ spec:
       podSelector:
         matchLabels:
           app: minio-init
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kafka-topics
     - namespaceSelector:
         matchLabels:
           name: dataagent-service

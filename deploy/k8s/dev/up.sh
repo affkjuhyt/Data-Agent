@@ -36,7 +36,6 @@ job migrate
 job kong-migration
 job db-init 5m
 job minio-init 5m
-job kafka-topics 5m
 
 kubectl apply -f service/
 for d in $(kubectl -n "$SVC" get deploy -o name); do

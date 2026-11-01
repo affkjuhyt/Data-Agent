@@ -220,10 +220,6 @@ kubectl -n dataagent-service create secret generic temporal-schema-secrets \
   --from-literal=SQL_PASSWORD="${TEMPORAL_DB_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n dataagent-service create secret generic seed-secrets \
-  --from-literal=PGPASSWORD="${POSTGRES_PASSWORD}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 kubectl -n dataagent-service create secret generic minio-init-secrets \
   --from-literal=MINIO_ROOT_USER="${MINIO_ROOT_USER}" \
   --from-literal=MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD}" \

@@ -40,7 +40,7 @@ data:
   # The image's log.dirs defaults to /tmp/kafka-logs, not the PVC mounted at
   # /var/lib/kafka/data, so every pod restart wiped topics, ACLs, offsets and
   # messages (the ACLs live in the KRaft metadata log, so a restart also
-  # silently cut off every SASL client until kafka-topics was re-run).
+  # silently cut off every SASL client until the ACLs were recreated).
   KAFKA_LOG_DIRS: /var/lib/kafka/data
 ---
 apiVersion: apps/v1

@@ -137,18 +137,6 @@ fi
 # Helper: extract first occurrence of a string field from JSON (no jq/Python needed)
 json_field() { grep -o "\"$1\":\"[^\"]*\"" | head -1 | sed 's/.*":"//;s/"$//'; }
 
-# ── 2. Create the V3 upstream and routes ───────────────────────────────
-# The old workflow-runtime and flow-builder routes are deliberately removed
-# here. Kong is stateful, so deleting their manifests alone would leave stale
-# routes active after a rollout.
-echo "🧹 Removing legacy workflow-runtime routes and services..."
-for route in builder-route runtime-route; do
-  curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/flow_builder/routes/$route" || true
-  curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/workflow_runtime/routes/$route" || true
-done
-curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/flow_builder" || true
-curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/workflow_runtime" || true
-
 # ── 3. Create routes ───────────────────────────────────────────────────
 
 echo "📡 Creating api service..."
@@ -170,37 +158,6 @@ curl -sf -X PUT "$KONG_ADMIN/services/api/routes/api-v1-route" \
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
-
-# ── 3b. Retired auth_api service + routes ──────────────────────────────
-# /api/auth (API keys, IP allowlist, Secrets Vault) was removed; V3 serves those from /v1
-# (org, integration). Same as 3c below: the routes first, then the service, whose
-# aeroflow-jwks plugin and the routes' ip-restriction plugins go with them.
-echo "🧹 Removing the retired auth_api service..."
-for route in auth_api-route auth_api-keys-route auth_api-secrets-route; do
-  curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/auth_api/routes/$route" || true
-done
-curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/auth_api" || true
-
-# ── 3c. Retired release_worker service + route ─────────────────────────
-# Release management (/api/release) was removed. Every step here is an
-# idempotent PUT, so nothing deletes what an earlier run created: drop the
-# route first (Kong refuses to delete a service a route still references), then
-# the service, whose plugins go with it. A 404 on a clean gateway is fine.
-echo "🧹 Removing the retired release_worker service..."
-curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/release_worker/routes/release-route" || true
-curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/release_worker" || true
-
-# (3d used to create an `orchestrator` service + route, and 3d-2 a
-# `minio_service` one. Both are retired with the legacy runtime.)
-
-# ── 3e. Retired kb-backend service + route ─────────────────────────────
-# The legacy knowledge base (/api/data, /api/knowledge, /api/pipeline, /api/fleet) was
-# removed (KB-08); the V3 screens use /v1. Same as 3c: the route first, then the service,
-# whose plugins (size limit, aeroflow-jwks, rate limiting) and the route's CORS go with them.
-echo "🧹 Removing the retired kb-backend service..."
-curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/kb-backend/routes/kb-backend-route" || true
-curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/kb-backend" || true
-
 
 # Helper: upsert a plugin scoped to a specific service/route/global endpoint.
 # Fetches all plugins at the scope, finds one matching plugin_name by parsing
@@ -293,17 +250,6 @@ else
     "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"dataagent-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"hide_credentials\":false$GATEWAY_KEY_JSON_FIELD}}" \
     "aeroflow-jwks"
 
-fi
-
-# ── 5. IP restriction ─────────────────────────────────────────────────
-# Remove any leftover global ip-restriction plugin (from previous setup runs)
-echo "🧹 Removing any global ip-restriction plugin..."
-GLOBAL_IP_ID=$(curl -sf "$KONG_ADMIN/plugins" \
-  | python3 -c "import sys,json; [print(p['id']) for p in json.load(sys.stdin).get('data',[]) if p['name']=='ip-restriction' and not p.get('service') and not p.get('route')]" 2>/dev/null || true)
-if [ -n "$GLOBAL_IP_ID" ]; then
-  curl -sf -X DELETE "$KONG_ADMIN/plugins/$GLOBAL_IP_ID" && echo "  → removed global plugin $GLOBAL_IP_ID"
-else
-  echo "  → no global ip-restriction found"
 fi
 
 # ── 8. CORS (browser preflight) ───────────────────────────────────────

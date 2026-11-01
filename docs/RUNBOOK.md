@@ -79,7 +79,7 @@ kubectl -n dataagent-service get secret keycloak-secrets \
 | `pyproject.toml`, `requirements-test.txt` | none — no image copies them, so nothing rebuilds |
 | New Alembic revision | `-e apply_jobs=true` (reruns `migrate`, then `db-init` for the grants) |
 | A Job manifest under `deploy/k8s/dev/job/`, a seed file, `deploy/docker/sql/` | `-e apply_jobs=true` (reruns only the Jobs that read it; `-e jobs_force=true` reruns all) |
-| `deploy/docker/kong/kong-setup.sh`, Keycloak mappers | `-e apply_setup=true` |
+| `deploy/docker/kong/kong-setup.sh`, Keycloak scripts or realm | nothing: the setup Job reruns when they change (`setup_inputs`) |
 | A value in the vault | `-e secrets_changed=true` (§7) |
 | Only one image, skip the rest | `-e images_only=worker-agent` |
 
@@ -497,7 +497,7 @@ suspecting the pipeline.
 | DB-connector / warehouse nodes fail to authenticate | OpenBao sealed → §8 |
 | Many pods `Evicted` at once | Disk pressure → §9 |
 | `worker-agent` does not answer a question | Check `kubectl -n dataagent-service logs deployment/worker-agent`; then inspect the question's terminal refusal and the `qa.outbox`/Redis SSE path |
-| A worker's Kafka producer times out on metadata ("Failed to update metadata after 60 secs") though SASL login succeeds | Kafka's ACLs are gone (ACLs live in the broker's metadata, lost with it). Re-run the topics/ACL Job: `kubectl apply -f deploy/k8s/dev/job/kafka-topics.yaml` (delete the old Job first if it still exists) |
+| A worker's Kafka producer times out on metadata ("Failed to update metadata after 60 secs") though SASL login succeeds | Kafka's ACLs are gone (ACLs live in the broker's metadata, lost with it). No V3 service is a Kafka client yet; when one is, its topics and ACLs need a Job that creates them (the old `kafka-topics` Job only dropped legacy topics and was removed on 01/11/2026) |
 | litellm `429 No deployments available` for `embedder`, or `401 Incorrect API key ... platform.openai.com` | `EMBEDDING_V1_BASE_URL` missing from `litellm-env`, so the embedder calls OpenAI and goes into cooldown |
 | `/v1/questions` returns `502` | Check `api` is Ready and not `OOMKilled`; then check Kong upstream logs and `worker-agent` logs. Do not restore the retired workflow runtime |
 | The card says "Hệ thống chưa lập được cách trả lời…" (`PLANNER_ERROR`) | The planner model returned no valid plan twice (the second time at temperature 0). Check the `planner \| response is not a valid plan` lines for that conversation; usually `planner_max_tokens` too low or the model endpoint degraded |

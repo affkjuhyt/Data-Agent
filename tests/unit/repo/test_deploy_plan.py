@@ -359,8 +359,8 @@ class TestJobsToRerun:
         assert _rerun(["deploy/docker/semantic/ds-bh.yaml"]) == []
 
     def test_a_job_manifest_reruns_only_that_job(self):
-        assert _rerun(["deploy/k8s/dev/job/kafka-topics.yaml"]) == ["kafka-topics"]
-        assert _rerun(["deploy/k8s/production/job/kafka-topics.yaml"]) == []
+        assert _rerun(["deploy/k8s/dev/job/minio-init.yaml"]) == ["minio-init"]
+        assert _rerun(["deploy/k8s/production/job/minio-init.yaml"]) == []
 
     def test_a_rebuilt_kong_reruns_its_migration(self):
         assert _rerun([], rebuilt=["kong"]) == ["kong-migration"]

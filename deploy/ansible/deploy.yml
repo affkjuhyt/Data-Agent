@@ -201,6 +201,12 @@
              | select('match', '^(' ~ ((k8s_manifests | relpath(project_dir)) ~ '/service/') | regex_escape
                                ~ '|deploy/ansible/)')
              | list | length) > 0 }}
+        # The gateway setup Job (kong-setup.sh, the Keycloak scripts and realm) used to run only
+        # with -e apply_setup=true, so an edit to kong-setup.sh deployed without reaching Kong.
+        setup_changed: >-
+          {{ (full_deploy | bool) or (git_diff.stdout_lines | default([])
+             | select('match', '^(' ~ (setup_inputs | map('regex_escape') | join('|')) ~ ')')
+             | list | length) > 0 }}
         service_manifests_changed: >-
           {{ (full_deploy | bool) or (git_diff.stdout_lines | default([])
              | select('match', '^' ~ ((k8s_manifests | relpath(project_dir)) ~ '/service/') | regex_escape)
@@ -214,6 +220,7 @@
           - "changed: {{ 'everything' if (full_deploy | bool) else (changed_paths | length | string) ~ ' file(s)' }}"
           - "secrets: {{ secrets_changed }}   configmaps: {{ config_changed }}"
           - "reapply: database tier {{ databases_changed }}   service tier {{ services_changed }}"
+          - "gateway setup: {{ (apply_setup | bool) or (setup_changed | bool) }}"
 
     - name: Plan the images and Jobs
       ansible.builtin.import_role:
@@ -452,152 +459,6 @@
       register: svc_apply
       changed_when: "'created' in svc_apply.stdout or 'configured' in svc_apply.stdout"
       when: (apply_services | bool) and (services_changed | bool)
-
-    - name: Remove the retired workflow-runtime workload in a V3 service slice
-      ansible.builtin.command:
-        cmd: >-
-          {{ kubectl }} -n {{ ns_service }} delete
-          deployment/workflow-runtime service/workflow-runtime
-          serviceaccount/workflow-runtime configmap/workflow-runtime-env
-          secret/workflow-runtime-secrets
-          --ignore-not-found=true
-      register: legacy_runtime_delete
-      changed_when: >-
-        'deleted' in legacy_runtime_delete.stdout
-        or 'deleted' in legacy_runtime_delete.stderr
-      when:
-        - apply_services | bool
-        - "'workflow-runtime' not in service_manifests"
-
-    # Temporal fires the nightly eval run now (TM-02, schedules/targets.py); left in place the
-    # CronJob would request the same runs a second time, which nightly_evals.MIN_GAP only absorbs.
-    - name: Remove the retired eval-nightly CronJob
-      ansible.builtin.command: >-
-        {{ kubectl }} -n {{ ns_service }} delete
-        cronjob/eval-nightly serviceaccount/eval-nightly secret/eval-nightly-secrets
-        --ignore-not-found=true
-      register: eval_nightly_delete
-      changed_when: "'deleted' in eval_nightly_delete.stdout"
-      when: apply_services | bool
-
-    # The legacy knowledge base and web-crawler (KB-08): their manifests are gone, and an apply
-    # never deletes what it no longer names, so a cluster that ran them keeps their objects (k8s-local
-    # still had their six Secrets). The two PVCs are the promote workers' caches, nothing original.
-    - name: Remove the retired knowledge base and web-crawler
-      ansible.builtin.command: >-
-        {{ kubectl }} -n {{ ns_service }} delete
-        deployment/kb-backend deployment/kb-conflict-resolution deployment/kb-promote-gold
-        deployment/kb-promote-silver deployment/kb-structured-data
-        deployment/platform-workers-web-crawler
-        horizontalpodautoscaler/kb-backend service/kb-backend
-        serviceaccount/kb-backend serviceaccount/kb-conflict-resolution
-        serviceaccount/kb-promote-gold serviceaccount/kb-promote-silver
-        serviceaccount/kb-structured-data serviceaccount/platform-workers-web-crawler
-        configmap/kb-backend-env configmap/kb-conflict-resolution-env configmap/kb-promote-gold-env
-        configmap/kb-promote-silver-env configmap/kb-structured-data-env
-        configmap/platform-workers-web-crawler-env
-        secret/kb-backend-secrets secret/kb-conflict-resolution-secrets
-        secret/kb-promote-gold-secrets secret/kb-promote-silver-secrets
-        secret/kb-structured-data-secrets secret/platform-workers-web-crawler-secrets
-        persistentvolumeclaim/kb-promote-silver-cache persistentvolumeclaim/kb-structured-data-cache
-        --ignore-not-found=true
-      register: kb_delete
-      changed_when: "'deleted' in kb_delete.stdout"
-      when: apply_services | bool
-
-    # Jaeger's only trace source was workflow-runtime; no V3 service carries an OTel SDK.
-    - name: Remove the retired Jaeger
-      ansible.builtin.command: >-
-        {{ kubectl }} -n {{ ns_service }} delete --ignore-not-found=true
-        deployment/jaeger service/jaeger serviceaccount/jaeger configmap/jaeger-env
-        networkpolicy/allow-jaeger networkpolicy/allow-workflow-runtime
-      register: jaeger_delete
-      changed_when: "'deleted' in jaeger_delete.stdout"
-      when: apply_services | bool
-
-    # MongoDB held the legacy canvas workflows and Neo4j the legacy KB graph; nothing in V3 reads
-    # either. Their PVCs (data-mongo-0, data-neo4j-0, logs-neo4j-0) are kept: deleting data is
-    # an operator's call, not a deploy's.
-    - name: Remove the retired MongoDB and Neo4j
-      ansible.builtin.command: >-
-        {{ kubectl }} -n {{ ns_database }} delete --ignore-not-found=true
-        statefulset/mongo service/mongo service/mongo-nodeport serviceaccount/mongo configmap/mongo-env
-        statefulset/neo4j service/neo4j service/neo4j-nodeport serviceaccount/neo4j configmap/neo4j-env
-        secret/neo4j-secrets networkpolicy/allow-mongo networkpolicy/allow-neo4j
-      register: graph_store_delete
-      changed_when: "'deleted' in graph_store_delete.stdout"
-      when: apply_databases | bool
-
-    # auth-api served /api/auth (API keys, IP allowlist, Secrets Vault), replaced by the api's
-    # org and integration modules; kong-setup.sh drops its Kong service and routes.
-    - name: Remove the retired auth-api
-      ansible.builtin.command: >-
-        {{ kubectl }} -n {{ ns_service }} delete --ignore-not-found=true
-        deployment/auth-api service/auth-api horizontalpodautoscaler/auth-api
-        poddisruptionbudget/auth-api serviceaccount/auth-api configmap/auth-api-env
-        secret/auth-api-secrets
-      register: auth_api_delete
-      changed_when: "'deleted' in auth_api_delete.stdout"
-      when: apply_services | bool
-
-    # model-service served embeddings and an LLM gateway nothing calls any more (V3 embeds and
-    # reranks at TEI, calls LLMs through LiteLLM); Grafana's only dashboard charted its metrics.
-    - name: Remove the retired model-service and Grafana
-      ansible.builtin.command: >-
-        {{ kubectl }} -n {{ ns_service }} delete --ignore-not-found=true
-        deployment/model-service service/model-service horizontalpodautoscaler/model-service
-        serviceaccount/model-service configmap/model-service-env secret/model-service-secrets
-        deployment/grafana service/grafana serviceaccount/grafana configmap/grafana-env
-        secret/grafana-secrets persistentvolumeclaim/grafana-data
-        configmap/grafana-datasources configmap/grafana-dashboards-provider configmap/grafana-dashboards
-      register: model_service_delete
-      changed_when: "'deleted' in model_service_delete.stdout"
-      when: apply_services | bool
-
-    # The platform workers (audit, memory, schema-crawler) consumed Kafka topics only
-    # workflow-runtime produced and wrote tables V3 does not have; llm-exporter fed the legacy
-    # Grafana dashboard. audit-bridge-state was the audit bridge's Keycloak-events cursor.
-    - name: Remove the retired platform workers and llm-exporter
-      ansible.builtin.command: >-
-        {{ kubectl }} -n {{ ns_service }} delete --ignore-not-found=true
-        deployment/platform-workers-audit deployment/platform-workers-memory
-        deployment/platform-workers-schema-crawler deployment/llm-exporter service/llm-exporter
-        serviceaccount/platform-workers-audit serviceaccount/platform-workers-memory
-        serviceaccount/platform-workers-schema-crawler serviceaccount/llm-exporter
-        configmap/platform-workers-audit-env configmap/platform-workers-memory-env
-        configmap/platform-workers-schema-crawler-env configmap/llm-exporter-env
-        secret/platform-workers-audit-secrets secret/platform-workers-memory-secrets
-        secret/platform-workers-schema-crawler-secrets
-        persistentvolumeclaim/audit-bridge-state
-      register: platform_workers_delete
-      changed_when: "'deleted' in platform_workers_delete.stdout"
-      when: apply_services | bool
-
-    # sandbox-executor ran user code for workflow-runtime, which is gone; nothing in V3 calls it.
-    # Deleting dataagent-sandbox takes its pool pods, the runner account and the RBAC with it.
-    - name: Remove the retired sandbox-executor and its namespace
-      ansible.builtin.command: >-
-        {{ kubectl }} delete --ignore-not-found=true
-        -n {{ ns_service }}
-        deployment/sandbox-executor service/sandbox-executor serviceaccount/sandbox-executor
-        configmap/sandbox-executor-env secret/sandbox-executor-secrets
-      register: sandbox_delete
-      changed_when: "'deleted' in sandbox_delete.stdout"
-      when: apply_services | bool
-
-    - name: Remove the retired sandbox namespace
-      ansible.builtin.command: "{{ kubectl }} delete namespace dataagent-sandbox --ignore-not-found=true --wait=false"
-      register: sandbox_ns_delete
-      changed_when: "'deleted' in sandbox_ns_delete.stdout"
-      when: apply_services | bool
-
-    - name: Remove the retired legacy seed Job
-      ansible.builtin.command: >-
-        {{ kubectl }} -n {{ ns_service }} delete
-        job/seed serviceaccount/seed configmap/seed-env configmap/seed-sql configmap/seed-mongo
-        --ignore-not-found=true
-      changed_when: false
-      when: apply_jobs | bool
 
     # After the service tier, whose manifests carry per-workload env ConfigMaps
     # of their own, so a change there is seen too.

@@ -1,6 +1,6 @@
 ---
 - name: Run gateway setup
-  when: (apply_setup | bool)
+  when: (apply_setup | bool) or (setup_changed | default(false) | bool)
   block:
     - name: Delete setup job
       ansible.builtin.command: >
@@ -34,15 +34,6 @@
       register: backup_apply
       changed_when: "'created' in backup_apply.stdout or 'configured' in backup_apply.stdout"
       when: apply_maintenance_jobs | bool
-
-- name: Remove the retired memory cleanup CronJob
-  ansible.builtin.command: >-
-    {{ kubectl }} -n {{ ns_service }} delete
-    cronjob/memory-cleanup serviceaccount/memory-cleanup
-    configmap/memory-cleanup-env secret/memory-cleanup-secrets
-    --ignore-not-found=true
-  changed_when: false
-  when: apply_maintenance_jobs | bool
 
 - name: Get restore suspend flag
   ansible.builtin.command: >
