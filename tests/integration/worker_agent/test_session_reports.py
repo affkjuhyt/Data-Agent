@@ -221,6 +221,7 @@ async def test_a_reader_with_a_narrower_policy_fails_the_rights_check(
     catalogue_columns(seed, bank)
     ws, tile = _workspace(bank)
     reader = seed.one("SELECT id FROM org.app_user WHERE org_id = %s AND username = 'o'", bank.org)
+    test_answers.seat(seed, bank, reader)
     seed.row(
         "workspace.workspace_share",
         org_id=bank.org,

@@ -134,13 +134,10 @@ async def open_agent_account(
             )
         )
         await session.flush()
+        # Seated even in a space with no members yet: such a space is closed to all but its
+        # steward (query/scope.can_ask_data_space), so an unseated agent could not answer.
         space = await session.get(org.DataSpace, data_space_id)
-        members = await session.scalar(
-            select(func.count())
-            .select_from(org.DataSpaceMember)
-            .where(org.DataSpaceMember.data_space_id == data_space_id)
-        )
-        if space is None or not members:
+        if space is None:
             return
         seated, scope, held = await _owner_grant(session, space, principal.user_id)
         role = await _ask_role(session, held)

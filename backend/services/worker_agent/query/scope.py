@@ -39,9 +39,10 @@ async def can_ask_data_space(
 ) -> bool:
     """Check Data Space membership before any model prompt is built.
 
-    Older pilot fixtures predate membership rows; the steward remains the owner and an empty
-    membership table is treated as the legacy open pilot state. Once a space has memberships,
-    only a live direct/group grant carrying ``ask`` can enter the semantic path.
+    The steward owns the space; anyone else needs a live direct or group grant carrying ``ask``.
+    A space without membership rows is closed to everyone but its steward: it used to be open to
+    the whole organisation (the pilot's fixtures predated memberships), which exposed every new
+    space until someone added its first member.
     """
     space = await session.scalar(
         select(org_models.DataSpace).where(org_models.DataSpace.id == data_space_id)
@@ -49,11 +50,6 @@ async def can_ask_data_space(
     if space is None or space.steward_id == principal_id:
         return space is not None
     member = org_models.DataSpaceMember
-    all_members = await session.scalar(
-        select(func.count()).select_from(member).where(member.data_space_id == data_space_id)
-    )
-    if not all_members:
-        return True
     groups = select(org_models.UserGroupMember.group_id).where(
         org_models.UserGroupMember.user_id == principal_id
     )
@@ -202,11 +198,6 @@ async def active_row_scopes(
     if space is None or space.steward_id == principal_id:
         return None
     member = org_models.DataSpaceMember
-    all_members = await session.scalar(
-        select(func.count()).select_from(member).where(member.data_space_id == data_space_id)
-    )
-    if not all_members:
-        return None
     groups = select(org_models.UserGroupMember.group_id).where(
         org_models.UserGroupMember.user_id == principal_id
     )

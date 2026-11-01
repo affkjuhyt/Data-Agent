@@ -19,7 +19,7 @@ from services.worker_agent.schedules import targets
 
 from . import test_answers
 from .conftest import Seed
-from .test_answers import Bank, activate, build
+from .test_answers import Bank, activate, build, seat
 from .test_column_masking import catalogue_columns
 
 warehouse = test_answers.warehouse
@@ -150,6 +150,7 @@ async def test_a_report_is_rendered_stored_and_told_to_its_recipients(
     catalogue_columns(seed, bank)
     report = schedule(bank)
     recipient(bank, report, bank.user)
+    seat(seed, bank, other_user(seed, bank))
     recipient(bank, report, other_user(seed, bank))
     run = request(bank, report)
     await drain()
@@ -178,6 +179,7 @@ async def test_a_member_with_narrower_rights_does_not_receive_the_groups_renderi
     bank = build(seed, warehouse, monkeypatch)
     catalogue_columns(seed, bank)
     narrow = other_user(seed, bank)
+    seat(seed, bank, narrow)
     seed.row(
         "governance.access_policy",
         org_id=bank.org,
@@ -254,6 +256,7 @@ async def test_a_bound_email_gets_the_card_and_an_unbound_one_makes_it_partial(
     )
     report = schedule(bank, formats=("html", "pdf"))
     recipient(bank, report, bank.user, channels=("in_app", "email"))
+    seat(seed, bank, other_user(seed, bank))
     recipient(bank, report, other_user(seed, bank), channels=("email",))  # bound to nothing
     run = request(bank, report)
     await drain()

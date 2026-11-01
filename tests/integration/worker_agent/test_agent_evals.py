@@ -62,7 +62,8 @@ def agent_asking_for_eval(
 ) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
     """An agent whose version 1 asks for its eval run, as POST /v1/agents/{id}/eval-runs leaves
     it: the run id reserved on the config, the config testing, the event in agent.outbox. Its
-    own account (app_user kind agent) is the one the items are answered as."""
+    own account (app_user kind agent) is the one the items are answered as, seated in the space
+    with an ask role as POST /v1/agents leaves it (org/public.open_agent_account)."""
     account = seed.row(
         "org.app_user",
         org_id=org,
@@ -71,6 +72,21 @@ def agent_asking_for_eval(
         display_name="Agent thử",
         kind="agent",
         owner_user_id=owner,
+    )
+    ask_role = seed.row(
+        "org.role",
+        org_id=org,
+        code=f"ASK-{uuid.uuid4().hex[:6]}",
+        name="Ask",
+        capabilities=["ask"],
+    )
+    seed.row(
+        "org.data_space_member",
+        org_id=org,
+        data_space_id=space,
+        principal_type="agent",
+        principal_id=account,
+        role_id=ask_role,
     )
     agent_id = seed.row(
         "agent.agent_def",

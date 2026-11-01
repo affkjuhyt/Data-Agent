@@ -271,6 +271,26 @@ def build(seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     return Bank(org, space, user, npl, loans, seed)
 
 
+def seat(seed: Seed, bank: Bank, user: Any) -> None:
+    """`user` may ask in the bank's space. A space is closed to everyone but its steward until
+    someone is seated in it (query/scope.can_ask_data_space)."""
+    role = seed.row(
+        "org.role",
+        org_id=bank.org,
+        code=f"ASK-{uuid.uuid4().hex[:6]}",
+        name="Ask",
+        capabilities=["ask"],
+    )
+    seed.row(
+        "org.data_space_member",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        principal_type="user",
+        principal_id=user,
+        role_id=role,
+    )
+
+
 def activate(
     bank: Bank, *, freshness: str = "fresh", metrics: tuple[str, ...] = ("NPL_RATIO",)
 ) -> uuid.UUID:
@@ -854,6 +874,34 @@ async def test_ac_11_01_01_non_member_cannot_enter_data_space_question_path(
     assert (status, kind) == ("refused", "refusal")
     assert "Data Space" in text and "quyền" in text
     assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", question) == 0
+
+
+async def test_a_space_with_no_members_is_closed_to_all_but_its_steward(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # GEN-01: no membership rows used to mean "open to the whole organisation".
+    bank = build(seed, warehouse, monkeypatch)
+    assert (
+        seed.one("SELECT count(*) FROM org.data_space_member WHERE data_space_id = %s", bank.space)
+        == 0
+    )
+    steward = bank.user
+    bank.user = seed.row(
+        "org.app_user",
+        org_id=bank.org,
+        external_id="kc-same-org",
+        username="same-org",
+        display_name="Same org",
+    )
+    refused = bank.ask("Tỷ lệ nợ xấu tháng 9/2026")
+    await drain()
+    status, kind, *_ = answer_of(seed, refused)
+    assert (status, kind) == ("refused", "refusal")
+    assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", refused) == 0
+    bank.user = steward
+    answered = bank.ask("Tỷ lệ nợ xấu tháng 9/2026")
+    await drain()
+    assert answer_of(seed, answered)[0] == "answered"
 
 
 async def test_ac_11_01_01_membership_row_scope_limits_source_rows(
