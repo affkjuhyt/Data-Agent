@@ -14,16 +14,22 @@
 # directly regardless of this image's own (root) default.
 FROM python:3.11.9-slim
 WORKDIR /app
-COPY requirements.txt .
+# Built from the repository root (deploy/ansible image_self_context no longer lists it): auth.py
+# imports libs.shared.service_identity, which a context of this directory alone could not copy, so
+# the image started with "No module named 'libs'" while the tests, run with backend/ on the path,
+# passed. Only that module is taken; it needs nothing beyond the standard library.
+COPY backend/services/sandbox_executor/requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
+COPY backend/libs/__init__.py ./libs/__init__.py
+COPY backend/libs/shared/__init__.py backend/libs/shared/service_identity.py ./libs/shared/
 # Every module, not a file list. The list version silently went stale twice:
 # clickhouse_readonly.py was added as a third SQL backend and never copied, so
 # the image kept building and failed only on the first ClickHouse query.
 # __pycache__ is excluded by the repo .dockerignore.
-COPY *.py ./
-COPY api ./api
-COPY core ./core
-COPY execution ./execution
+COPY backend/services/sandbox_executor/*.py ./
+COPY backend/services/sandbox_executor/api ./api
+COPY backend/services/sandbox_executor/core ./core
+COPY backend/services/sandbox_executor/execution ./execution
 
 # No CMD/EXPOSE: the start command and the port are deployment concerns and
 # live in deploy/k8s. Keeping them here too meant two places to change.

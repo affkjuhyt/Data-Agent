@@ -51,7 +51,6 @@ manifest_sed: >-
 images_on_demand: [eval]
 
 image_self_context:
-  - backend/services/sandbox_executor
   - backend/services/sandbox_executor/sandbox_runner
   - frontend
 
