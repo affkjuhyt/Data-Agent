@@ -46,9 +46,32 @@ manifest_sed_rewrite: >-
   -e "s|image: localhost:5000/{{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|image: {{ image_deploy_prefix }}/\1:{{ image_tag }}|g"
   -e "s|localhost:5000/{{ image_prefix }}/|{{ image_deploy_prefix }}/|g"
   -e "s|imagePullPolicy: IfNotPresent|imagePullPolicy: Always|g"
-manifest_sed: >-
+manifest_sed_images: >-
   {{ manifest_sed_rewrite if (image_registry | length) > 0
      else 'sed -e "s|localhost:5000/dataagent/|dataagent/|g" -e "s|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|g"' }}
+manifest_sed: "{{ manifest_sed_images }}{{ manifest_values_sed }}"
+
+# GEN-06: where this install reaches its models and is reached from. The production manifests
+# carry __NAME__ for each (manifest_values), so no pilot address or localhost is baked in; the dev
+# manifests keep their LAN values. None is defaulted: k8s_preflight stops a production deploy
+# that leaves one empty.
+llm_main_base_url: ""        # the main model, OpenAI-style .../v1 (LiteLLM's upstream)
+llm_fast_base_url: ""        # the fast model, .../v1
+embedding_base_url: ""       # LiteLLM's embedding upstream, .../v1
+document_embed_url: ""       # the TEI that embeds document chunks and questions (bge-m3)
+document_rerank_url: ""      # the TEI reranker of document answers
+gpu_egress_cidr: ""          # where those models run, opened in the NetworkPolicies (a.b.c.d/32)
+frontend_origins: []         # the browser origins of the frontend: CORS and OIDC redirects
+manifest_values:
+  LLM_MAIN_BASE_URL: "{{ llm_main_base_url }}"
+  LLM_FAST_BASE_URL: "{{ llm_fast_base_url }}"
+  EMBEDDING_BASE_URL: "{{ embedding_base_url }}"
+  DOCUMENT_EMBED_URL: "{{ document_embed_url }}"
+  DOCUMENT_RERANK_URL: "{{ document_rerank_url }}"
+  GPU_EGRESS_CIDR: "{{ gpu_egress_cidr }}"
+  FRONTEND_ORIGINS: "{{ frontend_origins | join(',') }}"
+manifest_values_sed: >-
+  {% for name, value in manifest_values.items() %} -e "s|__{{ name }}__|{{ value }}|g"{% endfor %}
 
 # Built only when images_only names them (k8s_plan): images no Deployment and no
 # deploy-run Job uses. eval is the online-eval Job, applied by hand (model/eval/README.md).
@@ -60,17 +83,11 @@ image_self_context:
 image_name_overrides:
   backend/alembic: migrate
 
-# frontend's k8s Deployment runs `npm run dev` (both dev/ and production/
-# manifests today), which needs the full-source layout Dockerfile.dev provides,
-# not plain Dockerfile's `vite preview`/dist-only production build: built from
-# the plain Dockerfile, the pod fails its readiness probe with 404 because the
-# image has only dist/. Unconditional (not k8s_env-
-# gated): both manifests currently need it. Mirrors what
-# deploy/k8s/build-push-images.sh already does — this dict is what let
-# deploy.yml's generic build task catch up to it instead of silently
-# rebuilding a broken frontend image.
+# The frontend: production serves the built app (frontend/Dockerfile: `vite build`, then
+# `vite preview` of dist/ with the install's settings written at start, GEN-05); the dev cluster
+# keeps the Vite dev server of Dockerfile.dev, which needs the full source.
 image_dockerfile_overrides:
-  frontend: Dockerfile.dev
+  frontend: "{{ 'Dockerfile.dev' if k8s_env == 'dev' else 'Dockerfile' }}"
 
 # What an image is rebuilt for is read from its Dockerfile (k8s_plan): the
 # Dockerfile itself, every COPY/ADD source resolved against its build context,

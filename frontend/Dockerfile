@@ -36,7 +36,10 @@ RUN npm config set fetch-retries 5 \
 COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm npm install --no-audit --no-fund --omit=dev
 COPY vite.config.ts ./
+COPY scripts/write-runtime-config.mjs ./scripts/
 COPY --from=build /app/dist ./dist
 
 EXPOSE 8280
-CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "8280"]
+# The install's settings are written at start, not baked in (src/lib/runtimeConfig.ts): the pod's
+# root filesystem is read-only, so production mounts an emptyDir at dist/runtime.
+CMD ["sh", "-c", "node scripts/write-runtime-config.mjs && exec npm run preview -- --host 0.0.0.0 --port 8280"]

@@ -101,7 +101,8 @@ def main() -> int:
     parser.add_argument(
         "--tenant-id",
         dest="data_space_id",
-        default=os.getenv("EVAL_DATA_SPACE_ID", "a0000000-0000-0000-0000-000000000001"),
+        # No default: the demo organisation is not every install's (GEN-06).
+        default=os.getenv("EVAL_DATA_SPACE_ID", ""),
     )
     args = parser.parse_args()
 
@@ -116,6 +117,12 @@ def main() -> int:
     if args.tier in ("online", "all"):
         if not args.agent_id:
             print("--agent-id (or AGENT_ID) is required for the online tier", file=sys.stderr)
+            return 2
+        if not args.data_space_id:
+            print(
+                "--tenant-id (or EVAL_DATA_SPACE_ID) is required for the online tier",
+                file=sys.stderr,
+            )
             return 2
         online = asyncio.run(run_online(args.agent_url, args.agent_id, args.data_space_id))
         report["tiers"].append("online")

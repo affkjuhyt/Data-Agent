@@ -255,9 +255,16 @@ fi
 # ── 8. CORS (browser preflight) ───────────────────────────────────────
 # Global plugin — applies to all routes. Priority 2000 runs before JWT (1010)
 # so OPTIONS preflight returns 200 without needing a token.
-echo "🌐 Enabling global CORS plugin..."
+# The origins: an install's own (FRONTEND_ORIGINS, comma-separated, from the inventory's
+# frontend_origins, GEN-06), else the dev ones (localhost and the dev LAN).
+CORS_ORIGINS_JSON=$(python3 -c '
+import json, os
+given = [o.strip().rstrip("/") for o in os.environ.get("FRONTEND_ORIGINS", "").split(",") if o.strip()]
+dev = ["http://localhost:3000", "http://localhost:8150", "http://localhost:30280", "http://10.10.55.101:30280"]
+print(json.dumps(given or dev))')
+echo "🌐 Enabling global CORS plugin for $CORS_ORIGINS_JSON..."
 upsert_plugin "$KONG_ADMIN/plugins" \
-  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150","http://localhost:30280","http://10.10.55.101:30280"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Data-Space","X-Tenant-ID","X-Conversation-Id","Accept","X-Role","Idempotency-Key","X-Upload-Filename","Last-Event-ID","If-Match"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
+  '{"name":"cors","config":{"origins":'"$CORS_ORIGINS_JSON"',"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Data-Space","X-Tenant-ID","X-Conversation-Id","Accept","X-Role","Idempotency-Key","X-Upload-Filename","Last-Event-ID","If-Match"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
   "cors" "global"
 
 # ── 9. Correlation ID (tracing) ────────────────────────────────────────

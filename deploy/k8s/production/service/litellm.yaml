@@ -32,9 +32,9 @@ data:
   # blocked by NetworkPolicy — see allow-egress-remote-llm). vllm-main/
   # vllm-fast run on the host in --network host mode (deploy/k8s/switch-gpu-
   # containers-to-host-network.sh), reachable at the node's real IP.
-  LLM_MAIN_BASE_URL: http://10.10.55.101:8001/v1
-  LLM_FAST_BASE_URL: http://10.10.55.101:8002/v1
-  EMBEDDING_V1_BASE_URL: http://10.10.55.101:8003/v1
+  LLM_MAIN_BASE_URL: __LLM_MAIN_BASE_URL__
+  LLM_FAST_BASE_URL: __LLM_FAST_BASE_URL__
+  EMBEDDING_V1_BASE_URL: __EMBEDDING_BASE_URL__
 
 ---
 apiVersion: apps/v1

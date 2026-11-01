@@ -2,6 +2,7 @@ import { Button } from '../../design-system/Button';
 import { Icon } from '../../design-system/Icon';
 import { StatusDot } from '../../design-system/StatusDot';
 import keycloak from '../../lib/keycloak';
+import { setting } from '../../lib/runtimeConfig';
 
 /*
  * Figma "v3.1 · Đăng nhập [toàn cục]" (2230:14958). The app draws this page; the password never
@@ -14,8 +15,8 @@ import keycloak from '../../lib/keycloak';
  * The Figma line "Phiên tự khoá sau 15 phút" is left out: the realm's idle timeout decides that,
  * and the page cannot read it before sign-in.
  */
-const ENTRA_IDP = (import.meta.env.VITE_KEYCLOAK_ENTRA_IDP as string | undefined) || '';
-const ENVIRONMENT = (import.meta.env.VITE_ENVIRONMENT_LABEL as string | undefined) || '';
+const ENTRA_IDP = setting('VITE_KEYCLOAK_ENTRA_IDP') || '';
+const ENVIRONMENT = setting('VITE_ENVIRONMENT_LABEL') || '';
 
 export function LoginPage() {
   const redirectUri = window.location.href;

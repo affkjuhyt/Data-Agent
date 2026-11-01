@@ -46,6 +46,23 @@
     - "{{ k8s_dir }}/secrets.env.example"
     - "{{ docker_dir }}/kafka/kafka-broker-jaas.config.example"
 
+# GEN-06: the production manifests take these addresses from the inventory (manifest_values);
+# an empty one would deploy a placeholder, a '|' or '&' would break the sed that substitutes it.
+- name: Check the addresses of a production install
+  ansible.builtin.assert:
+    that:
+      - item.value | length > 0
+      - "'|' not in item.value and '&' not in item.value"
+    fail_msg: >-
+      {{ item.key }} is empty or holds '|' or '&': set it in the inventory
+      (llm_main_base_url, llm_fast_base_url, embedding_base_url, document_embed_url,
+      document_rerank_url, gpu_egress_cidr, frontend_origins; roles/k8s_common/defaults/main.yml).
+    quiet: true
+  loop: "{{ manifest_values | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: k8s_env == 'production'
+
 - name: Report preflight
   ansible.builtin.debug:
     msg:

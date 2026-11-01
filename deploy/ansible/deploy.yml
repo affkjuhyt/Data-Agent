@@ -308,14 +308,19 @@
 
     # The snapshot and secret reapply below address namespaced resources, so a
     # clean cluster must have its namespaces before either task runs.
+    # Rendered like every other manifest: the production policies take the GPU host's address
+    # from the inventory (__GPU_EGRESS_CIDR__, GEN-06).
     - name: Apply namespaces, RBAC and NetworkPolicies
-      ansible.builtin.command:
-        cmd: >-
-          {{ kubectl }} apply
-          -f {{ (k8s_manifests ~ '/namespace.yaml') | quote }}
-          -f {{ (k8s_manifests ~ '/rbac.yaml') | quote }}
-          -f {{ (k8s_manifests ~ '/networkpolicy-service.yaml') | quote }}
-          -f {{ (k8s_manifests ~ '/networkpolicy-database.yaml') | quote }}
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
+          for f in namespace rbac networkpolicy-service networkpolicy-database; do
+            {{ manifest_sed }} "{{ k8s_manifests }}/$f.yaml" > "$stage/$f.yaml"
+          done
+          {{ kubectl }} apply -f "$stage/namespace.yaml" -f "$stage/rbac.yaml" \
+            -f "$stage/networkpolicy-service.yaml" -f "$stage/networkpolicy-database.yaml"
+        executable: /bin/bash
       register: base_apply
       changed_when: "'created' in base_apply.stdout or 'configured' in base_apply.stdout"
 
@@ -360,6 +365,9 @@
       ansible.builtin.command:
         cmd: "bash {{ (k8s_dir ~ '/create-configmaps.sh') | quote }}"
         chdir: "{{ project_dir }}"
+      environment:
+        # GEN-04: the demo ConfigMaps exist only with seed_demo; without it they are removed.
+        SEED_DEMO: "{{ '1' if (seed_demo | bool) else '0' }}"
       when: config_changed | bool
       changed_when: true
 
@@ -594,9 +602,7 @@
               set -euo pipefail
               stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
               for j in {{ rerun_inits | join(' ') }}; do
-                {{ manifest_sed }} "{{ k8s_manifests }}/job/$j.yaml" \
-                  | sed "s|SEED_DEMO: '0'|SEED_DEMO: '{{ 1 if (seed_demo | bool) else 0 }}'|" \
-                  > "$stage/$j.yaml"
+                {{ manifest_sed }} "{{ k8s_manifests }}/job/$j.yaml" > "$stage/$j.yaml"
               done
               {{ kubectl }} apply -f "$stage/"
             executable: /bin/bash

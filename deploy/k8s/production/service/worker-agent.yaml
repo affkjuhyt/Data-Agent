@@ -19,6 +19,10 @@ metadata:
     app: worker-agent
     app.kubernetes.io/part-of: dataagent
 data:
+  # Document answers (UC-05-04): the question is embedded by the TEI the chunks were embedded
+  # with and the pool is ordered by the TEI reranker; without them retrieval is keyword-only.
+  DOCUMENT_EMBED_URL: __DOCUMENT_EMBED_URL__
+  DOCUMENT_RERANK_URL: __DOCUMENT_RERANK_URL__
   OTEL_SERVICE_NAME: worker-agent
   # Every schedule's clock (ADR-33, schedules/clock.py): the worker keeps the Temporal Schedules in
   # step with the data and runs their firings, the nightly eval run among them.

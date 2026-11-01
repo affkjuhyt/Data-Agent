@@ -454,7 +454,7 @@ spec:
   egress:
   - to:
     - ipBlock:
-        cidr: 10.10.55.101/32
+        cidr: __GPU_EGRESS_CIDR__
     ports:
     - protocol: TCP
       port: 8001
@@ -464,4 +464,34 @@ spec:
       port: 8003
     - protocol: TCP
       port: 8004
-
+---
+# GEN-06: document retrieval talks to the TEI embedder (8003) and reranker (8004) on the GPU
+# host itself, not through LiteLLM; only those two ports, and only for the three that embed or
+# rerank (api: search, worker-agent: answers, worker-document: indexing).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-document-models
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values:
+      - api
+      - worker-agent
+      - worker-document
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: __GPU_EGRESS_CIDR__
+    ports:
+    - protocol: TCP
+      port: 8003
+    - protocol: TCP
+      port: 8004

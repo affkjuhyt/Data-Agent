@@ -151,8 +151,7 @@ account (`E2E_USER` helios-engineer, `E2E_ADMIN_USER` platform-admin,
 accounts' passwords are the vault's `vault_demo_password_*`
 (`deploy/ansible/inventories/<env>/group_vars/all/vault.yml.example`), which the
 setup Job writes into Keycloak on a deploy with `-e apply_setup=true`; an unset
-one leaves that account's password as it is. `E2E_STRICT=1` turns the model-dependent behaviour checks
-from xfail into failures; each turn's frames land in `tests/e2e/out/`.
+one leaves that account's password as it is.
 
 **These tests write data.** The agent-answer test runs real turns (new
 conversations every run) and the tenant-isolation test deletes, revokes and

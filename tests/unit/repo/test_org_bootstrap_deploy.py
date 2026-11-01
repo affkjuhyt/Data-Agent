@@ -49,8 +49,10 @@ def test_the_local_inventory_names_the_demo_organisation_and_its_admin() -> None
         (ANSIBLE / "inventories" / "k8s-local" / "group_vars" / "all" / "main.yml").read_text()
     )
     assert all(local[name] for name in ORG_VARS)
-    realm = json.loads((REPO / "deploy" / "docker" / "keycloak" / "realm-export.json").read_text())
-    admin = next(u for u in realm["users"] if u["username"] == local["org_admin_username"])
+    demo = json.loads(
+        (REPO / "deploy" / "docker" / "keycloak" / "demo" / "aeroflow-users-0.json").read_text()
+    )
+    admin = next(u for u in demo["users"] if u["username"] == local["org_admin_username"])
     defaults = yaml.safe_load(
         (ANSIBLE / "roles" / "k8s_common" / "defaults" / "main.yml").read_text()
     )

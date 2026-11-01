@@ -21,6 +21,9 @@ data:
   KONG_PROXY_URL: http://kong.dataagent-service.svc.cluster.local:8100
   KEYCLOAK_DISABLE_MFA: '0'
   SMOKE_USER: ''
+  # The browser origins of the frontend (inventory frontend_origins, GEN-06): Kong's CORS and
+  # the Keycloak client's redirect URIs.
+  FRONTEND_ORIGINS: __FRONTEND_ORIGINS__
 
 ---
 apiVersion: batch/v1

@@ -17,6 +17,8 @@ metadata:
     app: api
     app.kubernetes.io/part-of: dataagent
 data:
+  # Document search embeds the question with the TEI the chunks were embedded with (GEN-06).
+  DOCUMENT_EMBED_URL: __DOCUMENT_EMBED_URL__
   OTEL_SERVICE_NAME: api
   PROMETHEUS_URL: http://prometheus.dataagent-service.svc.cluster.local:8400
   API_OIDC_AUDIENCE: dataagent-api

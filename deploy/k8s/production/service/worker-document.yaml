@@ -12,6 +12,8 @@ metadata:
   name: worker-document-env
   namespace: dataagent-service
 data:
+  # The chunks' embeddings (bge-m3 TEI); the same model embeds questions at answer time.
+  DOCUMENT_EMBED_URL: __DOCUMENT_EMBED_URL__
   WORKER_DOCUMENT_POLL_SECONDS: "1"
   WORKER_DOCUMENT_BATCH: "4"
   DOCUMENT_RAW_BUCKET: da-raw-docs

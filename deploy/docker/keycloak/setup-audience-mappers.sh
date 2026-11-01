@@ -205,6 +205,27 @@ else
 fi
 
 echo
+# ── 9. Where the frontend may send a login back (GEN-06) ────────────────
+# The realm export lists the dev origins (localhost and the dev LAN). An install that names its
+# own (FRONTEND_ORIGINS, comma-separated, from the inventory's frontend_origins) gets exactly those
+# as the client's redirect URIs, web origins and post-logout URIs; the export's are not kept.
+if [ -n "${FRONTEND_ORIGINS:-}" ]; then
+    echo
+    echo "↩️  Frontend origins: $FRONTEND_ORIGINS"
+    curl -sf -H "Authorization: Bearer $TOKEN" "$KC_BASE/admin/realms/$REALM/clients/$CLIENT_ID" \
+        | FRONTEND_ORIGINS="$FRONTEND_ORIGINS" python3 -c '
+import json, os, sys
+client = json.load(sys.stdin)
+origins = [o.strip().rstrip("/") for o in os.environ["FRONTEND_ORIGINS"].split(",") if o.strip()]
+client["redirectUris"] = [o + "/*" for o in origins]
+client["webOrigins"] = origins
+client.setdefault("attributes", {})["post.logout.redirect.uris"] = "##".join(o + "/*" for o in origins)
+json.dump(client, sys.stdout)' \
+        | curl -sf -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            --data-binary @- "$KC_BASE/admin/realms/$REALM/clients/$CLIENT_ID" > /dev/null
+    echo "  → $TARGET_CLIENT redirects only to them"
+fi
+
 echo "✅ Audience mappers configured + test users unblocked. Tokens from"
 echo "   $TARGET_CLIENT will include: ${AUDIENCES[*]} in the aud claim."
 echo

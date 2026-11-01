@@ -56,6 +56,19 @@ kubectl -n dataagent-service get secret keycloak-secrets \
   -o jsonpath='{.data.KEYCLOAK_ADMIN_PASSWORD}' | base64 -d; echo   # Keycloak user: admin
 ```
 
+### A production install (GEN-04 to GEN-06)
+
+The production manifests carry no demo data and no address of the pilot: an inventory with
+`k8s_env: production` sets the organisation (below), `seed_demo: false`, and the addresses
+`llm_main_base_url`, `llm_fast_base_url`, `embedding_base_url` (each `http://<host>:<port>/v1`),
+`document_embed_url`, `document_rerank_url` (the TEI services, `http://<host>:8003`, `:8004`),
+`gpu_egress_cidr` (`<host>/32`) and `frontend_origins` (a list such as `["https://app.example.vn"]`).
+Preflight stops on a missing one. The frontend is the built app (`frontend/Dockerfile`); its URLs and
+realm come from `frontend-env` and `frontend-secrets` at pod start (`/runtime/config.js`), so one
+image serves every install. With `seed_demo: false` db-init applies the grants only, `minio-init`
+uploads no document and the realm imports no demo user; turning it off on an install that had it
+stops loading demo data but does not delete what is already there.
+
 ### The organisation (GEN-07)
 
 Every deploy makes sure the install has its organisation, its default roles and a first admin

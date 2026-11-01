@@ -1,5 +1,6 @@
 import createClient, { type Middleware } from 'openapi-fetch';
 import keycloak from '../keycloak';
+import { setting } from '../runtimeConfig';
 import type { paths } from './schema';
 
 /*
@@ -16,7 +17,7 @@ import type { paths } from './schema';
  * In development `VITE_MOCK_V1=1` answers these calls from src/mocks (MSW) until the backend
  * serves them; nothing here knows about the mock.
  */
-const ORIGIN = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:30100';
+const ORIGIN = setting('VITE_API_URL') ?? 'http://localhost:30100';
 /** The path every v1 request starts with, behind a gateway that may mount the api under a prefix. */
 const ROOT = `${new URL(ORIGIN).pathname.replace(/\/$/, '')}/v1`;
 

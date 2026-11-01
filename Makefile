@@ -190,22 +190,20 @@ E2E_KEYCLOAK_URL ?= http://localhost:30110
 E2E_DATA_SPACE ?= DS-AW
 E2E_TESTS ?= tests/integration/test_v3_question_e2e.py
 E2E_FORWARD_VARS = E2E_USER E2E_PASS E2E_ADMIN_USER E2E_ADMIN_PASS E2E_T2_ADMIN_USER E2E_T2_ADMIN_PASS \
-                   E2E_DATA_SPACE E2E_STRICT E2E_TURN_TIMEOUT
+                   E2E_DATA_SPACE E2E_TURN_TIMEOUT
 E2E_FORWARD = $(foreach v,$(E2E_FORWARD_VARS),$(if $($(v)),-e $(v)))
 
 export $(E2E_FORWARD_VARS)
 
 # --no-showlocals: a failing e2e test would otherwise print the passwords and tokens
 # in its frames (pyproject sets --showlocals for every suite).
-# The turn test writes its frames to tests/e2e/out/ as root; hand them back.
 e2e:  ## pytest -m e2e against the deployed V3 dev cluster (LAN NodePorts; URLs overridable, credentials from env)
 	@docker build -q --build-arg BASE=$(IMAGE_REGISTRY)/dataagent/worker-agent:latest --build-arg SUITE=worker_agent \
 	  -f tests/test-image.Dockerfile -t dataagent-test/worker_agent:latest . >/dev/null
 	@$(DOCKER_RUN_SUITE) --network host -e LIVE_STACK=1 -e LIVE_KONG_URL=$(E2E_KONG_URL) \
 	  -e LIVE_KEYCLOAK_URL=$(E2E_KEYCLOAK_URL) $(E2E_FORWARD) \
 	  dataagent-test/worker_agent:latest sh -c \
-	  "python -m pytest -q -p no:cacheprovider --no-showlocals -m e2e $(PYTEST_ARGS) $(E2E_TESTS); \
-	   rc=\$$?; chown -R $$(id -u):$$(id -g) tests/e2e/out 2>/dev/null; exit \$$rc"
+	  "python -m pytest -q -p no:cacheprovider --no-showlocals -m e2e $(PYTEST_ARGS) $(E2E_TESTS)"
 
 # AdventureWorksDW, the dataset the product is tested on (tests/e2e/adventureworks): fetched at the
 # commit pinned in sources.json, converted to PostgreSQL and loaded into its own database of the

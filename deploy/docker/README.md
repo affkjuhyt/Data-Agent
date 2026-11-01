@@ -19,7 +19,7 @@ things:
 | `keycloak/Dockerfile` | image `dataagent/keycloak`: Keycloak built for Postgres, so `--optimized` starts under a read-only root fs |
 | `setup/Dockerfile` | image for `job/setup.yaml` (the Job has no Internet egress to `apk add` at runtime) |
 | `kong/kong-setup.sh` | ConfigMap `kong-scripts` → `job/setup.yaml` |
-| `keycloak/setup-audience-mappers.sh`, `realm-export.json` | ConfigMaps `keycloak-scripts`, `keycloak-realm` |
+| `keycloak/setup-audience-mappers.sh`, `realm-export.json` (key `aeroflow-realm.json`), `keycloak/demo/aeroflow-users-0.json` (demo users, only with `seed_demo`) | ConfigMaps `keycloak-scripts`, `keycloak-realm` |
 | `sql/create-extra-dbs.sql`, `init.sql` | ConfigMap `postgres-initdb` |
 | `sql/grant-roles.sql`, `v3-*.sql` | ConfigMap `db-init-sql` → `job/db-init.yaml` |
 | `litellm/config.yaml` | ConfigMap `litellm-config` |

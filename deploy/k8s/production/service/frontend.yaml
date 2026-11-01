@@ -88,22 +88,30 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        # The built app with the install's settings (frontend/Dockerfile writes runtime/config.js
+        # at start, GEN-05).
+        - name: runtime-config
+          mountPath: /app/dist/runtime
+        # vite preview bundles vite.config.ts into node_modules/.vite-temp before it serves.
+        - name: vite-temp
+          mountPath: /app/node_modules/.vite-temp
         envFrom:
         - configMapRef:
             name: frontend-env
         - secretRef:
             name: frontend-secrets
+        # The built app (frontend/Dockerfile), not the Vite dev server: the install's settings are
+        # written to dist/runtime/config.js first (GEN-05).
         command:
-        - npm
-        - run
-        - dev
-        - --
-        - --host
-        - 0.0.0.0
-        - --port
-        - '8280'
+        - sh
+        - -c
+        - node scripts/write-runtime-config.mjs && exec npm run preview -- --host 0.0.0.0 --port 8280
       volumes:
       - name: tmp
+        emptyDir: {}
+      - name: runtime-config
+        emptyDir: {}
+      - name: vite-temp
         emptyDir: {}
       enableServiceLinks: false
       serviceAccountName: frontend

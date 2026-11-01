@@ -69,6 +69,11 @@ spec:
             echo waiting for migrations; sleep 3
           done
           for f in /sql/*.sql; do echo applying $f; psql -v ON_ERROR_STOP=1 -f "$f"; done
+          # Demo data, only when the deploy made db-init-demo-sql (seed_demo, GEN-04).
+          for f in /demo-sql/*.sql; do
+            [ -e "$f" ] || continue
+            echo applying demo $f; psql -v ON_ERROR_STOP=1 -f "$f"
+          done
           echo setting role passwords
           # DB_ROLE_PASSWORDS is a JSON object {"svc_qa": "...", ...} from the vault; each role
           # named there becomes a login with that password (design tab 3 D5.1).
@@ -103,6 +108,9 @@ spec:
         - name: sql
           mountPath: /sql
           readOnly: true
+        - name: demo-sql
+          mountPath: /demo-sql
+          readOnly: true
         - name: tmp
           mountPath: /tmp
         envFrom:
@@ -114,6 +122,10 @@ spec:
       - name: sql
         configMap:
           name: db-init-sql
+      - name: demo-sql
+        configMap:
+          name: db-init-demo-sql
+          optional: true
       - name: tmp
         emptyDir: {}
       serviceAccountName: db-init
