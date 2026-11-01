@@ -511,7 +511,7 @@ export interface Backtest {
   empty_queries_text: string;
 }
 
-export interface PolicySimulation {
+interface PolicySimulation {
   question: string;
   rows: { label: string; without: string; with: string }[];
 }

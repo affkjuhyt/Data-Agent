@@ -346,19 +346,6 @@ export const listDatasets = async (): Promise<Page<Dataset>> => {
   );
   return { ...page, items: page.items.map(readDataset) };
 };
-export const listSourceDatasets = async (sourceId: string): Promise<Page<Dataset>> => {
-  const page = await ok<Page<DatasetWire>>(
-    api.GET('/v1/datasets', {
-      params: {
-        query: {
-          ...ALL,
-          source_id: sourceId,
-        },
-      },
-    }),
-  );
-  return { ...page, items: page.items.map(readDataset) };
-};
 export const listMetrics = () =>
   ok<Page<Metric>>(api.GET('/v1/metrics', { params: { query: ALL } }));
 export const listTerms = () =>

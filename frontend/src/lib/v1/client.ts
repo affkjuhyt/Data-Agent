@@ -293,7 +293,7 @@ export async function v1Upload<T = unknown>(
 }
 
 /** One Server-Sent Event; `id` is what Last-Event-ID resumes after (A1.6). */
-export interface V1Event {
+interface V1Event {
   id?: string;
   event: string;
   data: string;

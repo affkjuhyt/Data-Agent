@@ -16,7 +16,7 @@ type Schemas = components['schemas'];
  * discussion on a proposal: a note travels with :decide and :resolve.
  */
 
-export type ChainStepState = 'sent' | 'agreed' | 'viewing' | 'waiting' | 'changes_requested';
+type ChainStepState = 'sent' | 'agreed' | 'viewing' | 'waiting' | 'changes_requested';
 
 export interface ChainStep {
   name: string;

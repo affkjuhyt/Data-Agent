@@ -8,12 +8,12 @@ import { Select } from './Select';
  * Client-side search, filter, sort and pagination for a record table.
  * Pages keep their own cells; this owns the four controls every list must have.
  */
-export const TABLE_PAGE_SIZE = 20;
+const TABLE_PAGE_SIZE = 20;
 const ALL = '_all';
 
-export type SortDir = 'asc' | 'desc';
+type SortDir = 'asc' | 'desc';
 
-export type TableFilter<T> = {
+type TableFilter<T> = {
   id: string;
   /** Shown in the option, as "Chế độ: truy vấn tại chỗ". */
   label: string;
@@ -23,12 +23,12 @@ export type TableFilter<T> = {
   text?: (value: string) => string;
 };
 
-export type TableSort<T> = {
+type TableSort<T> = {
   id: string;
   value: (row: T) => string | number | null | undefined;
 };
 
-export type TableView<T> = {
+type TableView<T> = {
   rows: T[];
   total: number;
   page: number;

@@ -32,7 +32,7 @@ export interface FigureWire {
 }
 
 /** qa.answer.chart_spec (answer/narrate.py chart_spec_of): the cut to draw, never the values. */
-export interface ChartSpecWire {
+interface ChartSpecWire {
   type: 'bar' | 'line';
   x: string;
   x_label?: string;

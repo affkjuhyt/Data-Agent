@@ -150,7 +150,7 @@ export interface TileTask {
 }
 
 /** GET /v1/tiles/{id}/comments — the thread, and the comments given as tasks. */
-export interface TileThread {
+interface TileThread {
   items: TileComment[];
   tasks: TileTask[];
 }
@@ -170,7 +170,7 @@ export interface WorkspaceMember {
 }
 
 /** GET/PUT /v1/workspaces/{id}/shares; `preview` and `link` are the screen's. */
-export interface WorkspaceSharing {
+interface WorkspaceSharing {
   members: WorkspaceMember[];
   /** "Người nhận thấy gì": what each recipient will see, computed from their data scope. */
   preview: string;
@@ -223,7 +223,7 @@ export interface SessionReport {
 }
 
 /** The immutable markdown artifact returned by GET /v1/session-reports/{id}/document. */
-export type SessionReportDocument = components['schemas']['ReportDocumentView'];
+type SessionReportDocument = components['schemas']['ReportDocumentView'];
 
 /* Phiên */
 export const getWorkspace = async (id: string) =>
@@ -335,7 +335,7 @@ export const getSharing = async (id: string) =>
     id,
   );
 
-export type SharingInput = { principal_id: string; kind: 'user' | 'group'; role: MemberRole }[];
+type SharingInput = { principal_id: string; kind: 'user' | 'group'; role: MemberRole }[];
 
 /*
  * PUT replaces the whole set (A1.3). The owner is the workspace's, not a share, so it is left
@@ -450,7 +450,7 @@ function readReportChecks(raw: unknown): ReportCheck[] {
 }
 
 /** The API row carries metadata; the document endpoint supplies the immutable report body. */
-export function readSessionReport(raw: components['schemas']['ReportView']): SessionReport {
+function readSessionReport(raw: components['schemas']['ReportView']): SessionReport {
   // MSW keeps the richer design fixture beside the wire row; the real API simply omits it until
   // the report-document contract is shipped. Reading it here keeps mock and live adapters on one
   // path without making the live response depend on undocumented fields.
@@ -579,12 +579,6 @@ export const publishSessionReport = async (id: string) => {
       body: { recipients: [] },
     }),
   );
-  return getSessionReport(id);
-};
-
-/** Re-runs the pre-publish checks (202), e.g. after a number was tied to a tile. */
-export const checkSessionReport = async (id: string) => {
-  await ok(api.POST('/v1/session-reports/{id}:check', { params: { path: { id } } }));
   return getSessionReport(id);
 };
 

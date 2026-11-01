@@ -39,86 +39,8 @@ export const DATA_SPACE_STORAGE_KEY = 'dataagent.data-space';
 export const ORGANISATION_SCOPE = '__organisation__';
 
 /* ─── URL route helpers ────────────────────────────────────────────── */
-/* Module ids of earlier IAs → the six v3.1 areas (Trang chủ · Cần bạn · Agents · Phân tích ·
- * Dữ liệu · Quản trị). Applied by the routes (router.tsx) and navigate so existing links and bookmarks keep
- * working and the URL stays canonical. `subs` maps an old page to its new one; a missing
- * entry lands on `sub`, or on the area's first page when `sub` is empty. */
-type Redirect = {
-  module: string;
-  sub: string;
-  subs?: Record<string, { module: string; sub: string }>;
-};
-
-const REDIRECT_MAP: Record<string, Redirect> = {
-  // V3.0 IA (ask / knowledge / build / ops / settings)
-  ask: { module: 'analysis', sub: 'ASK' },
-  knowledge: { module: 'data', sub: 'SOURCES' },
-  build: {
-    module: 'agents',
-    sub: 'TEAM',
-    subs: {
-      AGENTS: { module: 'agents', sub: 'TEAM' },
-      WORKFLOWS: { module: 'agents', sub: 'ORCHESTRATION' },
-      PLAYGROUND: { module: 'agents', sub: 'EVALUATE' },
-      KNOWLEDGE: { module: 'data', sub: 'SOURCES' },
-      VERSIONS: { module: 'agents', sub: 'TEAM' },
-    },
-  },
-  ops: {
-    module: 'analysis',
-    sub: 'SESSIONS',
-    subs: {
-      CONVERSATIONS: { module: 'analysis', sub: 'SESSIONS' },
-      TRACES: { module: 'agents', sub: 'RUNS' },
-      REVIEWS: { module: 'needs-you', sub: '' },
-      ANALYTICS: { module: 'analysis', sub: 'SESSIONS' },
-    },
-  },
-  settings: {
-    module: 'admin',
-    sub: '',
-    subs: {
-      TEAM: { module: 'admin', sub: 'USERS' },
-      IAM: { module: 'admin', sub: 'USERS' },
-      PROVIDERS: { module: 'admin', sub: 'MODELS' },
-      AI_PROVIDERS: { module: 'admin', sub: 'MODELS' },
-      API: { module: 'admin', sub: 'INTEGRATIONS' },
-      INFRASTRUCTURE: { module: 'admin', sub: 'MONITORING' },
-      AUDIT: { module: 'admin', sub: 'AUDIT' },
-      SECURITY: { module: 'admin', sub: 'AUDIT' },
-      BILLING: { module: 'agents', sub: 'OPERATIONS' },
-    },
-  },
-  // Older IAs
-  dashboard: { module: 'analysis', sub: 'SESSIONS' },
-  'national-ops': { module: 'analysis', sub: 'SESSIONS' },
-  'knowledge-ops': { module: 'data', sub: 'SOURCES' },
-  'ai-runtime': { module: 'agents', sub: 'TEAM' },
-  'release-management': { module: 'agents', sub: 'TEAM' },
-  release: { module: 'agents', sub: 'TEAM' },
-  'operations-center': { module: 'agents', sub: 'RUNS' },
-  governance: { module: 'admin', sub: 'AUDIT' },
-  test: { module: 'agents', sub: 'EVALUATE' },
-  monitor: {
-    module: 'analysis',
-    sub: 'SESSIONS',
-    subs: {
-      TRACES: { module: 'agents', sub: 'RUNS' },
-      ANALYTICS: { module: 'analysis', sub: 'SESSIONS' },
-    },
-  },
-};
-
 /** Everyone lands on Trang chủ (v3.1): it is the start of every role's day. */
 export const landingFor = (): { module: string; sub?: string } => ({ module: 'home' });
-
-export const resolveRoute = (module: string, sub?: string): { module: string; sub?: string } => {
-  const r = REDIRECT_MAP[module];
-  if (!r) return { module, sub };
-  const mapped = sub ? r.subs?.[sub] : undefined;
-  if (mapped) return { module: mapped.module, sub: mapped.sub || undefined };
-  return { module: r.module, sub: r.sub || undefined };
-};
 
 /** The route a pathname names, after the router has made it canonical. */
 const routeOf = (pathname: string): { module: string; sub?: string; id?: string } => {
@@ -170,8 +92,7 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
 
   const navigate = useCallback(
     (moduleId: string, subId?: string, id?: string) => {
-      /* Honor redirect map if a caller still uses an old module id */
-      const resolved = resolveRoute(moduleId, subId);
+      const resolved = { module: moduleId, sub: subId };
       setRemembered((prev) => {
         const next = { ...prev };
         if (resolved.sub) next[resolved.module] = resolved.sub;

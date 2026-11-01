@@ -37,7 +37,7 @@ export interface ConversationDetail {
   turns: ConversationTurn[];
 }
 
-export interface ConversationListItem {
+interface ConversationListItem {
   id: string;
   title: string | null;
   last_question_at: string | null;
@@ -59,7 +59,7 @@ export const askQuestion = (text: string, conversationId: string | null) =>
 export const getAnswer = async (id: string) =>
   ok<Answer>(api.GET('/v1/answers/{id}', { params: { path: { id } } }));
 
-export type QuestionWire = components['schemas']['QuestionView'];
+type QuestionWire = components['schemas']['QuestionView'];
 
 /** The question with its latest plan (chips and steps), for "Hệ thống hiểu là" and the steps
  *  waiting for the person (UC-01-04, UC-03-01). */

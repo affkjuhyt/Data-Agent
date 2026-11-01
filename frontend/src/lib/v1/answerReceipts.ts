@@ -154,7 +154,7 @@ function readSource(raw: ReceiptFigureWire): ReceiptFigure['source'] {
   };
 }
 
-export const readFigure = (raw: ReceiptFigureWire, compiler = ''): ReceiptFigure => {
+const readFigure = (raw: ReceiptFigureWire, compiler = ''): ReceiptFigure => {
   const source = readSource(raw);
   if (source.kind === 'query_run') source.query.compiler = compiler;
   return {

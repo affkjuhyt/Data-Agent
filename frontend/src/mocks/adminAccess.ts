@@ -75,7 +75,7 @@ const dayMonth = (iso: string) => {
 
 /* ─── Fixtures ─────────────────────────────────────────────────────────── */
 
-export function rolesFixture(): Role[] {
+function rolesFixture(): Role[] {
   return [
     { id: 'role-business', code: 'AC01', name: 'Người dùng nghiệp vụ', capabilities: ['ask'] },
     {
@@ -95,7 +95,7 @@ export function rolesFixture(): Role[] {
   ];
 }
 
-export function groupsFixture(): UserGroup[] {
+function groupsFixture(): UserGroup[] {
   return [
     { id: 'grp-risk-analyst', name: 'GRP_RISK_ANALYST', member_count: 24, source: 'ad' },
     { id: 'grp-risk-head', name: 'GRP_RISK_HEAD', member_count: 6, source: 'ad' },
@@ -129,7 +129,7 @@ const person = (
   identity_source: 'Active Directory',
 });
 
-export function adminUsersFixture(): AdminUser[] {
+function adminUsersFixture(): AdminUser[] {
   const yearEnd = new Date(new Date().getFullYear(), 11, 31, 23, 59).toISOString();
   const named: AdminUser[] = [
     person(
@@ -206,7 +206,7 @@ export function adminUsersFixture(): AdminUser[] {
   return [...named, ...rest, ...agents];
 }
 
-export function dataSpaceSummariesFixture(): DataSpaceSummary[] {
+function dataSpaceSummariesFixture(): DataSpaceSummary[] {
   const ds = (
     id: string,
     code: string,
@@ -248,7 +248,7 @@ export function dataSpaceSummariesFixture(): DataSpaceSummary[] {
 type MemberWire = Schemas['MemberDetail'];
 
 /** GET /v1/data-spaces/{id}/members as the api answers it (MemberDetail). */
-export function membersFixture(spaceId: string = DS_RISK): MemberWire[] {
+function membersFixture(spaceId: string = DS_RISK): MemberWire[] {
   const stamp = new Date(new Date().getFullYear(), 0, 5).toISOString();
   const m = (
     id: string,
@@ -297,7 +297,7 @@ export function membersFixture(spaceId: string = DS_RISK): MemberWire[] {
   ];
 }
 
-export function permissionMatrixFixture(): PermissionMatrix {
+function permissionMatrixFixture(): PermissionMatrix {
   const row = (
     roleId: string,
     name: string,
@@ -349,7 +349,7 @@ export function permissionMatrixFixture(): PermissionMatrix {
 }
 
 /** POST /v1/permissions:simulate as the api answers it: one TableView per role or person asked. */
-export function permissionSimulationFixture(
+function permissionSimulationFixture(
   datasetId: string,
   subjects: { kind: 'role' | 'user'; id: string }[],
 ): PermissionSimulation {
@@ -380,7 +380,7 @@ export function permissionSimulationFixture(
   };
 }
 
-export function accessRequestsFixture(): AccessRequest[] {
+function accessRequestsFixture(): AccessRequest[] {
   const base = {
     requester_id: 'u-minh-chau',
     data_space_id: DS_RETAIL,
@@ -460,7 +460,7 @@ export function accessRequestsFixture(): AccessRequest[] {
   ];
 }
 
-export function accessPoliciesFixture(): AccessPolicy[] {
+function accessPoliciesFixture(): AccessPolicy[] {
   const policy = (
     n: number,
     name: string,
@@ -577,7 +577,7 @@ function auditRow(
   };
 }
 
-export function auditFixture(): AuditWire[] {
+function auditFixture(): AuditWire[] {
   return [
     auditRow(
       6,
@@ -678,7 +678,7 @@ export function auditFixture(): AuditWire[] {
   ];
 }
 
-export function securityEventsFixture(): SecurityEvent[] {
+function securityEventsFixture(): SecurityEvent[] {
   return [
     {
       id: 'se-2',
@@ -726,7 +726,7 @@ const dsrItem = (
   executed_at: null,
 });
 
-export function dsrFixture(): DsrWire[] {
+function dsrFixture(): DsrWire[] {
   const stamp = daysFromNow(-4);
   return [
     {

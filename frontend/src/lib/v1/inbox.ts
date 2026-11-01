@@ -16,7 +16,7 @@ export interface ResolvedRequest {
 }
 
 /** Monday 00:00 of the current week, local time. */
-export function startOfWeek(now: Date = new Date()): Date {
+function startOfWeek(now: Date = new Date()): Date {
   const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return d;

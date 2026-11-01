@@ -1,10 +1,10 @@
 /**
  * The router (router.tsx) under useAppState(): URLs are /<area>/<page>/<id> with the page
- * lowercased, links of earlier IAs and of the hash era land on their v3.1 page, and navigate()
+ * lowercased, and navigate()
  * is a history entry that Back undoes.
  */
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { createBrowserHistory, createMemoryHistory, RouterProvider } from '@tanstack/react-router';
+import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppStateProvider, useAppState } from '../AppStateContext';
 import { SideRail } from '../components/shell/SideRail';
@@ -20,7 +20,6 @@ function Where() {
         {[activeModule, subTab[activeModule] ?? '', routeId ?? ''].join('|')}
       </output>
       <button onClick={() => navigate('admin', 'DATA_SPACES', 'ds-1')}>open</button>
-      <button onClick={() => navigate('build', 'WORKFLOWS')}>old</button>
     </div>
   );
 }
@@ -58,15 +57,9 @@ describe('router', () => {
     );
   });
 
-  it('lowercases a page and sends a page of an earlier IA to its v3.1 place', async () => {
+  it('lowercases a page', async () => {
     const upper = at('/admin/DATA_SPACES/ds-1');
     await waitFor(() => expect(upper.state.location.pathname).toBe('/admin/data_spaces/ds-1'));
-  });
-
-  it('drops the id when the page it belonged to moved elsewhere', async () => {
-    const old = at('/build/workflows/wf-1');
-    await waitFor(() => expect(old.state.location.pathname).toBe('/agents/orchestration'));
-    expect(where()).toBe('agents|ORCHESTRATION|');
   });
 
   it('navigates as a history entry that Back undoes', async () => {
@@ -77,16 +70,6 @@ describe('router', () => {
     expect(where()).toBe('admin|DATA_SPACES|ds-1');
     act(() => router.history.back());
     await waitFor(() => expect(where()).toBe('home||'));
-    // A caller still naming an old module lands on the canonical page.
-    fireEvent.click(screen.getByRole('button', { name: 'old' }));
-    await waitFor(() => expect(router.state.location.pathname).toBe('/agents/orchestration'));
-  });
-
-  it('opens a link of the hash era as the path it names', async () => {
-    window.history.replaceState(null, '', '/#/build/workflows');
-    const router = createAppRouter({ history: createBrowserHistory(), layout: Layout });
-    render(<RouterProvider router={router} />);
-    await waitFor(() => expect(router.state.location.pathname).toBe('/agents/orchestration'));
   });
 
   it('leaves the fragment Keycloak comes back with for keycloak-js to read', () => {

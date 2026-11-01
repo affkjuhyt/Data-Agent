@@ -326,10 +326,3 @@ export interface AskMessage {
   understanding?: Understanding;
   latencyMs?: number;
 }
-
-export interface AgentOption {
-  id: string;
-  label: string;
-  description: string;
-  routing_keywords?: string[];
-}

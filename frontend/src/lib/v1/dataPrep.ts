@@ -515,7 +515,7 @@ export interface OutputDraft {
   notify_options: Option[];
 }
 
-export interface PublishPipeline {
+interface PublishPipeline {
   table_name: string;
   data_space_id: string;
   write_mode: WriteMode;

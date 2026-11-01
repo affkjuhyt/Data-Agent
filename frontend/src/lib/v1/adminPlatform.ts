@@ -464,7 +464,7 @@ export interface GpuLoad {
 }
 
 /** governance.model_config.task, in the words of the screen. */
-export const MODEL_TASKS: { value: string; label: string }[] = [
+const MODEL_TASKS: { value: string; label: string }[] = [
   { value: 'planning', label: 'Lập kế hoạch, điều phối agent' },
   { value: 'sql_generation', label: 'Sinh SQL' },
   { value: 'answer_writing', label: 'Viết câu trả lời, soạn báo cáo' },
@@ -705,7 +705,7 @@ export interface NewProvider {
 }
 
 /** PROPOSAL: one trial call through the provider. */
-export interface ProviderTest {
+interface ProviderTest {
   ok: boolean;
   latency_ms: number | null;
   /** Why it failed, in words for the admin. */
@@ -1039,7 +1039,7 @@ export const getIntegrationUsage = async (client: Integration): Promise<Integrat
   };
 };
 
-export interface NewClient {
+interface NewClient {
   name: string;
   kind: IntegrationKind;
   owner_user_id: Uuid;

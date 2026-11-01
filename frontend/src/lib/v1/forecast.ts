@@ -64,7 +64,7 @@ const ALGORITHM: Record<string, string> = {
 const algorithmLabel = (code: string) => ALGORITHM[code] ?? code;
 
 /** "2026-11-01" → "T11/2026" for a monthly series, "Q4/2026" quarterly, "01/11/2026" otherwise. */
-export function periodLabel(iso: string, frequency: string) {
+function periodLabel(iso: string, frequency: string) {
   const [year, month, day] = iso.slice(0, 10).split('-');
   if (frequency === 'month') return `T${Number(month)}/${year}`;
   if (frequency === 'quarter') return `Q${Math.ceil(Number(month) / 3)}/${year}`;
@@ -661,7 +661,7 @@ export async function getForecast(id: string): Promise<Forecast> {
   return readForecast(raw, version, backtest);
 }
 
-export interface ScenarioInput {
+interface ScenarioInput {
   name: string;
   feature: string;
   /** "tăng", "giảm", "giữ nguyên" */
@@ -1643,7 +1643,7 @@ export const getForecastLedger = async (seriesId: string, periods?: number) => {
 
 /* Theo dõi lịch: the pre- and post-period bulletins of a series (UC-08-08) */
 
-export interface ScheduleCalendar {
+interface ScheduleCalendar {
   id: string;
   name: string;
   /** The api's calendar does not say whether the caller is subscribed: false until toggled. */

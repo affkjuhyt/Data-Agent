@@ -375,7 +375,7 @@ export const requestHandover = async (body: {
  * reviewer is the target's steward; DataSpaceSummary carries only the steward's id, so no name.
  * The title the leader signs with instead of the name is typed in (attribution_label, A3).
  */
-export interface PublishTarget {
+interface PublishTarget {
   id: string;
   name: string;
   steward_id: string;

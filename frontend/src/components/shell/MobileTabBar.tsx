@@ -8,7 +8,7 @@ import type { AreaId } from './areas';
  * 16px icon over a DA/Label word, 72px wide, the current tab in primary; card, top border,
  * 12×8 padding, plus the device's bottom inset.
  */
-export type MobileTab = 'home' | 'needs-you' | 'agents' | 'ask';
+type MobileTab = 'home' | 'needs-you' | 'agents' | 'ask';
 
 const TABS: { id: MobileTab; label: string; icon: IconName }[] = [
   { id: 'home', label: 'Trang chủ', icon: 'home' },

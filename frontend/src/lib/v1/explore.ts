@@ -56,7 +56,7 @@ export async function awaitQueryRun(
   return current;
 }
 
-export interface QueryRows {
+interface QueryRows {
   columns: { name: string; type: string | null }[];
   /** One array per row, in column order. */
   rows: unknown[][];
@@ -159,7 +159,7 @@ export type ExploreFilter = {
   values: string[];
 };
 
-export interface ExploreQueryInput {
+interface ExploreQueryInput {
   metric_ids: string[];
   dimension_ids: string[];
   filters: ExploreFilter[];

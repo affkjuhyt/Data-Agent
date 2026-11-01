@@ -514,7 +514,7 @@ export const testSource = async (id: string): Promise<ConnectionTest> => {
   throw new V1Error(504, 'timeout', 'Kiểm tra kết nối chưa có kết quả, hãy thử lại sau.');
 };
 
-export type ScanRun = {
+type ScanRun = {
   id: string;
   source_id: string;
   kind: string;
@@ -701,7 +701,7 @@ export interface UploadDetail extends RecentUpload {
   updated_at: Timestamp;
 }
 
-export interface UploadPreview {
+interface UploadPreview {
   file_name: string;
   columns: string[];
   rows: unknown[][];

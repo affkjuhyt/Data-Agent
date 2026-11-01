@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { AREA_LANDING, AREA_RAILS, AREAS, firstPageOf, isRailPage } from '../constants';
 import { ROUTE_MAP, SINGLE_SCREEN } from '../routes';
-import { landingFor, resolveRoute } from '../AppStateContext';
+import { landingFor } from '../AppStateContext';
 
 describe('navigation', () => {
   it('shows the six v3.1 areas in order, with Cài đặt only behind the avatar', () => {
@@ -52,29 +52,5 @@ describe('navigation', () => {
     expect(firstPageOf('analysis')).toBeUndefined();
     expect(firstPageOf('home')).toBeUndefined();
     expect(firstPageOf('account')).toBe('PROFILE');
-  });
-
-  it('redirects links of the earlier IAs to the v3.1 areas', () => {
-    expect(resolveRoute('ask')).toEqual({ module: 'analysis', sub: 'ASK' });
-    expect(resolveRoute('knowledge')).toEqual({ module: 'data', sub: 'SOURCES' });
-    expect(resolveRoute('build', 'AGENTS')).toEqual({ module: 'agents', sub: 'TEAM' });
-    expect(resolveRoute('build', 'WORKFLOWS')).toEqual({ module: 'agents', sub: 'ORCHESTRATION' });
-    expect(resolveRoute('build', 'PLAYGROUND')).toEqual({ module: 'agents', sub: 'EVALUATE' });
-    expect(resolveRoute('build', 'KNOWLEDGE')).toEqual({ module: 'data', sub: 'SOURCES' });
-    expect(resolveRoute('settings')).toEqual({ module: 'admin', sub: undefined });
-    expect(resolveRoute('ops', 'TRACES')).toEqual({ module: 'agents', sub: 'RUNS' });
-    expect(resolveRoute('ops', 'REVIEWS')).toEqual({ module: 'needs-you', sub: undefined });
-    expect(resolveRoute('ops', 'ANALYTICS')).toEqual({ module: 'analysis', sub: 'SESSIONS' });
-    expect(resolveRoute('settings', 'TEAM')).toEqual({ module: 'admin', sub: 'USERS' });
-    expect(resolveRoute('settings', 'AI_PROVIDERS')).toEqual({ module: 'admin', sub: 'MODELS' });
-    expect(resolveRoute('settings', 'BILLING')).toEqual({ module: 'agents', sub: 'OPERATIONS' });
-    expect(resolveRoute('settings', 'ADVANCED')).toEqual({ module: 'admin', sub: undefined });
-    expect(resolveRoute('monitor', 'TRACES')).toEqual({ module: 'agents', sub: 'RUNS' });
-    expect(resolveRoute('test', 'PLAYGROUND')).toEqual({ module: 'agents', sub: 'EVALUATE' });
-  });
-
-  it('leaves v3.1 routes untouched', () => {
-    expect(resolveRoute('agents', 'RUNS')).toEqual({ module: 'agents', sub: 'RUNS' });
-    expect(resolveRoute('home')).toEqual({ module: 'home', sub: undefined });
   });
 });

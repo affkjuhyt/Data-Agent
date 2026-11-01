@@ -48,7 +48,7 @@ const problem = (status: number, code: string, detail: string) =>
     { status, headers: { 'Content-Type': 'application/problem+json' } },
   );
 
-export function systemHealthFixture(): SystemHealth {
+function systemHealthFixture(): SystemHealth {
   return {
     as_of: '2026-10-10T08:15:00+07:00',
     no_data: false,
@@ -160,7 +160,7 @@ export function systemHealthFixture(): SystemHealth {
   };
 }
 
-export function agentOpsFixture(period: OpsPeriod): AgentOpsSummary {
+function agentOpsFixture(period: OpsPeriod): AgentOpsSummary {
   return {
     period,
     headline:
@@ -280,7 +280,7 @@ export function agentOpsFixture(period: OpsPeriod): AgentOpsSummary {
   };
 }
 
-export function modelRoutesFixture(): ModelRoute[] {
+function modelRoutesFixture(): ModelRoute[] {
   const route = (r: Omit<ModelRoute, 'status'>): ModelRoute => ({ status: 'active', ...r });
   return [
     route({
@@ -358,7 +358,7 @@ export function modelRoutesFixture(): ModelRoute[] {
   ];
 }
 
-export function aiPolicyFixture(): AiPolicy {
+function aiPolicyFixture(): AiPolicy {
   return {
     rules: [
       {
@@ -393,7 +393,7 @@ export function aiPolicyFixture(): AiPolicy {
   };
 }
 
-export function providersFixture(): AiProvider[] {
+function providersFixture(): AiProvider[] {
   return [
     {
       id: 'prov-vllm',
@@ -441,7 +441,7 @@ export function providersFixture(): AiProvider[] {
 }
 
 /* Week 41's audit, newest first: the three rows of the frame, then older ones of the week. */
-export function routingLogFixture(): RoutingLogEntry[] {
+function routingLogFixture(): RoutingLogEntry[] {
   const rows: [string, string, RoutingLogEntry['decision'], string, string][] = [
     [
       '2026-10-09T09:42:00+07:00',
@@ -511,7 +511,7 @@ export function routingLogFixture(): RoutingLogEntry[] {
   }));
 }
 
-export function gpuLoadFixture(): GpuLoad {
+function gpuLoadFixture(): GpuLoad {
   // Hourly load of the drawn curve: low overnight, a ramp from 09:00, peak 83% at 15:00.
   const load = [
     0.42, 0.4, 0.38, 0.37, 0.38, 0.4, 0.46, 0.55, 0.66, 0.74, 0.78, 0.8, 0.79, 0.77, 0.79, 0.83,
@@ -562,7 +562,7 @@ function clientRow(
   };
 }
 
-export function integrationsFixture(): ClientWire[] {
+function integrationsFixture(): ClientWire[] {
   return [
     clientRow({
       id: 'cli-copilot',
@@ -643,7 +643,7 @@ function usageRows(id: string): UsageRow[] {
 }
 
 /* The clients the signed-in person (meFixture) answers for. */
-export function myClientsFixture(): ClientWire[] {
+function myClientsFixture(): ClientWire[] {
   const me = '01920000-0000-7000-8000-00000000a5c1';
   return [
     clientRow({
@@ -668,7 +668,7 @@ export function myClientsFixture(): ClientWire[] {
   ];
 }
 
-export function meFixture(): Me {
+function meFixture(): Me {
   return {
     id: '01920000-0000-7000-8000-00000000a5c1',
     username: 'yen.dh',
@@ -754,7 +754,7 @@ export function notificationPreferencesFixture(): NotificationPreferences {
   };
 }
 
-export function channelRulesFixture(): ChannelRules {
+function channelRulesFixture(): ChannelRules {
   const ok = (text: string) => ({ text, tone: 'success' as const });
   const limited = (text: string) => ({ text, tone: 'warning' as const });
   const blocked = (text: string) => ({ text, tone: 'error' as const });

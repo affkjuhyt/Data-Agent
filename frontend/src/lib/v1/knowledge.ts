@@ -358,7 +358,7 @@ export const runKnowledgeLint = () =>
  * placeholders bound to the query (BR-162) are built by the server when it saves, so the dialog
  * shows the answer, not a preview of the paragraph.
  */
-export interface KnowledgeDraft {
+interface KnowledgeDraft {
   answer_text: string;
   target_page: { id: string; title: string } | null;
 }

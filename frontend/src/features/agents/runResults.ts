@@ -72,11 +72,11 @@ export function stepChart(output: unknown): ChartSpec | null {
 }
 
 /** The question a query step answered (the line of the goal it was planned from). */
-export function stepQuestion(output: unknown): string | null {
+function stepQuestion(output: unknown): string | null {
   return isRecord(output) && typeof output.question === 'string' ? output.question : null;
 }
 
-export interface ResultPart {
+interface ResultPart {
   key: string;
   question: string | null;
   summary: string;

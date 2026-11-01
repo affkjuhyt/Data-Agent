@@ -177,7 +177,7 @@ export interface TestRun extends Pick<
 }
 
 /** agent.agent_deployment */
-export interface AgentDeployment {
+interface AgentDeployment {
   id: Uuid;
   agent_id: Uuid;
   config_version: number;
@@ -503,7 +503,7 @@ export const getAgent = async (id: string) =>
     await okAs<AgentDetailWire>(api.GET('/v1/agents/{id}', { params: { path: { id } } })),
   );
 
-export const listConfigs = async (id: string) => {
+const listConfigs = async (id: string) => {
   const page = await ok<Page<Schemas['ConfigView']>>(
     api.GET('/v1/agents/{id}/configs', { params: { path: { id } } }),
   );

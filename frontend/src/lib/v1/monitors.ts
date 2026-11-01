@@ -58,7 +58,7 @@ const SENSITIVITY_LABEL: Record<string, string> = { low: 'thấp', medium: 'vừ
 const num = (v: unknown) => String(v ?? '').replace('.', ',');
 
 /** The rule in words: the text the form saved with it, else said from its fields. */
-export function conditionText(kind: string, raw: unknown): string {
+function conditionText(kind: string, raw: unknown): string {
   const rule = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
   if (typeof rule.text === 'string' && rule.text) return rule.text;
   if (kind === 'threshold')
@@ -177,7 +177,7 @@ export interface MonitorOptions {
 }
 
 /** The dimensions and unit of the chosen metric, from its current version. */
-export interface MetricShape {
+interface MetricShape {
   unit: string;
   splits: { value: string; label: string }[];
 }

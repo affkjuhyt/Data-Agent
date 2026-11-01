@@ -5,14 +5,12 @@
  * theme exists there — dark mode is paused in Figma ("zz · Bản tối") — so `mode` is kept for the
  * callers' API but "dark" renders like "light" until the tokens get a dark set.
  */
-import React, { createContext, useContext } from 'react';
+import React, { createContext } from 'react';
 import { cn } from '../../../lib/utils';
 
 type AnswerThemeMode = 'light' | 'dark';
 
 const Ctx = createContext<AnswerThemeMode>('light');
-
-export const useAnswerTheme = (): AnswerThemeMode => useContext(Ctx);
 
 /** Series colours in the fixed order of color/chart/1..6. */
 export const chartColor = (index: number): string => `var(--chart-${(index % 6) + 1})`;

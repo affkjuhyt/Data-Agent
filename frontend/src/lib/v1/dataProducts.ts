@@ -324,7 +324,7 @@ export const listCatalogProducts = () =>
   okAs<Page<CatalogProduct>>(api.GET('/v1/data-products/catalog'));
 
 /** PROPOSAL: one access request per product, decided by the owning Data Space. */
-export interface ProductUseRequest {
+interface ProductUseRequest {
   id: string;
   product_id: string;
   status: 'pending' | 'approved';

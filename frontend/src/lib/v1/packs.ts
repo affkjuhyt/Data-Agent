@@ -58,7 +58,7 @@ export interface IndustryPack {
   draft: { version: string; version_id: string } | null;
 }
 
-export type PackWire = Schemas['IndustryPackView'] & {
+type PackWire = Schemas['IndustryPackView'] & {
   /** What IndustryPackView lacks (installed, latest, draft), which the mock sends. */
   display?: Partial<IndustryPack>;
 };
@@ -583,7 +583,7 @@ export const getMetricOverride = async (id: string) => {
 
 export type UpgradeChoice = Schemas['UpgradeDecision']['decision'];
 
-export const UPGRADE_CHOICES: { value: UpgradeChoice; label: string }[] = [
+const UPGRADE_CHOICES: { value: UpgradeChoice; label: string }[] = [
   { value: 'keep_override', label: 'Giữ của tổ chức' },
   { value: 'take_new', label: 'Dùng bản mới' },
   { value: 'defer', label: 'Để sau' },

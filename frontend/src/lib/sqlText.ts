@@ -69,9 +69,9 @@ const CLAUSE = new Set([
   'cross join',
 ]);
 
-export type SqlTokenKind = 'keyword' | 'string' | 'number' | 'comment' | 'plain';
+type SqlTokenKind = 'keyword' | 'string' | 'number' | 'comment' | 'plain';
 
-export interface SqlToken {
+interface SqlToken {
   text: string;
   kind: SqlTokenKind;
 }
@@ -90,7 +90,7 @@ export function sqlLines(sql: string): SqlToken[][] {
 }
 
 /** Split SQL without dropping characters, so the highlight lines up with the textarea. */
-export function sqlTokens(sql: string): SqlToken[] {
+function sqlTokens(sql: string): SqlToken[] {
   const tokens: SqlToken[] = [];
   let i = 0;
   while (i < sql.length) {
@@ -194,12 +194,12 @@ export interface SqlBrowseTable {
   sourceName: string | null;
 }
 
-export interface SqlBrowseSchema {
+interface SqlBrowseSchema {
   name: string;
   tables: SqlBrowseTable[];
 }
 
-export interface SqlBrowseSource {
+interface SqlBrowseSource {
   id: string;
   name: string;
   schemas: SqlBrowseSchema[];
@@ -238,7 +238,7 @@ export function sqlBrowseTree(tables: SqlBrowseTable[]): SqlBrowseSource[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export interface SqlSchemaTable {
+interface SqlSchemaTable {
   name: string;
   columns: { name: string }[];
 }
@@ -470,7 +470,7 @@ export function sqlErrorLine(message: string): number | null {
   return Number.isInteger(line) && line > 0 ? line : null;
 }
 
-export interface SqlMetricRef {
+interface SqlMetricRef {
   id: string;
   code: string;
   version: number | null;

@@ -12,7 +12,7 @@ import { runChips, type Tone } from './evidenceSummary';
 
 const BADGE_TONE = { ok: 'success', warn: 'warning', bad: 'error', neutral: 'neutral' } as const;
 
-export function Chip({ label, tone, title }: { label: string; tone: Tone; title?: string }) {
+function Chip({ label, tone, title }: { label: string; tone: Tone; title?: string }) {
   return (
     <span title={title} className="inline-flex">
       <Badge tone={BADGE_TONE[tone]}>{label}</Badge>

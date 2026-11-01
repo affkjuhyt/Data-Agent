@@ -49,7 +49,7 @@ export interface CrawlSource {
  * /consolidation-specs and the target dataset's versions). A figure no row carries is null and
  * its line is left out.
  */
-export interface AcquireSummary {
+interface AcquireSummary {
   active: number;
   total: number;
   paused: number;

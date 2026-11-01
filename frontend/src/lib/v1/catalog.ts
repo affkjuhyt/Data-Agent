@@ -61,7 +61,7 @@ export function restApis(sources: SourceRow[]): { id: string; name: string; endp
     .map((source) => ({ id: source.id, name: source.name, endpoint: source.host ?? 'API' }));
 }
 
-export type CatalogColumn = {
+type CatalogColumn = {
   id: string;
   name: string;
   display_name: string | null;
@@ -88,7 +88,7 @@ async function mapLimited<T, R>(
 }
 
 /** Current columns of each table, from GET /v1/datasets/{id}. A failed read leaves that table's columns out. */
-export async function columnsByDataset(datasets: Dataset[]): Promise<Map<string, CatalogColumn[]>> {
+async function columnsByDataset(datasets: Dataset[]): Promise<Map<string, CatalogColumn[]>> {
   const details = await mapLimited(datasets, COLUMN_FETCHES, async (dataset) => {
     try {
       const detail = await ok<{ columns?: CatalogColumn[] }>(

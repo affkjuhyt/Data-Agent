@@ -1,7 +1,7 @@
 import { PostgreSQL } from '@codemirror/lang-sql';
 import { unknownSqlRelations } from './sqlText';
 
-export interface SqlDiagnostic {
+interface SqlDiagnostic {
   from: number;
   to: number;
   message: string;

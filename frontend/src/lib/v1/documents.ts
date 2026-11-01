@@ -50,7 +50,7 @@ export interface DocumentRow {
 }
 
 /** The counts on the library tabs; a category count is absent when no row carries a category. */
-export interface DocumentCounts {
+interface DocumentCounts {
   all: number;
   regulation?: number;
   internal?: number;
@@ -100,7 +100,7 @@ function progressOf(p: Schemas['Progress']): number {
   return Math.min(1, pages / 2 + chunks / 2);
 }
 
-export function readLibraryRow(raw: LibraryWire): DocumentRow {
+function readLibraryRow(raw: LibraryWire): DocumentRow {
   if (raw.display) return raw.display;
   const today = new Date().toISOString().slice(0, 10);
   const ended = raw.effective_to !== null && raw.effective_to < today;
@@ -439,7 +439,7 @@ export const listChunks = async (doc: {
   };
 };
 
-export interface DocumentActivity {
+interface DocumentActivity {
   id: Uuid;
   /** "08/10 10:42" */
   when_text: string;

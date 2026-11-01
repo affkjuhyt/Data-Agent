@@ -95,7 +95,7 @@ export interface SqlEditorHandle {
   placeCaret: (start: number, end: number) => void;
 }
 
-export interface SqlEditorProps {
+interface SqlEditorProps {
   value: string;
   onChange: (value: string) => void;
   onRun: () => void;

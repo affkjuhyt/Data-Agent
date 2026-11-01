@@ -143,7 +143,7 @@ function readRun(run: Schemas['ReportRunView']): ReportSchedule['recent_runs'][n
 }
 
 /** ReportScheduleDetail in the screen's words; a PROPOSAL field the mock sends wins. */
-export function readReport(raw: ReportScheduleWire): ReportSchedule {
+function readReport(raw: ReportScheduleWire): ReportSchedule {
   const recipients = raw.recipients ?? [];
   const latest = raw.latest_run ? readRun(raw.latest_run) : null;
   return {
@@ -280,7 +280,7 @@ const RUN_STATUS_TEXT: Record<string, string> = {
   failed: 'lỗi khi soạn',
 };
 
-export function readReportRun(raw: ReportRunWire): ReportRun {
+function readReportRun(raw: ReportRunWire): ReportRun {
   return {
     id: raw.id,
     title: raw.title ?? null,
