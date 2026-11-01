@@ -7,7 +7,7 @@ asyncpg==0.29.0
 redis>=5.0
 # Token verification against the Keycloak realm's JWKS (ADR-30); [crypto] for RS256/ES256.
 pyjwt[crypto]==2.9.0
-# Multipart bodies (A3 uploads: /v1/uploads, /v1/documents, /v1/packs:import); FastAPI needs it for UploadFile/Form.
+# Multipart bodies (A3 uploads: /v1/uploads, /v1/documents); FastAPI needs it for UploadFile/Form.
 python-multipart==0.0.9
 # Read-only report artifacts from the MinIO S3 API.
 aioboto3>=12.0.0
