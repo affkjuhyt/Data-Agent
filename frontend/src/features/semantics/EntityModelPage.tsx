@@ -10,6 +10,7 @@ import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import { getEntity, getEntityModel, type EntityModel } from '../../lib/v1/semanticLayer';
 import { useV1 } from '../../lib/v1/useV1';
+import { RelationshipList } from './RelationshipList';
 
 /*
  * "v3.1 · Semantic · Mô hình thực thể" (2087:8090, UC-07-02): the business concepts of a Data
@@ -190,6 +191,7 @@ function ModelBody({ model }: { model: EntityModel }) {
                   </p>
                 </>
               )}
+              <RelationshipList rows={d.relationships} />
             </>
           )}
         </AsyncRegion>

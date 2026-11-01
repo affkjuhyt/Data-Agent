@@ -33,7 +33,24 @@ export interface EntityDetail {
   synonyms: string[];
   metrics: string[];
   more_metrics: number;
+  /** The joins of the entity's table, one row each: the diagram draws one line per pair of
+   * entities, so roles of the same calendar (order, ship, due date) only part here. */
+  relationships: EntityRelationshipRow[];
 }
+
+export interface EntityRelationshipRow {
+  id: string;
+  text: string;
+  status: string;
+  /** Active: it can be retired (POST /v1/relationships/{id}:retire, a proposal). */
+  active: boolean;
+}
+
+const RELATIONSHIP_STATUS: Record<string, string> = {
+  active: 'Đang dùng',
+  pending_review: 'Chờ duyệt',
+  rejected: 'Đã gỡ',
+};
 
 /*
  * The model of one Data Space, nodes and relationships. A relationship waiting for review
@@ -117,6 +134,12 @@ export function readEntityDetail(raw: EntityDetailWire): EntityDetail {
     synonyms: [],
     metrics: (raw.metrics ?? []).map((metric) => metric.display_name ?? metric.code),
     more_metrics: 0,
+    relationships: (raw.relationships ?? []).map((r) => ({
+      id: r.id,
+      text: `${r.from_entity ?? 'bảng'}(${r.from_columns.join(', ')}) → ${r.to_entity ?? 'bảng'}(${r.to_columns.join(', ')})`,
+      status: RELATIONSHIP_STATUS[r.status] ?? r.status,
+      active: r.status === 'active',
+    })),
     ...raw.display,
   };
 }
@@ -129,6 +152,16 @@ export const getEntityModel = async () =>
 export const getEntity = async (key: string) =>
   readEntityDetail(
     await ok<EntityDetailWire>(api.GET('/v1/entities/{key}', { params: { path: { key } } })),
+  );
+
+/** Asks for an active join to go: a proposal someone else decides in Cần bạn; it stays active
+ * until then. */
+export const retireRelationship = async (id: string, reason: string) =>
+  ok(
+    api.POST('/v1/relationships/{id}:retire', {
+      params: { path: { id } },
+      body: { reason },
+    }),
   );
 
 /* ─── Từ điển nghiệp vụ ─────────────────────────────────────────────── */

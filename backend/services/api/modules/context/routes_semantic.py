@@ -58,6 +58,7 @@ from services.api.modules.context.schemas import (
     MetricVersionView,
     MetricView,
     RelationshipCreate,
+    RelationshipRetire,
     RelationshipView,
     SynonymCreate,
     SynonymView,
@@ -766,6 +767,47 @@ async def create_relationship(
         )
         await session.flush()
         await session.refresh(row)
+        return RelationshipView.model_validate(row)
+
+
+@router.post(
+    "/v1/relationships/{id}:retire",
+    status_code=202,
+    response_model=RelationshipView,
+    **endpoint("POST", "/v1/relationships/{id}:retire", operation_id="retireRelationship"),
+)
+async def retire_relationship(
+    relationship_id: Annotated[uuid.UUID, Path(alias="id")],
+    body: RelationshipRetire,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> RelationshipView:
+    """Ask for an active relationship to stop being joined on. Approved relationships could not be
+    taken back at all: a scan's role-playing joins (ship and due dates beside the order date)
+    accepted by mistake left the compiler two paths to the calendar for good. Like declaring
+    one, retiring is proposed and someone else decides (BR-100); it stays active until then."""
+    async with transaction(ROLE, principal) as session:
+        row = await session.get(context.Relationship, relationship_id, with_for_update=True)
+        if row is None or row.data_space_id != data_space:
+            raise Problem(404, "not_found", "No such relationship in this Data Space.")
+        if row.status != "active":
+            raise Problem(
+                409,
+                "invalid_state",
+                f"The relationship is {row.status}; only an active one is retired.",
+            )
+        emit(
+            session,
+            principal,
+            "relationship",
+            row.id,
+            "relationship.retire_requested",
+            relationship_id=row.id,
+            data_space_id=data_space,
+            requested_by=principal.user_id,
+            reason=body.reason.strip(),
+        )
+        await session.flush()
         return RelationshipView.model_validate(row)
 
 

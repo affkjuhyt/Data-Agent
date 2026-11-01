@@ -2819,6 +2819,24 @@
    "errors": [],
    "request_text": "from_dataset_id*, from_columns*, to_dataset_id*, to_columns*, cardinality*"
   },
+  "POST /v1/relationships/{id}:retire": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "202, Relationship (vẫn active cho tới khi đề xuất gỡ được chấp nhận)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason*"
+  },
   "POST /v1/synonyms": {
    "group": "Lớp ngữ cảnh",
    "groups": [

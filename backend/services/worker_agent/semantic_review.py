@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 ROLE = "svc_context"
 SYNONYM = "synonym.created"
 RELATIONSHIP = "relationship.created"
+RELATIONSHIP_RETIRE = "relationship.retire_requested"
 EXAMPLE_CREATED = "example_query.created"
 EXAMPLE_UPDATED = "example_query.updated"
 TERM = "glossary_term.created"
@@ -216,6 +217,42 @@ async def relationship_created(event: Event) -> None:
     )
 
 
+async def relationship_retire_requested(event: Event) -> None:
+    """A steward asks for an active relationship to go (POST /v1/relationships/{id}:retire): a
+    relationship proposal whose diff says retire, decided by someone else like any other. The
+    standard set is not run with the join removed (the overlay only adds items); the reviewer
+    reads the reason."""
+    p = event.payload
+    rel_id = uuid.UUID(str(p["relationship_id"]))
+    actor = uuid.UUID(str(p["requested_by"]))
+    async with scoped_session(ROLE, event.org_id, actor) as session:
+        row = await session.get(context.Relationship, rel_id)
+        if row is None or row.status != "active":
+            return
+        space_id = row.data_space_id
+        diff = {
+            "action": "retire",
+            "reason": p.get("reason"),
+            "from_dataset_id": str(row.from_dataset_id),
+            "from_columns": list(row.from_columns),
+            "to_dataset_id": str(row.to_dataset_id),
+            "to_columns": list(row.to_columns),
+            "cardinality": row.cardinality,
+        }
+        joined = (await _relationship_title(session, row)).removeprefix("Quan hệ ")
+        title = f"Gỡ quan hệ {joined}"
+    await _open(
+        event,
+        space_id=space_id,
+        kind="relationship",
+        target_ref=rel_id,
+        title=title,
+        diff=diff,
+        proposed_by=actor,
+        eval_run_id=None,
+    )
+
+
 async def example_changed(event: Event) -> None:
     """The checker of an example's SQL (UC-07-02 step 3): a draft whose SQL runs read-only on the
     workspace becomes pending_review with a proposal; one that fails stays a draft."""
@@ -311,6 +348,16 @@ async def term_created(event: Event) -> None:
     )
 
 
+def _requested(proposal: dict[str, Any]) -> dict[str, Any]:
+    """The diff the module asked for (proposals keep it as evidence[0].requested)."""
+    evidence = proposal.get("evidence")
+    if isinstance(evidence, list) and evidence and isinstance(evidence[0], dict):
+        requested = evidence[0].get("requested")
+        if isinstance(requested, dict):
+            return requested
+    return {}
+
+
 async def apply(event: Event, proposal: dict[str, Any]) -> bool:
     """Apply a decided semantic proposal; False when its object is gone or has moved on."""
     accepted = event.payload.get("status") == "accepted"
@@ -326,6 +373,10 @@ async def apply(event: Event, proposal: dict[str, Any]) -> bool:
             "example": (context.ExampleQuery, "pending_review", "active", "rejected"),
             "glossary": (context.GlossaryTerm, "pending_review", "active", "retired"),
         }[kind]
+        requested = _requested(proposal)
+        if kind == "relationship" and requested.get("action") == "retire":
+            # A retirement: accepted, the active join stops; rejected, it simply stays.
+            waiting, yes, no = "active", "rejected", "active"
         row = await session.get(model, ref, with_for_update=True)
         if row is None or row.status != waiting:
             return False
@@ -340,6 +391,7 @@ async def apply(event: Event, proposal: dict[str, Any]) -> bool:
 HANDLERS: dict[str, Handler] = {
     SYNONYM: synonym_created,
     RELATIONSHIP: relationship_created,
+    RELATIONSHIP_RETIRE: relationship_retire_requested,
     EXAMPLE_CREATED: example_changed,
     EXAMPLE_UPDATED: example_changed,
     TERM: term_created,

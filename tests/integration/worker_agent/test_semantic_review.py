@@ -300,3 +300,77 @@ async def test_a_relationship_a_scheduled_scan_inferred_reaches_the_stewards_rev
         )
         == f"approve {bank.user}"
     )
+
+
+@pytest.mark.parametrize(
+    ("decision", "after", "ends"),
+    [("accepted", "rejected", "applied"), ("rejected", "active", "rejected")],
+)
+async def test_retiring_an_active_relationship_is_a_proposal_someone_else_decides(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    decision: str,
+    after: str,
+    ends: str,
+) -> None:
+    # POST /v1/relationships/{id}:retire emits relationship.retire_requested; accepted, the join
+    # stops being active; rejected, it stays.
+    bank = build(seed, warehouse, monkeypatch)
+    relationship = seed.row(
+        "context.relationship",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        from_dataset_id=bank.loans,
+        from_columns="{ship_date_key}",
+        to_dataset_id=bank.loans,
+        to_columns="{loan_id}",
+        cardinality="many_to_one",
+        origin="declared",
+        status="active",
+        created_by=bank.user,
+        updated_by=bank.user,
+    )
+    seed.row(
+        "context.outbox",
+        org_id=bank.org,
+        aggregate_type="relationship",
+        aggregate_id=relationship,
+        event_type="relationship.retire_requested",
+        payload=json.dumps(
+            {
+                "relationship_id": str(relationship),
+                "data_space_id": str(bank.space),
+                "requested_by": str(bank.user),
+                "reason": "Vai ngày giao hàng",
+            }
+        ),
+    )
+    await drain_all()
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, title, status, diff FROM inbox.proposal WHERE target_ref = %s",
+            (str(relationship),),
+        )
+        pid, title, status, diff = cur.fetchone()
+    table = seed.one("SELECT table_name FROM catalog.dataset WHERE id = %s", bank.loans)
+    assert title == f"Gỡ quan hệ {table}(ship_date_key) → {table}(loan_id)"
+    assert (status, diff["action"], diff["reason"]) == (
+        "pending_review",
+        "retire",
+        "Vai ngày giao hàng",
+    )
+    assert (
+        seed.one(
+            "SELECT count(*) FROM inbox.hitl_request WHERE kind = 'approve_proposal' AND source_ref = %s",
+            pid,
+        )
+        == 1
+    )
+    reviewer = seed.row(
+        "org.app_user", org_id=bank.org, external_id="kc-rv", username="rv", display_name="RV"
+    )
+    decide(bank, pid, decision, reviewer)
+    await drain_all()
+    assert seed.one("SELECT status FROM context.relationship WHERE id = %s", relationship) == after
+    assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", pid) == ends

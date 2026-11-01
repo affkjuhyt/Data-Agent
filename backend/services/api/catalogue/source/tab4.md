@@ -303,6 +303,7 @@ Dịch vụ: Context service (context). 39 endpoint, trong đó 16 endpoint lớ
 | POST | /v1/metrics/{id}/versions | Tạo phiên bản nháp | 07-01 | steward |
 | POST | /v1/metric-versions/{id}:preview | Chạy thử, so với bản đang dùng và số đã nộp | 07-01 | steward |
 | POST | /v1/relationships | Khai báo quan hệ | 07-02 | steward |
+| POST | /v1/relationships/{id}:retire | Gỡ quan hệ đang dùng: mở đề xuất, người khác duyệt (thêm 01/11/2026) | 07-02 | steward |
 | POST | /v1/synonyms | Thêm từ đồng nghĩa | 07-02 | steward |
 | POST | /v1/examples | Thêm câu hỏi mẫu | 07-02 | steward |
 | GET | /v1/terms | Từ điển nghiệp vụ | 07-09 | ask |
@@ -892,6 +893,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/metrics/{id}/versions | display\_name\*, description, expression\*, filters, unit, decimals, direction, period\_semantics\*, time\_grain, time\_dimension\_id, allowed\_dimensions, additivity, legal\_basis, change\_note | MetricVersion | 422 business\_rule\_violated (đổi mã chỉ số đã phát hành, BR-26) |
 | POST /v1/metric-versions/{id}:preview | periods | 202, Location tới eval\_run. Chạy trên 6 kỳ, so với bản đang dùng và số đã nộp; tạo đề xuất metric\_change khi gửi duyệt | — |
 | POST /v1/relationships | from\_dataset\_id\*, from\_columns\*, to\_dataset\_id\*, to\_columns\*, cardinality\* | Relationship. Tạo ở trạng thái pending\_review (BR-100) | — |
+| POST /v1/relationships/{id}:retire | reason\* | 202, Relationship (vẫn active cho tới khi đề xuất gỡ được chấp nhận) | 409 invalid\_state (quan hệ không active) |
 | POST /v1/synonyms | phrase\*, target\_kind\*, target\_id\*, target\_value | Synonym | 409 conflict (cụm từ đã gán cho đích khác) |
 | POST /v1/examples | question\*, sql\*, metric\_ids | ExampleQuery | 422 validation\_failed (SQL không chạy được) |
 | GET /v1/terms | ?q | Danh sách GlossaryTerm | — |

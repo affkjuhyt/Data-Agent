@@ -635,3 +635,40 @@ async def test_editing_an_example_needs_steward_in_its_data_space(ctx: Ctx) -> N
     assert ctx.one("SELECT status FROM context.example_query WHERE id = %s", elsewhere) == (
         "pending_review"
     )
+
+
+async def test_an_active_relationship_is_retired_through_a_proposal(ctx: Ctx) -> None:
+    # Approved joins could not be taken back: one accepted by mistake (a ship-date role beside the
+    # order date) stayed for good. Retiring is asked for here and decided like any proposal.
+    joins = ctx.rows["joins"]
+    async with client(ctx) as api:
+        asked = await api.post(
+            f"/v1/relationships/{joins}:retire",
+            headers=ctx.headers("steward"),
+            json={"reason": "Vai ngày giao hàng, không dùng"},
+        )
+        assert asked.status_code == 202, asked.text
+        assert asked.json()["status"] == "active"
+        not_steward = await api.post(
+            f"/v1/relationships/{joins}:retire",
+            headers=ctx.headers("asker"),
+            json={"reason": "x"},
+        )
+        assert not_steward.status_code == 403, not_steward.text
+        no_reason = await api.post(
+            f"/v1/relationships/{joins}:retire", headers=ctx.headers("steward"), json={"reason": ""}
+        )
+        assert no_reason.status_code == 422, no_reason.text
+    (event, payload), *_ = (e for e in ctx.events(joins) if e[0] == "relationship.retire_requested")
+    assert payload["requested_by"] == str(ctx.users["steward"])
+    assert payload["reason"] == "Vai ngày giao hàng, không dùng"
+    assert ctx.one("SELECT status FROM context.relationship WHERE id = %s", joins) == "active"
+
+    ctx.run("UPDATE context.relationship SET status = 'rejected' WHERE id = %s", joins)
+    async with client(ctx) as api:
+        gone = await api.post(
+            f"/v1/relationships/{joins}:retire",
+            headers=ctx.headers("steward"),
+            json={"reason": "x"},
+        )
+    assert gone.status_code == 409, gone.text

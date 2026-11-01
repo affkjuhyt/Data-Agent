@@ -143,6 +143,11 @@ class RelationshipCreate(BaseModel):
         return self
 
 
+class RelationshipRetire(BaseModel):
+    # Why the join should go; the reviewer reads it in the proposal.
+    reason: str = Field(min_length=1, max_length=2000)
+
+
 # ---------------------------------------------------------------- entity model (UC-07-02)
 
 

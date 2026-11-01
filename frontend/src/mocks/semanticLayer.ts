@@ -152,6 +152,7 @@ function entityFixture(key: string): EntityDetail | null {
       synonyms: [],
       metrics: [],
       more_metrics: 0,
+      relationships: [],
     };
   return {
     key,
@@ -170,6 +171,7 @@ function entityFixture(key: string): EntityDetail | null {
     synonyms: ['khoản vay', 'khoản tín dụng', 'món vay', 'hợp đồng tín dụng', 'loan'],
     metrics: ['NPL_RATIO v4', 'LOAN_BALANCE v2', 'COST_OF_RISK v1'],
     more_metrics: 11,
+    relationships: [],
   };
 }
 

@@ -2063,6 +2063,18 @@
   {
    "group": "Lớp ngữ cảnh",
    "method": "POST",
+   "path": "/v1/relationships/{id}:retire",
+   "summary": "Gỡ quan hệ đang dùng: mở đề xuất, người khác duyệt (thêm 01/11/2026)",
+   "use_cases": [
+    "07-02"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
    "path": "/v1/synonyms",
    "summary": "Thêm từ đồng nghĩa",
    "use_cases": [
