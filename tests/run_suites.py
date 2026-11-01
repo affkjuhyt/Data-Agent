@@ -42,11 +42,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # runs on the local dev-tools image (`make dev-tools` builds it) instead of a registry image.
 DEFAULT_UNIT = (
     "platform_workers:platform-workers contracts:api "
-    "sandbox_executor:sandbox_executor auth_api:auth_api model_service:model_service api:api worker_agent:worker-agent worker_ingest:worker-ingest "
+    "auth_api:auth_api model_service:model_service api:api worker_agent:worker-agent worker_ingest:worker-ingest "
     "worker_document:worker-document crawler:crawler repo:dataagent/dev-tools:local"
 )
 DEFAULT_INTEGRATION = (
-    "sandbox_executor:sandbox_executor contracts:api api:api migrate:migrate "
+    "contracts:api api:api migrate:migrate "
     "worker_agent:worker-agent worker_ingest:worker-ingest worker_document:worker-document "
     "crawler:crawler"
 )
@@ -63,9 +63,6 @@ SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
     "auth_api": {("unit", "auth_api")},
     "model_service": {("unit", "model_service")},
     "platform_workers": {("unit", "platform_workers")},
-    "sandbox_executor": {
-        ("unit", "sandbox_executor"), ("integration", "sandbox_executor"),
-    },
 }
 
 # The repo suite (tests/unit/repo) reads every service's Dockerfile and scans their
@@ -80,12 +77,8 @@ OTHER_PREFIXES: dict[str, set[tuple[str, str]]] = {
     "model/": {REPO_SUITE, ("unit", "model_service")},
 }
 
-# Per-suite pytest flags. sandbox_executor starts a real container per test, so it is
-# spread over 4 xdist workers (161 s -> 64 s, 2026-10-02); tests sharing a fixed
-# Docker resource carry @pytest.mark.xdist_group.
-SUITE_PYTEST_ARGS: dict[tuple[str, str], list[str]] = {
-    ("integration", "sandbox_executor"): ["-n", "4", "--dist", "loadgroup"],
-}
+# Per-suite pytest flags, (kind, suite) -> extra arguments.
+SUITE_PYTEST_ARGS: dict[tuple[str, str], list[str]] = {}
 
 # Paths with no further meaning to this script: frontend code has its own
 # `make frontend-test`, docs and CI config run no Python.
@@ -284,10 +277,6 @@ def run_suite(
         # --user 0, no bytecode, no pytest cache: the checkout is mounted, and a run
         # must not leave root-owned files in it.
         python_path = "/src/backend:/src"
-        if suite.name == "sandbox_executor":
-            # The sandbox image exposes api/auth as service-local top-level modules.
-            # Keep the normal repo path first, then add that service root for its tests.
-            python_path = "/src/backend:/src/backend/services/sandbox_executor:/src"
         cmd = [
             "docker", "run", "--rm", "--user", "0", "-v", f"{REPO_ROOT}:/src", "-w", "/src",
             "-e", f"PYTHONPATH={python_path}", "-e", "PYTHONDONTWRITEBYTECODE=1",
@@ -299,7 +288,6 @@ def run_suite(
             cmd += [
                 "--network", "host", "-v", "/var/run/docker.sock:/var/run/docker.sock",
                 "-e", "TESTCONTAINERS_RYUK_DISABLED=true",
-                "-e", f"SANDBOX_RUNNER_IMAGE={os.environ.get('SANDBOX_RUNNER_IMAGE', 'dataagent/sandbox-runner:latest')}",
             ]
         cmd += [
             tag, "python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "-m", suite.kind,

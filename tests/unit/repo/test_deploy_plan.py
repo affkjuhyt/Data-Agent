@@ -121,21 +121,11 @@ class TestRealImages:
             ("deploy/docker/setup", "Dockerfile"),
             ("frontend", "Dockerfile.dev"),
             ("backend/services/model_service", "Dockerfile"),
-            ("backend/services/sandbox_executor", "Dockerfile"),
-            ("backend/services/sandbox_executor/sandbox_runner", "Dockerfile"),
         ):
             assert not plan.paths_touching(
                 ["backend/libs/shared/x.py", "pyproject.toml", "uv.lock"],
                 _inputs(image_dir, dockerfile),
             ), image_dir
-
-    def test_the_sandbox_runner_is_not_part_of_the_executor_image(self):
-        executor = _inputs("backend/services/sandbox_executor")
-        assert not plan.paths_touching(
-            ["backend/services/sandbox_executor/sandbox_runner/Dockerfile"], executor
-        )
-        assert plan.paths_touching(["backend/services/sandbox_executor/main.py"], executor)
-        assert plan.paths_touching(["backend/services/sandbox_executor/core/x.py"], executor)
 
     def test_the_frontend_dev_image_sees_its_whole_directory(self):
         assert plan.paths_touching(["frontend/src/App.tsx"], _inputs("frontend", "Dockerfile.dev"))

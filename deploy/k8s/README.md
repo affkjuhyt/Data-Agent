@@ -10,9 +10,9 @@ dev server is in [`docs/RUNBOOK.md`](../../docs/RUNBOOK.md).
 ```
 deploy/k8s/
   production/                    hardened set (the sections below describe it)
-    namespace.yaml               dataagent-service, dataagent-database, dataagent-sandbox (restricted PSA)
+    namespace.yaml               dataagent-service, dataagent-database (restricted PSA)
     configmap.yaml               dataagent-config, one copy per namespace
-    rbac.yaml                    the two RBAC exceptions (OpenBao, sandbox-executor)
+    rbac.yaml                    the one RBAC exception (OpenBao)
     networkpolicy-*.yaml         deny-all + the allow matrices
     database/                    StatefulSets for the stores (10)
     service/                     Deployments
@@ -34,7 +34,6 @@ Three, all labelled `app.kubernetes.io/part-of: dataagent`:
 | --- | --- |
 | `dataagent-database` | Postgres, Mongo, Redis, Qdrant, Neo4j, Kafka, MinIO, ClickHouse, OpenBao, PgBouncer, and the restore job |
 | `dataagent-service` | the gateway, identity, application, worker and observability Deployments, and every Job except the restore |
-| `dataagent-sandbox` | only the sandbox runner pods `sandbox-executor` spawns; its default-deny has no allow rules at all |
 
 All carry a `name:` label as well, because the NetworkPolicies select namespaces
 by it.
@@ -74,9 +73,7 @@ policy — it will not talk to anything until you do.
 RoleBinding is created for any of them, so the account can call essentially
 nothing on the API server. That is the default and it is deliberate.
 
-There are two exceptions. `sandbox-executor` holds a Role in `dataagent-sandbox`
-only (create/delete/get/list/watch on pods, `pods/exec`, `pods/log`) to run its
-warm pool of runner pods. `openbao` calls the API server for the Kubernetes auth
+There is one exception. `openbao` calls the API server for the Kubernetes auth
 method, so it mounts its token and holds exactly three verbs:
 
 | Scope | Resource | Verb |
@@ -110,10 +107,6 @@ No pod uses `hostNetwork`, `hostPID`, `hostIPC`, a `hostPath` volume, or
 `privileged`. `tests/unit/repo/test_k8s_manifests.py` asserts all of it, plus every
 field against the API server's own OpenAPI models.
 
-`sandbox-executor` runs user-submitted code and additionally sets
-`runtimeClassName: gvisor`. The cluster needs a `RuntimeClass` named `gvisor`;
-drop the field if you have not installed it (RUNBOOK: "sandbox-executor Pending").
-
 ## Configuration and secrets
 
 Nothing is set inline on a container. Each workload reads exactly three sources,
@@ -143,8 +136,7 @@ names the code expects — so `crawler` gets six keys and never sees
 `GATEWAY_KEY` and `SERVICE_AUTH_SECRET` go to the services that import
 `libs.shared.auth` (which imports `service_identity`): `auth-api`
 (`GATEWAY_KEY` also to the `setup` Job, which writes it into the
-Kong plugin; `SERVICE_AUTH_SECRET` also to `sandbox-executor`, which verifies
-service assertions). Nothing else needs them. An unset `GATEWAY_KEY` makes every
+Kong plugin). Nothing else needs them. An unset `GATEWAY_KEY` makes every
 Kong-routed request 401 (the services log an error naming it); `GATEWAY_KEY_OPTIONAL=true`
 restores the old trust-`X-Kong-Verified`-alone behaviour while a key is rolled out. A
 mismatched `SERVICE_AUTH_SECRET` fails *silently*: `kb_search` returns no chunks. Check those
@@ -327,7 +319,6 @@ band. Nothing in `deploy/k8s/` may use it.
 | auth-api | service | 8200 | **8200** | manifest `command` (unchanged) |
 | model-service | service | 8001 | **8230** | manifest `command` |
 | workflow-runtime | service | 8001 | **8240** | manifest `command` |
-| sandbox-executor | service | 8500 | **8260** | manifest `command` |
 | llm-exporter | service | 9200 | **8270** | `LISTEN_PORT` in its ConfigMap (runs as `WORKER=llm-exporter` of the platform-workers image) |
 | frontend | service | 3000 | **8280** | manifest `command` (vite `--port`) |
 | postgres | database | 5432 | **8300** | `PGPORT` |
@@ -364,7 +355,7 @@ numbers above — `postgres:8300`, `redis://redis:8320`, `bolt://neo4j:8341`,
 
 Service DNS names are DNS-1123, so an underscore is not legal in a hostname:
 `model-service`, `workflow-runtime`, `auth-api`,
-`sandbox-executor`, `llm-exporter`. `env` in the manifest wins
+`llm-exporter`. `env` in the manifest wins
 over whatever default the image ships, so the underscored defaults compiled into
 the Python services never apply in-cluster.
 
@@ -388,5 +379,4 @@ not here:
 
 | Component | Why |
 | --- | --- |
-| Docker-in-Docker sandbox | Rootless Docker-in-Docker needs `privileged`, unconfined seccomp/AppArmor and `/dev/fuse` — it cannot exist in a restricted namespace. `sandbox-executor` spawns runner pods in `dataagent-sandbox` (`SANDBOX_BACKEND=kubernetes`), under `runtimeClassName: gvisor` in the production set. |
 | Central log store | Node log collection needs a `hostPath` agent running as root, a cluster add-on rather than an application workload. The Elasticsearch/Kibana pair was removed after it held 0 indices for 16 days (27/09/2026). Read logs with `kubectl logs`; the target (Loki, after the POC) is in `docs/v2/11-ops.md` §7. |

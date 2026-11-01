@@ -72,7 +72,6 @@ _UNSCOPED_BUDGET = {
     # libs/shared is at 0: the document advisory lock moved to
     # get_platform_client(), the deliberate unscoped form.
     "database_connector": 15,
-    "sandbox_executor": 1,
     "platform_workers": 1,
 }
 

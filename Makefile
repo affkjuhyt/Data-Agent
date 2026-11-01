@@ -83,16 +83,11 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 # k8s, Ansible, model/, cross-service policy) belongs to no service and runs on the local
 # dev-tools image: an image naming a `/` is used as given, not looked up in the registry.
 IMAGE_REGISTRY ?= localhost:5001
-UNIT_SUITES ?= platform_workers:platform-workers \
-               sandbox_executor:sandbox_executor auth_api:auth_api \
+UNIT_SUITES ?= platform_workers:platform-workers auth_api:auth_api \
                model_service:model_service contracts:api api:api worker_agent:worker-agent worker_ingest:worker-ingest \
                worker_document:worker-document crawler:crawler repo:$(DEV_TOOLS_IMAGE)
-INTEGRATION_SUITES ?= sandbox_executor:sandbox_executor \
-                      contracts:api api:api migrate:migrate worker_agent:worker-agent worker_ingest:worker-ingest \
+INTEGRATION_SUITES ?= contracts:api api:api migrate:migrate worker_agent:worker-agent worker_ingest:worker-ingest \
                       worker_document:worker-document crawler:crawler
-# The integration sandbox tests start real sandbox-runner containers; the tag
-# differs per host (tests/integration/_sandbox.py), override it to match.
-SANDBOX_RUNNER_IMAGE ?= dataagent/sandbox-runner:latest
 PYTEST_ARGS ?=
 TEST_JOBS ?= 0
 CHANGED_BASE ?= main
@@ -104,7 +99,7 @@ DOCKER_RUN_SUITE = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPA
 # test tooling, tests/test-image.Dockerfile) and runs the suites in parallel;
 # TEST_JOBS=1 runs them one after another. Every suite runs even when another fails.
 RUN_SUITES = UNIT_SUITES="$(UNIT_SUITES)" INTEGRATION_SUITES="$(INTEGRATION_SUITES)" \
-             IMAGE_REGISTRY="$(IMAGE_REGISTRY)" SANDBOX_RUNNER_IMAGE="$(SANDBOX_RUNNER_IMAGE)" \
+             IMAGE_REGISTRY="$(IMAGE_REGISTRY)" \
              PYTEST_ARGS="$(PYTEST_ARGS)" python3 tests/run_suites.py --jobs $(TEST_JOBS)
 
 # dev-tools first: the repo suite's base image. A cache hit after the first build.

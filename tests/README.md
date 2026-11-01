@@ -15,8 +15,8 @@ tests/
 │   ├── workflow_runtime/    # one suite per service, run in that service's image:
 │   ├── crawler/             #   a test goes in the suite of the code it exercises.
 │   ├── platform_workers/    #   There is no single image that can import every
-│   ├── sandbox_executor/    #   service (their pins conflict: OTel, boto3), so the
-│   ├── auth_api/            #   suites are never run together.
+│   ├── auth_api/            #   service (their pins conflict: OTel, boto3), so the
+│   │                        #   suites are never run together.
 │   ├── model_service/
 │   ├── contracts/           # libs/contracts (NOP-150), run in the api image (PyYAML, pinned pydantic)
 │   └── repo/                # repo-wide: k8s manifests, db-init, Ansible deploy plan, migrate image,
@@ -27,12 +27,10 @@ tests/
 ├── contract_mock/           # Contract v1 mock API for FE/Data/Agent (NOP-151, `make mock-api`; README.md)
 ├── integration/             # testcontainers; same per-service split as unit/
 │   ├── _db.py               # reset_database / run_alembic / alembic_head for the shared container
-│   ├── _sandbox.py          # sandbox-runner image gate (SANDBOX_RUNNER_IMAGE)
 │   ├── workflow_runtime/    # migrations, RLS on KB child tables, memory, schema catalog,
 │   │   └── requirements.txt #   handler→sandbox wiring (its extra sandbox imports)
 │   ├── auth_api/            # conftest.py: the auth_api app + minimal schema; smoke + RLS
 │   ├── platform_workers/    # schema crawler, web crawler
-│   ├── sandbox_executor/    # real sandbox-runner containers, read-only Postgres backend
 │   ├── contracts/           # the Contract v1 mock as a real server (api image)
 │   └── test_*.py            # e2e only (LIVE_STACK=1): agent answer, JWT audience, load, tenant isolation
 ├── e2e/                     # seed data for the demo agent + non-pytest harnesses
@@ -126,11 +124,8 @@ make test-integration INTEGRATION_SUITES=auth_api:auth_api
 
 The suite container gets the Docker socket and the host network, so
 testcontainers starts Postgres/Qdrant/MinIO next to it. `requirements-integration.txt`
-adds testcontainers, psycopg2 and alembic; a suite that needs more (the
-workflow_runtime handler-wiring test runs sandbox_executor's app) lists it in
-`tests/integration/<suite>/requirements.txt`. The sandbox tests start real
-sandbox-runner containers from `SANDBOX_RUNNER_IMAGE`
-(default `dataagent/sandbox-runner:latest`, the deploy build).
+adds testcontainers, psycopg2 and alembic; a suite that needs more lists it in
+`tests/integration/<suite>/requirements.txt`.
 
 Every suite shares one session-scoped Postgres container. A test that needs an
 empty database at alembic head takes the `migrated_db` fixture
@@ -141,10 +136,6 @@ fingerprint of the schema guards it: after a test that changed the schema (a
 downgrade, its own DDL), the next one migrates from scratch again. A test that
 exercises the migrations themselves starts from `reset_database`, which drops every
 schema and role the migrations created; never hand-roll a `DROP SCHEMA public`.
-
-`sandbox_executor`'s integration suite runs on 4 xdist workers (a real container
-per test). A test that needs a fixed Docker resource (a network name, a port) must
-carry `@pytest.mark.xdist_group("<resource>")` so it never runs beside its twin.
 
 `make test` runs both. We do NOT roll every service's deps into
 `pyproject.toml [test]` — no single environment can hold them all.

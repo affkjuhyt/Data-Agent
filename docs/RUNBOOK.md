@@ -19,7 +19,7 @@ How to run, check and fix the Data Agent stack on the dev server. Start here.
 | Deploy command | `cd deploy/ansible && ansible-playbook deploy.yml` |
 | Manifests applied | `deploy/k8s/dev/` |
 | Image registry | `localhost:5000` (Docker container `registry` on the server) |
-| Namespaces | `dataagent-database` (stores), `dataagent-service` (everything else), `dataagent-sandbox` (sandbox runner pods) |
+| Namespaces | `dataagent-database` (stores), `dataagent-service` (everything else) |
 | LLM / embed / rerank | GPU services on `10.10.55.101`: vLLM main `:8001` (Qwen3-14B), vLLM fast `:8002` (Qwen3-4B), TEI embed `:8003`, TEI rerank `:8004` |
 | Server-only secrets | `deploy/ansible/inventories/k8s-local/.secrets/`, `deploy/k8s/dev/{secrets.env,.openbao-keys.json,.openbao-env.yml}` — git-ignored, back them up |
 
@@ -229,7 +229,7 @@ Details and the full flow: [`deploy/ansible/README.md` → Secrets](../deploy/an
 
 OpenBao holds warehouse and connector passwords. It **seals itself whenever its
 pod restarts** (node reboot, eviction). While sealed, `api`, `worker-agent` and
-the sandbox cannot read secrets: source calls fail to authenticate and the logs show
+the crawler cannot read secrets: source calls fail to authenticate and the logs show
 `failed to read secret … from vault`.
 
 ```bash
@@ -511,7 +511,6 @@ suspecting the pipeline.
 | Pod in `CreateContainerConfigError` | Its `<workload>-secrets` is missing a key → `kubectl -n <ns> describe pod <pod>` names it; rerun the pipeline with `-e secrets_changed=true` |
 | DB-connector / warehouse nodes fail to authenticate | OpenBao sealed → §8 |
 | Many pods `Evicted` at once | Disk pressure → §9 |
-| `sandbox-executor` Pending (production set) | No `gvisor` RuntimeClass; preflight reports it. The dev set doesn't use gvisor |
 | `worker-agent` does not answer a question | Check `kubectl -n dataagent-service logs deployment/worker-agent`; then inspect the question's terminal refusal and the `qa.outbox`/Redis SSE path |
 | A worker's Kafka producer times out on metadata ("Failed to update metadata after 60 secs") though SASL login succeeds | Kafka's ACLs are gone (ACLs live in the broker's metadata, lost with it). Re-run the topics/ACL Job: `kubectl apply -f deploy/k8s/dev/job/kafka-topics.yaml` (delete the old Job first if it still exists) |
 | litellm `429 No deployments available` for `embedder`, or `401 Incorrect API key ... platform.openai.com` | `EMBEDDING_V1_BASE_URL` missing from `litellm-env`, so the embedder calls OpenAI and goes into cooldown |

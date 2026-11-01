@@ -43,8 +43,6 @@ data:
   #Model Service
   MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
 
-  #Sandbox-executor
-  SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
 
   #Kong
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
@@ -134,8 +132,6 @@ data:
   #Model Service
   MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
 
-  #Sandbox-Executor
-  SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
 
   #Kong
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101

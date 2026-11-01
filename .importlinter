@@ -95,7 +95,6 @@ forbidden_modules =
     services.workflow_runtime
     services.auth_api
     services.platform_workers
-    services.sandbox_executor
     services.model_service
 
 # worker-agent (ADR-28): talks to the api only through the database and events, never by
@@ -110,7 +109,6 @@ forbidden_modules =
     services.workflow_runtime
     services.auth_api
     services.platform_workers
-    services.sandbox_executor
     services.model_service
 
 # crawler (ADR-28, KB-02): reaches the api and worker-agent only through acquire's tables and

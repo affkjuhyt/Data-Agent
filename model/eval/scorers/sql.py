@@ -21,7 +21,7 @@ from typing import Any
 
 from model.eval import _paths
 
-_paths.ensure(_paths.SANDBOX_EXECUTOR)
+_paths.ensure()
 
 
 def _build_catalog(spec: dict[str, Any]) -> Any:
@@ -82,11 +82,11 @@ def _guard_verdict(sql: str, dialect: str) -> str:
     SQL. A compiler that emitted something the guard rejects would break the
     semantic route in production; here it costs one failing case.
     """
-    from sql_guard import SQLGuardError, validate_select_only
+    from libs.sql_guard import SqlRejected, check_read_only
 
     try:
-        validate_select_only(sql, dialect if dialect in ("postgres", "clickhouse") else None)
-    except SQLGuardError as e:
+        check_read_only(sql, dialect if dialect in ("postgres", "clickhouse") else "postgres")
+    except SqlRejected as e:
         return str(e)
     return ""
 

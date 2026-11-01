@@ -459,15 +459,12 @@ class TestEveryPodIsHardened:
     def test_no_pod_mounts_a_service_account_token(self):
         """A mounted token is a credential waiting to be stolen out of a
         compromised container. OpenBao calls the API server (TokenReview for
-        the Kubernetes auth method) and sandbox-executor manages its own pool
-        of execution pods (backend/services/sandbox_executor/k8s_pool.py) —
-        the two deliberate exceptions, and the only two with a RoleBinding."""
+        the Kubernetes auth method): the one deliberate exception, and the only
+        workload with a RoleBinding."""
         bad = [
             w
             for w, pod in self._pods()
-            if pod.get("automountServiceAccountToken") is not False
-            and not w.endswith("openbao")
-            and not w.endswith("sandbox-executor")
+            if pod.get("automountServiceAccountToken") is not False and not w.endswith("openbao")
         ]
         assert not bad, f"pods still automounting a SA token: {bad}"
 
@@ -642,8 +639,8 @@ class TestPortsFollowThePlan:
 
 # ── namespaces, identity and network isolation ─────────────────────────────
 
-SVC_NS, DB_NS, SANDBOX_NS = "dataagent-service", "dataagent-database", "dataagent-sandbox"
-ALL_NS = (SVC_NS, DB_NS, SANDBOX_NS)
+SVC_NS, DB_NS = "dataagent-service", "dataagent-database"
+ALL_NS = (SVC_NS, DB_NS)
 
 
 class TestTheNamespaces:
@@ -689,7 +686,7 @@ class TestTheNamespaces:
 
 
 class TestDenyAllIsTheDefault:
-    @pytest.mark.parametrize("namespace", [SVC_NS, DB_NS, SANDBOX_NS])
+    @pytest.mark.parametrize("namespace", [SVC_NS, DB_NS])
     def test_each_namespace_denies_all_ingress_and_egress(self, namespace):
         """An empty podSelector with no rules is the only shape that denies
         everything — inside the namespace as well as across it."""
@@ -717,22 +714,6 @@ class TestDenyAllIsTheDefault:
         assert any(
             d["metadata"]["name"] == "allow-dns" for d in policies
         ), f"{namespace} denies egress with no DNS exception — every lookup fails"
-
-    def test_the_sandbox_namespace_has_no_allow_rules_at_all(self):
-        """dataagent-sandbox is the k8s-native equivalent of the Docker
-        backend's `network_disabled=True` (no network namespace at all,
-        docker_runner.py/k8s_pool.py module docstrings) — not of the other
-        two namespaces' "reopen one flow at a time" pattern. Not even DNS:
-        a sandboxed exec has no legitimate reason to resolve anything."""
-        policies = [
-            d
-            for _, d in TOP_LEVEL
-            if d["kind"] == "NetworkPolicy" and d["metadata"]["namespace"] == SANDBOX_NS
-        ]
-        assert len(policies) == 1 and policies[0]["metadata"]["name"] == "default-deny-all", (
-            f"dataagent-sandbox must carry only default-deny-all, found: "
-            f"{sorted(d['metadata']['name'] for d in policies)}"
-        )
 
 
 class TestEveryManifestParses:
@@ -798,11 +779,10 @@ class TestEveryWorkloadHasItsOwnIdentity:
                 bad.append(f"{name}: no ServiceAccount object in {ns}")
         assert not bad, f"workloads without a dedicated ServiceAccount: {bad}"
 
-    def test_only_the_two_deliberate_exceptions_are_granted_anything(self):
+    def test_only_the_deliberate_exception_is_granted_anything(self):
         """A ServiceAccount with no binding can call almost nothing. That is
         the default here; every exception has to be deliberate. OpenBao
-        (TokenReview for the Kubernetes auth method) and sandbox-executor
-        (manages its own pool of execution pods, k8s_pool.py) are the two."""
+        (TokenReview for the Kubernetes auth method) is the one."""
         granted = {
             s["name"]
             for _, d in TOP_LEVEL
@@ -810,10 +790,7 @@ class TestEveryWorkloadHasItsOwnIdentity:
             for s in d["subjects"]
             if s["kind"] == "ServiceAccount"
         }
-        assert granted == {
-            "openbao",
-            "sandbox-executor",
-        }, f"only openbao and sandbox-executor should hold RBAC; these do: {sorted(granted)}"
+        assert granted == {"openbao"}, f"only openbao should hold RBAC; these do: {sorted(granted)}"
 
     def test_openbao_is_granted_only_what_the_auth_method_needs(self):
         rules = [
@@ -835,46 +812,6 @@ class TestEveryWorkloadHasItsOwnIdentity:
             for v in r["verbs"]
         }
         assert actual <= allowed, f"OpenBao granted more than it needs: {sorted(actual - allowed)}"
-        assert not any(
-            "*" in r["verbs"] or "*" in r["resources"] for r in rules
-        ), "no wildcard verbs or resources"
-
-    def test_sandbox_executor_is_granted_only_pod_lifecycle_in_its_own_namespace(self):
-        """k8s_pool.py needs to create/watch/retire its own pool's pods and
-        exec into them — nothing about Secrets, ConfigMaps, or any other
-        namespace's resources."""
-        role_docs = [
-            d
-            for _, d in TOP_LEVEL
-            if d["kind"] == "Role" and d["metadata"]["name"] == "sandbox-executor-pool"
-        ]
-        assert role_docs, "expected a sandbox-executor-pool Role"
-        for d in role_docs:
-            assert d["metadata"]["namespace"] == "dataagent-sandbox", (
-                "sandbox-executor's Role must be scoped to dataagent-sandbox, "
-                f"not {d['metadata']['namespace']}"
-            )
-        rules = [r for d in role_docs for r in d["rules"]]
-        allowed = {
-            ("", "pods", "get"),
-            ("", "pods", "list"),
-            ("", "pods", "watch"),
-            ("", "pods", "create"),
-            ("", "pods", "delete"),
-            ("", "pods/exec", "get"),
-            ("", "pods/exec", "create"),
-            ("", "pods/log", "get"),
-        }
-        actual = {
-            (g, res, v)
-            for r in rules
-            for g in r["apiGroups"]
-            for res in r["resources"]
-            for v in r["verbs"]
-        }
-        assert (
-            actual <= allowed
-        ), f"sandbox-executor granted more than it needs: {sorted(actual - allowed)}"
         assert not any(
             "*" in r["verbs"] or "*" in r["resources"] for r in rules
         ), "no wildcard verbs or resources"
@@ -907,7 +844,6 @@ class TestCrossNamespaceHostnamesAreQualified:
             "model-service",
             "workflow-runtime",
             "api",
-            "sandbox-executor",
             "llm-exporter",
             "frontend",
         ]
@@ -1003,9 +939,7 @@ class TestConfigComesFromConfigMapsAndSecrets:
 
     def test_the_auth_chain_keys_reach_exactly_the_services_that_verify_them(self):
         """GATEWAY_KEY and SERVICE_AUTH_SECRET fail silently when missing, so the
-        set of holders is pinned to the services importing libs.shared.auth, plus,
-        for SERVICE_AUTH_SECRET, sandbox-executor, which verifies X-Service-Assertion
-        through libs.shared.service_identity (sandbox_executor/auth.py)."""
+        set of holders is pinned to the services importing libs.shared.auth."""
         script = (K8S_DIR / "create-secrets.sh").read_text(encoding="utf-8")
         for key in ("GATEWAY_KEY", "SERVICE_AUTH_SECRET"):
             holders = {
@@ -1018,8 +952,6 @@ class TestConfigComesFromConfigMapsAndSecrets:
                 expected |= {"setup"}  # kong-setup.sh writes it into the plugin
                 # Not the eval Job: model/eval's agent_client calls the public
                 # V3 API with a Keycloak token (EVAL_ACCESS_TOKEN), not as Kong.
-            else:
-                expected |= {"sandbox-executor"}
             assert (
                 holders == expected
             ), f"{key} goes to {sorted(holders)}, expected {sorted(expected)}"

@@ -48,7 +48,7 @@ Images are named `dataagent/<service_name>`; push them as
 Ports are not in the Dockerfiles. Each image has no `EXPOSE` and no `CMD` — the
 start command and the port live in the workload's manifest, so there is one place
 to change them: auth-api 8200, model-service
-8230, workflow-runtime 8240 (also the agent/workflow authoring API, ex flow-builder), sandbox-executor 8260,
+8230, workflow-runtime 8240 (also the agent/workflow authoring API, ex flow-builder),
 llm-exporter 8270. `8000–8099` stays reserved for the LLM tier. Third-party
 images keep their native port.
 
@@ -60,8 +60,6 @@ images keep their native port.
 - **Kafka's `INTERNAL` listener (`:8352`) is plaintext and its principal is a
   super-user.** The `kafka-topics` Job uses it (`docs/v2/11-ops.md` §5, K7).
 - **Redis has no password.** Langfuse must not send `AUTH`.
-- **`SERVICE_AUTH_SECRET` must be identical** in `auth-api` and
-  `sandbox-executor` — a mismatch is silent.
 - **`GATEWAY_KEY` must equal the `aeroflow-jwks` plugin's key** set by
   `kong/kong-setup.sh`.
 - **Debian packages come from `DEBIAN_MIRROR` when it is set.** The Dockerfiles that run

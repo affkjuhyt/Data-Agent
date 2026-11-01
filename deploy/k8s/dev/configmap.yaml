@@ -24,7 +24,6 @@ data:
   KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
   MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
-  SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
   KEYCLOAK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KC_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
@@ -68,7 +67,6 @@ data:
   KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
   MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
-  SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
   KEYCLOAK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KC_URL: http://keycloak.dataagent-service.svc.cluster.local:8110

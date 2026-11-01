@@ -169,7 +169,7 @@ with an existing baseline to burn down. Ratchet plan:
   | `backend/libs/{basemodel,database_connector,shared}` | **0**, enforced |
   | `backend/services/workflow_runtime` (incl. `workflow_runtime/application/orchestrator`) | **0**, enforced |
   | `backend/services/{api,worker_agent,crawler}` (`--disallow-untyped-defs --disallow-any-generics`) | CI blocking step (`make type-v3`) |
-  | `backend/services/{auth_api,model_service,sandbox_executor,platform_workers}` | **0**, enforced |
+  | `backend/services/{auth_api,model_service,platform_workers}` | **0**, enforced |
 
   Not on the strict list: `backend/libs/{semantic,indicator}`. The whole-tree run is report-only (`|| true`).
 

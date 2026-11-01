@@ -194,29 +194,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-sandbox-executor
-  namespace: dataagent-service
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: sandbox-executor
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: workflow-runtime
-    ports:
-    - protocol: TCP
-      port: 8260
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: allow-auth-api
   namespace: dataagent-service
   labels:
@@ -479,9 +456,6 @@ spec:
           app: auth-api
     - podSelector:
         matchLabels:
-          app: sandbox-executor
-    - podSelector:
-        matchLabels:
           app: platform-workers-audit
     - podSelector:
         matchLabels:
@@ -675,42 +649,3 @@ spec:
     - protocol: TCP
       port: 8004
 
----
-# k8s_pool.py calls the API server (create/exec/delete pods in
-# dataagent-sandbox) via its in-cluster ServiceAccount token — kube-apiserver
-# runs as a host process in k3s, not a Pod, so podSelector-based rules can't
-# name it; the ClusterIP every in-cluster client actually dials
-# (`kubernetes.default.svc`, always 10.43.0.1:443 in this cluster) is the
-# only thing to allow.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-egress-k8s-api
-  namespace: dataagent-service
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: sandbox-executor
-  policyTypes:
-  - Egress
-  egress:
-  # Both the kubernetes.default ClusterIP (what the in-cluster client
-  # library actually dials — KUBERNETES_SERVICE_HOST/PORT) and the real
-  # node address kube-apiserver listens on (`kubectl get endpoints
-  # kubernetes`) — see the debugging note in this policy's history for why
-  # both are listed rather than assuming which one a given NetworkPolicy
-  # implementation matches on for egress to a Service.
-  - to:
-    - ipBlock:
-        cidr: 10.43.0.1/32
-    ports:
-    - protocol: TCP
-      port: 443
-  - to:
-    - ipBlock:
-        cidr: 10.10.55.101/32
-    ports:
-    - protocol: TCP
-      port: 6443

@@ -134,14 +134,6 @@ kubectl -n dataagent-service create secret generic model-service-secrets \
   --from-literal=REMOTE_LLM_KEY="${REMOTE_LLM_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n dataagent-service create secret generic sandbox-executor-secrets \
-  --from-literal=MINIO_ACCESS_KEY="${MINIO_ROOT_USER}" \
-  --from-literal=MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD}" \
-  --from-literal=OPENBAO_ROLE_ID="${SANDBOX_EXECUTOR_OPENBAO_ROLE_ID}" \
-  --from-literal=OPENBAO_SECRET_ID="${SANDBOX_EXECUTOR_OPENBAO_SECRET_ID}" \
-  --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 kubectl -n dataagent-service create secret generic platform-workers-audit-secrets \
   --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
   --from-literal=KAFKA_SASL_PASSWORD="${AUDIT_CONSUMER_KAFKA_PASSWORD}" \

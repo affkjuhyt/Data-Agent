@@ -1,57 +1,24 @@
-"""sys.path entries for the service modules the scorers evaluate.
+"""sys.path entries for the modules the scorers evaluate.
 
-Several services live in hyphenated directories (`backend/services/sandbox_executor`)
-which are not importable package names, and they
-use bare imports that assume their own directory is on sys.path. Same problem
-tests/unit/_loader.py solves for the test suite; kept separate because the eval
-harness ships in the ragas image, where the test package is not present.
+The scorers import `libs.*` from backend/, which pytest puts on sys.path through its pythonpath
+config but a bare `python -m model.eval.run` does not. Kept apart from the test suite's own path
+setup because the eval harness ships in the ragas image, where the test package is not present.
 
-The scorers import the REAL modules deliberately. An eval that re-implemented
-the rule it is measuring would measure the re-implementation.
+The scorers import the REAL modules deliberately. An eval that re-implemented the rule it is
+measuring would measure the re-implementation.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from pathlib import Path
-from types import ModuleType
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SANDBOX_EXECUTOR = REPO_ROOT / "backend" / "services" / "sandbox_executor"
-WORKER_AGENT = REPO_ROOT / "backend" / "services" / "worker_agent"
 
 
-def ensure(*directories: Path) -> None:
-    """Prepend each directory to sys.path once.
-
-    `REPO_ROOT / "backend"` is always included: `libs.semantic.*` (and the other
-    backend/libs packages the scorers pull in) resolve relative to backend/,
-    which pytest puts on sys.path via pythonpath config but a bare
-    `python -m model.eval.run` does not.
-    """
-    for directory in (REPO_ROOT, REPO_ROOT / "backend", *directories):
+def ensure() -> None:
+    """Put the repository root and backend/ on sys.path once."""
+    for directory in (REPO_ROOT, REPO_ROOT / "backend"):
         entry = str(directory)
         if entry not in sys.path:
             sys.path.insert(0, entry)
-
-
-def load_module(name: str, path: Path) -> ModuleType:
-    """Load one module from its file, WITHOUT executing its package __init__.
-
-    `application/nodes/sandbox/tool_executor/_utils.py` holds a pure path check inside a
-    package whose __init__ imports the whole node graph, and through it litellm.
-    Importing it normally would make an offline evaluation of a stdlib-only
-    function depend on a model client being installed — so the file is loaded
-    directly. It is still the real module, not a copy of the rule.
-    """
-    cached = sys.modules.get(name)
-    if cached is not None:
-        return cached
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot load {name} from {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module

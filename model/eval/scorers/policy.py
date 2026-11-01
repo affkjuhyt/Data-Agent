@@ -22,7 +22,7 @@ from typing import Any
 
 from model.eval import _paths
 
-_paths.ensure(_paths.SANDBOX_EXECUTOR, _paths.WORKER_AGENT)
+_paths.ensure()
 
 
 class _Refused(Exception):
@@ -38,43 +38,8 @@ def _sql_guard(case: dict[str, Any]) -> None:
         raise _Refused(str(e)) from e
 
 
-def _python_guard(case: dict[str, Any]) -> None:
-    from security_visitor import SecurityError, validate_python_code
-
-    try:
-        validate_python_code(case["input"])
-    except SecurityError as e:
-        raise _Refused(str(e)) from e
-    except SyntaxError as e:
-        # main.py treats an unparseable submission as a validation failure too.
-        raise _Refused(f"syntax error: {e}") from e
-
-
-def _path_guard(case: dict[str, Any]) -> None:
-    utils = _paths.load_module(
-        "_eval_tool_executor_utils",
-        _paths.SANDBOX_EXECUTOR / "path_guard.py",
-    )
-
-    _, error = utils.safe_path(case["input"], case.get("allowed_dir", ""))
-    if error:
-        raise _Refused(error)
-
-
-def _sandbox_input_name(case: dict[str, Any]) -> None:
-    from input_names import validate_input_name
-
-    try:
-        validate_input_name(case["input"])
-    except ValueError as e:
-        raise _Refused(str(e)) from e
-
-
 SURFACES: dict[str, Callable[[dict[str, Any]], None]] = {
     "sql_guard": _sql_guard,
-    "python_guard": _python_guard,
-    "path_guard": _path_guard,
-    "sandbox_input_name": _sandbox_input_name,
 }
 
 

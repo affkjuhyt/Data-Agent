@@ -24,10 +24,10 @@ nothing anywhere that could stop a release.
 
 Not by subject, by what they need to run.
 
-**offline** is pure Python against the *real* guards (`sql_guard`,
-`security_visitor`, the tool-executor path check, the staged-input name rule)
-and the *real* metric compiler. No model, no warehouse, no stack; `sqlparse` is
-the only third-party import. That is what lets it gate **every pull request** —
+**offline** is pure Python against the *real* read-only SQL guard
+(`libs/sql_guard`, the one the api and worker-agent use) and the *real* metric
+compiler. No model, no warehouse, no stack; `sqlglot` and `sqlparse` are the
+only third-party imports. That is what lets it gate **every pull request** —
 a gate that needs a GPU is a gate that runs nightly and blocks nothing.
 
 **online** needs a model behind LiteLLM and an agent to interrogate. It runs

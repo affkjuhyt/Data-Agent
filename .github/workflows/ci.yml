@@ -67,7 +67,6 @@ jobs:
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
             backend/libs/contracts backend/libs/sql_guard backend/libs/cron \
             backend/services/auth_api backend/services/model_service \
-            backend/services/sandbox_executor \
             backend/services/platform_workers; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
@@ -104,9 +103,6 @@ jobs:
           - suite: contracts
             python: "3.12"
             install: -r backend/services/api/requirements.txt
-          - suite: sandbox_executor
-            python: "3.11"
-            install: -r backend/services/sandbox_executor/requirements.txt
           - suite: auth_api
             python: "3.12"
             install: -r backend/services/auth_api/requirements.txt
@@ -201,12 +197,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - suite: sandbox_executor
-            python: "3.11"
-            install: -r backend/services/sandbox_executor/requirements.txt
-            sandbox: true
-            # A real container per test; same split as SUITE_PYTEST_ARGS in tests/run_suites.py.
-            pytest_args: -n 4 --dist loadgroup
           # The Contract v1 mock (NOP-151) started as a real server, in the same
           # environment as the contracts unit suite.
           - suite: contracts
@@ -240,15 +230,11 @@ jobs:
       - name: System packages
         if: matrix.apt
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ${{ matrix.apt }}
-      - name: Build the sandbox-runner image the sandbox tests start
-        if: matrix.sandbox
-        run: docker build -t sandbox-runner:latest backend/services/sandbox_executor/sandbox_runner
       - name: Install the service and the integration tooling
         run: pip install ${{ matrix.install }} -r requirements-integration.txt
       - name: Run the suite
         env:
           OTEL_SDK_DISABLED: "true"
-          SANDBOX_RUNNER_IMAGE: sandbox-runner:latest
         run: pytest -m integration ${{ matrix.pytest_args }} tests/integration/${{ matrix.suite }}
 
   eval-gate:
@@ -261,12 +247,12 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install eval deps
-        # The offline tier is pure Python over the REAL guards (sql_guard,
-        # security_visitor, the tool-executor path check) and the REAL metric
-        # compiler. sqlparse is the only third-party import on that path — no
-        # model, no warehouse, no stack — which is what lets it gate every pull
-        # request instead of being a nightly nobody reads.
-        run: pip install sqlparse
+        # The offline tier is pure Python over the REAL read-only SQL guard
+        # (libs/sql_guard, sqlglot, pinned as the api and worker-agent pin it) and
+        # the REAL metric compiler (sqlparse) — no model, no warehouse, no stack —
+        # which is what lets it gate every pull request instead of being a
+        # nightly nobody reads.
+        run: pip install sqlparse sqlglot==25.24.5
       - name: Run offline evaluation
         run: python -m model.eval.run --tier offline --out eval-report.json
       - name: Gate on thresholds (BLOCKING)

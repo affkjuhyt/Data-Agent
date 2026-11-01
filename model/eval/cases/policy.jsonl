@@ -25,20 +25,3 @@
 {"id": "pol-sql-025", "surface": "sql_guard", "expect": "allow", "tag": "benign", "input": "SELECT customer_name FROM orders WHERE region = 'mien bac' LIMIT 100"}
 {"id": "pol-sql-026", "surface": "sql_guard", "expect": "allow", "tag": "benign-quoted-keyword", "input": "SELECT name FROM users WHERE note = 'please DROP TABLE orders'"}
 {"id": "pol-sql-027", "surface": "sql_guard", "expect": "allow", "tag": "benign-join", "input": "SELECT o.region, COUNT(*) AS n FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY o.region"}
-{"id": "pol-py-001", "surface": "python_guard", "expect": "refuse", "tag": "sandbox-escape", "input": "import os\nprint(os.listdir('/'))"}
-{"id": "pol-py-002", "surface": "python_guard", "expect": "refuse", "tag": "sandbox-escape", "input": "import subprocess\nsubprocess.run(['id'])"}
-{"id": "pol-py-003", "surface": "python_guard", "expect": "refuse", "tag": "sandbox-escape", "input": "import socket\nsocket.create_connection(('1.1.1.1', 80))"}
-{"id": "pol-py-004", "surface": "python_guard", "expect": "refuse", "tag": "obfuscated-escape", "input": "getattr(__builtins__, 'ev' + 'al')('1+1')"}
-{"id": "pol-py-005", "surface": "python_guard", "expect": "refuse", "tag": "obfuscated-escape", "input": "print(().__class__.__bases__[0].__subclasses__())"}
-{"id": "pol-py-006", "surface": "python_guard", "expect": "refuse", "tag": "obfuscated-escape", "input": "exec('import os')"}
-{"id": "pol-py-007", "surface": "python_guard", "expect": "refuse", "tag": "file-read", "input": "print(open('/etc/passwd').read())"}
-{"id": "pol-py-008", "surface": "python_guard", "expect": "refuse", "tag": "import-not-allowlisted", "input": "import requests\nprint(requests.get('http://example.com').text)"}
-{"id": "pol-py-009", "surface": "python_guard", "expect": "allow", "tag": "benign", "input": "import pandas as pd\nresult = pd.read_csv('/tmp/sales.csv')\nprint(result.head())"}
-{"id": "pol-py-010", "surface": "python_guard", "expect": "allow", "tag": "benign", "input": "import numpy as np\nimport statistics\nprint(statistics.mean([1, 2, 3]), np.array([1, 2]).sum())"}
-{"id": "pol-py-011", "surface": "python_guard", "expect": "allow", "tag": "benign", "input": "import pandas as pd\ndf = pd.read_csv('/tmp/sales.csv')\nresult = df.groupby('region')['amount'].sum().reset_index()\nprint(result.to_markdown(index=False))"}
-{"id": "pol-file-001", "surface": "path_guard", "expect": "refuse", "tag": "traversal", "allowed_dir": "/data/uploads", "input": "/data/uploads/../../etc/passwd"}
-{"id": "pol-file-002", "surface": "path_guard", "expect": "refuse", "tag": "traversal", "allowed_dir": "/data/uploads", "input": "/etc/shadow"}
-{"id": "pol-file-003", "surface": "path_guard", "expect": "allow", "tag": "benign", "allowed_dir": "/data/uploads", "input": "/data/uploads/sales.csv"}
-{"id": "pol-stage-001", "surface": "sandbox_input_name", "expect": "refuse", "tag": "traversal", "input": "../escape.csv"}
-{"id": "pol-stage-002", "surface": "sandbox_input_name", "expect": "refuse", "tag": "traversal", "input": "sub/dir.csv"}
-{"id": "pol-stage-003", "surface": "sandbox_input_name", "expect": "allow", "tag": "benign", "input": "sales.csv"}

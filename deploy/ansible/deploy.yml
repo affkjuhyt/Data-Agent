@@ -269,7 +269,6 @@
         openbao_env: >-
           {{ {'OPENBAO_TOKEN': '',
               'WORKER_AGENT_OPENBAO_ROLE_ID': '', 'WORKER_AGENT_OPENBAO_SECRET_ID': '',
-              'SANDBOX_EXECUTOR_OPENBAO_ROLE_ID': '', 'SANDBOX_EXECUTOR_OPENBAO_SECRET_ID': '',
               'PLATFORM_WORKERS_OPENBAO_ROLE_ID': '', 'PLATFORM_WORKERS_OPENBAO_SECRET_ID': '',
               'API_OPENBAO_ROLE_ID': '', 'API_OPENBAO_SECRET_ID': '',
               'CRAWLER_OPENBAO_ROLE_ID': '', 'CRAWLER_OPENBAO_SECRET_ID': ''}
@@ -312,7 +311,6 @@
           -f {{ (k8s_manifests ~ '/rbac.yaml') | quote }}
           -f {{ (k8s_manifests ~ '/networkpolicy-service.yaml') | quote }}
           -f {{ (k8s_manifests ~ '/networkpolicy-database.yaml') | quote }}
-          -f {{ (k8s_manifests ~ '/networkpolicy-sandbox.yaml') | quote }}
       register: base_apply
       changed_when: "'created' in base_apply.stdout or 'configured' in base_apply.stdout"
 
@@ -510,6 +508,24 @@
         --ignore-not-found=true
       register: kb_delete
       changed_when: "'deleted' in kb_delete.stdout"
+      when: apply_services | bool
+
+    # sandbox-executor ran user code for workflow-runtime, which is gone; nothing in V3 calls it.
+    # Deleting dataagent-sandbox takes its pool pods, the runner account and the RBAC with it.
+    - name: Remove the retired sandbox-executor and its namespace
+      ansible.builtin.command: >-
+        {{ kubectl }} delete --ignore-not-found=true
+        -n {{ ns_service }}
+        deployment/sandbox-executor service/sandbox-executor serviceaccount/sandbox-executor
+        configmap/sandbox-executor-env secret/sandbox-executor-secrets
+      register: sandbox_delete
+      changed_when: "'deleted' in sandbox_delete.stdout"
+      when: apply_services | bool
+
+    - name: Remove the retired sandbox namespace
+      ansible.builtin.command: "{{ kubectl }} delete namespace dataagent-sandbox --ignore-not-found=true --wait=false"
+      register: sandbox_ns_delete
+      changed_when: "'deleted' in sandbox_ns_delete.stdout"
       when: apply_services | bool
 
     - name: Remove the retired legacy seed Job

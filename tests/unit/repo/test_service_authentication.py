@@ -65,7 +65,6 @@ _LIVE_SERVICES = (
     "auth_api",
     "model_service",
     "platform_workers",
-    "sandbox_executor",
     "worker_agent",
 )
 
@@ -162,7 +161,7 @@ class TestNothingUnauthenticatedIsPublished:
         )
 
     def test_the_agent_tier_has_no_externally_reachable_service(self):
-        agent_tier = {"worker-agent", "sandbox-executor"}
+        agent_tier = {"worker-agent"}
         offenders = [
             s["metadata"]["name"]
             for s in self._exposed_services()

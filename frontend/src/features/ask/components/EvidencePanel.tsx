@@ -147,7 +147,7 @@ function RunDetail({ run, index, total }: { run: EvidenceRun; index: number; tot
               <SqlBlock sql={run.sql} />
               <div className="flex items-center gap-da-sm">
                 <CopyButton text={run.sql} label="Sao chép SQL" />
-                <span className="text-muted-foreground da-caption">sandbox_executor · chỉ đọc · có ghi nhật ký</span>
+                <span className="text-muted-foreground da-caption">worker-agent · chỉ đọc · có ghi nhật ký</span>
               </div>
             </>
           )}

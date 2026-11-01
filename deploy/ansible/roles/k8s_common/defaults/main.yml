@@ -37,9 +37,9 @@ image_import: ""
 image_registry: ""
 image_deploy_prefix: "{{ (image_registry ~ '/') if (image_registry | length) > 0 else '' }}{{ image_prefix }}"
 
-# The third rule also rewrites an image named in a value rather than an `image:` line
-# (sandbox-executor's SANDBOX_RUNNER_IMAGE, the pool pods it starts): left on localhost:5000, those
-# pods never pulled on a cluster whose registry is elsewhere.
+# The third rule also rewrites an image named in a value rather than an `image:` line: left on
+# localhost:5000, a pod started from such a value never pulled on a cluster whose registry is
+# elsewhere (the retired sandbox pool's runner image did exactly that).
 manifest_sed_rewrite: >-
   sed
   -e "s|image: {{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|image: {{ image_deploy_prefix }}/\1:{{ image_tag }}|g"
@@ -55,7 +55,6 @@ manifest_sed: >-
 images_on_demand: [eval]
 
 image_self_context:
-  - backend/services/sandbox_executor/sandbox_runner
   - frontend
 
 image_name_overrides:
@@ -139,7 +138,6 @@ service_workloads:
   - litellm
   - auth-api
   - model-service
-  - sandbox-executor
   - platform-workers-audit
   - platform-workers-memory
   - platform-workers-schema-crawler

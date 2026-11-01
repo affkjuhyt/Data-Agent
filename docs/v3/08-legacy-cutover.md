@@ -27,7 +27,7 @@
 | `indicator-api` | đã xoá 12/10/2026 | module của `api` (mọi route của nó chỉ trả 501) | Đã xoá | không còn Kong route, lời gọi frontend, import hay topic nào; manifest, Ansible, Makefile, CI, secret xoá cùng commit |
 | `platform-workers-*` | audit, memory, schema-crawler (web-crawler đã xoá mã 22/10/2026, thay bằng `crawler`) | `worker-ingest`, audit/memory worker V3 | Giữ | từng topic, group, ACL và state store có consumer thay thế; không còn CronJob/manifest tham chiếu |
 | `model-service` | `service/model-service.yaml`, `dataagent/model_service` | Chưa được đặc tả rõ trong V3 | Giữ | Có quyết định riêng về LLM/model proxy; không xoá theo suy đoán |
-| `sandbox-executor` | `service/sandbox-executor.yaml`, `dataagent/sandbox_executor` | Có thể nằm trong `worker-agent` | Giữ | worker-agent có boundary xác thực, policy OpenBao và test isolation tương đương |
+| `sandbox-executor` | đã xoá 01/11/2026 | — (V3 không chạy code người dùng; sandbox, khi cần, nằm trong `worker-agent`, tab 1 §7.2) | Đã xoá | bên gọi duy nhất là `workflow-runtime` (đã xoá); không khối V3 nào gọi; manifest, namespace `dataagent-sandbox`, RBAC, Ansible, OpenBao, CI, suite và các ca eval của nó xoá cùng commit |
 | `llm-exporter` | `service/llm-exporter.yaml` | Observability V3 | Giữ | metric thay thế đã được Prometheus scrape và dashboard kiểm chứng |
 
 Frontend không phải legacy backend để xoá. Nó chỉ chuyển từng màn từ mock/`/api` sang `/v1` theo nhóm

@@ -46,15 +46,8 @@
     - "{{ k8s_dir }}/secrets.env.example"
     - "{{ docker_dir }}/kafka/kafka-broker-jaas.config.example"
 
-- name: Check gvisor runtimeclass
-  ansible.builtin.command: "{{ kubectl }} get runtimeclass gvisor"
-  register: gvisor
-  changed_when: false
-  failed_when: false
-
 - name: Report preflight
   ansible.builtin.debug:
     msg:
       - "context: {{ kube_context.stdout | default('none') }}"
       - "nodes:   {{ nodes.stdout | trim }}"
-      - "gvisor:  {{ 'present' if gvisor.rc == 0 else 'missing, sandbox-executor will stay Pending' }}"

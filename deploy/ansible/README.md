@@ -139,7 +139,7 @@ outside the server fail with "Connecting to Keycloak…" and
 | `images_only=eval` | build an on-demand image (`images_on_demand`) — before applying the online-eval Job |
 | `deploy_full=true` | treat everything as changed: rebuild **all** images, reapply all Secrets and ConfigMaps, rerun Jobs (with `apply_jobs`). Images whose digest comes out unchanged are neither pushed nor restarted. Needs tens of GB of free disk — check `df -h /data` first |
 | `seed_demo=false` | run the `seed` Job without demo data |
-| `openbao_rotate_approle=true` | mint new workload AppRole secret-ids and reapply the Secrets that carry them; restart worker-agent, sandbox-executor and platform workers afterwards |
+| `openbao_rotate_approle=true` | mint new workload AppRole secret-ids and reapply the Secrets that carry them; restart worker-agent and platform workers afterwards |
 | `openbao_allow_reset=true` | allow re-initialising OpenBao when the keys file is missing. **Destroys every secret in the vault** — throwaway clusters only |
 | `git_sync_enabled=true` | pull before deploying (see step 2) |
 

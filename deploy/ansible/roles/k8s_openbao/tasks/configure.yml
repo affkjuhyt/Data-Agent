@@ -131,7 +131,6 @@
     token_policies={{ item.policy | default('dataagent-secret-read-policy') }} token_ttl=1h token_max_ttl=4h
   loop:
     - {role: worker_agent, prefix: WORKER_AGENT}
-    - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
     - {role: platform_workers, prefix: PLATFORM_WORKERS}
     - {role: api, prefix: API, policy: dataagent-api-policy}
     - {role: crawler, prefix: CRAWLER, policy: dataagent-crawler-policy}
@@ -144,7 +143,6 @@
     bao read -field=role_id auth/approle/role/{{ item.role }}/role-id
   loop:
     - {role: worker_agent, prefix: WORKER_AGENT}
-    - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
     - {role: platform_workers, prefix: PLATFORM_WORKERS}
     - {role: api, prefix: API, policy: dataagent-api-policy}
     - {role: crawler, prefix: CRAWLER, policy: dataagent-crawler-policy}
@@ -158,7 +156,6 @@
     bao write -f -field=secret_id auth/approle/role/{{ item.role }}/secret-id
   loop:
     - {role: worker_agent, prefix: WORKER_AGENT}
-    - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
     - {role: platform_workers, prefix: PLATFORM_WORKERS}
     - {role: api, prefix: API, policy: dataagent-api-policy}
     - {role: crawler, prefix: CRAWLER, policy: dataagent-crawler-policy}
@@ -189,14 +186,12 @@
         OPENBAO_TOKEN: "{{ bao_keys.root_token }}"
         WORKER_AGENT_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[0].stdout | trim }}"
         WORKER_AGENT_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[0].stdout | default(openbao_prev.WORKER_AGENT_OPENBAO_SECRET_ID | default(''), true) | trim }}"
-        SANDBOX_EXECUTOR_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[1].stdout | trim }}"
-        SANDBOX_EXECUTOR_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[1].stdout | default(openbao_prev.SANDBOX_EXECUTOR_OPENBAO_SECRET_ID | default(''), true) | trim }}"
-        PLATFORM_WORKERS_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[2].stdout | trim }}"
-        PLATFORM_WORKERS_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[2].stdout | default(openbao_prev.PLATFORM_WORKERS_OPENBAO_SECRET_ID | default(''), true) | trim }}"
-        API_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[3].stdout | trim }}"
-        API_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[3].stdout | default(openbao_prev.API_OPENBAO_SECRET_ID | default(''), true) | trim }}"
-        CRAWLER_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[4].stdout | trim }}"
-        CRAWLER_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[4].stdout | default(openbao_prev.CRAWLER_OPENBAO_SECRET_ID | default(''), true) | trim }}"
+        PLATFORM_WORKERS_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[1].stdout | trim }}"
+        PLATFORM_WORKERS_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[1].stdout | default(openbao_prev.PLATFORM_WORKERS_OPENBAO_SECRET_ID | default(''), true) | trim }}"
+        API_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[2].stdout | trim }}"
+        API_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[2].stdout | default(openbao_prev.API_OPENBAO_SECRET_ID | default(''), true) | trim }}"
+        CRAWLER_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[3].stdout | trim }}"
+        CRAWLER_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[3].stdout | default(openbao_prev.CRAWLER_OPENBAO_SECRET_ID | default(''), true) | trim }}"
   no_log: true
   # A skipped mint keeps each existing secret id rather than blanking it: a
   # rerun that does not rotate must not invalidate a workload's login.

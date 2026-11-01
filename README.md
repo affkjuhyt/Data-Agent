@@ -102,7 +102,7 @@ npm run test          # vitest run
 - **Security and gateway:** Keycloak, Kong (`aeroflow-jwks` plugin verifies JWTs at the edge), OpenBao
 - **Messaging:** Kafka
 - **Observability and AI tooling:** LiteLLM, Langfuse, Prometheus, Grafana, Jaeger (no central log store: `kubectl logs`)
-- **Application services:** V3 `api`, `worker-agent`, `worker-ingest`, `worker-document`, `crawler`; legacy model_service, auth_api, sandbox_executor, platform_workers (memory / schema-crawler / audit / llm-exporter)
+- **Application services:** V3 `api`, `worker-agent`, `worker-ingest`, `worker-document`, `crawler`; legacy model_service, auth_api, platform_workers (memory / schema-crawler / audit / llm-exporter)
 - **LLM tier:** GPU services on `10.10.55.101` — vLLM main `:8001` (`agent-main`), vLLM fast `:8002` (`agent-fast`), TEI embed `:8003`, TEI rerank `:8004`
 
 Every workload listens on an `8xxx` port; `8000–8099` is reserved for the LLM tier. The full port
