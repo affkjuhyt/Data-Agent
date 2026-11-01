@@ -21,13 +21,31 @@ ON CONFLICT (id) DO UPDATE SET
     email = EXCLUDED.email,
     status = EXCLUDED.status;
 
+-- The demo organisation's admin, as the realm's demo users file knows it (Keycloak id 6516da6c-…).
+-- roles/k8s_org makes the organisation's first admin of it (AC05) and keeps this row: same
+-- username, same Keycloak id. On a cluster where the bootstrap made it first, this does nothing.
+INSERT INTO org.app_user (id, org_id, external_id, username, display_name, email, status)
+VALUES (
+    'a0000000-0000-0000-0000-000000000023',
+    'a0000000-0000-0000-0000-000000000001',
+    '6516da6c-bbaa-47ac-8c61-abfea8b9362d',
+    'helios-admin',
+    'Admin Helios',
+    'helios-admin@helios.corp',
+    'active'
+)
+ON CONFLICT (org_id, username) DO NOTHING;
+
 INSERT INTO org.role (id, org_id, code, name, capabilities, is_system)
 VALUES (
     'a0000000-0000-0000-0000-000000000022',
     'a0000000-0000-0000-0000-000000000001',
     'data-engineer',
     'Data Engineer',
-    ARRAY['ask', 'view_aggregate', 'view_detail', 'run_agent', 'create_agent', 'upload', 'admin_data'],
+    -- steward and approve: the demo engineer also curates DS-AW (its scan's relationships, its
+    -- metric drafts), and helios-admin, seated with the same role, decides them.
+    ARRAY['ask', 'view_aggregate', 'view_detail', 'run_agent', 'create_agent', 'upload', 'admin_data',
+          'steward', 'approve'],
     true
 )
 ON CONFLICT (id) DO UPDATE SET

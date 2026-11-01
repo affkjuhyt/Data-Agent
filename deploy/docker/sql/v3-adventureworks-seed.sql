@@ -37,6 +37,18 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
+-- helios-admin sits in DS-AW too, so the space is reachable from the website (a Data Space shows only
+-- to its members, an admin's included) and someone other than the engineer decides what the
+-- engineer proposes: the scan's relationships, the metric drafts.
+INSERT INTO org.data_space_member (
+    id, org_id, data_space_id, principal_type, principal_id, role_id, source
+)
+SELECT 'a0000000-0000-0000-0000-000000000a04', :org::uuid, :space::uuid, 'user', u.id,
+       'a0000000-0000-0000-0000-000000000022', 'manual'
+FROM org.app_user u
+WHERE u.org_id = :org::uuid AND u.username = 'helios-admin'
+ON CONFLICT (data_space_id, principal_type, principal_id, role_id) DO NOTHING;
+
 INSERT INTO catalog.source (
     id, org_id, data_space_id, name, kind, host, port, database_name, secret_ref, mode,
     authority_level, scan_schemas, status, created_by, updated_by
