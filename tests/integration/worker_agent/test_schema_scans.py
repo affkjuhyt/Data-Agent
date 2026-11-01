@@ -216,12 +216,13 @@ async def test_columns_postgres_cannot_order_or_compare_are_profiled_as_text(
             cur.execute("CREATE SCHEMA IF NOT EXISTS scan_types")
             cur.execute("DROP TABLE IF EXISTS scan_types.product")
             cur.execute(
-                "CREATE TABLE scan_types.product (finished boolean, spec xml, extra json, qty integer)"
+                "CREATE TABLE scan_types.product"
+                " (finished boolean, spec xml, extra json, qty integer, photo bytea)"
             )
             cur.execute(
                 "INSERT INTO scan_types.product VALUES"
-                " (true, '<a/>', '{\"k\": 1}', 9), (false, '<b/>', '{\"k\": 2}', 10),"
-                " (true, NULL, NULL, 10)"
+                " (true, '<a/>', '{\"k\": 1}', 9, '\\x4749'), (false, '<b/>', '{\"k\": 2}', 10, NULL),"
+                " (true, NULL, NULL, 10, '\\x4749')"
             )
             cur.execute(
                 "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dw_reader') "
@@ -258,6 +259,7 @@ async def test_columns_postgres_cannot_order_or_compare_are_profiled_as_text(
             {"name": "spec", "data_type": "xml"},
             {"name": "extra", "data_type": "json"},
             {"name": "qty", "data_type": "integer"},
+            {"name": "photo", "data_type": "bytea"},
         ],
     }
     profiles = await schema_scans._profile_source(source, [table])
@@ -271,3 +273,7 @@ async def test_columns_postgres_cannot_order_or_compare_are_profiled_as_text(
     assert profiles[("scan_types", "product", "extra")]["distinct_est"] == 2
     # A number keeps its own order: 9 before 10, which as text would be the other way round.
     assert profiles[("scan_types", "product", "qty")]["min_value"] == "9"
+    # A photo is counted, never sampled: no bounds, no values for the index.
+    photo = profiles[("scan_types", "product", "photo")]
+    assert (photo["distinct_est"], photo["min_value"], photo["top_values"]) == (1, None, [])
+    assert photo["category_values"] == []

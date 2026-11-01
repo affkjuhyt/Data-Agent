@@ -39,6 +39,9 @@ _CLICKHOUSE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # count(DISTINCT) or GROUP BY): such a column failed the whole profile run. It is profiled through
 # its text form; every other type keeps its own order, so a number's min is not a string's.
 _PROFILED_AS_TEXT = frozenset({"boolean", "xml", "json"})
+# Nor min() of bytea; and a binary value (a product photo) is no category or sample to keep, so
+# such a column gets its counts only.
+_BINARY = frozenset({"bytea"})
 
 EVENT_TYPE = "scan_run.created"
 ROLE = "svc_catalog"
@@ -463,22 +466,28 @@ async def _profile_source(
             for column in table["columns"]:
                 name = str(column["name"])
                 column_sql = f'"{name.replace(chr(34), chr(34) * 2)}"'
-                if str(column.get("data_type", "")).lower() in _PROFILED_AS_TEXT:
+                data_type = str(column.get("data_type", "")).lower()
+                binary = data_type in _BINARY
+                if data_type in _PROFILED_AS_TEXT:
                     column_sql = f"{column_sql}::text"
+                bounds = (
+                    "NULL::text AS min_value, NULL::text AS max_value"
+                    if binary
+                    else f"min({column_sql})::text AS min_value, max({column_sql})::text AS max_value"
+                )
                 stats = await conn.fetchrow(
                     f"""
                     SELECT count(*)::bigint AS sample_rows,
                            count(*) FILTER (WHERE {column_sql} IS NULL)::bigint AS null_count,
                            count(DISTINCT {column_sql})::bigint AS distinct_est,
-                           min({column_sql})::text AS min_value,
-                           max({column_sql})::text AS max_value
+                           {bounds}
                     FROM {table_sql}
                     """
                 )
                 distinct = int(stats["distinct_est"] or 0)
-                category = distinct <= MAX_CATEGORY_CARDINALITY
+                category = distinct <= MAX_CATEGORY_CARDINALITY and not binary
                 values: list[dict[str, object]] = []
-                if not _is_sensitive_column(name):
+                if not _is_sensitive_column(name) and not binary:
                     top = await conn.fetch(
                         f"""
                         SELECT {column_sql}::text AS value, count(*)::bigint AS value_count
