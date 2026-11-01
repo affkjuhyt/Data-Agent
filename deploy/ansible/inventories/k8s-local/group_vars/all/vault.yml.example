@@ -11,7 +11,7 @@
 # safe: the file on disk is ciphertext. Only the vault password stays out of
 # the repo (ansible.cfg reads it from ANSIBLE_VAULT_PASSWORD_FILE).
 #
-# Composite values -- every DSN, MINIO_URL, NEO4J_AUTH -- are NOT here. They
+# Composite values -- every DSN, MINIO_URL -- are NOT here. They
 # are derived from these passwords in group_vars/all/secrets.yml so that a
 # password and the URL embedding it cannot drift apart.
 #
@@ -35,7 +35,6 @@ vault_db_role_passwords: {}
 vault_temporal_db_password: ""
 
 # ── other stores ──────────────────────────────────────────────────────
-vault_neo4j_password: ""
 vault_clickhouse_password: ""
 vault_minio_root_password: ""
 # MinIO user worker-agent: writes answer exports to da-exports, nothing else (minio-init).

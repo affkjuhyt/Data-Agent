@@ -95,8 +95,8 @@ npm run test          # vitest run
 
 ## Runtime shape
 
-- **Storage:** PostgreSQL (+ PgBouncer), MongoDB, Redis, MinIO
-- **Search and graph:** Qdrant, Neo4j, ClickHouse
+- **Storage:** PostgreSQL (+ PgBouncer), Redis, MinIO
+- **Search and graph:** Qdrant, ClickHouse
 - **Security and gateway:** Keycloak, Kong (`aeroflow-jwks` plugin verifies JWTs at the edge), OpenBao
 - **Messaging:** Kafka
 - **Observability and AI tooling:** LiteLLM, Langfuse, Prometheus, Jaeger (no central log store: `kubectl logs`)

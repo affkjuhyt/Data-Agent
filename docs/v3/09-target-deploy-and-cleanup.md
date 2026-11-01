@@ -81,7 +81,7 @@ tính năng mới trong dịch vụ cũ, phần còn lại của R0 làm thẳng
 
 | Giữ | Thêm | Bỏ |
 | --- | --- | --- |
-| PostgreSQL 16 + PgBouncer (transaction pooling, ADR-31); Kafka; Redis; MinIO; Qdrant; OpenBao (thêm Transit cho P16); Keycloak; vLLM + LiteLLM; Langfuse + ClickHouse; Prometheus, Grafana | Debezium / Kafka Connect cho outbox (ADR-06), Apicurio (ADR-32); TEI hoặc Infinity (ADR-35); egress proxy cho `crawler`; Model gateway (ADR-41); Loki, Tempo, Alertmanager qua OpenTelemetry (ADR-40); Temporal từ R3 (ADR-05/33) | Neo4j (ADR-04, sau G3); MongoDB khi canvas không còn (tab 1 §8.0); `model_service`, `llm-exporter`; Kong chỉ khi APISIX qua kiểm `{id}:verb` ở Giai đoạn 0 (ADR-30) |
+| PostgreSQL 16 + PgBouncer (transaction pooling, ADR-31); Kafka; Redis; MinIO; Qdrant; OpenBao (thêm Transit cho P16); Keycloak; vLLM + LiteLLM; Langfuse + ClickHouse; Prometheus, Grafana (Grafana gỡ 01/11/2026 vì chỉ có dashboard của KB cũ; dựng lại cùng dashboard V3 theo ADR-40) | Debezium / Kafka Connect cho outbox (ADR-06), Apicurio (ADR-32); TEI hoặc Infinity (ADR-35); egress proxy cho `crawler`; Model gateway (ADR-41); Loki, Tempo, Alertmanager qua OpenTelemetry (ADR-40); Temporal từ R3 (ADR-05/33) | Neo4j (ADR-04, sau G3), MongoDB, `model_service`, `llm-exporter`: đã xoá 01/11/2026; Kong chỉ khi APISIX qua kiểm `{id}:verb` ở Giai đoạn 0 (ADR-30) |
 
 ### 4.3 Sửa ngay trong đường deploy hiện tại
 
@@ -142,7 +142,7 @@ Thứ tự:
 | Kustomize base + overlay | Có |
 | APISIX hay giữ Kong | Theo kiểm `{id}:verb` ở Giai đoạn 0 (ADR-30) |
 | `model_service` → TEI/Infinity | Có, xong 01/11/2026 |
-| MongoDB | Bỏ khi canvas workflow không còn trong V3 |
+| MongoDB | Đã bỏ 01/11/2026: canvas workflow không còn trong V3 |
 | Python | 3.12 cho khối mới (ADR-29); dịch vụ cũ giữ 3.11 tới khi xoá |
 
 ## Phụ lục A. Kế hoạch bỏ script

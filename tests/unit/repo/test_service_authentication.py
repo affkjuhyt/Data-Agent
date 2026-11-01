@@ -41,7 +41,6 @@ _NOT_APP_SERVICES = {
     "kong-admin",
     "frontend",
     "postgres",
-    "mongo",
     "redis",
     "kafka",
     "qdrant",

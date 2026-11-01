@@ -575,7 +575,7 @@ class TestPortsFollowThePlan:
 
     def test_no_env_value_points_at_a_pre_migration_port(self):
         legacy = re.compile(
-            r"\b(?:postgres|mongo|redis|qdrant|neo4j|kafka|minio|clickhouse|"
+            r"\b(?:postgres|redis|qdrant|kafka|minio|clickhouse|"
             r"openbao|keycloak|kong|kong-admin|litellm|langfuse|jaeger)"
             r":(?!8[1-5]\d\d\b)\d{4,5}\b"
         )
@@ -630,10 +630,8 @@ class TestTheNamespaces:
     def test_the_stores_are_in_the_database_namespace(self):
         stores = {
             "postgres",
-            "mongo",
             "redis",
             "qdrant",
-            "neo4j",
             "kafka",
             "minio",
             "clickhouse",
@@ -784,10 +782,8 @@ class TestCrossNamespaceHostnamesAreQualified:
         Across the two namespaces every hostname has to be an FQDN."""
         hosts = [
             "postgres",
-            "mongo",
             "redis",
             "qdrant",
-            "neo4j",
             "kafka",
             "minio",
             "clickhouse",
@@ -912,10 +908,8 @@ class TestImageReferencesAreIntact:
 
     KNOWN: ClassVar[set[str]] = {
         "postgres:16-alpine",
-        "mongo:7.0",
         "redis:7-alpine",
         "qdrant/qdrant:v1.13.6",
-        "neo4j:5.20",
         "apache/kafka:3.7.0",
         "bitnamilegacy/minio:2024.12.18-debian-12-r0",
         "docker.io/clickhouse/clickhouse-server",

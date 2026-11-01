@@ -213,7 +213,7 @@ Needed when the server's IP or hostname changes, or when putting an ingress in f
   (from `deploy/ansible/`, the vault password is picked up automatically).
 - The vault is outside git, so apply an edit with
   `ansible-playbook deploy.yml -e secrets_changed=true`.
-- **Do not change** the Postgres admin, Keycloak admin, MinIO, Neo4j or
+- **Do not change** the Postgres admin, Keycloak admin, MinIO or
   ClickHouse passwords on a running stack: those stores only take the password
   when their storage is first created.
 - Never run `deploy/k8s/create-secrets.sh` by hand from an env file you haven't

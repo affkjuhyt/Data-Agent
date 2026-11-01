@@ -11,9 +11,6 @@ data:
   POSTGRES_USER: admin
   POSTGRES_HOST: postgres.dataagent-database.svc.cluster.local
 
-  #Mongo
-  MONGODB_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
-  MONGO_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
 
   #Redis
   REDIS_URL: redis://redis.dataagent-database.svc.cluster.local:8320
@@ -21,9 +18,6 @@ data:
   #Qdrant
   QDRANT_URL: http://qdrant.dataagent-database.svc.cluster.local:8330
 
-  #Neo4j
-  NEO4J_URI: bolt://neo4j.dataagent-database.svc.cluster.local:8341
-  NEO4J_URL: bolt://neo4j.dataagent-database.svc.cluster.local:8341
 
   #Minio
   MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360
@@ -91,9 +85,6 @@ data:
   POSTGRES_USER: admin
   POSTGRES_HOST: postgres.dataagent-database.svc.cluster.local
 
-  #Mongo
-  MONGODB_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
-  MONGO_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
 
   #Redis
   REDIS_URL: redis://redis.dataagent-database.svc.cluster.local:8320
@@ -101,9 +92,6 @@ data:
   #Qdrant
   QDRANT_URL: http://qdrant.dataagent-database.svc.cluster.local:8330
 
-  #Neo4j
-  NEO4J_URI: bolt://neo4j.dataagent-database.svc.cluster.local:8341
-  NEO4J_URL: bolt://neo4j.dataagent-database.svc.cluster.local:8341
 
   #Minio
   MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360

@@ -505,6 +505,19 @@
       changed_when: "'deleted' in kb_delete.stdout"
       when: apply_services | bool
 
+    # MongoDB held the legacy canvas workflows and Neo4j the legacy KB graph; nothing in V3 reads
+    # either. Their PVCs (data-mongo-0, data-neo4j-0, logs-neo4j-0) are kept: deleting data is
+    # an operator's call, not a deploy's.
+    - name: Remove the retired MongoDB and Neo4j
+      ansible.builtin.command: >-
+        {{ kubectl }} -n {{ ns_database }} delete --ignore-not-found=true
+        statefulset/mongo service/mongo service/mongo-nodeport serviceaccount/mongo configmap/mongo-env
+        statefulset/neo4j service/neo4j service/neo4j-nodeport serviceaccount/neo4j configmap/neo4j-env
+        secret/neo4j-secrets networkpolicy/allow-mongo networkpolicy/allow-neo4j
+      register: graph_store_delete
+      changed_when: "'deleted' in graph_store_delete.stdout"
+      when: apply_databases | bool
+
     # auth-api served /api/auth (API keys, IP allowlist, Secrets Vault), replaced by the api's
     # org and integration modules; kong-setup.sh drops its Kong service and routes.
     - name: Remove the retired auth-api

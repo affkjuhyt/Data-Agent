@@ -17,13 +17,13 @@ job() {
 load_secrets
 kubectl apply -f namespace.yaml
 kubectl apply -f configmap.yaml -f rbac.yaml \
-  -f networkpolicy-service.yaml -f networkpolicy-database.yaml -f networkpolicy-sandbox.yaml
+  -f networkpolicy-service.yaml -f networkpolicy-database.yaml
 bash ../create-secrets.sh
 bash ../gen-kafka-jaas-secret.sh
 bash ../create-configmaps.sh
 
 kubectl apply -f database/
-for s in postgres mongo redis qdrant neo4j kafka minio clickhouse openbao; do
+for s in postgres redis qdrant kafka minio clickhouse openbao; do
   kubectl -n "$DB" rollout status "statefulset/$s" --timeout=10m
 done
 kubectl -n "$DB" rollout status deployment/pgbouncer --timeout=5m

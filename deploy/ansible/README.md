@@ -40,11 +40,7 @@ non-blocking stdio.
 
 > **On the OrbStack cluster use `make deploy-local`.** That cluster runs only the V3
 > slice (api, worker-agent, worker-ingest, worker-document, crawler, frontend, migrate, gateway,
-> litellm, mailpit). `make deploy` plans the whole stack. `make deploy-local` also leaves Neo4j
-> out of the database tier (`LOCAL_DATABASES` in the Makefile): nothing in V3 reads it, and its
-> 2 GiB request left the one-node cluster no memory to schedule worker-agent on 22/10/2026. A
-> Neo4j already there stays as it is; `kubectl -n dataagent-database scale statefulset neo4j
-> --replicas=0` frees it, its PVC kept.
+> litellm, mailpit). `make deploy` plans the whole stack, Langfuse and Jaeger included.
 
 ## What a run does
 
@@ -145,7 +141,7 @@ outside the server fail with "Connecting to Keycloak…" and
 
 ```
 .secrets/vault.yml                 raw passwords (vault_*), ansible-vault encrypted
-   └─ group_vars/all/secrets.yml   derives every DSN, MINIO_URL, NEO4J_AUTH, the public URLs → secret_env
+   └─ group_vars/all/secrets.yml   derives every DSN, MINIO_URL, the public URLs → secret_env
         └─ templates/secrets.env.j2 + OpenBao AppRole creds → deploy/k8s/dev/secrets.env (every run)
              └─ deploy/k8s/create-secrets.sh → one <workload>-secrets per workload, only the keys it reads
 ```
@@ -158,7 +154,7 @@ outside the server fail with "Connecting to Keycloak…" and
 - Because the vault is outside git, **editing it does not trigger a reapply.**
   Run with `-e secrets_changed=true` (Secrets are reapplied and the service tier
   restarted in the same run).
-- Postgres admin, Keycloak admin, MinIO, Neo4j and ClickHouse read their password
+- Postgres admin, Keycloak admin, MinIO and ClickHouse read their password
   only when their storage is first initialised. Changing one afterwards updates
   the Secret but not the store, and the services lose access. The Postgres app
   roles (`app_user`, `pgbouncer_auth`, `temporal`)

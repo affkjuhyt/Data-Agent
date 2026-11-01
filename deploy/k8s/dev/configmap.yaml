@@ -10,12 +10,8 @@ data:
   POSTGRES_DB: dataagent
   POSTGRES_USER: admin
   POSTGRES_HOST: postgres.dataagent-database.svc.cluster.local
-  MONGODB_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
-  MONGO_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
   REDIS_URL: redis://redis.dataagent-database.svc.cluster.local:8320
   QDRANT_URL: http://qdrant.dataagent-database.svc.cluster.local:8330
-  NEO4J_URI: bolt://neo4j.dataagent-database.svc.cluster.local:8341
-  NEO4J_URL: bolt://neo4j.dataagent-database.svc.cluster.local:8341
   MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360
   OPENBAO_ADDR: http://openbao.dataagent-database.svc.cluster.local:8120
   KAFKA_BOOTSTRAP_SERVERS: kafka.dataagent-database.svc.cluster.local:8350
@@ -47,12 +43,8 @@ data:
   POSTGRES_DB: dataagent
   POSTGRES_USER: admin
   POSTGRES_HOST: postgres.dataagent-database.svc.cluster.local
-  MONGODB_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
-  MONGO_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
   REDIS_URL: redis://redis.dataagent-database.svc.cluster.local:8320
   QDRANT_URL: http://qdrant.dataagent-database.svc.cluster.local:8330
-  NEO4J_URI: bolt://neo4j.dataagent-database.svc.cluster.local:8341
-  NEO4J_URL: bolt://neo4j.dataagent-database.svc.cluster.local:8341
   MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360
   OPENBAO_ADDR: http://openbao.dataagent-database.svc.cluster.local:8120
   KAFKA_BOOTSTRAP_SERVERS: kafka.dataagent-database.svc.cluster.local:8350

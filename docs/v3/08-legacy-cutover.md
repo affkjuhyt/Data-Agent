@@ -95,7 +95,8 @@ này (đã đặt trước 82% bộ nhớ) và không cần cho các bằng ch�
 
 ## 5. Các phần không được xoá trong đợt này
 
-PostgreSQL/audit, PgBouncer, Kafka, Redis, MongoDB, MinIO, Qdrant, Neo4j, ClickHouse, Keycloak,
+PostgreSQL/audit, PgBouncer, Kafka, Redis, MinIO, Qdrant, ClickHouse, Keycloak,
 Kong, OpenBao và observability là hạ tầng dùng chung. Việc API-06 hoàn tất không phải lý do để xoá
-chúng. Các revision Alembic cũ cũng chỉ xoá theo kế hoạch migration riêng, sau khi backup và có baseline
+chúng. MongoDB và Neo4j thì đã xoá ngày 01/11/2026: không dịch vụ V3 nào đọc (canvas workflow và đồ thị
+KB cũ đi cùng mã của chúng); PVC dữ liệu của hai store được giữ, xoá tay khi chắc không cần. Các revision Alembic cũ cũng chỉ xoá theo kế hoạch migration riêng, sau khi backup và có baseline
 V3 đã được nghiệm thu.

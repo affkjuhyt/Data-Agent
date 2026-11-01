@@ -32,7 +32,7 @@ Three, all labelled `app.kubernetes.io/part-of: dataagent`:
 
 | Namespace | Holds |
 | --- | --- |
-| `dataagent-database` | Postgres, Mongo, Redis, Qdrant, Neo4j, Kafka, MinIO, ClickHouse, OpenBao, PgBouncer, and the restore job |
+| `dataagent-database` | Postgres, Redis, Qdrant, Kafka, MinIO, ClickHouse, OpenBao, PgBouncer, and the restore job |
 | `dataagent-service` | the gateway, identity, application, worker and observability Deployments, and every Job except the restore |
 
 All carry a `name:` label as well, because the NetworkPolicies select namespaces
@@ -41,7 +41,7 @@ by it.
 Splitting namespaces breaks short-name DNS: `postgres:8300` resolves only inside
 the namespace that owns it. **Every in-cluster hostname is therefore an FQDN** —
 `postgres.dataagent-database.svc.cluster.local:8300`, and so on for Kafka's
-advertised listeners and Neo4j's advertised bolt address. A test fails the build
+advertised listeners. A test fails the build
 if a short name creeps back in.
 
 ## Network isolation
@@ -308,12 +308,9 @@ band. Nothing in `deploy/k8s/` may use it.
 | workflow-runtime | service | 8001 | **8240** | manifest `command` |
 | frontend | service | 3000 | **8280** | manifest `command` (vite `--port`) |
 | postgres | database | 5432 | **8300** | `PGPORT` |
-| mongo | database | 27017 | **8310** | `mongod --port` |
 | redis | database | 6379 | **8320** | `redis.conf` |
 | qdrant (http) | database | 6333 | **8330** | `QDRANT__SERVICE__HTTP_PORT` |
 | qdrant (grpc) | database | 6334 | **8331** | `QDRANT__SERVICE__GRPC_PORT` |
-| neo4j (http) | database | 7474 | **8340** | `NEO4J_server_http_listen__address` |
-| neo4j (bolt) | database | 7687 | **8341** | `NEO4J_server_bolt_listen__address` |
 | kafka (SASL) | database | 9092 | **8350** | `KAFKA_LISTENERS` |
 | kafka (controller) | database | 9093 | **8351** | `KAFKA_LISTENERS` |
 | kafka (internal) | database | 9094 | **8352** | `KAFKA_LISTENERS` |
@@ -334,7 +331,7 @@ band. Nothing in `deploy/k8s/` may use it.
 ### Consistency
 
 Every URL in `dataagent-config` and in the inline `env` of each manifest uses the
-numbers above — `postgres:8300`, `redis://redis:8320`, `bolt://neo4j:8341`,
+numbers above — `postgres:8300`, `redis://redis:8320`,
 `kafka:8350` (SASL) / `kafka:8352` (plaintext internal), `http://minio:8360`,
 `http://litellm:8500`, `http://jaeger:8431`, and so on.
 

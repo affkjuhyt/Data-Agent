@@ -299,13 +299,10 @@ sqlgen-ablation:  ## SQL expert ablation on ABLATION_SET (ABLATION_ORG, ABLATION
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
 
-# The V3 slice reads no graph store: only the legacy kb-backend used Neo4j, and its 2 GiB request
-# left a one-node OrbStack cluster no room to schedule worker-agent (22/10/2026). Every other
-# store is applied and waited for as `make deploy` does.
-LOCAL_DATABASES = ["postgres","pgbouncer","redis","mongo","minio","kafka","openbao","qdrant","clickhouse"]
-LOCAL_DATABASE_WORKLOADS = ["redis","mongo","minio","kafka","openbao","qdrant","clickhouse"]
+LOCAL_DATABASES = ["postgres","pgbouncer","redis","minio","kafka","openbao","qdrant","clickhouse"]
+LOCAL_DATABASE_WORKLOADS = ["redis","minio","kafka","openbao","qdrant","clickhouse"]
 
-deploy-local:  ## deploy the V3 local slice (api, worker-agent, worker-ingest, worker-document, crawler, egress-proxy, temporal, web, migrate, gateway, litellm, mailpit; no Neo4j)
+deploy-local:  ## deploy the V3 local slice (api, worker-agent, worker-ingest, worker-document, crawler, egress-proxy, temporal, web, migrate, gateway, litellm, mailpit)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml \
 		-e apply_jobs=true -e image_registry=$(IMAGE_REGISTRY) -e image_push=true \
 		-e '{"database_manifests":$(LOCAL_DATABASES),"database_workloads":$(LOCAL_DATABASE_WORKLOADS)}' \

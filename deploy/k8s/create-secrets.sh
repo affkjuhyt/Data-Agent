@@ -126,10 +126,6 @@ kubectl -n dataagent-database create secret generic postgres-secrets \
   --from-literal=POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n dataagent-database create secret generic neo4j-secrets \
-  --from-literal=NEO4J_AUTH="${NEO4J_AUTH}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 kubectl -n dataagent-database create secret generic clickhouse-secrets \
   --from-literal=CLICKHOUSE_USER="${CLICKHOUSE_USER}" \
   --from-literal=CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD}" \

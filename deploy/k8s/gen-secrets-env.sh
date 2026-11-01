@@ -26,7 +26,6 @@ POSTGRES_PASSWORD="$(rand)"
 KEYCLOAK_ADMIN_PASSWORD="$(rand)"
 MINIO_ROOT_USER="minioadmin"
 MINIO_ROOT_PASSWORD="$(rand)"
-NEO4J_PASSWORD="$(rand)"
 CLICKHOUSE_USER="langfuse"
 CLICKHOUSE_PASSWORD="$(rand)"
 GATEWAY_KEY="$(rand)"
@@ -72,10 +71,6 @@ LITELLM_DATABASE_URL=postgresql://admin:$POSTGRES_PASSWORD@postgres.dataagent-da
 MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD
 MINIO_ROOT_USER=$MINIO_ROOT_USER
 MINIO_URL=http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@minio.dataagent-database.svc.cluster.local:8360
-# libs/database_connector/neo4j_connector.py calls
-# AsyncGraphDatabase.driver(uri=...) with no auth= — it only works against an
-# unauthenticated server. Real auth needs that connector fixed first.
-NEO4J_AUTH=none
 OPENAI_API_KEY=
 WORKER_AGENT_OPENBAO_ROLE_ID=
 WORKER_AGENT_OPENBAO_SECRET_ID=

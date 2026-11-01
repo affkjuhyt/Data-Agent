@@ -38,7 +38,6 @@
   changed_when: false
   loop:
     - { svc: postgres, port: 8300 }
-    - { svc: mongo, port: 8310 }
     - { svc: redis, port: 8320 }
     - { svc: minio, port: 8360 }
   loop_control:

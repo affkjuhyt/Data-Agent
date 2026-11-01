@@ -114,12 +114,10 @@ apply_maintenance_jobs: true
 
 database_workloads:
   - redis
-  - mongo
   - minio
   - kafka
   - openbao
   - qdrant
-  - neo4j
   - clickhouse
 
 # Empty applies every database manifest. A staged V3 deployment can limit this
