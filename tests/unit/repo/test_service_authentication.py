@@ -64,7 +64,6 @@ _LIVE_SERVICES = (
     "api",
     "auth_api",
     "model_service",
-    "platform_workers",
     "worker_agent",
 )
 

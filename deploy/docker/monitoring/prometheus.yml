@@ -7,10 +7,6 @@ scrape_configs:
     static_configs:
       - targets: ["model-service:8230"]
 
-  - job_name: llm-exporter
-    static_configs:
-      - targets: ["llm-exporter:8270"]
-
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:8400"]

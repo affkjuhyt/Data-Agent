@@ -68,18 +68,6 @@
   changed_when: false
   no_log: true
 
-- name: Write the demo warehouse password
-  ansible.builtin.command: >
-    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
-    bao kv put -mount=secret tenants/{{ seed_demo_tenant }}/e2e_dw_password
-    value={{ vault_sandbox_reader_password }}
-  when: seed_demo | bool
-  changed_when: false
-  no_log: true
-  # tests/e2e/seed.sql registers secrets_vault row e2e_dw_password; the demo
-  # agent's db_connector resolves it here. sandbox_reader's password is the one
-  # the db-init Job sets, so both come from the same vault value.
-
 - name: Write the demo PostgreSQL source credentials
   ansible.builtin.command: >
     {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
@@ -131,7 +119,6 @@
     token_policies={{ item.policy | default('dataagent-secret-read-policy') }} token_ttl=1h token_max_ttl=4h
   loop:
     - {role: worker_agent, prefix: WORKER_AGENT}
-    - {role: platform_workers, prefix: PLATFORM_WORKERS}
     - {role: api, prefix: API, policy: dataagent-api-policy}
     - {role: crawler, prefix: CRAWLER, policy: dataagent-crawler-policy}
   changed_when: false
@@ -143,7 +130,6 @@
     bao read -field=role_id auth/approle/role/{{ item.role }}/role-id
   loop:
     - {role: worker_agent, prefix: WORKER_AGENT}
-    - {role: platform_workers, prefix: PLATFORM_WORKERS}
     - {role: api, prefix: API, policy: dataagent-api-policy}
     - {role: crawler, prefix: CRAWLER, policy: dataagent-crawler-policy}
   register: bao_role_ids
@@ -156,7 +142,6 @@
     bao write -f -field=secret_id auth/approle/role/{{ item.role }}/secret-id
   loop:
     - {role: worker_agent, prefix: WORKER_AGENT}
-    - {role: platform_workers, prefix: PLATFORM_WORKERS}
     - {role: api, prefix: API, policy: dataagent-api-policy}
     - {role: crawler, prefix: CRAWLER, policy: dataagent-crawler-policy}
   register: bao_secret_ids
@@ -186,12 +171,10 @@
         OPENBAO_TOKEN: "{{ bao_keys.root_token }}"
         WORKER_AGENT_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[0].stdout | trim }}"
         WORKER_AGENT_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[0].stdout | default(openbao_prev.WORKER_AGENT_OPENBAO_SECRET_ID | default(''), true) | trim }}"
-        PLATFORM_WORKERS_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[1].stdout | trim }}"
-        PLATFORM_WORKERS_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[1].stdout | default(openbao_prev.PLATFORM_WORKERS_OPENBAO_SECRET_ID | default(''), true) | trim }}"
-        API_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[2].stdout | trim }}"
-        API_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[2].stdout | default(openbao_prev.API_OPENBAO_SECRET_ID | default(''), true) | trim }}"
-        CRAWLER_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[3].stdout | trim }}"
-        CRAWLER_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[3].stdout | default(openbao_prev.CRAWLER_OPENBAO_SECRET_ID | default(''), true) | trim }}"
+        API_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[1].stdout | trim }}"
+        API_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[1].stdout | default(openbao_prev.API_OPENBAO_SECRET_ID | default(''), true) | trim }}"
+        CRAWLER_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[2].stdout | trim }}"
+        CRAWLER_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[2].stdout | default(openbao_prev.CRAWLER_OPENBAO_SECRET_ID | default(''), true) | trim }}"
   no_log: true
   # A skipped mint keeps each existing secret id rather than blanking it: a
   # rerun that does not rotate must not invalidate a workload's login.

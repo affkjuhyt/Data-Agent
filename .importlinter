@@ -2,7 +2,7 @@
 # current package layout allows it. Run: `lint-imports`.
 #
 # NOTE: only directories with an __init__.py are importable packages, so grimp
-# sees libs.* and the services that have one (api, worker_*, crawler, platform_workers).
+# sees libs.* and the services that have one (api, worker_*, crawler).
 # workflow_runtime, auth_api, flow_builder, … have no __init__.py and cannot be
 # analysed here. These contracts capture the rules that ARE true today and guard
 # against regression. The full layered Dependency Rule contract (domain ←
@@ -44,7 +44,7 @@ forbidden_modules =
     services
     libs.database_connector
 
-# NOP-150. libs.contracts holds the wire shapes platform_workers and worker_agent share; a service import here would make every
+# NOP-150. libs.contracts holds the wire shapes worker_agent consumes; a service import here would make every
 # consumer import that service. libs.indicator (numeric core) is the only libs
 # package it may use; libs.semantic's v1 DTOs are not the V2 contract.
 [importlinter:contract:contracts-is-a-leaf]
@@ -94,7 +94,6 @@ source_modules =
 forbidden_modules =
     services.workflow_runtime
     services.auth_api
-    services.platform_workers
     services.model_service
 
 # worker-agent (ADR-28): talks to the api only through the database and events, never by
@@ -108,7 +107,6 @@ forbidden_modules =
     services.api
     services.workflow_runtime
     services.auth_api
-    services.platform_workers
     services.model_service
 
 # crawler (ADR-28, KB-02): reaches the api and worker-agent only through acquire's tables and
@@ -121,7 +119,6 @@ source_modules =
 forbidden_modules =
     services.api
     services.worker_agent
-    services.platform_workers
     services.model_service
     libs.database_connector
     libs.basemodel

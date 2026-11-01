@@ -160,18 +160,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: platform-workers-audit
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: memory-cleanup
     - namespaceSelector:
         matchLabels:
@@ -179,12 +167,6 @@ spec:
       podSelector:
         matchLabels:
           app: postgres-backup
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -338,24 +320,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: platform-workers-audit
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: minio-init
     - namespaceSelector:
         matchLabels:
@@ -479,24 +443,6 @@ spec:
       podSelector:
         matchLabels:
           app: eval
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-audit
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -638,24 +584,6 @@ spec:
       podSelector:
         matchLabels:
           app: eval
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-audit
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -810,24 +738,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: platform-workers-audit
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: minio-init
     - namespaceSelector:
         matchLabels:
@@ -953,24 +863,6 @@ spec:
       podSelector:
         matchLabels:
           app: eval
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-audit
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1131,24 +1023,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: platform-workers-audit
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: minio-init
     - namespaceSelector:
         matchLabels:
@@ -1274,24 +1148,6 @@ spec:
       podSelector:
         matchLabels:
           app: eval
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-audit
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1445,24 +1301,6 @@ spec:
       podSelector:
         matchLabels:
           app: eval
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-audit
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1622,24 +1460,6 @@ spec:
       podSelector:
         matchLabels:
           app: eval
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-audit
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
     - namespaceSelector:
         matchLabels:
           name: dataagent-service

@@ -134,25 +134,6 @@ kubectl -n dataagent-service create secret generic model-service-secrets \
   --from-literal=REMOTE_LLM_KEY="${REMOTE_LLM_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n dataagent-service create secret generic platform-workers-audit-secrets \
-  --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
-  --from-literal=KAFKA_SASL_PASSWORD="${AUDIT_CONSUMER_KAFKA_PASSWORD}" \
-  --from-literal=KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN}" \
-  --from-literal=KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n dataagent-service create secret generic platform-workers-memory-secrets \
-  --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
-  --from-literal=KAFKA_SASL_PASSWORD="${MEMORY_CONSUMER_KAFKA_PASSWORD}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n dataagent-service create secret generic platform-workers-schema-crawler-secrets \
-  --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
-  --from-literal=KAFKA_SASL_PASSWORD="${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}" \
-  --from-literal=OPENBAO_ROLE_ID="${PLATFORM_WORKERS_OPENBAO_ROLE_ID}" \
-  --from-literal=OPENBAO_SECRET_ID="${PLATFORM_WORKERS_OPENBAO_SECRET_ID}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 kubectl -n dataagent-service create secret generic frontend-secrets \
   --from-literal=VITE_KEYCLOAK_URL="${KEYCLOAK_PUBLIC_URL}" \
   --from-literal=VITE_API_BASE_URL="${PUBLIC_API_URL}" \

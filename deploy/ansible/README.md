@@ -163,7 +163,7 @@ outside the server fail with "Connecting to Keycloak…" and
 - Postgres admin, Keycloak admin, MinIO, Neo4j and ClickHouse read their password
   only when their storage is first initialised. Changing one afterwards updates
   the Secret but not the store, and the services lose access. The Postgres app
-  roles (`app_user`, `runtime_writer`, `sandbox_reader`, `pgbouncer_auth`)
+  roles (`app_user`, `pgbouncer_auth`, `temporal`)
   are different: the `db-init` Job sets
   their passwords on every run.
 - OpenBao's root token and the three workload AppRole credential pairs are not in

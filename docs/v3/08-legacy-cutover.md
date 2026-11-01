@@ -25,10 +25,10 @@
 | `kb-backend` | đã xoá mã 22/10/2026 (KB-08) | `api` (document, catalog, conflict) + `worker-document`, `worker-agent`, `crawler` | Đã xoá, cổng §4 đạt 01/11/2026 | ingest/search/catalog mới chạy trên V3 và các `/api/data`, `/api/knowledge`, `/api/pipeline` đã có replacement |
 | `kb-promote-*` | đã xoá mã 22/10/2026 (KB-08) | `worker-document` + `worker-agent` (`document.indexed`) | Đã xoá, cổng §4 đạt 01/11/2026 | Kafka consumer/group mới xử lý đủ Bronze/Silver/Gold, retry và DLQ |
 | `indicator-api` | đã xoá 12/10/2026 | module của `api` (mọi route của nó chỉ trả 501) | Đã xoá | không còn Kong route, lời gọi frontend, import hay topic nào; manifest, Ansible, Makefile, CI, secret xoá cùng commit |
-| `platform-workers-*` | audit, memory, schema-crawler (web-crawler đã xoá mã 22/10/2026, thay bằng `crawler`) | `worker-ingest`, audit/memory worker V3 | Giữ | từng topic, group, ACL và state store có consumer thay thế; không còn CronJob/manifest tham chiếu |
+| `platform-workers-*` | đã xoá 01/11/2026 | — | Đã xoá | audit, memory nhận topic chỉ `workflow-runtime` (đã xoá) phát; schema-crawler đọc/ghi bảng KB cũ (`KBWarehouse*`, `SchemaCatalog`) không có trong CSDL V3, V3 quét schema trong `worker-agent` (`schema_scans.py`); topic, ACL, group Kafka và user SASL của chúng xoá cùng commit |
 | `model-service` | `service/model-service.yaml`, `dataagent/model_service` | Chưa được đặc tả rõ trong V3 | Giữ | Có quyết định riêng về LLM/model proxy; không xoá theo suy đoán |
 | `sandbox-executor` | đã xoá 01/11/2026 | — (V3 không chạy code người dùng; sandbox, khi cần, nằm trong `worker-agent`, tab 1 §7.2) | Đã xoá | bên gọi duy nhất là `workflow-runtime` (đã xoá); không khối V3 nào gọi; manifest, namespace `dataagent-sandbox`, RBAC, Ansible, OpenBao, CI, suite và các ca eval của nó xoá cùng commit |
-| `llm-exporter` | `service/llm-exporter.yaml` | Observability V3 | Giữ | metric thay thế đã được Prometheus scrape và dashboard kiểm chứng |
+| `llm-exporter` | đã xoá 01/11/2026 | `model/bench` (TTFT, decode, throughput theo vai trò) | Đã xoá | chỉ dashboard Grafana `kb-ccu` của KB cũ đọc số của nó |
 
 Frontend không phải legacy backend để xoá. Nó chỉ chuyển từng màn từ mock/`/api` sang `/v1` theo nhóm
 đã vào `COMPLETE_GROUPS`.

@@ -47,9 +47,6 @@ GATE_CONTAINER = "wait-for-migrations"
 HEADLESS_WORKERS = {
     "crawler",
     "langfuse-worker",
-    "platform-workers-audit",
-    "platform-workers-memory",
-    "platform-workers-schema-crawler",
     "worker-agent",
     "worker-document",
     "worker-ingest",
@@ -844,7 +841,6 @@ class TestCrossNamespaceHostnamesAreQualified:
             "model-service",
             "workflow-runtime",
             "api",
-            "llm-exporter",
             "frontend",
         ]
         pattern = re.compile(

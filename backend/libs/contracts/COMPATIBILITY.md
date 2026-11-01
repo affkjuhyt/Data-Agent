@@ -1,7 +1,6 @@
 # Contract V2: version và tương thích (NOP-150)
 
-`libs/contracts` là hợp đồng dây (wire) giữa indicator-api, platform_workers, workflow_runtime,
-kb_backend và frontend. Model nội bộ, logic, state machine ở lại service sở hữu; ở đây chỉ có shape
+`libs/contracts` là hợp đồng dây (wire) giữa các service (hiện là worker_agent) và frontend. Model nội bộ, logic, state machine ở lại service sở hữu; ở đây chỉ có shape
 đi qua REST và Kafka.
 
 ## Bốn loại version

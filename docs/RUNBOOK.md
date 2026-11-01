@@ -153,7 +153,7 @@ FROM query.query_run WHERE started_at > now() - interval '1 day';
 
 ## 5. Demo data
 
-With `seed_demo: true` (the dev inventory's setting) the `seed` Job loads:
+With `seed_demo: true` (the dev inventory's setting) the `db-init` Job loads:
 
 | Source | What |
 | --- | --- |
@@ -163,16 +163,15 @@ With `seed_demo: true` (the dev inventory's setting) the `seed` Job loads:
 | `deploy/docker/sql/v3-pilot-seed.sql` | `DS-BH` "Bán hàng": sales lines, order headers, receivables, month-end stock and three policy documents. The book contains the five pilot traps (join fan-out, unweighted margin, summed stock, an expired promotion, two editions of September). The 20 metrics of `deploy/docker/semantic/ds-bh.yaml`, certified, and 34 verified queries (R1-08). Rebuilt on every apply; db-init reruns when any file of `deploy/docker/sql/` changes |
 | `deploy/docker/sql/v3-agent-seed.sql` | `DS-BH`: four agents (biên gộp, công nợ, tồn kho, điều phối), their runs, a rolling deployment, one skill waiting for review and one suggestion. Re-applied, the runs move back into the last day so the operations screen stays populated |
 | `deploy/docker/sql/v3-banking-demo.sql` | `DS-DEMO`: binds the uploaded CFPB complaints table to a certified `COMPLAINT_COUNT` metric and banking dimensions (`product`, `issue`, `state`, `submitted_via`, `date_received`). It is skipped until the upload has been materialized, then re-applied idempotently |
-| `tests/e2e/seed*.sql` | optional extended warehouse/governance fixtures when a test explicitly needs them; these are not the V3 runtime seed path |
-| `k8s_openbao` role | OpenBao secret `secret/tenants/<tenant>/e2e_dw_password` = `sandbox_reader`'s password |
+| `k8s_openbao` role | OpenBao secret `secret/tenants/<tenant>/demo-postgres`, the demo PostgreSQL source's login |
 
 Everything is idempotent. Knowledge-base **documents** are not seeded; upload them through the UI.
 
 Check it:
 
 ```bash
-kubectl -n dataagent-database exec postgres-0 -- psql -U admin -d sandbox_dev \
-  -Atc "select 'fact_sales', count(*) from fact_sales union all select 'stg_orders_raw', count(*) from stg_orders_raw"
+kubectl -n dataagent-database exec postgres-0 -- psql -U admin -d dataagent \
+  -Atc "select 'credit_loan_snapshot', count(*) from workspace.credit_loan_snapshot"
 ```
 
 **Reseed** without a full pipeline run (after `create-configmaps.sh` if a seed file changed):

@@ -34,9 +34,6 @@ tests/
 │   ├── contracts/           # the Contract v1 mock as a real server (api image)
 │   └── test_*.py            # e2e only (LIVE_STACK=1): agent answer, JWT audience, load, tenant isolation
 ├── e2e/                     # seed data for the demo agent + non-pytest harnesses
-│   ├── seed.sql             # demo agent, metrics, fact_sales warehouse
-│   ├── seed-governance.sql  # schema-crawler warehouse, owners, lineage, freshness SLAs
-│   ├── seed-flow.js         # the demo agent's canvas in Mongo
 │   ├── agent_eval.py        # 10-case behavioural eval through /api/orchestrate/stream
 │   └── ui.e2e.mjs           # Playwright: real Keycloak login → ask → check the answer block
 ├── loadtest/                # k6 scripts and an ingestion throughput probe
@@ -171,11 +168,9 @@ from xfail into failures; each turn's frames land in `tests/e2e/out/`.
 conversations every run) and the tenant-isolation test deletes, revokes and
 rotates API keys. Point them only at a cluster where that is acceptable.
 
-They need the demo data: the `seed` Job loads `tests/e2e/seed.sql`,
-`seed-governance.sql` and `seed-flow.js` when the inventory has `seed_demo: true`.
-The Job reads them from the `seed-sql` / `seed-mongo` ConfigMaps that
-`deploy/k8s/create-configmaps.sh` builds, so after editing a seed file rerun the
-pipeline with `-e apply_jobs=true` (RUNBOOK §5).
+They need the demo data the `db-init` Job loads from `deploy/docker/sql/` when the
+inventory has `seed_demo: true`; after editing a seed file rerun the pipeline with
+`-e apply_jobs=true` (RUNBOOK §5).
 
 ### Frontend
 

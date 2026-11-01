@@ -66,8 +66,7 @@ jobs:
           for target in \
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
             backend/libs/contracts backend/libs/sql_guard backend/libs/cron \
-            backend/services/auth_api backend/services/model_service \
-            backend/services/platform_workers; do
+            backend/services/auth_api backend/services/model_service; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent \
@@ -95,9 +94,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - suite: platform_workers
-            python: "3.12"
-            install: -r backend/services/platform_workers/requirements.txt
           # libs/contracts (NOP-150) in the api environment: it has PyYAML for the seed
           # test and pins pydantic, which the generated/ staleness check needs.
           - suite: contracts

@@ -118,9 +118,6 @@ spec:
     - podSelector:
         matchLabels:
           app: setup
-    - podSelector:
-        matchLabels:
-          app: platform-workers-audit
     # V3 blocks (KB-02).
     - podSelector:
         matchLabels:
@@ -235,12 +232,6 @@ spec:
     - podSelector:
         matchLabels:
           app: eval
-    - podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
     # V3 blocks (KB-02).
     - podSelector:
         matchLabels:
@@ -454,15 +445,6 @@ spec:
     - podSelector:
         matchLabels:
           app: auth-api
-    - podSelector:
-        matchLabels:
-          app: platform-workers-audit
-    - podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
     ports:
     - protocol: TCP
       port: 8430
@@ -518,29 +500,6 @@ spec:
     ports:
     - protocol: TCP
       port: 8410
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-llm-exporter
-  namespace: dataagent-service
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: llm-exporter
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: prometheus
-    ports:
-    - protocol: TCP
-      port: 8270
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -632,7 +591,6 @@ spec:
       values:
       - model-service
       - litellm
-      - llm-exporter
   policyTypes:
   - Egress
   egress:

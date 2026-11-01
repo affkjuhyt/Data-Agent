@@ -269,7 +269,6 @@
         openbao_env: >-
           {{ {'OPENBAO_TOKEN': '',
               'WORKER_AGENT_OPENBAO_ROLE_ID': '', 'WORKER_AGENT_OPENBAO_SECRET_ID': '',
-              'PLATFORM_WORKERS_OPENBAO_ROLE_ID': '', 'PLATFORM_WORKERS_OPENBAO_SECRET_ID': '',
               'API_OPENBAO_ROLE_ID': '', 'API_OPENBAO_SECRET_ID': '',
               'CRAWLER_OPENBAO_ROLE_ID': '', 'CRAWLER_OPENBAO_SECRET_ID': ''}
              | combine((openbao_state | default({}, true)).openbao_env | default({}, true)) }}
@@ -337,9 +336,6 @@
 
           jaas=$(mktemp); trap 'rm -f "$jaas"' EXIT
           sed -e "s|REPLACE_WITH_KAFKA_ADMIN_PASSWORD|${KAFKA_ADMIN_PASSWORD}|g" \
-              -e "s|REPLACE_WITH_AUDIT_CONSUMER_PASSWORD|${AUDIT_CONSUMER_KAFKA_PASSWORD}|g" \
-              -e "s|REPLACE_WITH_MEMORY_CONSUMER_PASSWORD|${MEMORY_CONSUMER_KAFKA_PASSWORD}|g" \
-              -e "s|REPLACE_WITH_SCHEMA_CRAWLER_WORKER_PASSWORD|${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}|g" \
               "{{ docker_dir }}/kafka/kafka-broker-jaas.config.example" > "$jaas"
           kubectl -n {{ ns_database }} create secret generic kafka-jaas \
             --from-file=kafka-broker-jaas.config="$jaas" \
@@ -508,6 +504,25 @@
         --ignore-not-found=true
       register: kb_delete
       changed_when: "'deleted' in kb_delete.stdout"
+      when: apply_services | bool
+
+    # The platform workers (audit, memory, schema-crawler) consumed Kafka topics only
+    # workflow-runtime produced and wrote tables V3 does not have; llm-exporter fed the legacy
+    # Grafana dashboard. audit-bridge-state was the audit bridge's Keycloak-events cursor.
+    - name: Remove the retired platform workers and llm-exporter
+      ansible.builtin.command: >-
+        {{ kubectl }} -n {{ ns_service }} delete --ignore-not-found=true
+        deployment/platform-workers-audit deployment/platform-workers-memory
+        deployment/platform-workers-schema-crawler deployment/llm-exporter service/llm-exporter
+        serviceaccount/platform-workers-audit serviceaccount/platform-workers-memory
+        serviceaccount/platform-workers-schema-crawler serviceaccount/llm-exporter
+        configmap/platform-workers-audit-env configmap/platform-workers-memory-env
+        configmap/platform-workers-schema-crawler-env configmap/llm-exporter-env
+        secret/platform-workers-audit-secrets secret/platform-workers-memory-secrets
+        secret/platform-workers-schema-crawler-secrets
+        persistentvolumeclaim/audit-bridge-state
+      register: platform_workers_delete
+      changed_when: "'deleted' in platform_workers_delete.stdout"
       when: apply_services | bool
 
     # sandbox-executor ran user code for workflow-runtime, which is gone; nothing in V3 calls it.

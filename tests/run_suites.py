@@ -41,7 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # `repo` (deploy/, k8s, Ansible, model/, cross-service policy) belongs to no service, so it
 # runs on the local dev-tools image (`make dev-tools` builds it) instead of a registry image.
 DEFAULT_UNIT = (
-    "platform_workers:platform-workers contracts:api "
+    "contracts:api "
     "auth_api:auth_api model_service:model_service api:api worker_agent:worker-agent worker_ingest:worker-ingest "
     "worker_document:worker-document crawler:crawler repo:dataagent/dev-tools:local"
 )
@@ -62,7 +62,6 @@ SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
     "crawler": {("unit", "crawler"), ("integration", "crawler")},
     "auth_api": {("unit", "auth_api")},
     "model_service": {("unit", "model_service")},
-    "platform_workers": {("unit", "platform_workers")},
 }
 
 # The repo suite (tests/unit/repo) reads every service's Dockerfile and scans their
