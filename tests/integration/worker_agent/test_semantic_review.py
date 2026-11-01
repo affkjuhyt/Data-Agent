@@ -279,10 +279,18 @@ async def test_a_relationship_a_scheduled_scan_inferred_reaches_the_stewards_rev
     )
     await drain_all()
     # build() makes bank.user the Data Space's steward.
+    pid = seed.one(
+        "SELECT id FROM inbox.proposal WHERE target_ref = %s AND kind = 'relationship'",
+        relationship,
+    )
+    assert seed.one("SELECT proposed_by FROM inbox.proposal WHERE id = %s", pid) == bank.user
+    # And it reaches Cần bạn: an approve_proposal request for whoever holds approve, the steward
+    # who proposed it excluded.
     assert (
         seed.one(
-            "SELECT proposed_by FROM inbox.proposal WHERE target_ref = %s AND kind = 'relationship'",
-            relationship,
+            "SELECT assignee_capability || ' ' || (context->'excluded_approver_ids'->>0)"
+            " FROM inbox.hitl_request WHERE kind = 'approve_proposal' AND source_ref = %s",
+            pid,
         )
-        == bank.user
+        == f"approve {bank.user}"
     )

@@ -18,7 +18,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request
-from sqlalchemy import Select, and_, or_, select
+from sqlalchemy import Select, and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -55,6 +55,8 @@ ROLE = "svc_inbox"
 
 # hitl_request states that still wait for a person; "reassigned" waits for the new assignee.
 PENDING = ("open", "reassigned")
+# A proposal's approve_proposal request once the proposal is decided for good: it leaves Cần bạn.
+REQUEST_STATUS = {"accepted": "approved", "rejected": "rejected", "open": "changes_requested"}
 HITL_STATUS = {
     "answer": "answered",
     "approve": "approved",
@@ -657,6 +659,22 @@ async def decide_proposal(
         else:
             row.status = PROPOSAL_STATUS[body.decision]
             event_type = "proposal.decided"
+            # The request that put it in its reviewers' Cần bạn (worker_agent/proposals.py).
+            await session.execute(
+                update(inbox.HitlRequest)
+                .where(
+                    inbox.HitlRequest.kind == "approve_proposal",
+                    inbox.HitlRequest.source_ref == row.id,
+                    inbox.HitlRequest.status.in_(PENDING),
+                )
+                .values(
+                    status=REQUEST_STATUS[row.status],
+                    resolved_by=principal.user_id,
+                    resolved_at=_now(),
+                    updated_by=principal.user_id,
+                    updated_at=_now(),
+                )
+            )
         session.add(
             _event(
                 principal,

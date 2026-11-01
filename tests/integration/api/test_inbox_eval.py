@@ -898,3 +898,41 @@ async def test_an_excluded_approver_cannot_even_reassign(team: Team) -> None:
             json={"decision": "reassign", "reassign_to": str(team.users["reviewer"])},
         )
     assert r.status_code == 403
+
+
+async def test_a_proposal_reaches_cần_bạn_and_leaves_it_once_decided(team: Team) -> None:
+    # The worker opens an approve_proposal request beside each proposal (proposals._open): it is
+    # what Cần bạn lists. Before it, no reviewer ever saw a proposal there.
+    accepted, rejected = _proposal(team), _proposal(team)
+    requests = {
+        p: _hitl(
+            team,
+            kind="approve_proposal",
+            source_service="inbox",
+            source_ref=p,
+            assignee_capability="approve",
+            created_by=team.users["proposer"],
+        )
+        for p in (accepted, rejected)
+    }
+    async with client(team) as api:
+        listed = await api.get("/v1/inbox", headers=team.headers("reviewer"))
+        assert {i["id"] for i in listed.json()["items"]} >= {str(r) for r in requests.values()}
+        for proposal, decision in ((accepted, "accept"), (rejected, "reject")):
+            decided = await api.post(
+                f"/v1/proposals/{proposal}:decide",
+                headers=team.headers("reviewer"),
+                json={"decision": decision, "note": "Đã xem", "reviewed_regressions": True},
+            )
+            assert decided.status_code == 200, decided.text
+        still = await api.get("/v1/inbox", headers=team.headers("reviewer"))
+    assert not {i["id"] for i in still.json()["items"]} & {str(r) for r in requests.values()}
+    with team.seed.conn.cursor() as cur:
+        cur.execute(
+            "SELECT source_ref, status, resolved_by FROM inbox.hitl_request WHERE kind = 'approve_proposal'"
+            " AND org_id = %s",
+            (str(team.org),),
+        )
+        closed = {str(ref): (status, str(by)) for ref, status, by in cur.fetchall()}
+    reviewer = str(team.users["reviewer"])
+    assert closed == {str(accepted): ("approved", reviewer), str(rejected): ("rejected", reviewer)}

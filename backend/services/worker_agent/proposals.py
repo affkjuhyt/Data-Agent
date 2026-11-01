@@ -94,7 +94,7 @@ async def _open(
 ) -> uuid.UUID:
     pid = proposal_id(event)
     async with scoped_session("svc_inbox", event.org_id, proposed_by) as session:
-        await session.execute(
+        opened = await session.execute(
             insert(inbox.Proposal)
             .values(
                 id=pid,
@@ -116,8 +116,65 @@ async def _open(
                 created_by=proposed_by,
             )
             .on_conflict_do_nothing(index_elements=["id"])
+            .returning(inbox.Proposal.id)
         )
+        if opened.scalar() is not None:
+            _review_request(
+                event, pid, data_space_id, kind, title, proposed_by, impact_level, session
+            )
     return pid
+
+
+def _review_request(
+    event: Event,
+    pid: uuid.UUID,
+    data_space_id: uuid.UUID,
+    kind: str,
+    title: str,
+    proposed_by: uuid.UUID,
+    impact_level: str,
+    session: Any,
+) -> None:
+    """The approve_proposal request that puts the proposal in its reviewers' Cần bạn.
+
+    Cần bạn lists HITL requests (GET /v1/inbox), and a proposal reaches it only through one whose
+    source_ref is the proposal (frontend decision.ts opens the proposal from it). Without it no
+    reviewer ever saw a metric draft or a relationship. Anyone of the space holding `approve`
+    decides, except the proposer, as :decide already refuses; deciding closes it (inbox routes)."""
+    request_id = uuid7()
+    session.add(
+        inbox.HitlRequest(
+            id=request_id,
+            org_id=event.org_id,
+            data_space_id=data_space_id,
+            kind="approve_proposal",
+            risk=impact_level,
+            title=title,
+            context={"proposal_kind": kind, "excluded_approver_ids": [str(proposed_by)]},
+            options=[],
+            source_service="inbox",
+            source_ref=pid,
+            assignee_capability="approve",
+            created_by=proposed_by,
+            updated_by=proposed_by,
+        )
+    )
+    session.add(
+        inbox.Outbox(
+            id=uuid7(),
+            org_id=event.org_id,
+            aggregate_type="hitl_request",
+            aggregate_id=request_id,
+            event_type="hitl.opened",
+            payload={
+                "hitl_request_id": str(request_id),
+                "data_space_id": str(data_space_id),
+                "kind": "approve_proposal",
+                "risk": impact_level,
+                "source_service": "inbox",
+            },
+        )
+    )
 
 
 async def _skill_back(event: Event, version_id: uuid.UUID, actor: uuid.UUID, status: str) -> None:
