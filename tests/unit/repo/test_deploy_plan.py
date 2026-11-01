@@ -354,9 +354,9 @@ class TestJobsToRerun:
 
     def test_any_seed_db_init_applies_reruns_it(self):
         # db-init applies every file of deploy/docker/sql/ (the db-init-sql ConfigMap).
-        assert _rerun(["deploy/docker/sql/v3-pilot-seed.sql"]) == ["db-init"]
+        assert _rerun(["deploy/docker/sql/v3-adventureworks-seed.sql"]) == ["db-init"]
         assert _rerun(["deploy/docker/sql/grant-roles.sql"]) == ["db-init"]
-        assert _rerun(["deploy/docker/semantic/ds-bh.yaml"]) == []
+        assert _rerun(["deploy/docker/semantic/ds-aw.yaml"]) == []
 
     def test_a_job_manifest_reruns_only_that_job(self):
         assert _rerun(["deploy/k8s/dev/job/minio-init.yaml"]) == ["minio-init"]

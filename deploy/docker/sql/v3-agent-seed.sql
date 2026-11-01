@@ -5,7 +5,7 @@
 -- states the screens distinguish: one running a margin question, one waiting on a person, one
 -- paused, and one leading two others. A rolling deployment, a skill waiting for review and an open
 -- suggestion fill the screens that are empty without an id.
--- Ids are a0000000-…-000000aa0cNN / …aa0dNN, apart from the DS-BH team the pilot seeded before.
+-- Ids are a0000000-…-000000aa0cNN / …aa0dNN, apart from the DS-BH team an older seed left behind.
 -- Idempotent: db-init can apply it again, and the runs move back into the last day.
 
 \set org '''a0000000-0000-0000-0000-000000000001'''

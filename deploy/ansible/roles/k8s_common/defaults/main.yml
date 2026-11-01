@@ -157,7 +157,7 @@ job_inputs:
   migrate: [backend/alembic]
   # grant-roles.sql grants on ALL TABLES, so tables a migration adds need it again. Every
   # file of deploy/docker/sql/ is applied by db-init (the db-init-sql ConfigMap): a seed
-  # edited there (the pilot's verified queries) reaches the cluster only if it reruns.
+  # edited there (DS-AW's verified queries) reaches the cluster only if it reruns.
   db-init: [deploy/docker/sql, "job:migrate"]
   # The DS-AW documents it copies to da-raw-docs (the ConfigMaps of create-configmaps.sh).
   minio-init: [deploy/docker/adventureworks-docs]

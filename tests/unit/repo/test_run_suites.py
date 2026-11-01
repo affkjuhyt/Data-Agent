@@ -30,7 +30,7 @@ FILES = {
     "tests/integration/worker_agent/test_verified.py": (
         "from services.worker_agent.sqlgen.verified import match\n"
     ),
-    "tests/integration/worker_agent/test_pilot.py": 'SEED = "v3-pilot-seed.sql"\n',
+    "tests/integration/worker_agent/test_adventureworks.py": 'SEED = "v3-adventureworks-seed.sql"\n',
     "tests/integration/worker_agent/test_runs.py": "from services.worker_agent import runs\n",
     "tests/integration/worker_agent/test_follow.py": "from .test_sql import Script\n",
     "tests/integration/api/test_qa_answers.py": "async def test_x(): ...\n",
@@ -78,8 +78,8 @@ def test_a_changed_test_runs_with_the_tests_that_borrow_from_it() -> None:
 
 
 def test_a_file_a_test_reads_runs_that_test_in_any_suite() -> None:
-    picked, whole = related(["deploy/docker/sql/v3-pilot-seed.sql"], WORKER)
-    assert picked == ["tests/integration/worker_agent/test_pilot.py"] and not whole
+    picked, whole = related(["deploy/docker/sql/v3-adventureworks-seed.sql"], WORKER)
+    assert picked == ["tests/integration/worker_agent/test_adventureworks.py"] and not whole
 
 
 def test_what_no_import_reaches_runs_the_suite_whole() -> None:

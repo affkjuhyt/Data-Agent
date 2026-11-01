@@ -246,30 +246,40 @@ def test_the_command_line_exports_and_dry_runs(
     assert [m["name"] for m in exported["metrics"]] == ["DU_NO", "NPL_RATIO"]
 
 
-async def test_the_pilot_model_imports_whole(seed: Seed) -> None:
-    # deploy/docker/semantic/ds-bh.yaml, the R1-06 pilot, on the pilot's catalogued tables.
+async def test_the_adventureworks_model_imports_whole(seed: Seed) -> None:
+    # deploy/docker/semantic/ds-aw.yaml, the model DS-AW is tested with, on AdventureWorksDW's
+    # tables as a scan of the source catalogues them.
     space = Space(seed)
-    for table in (
-        "pilot_sales_line",
-        "pilot_inventory",
-        "pilot_receivable",
-        "pilot_period_edition",
-    ):
+    text = (pathlib.Path(__file__).parents[3] / "deploy/docker/semantic/ds-aw.yaml").read_text(
+        encoding="utf-8"
+    )
+    model = yaml.safe_load(text)
+    source = seed.row(
+        "catalog.source",
+        org_id=space.org,
+        data_space_id=space.id,
+        name="AdventureWorksDW",
+        kind="postgresql",
+        database_name="adventureworks_dw",
+        secret_ref=f"secret/tenants/{space.org}/demo-postgres",
+    )
+    for sm in model["semantic_models"]:
+        schema, table = sm["model"].split(".")
         seed.row(
             "catalog.dataset",
             org_id=space.org,
             data_space_id=space.id,
-            origin="derived",
-            schema_name="workspace",
+            source_id=source,
+            origin="source",
+            schema_name=schema,
             table_name=table,
             enabled=True,
         )
-    text = (pathlib.Path(__file__).parents[3] / "deploy/docker/semantic/ds-bh.yaml").read_text(
-        encoding="utf-8"
-    )
     report = await space.load(text)
-    assert report.created["semantic_model"] == 4 and report.created["metric"] == 20
+    assert report.created["semantic_model"] == len(model["semantic_models"])
+    assert report.created["metric"] == len(model["metrics"])
+    assert report.created["relationship"] == len(model["relationships"])
     exported = await space.export()
     assert sorted(m["name"] for m in exported["metrics"]) == sorted(
-        m["name"] for m in yaml.safe_load(text)["metrics"]
+        m["name"] for m in model["metrics"]
     )

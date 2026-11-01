@@ -35,15 +35,18 @@ ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     is_system = EXCLUDED.is_system;
 
--- DS-DEMO, the Data Space this seed used to open for the engineer, is retired: AdventureWorks
--- (DS-AW, v3-adventureworks-seed.sql) is the one the product is tested on. A cluster seeded before
--- keeps rows that point at DS-DEMO in schemas without a foreign key to org.data_space (questions,
--- documents, datasets), so the space is archived, which hides it from the switcher and from
--- identity resolution, rather than deleted from under them. Only the membership goes, unless an
--- access request still names it.
+-- DS-DEMO, the Data Space this seed used to open for the engineer, and DS-BH, the synthetic pilot
+-- of v3-pilot-seed.sql, are retired: AdventureWorks (DS-AW, v3-adventureworks-seed.sql) is the one
+-- the product is tested on. A cluster seeded before keeps rows that point at them in schemas without
+-- a foreign key to org.data_space (questions, documents, datasets, agents), so the spaces are
+-- archived, which hides them from the switcher and from identity resolution, rather than deleted
+-- from under those rows. DS-DEMO's membership goes, unless an access request still names it; the
+-- pilot's own tables in the workspace schema go with it.
 UPDATE org.app_user
 SET default_data_space_id = NULL
-WHERE default_data_space_id = 'a0000000-0000-0000-0000-000000000061';
+WHERE default_data_space_id IN (
+    'a0000000-0000-0000-0000-000000000061', 'a0000000-0000-0000-0000-000000000b01'
+);
 
 DELETE FROM org.data_space_member m
 WHERE m.id = 'a0000000-0000-0000-0000-000000000022'
@@ -52,5 +55,8 @@ WHERE m.id = 'a0000000-0000-0000-0000-000000000022'
 
 UPDATE org.data_space
 SET status = 'archived', deleted_at = COALESCE(deleted_at, now())
-WHERE id = 'a0000000-0000-0000-0000-000000000061'
+WHERE id IN ('a0000000-0000-0000-0000-000000000061', 'a0000000-0000-0000-0000-000000000b01')
   AND (status <> 'archived' OR deleted_at IS NULL);
+
+DROP TABLE IF EXISTS workspace.pilot_sales_line, workspace.pilot_order_header,
+    workspace.pilot_receivable, workspace.pilot_inventory, workspace.pilot_period_edition;
