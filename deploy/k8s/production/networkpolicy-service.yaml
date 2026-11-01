@@ -111,9 +111,6 @@ spec:
           app: kong
     - podSelector:
         matchLabels:
-          app: auth-api
-    - podSelector:
-        matchLabels:
           app: frontend
     - podSelector:
         matchLabels:
@@ -160,29 +157,6 @@ spec:
     ports:
     - protocol: TCP
       port: 8240
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-auth-api
-  namespace: dataagent-service
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: auth-api
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: kong
-    ports:
-    - protocol: TCP
-      port: 8200
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -416,9 +390,6 @@ spec:
     - podSelector:
         matchLabels:
           app: workflow-runtime
-    - podSelector:
-        matchLabels:
-          app: auth-api
     ports:
     - protocol: TCP
       port: 8430
@@ -494,9 +465,6 @@ spec:
   - Ingress
   ingress:
   - from:
-    - podSelector:
-        matchLabels:
-          app: auth-api
     - podSelector:
         matchLabels:
           app: setup

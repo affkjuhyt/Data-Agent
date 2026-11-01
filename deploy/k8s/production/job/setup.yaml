@@ -18,8 +18,6 @@ metadata:
     app: setup
     app.kubernetes.io/part-of: dataagent
 data:
-  ENABLE_ADMIN_KEY_AUTH: '0'
-  KONG_ADMIN_SUBNET: ''
   KONG_PROXY_URL: http://kong.dataagent-service.svc.cluster.local:8100
   KEYCLOAK_DISABLE_MFA: '0'
   SMOKE_USER: ''

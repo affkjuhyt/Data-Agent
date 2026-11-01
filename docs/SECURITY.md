@@ -7,84 +7,30 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
 
 ## 1. Authentication & authorization
 
-- **Fail-closed gateway.** All API traffic must pass through **Kong** carrying a verified
-  Keycloak identity (`X-Kong-Verified`, realm `aeroflow`, `aeroflow-jwks` plugin). Any
-  request without it gets `401`. Services never trust a raw bearer token directly —
-  identity is injected by Kong.
-- **The agent tier is behind the gateway too.** The orchestrator runs inside
-  `workflow-runtime` (`/api/orchestrate/*`), which is a ClusterIP Service on `8240`
-  in the production set; Kong's workflow_runtime route is the only way in, and the
-  service enforces the shared caller check instead of reading raw headers.
-  Previously nothing verified the caller and the orchestrator fell back to
-  `DEV_TENANT_ID`, so any caller reaching its port could act as any tenant. The
-  Vite dev proxy, which used to inject a hardcoded `platform-admin` identity, now
-  routes through Kong like everything else. (The dev set publishes every Service
-  as a NodePort for debugging; the caller check still applies there.)
-- **Gateway proof (`X-Gateway-Key`).** `X-Kong-Verified` is only a header: a caller that
-  reaches a service port directly can send it and be believed. The plugin now also injects
-  a shared secret (`gateway_key` ↔ `GATEWAY_KEY`) that every upstream compares in constant
-  time, so the marker means "Kong verified a JWT", not "someone typed this". Leaving
-  `GATEWAY_KEY` unset keeps the old, weaker behaviour and logs a warning on every
-  request — set it everywhere except a laptop. (`KB_GATEWAY_KEY` is still read as a
-  deprecated alias.)
-- **API keys (`sk-…`).** Issued by a `platform-admin` in Settings → API keys and sent as
-  `X-API-Key: sk-…` or `Authorization: Bearer sk-…`. `aeroflow-jwks` sends the key to
-  auth_api's `/internal/api-keys/verify` (no Kong route reaches it; the caller must present
-  the gateway key), which finds it by `key_prefix`, checks the bcrypt hash and refuses a
-  revoked or expired key. The key then acts as its tenant with one role per scope
-  (`full_access` → `ai-engineer`, `read_only` → `executive-viewer`, `admin_platform` →
-  `platform-admin`), `X-User-Id: api-key:<id>`. Kong caches a verified key for
-  `api_key_cache_ttl` (60 s), which is also how long a revoked key can keep working.
-  Enabled exactly when `GATEWAY_KEY` is set (`kong-setup.sh`).
-- **IP allowlist.** Rules are kept per tenant (`ip_allowlists`), but Kong's `ip-restriction`
-  plugin is one per service/route, so auth_api pushes the **union** of every tenant's active
-  CIDRs (`kong_sync.get_active_cidrs`). It narrows who can reach the gateway; which tenant a
-  caller acts for is still decided by its token.
-- **Vault panic mode** is per tenant (`compliance_settings.vault_panic_mode`): it revokes that
-  tenant's secrets and answers 503 on that tenant's secret routes only, until a
-  platform-admin turns it off in Settings → Secrets.
-- **Service-to-service identity.** A service that acts for a user without the user's token
-  signs an **HMAC assertion** (`backend/libs/shared/service_identity.py`) carrying the real
-  caller's tenant, user and roles, with a 120 s expiry; the receiver takes identity **only**
-  from the token, ignoring accompanying `X-User-*` headers, and fails closed without one. The
-  trust decision lives once in `backend/libs/shared/auth.resolve_caller`. Its first user,
-  kb-backend's retrieval, was removed with the legacy knowledge base (KB-08); the V3 blocks
-  talk through the database and events instead.
-- **Mutual TLS (optional).** `deploy/docker/certs/gen-certs.sh` issues the CA plus `clientAuth`
-  certificates for Kong *and* `workflow-runtime`, and a `serverAuth` cert for the backend.
-  Setting `MTLS_CLIENT_CERT` / `MTLS_CLIENT_KEY` / `MTLS_CA_CERT` authenticates the
-  connection; the signed assertion authenticates the request. They are independent layers —
-  mTLS alone would let any CA-signed client assert any identity, and the assertion alone is
-  only as strong as the network.
-- **Data-access audit trail.** Every query an agent runs emits a `data.access`
-  event (`backend/libs/shared/audit.py`) onto the existing Kafka pipeline; the `platform-workers` audit worker
-  writes it to `DataAccessLog` — who, which roles, which connection, which tables,
-  row count, latency, and the allow/deny/error outcome. Previously the audit
-  covered **authentication events only**, so "who read this data" had no answer and
-  the SQL lived only in Langfuse traces, which sample and expire.
-  - **Statements are redacted, never stored raw.** A `WHERE` clause routinely holds
-    exactly the personal data the audit protects, so literals become `?` and a
-    SHA-256 of the original is kept alongside — enough to correlate repeat queries
-    and prove which statement ran, without reproducing its arguments.
-  - **Every outcome is recorded, not just successes.** A guard rejection is logged
-    as `deny`, which is what makes "how often does the agent attempt a write?"
-    answerable.
-  - **Auditing records access, it does not gate it.** Emission is fire-and-forget
-    and can never fail a user's turn. A control that must *block* on an unavailable
-    audit log belongs at the policy layer.
-  - **Action for prod — append-only is NOT yet enforced.** Nothing updates or
-    deletes rows, but `app_user` still holds `UPDATE`/`DELETE` from the blanket
-    grant in `enable_tenant_rls`. Tamper-evidence needs an INSERT-only writer role
-    for the consumer plus revoking `UPDATE`/`DELETE` from everything else.
-  - **Action for prod — retention.** The topic is provisioned at 90 days
-    (`deploy/k8s/<env>/job/kafka-topics.yaml`); align it and the table's retention
-    with the policy covering the data being queried.
+- **The api verifies every caller itself.** Kong routes `/v1` to the api and its
+  `aeroflow-jwks` plugin rejects a request without a valid Keycloak token (realm `aeroflow`,
+  audience `dataagent-api`), but ADR-30 keeps the check in the api as well: it verifies the
+  token against the realm's JWKS (signature, issuer, expiry, audience) on every request and
+  reads nothing from identity headers (`backend/services/api/kernel/auth.py`). The
+  organisation comes from the `org_id` claim; who the caller is and what they may do come
+  from `org.app_user` and `org.role.capabilities`, resolved per request.
+- **API clients use client-credentials tokens** (ADR-30, `integration.api_client`). The
+  legacy `sk-` API keys, the per-tenant IP allowlist and the Secrets Vault of `auth_api` were
+  removed with it on 01/11/2026; Kong now answers an `sk-` bearer with 401 like any other
+  malformed token.
+- **The agent tier has no external Service.** worker-agent, worker-ingest, worker-document and
+  crawler take work from the database, Temporal and events, never from a caller; only Kong
+  (and Keycloak, for the browser login redirect) is published outside the cluster.
+- **Mutual TLS (optional).** `deploy/docker/certs/gen-certs.sh` issues the CA plus a
+  `clientAuth` certificate for Kong and a `serverAuth` cert for the backend; kong-setup.sh
+  attaches the client certificate to the api service when the files exist.
+- **Audit.** The api appends one `audit.audit_log` row per `/v1` call, outcome included
+  (`backend/services/api/kernel/access_log.py`, A1.8); the modules that must not act unaudited
+  write their own row inside the action. The V2 `data.access` Kafka pipeline went with
+  platform-workers.
 - **Multi-tenant isolation via Postgres RLS.** Tenant tables carry `tenant_id` with
   row-level-security policies; child tables without their own `tenant_id` are covered by
   FK-chain `EXISTS` policies (`enable_tenant_rls` + `rls_kb_child_tables` migrations).
-  Isolation is asserted by the e2e test `tests/integration/test_tenant_isolation.py`,
-  run by `make e2e` against the dev cluster (not in CI), and in-process by the
-  RLS integration tests (`tests/integration/auth_api/test_rls_enforcement.py`).
 - **DB RBAC.** `runtime_writer` is scoped to `INSERT/SELECT` on the conversation tables
   only — least privilege for the runtime path.
 
@@ -110,7 +56,7 @@ release-hardening pass:
 
 | Runs as non-root (`USER` in the image) | Root in the image — documented |
 |---|---|
-| api, worker-agent, worker-ingest, worker-document, crawler, workflow-runtime (incl. the orchestrator and agent/workflow authoring), auth-api | **sandbox-executor** — the image stays root for `SANDBOX_BACKEND=docker`, which spawns containers through the host Docker socket. On k8s it runs `SANDBOX_BACKEND=kubernetes` (runner pods in `dataagent-sandbox` via its ServiceAccount), and the production manifest sets `runAsNonRoot` / `runAsUser: 10001`. |
+| api, worker-agent, worker-ingest, worker-document, crawler, migrate | — (none since sandbox-executor was removed) |
 
 `frontend/Dockerfile.dev` (dev-only) is out of scope for the prod non-root requirement.
 
@@ -167,7 +113,6 @@ with an existing baseline to burn down. Ratchet plan:
   | `backend/libs/{basemodel,database_connector,shared}` | **0**, enforced |
   | `backend/services/workflow_runtime` (incl. `workflow_runtime/application/orchestrator`) | **0**, enforced |
   | `backend/services/{api,worker_agent,crawler}` (`--disallow-untyped-defs --disallow-any-generics`) | CI blocking step (`make type-v3`) |
-  | `backend/services/auth_api` | **0**, enforced |
 
   Not on the strict list: `backend/libs/{semantic,indicator}`. The whole-tree run is report-only (`|| true`).
 

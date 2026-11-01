@@ -40,7 +40,7 @@ deploy riêng, CLAUDE.md §3):
 
 | Cũ | Thay bằng |
 | --- | --- |
-| `auth_api` / `auth-api` | module `org` + `integration` trong `api` |
+| `auth_api` / `auth-api` | đã xoá 01/11/2026: module `org` + `integration` trong `api` |
 | `workflow_runtime` / `workflow-runtime` | `api` (agent, qa, workspace, inbox) + `worker-agent` (thực thi) |
 | `sandbox_executor`, `sandbox-runner` | đã xoá 01/11/2026; sandbox, khi cần, nằm trong `worker-agent` (tab 1 §7.2) |
 | `kb_backend`, `kb-worker` (`kb-promote-*`, `kb-structured-data`, `kb-conflict-resolution`) | đã xoá mã 22/10/2026 (04 §3c, KB-08): `api` (document, catalog, conflict) + `worker-document` (trang, chunk, index) + `worker-agent` (claim, xung đột, trích trường trên `document.indexed`); bước LLM nằm ở `worker-agent`, không ở `worker-ingest` |

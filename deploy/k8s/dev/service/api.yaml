@@ -105,7 +105,7 @@ spec:
           name: http
         # OpenBao through the api's own AppRole (OPENBAO_ROLE_ID, OPENBAO_SECRET_ID on
         # api-secrets, policy dataagent-api-policy): write-only on tenant source paths, never
-        # the root token auth-api holds. A typed source password is stored there and only the
+        # the root token. A typed source password is stored there and only the
         # path in the database (BR-14).
         envFrom:
         - configMapRef:

@@ -869,18 +869,6 @@
       "nodeReRegistrationTimeout": -1,
       "protocolMappers": [
         {
-          "id": "4961f5df-a412-4ca0-b1c7-b361da617fd3",
-          "name": "aeroflow-backend-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "id.token.claim": "false",
-            "access.token.claim": "true",
-            "included.custom.audience": "aeroflow-backend"
-          }
-        },
-        {
           "id": "eea282c6-46fb-4eb1-83e3-fb21db7a2e6e",
           "name": "tenant_id",
           "protocol": "openid-connect",
@@ -922,39 +910,6 @@
             "access.token.claim": "true",
             "claim.name": "role_id",
             "jsonType.label": "String"
-          }
-        },
-        {
-          "name": "workflow_runtime-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.custom.audience": "workflow_runtime",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "flow_builder-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.custom.audience": "flow_builder",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
-          "name": "auth_api-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.custom.audience": "auth_api",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
           }
         }
       ],

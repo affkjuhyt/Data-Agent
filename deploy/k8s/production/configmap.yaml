@@ -62,7 +62,6 @@ data:
   # are named with hyphens — override here so Kong's upstream DNS lookup resolves.
   # Without this, JWT/CORS checks can pass fine (they don't touch the
   # upstream) but the request 503s the moment Kong actually proxies it.
-  AUTH_API_HOST: auth-api
   API_HOST: api
 
   #Langfuse

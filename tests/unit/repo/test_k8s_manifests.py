@@ -800,7 +800,6 @@ class TestCrossNamespaceHostnamesAreQualified:
             "langfuse",
             "jaeger",
             "prometheus",
-            "auth-api",
             "workflow-runtime",
             "api",
             "frontend",
@@ -895,24 +894,16 @@ class TestConfigComesFromConfigMapsAndSecrets:
                 bad.append(w)
         assert not bad, f"workload ConfigMap listed before the shared one: {bad}"
 
-    def test_the_auth_chain_keys_reach_exactly_the_services_that_verify_them(self):
-        """GATEWAY_KEY and SERVICE_AUTH_SECRET fail silently when missing, so the
-        set of holders is pinned to the services importing libs.shared.auth."""
+    def test_the_gateway_key_reaches_only_the_setup_job(self):
+        """kong-setup.sh writes GATEWAY_KEY into the plugin; no upstream verifies it since
+        the api checks the Keycloak token itself."""
         script = (K8S_DIR / "create-secrets.sh").read_text(encoding="utf-8")
-        for key in ("GATEWAY_KEY", "SERVICE_AUTH_SECRET"):
-            holders = {
-                m.split("create secret generic ")[1].split("-secrets")[0]
-                for m in script.split("kubectl -n ")[1:]
-                if key in m
-            }
-            expected = {"auth-api"}
-            if key == "GATEWAY_KEY":
-                expected |= {"setup"}  # kong-setup.sh writes it into the plugin
-                # Not the eval Job: model/eval's agent_client calls the public
-                # V3 API with a Keycloak token (EVAL_ACCESS_TOKEN), not as Kong.
-            assert (
-                holders == expected
-            ), f"{key} goes to {sorted(holders)}, expected {sorted(expected)}"
+        holders = {
+            m.split("create secret generic ")[1].split("-secrets")[0]
+            for m in script.split("kubectl -n ")[1:]
+            if "GATEWAY_KEY" in m
+        }
+        assert holders == {"setup"}, f"GATEWAY_KEY goes to {sorted(holders)}"
 
 
 class TestImageReferencesAreIntact:

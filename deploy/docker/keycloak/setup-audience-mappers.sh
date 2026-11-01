@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Adds Audience protocol mappers to the `aeroflow-frontend` Keycloak client
-# so tokens it issues contain `aeroflow-backend`, `auth_api`,
-# `workflow_runtime` and `flow_builder` in the `aud` claim.
+# so tokens it issues contain `dataagent-api` in the `aud` claim.
 #
 # Without these mappers, Keycloak issues tokens with `aud=["aeroflow-frontend"]`
 # only. The Kong `aeroflow-jwks` plugin (configured by kong-setup.sh) rejects
@@ -21,13 +20,11 @@ REALM="${KEYCLOAK_REALM:-aeroflow}"
 ADMIN_USER="${KEYCLOAK_ADMIN:-admin}"
 ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
 
-# Audiences to inject — must match the `audience` config of aeroflow-jwks
-# plugin in kong-setup.sh.
-# Phải khớp TỪNG giá trị `audience` của plugin aeroflow-jwks trong kong-setup.sh.
-# workflow_runtime và flow_builder từng thiếu ở đây: Kong đổi sang tên gạch dưới
-# ở đợt rename service, danh sách này thì không, nên mọi request tới hai route đó
-# trả 401 "Audience mismatch" — token vẫn hợp lệ, chỉ là không mang aud Kong chờ.
-AUDIENCES=(aeroflow-backend auth_api workflow_runtime flow_builder dataagent-api)
+# Audiences to inject — must match each `audience` of the aeroflow-jwks plugin in
+# kong-setup.sh, or every request to that service answers 401 "Audience mismatch".
+# Mappers of the removed services stay on an existing realm until deleted by hand;
+# an extra audience in a token is harmless.
+AUDIENCES=(dataagent-api)
 
 # Client whose tokens get the audience extension.
 TARGET_CLIENT="aeroflow-frontend"

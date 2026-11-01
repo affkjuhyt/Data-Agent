@@ -1,28 +1,21 @@
-"""End-to-end JWT audience validation tests.
+"""End-to-end JWT audience validation at the gateway.
 
-Verifies the audience-validation slice of P1 #7:
+  * Keycloak issues tokens with `dataagent-api` in the `aud` claim (the audience mappers
+    installed by deploy/docker/keycloak/setup-audience-mappers.sh).
+  * Kong's aeroflow-jwks plugin on the api service checks `aud` against `dataagent-api`
+    (deploy/docker/kong/kong-setup.sh) and rejects anything it cannot verify.
 
-  * Keycloak issues tokens with `aeroflow-backend` and `auth_api`
-    in the `aud` claim (driven by audience mappers
-    installed via deploy/docker/keycloak/setup-audience-mappers.sh).
-  * Kong's aeroflow-jwks plugin rejects a token if its `aud` doesn't
-    match the per-route audience config (set by deploy/docker/kong/kong-setup.sh).
+The grace_period behaviour on JWKS rotation needs the Keycloak admin API to rotate keys and
+timed assertions; it is not covered here.
 
-This test does NOT cover the grace_period behavior on JWKS rotation —
-that needs Keycloak admin API to actually rotate keys + carefully timed
-assertions. Run the procedural test in
-docs/auth-runbook.md "JWKS rotation grace period" for that.
-
-Requires the full live stack:
-
-    kubectl apply -f deploy/k8s/production/database/ -f deploy/k8s/production/service/
-    kubectl apply -f deploy/k8s/production/job/setup.yaml
-    LIVE_STACK=1 pytest -m e2e tests/integration/test_jwt_audience.py -v
+Runs against the deployed cluster: `make e2e E2E_TESTS=tests/integration/test_jwt_audience.py`.
 """
+
 from __future__ import annotations
 
 import base64
 import json
+import os
 
 import pytest
 import requests
@@ -31,6 +24,10 @@ from tests.conftest import live_token
 
 pytestmark = pytest.mark.e2e
 
+DATA_SPACE = os.environ.get("E2E_DATA_SPACE", "DS-DEMO")
+# Any /v1 route behind the api's plugin; the gate runs before the api sees the request.
+GATED = "/v1/datasets"
+
 
 def _decode_jwt_payload(token: str) -> dict:
     payload = token.split(".")[1]
@@ -38,79 +35,69 @@ def _decode_jwt_payload(token: str) -> dict:
     return json.loads(base64.urlsafe_b64decode(payload))
 
 
-# ─── Token shape — verify Keycloak is issuing tokens with our audiences ────
-def test_keycloak_issues_token_with_expected_audiences(live_stack):
-    """The audience-mapper setup must make Keycloak put all three target
-    audiences into the issued token's `aud` claim."""
-    token = live_token(live_stack["keycloak"], "admin")
-    payload = _decode_jwt_payload(token)
-    aud = payload.get("aud")
-
-    # `aud` is a string when there's one value, a list when multiple. Normalize.
+def test_keycloak_issues_token_with_the_api_audience(live_stack):
+    token = live_token(live_stack["keycloak"], "engineer")
+    aud = _decode_jwt_payload(token).get("aud")
+    # `aud` is a string when there's one value, a list when multiple.
     aud_list = [aud] if isinstance(aud, str) else (aud or [])
-
-    expected = {"aeroflow-backend", "auth_api"}
-    missing = expected - set(aud_list)
-    assert not missing, (
-        f"Keycloak token missing audiences {missing}. Run "
-        f"setup-audience-mappers.sh first. Token aud: {aud_list}"
+    assert "dataagent-api" in aud_list, (
+        f"token aud {aud_list} lacks dataagent-api; run setup-audience-mappers.sh"
     )
 
 
-# ─── Kong accepts the token on routes whose audience matches ───────────────
-def test_kong_accepts_token_on_matching_audience_route(live_stack):
-    """auth_api route has audience=auth_api in its plugin config. A token
-    that includes auth_api in its aud claim should be accepted."""
-    token = live_token(live_stack["keycloak"], "admin")
-
+def test_kong_accepts_a_token_for_the_api(live_stack):
+    token = live_token(live_stack["keycloak"], "engineer")
     r = requests.get(
-        f"{live_stack['kong']}/api/auth/health",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=5,
+        f"{live_stack['kong']}{GATED}",
+        headers={"Authorization": f"Bearer {token}", "X-Data-Space": DATA_SPACE},
+        timeout=15,
     )
-    # /health is auth-free, but a Bearer that's invalid would still 401 at
-    # the plugin layer before reaching the handler. We expect 200.
     assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text[:200]}"
 
 
-# ─── Kong rejects tokens crafted with a wrong audience (manipulation guard) ─
-# We can't easily synthesize a JWT with a wrong audience because we don't
-# have Keycloak's private key. But we CAN demonstrate that a JWT signed by
-# a DIFFERENT key (or one with manipulated payload) is rejected. This test
-# uses the audience contract differently: hand-craft an unsigned token with
-# wrong aud and verify it's rejected even though the structure is valid.
 def test_kong_rejects_token_with_invalid_audience(live_stack):
     """A token whose payload has `aud = "other-service"` must be rejected.
 
-    We can't sign with Keycloak's private key, so this token will also fail
-    signature verification. That's fine — the test asserts that 401 is the
-    outcome, which is the security property we care about: a wrong-aud
-    token does NOT pass the gate, regardless of whether it fails on
-    signature or on aud check.
+    It cannot be signed with Keycloak's key, so it also fails signature verification. The
+    property asserted is that a wrong-aud token does not pass the gate, whichever check
+    stops it.
     """
-    # Header: alg=RS256, kid=none
-    header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "kid": "fake-kid"}).encode()).rstrip(b"=")
-    # Payload with wrong audience
-    payload = base64.urlsafe_b64encode(json.dumps({
-        "iss": f"{live_stack['keycloak']}/realms/aeroflow",
-        "aud": "other-service",  # NOT auth_api / aeroflow-backend
-        "exp": 9999999999,
-        "sub": "spoofer",
-    }).encode()).rstrip(b"=")
+    header = base64.urlsafe_b64encode(
+        json.dumps({"alg": "RS256", "kid": "fake-kid"}).encode()
+    ).rstrip(b"=")
+    payload = base64.urlsafe_b64encode(
+        json.dumps(
+            {
+                "iss": f"{live_stack['keycloak']}/realms/aeroflow",
+                "aud": "other-service",
+                "exp": 9999999999,
+                "sub": "spoofer",
+            }
+        ).encode()
+    ).rstrip(b"=")
     fake_sig = base64.urlsafe_b64encode(b"\x00" * 256).rstrip(b"=")
     bad_token = f"{header.decode()}.{payload.decode()}.{fake_sig.decode()}"
 
     r = requests.get(
-        f"{live_stack['kong']}/api/auth/health",
+        f"{live_stack['kong']}{GATED}",
         headers={"Authorization": f"Bearer {bad_token}"},
         timeout=5,
     )
     assert r.status_code == 401, f"Expected 401, got {r.status_code}: {r.text[:200]}"
 
 
-# ─── Token without Authorization header rejected at the gate ───────────────
 def test_kong_rejects_request_without_bearer_token(live_stack):
-    """Baseline: no Bearer = 401. Sanity-checks the plugin is active on the
-    route (a regressed setup that forgot the plugin would 200 here)."""
-    r = requests.get(f"{live_stack['kong']}/api/auth/health", timeout=5)
+    """A regressed setup that forgot the plugin would answer here."""
+    r = requests.get(f"{live_stack['kong']}{GATED}", timeout=5)
+    assert r.status_code == 401, f"Expected 401, got {r.status_code}"
+
+
+def test_kong_rejects_a_legacy_api_key(live_stack):
+    """`sk-` keys were verified by the removed auth_api; V3 clients use client-credentials
+    tokens (ADR-30), so a key is just a malformed bearer."""
+    r = requests.get(
+        f"{live_stack['kong']}{GATED}",
+        headers={"Authorization": "Bearer sk-legacy"},
+        timeout=5,
+    )
     assert r.status_code == 401, f"Expected 401, got {r.status_code}"

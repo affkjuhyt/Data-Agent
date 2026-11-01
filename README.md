@@ -24,7 +24,7 @@ model/       eval/ (release gate: cases, scorers incl. RAGAS faithfulness, thres
 | Path | Contents |
 |---|---|
 | [`frontend/src/`](./frontend/src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI + Ask). `frontend/src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity). Root `package.json` is an npm workspace that forwards `npm run dev/test/typecheck` here |
-| [`backend/services/`](./backend/services) | Backend services: the V3 blocks `api`, `worker_agent`, `worker_ingest`, `worker_document`, `crawler`; legacy `auth_api`, `workflow_runtime` (which also hosts the agent/workflow/canvas authoring API, ex flow_builder, and the multi-agent orchestrator at `/api/orchestrate`), `model_service`, `sandbox_executor`, `platform_workers` (one image; `WORKER=memory\|schema-crawler\|audit\|llm-exporter`). Each owns its `Dockerfile` (build context = repo root) |
+| [`backend/services/`](./backend/services) | Backend services: the V3 blocks `api`, `worker_agent`, `worker_ingest`, `worker_document`, `crawler`. Each owns its `Dockerfile` (build context = repo root) |
 | [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/contracts` (V2 wire contract), `libs/dataagent_db` (V3 ORM), `libs/semantic` (metric contracts), `libs/indicator` (numeric core). Innermost architecture layer |
 | [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
 | [`deploy/ansible/`](./deploy/ansible) | The deploy pipeline — `deploy.yml` builds what changed, renders Secrets from the vault, applies the manifests, reruns Jobs, restarts what changed |
@@ -100,7 +100,7 @@ npm run test          # vitest run
 - **Security and gateway:** Keycloak, Kong (`aeroflow-jwks` plugin verifies JWTs at the edge), OpenBao
 - **Messaging:** Kafka
 - **Observability and AI tooling:** LiteLLM, Langfuse, Prometheus, Jaeger (no central log store: `kubectl logs`)
-- **Application services:** V3 `api`, `worker-agent`, `worker-ingest`, `worker-document`, `crawler`; legacy auth_api
+- **Application services:** V3 `api`, `worker-agent`, `worker-ingest`, `worker-document`, `crawler`
 - **LLM tier:** GPU services on `10.10.55.101` — vLLM main `:8001` (`agent-main`), vLLM fast `:8002` (`agent-fast`), TEI embed `:8003`, TEI rerank `:8004`
 
 Every workload listens on an `8xxx` port; `8000–8099` is reserved for the LLM tier. The full port

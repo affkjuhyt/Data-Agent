@@ -42,7 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # runs on the local dev-tools image (`make dev-tools` builds it) instead of a registry image.
 DEFAULT_UNIT = (
     "contracts:api "
-    "auth_api:auth_api api:api worker_agent:worker-agent worker_ingest:worker-ingest "
+    "api:api worker_agent:worker-agent worker_ingest:worker-ingest "
     "worker_document:worker-document crawler:crawler repo:dataagent/dev-tools:local"
 )
 DEFAULT_INTEGRATION = (
@@ -60,7 +60,6 @@ SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
     "worker_ingest": {("unit", "worker_ingest")},
     "worker_document": {("unit", "worker_document"), ("integration", "worker_document")},
     "crawler": {("unit", "crawler"), ("integration", "crawler")},
-    "auth_api": {("unit", "auth_api")},
 }
 
 # The repo suite (tests/unit/repo) reads every service's Dockerfile and scans their

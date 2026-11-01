@@ -61,7 +61,6 @@ _NOT_APP_SERVICES = {
 # can leave an ignored __pycache__-only directory behind in a working copy.
 _LIVE_SERVICES = (
     "api",
-    "auth_api",
     "worker_agent",
 )
 
@@ -212,7 +211,7 @@ class TestFailClosedOnAMissingTenant:
 
 
 # The Kong service names of the application services behind the gateway.
-_KONG_SERVICES = ("api", "auth_api")
+_KONG_SERVICES = ("api",)
 
 
 class TestGatewayConfigMatchesTheClosedPorts:
@@ -241,5 +240,5 @@ class TestGatewayConfigMatchesTheClosedPorts:
         setup = (REPO_ROOT / "deploy" / "docker" / "kong" / "kong-setup.sh").read_text(
             encoding="utf-8"
         )
-        for service in ("workflow_runtime", "flow_builder"):
+        for service in ("workflow_runtime", "flow_builder", "auth_api"):
             assert f'-X PUT "$KONG_ADMIN/services/{service}' not in setup, service

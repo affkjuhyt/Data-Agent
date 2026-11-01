@@ -58,7 +58,7 @@ flow at a time:
 | `allow-egress-to-platform` | egress may reach only the two `dataagent-*` namespaces |
 | `allow-<store>` (database ns) | ingress to one store, from the named service-namespace apps, on that store's port |
 | `allow-<service>` (service ns) | ingress to one service, from the named callers only |
-| `allow-kong-admin` | port 8101 only from `auth-api` and `setup` |
+| `allow-kong-admin` | port 8101 only from the `setup` Job |
 | `allow-ingress-controller-to-kong` | the only ingress from outside the platform |
 | `allow-egress-remote-llm` | `10.10.55.101` on 8001–8004, from the one workload that calls the GPU box: `litellm` |
 
@@ -133,14 +133,9 @@ There is no shared Secret mounted everywhere. Each workload gets a
 names the code expects — so `crawler` gets six keys and never sees
 the Langfuse or LiteLLM keys.
 
-`GATEWAY_KEY` and `SERVICE_AUTH_SECRET` go to the services that import
-`libs.shared.auth` (which imports `service_identity`): `auth-api`
-(`GATEWAY_KEY` also to the `setup` Job, which writes it into the
-Kong plugin). Nothing else needs them. An unset `GATEWAY_KEY` makes every
-Kong-routed request 401 (the services log an error naming it); `GATEWAY_KEY_OPTIONAL=true`
-restores the old trust-`X-Kong-Verified`-alone behaviour while a key is rolled out. A
-mismatched `SERVICE_AUTH_SECRET` fails *silently*: `kb_search` returns no chunks. Check those
-two first if retrieval goes quiet.
+`GATEWAY_KEY` goes only to the `setup` Job, which writes it into the Kong plugin. The api
+verifies the Keycloak token itself (Kong passes it on, `hide_credentials: false`), so no
+upstream reads it.
 
 [`create-secrets.sh`](create-secrets.sh) reads one env file and creates every
 Secret in the right namespace with the right subset. The deploy pipeline renders
@@ -310,7 +305,6 @@ band. Nothing in `deploy/k8s/` may use it.
 | keycloak (health) | service | 9000 | **8111** | `KC_HTTP_MANAGEMENT_PORT` |
 | openbao | database | 8200 | **8120** | `config.hcl` listener |
 | egress-proxy | service | 3128 | **8130** | `http_port` in its `squid.conf` ConfigMap |
-| auth-api | service | 8200 | **8200** | manifest `command` (unchanged) |
 | workflow-runtime | service | 8001 | **8240** | manifest `command` |
 | frontend | service | 3000 | **8280** | manifest `command` (vite `--port`) |
 | postgres | database | 5432 | **8300** | `PGPORT` |
@@ -345,7 +339,7 @@ numbers above — `postgres:8300`, `redis://redis:8320`, `bolt://neo4j:8341`,
 `http://litellm:8500`, `http://jaeger:8431`, and so on.
 
 Service DNS names are DNS-1123, so an underscore is not legal in a hostname:
-`worker-agent`, `worker-ingest`, `worker-document`, `auth-api`. `env` in the manifest wins
+`worker-agent`, `worker-ingest`, `worker-document`. `env` in the manifest wins
 over whatever default the image ships, so the underscored defaults compiled into
 the Python services never apply in-cluster.
 

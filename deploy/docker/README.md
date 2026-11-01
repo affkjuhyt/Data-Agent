@@ -21,7 +21,7 @@ things:
 | `kong/kong-setup.sh` | ConfigMap `kong-scripts` → `job/setup.yaml` |
 | `keycloak/setup-audience-mappers.sh`, `realm-export.json` | ConfigMaps `keycloak-scripts`, `keycloak-realm` |
 | `sql/create-extra-dbs.sql`, `init.sql` | ConfigMap `postgres-initdb` |
-| `sql/grant-roles.sql`, `platform-seed.sql` | ConfigMap `db-init-sql` → `job/db-init.yaml` |
+| `sql/grant-roles.sql`, `v3-*.sql` | ConfigMap `db-init-sql` → `job/db-init.yaml` |
 | `litellm/config.yaml` | ConfigMap `litellm-config` |
 | `monitoring/prometheus.yml` | ConfigMap `prometheus-config` |
 | `certs/gen-certs.sh` | dev TLS material, generated files git-ignored |

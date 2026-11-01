@@ -4,18 +4,6 @@
 #   set -a; . ./secrets.env; set +a; bash deploy/k8s/create-secrets.sh
 set -euo pipefail
 
-# app_user: tenant routes set app.tenant_id, cross-tenant reads go through the
-# SECURITY DEFINER functions of migration 4a7c2e9f1b3d.
-kubectl -n dataagent-service create secret generic auth-api-secrets \
-  --from-literal=DATABASE_URL="${APP_DATABASE_URL}" \
-  --from-literal=APP_DATABASE_URL="${APP_DATABASE_URL}" \
-  --from-literal=OPENBAO_TOKEN="${OPENBAO_TOKEN}" \
-  --from-literal=KC_ADMIN_USER="${KEYCLOAK_ADMIN}" \
-  --from-literal=KC_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD}" \
-  --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
-  --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 # The api's own AppRole (dataagent-api-policy), never the root token.
 kubectl -n dataagent-service create secret generic api-secrets \
   --from-literal=API_OIDC_ISSUER="${API_OIDC_ISSUER}" \

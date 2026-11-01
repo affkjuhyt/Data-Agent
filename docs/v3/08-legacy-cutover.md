@@ -20,7 +20,7 @@
 
 | Workload cũ | Manifest / image | Replacement V3 | Trạng thái | Điều kiện xoá |
 | --- | --- | --- | --- | --- |
-| `auth-api` | `service/auth-api.yaml`, `dataagent/auth_api` | `api` (`org`, token/capability) | Giữ | API thay được `/api/auth`, API-key verification và mọi client cũ; e2e auth qua `/v1` |
+| `auth-api` | đã xoá 01/11/2026 | `api` (`org`, `integration`: token/capability, api client bằng client-credentials) | Đã xoá | không frontend hay dịch vụ V3 nào gọi `/api/auth`; Kong xoá service và route cũ, plugin bỏ nhánh khoá `sk-`; e2e audience chạy qua `/v1` (`tests/integration/test_jwt_audience.py`) |
 | `workflow-runtime` | `service/workflow-runtime.yaml`, `dataagent/workflow_runtime` | `api` cho resource/control + `worker-agent` cho execution | Giữ | `worker-agent` chạy agent turn thật, resume/HITL, outbox và sandbox; Kong không còn route runtime cũ |
 | `kb-backend` | đã xoá mã 22/10/2026 (KB-08) | `api` (document, catalog, conflict) + `worker-document`, `worker-agent`, `crawler` | Đã xoá, cổng §4 đạt 01/11/2026 | ingest/search/catalog mới chạy trên V3 và các `/api/data`, `/api/knowledge`, `/api/pipeline` đã có replacement |
 | `kb-promote-*` | đã xoá mã 22/10/2026 (KB-08) | `worker-document` + `worker-agent` (`document.indexed`) | Đã xoá, cổng §4 đạt 01/11/2026 | Kafka consumer/group mới xử lý đủ Bronze/Silver/Gold, retry và DLQ |

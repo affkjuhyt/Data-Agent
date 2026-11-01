@@ -17,8 +17,6 @@ metadata:
     app: setup
     app.kubernetes.io/part-of: dataagent
 data:
-  ENABLE_ADMIN_KEY_AUTH: '0'
-  KONG_ADMIN_SUBNET: ''
   KONG_PROXY_URL: http://kong.dataagent-service.svc.cluster.local:8100
   # Dev only: the realm export keeps Browser MFA. This job switches the live realm
   # to the built-in browser flow and turns off its conditional OTP step, so a

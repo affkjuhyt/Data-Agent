@@ -7,8 +7,7 @@
 # Runs as the `setup` Job (deploy/k8s/<env>/job/setup.yaml), which mounts this
 # file from the kong-scripts ConfigMap; the deploy pipeline reruns it with
 # `-e apply_setup=true`. Kong's admin API is the ClusterIP Service kong-admin
-# (8101), reachable only from auth-api and the setup Job (allow-kong-admin).
-# Phase 3 key-auth is opt-in with ENABLE_ADMIN_KEY_AUTH=1 in the Job's env.
+# (8101), reachable only from the setup Job (allow-kong-admin).
 #
 # Requires: curl, python3 (baked into the runner image — see
 # deploy/docker/setup/Dockerfile).
@@ -26,7 +25,6 @@ KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
 # Without the override, Kong's upstream DNS lookup 503s with "name error"
 # the moment a route actually gets proxied (JWT/CORS checks can pass fine
 # before that point, which is what made this easy to miss).
-AUTH_API_HOST="${AUTH_API_HOST:-auth_api}"
 API_HOST="${API_HOST:-api}"
 REALM="${KEYCLOAK_REALM:-aeroflow}"
 # Set SKIP_JWT=1 to skip JWT plugin registration (useful for dev with VITE_MOCK_AUTH=true)
@@ -173,46 +171,15 @@ curl -sf -X PUT "$KONG_ADMIN/services/api/routes/api-v1-route" \
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-# ── 3b. Create auth_api service + route ────────────────────────────────
-echo "📡 Creating auth_api service..."
-curl -sf -X PUT "$KONG_ADMIN/services/auth_api" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "auth_api",
-    "url": "http://'"$AUTH_API_HOST"':8200",
-    "connect_timeout": 5000,
-    "read_timeout": 30000
-  }' | json_field name | xargs -I{} echo "  → service: {}"
-
-echo "🛣️  Creating auth_api route (ip-allowlist mgmt — no IP restriction)..."
-curl -sf -X PUT "$KONG_ADMIN/services/auth_api/routes/auth_api-route" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "auth_api-route",
-    "paths": ["/api/auth"],
-    "strip_path": false,
-    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
-  }' | json_field name | xargs -I{} echo "  → route: {}"
-
-echo "🛣️  Creating auth_api-keys route (API key mgmt — IP restricted)..."
-curl -sf -X PUT "$KONG_ADMIN/services/auth_api/routes/auth_api-keys-route" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "auth_api-keys-route",
-    "paths": ["/api/auth/api-keys"],
-    "strip_path": false,
-    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
-  }' | json_field name | xargs -I{} echo "  → route: {}"
-
-echo "🛣️  Creating auth_api-secrets route (Secrets Vault — IP restricted)..."
-curl -sf -X PUT "$KONG_ADMIN/services/auth_api/routes/auth_api-secrets-route" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "auth_api-secrets-route",
-    "paths": ["/api/auth/secrets"],
-    "strip_path": false,
-    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
-  }' | json_field name | xargs -I{} echo "  → route: {}"
+# ── 3b. Retired auth_api service + routes ──────────────────────────────
+# /api/auth (API keys, IP allowlist, Secrets Vault) was removed; V3 serves those from /v1
+# (org, integration). Same as 3c below: the routes first, then the service, whose
+# aeroflow-jwks plugin and the routes' ip-restriction plugins go with them.
+echo "🧹 Removing the retired auth_api service..."
+for route in auth_api-route auth_api-keys-route auth_api-secrets-route; do
+  curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/auth_api/routes/$route" || true
+done
+curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/auth_api" || true
 
 # ── 3c. Retired release_worker service + route ─────────────────────────
 # Release management (/api/release) was removed. Every step here is an
@@ -307,9 +274,6 @@ fi
 GATEWAY_KEY_JSON_FIELD=""
 if [ -n "$KONG_GATEWAY_KEY" ]; then
   GATEWAY_KEY_JSON_FIELD=",\"gateway_key\":\"$KONG_GATEWAY_KEY\""
-  # API keys (sk-...) are verified by auth_api, which only answers a caller
-  # holding the gateway key — so they are enabled exactly when that key is set.
-  GATEWAY_KEY_JSON_FIELD="$GATEWAY_KEY_JSON_FIELD,\"api_key_verify_url\":\"http://$AUTH_API_HOST:8200/internal/api-keys/verify\""
 fi
 
 if [ "$SKIP_JWT" = "1" ]; then
@@ -324,12 +288,6 @@ for p in data.get('data', []):
     curl -sf -X DELETE "$KONG_ADMIN/plugins/$pid" && echo "  → removed aeroflow-jwks plugin $pid"
   done
 else
-  # ── 4c. aeroflow-jwks on auth_api ──────────────────────────────────────
-  echo "🔐 Enabling aeroflow-jwks plugin on auth_api (aud=auth_api)..."
-  upsert_plugin "$KONG_ADMIN/services/auth_api/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth_api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
-    "aeroflow-jwks"
-
   echo "🔐 Enabling aeroflow-jwks plugin on api (aud=dataagent-api)..."
   upsert_plugin "$KONG_ADMIN/services/api/plugins" \
     "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"dataagent-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"hide_credentials\":false$GATEWAY_KEY_JSON_FIELD}}" \
@@ -338,19 +296,6 @@ else
 fi
 
 # ── 5. IP restriction ─────────────────────────────────────────────────
-# Applied to: auth_api-keys-route and auth_api-secrets-route.
-# auth_api ip-allowlist routes are intentionally EXCLUDED so admin can always
-# manage the allowlist regardless of the current IP policy.
-# Default: allow_all — auth_api syncs Kong to the DB mode on startup.
-# Switch to restricted via PUT /api/auth/ip-allowlist/config {"mode":"allowlist"}.
-_IP_DEFAULT='{"name":"ip-restriction","config":{"allow":["0.0.0.0/0","::/0"]}}'
-
-echo "🛡️  Enabling IP restriction on auth_api-keys-route..."
-upsert_plugin "$KONG_ADMIN/routes/auth_api-keys-route/plugins" "$_IP_DEFAULT" "ip-restriction"
-
-echo "🛡️  Enabling IP restriction on auth_api-secrets-route..."
-upsert_plugin "$KONG_ADMIN/routes/auth_api-secrets-route/plugins" "$_IP_DEFAULT" "ip-restriction"
-
 # Remove any leftover global ip-restriction plugin (from previous setup runs)
 echo "🧹 Removing any global ip-restriction plugin..."
 GLOBAL_IP_ID=$(curl -sf "$KONG_ADMIN/plugins" \
@@ -420,93 +365,6 @@ else
   echo "   Run: bash deploy/docker/certs/gen-certs.sh   to generate, then re-run this script."
 fi
 
-# ── 11. Admin API key-auth (Phase 3 hardening, OPT-IN) ────────────────
-# OSS Kong's admin endpoint doesn't natively accept plugins. Pattern below
-# uses "Kong-fronting-Kong": expose admin through a regular Kong service +
-# route, then apply key-auth on that route. Services that need to manage
-# Kong call http://kong:8000/_kong_admin/<path> with `apikey: <key>` instead
-# of the raw http://172.30.0.10:8001/<path>.
-#
-# Enable by setting ENABLE_ADMIN_KEY_AUTH=1. Disabled by default because
-# services still call raw admin in this PR — flipping this on without also
-# updating service env vars to use the proxied URL + apikey header will
-# break startup. Phased rollout:
-#
-#   1. Run with the flag in dev/staging
-#   2. Copy generated keys to .env (KONG_ADMIN_API_KEY_AUTH_API, ...)
-#   3. Update services to send `apikey` header + use proxied URL
-#   4. Verify, then flip on in prod
-if [ "${ENABLE_ADMIN_KEY_AUTH:-0}" = "1" ]; then
-  echo "🔒 Phase 3: registering Kong-fronting-Kong admin proxy with key-auth..."
-
-  # Upstream to the `kong-admin` network alias rather than a hardcoded address,
-  # so this keeps working wherever Kong lands (the k8s Service name).
-  ADMIN_UPSTREAM="${KONG_ADMIN_UPSTREAM:-http://kong-admin:8001}"
-
-  curl -sf -X PUT "$KONG_ADMIN/services/kong-admin-proxy" \
-    -H "Content-Type: application/json" \
-    -d "{\"name\":\"kong-admin-proxy\",\"url\":\"$ADMIN_UPSTREAM\"}" \
-    > /dev/null
-
-  curl -sf -X PUT "$KONG_ADMIN/services/kong-admin-proxy/routes/kong-admin-route" \
-    -H "Content-Type: application/json" \
-    -d '{
-      "name": "kong-admin-route",
-      "paths": ["/_kong_admin"],
-      "strip_path": true,
-      "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS","HEAD"]
-    }' > /dev/null
-
-  upsert_plugin "$KONG_ADMIN/routes/kong-admin-route/plugins" \
-    '{"name":"key-auth","config":{"key_names":["apikey"],"hide_credentials":true}}' \
-    "key-auth"
-
-  # Optional: also restrict by IP to defense-in-depth even if key leaks.
-  # Subnet comes from KONG_ADMIN_SUBNET (.env) so it stays in lockstep with the
-  # network CIDR — no silent break if the CIDR changes.
-  upsert_plugin "$KONG_ADMIN/routes/kong-admin-route/plugins" \
-    "{\"name\":\"ip-restriction\",\"config\":{\"allow\":[\"${KONG_ADMIN_SUBNET:-172.30.0.0/24}\"]}}" \
-    "ip-restriction"
-
-  # Helper: idempotent consumer + key creation. Writes keys to admin-keys.env
-  # for ops to copy into .env. NEVER commits keys to git — file is gitignored.
-  KEYS_FILE="$SCRIPT_DIR/../certs/admin-keys.env"
-  : > "$KEYS_FILE"
-  chmod 600 "$KEYS_FILE"
-
-  for consumer in auth_api; do
-    # Create consumer if not exists (PUT is idempotent)
-    curl -sf -X PUT "$KONG_ADMIN/consumers/$consumer-admin" \
-      -H "Content-Type: application/json" \
-      -d "{\"username\":\"$consumer-admin\"}" > /dev/null
-
-    # Rotate key: delete existing then create fresh. Idempotent re-runs
-    # generate a new key each time — operators see the rotation.
-    EXISTING_KEY_ID=$(curl -sf "$KONG_ADMIN/consumers/$consumer-admin/key-auth" \
-      | python3 -c "
-import sys, json
-data = json.load(sys.stdin).get('data', [])
-print(data[0]['id'] if data else '')" 2>/dev/null || true)
-    if [ -n "$EXISTING_KEY_ID" ]; then
-      curl -sf -X DELETE "$KONG_ADMIN/consumers/$consumer-admin/key-auth/$EXISTING_KEY_ID" > /dev/null || true
-    fi
-
-    NEW_KEY=$(curl -sf -X POST "$KONG_ADMIN/consumers/$consumer-admin/key-auth" \
-      | python3 -c "import sys, json; print(json.load(sys.stdin)['key'])")
-
-    # Upper-snake key var name, e.g. KONG_ADMIN_API_KEY_AUTH_API
-    VAR_NAME=$(echo "KONG_ADMIN_API_KEY_${consumer}" | tr '[:lower:]-' '[:upper:]_')
-    echo "${VAR_NAME}=${NEW_KEY}" >> "$KEYS_FILE"
-    echo "  → ${VAR_NAME} written"
-  done
-
-  echo ""
-  echo "  Admin proxy: http://kong:8000/_kong_admin/<path>"
-  echo "  Header:      apikey: \$${VAR_NAME%_*}_<SERVICE>"
-  echo "  Keys file:   $KEYS_FILE (chmod 600)"
-  echo "  Next step:   copy keys to .env, switch services to proxied URL"
-fi
-
 # ── 12. Note on Kong worker cache ──────────────────────────────────────
 # Kong's pubsub propagates plugin config to workers within a few seconds.
 # Custom-plugin local caches (kong.cache entries keyed off conf values)
@@ -534,7 +392,4 @@ echo "  CORS:   localhost:3000, localhost:8150"
 MTLS_STATUS="NOT configured (run deploy/docker/certs/gen-certs.sh first)"
 [ -f "$CERT_FILE" ] && MTLS_STATUS="Configured (Kong presents client cert)"
 echo "  mTLS:   $MTLS_STATUS"
-ADMIN_AUTH_STATUS="disabled (set ENABLE_ADMIN_KEY_AUTH=1 to enable)"
-[ "${ENABLE_ADMIN_KEY_AUTH:-0}" = "1" ] && ADMIN_AUTH_STATUS="enabled via /_kong_admin route"
-echo "  Admin auth: $ADMIN_AUTH_STATUS"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

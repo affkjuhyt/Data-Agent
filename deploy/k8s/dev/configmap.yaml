@@ -29,7 +29,6 @@ data:
   KEYCLOAK_NETWORK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KEYCLOAK_REALM: aeroflow
   KC_REALM: aeroflow
-  AUTH_API_HOST: auth-api
   API_HOST: api
   LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
   OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger.dataagent-service.svc.cluster.local:8431

@@ -267,8 +267,7 @@
     - name: Default the OpenBao credentials
       ansible.builtin.set_fact:
         openbao_env: >-
-          {{ {'OPENBAO_TOKEN': '',
-              'WORKER_AGENT_OPENBAO_ROLE_ID': '', 'WORKER_AGENT_OPENBAO_SECRET_ID': '',
+          {{ {'WORKER_AGENT_OPENBAO_ROLE_ID': '', 'WORKER_AGENT_OPENBAO_SECRET_ID': '',
               'API_OPENBAO_ROLE_ID': '', 'API_OPENBAO_SECRET_ID': '',
               'CRAWLER_OPENBAO_ROLE_ID': '', 'CRAWLER_OPENBAO_SECRET_ID': ''}
              | combine((openbao_state | default({}, true)).openbao_env | default({}, true)) }}
@@ -504,6 +503,18 @@
         --ignore-not-found=true
       register: kb_delete
       changed_when: "'deleted' in kb_delete.stdout"
+      when: apply_services | bool
+
+    # auth-api served /api/auth (API keys, IP allowlist, Secrets Vault), replaced by the api's
+    # org and integration modules; kong-setup.sh drops its Kong service and routes.
+    - name: Remove the retired auth-api
+      ansible.builtin.command: >-
+        {{ kubectl }} -n {{ ns_service }} delete --ignore-not-found=true
+        deployment/auth-api service/auth-api horizontalpodautoscaler/auth-api
+        poddisruptionbudget/auth-api serviceaccount/auth-api configmap/auth-api-env
+        secret/auth-api-secrets
+      register: auth_api_delete
+      changed_when: "'deleted' in auth_api_delete.stdout"
       when: apply_services | bool
 
     # model-service served embeddings and an LLM gateway nothing calls any more (V3 embeds and

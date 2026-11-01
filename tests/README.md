@@ -11,12 +11,11 @@ per-service suites.
 tests/
 ├── conftest.py              # session fixtures: postgres / redis / kafka via testcontainers
 ├── unit/                    # pure Python, no Docker, no network — fast
-│   ├── _loader.py           # load a service module by path, with stubs that do not leak
-│   ├── workflow_runtime/    # one suite per service, run in that service's image:
-│   ├── crawler/             #   a test goes in the suite of the code it exercises.
-│   ├── platform_workers/    #   There is no single image that can import every
-│   ├── auth_api/            #   service (their pins conflict: OTel, boto3), so the
-│   │                        #   suites are never run together.
+│   ├── api/                 # one suite per service, run in that service's image:
+│   ├── worker_agent/        #   a test goes in the suite of the code it exercises.
+│   ├── worker_ingest/       #   There is no single image that can import every
+│   ├── worker_document/     #   service (their pins conflict), so the suites are
+│   ├── crawler/             #   never run together.
 │   ├── contracts/           # libs/contracts (NOP-150), run in the api image (PyYAML, pinned pydantic)
 │   └── repo/                # repo-wide: k8s manifests, db-init, Ansible deploy plan, migrate image,
 │                            #   cross-service auth/tenant policy, model/bench and model/eval.
@@ -26,14 +25,11 @@ tests/
 ├── contract_mock/           # Contract v1 mock API for FE/Data/Agent (NOP-151, `make mock-api`; README.md)
 ├── integration/             # testcontainers; same per-service split as unit/
 │   ├── _db.py               # reset_database / run_alembic / alembic_head for the shared container
-│   ├── workflow_runtime/    # migrations, RLS on KB child tables, memory, schema catalog,
-│   │   └── requirements.txt #   handler→sandbox wiring (its extra sandbox imports)
-│   ├── auth_api/            # conftest.py: the auth_api app + minimal schema; smoke + RLS
-│   ├── platform_workers/    # schema crawler, web crawler
-│   ├── contracts/           # the Contract v1 mock as a real server (api image)
-│   └── test_*.py            # e2e only (LIVE_STACK=1): agent answer, JWT audience, load, tenant isolation
+│   ├── api/, worker_agent/, worker_ingest/, worker_document/, crawler/, migrate/, contracts/
+│   └── test_*.py            # e2e only (`make e2e`): V3 question, agent screens, JWT audience,
+│                            #   the KB replacement
 ├── e2e/                     # seed data for the demo agent + non-pytest harnesses
-│   ├── agent_eval.py        # 10-case behavioural eval through /api/orchestrate/stream
+│   ├── agent_eval.py        # behavioural eval through the deployed agent
 │   └── ui.e2e.mjs           # Playwright: real Keycloak login → ask → check the answer block
 ├── loadtest/                # k6 scripts and an ingestion throughput probe
 └── README.md
@@ -115,7 +111,7 @@ too old for the code (3.11+).
 
 ```bash
 make test-integration
-make test-integration INTEGRATION_SUITES=auth_api:auth_api
+make test-integration INTEGRATION_SUITES=api:api
 ```
 
 The suite container gets the Docker socket and the host network, so
@@ -148,10 +144,9 @@ make e2e                                                    # every tests/integr
 make e2e E2E_TESTS=tests/integration/test_agent_answer_e2e.py PYTEST_ARGS="-v -s"
 ```
 
-`make e2e` runs `pytest -m e2e` in the `workflow_runtime` image against the local
-OrbStack/k8s NodePorts by default (Kong `http://localhost:30100`, Keycloak
-`http://localhost:30110`, workflow-runtime `http://localhost:30240`). Override
-`E2E_KONG_URL` / `E2E_KEYCLOAK_URL` / `E2E_RUNTIME_URL` to target a shared or
+`make e2e` runs `pytest -m e2e` in the worker-agent image against the dev cluster's
+NodePorts (Kong `:30100`, Keycloak `:30110`). Override
+`E2E_KONG_URL` / `E2E_KEYCLOAK_URL` to target a shared or
 another cluster. Credentials come from the environment, never from a file
 (`tests/conftest.py` `LIVE_ACCOUNTS`): each account's password variable is required
 — a test fails naming the one that is unset — and its username defaults to the demo
@@ -200,8 +195,8 @@ import pytest
 
 @pytest.mark.unit
 def test_user_role_serialization():
-    from services.shared.auth import serialize_role  # example
-    assert serialize_role("platform-admin") == "platform_admin"
+    from services.api.kernel.auth import CAPABILITIES  # example
+    assert "ask" in CAPABILITIES
 ```
 
 ## Writing a new integration test (Postgres-backed)
@@ -220,148 +215,10 @@ The `postgres_container` fixture is session-scoped — one container per pytest
 run, not per test. If you need per-test isolation, wrap your test in a
 transaction and roll back at the end.
 
-## Service-scoped integration tests — the auth_api pattern
-
-`tests/integration/auth_api/conftest.py` is the template for in-process integration
-testing of a FastAPI service. See [tests/integration/auth_api/test_auth_api_smoke.py](integration/auth_api/test_auth_api_smoke.py)
-for the seven smoke tests built on top of it.
-
-The pattern, when cloning for a new service (workflow_runtime, ...):
-
-1. **Import the service by its package path** — `from services.auth_api.app
-   import create_app` — the way the image runs it (PYTHONPATH=backend, which
-   pyproject's `pythonpath` already gives pytest). Do not put a service
-   directory on `sys.path`: auth_api has its own `services/` package, and with
-   its directory first every later `import services.…` in the session
-   resolved to it.
-
-2. **Apply a minimal SQL schema, not full alembic.** Hand-roll only the
-   tables the routes under test touch. Faster, easier to read, and the
-   schema lives in the same file as the fixture — when columns change, the
-   test breaks loudly. Don't drift toward "test fixture = full prod schema"
-   — that ratchet ends with tests blocked by every unrelated migration.
-
-3. **Set env vars BEFORE importing the service module.** Module-level
-   constants (e.g. `PG_DSN = os.environ.get(...)`) read at import time, so
-   the session-scoped app fixture sets `DATABASE_URL`/`APP_DATABASE_URL`
-   first and imports second.
-
-4. **Strip the startup hook**. Most services have a `@app.on_event("startup")`
-   that talks to Kong, OpenBao, or Kafka. None are appropriate in-process.
-   `app.router.on_startup.clear()` after `create_app()`.
-
-5. **Reset per test, don't recreate the container.** Session-scoped
-   container, function-scoped `auth_api_db` that calls `reset_database` and
-   re-applies the minimal schema. Other suites migrate the same container,
-   so anything set up once per session (tables, the `app_user` password) is
-   gone by the time a later test runs.
-
-6. **Mock external services only where you must.** The smoke tests in
-   `test_auth_api_smoke.py` deliberately stop at validation/auth so they
-   don't need OpenBao at all. When you DO need OpenBao mocked, patch
-   `auth_core.get_vault` at test scope, not in conftest — keeps the global
-   fixture clean.
-
-7. **Add the suite to CI and make**. A new `tests/integration/<service>/`
-   directory goes into `INTEGRATION_SUITES` in the Makefile and the
-   `python-integration` matrix in `.github/workflows/ci.yml`.
-
-## Row-Level Security (RLS) — the rollout pattern
-
-`backend/alembic/versions/a1b2c3d4e5f6_enable_tenant_rls.py` enables `FORCE ROW
-LEVEL SECURITY` on every public table with a `tenant_id` column and
-installs a `tenant_isolation` policy filtering by
-`current_setting('app.tenant_id')`.
-
-After the migration, services have two ways to query the DB:
-
-1. **As `app_user`** — RLS-enforced. Connection MUST set `app.tenant_id`
-   per request. Forgetting to set it returns zero rows (fail-closed).
-   Try to read/write another tenant's row → empty result / CheckViolation.
-2. **As the owner role** (existing `aeroflow` etc.) — bypasses RLS via the
-   superuser bit. Reserved for migrations, backups, audit aggregation.
-   Service routes MUST NOT use this path for user-facing reads.
-
-### How to wire a route — the auth_api PoC
-
-[backend/services/auth_api/routers/api_keys.py](../backend/services/auth_api/routers/api_keys.py)
-shows the pattern as a sibling route:
-
-```python
-from shared.db_context import get_tenant_db
-
-@router.get("/api/auth/api-keys/list-via-rls")
-def list_api_keys_via_rls(db = Depends(get_tenant_db), ...):
-    with db.cursor(...) as cur:
-        cur.execute("SELECT ... FROM api_keys")   # no WHERE — RLS handles it
-        return ...
-```
-
-The `get_tenant_db` dependency:
-
-- Reads `X-Tenant-Id` from the headers Kong injects after JWT verification.
-- Validates it's a UUID (rejects SQL injection-via-SET at the boundary).
-- Opens a `psycopg2` connection to `APP_DATABASE_URL` (the app_user DSN).
-- `SET LOCAL app.tenant_id` for the lifetime of the transaction.
-- Yields the connection; commits on clean exit, rolls back on exception.
-
-### Rollout checklist for each service
-
-When migrating a service (workflow_runtime, ...):
-
-1. Give it `APP_DATABASE_URL` in its `<workload>-secrets` (Ansible
-   `secrets.yml` → `create-secrets.sh`). Format:
-   `postgresql://app_user:<password>@<pg-host>:<port>/<db>`. The password
-   comes from the vault — the migration creates the role without one.
-2. Add `from shared.db_context import get_tenant_db` to the routers.
-3. Replace `def handler(... = Depends(get_db))` with
-   `def handler(db = Depends(get_tenant_db))`.
-4. Drop the `WHERE tenant_id = %s` from queries that the new dep covers.
-   Keep them for now if you want belt-and-suspenders — RLS is the safety
-   net, app-layer WHERE is the primary filter.
-5. Run `pytest -m integration tests/integration/auth_api/test_rls_enforcement.py`
-   in CI to prove no regression.
-
-### Testing the contract
-
-[test_rls_enforcement.py](integration/auth_api/test_rls_enforcement.py) pins six
-properties of the migration. Don't delete tests when refactoring policies
-— update the assertions if the contract changes intentionally:
-
-1. `app_user` SELECT * (no WHERE) returns only the bound tenant's rows.
-2. `app_user` without setting context returns zero rows (fail-closed).
-3. `app_user` INSERT with a foreign tenant_id is denied by WITH CHECK.
-4. Owner/superuser bypasses RLS (migrations + admin tasks still work).
-5. `get_tenant_db` rejects non-UUID `X-Tenant-Id` with 422.
-6. End-to-end: the `/api/auth/api-keys/list-via-rls` PoC route returns
-   only the caller's row.
-
-### Common gotchas
-
-- **`current_setting('app.tenant_id', true)`** — the second arg
-  (`missing_ok=true`) returns `''` if unset rather than raising. The
-  policy uses `NULLIF` to translate `''` to NULL so the comparison
-  cleanly fails (no rows).
-- **`SET LOCAL`** vs `SET` — always use LOCAL inside the dep. Without it,
-  connection-pool reuse would leak tenant context across requests.
-- **Long-running connections** — if you batch operations on one connection
-  across multiple tenants, re-call `set_tenant_context` between batches.
-  Forgetting = previous tenant's rows visible. Cleanest is one conn per
-  tenant op.
-- **RLS violations are "InsufficientPrivilege", not "CheckViolation"** —
-  Postgres treats RLS as access control, not data validation. SQLSTATE is
-  42501 (`InsufficientPrivilege`), not 23514 (`CheckViolation`). If a
-  route handler catches `IntegrityError` and converts to a friendly 4xx,
-  it WON'T catch the RLS case — that crashes as 500 unless you also catch
-  `psycopg2.errors.InsufficientPrivilege` explicitly. Convert to 403 with
-  a "not your tenant" message.
-
 ## Promoting a script to a test
 
-The old standalone tenant-isolation runner is now
-[tests/integration/test_tenant_isolation.py](integration/test_tenant_isolation.py),
-split into one pytest case per scenario so failures show individually. New
-checks go here as tests, not as scripts.
+A check worth keeping is a pytest case, one per scenario so failures show individually,
+not a standalone script.
 
 ## What's intentionally NOT here yet
 

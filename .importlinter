@@ -3,8 +3,7 @@
 #
 # NOTE: only directories with an __init__.py are importable packages, so grimp
 # sees libs.* and the services that have one (api, worker_*, crawler).
-# workflow_runtime, auth_api, flow_builder, … have no __init__.py and cannot be
-# analysed here. These contracts capture the rules that ARE true today and guard
+# A service without one cannot be analysed here. These contracts capture the rules that ARE true today and guard
 # against regression. The full layered Dependency Rule contract (domain ←
 # application ← adapters ← infrastructure) lands once those layers exist.
 
@@ -93,7 +92,6 @@ source_modules =
     services.api
 forbidden_modules =
     services.workflow_runtime
-    services.auth_api
 
 # worker-agent (ADR-28): talks to the api only through the database and events, never by
 # importing it, and takes nothing from the legacy runtime it replaces.
@@ -105,7 +103,6 @@ source_modules =
 forbidden_modules =
     services.api
     services.workflow_runtime
-    services.auth_api
 
 # crawler (ADR-28, KB-02): reaches the api and worker-agent only through acquire's tables and
 # events, and takes nothing from the web-crawler it replaces.

@@ -168,7 +168,6 @@
       # does. Delete this file (and openbao-keys.json) only if you are also
       # resetting the OpenBao volume.
       openbao_env:
-        OPENBAO_TOKEN: "{{ bao_keys.root_token }}"
         WORKER_AGENT_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[0].stdout | trim }}"
         WORKER_AGENT_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[0].stdout | default(openbao_prev.WORKER_AGENT_OPENBAO_SECRET_ID | default(''), true) | trim }}"
         API_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[1].stdout | trim }}"

@@ -35,7 +35,7 @@ MIN_TEST_ACCURACY = 0.95
 MIN_SAMPLE_ACCURACY = 0.90
 
 _DOMAIN = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
-# The KV v2 layout every service already reads (auth_api's Secrets Vault, warehouse_secrets.py):
+# The KV v2 layout every service already reads (warehouse_secrets.py):
 # tenants/<org id>/<key>. The org segment is what keeps one organisation off another's secrets.
 _SECRET_KEY = re.compile(r"^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$")
 

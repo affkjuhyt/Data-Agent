@@ -83,8 +83,7 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 # k8s, Ansible, model/, cross-service policy) belongs to no service and runs on the local
 # dev-tools image: an image naming a `/` is used as given, not looked up in the registry.
 IMAGE_REGISTRY ?= localhost:5001
-UNIT_SUITES ?= auth_api:auth_api \
-               contracts:api api:api worker_agent:worker-agent worker_ingest:worker-ingest \
+UNIT_SUITES ?= contracts:api api:api worker_agent:worker-agent worker_ingest:worker-ingest \
                worker_document:worker-document crawler:crawler repo:$(DEV_TOOLS_IMAGE)
 INTEGRATION_SUITES ?= contracts:api api:api migrate:migrate worker_agent:worker-agent worker_ingest:worker-ingest \
                       worker_document:worker-document crawler:crawler

@@ -111,7 +111,7 @@ class TestRealImages:
             ["backend/libs/basemodel/services_databaseconnector/postgres_model.py"], inputs
         )
         assert not plan.paths_touching(
-            ["backend/services/auth_api/main.py", "backend/libs/shared/outbox.py"], inputs
+            ["backend/services/api/main.py", "backend/libs/shared/outbox.py"], inputs
         )
 
     def test_images_that_never_copy_libs_ignore_a_libs_change(self):
