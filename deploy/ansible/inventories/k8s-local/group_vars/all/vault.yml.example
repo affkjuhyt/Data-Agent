@@ -47,6 +47,9 @@ vault_kafka_admin_password: ""
 
 # ── identity and gateway ──────────────────────────────────────────────
 vault_keycloak_admin_password: ""
+# GEN-07: the first admin's temporary Keycloak password, used only when roles/k8s_org has to
+# create that user (an existing one keeps its password).
+vault_org_admin_password: ""
 vault_gateway_key: ""
 vault_service_auth_secret: ""
 vault_smoke_password: ""

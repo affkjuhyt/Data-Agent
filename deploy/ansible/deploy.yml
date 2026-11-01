@@ -757,6 +757,12 @@
       ansible.builtin.import_role:
         name: k8s_setup
 
+    # After the setup Job, so the realm is imported, and after the service tier, so the api pod
+    # that writes the organisation is up.
+    - name: Set up the organisation
+      ansible.builtin.import_role:
+        name: k8s_org
+
     - name: Verify
       ansible.builtin.import_role:
         name: k8s_verify

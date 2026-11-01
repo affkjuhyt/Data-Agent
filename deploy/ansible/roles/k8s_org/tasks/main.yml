@@ -1,0 +1,273 @@
+---
+# GEN-07: the organisation this install serves, its default roles and its first admin. The admin
+# is a Keycloak user first (the api resolves a token's sub to org.app_user.external_id and its
+# tenant_id attribute to the organisation), then the api's own bootstrap writes the rest as
+# svc_org (services/api/modules/org/bootstrap.py). Both halves are idempotent, so this runs on
+# every deploy.
+- name: Check the organisation settings
+  ansible.builtin.assert:
+    that:
+      - (org_id | string) is match('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      - org_code | length > 0
+      - org_name | length > 0
+      - org_locale | length > 0
+      - org_time_zone | length > 0
+      - org_currency | length > 0
+      - org_admin_username | length > 0
+      - org_admin_email | length > 0
+    fail_msg: >-
+      The inventory must set org_id (a uuid), org_code, org_name, org_locale, org_time_zone,
+      org_currency, org_admin_username and org_admin_email (roles/k8s_common/defaults/main.yml);
+      none of them is guessed.
+    quiet: true
+
+- name: Log kcadm in to Keycloak
+  ansible.builtin.command:
+    argv:
+      - "{{ kubectl }}"
+      - -n
+      - "{{ ns_service }}"
+      - exec
+      - deploy/keycloak
+      - --
+      - /opt/keycloak/bin/kcadm.sh
+      - config
+      - credentials
+      - --config
+      - /tmp/kcadm-org.config
+      - --server
+      - http://localhost:8110
+      - --realm
+      - master
+      - --user
+      - "{{ keycloak_admin_user }}"
+      - --password
+      - "{{ vault_keycloak_admin_password }}"
+  changed_when: false
+  no_log: true
+
+# Keycloak 24 drops a user attribute its user profile does not declare when the user is made
+# through the admin API (a realm import keeps them), so tenant_id would be lost on every user an
+# administrator adds. ADMIN_EDIT keeps undeclared attributes but lets only admins see and change
+# them: a user editing their own tenant_id would move into another organisation. The realm
+# export carries the same policy; this applies it to a realm imported before it did.
+- name: Read the realm's user profile
+  ansible.builtin.command:
+    argv:
+      - "{{ kubectl }}"
+      - -n
+      - "{{ ns_service }}"
+      - exec
+      - deploy/keycloak
+      - --
+      - /opt/keycloak/bin/kcadm.sh
+      - get
+      - users/profile
+      - --config
+      - /tmp/kcadm-org.config
+      - -r
+      - "{{ keycloak_realm }}"
+  register: org_user_profile
+  changed_when: false
+
+- name: Keep user attributes, editable by admins only
+  ansible.builtin.command:
+    argv:
+      - "{{ kubectl }}"
+      - -n
+      - "{{ ns_service }}"
+      - exec
+      - -i
+      - deploy/keycloak
+      - --
+      - /opt/keycloak/bin/kcadm.sh
+      - update
+      - users/profile
+      - --config
+      - /tmp/kcadm-org.config
+      - -r
+      - "{{ keycloak_realm }}"
+      - -f
+      - "-"
+    stdin: >-
+      {{ org_user_profile.stdout | from_json
+         | combine({'unmanagedAttributePolicy': 'ADMIN_EDIT'}) | to_json }}
+  when: (org_user_profile.stdout | from_json).unmanagedAttributePolicy | default('') != 'ADMIN_EDIT'
+  changed_when: true
+
+- name: Look the first admin up in Keycloak
+  ansible.builtin.command:
+    argv:
+      - "{{ kubectl }}"
+      - -n
+      - "{{ ns_service }}"
+      - exec
+      - deploy/keycloak
+      - --
+      - /opt/keycloak/bin/kcadm.sh
+      - get
+      - users
+      - --config
+      - /tmp/kcadm-org.config
+      - -r
+      - "{{ keycloak_realm }}"
+      - -q
+      - "username={{ org_admin_username }}"
+      # No --fields: kcadm's filter prints a user's attributes map as empty.
+      - -q
+      - exact=true
+  register: org_admin_lookup
+  changed_when: false
+
+- name: Read the admin found
+  ansible.builtin.set_fact:
+    org_admin_found: "{{ org_admin_lookup.stdout | from_json }}"
+
+# The user's tenant_id is what puts every token of theirs in an organisation: a user of another
+# one is never taken over, whatever the inventory says.
+- name: Refuse an admin of another organisation
+  ansible.builtin.assert:
+    that: >-
+      (org_admin_found | length == 0) or
+      (((org_admin_found[0].attributes | default({})).tenant_id | default([''])) | first == (org_id | string))
+    fail_msg: >-
+      Keycloak user {{ org_admin_username }} belongs to another organisation (tenant_id
+      {{ ((org_admin_found[0].attributes | default({})).tenant_id | default(['none'])) | first }});
+      pick another org_admin_username.
+    quiet: true
+
+- name: Create the first admin in Keycloak
+  when: org_admin_found | length == 0
+  block:
+    - name: Check the vault holds the admin's temporary password
+      ansible.builtin.assert:
+        that: (vault_org_admin_password | default('')) | length >= 12
+        fail_msg: >-
+          {{ org_admin_username }} is not in Keycloak yet: set vault_org_admin_password (12+
+          characters) for its temporary password.
+        quiet: true
+
+    - name: Create the user
+      ansible.builtin.command:
+        argv:
+          - "{{ kubectl }}"
+          - -n
+          - "{{ ns_service }}"
+          - exec
+          - deploy/keycloak
+          - --
+          - /opt/keycloak/bin/kcadm.sh
+          - create
+          - users
+          - --config
+          - /tmp/kcadm-org.config
+          - -r
+          - "{{ keycloak_realm }}"
+          - -s
+          - "username={{ org_admin_username }}"
+          - -s
+          - "email={{ org_admin_email }}"
+          - -s
+          - emailVerified=true
+          - -s
+          - enabled=true
+          - -s
+          - 'attributes.tenant_id=["{{ org_id }}"]'
+          - -s
+          - 'requiredActions=["UPDATE_PASSWORD"]'
+          - -i
+      register: org_admin_created
+      changed_when: true
+
+    - name: Set its temporary password
+      ansible.builtin.command:
+        argv:
+          - "{{ kubectl }}"
+          - -n
+          - "{{ ns_service }}"
+          - exec
+          - deploy/keycloak
+          - --
+          - /opt/keycloak/bin/kcadm.sh
+          - set-password
+          - --config
+          - /tmp/kcadm-org.config
+          - -r
+          - "{{ keycloak_realm }}"
+          - --username
+          - "{{ org_admin_username }}"
+          - --new-password
+          - "{{ vault_org_admin_password }}"
+          - --temporary
+      changed_when: true
+      no_log: true
+
+    - name: Read the created user back
+      ansible.builtin.command:
+        argv:
+          - "{{ kubectl }}"
+          - -n
+          - "{{ ns_service }}"
+          - exec
+          - deploy/keycloak
+          - --
+          - /opt/keycloak/bin/kcadm.sh
+          - get
+          - "users/{{ org_admin_created.stdout | trim }}"
+          - --config
+          - /tmp/kcadm-org.config
+          - -r
+          - "{{ keycloak_realm }}"
+      register: org_admin_readback
+      changed_when: false
+
+    - name: Check the created user carries the organisation
+      ansible.builtin.assert:
+        that: >-
+          ((org_admin_readback.stdout | from_json).attributes | default({})).tenant_id
+          | default([]) == [org_id | string]
+        fail_msg: "Keycloak kept no tenant_id on {{ org_admin_username }}: its token would carry no organisation."
+        quiet: true
+
+- name: Pick the admin's Keycloak id
+  ansible.builtin.set_fact:
+    org_admin_external_id: >-
+      {{ (org_admin_created.stdout | trim) if (org_admin_found | length == 0)
+         else org_admin_found[0].id }}
+
+- name: Write the organisation, its default roles and its admin
+  ansible.builtin.command:
+    argv:
+      - "{{ kubectl }}"
+      - -n
+      - "{{ ns_service }}"
+      - exec
+      - deploy/api
+      - --
+      - python
+      - -m
+      - services.api.modules.org.bootstrap
+      - --org
+      - "{{ org_id }}"
+      - --code
+      - "{{ org_code }}"
+      - --name
+      - "{{ org_name }}"
+      - --locale
+      - "{{ org_locale }}"
+      - --time-zone
+      - "{{ org_time_zone }}"
+      - --currency
+      - "{{ org_currency }}"
+      - --admin-username
+      - "{{ org_admin_username }}"
+      - --admin-email
+      - "{{ org_admin_email }}"
+      - --admin-external-id
+      - "{{ org_admin_external_id }}"
+  register: org_bootstrap
+  changed_when: "'created:' in org_bootstrap.stdout"
+
+- name: Report the organisation
+  ansible.builtin.debug:
+    msg: "{{ org_bootstrap.stdout_lines }}"

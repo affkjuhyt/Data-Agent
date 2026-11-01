@@ -56,6 +56,32 @@ kubectl -n dataagent-service get secret keycloak-secrets \
   -o jsonpath='{.data.KEYCLOAK_ADMIN_PASSWORD}' | base64 -d; echo   # Keycloak user: admin
 ```
 
+### The organisation (GEN-07)
+
+Every deploy makes sure the install has its organisation, its default roles and a first admin
+(`deploy/ansible/roles/k8s_org`). An inventory other than k8s-local sets, with no default for any of
+them: `org_id` (the uuid users carry as Keycloak's `tenant_id`), `org_code`, `org_name`, `org_locale`
+(e.g. `vi-VN`), `org_time_zone` (e.g. `Asia/Ho_Chi_Minh`), `org_currency` (e.g. `VND`, kept in
+`org.organization.settings`), `org_admin_username`, `org_admin_email`, and in the vault
+`vault_org_admin_password`, the admin's temporary password, changed at first login.
+
+| Role | Who | Capabilities |
+| --- | --- | --- |
+| AC01 | Người dùng nghiệp vụ | ask (an agent is seated with it) |
+| AC02 | Lãnh đạo | ask, exec_vault |
+| AC03 | Người phụ trách dữ liệu | ask, view_detail, steward, approve |
+| AC04 | Kỹ sư dữ liệu | ask, view_detail, upload, prepare_data, admin_data, writeback |
+| AC05 | Quản trị hệ thống | admin |
+| AC06 | Tuân thủ và pháp chế | compliance, audit_read |
+| AC08 | Chuyên viên phân tích | ask, view_detail, upload, prepare_data, run_agent, create_skill |
+| AC09 | Người dựng agent | ask, run_agent, create_agent, create_skill |
+| AC10 | Kiểm toán nội bộ | audit_read |
+
+The first admin gets AC05 only. Give AC06 to someone else (Quản trị › Người dùng): compliance is the
+second approver of what an admin enables. A role an administrator changed is not reset by a later
+deploy. Organisation users need `tenant_id` set to `org_id` in Keycloak; the realm keeps that
+attribute, editable by admins only.
+
 ## 3. Deploy a change
 
 1. Commit on your branch. **Uncommitted edits are not deployed** (the pipeline

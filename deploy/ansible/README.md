@@ -65,6 +65,7 @@ overridden by the inventory's `group_vars/all/`.
 | 12 | **Restart for config**: the service tier's Secrets and ConfigMaps are hashed before step 5 and after step 9; only the Deployments that read one whose content changed (`envFrom`, `env.valueFrom`, volumes) are restarted | `apply_services` and some content changed |
 | 12b | **Wait** for every restarted workload, all at once; the gateway is waited on only when Keycloak/Kong changed, so an API/worker deploy does not block on the gateway | something restarted |
 | 13 | **Gateway setup** (`k8s_setup`): rerun the `setup` Job — Kong services/routes/plugins/CORS, the JWT issuer, Keycloak audience mappers, dev user passwords — and apply the backup CronJob | `apply_setup`, or a change under `setup_inputs` (`kong-setup.sh`, `deploy/docker/keycloak/`, `deploy/docker/setup/`, `job/setup.yaml`) or a full deploy |
+| 13b | **Organisation** (`k8s_org`, GEN-07): the realm's user profile keeps attributes for admins only (`ADMIN_EDIT`), the first admin is found or created in Keycloak with the organisation's `tenant_id` (a temporary password from `vault_org_admin_password`, changed at first login), then `services.api.modules.org.bootstrap` in the api pod writes the organisation, the default roles AC01–AC06, AC08–AC10 and the admin's AC05. Stops when an `org_*` value is missing or the admin belongs to another organisation | always; idempotent, an existing role or user is kept as it is |
 | 14 | **Verify** (`k8s_verify`), then write the checkpoint | always; the checkpoint only advances if every step above succeeded |
 
 Why restarts are explicit: a rebuilt image keeps the same `:latest` reference,
@@ -109,6 +110,7 @@ The only inventory. It deploys the single-node dev server from
 | `database_manifests` | `[]` | Empty applies every database manifest; staged V3 can use `postgres,pgbouncer,openbao` |
 | `apply_jobs` / `apply_setup` | `false` | Jobs rerun migrations, reset role passwords and rebuild demo tables; setup rewrites Kong config. Opt in per run with `-e` |
 | `seed_demo` | `true` | the `seed` Job loads demo data (see RUNBOOK) |
+| `org_id`, `org_code`, `org_name`, `org_locale`, `org_time_zone`, `org_currency`, `org_admin_username`, `org_admin_email` | the demo organisation `helios`, admin `helios-admin` | the organisation the install serves (step 13b). **No defaults**: another inventory must set all eight, plus `vault_org_admin_password` (12+ characters) when the admin is not in Keycloak yet |
 | `wait_rollout` | `180` | only changed/restarted workloads are waited on; gateway waits happen only for a gateway change |
 | `build_log_dir` | `$TMPDIR/dataagent-deploy/k8s-local` | per-image build/push logs on macOS |
 | `public_api_url`, `keycloak_public_url`, `langfuse_public_url` | `http://10.10.55.101:30100`, `:30110`, `:30420` | the URLs **browsers** use — see below |

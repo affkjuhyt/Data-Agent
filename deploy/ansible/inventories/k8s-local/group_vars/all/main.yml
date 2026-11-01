@@ -34,6 +34,15 @@ wait_rollout: 180
 build_log_dir: "{{ lookup('env', 'TMPDIR') | default('/tmp', true) }}/dataagent-deploy/k8s-local"
 
 seed_demo: true
+# The demo organisation, its admin the realm's helios-admin (already in Keycloak).
+org_id: "{{ seed_demo_tenant }}"
+org_code: helios
+org_name: Helios (demo)
+org_locale: vi-VN
+org_time_zone: Asia/Ho_Chi_Minh
+org_currency: VND
+org_admin_username: helios-admin
+org_admin_email: helios-admin@helios.corp
 
 public_api_url: http://localhost:30100
 keycloak_public_url: http://localhost:30110

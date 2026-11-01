@@ -173,6 +173,21 @@ setup_inputs:
 seed_demo: false
 seed_demo_tenant: a0000000-0000-0000-0000-000000000001
 
+# GEN-07: the organisation this install serves (roles/k8s_org). Every value is required and none
+# is defaulted, so an inventory that forgets one stops the deploy instead of installing a guess.
+# org_id is the uuid users carry in Keycloak's tenant_id attribute; org_admin_username is the
+# first system admin (AC05). When that user is not in Keycloak yet it is created with
+# vault_org_admin_password as a temporary password to change at first login.
+org_id: ""
+org_code: ""
+org_name: ""
+org_locale: ""
+org_time_zone: ""
+org_currency: ""
+org_admin_username: ""
+org_admin_email: ""
+keycloak_realm: aeroflow
+
 wait_namespace: 60
 wait_statefulset: 600
 wait_job: 900
