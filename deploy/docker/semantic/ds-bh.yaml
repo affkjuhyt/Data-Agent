@@ -2,12 +2,12 @@
 # the R1-06 pilot set, 20 metrics over sales lines, month-end stock, receivables and period
 # editions. Format: services/api/modules/context/semantic_yaml.py.
 #
-# Load into the dev cluster (a dry run first, then SEMANTIC_APPLY=1):
+# deploy/docker/sql/v3-pilot-seed.sql certifies all 20 on every db-init (the data is synthetic), so
+# the dev cluster serves this model with no review round; tests/unit/repo/test_pilot_seed_semantics.py
+# keeps the two the same. Change both together. To try a change on the cluster before seeding it:
 #   make semantic-import SEMANTIC_ORG=a0000000-0000-0000-0000-000000000001 SEMANTIC_SPACE=DS-BH \
 #        SEMANTIC_AS=<steward username> SEMANTIC_FILE=deploy/docker/semantic/ds-bh.yaml
-# Four of the five metrics the seed certified come back unchanged. TON_KHO gets a draft version 2
-# that leaves out the retired code, and stock gains its time dimension. The other 15 metrics arrive
-# as drafts for review.
+# which writes drafts for review.
 #
 # Every metric is reconciled against hand-written SQL on the seed's data
 # (tests/integration/worker_agent/test_pilot_reconciliation.py). The definitions keep to the

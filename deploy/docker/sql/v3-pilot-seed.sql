@@ -410,6 +410,222 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
+-- The rest of the pilot's semantic layer (R1-16): deploy/docker/semantic/ds-bh.yaml, all 20
+-- metrics certified so R1 development and the R1-12 eval set use them without a review round;
+-- the data is synthetic. tests/unit/repo/test_pilot_seed_semantics.py keeps this block and the
+-- yaml the same, and tests/integration/worker_agent/test_pilot_reconciliation.py reconciles
+-- every metric with hand-written SQL. TON_KHO version 2 leaves the retired code "Kho Hà Nội"
+-- out (version 1 counted it: trap 3) and stock gains its time dimension.
+INSERT INTO context.semantic_entity (
+    id, org_id, data_space_id, code, name, description, primary_dataset_id, key_columns,
+    created_by, updated_by
+)
+VALUES
+    ('a0000000-0000-0000-0000-000000000d01', :org::uuid, :space::uuid, 'cong_no', 'Công nợ phải thu',
+     'Hoá đơn và số đã thu tại một ngày chụp.',
+     'a0000000-0000-0000-0000-000000000b12', ARRAY['invoice_id', 'as_of_date'], :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d02', :org::uuid, :space::uuid, 'ban_chot', 'Bản chốt kỳ',
+     'Doanh thu và giá vốn của một kỳ theo từng bản (final, preliminary).',
+     'a0000000-0000-0000-0000-000000000b14', ARRAY['period_month', 'edition', 'category'], :engineer::uuid, :engineer::uuid)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO context.semantic_measure (
+    id, org_id, data_space_id, entity_id, code, name, expression, aggregation, unit, additivity,
+    created_by, updated_by
+)
+VALUES
+    ('a0000000-0000-0000-0000-000000000d10', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000b20', 'so_don', 'Số đơn',
+     'COUNT(DISTINCT order_id)', 'count_distinct', NULL, 'none', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d11', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000b20', 'so_luong', 'Số lượng bán',
+     'SUM(qty)', 'sum', 'cái', 'full', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d12', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000b21', 'gia_tri_ton', 'Giá trị tồn',
+     'SUM(qty_on_hand * unit_cost)', 'sum', 'VND', 'semi', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d13', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000d01', 'con_phai_thu', 'Còn phải thu',
+     'SUM(amount - paid)', 'sum', 'VND', 'semi', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d14', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000d01', 'qua_han', 'Quá hạn',
+     'SUM(CASE WHEN due_on < as_of_date THEN amount - paid ELSE 0 END)', 'sum', 'VND', 'semi', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d15', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000d01', 'hoa_don_mo', 'Hoá đơn còn mở',
+     'SUM(CASE WHEN amount > paid THEN 1 ELSE 0 END)', 'sum', NULL, 'semi', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d16', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000d02', 'doanh_thu_chot', 'Doanh thu đã chốt',
+     'SUM(net_revenue)', 'sum', 'VND', 'full', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d17', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000d02', 'gia_von_chot', 'Giá vốn đã chốt',
+     'SUM(cogs)', 'sum', 'VND', 'full', :engineer::uuid, :engineer::uuid)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO context.semantic_dimension (
+    id, org_id, data_space_id, entity_id, code, name, expression, value_index_enabled, is_time,
+    created_by, updated_by
+)
+VALUES
+    ('a0000000-0000-0000-0000-000000000d20', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000b21', 'ma_hang', 'Mã hàng', 'sku',
+     true, false, :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d21', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000b21', 'ngay_ton', 'Ngày tồn', 'as_of_date',
+     false, true, :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d22', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000d01', 'chi_nhanh_no', 'Chi nhánh', 'branch',
+     true, false, :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d23', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000d01', 'ngay_chup', 'Ngày chụp', 'as_of_date',
+     false, true, :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d24', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000d02', 'ban', 'Bản', 'edition',
+     true, false, :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d25', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000d02', 'ky_chot', 'Kỳ', 'period_month',
+     false, true, :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d26', :org::uuid, :space::uuid,
+     'a0000000-0000-0000-0000-000000000d02', 'nhom_hang_chot', 'Nhóm hàng', 'category',
+     true, false, :engineer::uuid, :engineer::uuid)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO context.metric (
+    id, org_id, data_space_id, code, owner_id, current_version, status, created_by, updated_by
+)
+VALUES
+    ('a0000000-0000-0000-0000-000000000d40', :org::uuid, :space::uuid, 'TY_LE_GIA_VON', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d41', :org::uuid, :space::uuid, 'SO_LUONG_BAN', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d42', :org::uuid, :space::uuid, 'SO_DON', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d43', :org::uuid, :space::uuid, 'GIA_TRI_DON_TB', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d44', :org::uuid, :space::uuid, 'GIA_BAN_TB', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d45', :org::uuid, :space::uuid, 'DOANH_THU_BQ_NGAY', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d46', :org::uuid, :space::uuid, 'GIA_TRI_TON_KHO', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d47', :org::uuid, :space::uuid, 'TON_KHO_BQ', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d48', :org::uuid, :space::uuid, 'VONG_QUAY_TON_KHO', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d49', :org::uuid, :space::uuid, 'DSO', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d4a', :org::uuid, :space::uuid, 'CONG_NO', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d4b', :org::uuid, :space::uuid, 'CONG_NO_QUA_HAN', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d4c', :org::uuid, :space::uuid, 'TY_LE_QUA_HAN', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d4d', :org::uuid, :space::uuid, 'SO_HOA_DON_MO', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000000d4e', :org::uuid, :space::uuid, 'DOANH_THU_CHOT', :engineer::uuid, 1,
+     'active', :engineer::uuid, :engineer::uuid)
+ON CONFLICT (id) DO NOTHING;
+
+-- One certified version per metric (metric_version_metric_id_key): TON_KHO's first steps aside.
+UPDATE context.metric_version SET status = 'superseded'
+WHERE metric_id = 'a0000000-0000-0000-0000-000000000b84' AND version = 1 AND status = 'certified'
+  AND NOT EXISTS (SELECT 1 FROM context.metric_version WHERE metric_id = 'a0000000-0000-0000-0000-000000000b84' AND version = 2);
+
+INSERT INTO context.metric_version (
+    id, org_id, metric_id, version, display_name, description, expression, filters, unit,
+    decimals, direction, period_semantics, time_grain, allowed_dimensions, additivity,
+    legal_basis, status, certified_by, certified_at, valid_from
+)
+SELECT
+    v.id::uuid, :org::uuid, v.metric_id::uuid, v.version, v.name, v.description, v.expression,
+    v.filters::jsonb, v.unit, v.decimals, v.direction, v.period_semantics, v.time_grain,
+    v.allowed, v.additivity, v.legal_basis, 'certified', :engineer::uuid,
+    '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z'
+FROM (VALUES
+    ('a0000000-0000-0000-0000-000000000d70', 'a0000000-0000-0000-0000-000000000d40', 1, 'Tỷ lệ giá vốn',
+     'Giá vốn trên doanh thu thuần, theo doanh thu (không trung bình tỷ lệ).',
+     'gia_von / doanh_thu * 100', '[]',
+     '%', 1, 'lower_better', 'sum_over_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000b40', 'a0000000-0000-0000-0000-000000000b41']::uuid[], 'none', NULL),
+    ('a0000000-0000-0000-0000-000000000d71', 'a0000000-0000-0000-0000-000000000d41', 1, 'Số lượng bán',
+     NULL,
+     'so_luong', '[]',
+     'cái', 0, 'higher_better', 'sum_over_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000b40', 'a0000000-0000-0000-0000-000000000b41']::uuid[], 'full', NULL),
+    ('a0000000-0000-0000-0000-000000000d72', 'a0000000-0000-0000-0000-000000000d42', 1, 'Số đơn hàng',
+     'Số đơn khác nhau; một đơn nhiều dòng đếm một lần.',
+     'so_don', '[]',
+     'đơn', 0, 'higher_better', 'sum_over_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000b40', 'a0000000-0000-0000-0000-000000000b41']::uuid[], 'none', NULL),
+    ('a0000000-0000-0000-0000-000000000d73', 'a0000000-0000-0000-0000-000000000d43', 1, 'Giá trị đơn bình quân',
+     NULL,
+     'doanh_thu / so_don', '[]',
+     'VND', 0, 'higher_better', 'sum_over_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000b40', 'a0000000-0000-0000-0000-000000000b41']::uuid[], 'none', NULL),
+    ('a0000000-0000-0000-0000-000000000d74', 'a0000000-0000-0000-0000-000000000d44', 1, 'Giá bán bình quân',
+     NULL,
+     'doanh_thu / so_luong', '[]',
+     'VND', 0, 'neutral', 'sum_over_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000b40', 'a0000000-0000-0000-0000-000000000b41']::uuid[], 'none', NULL),
+    ('a0000000-0000-0000-0000-000000000d75', 'a0000000-0000-0000-0000-000000000d45', 1, 'Doanh thu bình quân ngày bán',
+     'Trung bình doanh thu của những ngày có bán trong kỳ.',
+     'doanh_thu', '[]',
+     'VND', 0, 'higher_better', 'average_over_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000b40', 'a0000000-0000-0000-0000-000000000b41']::uuid[], 'none', NULL),
+    ('a0000000-0000-0000-0000-000000000d76', 'a0000000-0000-0000-0000-000000000b84', 2, 'Tồn kho',
+     'Số tồn tại ngày cuối kỳ. Không cộng các ngày, không cộng mã Kho Hà Nội.',
+     'ton_kho', '[{"dimension": "kho", "op": "!=", "values": ["Kho Hà Nội"]}]',
+     'cái', 0, 'neutral', 'end_of_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000b43', 'a0000000-0000-0000-0000-000000000d20']::uuid[], 'semi', 'QD-GV-2026/02'),
+    ('a0000000-0000-0000-0000-000000000d77', 'a0000000-0000-0000-0000-000000000d46', 1, 'Giá trị tồn kho',
+     NULL,
+     'gia_tri_ton', '[{"dimension": "kho", "op": "!=", "values": ["Kho Hà Nội"]}]',
+     'VND', 0, 'neutral', 'end_of_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000b43', 'a0000000-0000-0000-0000-000000000d20']::uuid[], 'semi', NULL),
+    ('a0000000-0000-0000-0000-000000000d78', 'a0000000-0000-0000-0000-000000000d47', 1, 'Tồn kho bình quân',
+     'Trung bình số tồn các ngày cuối tháng trong kỳ.',
+     'ton_kho', '[{"dimension": "kho", "op": "!=", "values": ["Kho Hà Nội"]}]',
+     'cái', 0, 'neutral', 'average_over_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000b43', 'a0000000-0000-0000-0000-000000000d20']::uuid[], 'none', NULL),
+    ('a0000000-0000-0000-0000-000000000d79', 'a0000000-0000-0000-0000-000000000d48', 1, 'Vòng quay hàng tồn kho',
+     'Giá vốn trong kỳ trên giá trị tồn cuối kỳ.',
+     'gia_von / gia_tri_ton', '[{"dimension": "kho", "op": "!=", "values": ["Kho Hà Nội"]}]',
+     'lần', 2, 'higher_better', 'sum_over_period', 'month',
+     ARRAY[]::uuid[], 'none', NULL),
+    ('a0000000-0000-0000-0000-000000000d7a', 'a0000000-0000-0000-0000-000000000d49', 1, 'Số ngày thu tiền',
+     'Còn phải thu trên doanh thu kỳ, quy ra 30 ngày.',
+     'con_phai_thu / doanh_thu * 30', '[]',
+     'ngày', 1, 'lower_better', 'sum_over_period', 'month',
+     ARRAY[]::uuid[], 'none', NULL),
+    ('a0000000-0000-0000-0000-000000000d7b', 'a0000000-0000-0000-0000-000000000d4a', 1, 'Công nợ phải thu',
+     NULL,
+     'con_phai_thu', '[]',
+     'VND', 0, 'lower_better', 'end_of_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000d22']::uuid[], 'semi', NULL),
+    ('a0000000-0000-0000-0000-000000000d7c', 'a0000000-0000-0000-0000-000000000d4b', 1, 'Công nợ quá hạn',
+     NULL,
+     'qua_han', '[]',
+     'VND', 0, 'lower_better', 'end_of_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000d22']::uuid[], 'semi', NULL),
+    ('a0000000-0000-0000-0000-000000000d7d', 'a0000000-0000-0000-0000-000000000d4c', 1, 'Tỷ lệ công nợ quá hạn',
+     NULL,
+     'qua_han / con_phai_thu * 100', '[]',
+     '%', 1, 'lower_better', 'end_of_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000d22']::uuid[], 'none', NULL),
+    ('a0000000-0000-0000-0000-000000000d7e', 'a0000000-0000-0000-0000-000000000d4d', 1, 'Số hoá đơn còn mở',
+     NULL,
+     'hoa_don_mo', '[]',
+     'hoá đơn', 0, 'lower_better', 'end_of_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000d22']::uuid[], 'semi', NULL),
+    ('a0000000-0000-0000-0000-000000000d7f', 'a0000000-0000-0000-0000-000000000d4e', 1, 'Doanh thu đã chốt',
+     'Doanh thu theo bản final của kỳ; bản preliminary không được cộng.',
+     'doanh_thu_chot', '[{"dimension": "ban", "op": "in", "values": ["final"]}]',
+     'VND', 0, 'higher_better', 'sum_over_period', 'month',
+     ARRAY['a0000000-0000-0000-0000-000000000d26']::uuid[], 'full', NULL)
+) AS v(id, metric_id, version, name, description, expression, filters, unit, decimals, direction,
+       period_semantics, time_grain, allowed, additivity, legal_basis)
+ON CONFLICT (id) DO NOTHING;
+
+UPDATE context.metric SET current_version = 2 WHERE id = 'a0000000-0000-0000-0000-000000000b84';
+
 -- Policy documents. The December 2025 promotion is expired. The July 2026 decision replaces January.
 -- The originals are deploy/docker/pilot-docs/*.html, which minio-init puts in da-raw-docs; sha256
 -- and size_bytes are theirs, so the file a reader opens is the one the pages were read from.
