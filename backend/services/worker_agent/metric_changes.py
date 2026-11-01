@@ -569,21 +569,29 @@ async def preview_requested(event: Event) -> None:
         )
 
 
+async def _back_to_draft(event: Event, reviewer: uuid.UUID, version_id: uuid.UUID) -> bool:
+    """A version whose proposal ends without certifying it returns to draft. A failed one too: its
+    proposal is apply_failed for good and a pending_review version is never previewed again, so
+    left pending it could be neither fixed nor proposed anew (a definition broken only because its
+    tables were not enabled yet stayed so after they were)."""
+    async with scoped_session("svc_context", event.org_id, reviewer) as session:
+        result = await session.execute(
+            update(context.MetricVersion)
+            .where(
+                context.MetricVersion.id == version_id,
+                context.MetricVersion.status == "pending_review",
+            )
+            .values(status="draft", proposal_id=None)
+        )
+    return result.rowcount == 1
+
+
 async def apply(event: Event, proposal: dict[str, Any]) -> bool:
     """The decision on a metric_change proposal; True when it took effect."""
     reviewer = uuid.UUID(str(event.payload["reviewer_id"]))
     version_id = uuid.UUID(str(proposal["target_ref"]))
     if event.payload.get("status") != "accepted":
-        async with scoped_session("svc_context", event.org_id, reviewer) as session:
-            result = await session.execute(
-                update(context.MetricVersion)
-                .where(
-                    context.MetricVersion.id == version_id,
-                    context.MetricVersion.status == "pending_review",
-                )
-                .values(status="draft", proposal_id=None)
-            )
-        return result.rowcount == 1
+        return await _back_to_draft(event, reviewer, version_id)
     v = await _versions(event.org_id, reviewer, version_id)
     if v is None or v.new.status != "pending_review":
         return False
@@ -603,6 +611,7 @@ async def apply(event: Event, proposal: dict[str, Any]) -> bool:
     # version, so an edited definition is a new version to preview, never certified as this one.
     if edited:
         logger.info("worker-agent | metric_change %s not applied: edited", proposal["id"])
+        await _back_to_draft(event, reviewer, version_id)
         return False
     # Fail closed: without a recorded author the reviewer could be it, so the version is not
     # certified; one created before the api recorded authors is saved again as a new version.
@@ -613,6 +622,7 @@ async def apply(event: Event, proposal: dict[str, Any]) -> bool:
             proposal["id"],
             "no recorded author" if author is None else "its author",
         )
+        await _back_to_draft(event, reviewer, version_id)
         return False
     impact.breaks += [
         b
@@ -625,6 +635,7 @@ async def apply(event: Event, proposal: dict[str, Any]) -> bool:
             proposal["id"],
             "; ".join(b["text"] for b in impact.breaks),
         )
+        await _back_to_draft(event, reviewer, version_id)
         return False
     stamp = _now()
     async with scoped_session("svc_context", event.org_id, reviewer) as session:

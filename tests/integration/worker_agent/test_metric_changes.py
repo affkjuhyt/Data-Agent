@@ -225,9 +225,8 @@ async def test_a_change_that_breaks_a_monitor_is_flagged_and_not_applied(
     await decide(bank, proposal, "accepted")
     assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "apply_failed"
     assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v1) == "certified"
-    assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v2) == (
-        "pending_review"
-    )
+    # Back to draft, so its steward can fix the definition and propose it again.
+    assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v2) == "draft"
     assert seed.one("SELECT current_version FROM context.metric WHERE id = %s", metric) == 1
 
 
