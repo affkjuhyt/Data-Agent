@@ -270,6 +270,10 @@ async def test_accepted_knowledge_page_version_is_served_and_old_version_is_pres
     assert (
         seed.one("SELECT kind FROM inbox.proposal WHERE id = %s", proposal_id) == "knowledge_page"
     )
+    # What POST /v1/proposals/{id}:decide does before it emits proposal.decided.
+    seed.conn.cursor().execute(
+        "UPDATE inbox.proposal SET status = 'accepted' WHERE id = %s", (str(proposal_id),)
+    )
     await proposals.decided(
         Event(
             uuid.uuid4(),

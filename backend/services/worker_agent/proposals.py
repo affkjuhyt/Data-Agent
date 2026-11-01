@@ -110,6 +110,10 @@ async def _open(
                 evidence=[{"requested": _plain(diff)}],
                 proposed_by=proposed_by,
                 eval_run_id=eval_run_id,
+                # Every caller has run its checks and the standard set before it opens the proposal,
+                # so it waits for a reviewer. Left at the column's default 'open', the review page
+                # (ProposalPage.tsx), which decides only pending_review, offered no decision at all.
+                status="pending_review",
                 # What the change reaches, counted when it is proposed (metric_changes.py).
                 impact=_plain(impact or {}),
                 impact_level=impact_level,

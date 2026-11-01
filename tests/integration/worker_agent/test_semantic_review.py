@@ -284,6 +284,8 @@ async def test_a_relationship_a_scheduled_scan_inferred_reaches_the_stewards_rev
         relationship,
     )
     assert seed.one("SELECT proposed_by FROM inbox.proposal WHERE id = %s", pid) == bank.user
+    # Its standard set has run: it waits for a reviewer, which is what the review page decides.
+    assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", pid) == "pending_review"
     table = seed.one("SELECT table_name FROM catalog.dataset WHERE id = %s", loans)
     assert seed.one("SELECT title FROM inbox.proposal WHERE id = %s", pid) == (
         f"Quan hệ {table}(branch_code) → {table}(loan_id)"

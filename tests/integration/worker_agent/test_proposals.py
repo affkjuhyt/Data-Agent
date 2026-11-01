@@ -150,7 +150,7 @@ async def test_uc_03_05_accepting_the_proposal_publishes_the_version(world: Worl
     await _drain("skill")  # redelivery-proof: still one proposal
     assert w.seed.one("SELECT count(*) FROM inbox.proposal WHERE target_ref = %s", version) == 1
     pid, kind, status, by = _opened(w, version)
-    assert (kind, status, by) == ("skill_publish", "open", str(w.author))
+    assert (kind, status, by) == ("skill_publish", "pending_review", str(w.author))
 
     _decide(w, pid, "accept")
     await _drain("inbox")
@@ -286,7 +286,7 @@ async def test_uc_06_04_writeback_opens_and_applies_a_real_proposal(world: World
         requested_by=w.author,
     )
     await _drain("pipeline")
-    assert _opened(w, writeback)[:3] == (proposal, "writeback", "open")
+    assert _opened(w, writeback)[:3] == (proposal, "writeback", "pending_review")
     _decide(w, proposal, "accept")
     await _drain("inbox")
     assert w.seed.one(
