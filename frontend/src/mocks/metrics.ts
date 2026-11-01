@@ -39,6 +39,7 @@ function version(
     direction: 'lower_better',
     period_semantics: 'end_of_period',
     time_grain: 'day',
+    time_dimension_id: null,
     dimension_labels: ['vùng', 'chi nhánh', 'sản phẩm', 'phân khúc', 'kỳ'],
     change_note: note,
     status,

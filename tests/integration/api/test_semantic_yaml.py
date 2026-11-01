@@ -218,6 +218,58 @@ async def test_a_file_that_does_not_resolve_writes_nothing(seed: Seed) -> None:
     ]
 
 
+async def test_a_name_two_datasets_share_is_refused_and_an_id_resolves(seed: Seed) -> None:
+    # GEN-22: two sources of one space may each have silver.loan; the name fits neither.
+    space = Space(seed)
+    source = seed.row(
+        "catalog.source",
+        org_id=space.org,
+        data_space_id=space.id,
+        name="Kho thứ hai",
+        kind="postgresql",
+        secret_ref=f"secret/tenants/{space.org}/second",
+        status="active",
+    )
+    other = seed.row(
+        "catalog.dataset",
+        org_id=space.org,
+        data_space_id=space.id,
+        source_id=source,
+        origin="source",
+        schema_name="silver",
+        table_name="loan",
+        enabled=True,
+    )
+    with pytest.raises(sy.ImportProblem) as caught:
+        await space.load(MODEL)
+    assert any("nhiều nguồn" in p and str(other) in p for p in caught.value.problems)
+
+    by_id = MODEL.replace("model: silver.loan", f"model: {other}").replace(
+        "from: silver.loan", f"from: {other}"
+    )
+    by_id = by_id.replace(
+        "    time_grain: month\n", "    time_grain: month\n    time_dimension: ngay\n", 1
+    )
+    await space.load(by_id)
+    space.approve_all()
+    exported = await space.export()
+    loan = next(m for m in exported["semantic_models"] if m["name"] == "khoan_vay")
+    assert loan["model"] == str(other)
+    assert exported["relationships"][0]["from"] == str(other)
+    npl = next(m for m in exported["metrics"] if m["name"] == "NPL_RATIO")
+    assert npl["time_dimension"] == "ngay"
+
+
+async def test_a_time_dimension_that_is_not_one_is_refused(seed: Seed) -> None:
+    space = Space(seed)
+    wrong = MODEL.replace(
+        "    time_grain: month\n", "    time_grain: week\n    time_dimension: san_pham\n", 1
+    )
+    with pytest.raises(sy.ImportProblem) as caught:
+        await space.load(wrong)
+    assert any("time_dimension san_pham" in p for p in caught.value.problems)
+
+
 def test_the_command_line_exports_and_dry_runs(
     seed: Seed, tmp_path: Any, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -346,6 +346,41 @@ async def test_metric_code_is_immutable_and_filed_metric_can_only_be_retired(ctx
         assert version.status_code == 201, version.text
         assert version.json()["version"] == 2
         assert version.json()["valid_from"] is not None
+        # GEN-22: a filter the compiler cannot read, and a time dimension that is not one, are
+        # refused where the steward can fix them.
+        for wrong in (
+            {"filters": [{"dimension": "vung", "op": "like", "values": ["M%"]}]},
+            {"filters": [{"dimension": "vung", "op": "between", "values": [1]}]},
+            {"time_dimension_id": str(ctx.rows["region"])},
+        ):
+            refused = await api.post(
+                f"/v1/metrics/{metric}/versions",
+                json={
+                    "display_name": "Dư nợ",
+                    "expression": "sum(balance)",
+                    "period_semantics": "end_of_period",
+                    **wrong,
+                },
+                headers=ctx.headers("steward"),
+            )
+            assert refused.status_code == 422, (wrong, refused.text)
+        typed = await api.post(
+            f"/v1/metrics/{metric}/versions",
+            json={
+                "display_name": "Dư nợ lớn",
+                "expression": "sum(balance)",
+                "period_semantics": "end_of_period",
+                "time_grain": "fiscal_quarter",
+                "filters": [
+                    {"dimension": "vung", "op": "!=", "values": ["MB", "MN"]},
+                    {"dimension": "vung", "op": "is_not_null"},
+                ],
+            },
+            headers=ctx.headers("steward"),
+        )
+        assert typed.status_code == 201, typed.text
+        assert typed.json()["time_grain"] == "fiscal_quarter"
+        assert typed.json()["time_dimension_id"] is None
 
         renamed = await api.patch(
             f"/v1/metrics/{metric}",

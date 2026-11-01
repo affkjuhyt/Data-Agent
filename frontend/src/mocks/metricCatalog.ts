@@ -109,6 +109,7 @@ function detailFixture(m: CatalogMetric): Schemas['MetricDetail'] {
         direction: 'neutral',
         period_semantics: 'end_of_period',
         time_grain: 'month',
+        time_dimension_id: null,
         unit: null,
         legal_basis: null,
         proposal_id: null,

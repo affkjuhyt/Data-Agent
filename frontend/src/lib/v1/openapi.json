@@ -26522,14 +26522,29 @@
       "title": "Period Semantics",
       "type": "string"
      },
+     "time_dimension_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Time Dimension Id"
+     },
      "time_grain": {
       "anyOf": [
        {
         "enum": [
          "day",
+         "week",
          "month",
          "quarter",
-         "year"
+         "year",
+         "fiscal_quarter",
+         "fiscal_year"
         ],
         "type": "string"
        },
@@ -26746,6 +26761,18 @@
       "title": "Status",
       "type": "string"
      },
+     "time_dimension_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Time Dimension Id"
+     },
      "time_grain": {
       "title": "Time Grain",
       "type": "string"
@@ -26803,6 +26830,7 @@
      "direction",
      "period_semantics",
      "time_grain",
+     "time_dimension_id",
      "allowed_dimensions",
      "additivity",
      "legal_basis",

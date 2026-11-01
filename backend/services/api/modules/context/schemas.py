@@ -41,7 +41,11 @@ class MetricVersionCreate(BaseModel):
     decimals: int | None = Field(default=None, ge=0, le=10)
     direction: Literal["higher_better", "lower_better", "neutral"] | None = None
     period_semantics: Literal["end_of_period", "sum_over_period", "average_over_period"]
-    time_grain: Literal["day", "month", "quarter", "year"] | None = None
+    time_grain: (
+        Literal["day", "week", "month", "quarter", "year", "fiscal_quarter", "fiscal_year"] | None
+    ) = None
+    # GEN-22: the time dimension the metric is read along; None: its table's own.
+    time_dimension_id: uuid.UUID | None = None
     allowed_dimensions: list[uuid.UUID] | None = None
     additivity: Literal["full", "semi", "none"] | None = None
     legal_basis: str | None = Field(default=None, max_length=1_000)
@@ -79,6 +83,7 @@ class MetricVersionView(View):
     direction: str
     period_semantics: str
     time_grain: str
+    time_dimension_id: uuid.UUID | None
     allowed_dimensions: list[uuid.UUID]
     additivity: str
     legal_basis: str | None

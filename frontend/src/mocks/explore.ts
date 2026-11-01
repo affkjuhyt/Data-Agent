@@ -231,6 +231,7 @@ const metricDetail = (m: Met): Schemas['MetricDetail'] => ({
       direction: m.direction,
       period_semantics: 'end_of_period',
       time_grain: 'month',
+      time_dimension_id: null,
       allowed_dimensions: m.allowed,
       additivity: 'none',
       legal_basis: null,

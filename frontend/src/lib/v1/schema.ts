@@ -15929,8 +15929,10 @@ export interface components {
              * @enum {string}
              */
             period_semantics: "end_of_period" | "sum_over_period" | "average_over_period";
+            /** Time Dimension Id */
+            time_dimension_id?: string | null;
             /** Time Grain */
-            time_grain?: ("day" | "month" | "quarter" | "year") | null;
+            time_grain?: ("day" | "week" | "month" | "quarter" | "year" | "fiscal_quarter" | "fiscal_year") | null;
             /** Unit */
             unit?: string | null;
         };
@@ -16004,6 +16006,8 @@ export interface components {
             proposal_id: string | null;
             /** Status */
             status: string;
+            /** Time Dimension Id */
+            time_dimension_id: string | null;
             /** Time Grain */
             time_grain: string;
             /** Unit */

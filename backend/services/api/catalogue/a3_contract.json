@@ -2773,6 +2773,7 @@
     "direction": false,
     "period_semantics": true,
     "time_grain": false,
+    "time_dimension_id": false,
     "allowed_dimensions": false,
     "additivity": false,
     "legal_basis": false,
@@ -2786,7 +2787,7 @@
      "business_rule_violated"
     ]
    ],
-   "request_text": "display_name*, description, expression*, filters, unit, decimals, direction, period_semantics*, time_grain, allowed_dimensions, additivity, legal_basis, change_note"
+   "request_text": "display_name*, description, expression*, filters, unit, decimals, direction, period_semantics*, time_grain, time_dimension_id, allowed_dimensions, additivity, legal_basis, change_note"
   },
   "POST /v1/metric-versions/{id}:preview": {
    "group": "Lớp ngữ cảnh",

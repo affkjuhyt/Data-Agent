@@ -8,7 +8,7 @@ then `metrics`. Where our model differs, the file says it our way:
     semantic_models:
       - name: khoan_vay                 # entity code
         label: Khoản vay
-        model: bank.loan                # schema.table of a catalogued dataset of this Data Space
+        model: bank.loan                # schema.table of a catalogued dataset, or its id
         primary_key: [loan_id]
         dimensions:
           - {name: ngay, label: Ngày, type: time, expr: as_of_date}
@@ -27,6 +27,11 @@ then `metrics`. Where our model differs, the file says it our way:
         unit: "%"
         dimensions: [vung, san_pham]    # the cuts the owner allows (BR-81)
         filters: [{dimension: san_pham, op: "!=", values: [NOI_BO]}]
+
+A table (`model`, a relationship's `from` and `to`) is a dataset of this Data Space by its id, or
+by `schema.table` (the table alone when it has no schema) when one dataset only has that name:
+two sources of one space may each have `public.orders`, and a name that fits both is refused with
+their ids (GEN-22). A metric's `time_dimension` names the time dimension it is read along.
 
 A measure is `agg` over `expr` (MetricFlow); an `expr` that already aggregates (`SUM(CASE …)`) is
 kept whole. Importing never approves anything: a relationship is pending_review (BR-100), a new
@@ -96,7 +101,8 @@ class SemanticModelDef(_Item):
     name: str = Field(pattern=_CODE)
     label: str | None = None
     description: str | None = None
-    model: str = Field(pattern=r"^[^.\s]+\.[^.\s]+$")
+    # A dataset id, schema.table, or the table alone (Datasets resolves it).
+    model: str = Field(pattern=r"^[^.\s]+(?:\.[^.\s]+)?$")
     primary_key: list[str] = Field(min_length=1)
     dimensions: list[DimensionDef] = Field(default_factory=list)
     measures: list[MeasureDef] = Field(default_factory=list)
@@ -116,7 +122,10 @@ class MetricDef(_Item):
     description: str | None = None
     expr: str = Field(min_length=1, max_length=8_000)
     period_semantics: Literal["end_of_period", "sum_over_period", "average_over_period"]
-    time_grain: Literal["day", "month", "quarter", "year"] = "day"
+    time_grain: Literal[
+        "day", "week", "month", "quarter", "year", "fiscal_quarter", "fiscal_year"
+    ] = "day"
+    time_dimension: str | None = None
     unit: str | None = None
     decimals: int = Field(default=2, ge=0, le=10)
     direction: Literal["higher_better", "lower_better", "neutral"] = "neutral"
@@ -194,7 +203,38 @@ def _measure_def(row: context.SemanticMeasure) -> dict[str, Any]:
     return out
 
 
-async def _datasets(session: AsyncSession, data_space: uuid.UUID) -> dict[str, catalog.Dataset]:
+@dataclass
+class Datasets:
+    """The datasets of a space by the names a file may use: id, or a name only one of them has."""
+
+    by_name: dict[str, catalog.Dataset]
+    # A name more than one dataset has → their ids.
+    ambiguous: dict[str, list[str]]
+
+    def __contains__(self, name: str) -> bool:
+        return name in self.by_name
+
+    def __getitem__(self, name: str) -> catalog.Dataset:
+        return self.by_name[name]
+
+    def name_of(self, dataset_id: uuid.UUID) -> str:
+        """The name the export writes: the unique schema.table, else the id."""
+        return next(
+            (n for n, d in self.by_name.items() if d.id == dataset_id and n != str(d.id)),
+            str(dataset_id),
+        )
+
+    def problem(self, where: str, name: str) -> str:
+        if name in self.ambiguous:
+            return f"{where}: bảng {name} có ở nhiều nguồn, hãy dùng id: {', '.join(self.ambiguous[name])}"
+        return f"{where}: bảng {name} chưa có trong catalog"
+
+
+def _qualified(d: catalog.Dataset) -> str:
+    return f"{d.schema_name}.{d.table_name}" if d.schema_name else d.table_name
+
+
+async def _datasets(session: AsyncSession, data_space: uuid.UUID) -> Datasets:
     rows = (
         await session.scalars(
             select(catalog.Dataset).where(
@@ -202,7 +242,13 @@ async def _datasets(session: AsyncSession, data_space: uuid.UUID) -> dict[str, c
             )
         )
     ).all()
-    return {f"{d.schema_name}.{d.table_name}": d for d in rows}
+    named: dict[str, list[catalog.Dataset]] = {}
+    for d in rows:
+        named.setdefault(_qualified(d), []).append(d)
+    by_name = {str(d.id): d for d in rows}
+    by_name.update({n: ds[0] for n, ds in named.items() if len(ds) == 1})
+    ambiguous = {n: sorted(str(d.id) for d in ds) for n, ds in named.items() if len(ds) > 1}
+    return Datasets(by_name, ambiguous)
 
 
 def _chosen(versions: Sequence[context.MetricVersion], current: int | None) -> Any:
@@ -220,7 +266,6 @@ def _chosen(versions: Sequence[context.MetricVersion], current: int | None) -> A
 
 async def export_model(session: AsyncSession, data_space: uuid.UUID) -> dict[str, Any]:
     datasets = await _datasets(session, data_space)
-    by_id = {d.id: name for name, d in datasets.items()}
     entities = (
         await session.scalars(
             select(context.SemanticEntity)
@@ -250,7 +295,7 @@ async def export_model(session: AsyncSession, data_space: uuid.UUID) -> dict[str
         item: dict[str, Any] = {"name": e.code, "label": e.name}
         if e.description:
             item["description"] = e.description
-        item["model"] = by_id.get(e.primary_dataset_id, str(e.primary_dataset_id))
+        item["model"] = datasets.name_of(e.primary_dataset_id)
         item["primary_key"] = list(e.key_columns)
         item["dimensions"] = [
             {
@@ -266,9 +311,9 @@ async def export_model(session: AsyncSession, data_space: uuid.UUID) -> dict[str
         models.append(item)
     relationships = [
         {
-            "from": by_id[r.from_dataset_id],
+            "from": datasets.name_of(r.from_dataset_id),
             "from_columns": list(r.from_columns),
-            "to": by_id[r.to_dataset_id],
+            "to": datasets.name_of(r.to_dataset_id),
             "to_columns": list(r.to_columns),
             "cardinality": r.cardinality,
         }
@@ -282,7 +327,7 @@ async def export_model(session: AsyncSession, data_space: uuid.UUID) -> dict[str
                 .order_by(context.Relationship.created_at)
             )
         ).all()
-        if r.from_dataset_id in by_id and r.to_dataset_id in by_id
+        if str(r.from_dataset_id) in datasets and str(r.to_dataset_id) in datasets
     ]
     dim_code = {d.id: d.code for d in dims}
     metrics = []
@@ -308,6 +353,11 @@ async def export_model(session: AsyncSession, data_space: uuid.UUID) -> dict[str
             expr=v.expression,
             period_semantics=v.period_semantics,
             time_grain=v.time_grain,
+            **(
+                {"time_dimension": dim_code[v.time_dimension_id]}
+                if v.time_dimension_id in dim_code
+                else {}
+            ),
             unit=v.unit,
             decimals=v.decimals,
             direction=v.direction,
@@ -331,11 +381,12 @@ def dump(model: dict[str, Any]) -> str:
     return text
 
 
-def _check(file: SemanticFile, datasets: dict[str, catalog.Dataset], known: set[str]) -> None:
+def _check(file: SemanticFile, datasets: Datasets, known: set[str]) -> None:
     """Every reference in the file resolves, or nothing is written."""
     problems: list[str] = []
     measures = {m.name for sm in file.semantic_models for m in sm.measures} | known
     dims = {d.name for sm in file.semantic_models for d in sm.dimensions}
+    times = {d.name for sm in file.semantic_models for d in sm.dimensions if d.type == "time"}
     for kind, names in (
         ("semantic_models", [sm.name for sm in file.semantic_models]),
         ("dimensions", [d.name for sm in file.semantic_models for d in sm.dimensions]),
@@ -347,7 +398,7 @@ def _check(file: SemanticFile, datasets: dict[str, catalog.Dataset], known: set[
             problems.append(f"{kind}: tên lặp lại {', '.join(twice)}")
     for sm in file.semantic_models:
         if sm.model not in datasets:
-            problems.append(f"semantic_models.{sm.name}: bảng {sm.model} chưa có trong catalog")
+            problems.append(datasets.problem(f"semantic_models.{sm.name}", sm.model))
         for m in sm.measures:
             try:
                 measure_expression(m)
@@ -356,7 +407,7 @@ def _check(file: SemanticFile, datasets: dict[str, catalog.Dataset], known: set[
     for r in file.relationships:
         for table in (r.from_, r.to):
             if table not in datasets:
-                problems.append(f"relationships: bảng {table} chưa có trong catalog")
+                problems.append(datasets.problem("relationships", table))
     for metric in file.metrics:
         unknown = sorted(set(_IDENT.findall(metric.expr)) - measures)
         if unknown:
@@ -367,6 +418,11 @@ def _check(file: SemanticFile, datasets: dict[str, catalog.Dataset], known: set[
         missing = sorted(named - dims - {""})
         if missing:
             problems.append(f"metrics.{metric.name}: chiều chưa định nghĩa {', '.join(missing)}")
+        if metric.time_dimension is not None and metric.time_dimension not in times:
+            problems.append(
+                f"metrics.{metric.name}: time_dimension {metric.time_dimension} không phải chiều"
+                " thời gian của tệp"
+            )
     if problems:
         raise ImportProblem(problems)
 
@@ -382,6 +438,7 @@ def _version_values(m: MetricDef, dim_ids: dict[str, uuid.UUID]) -> dict[str, An
         "direction": m.direction,
         "period_semantics": m.period_semantics,
         "time_grain": m.time_grain,
+        "time_dimension_id": dim_ids[m.time_dimension] if m.time_dimension else None,
         "allowed_dimensions": sorted((dim_ids[d] for d in m.dimensions), key=str),
         "additivity": m.additivity,
         "legal_basis": m.legal_basis,

@@ -229,7 +229,14 @@ class MetricVersion(Base):
         Text, comment="end_of_period, sum_over_period, average_over_period"
     )
     time_grain: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'day'"), comment="day, month, quarter, year"
+        Text,
+        server_default=sql_text("'day'"),
+        comment="day, week, month, quarter, year, fiscal_quarter, fiscal_year",
+    )
+    time_dimension_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="logic → semantic_dimension; chiều thời gian chỉ số đọc theo (GEN-22), ví dụ ngày giao hàng thay cho ngày đặt; trống thì chiều thời gian của bảng, hoặc của bảng ngày nó nối tới",
     )
     allowed_dimensions: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(UUID(as_uuid=True)),

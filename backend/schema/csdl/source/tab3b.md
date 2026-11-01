@@ -772,7 +772,8 @@ Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. R�
 | decimals | smallint, bắt buộc, mặc định 2 |  |
 | direction | text, bắt buộc, mặc định 'neutral' | higher\_better, lower\_better, neutral (“Chiều tốt” trên màn Chỉ số) |
 | period\_semantics | text, bắt buộc | end\_of\_period, sum\_over\_period, average\_over\_period |
-| time\_grain | text, bắt buộc, mặc định 'day' | day, month, quarter, year |
+| time\_grain | text, bắt buộc, mặc định 'day' | day, week, month, quarter, year, fiscal\_quarter, fiscal\_year |
+| time\_dimension\_id | uuid | logic → semantic\_dimension; chiều thời gian chỉ số đọc theo (GEN-22), ví dụ ngày giao hàng thay cho ngày đặt; trống thì chiều thời gian của bảng, hoặc của bảng ngày nó nối tới |
 | allowed\_dimensions | uuid\[\], bắt buộc, mặc định '{}' | logic → semantic\_dimension |
 | additivity | text, bắt buộc, mặc định 'none' | full, semi, none (BR-117) |
 | legal\_basis | text | Căn cứ, ví dụ điều khoản văn bản |
@@ -784,7 +785,7 @@ Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. R�
 | valid\_to | timestamptz |  |
 | proposal\_id | uuid | logic → inbox.proposal |
 
-Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (metric\_id, version); CHECK (direction IN ('higher\_better','lower\_better','neutral')); CHECK (period\_semantics IN ('end\_of\_period','sum\_over\_period','average\_over\_period')); CHECK (time\_grain IN ('day','month','quarter','year')); CHECK (additivity IN ('full','semi','none')); CHECK (status IN ('draft','testing','pending\_review','certified','superseded','broken')); CHECK (status NOT IN ('certified','superseded') OR (certified\_by IS NOT NULL AND certified\_at IS NOT NULL AND valid\_from IS NOT NULL)); FOREIGN KEY (metric\_id) REFERENCES context.metric(id). Chỉ mục: duy nhất (metric\_id) WHERE status = 'certified', để mỗi chỉ số chỉ có một phiên bản đang dùng.
+Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (metric\_id, version); CHECK (direction IN ('higher\_better','lower\_better','neutral')); CHECK (period\_semantics IN ('end\_of\_period','sum\_over\_period','average\_over\_period')); CHECK (time\_grain IN ('day','week','month','quarter','year','fiscal\_quarter','fiscal\_year')); CHECK (additivity IN ('full','semi','none')); CHECK (status IN ('draft','testing','pending\_review','certified','superseded','broken')); CHECK (status NOT IN ('certified','superseded') OR (certified\_by IS NOT NULL AND certified\_at IS NOT NULL AND valid\_from IS NOT NULL)); FOREIGN KEY (metric\_id) REFERENCES context.metric(id). Chỉ mục: duy nhất (metric\_id) WHERE status = 'certified', để mỗi chỉ số chỉ có một phiên bản đang dùng.
 
 #### context.relationship
 

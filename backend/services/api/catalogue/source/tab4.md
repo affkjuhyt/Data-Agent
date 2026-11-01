@@ -889,7 +889,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/metrics/{id} | — | Metric. Kèm danh sách phiên bản và nơi đang dùng (artifact, agent, báo cáo) | — |
 | PATCH /v1/metrics/{id} | code, consumer\_group | Metric | 409 immutable (đổi mã chỉ số) |
 | DELETE /v1/metrics/{id} | — | 204. Chỉ số chuyển retired, không xoá dòng | 409 in\_use (đang dùng trong báo cáo đã nộp); 409 invalid\_state (đã retired) |
-| POST /v1/metrics/{id}/versions | display\_name\*, description, expression\*, filters, unit, decimals, direction, period\_semantics\*, time\_grain, allowed\_dimensions, additivity, legal\_basis, change\_note | MetricVersion | 422 business\_rule\_violated (đổi mã chỉ số đã phát hành, BR-26) |
+| POST /v1/metrics/{id}/versions | display\_name\*, description, expression\*, filters, unit, decimals, direction, period\_semantics\*, time\_grain, time\_dimension\_id, allowed\_dimensions, additivity, legal\_basis, change\_note | MetricVersion | 422 business\_rule\_violated (đổi mã chỉ số đã phát hành, BR-26) |
 | POST /v1/metric-versions/{id}:preview | periods | 202, Location tới eval\_run. Chạy trên 6 kỳ, so với bản đang dùng và số đã nộp; tạo đề xuất metric\_change khi gửi duyệt | — |
 | POST /v1/relationships | from\_dataset\_id\*, from\_columns\*, to\_dataset\_id\*, to\_columns\*, cardinality\* | Relationship. Tạo ở trạng thái pending\_review (BR-100) | — |
 | POST /v1/synonyms | phrase\*, target\_kind\*, target\_id\*, target\_value | Synonym | 409 conflict (cụm từ đã gán cho đích khác) |

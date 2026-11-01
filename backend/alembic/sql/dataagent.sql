@@ -1522,6 +1522,7 @@ CREATE TABLE context.metric_version (
   direction text NOT NULL DEFAULT 'neutral',
   period_semantics text NOT NULL,
   time_grain text NOT NULL DEFAULT 'day',
+  time_dimension_id uuid,
   allowed_dimensions uuid[] NOT NULL DEFAULT '{}',
   additivity text NOT NULL DEFAULT 'none',
   legal_basis text,
@@ -1537,7 +1538,7 @@ CREATE TABLE context.metric_version (
   UNIQUE (metric_id, version),
   CHECK (direction IN ('higher_better','lower_better','neutral')),
   CHECK (period_semantics IN ('end_of_period','sum_over_period','average_over_period')),
-  CHECK (time_grain IN ('day','month','quarter','year')),
+  CHECK (time_grain IN ('day','week','month','quarter','year','fiscal_quarter','fiscal_year')),
   CHECK (additivity IN ('full','semi','none')),
   CHECK (status IN ('draft','testing','pending_review','certified','superseded','broken')),
   CHECK (status NOT IN ('certified','superseded') OR (certified_by IS NOT NULL AND certified_at IS NOT NULL AND valid_from IS NOT NULL))
@@ -1550,7 +1551,8 @@ COMMENT ON COLUMN context.metric_version.expression IS 'Công thức trên độ
 COMMENT ON COLUMN context.metric_version.filters IS 'Bộ lọc mặc định';
 COMMENT ON COLUMN context.metric_version.direction IS 'higher_better, lower_better, neutral (“Chiều tốt” trên màn Chỉ số)';
 COMMENT ON COLUMN context.metric_version.period_semantics IS 'end_of_period, sum_over_period, average_over_period';
-COMMENT ON COLUMN context.metric_version.time_grain IS 'day, month, quarter, year';
+COMMENT ON COLUMN context.metric_version.time_grain IS 'day, week, month, quarter, year, fiscal_quarter, fiscal_year';
+COMMENT ON COLUMN context.metric_version.time_dimension_id IS 'logic → semantic_dimension; chiều thời gian chỉ số đọc theo (GEN-22), ví dụ ngày giao hàng thay cho ngày đặt; trống thì chiều thời gian của bảng, hoặc của bảng ngày nó nối tới';
 COMMENT ON COLUMN context.metric_version.allowed_dimensions IS 'logic → semantic_dimension';
 COMMENT ON COLUMN context.metric_version.additivity IS 'full, semi, none (BR-117)';
 COMMENT ON COLUMN context.metric_version.legal_basis IS 'Căn cứ, ví dụ điều khoản văn bản';

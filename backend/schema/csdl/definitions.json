@@ -6632,7 +6632,18 @@
      "not_null": true,
      "default": "'day'",
      "unique": false,
-     "comment": "day, month, quarter, year",
+     "comment": "day, week, month, quarter, year, fiscal_quarter, fiscal_year",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "time_dimension_id",
+     "type": "uuid",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "logic → semantic_dimension; chiều thời gian chỉ số đọc theo (GEN-22), ví dụ ngày giao hàng thay cho ngày đặt; trống thì chiều thời gian của bảng, hoặc của bảng ngày nó nối tới",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -6768,7 +6779,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (time_grain IN ('day','month','quarter','year'))"
+     "sql": "CHECK (time_grain IN ('day','week','month','quarter','year','fiscal_quarter','fiscal_year'))"
     },
     {
      "kind": "check",

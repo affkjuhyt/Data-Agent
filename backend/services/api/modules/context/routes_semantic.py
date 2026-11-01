@@ -192,9 +192,58 @@ def _version_row(
     )
 
 
+# The filter ops the compiler reads (worker_agent/semantic/compiler.FILTER_OPS, GEN-22), with the
+# number of values each takes (None: one or more). An op the compiler would refuse is refused here,
+# where the steward can fix it, not at the first question.
+FILTER_OPS: dict[str, int | None] = {
+    "in": None,
+    "not_in": None,
+    "=": 1,
+    "!=": 1,
+    "<>": 1,
+    "<": 1,
+    ">": 1,
+    "<=": 1,
+    ">=": 1,
+    "between": 2,
+    "is_null": 0,
+    "is_not_null": 0,
+}
+
+
+def _check_filters(filters: list[dict[str, Any]]) -> None:
+    for f in filters:
+        op = str(f.get("op") or "in").lower()
+        values = f.get("values", f.get("value"))
+        count = len(values) if isinstance(values, list) else 0 if values is None else 1
+        if not (f.get("dimension") or f.get("column")) or op not in FILTER_OPS:
+            raise field_error(
+                "filters", f"a filter names a dimension and one of {', '.join(FILTER_OPS)}."
+            )
+        # A list is membership: {"op": "!=", "values": [...]} is NOT IN, as it always was.
+        wanted = None if isinstance(values, list) and op in ("=", "!=", "<>") else FILTER_OPS[op]
+        if count != wanted if wanted is not None else count == 0:
+            raise field_error(
+                "filters",
+                f"a {op} filter takes {'one or more' if wanted is None else wanted} values.",
+            )
+
+
 async def _check_dimensions(
     session: AsyncSession, body: MetricVersionCreate, data_space: uuid.UUID
 ) -> None:
+    _check_filters(body.filters or [])
+    if body.time_dimension_id is not None:
+        is_time = await session.scalar(
+            select(context.SemanticDimension.is_time).where(
+                context.SemanticDimension.id == body.time_dimension_id,
+                context.SemanticDimension.data_space_id == data_space,
+            )
+        )
+        if not is_time:
+            raise field_error(
+                "time_dimension_id", "time_dimension_id is not a time dimension of this Data Space."
+            )
     wanted = set(body.allowed_dimensions or [])
     if not wanted:
         return

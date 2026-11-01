@@ -19,10 +19,20 @@ never an LLM. What it does:
     dialect has (MySQL has no FULL JOIN), so a member present on one side only keeps NULL on the
     other;
   * the metric's default filters and the question's dimension filters become WHERE clauses with
-    values as literals sqlglot quotes (no text is spliced into SQL);
+    values as literals sqlglot quotes (no text is spliced into SQL). A filter is typed (GEN-22):
+    membership (in, not_in), a comparison (=, !=, <, >, <=, >=), a range (between, both ends
+    included) or null (is_null, is_not_null);
+  * a division in the metric's expression divides by NULLIF(…, 0): a member with no
+    denominator has no ratio, not a division error that fails the whole answer;
   * the period follows period_semantics: `sum_over_period` aggregates the whole range,
     `end_of_period` the last day of the range that has data (a balance is not summed over days),
-    `average_over_period` the mean of the metric's daily values over the range (R1-06);
+    `average_over_period` the mean of the metric's daily values over the range (R1-06). In a
+    `sum_over_period` metric, a measure the steward declared `semi` (a balance, not additive over
+    time) is still read on the last day (GEN-22): stock and flow aggregated apart, then combined,
+    so "doanh thu / tồn kho" divides the period's revenue by its closing stock;
+  * the time a metric is read along is its version's time_dimension_id, or the time dimension of
+    its table, or the one time dimension its table reaches through approved joins (a star
+    schema's date table, GEN-22);
   * a cut along time is at a grain (R1-06): the question's ("theo tháng") or the metric version's
     time_grain. Month, quarter and year are labelled '2026-09', '2026-Q3', '2026'; a week by its
     first day '2026-10-26', on the Data Space's week_start (GEN-21); a fiscal year and quarter
@@ -48,7 +58,7 @@ from sqlglot.errors import ParseError
 
 from libs import clock
 
-COMPILER_VERSION = "v3-compiler-3"
+COMPILER_VERSION = "v3-compiler-4"
 MAX_HOPS = 3
 GRAINS = ("day", "week", "month", "quarter", "year", "fiscal_quarter", "fiscal_year")
 # The day a value was read on, carried from a side to the average over the period.
@@ -117,6 +127,8 @@ class MetricVersion:
     certified: bool
     # The grain a cut along time is at when the question names none (metric_version.time_grain).
     time_grain: str = "day"
+    # The time it is read along (metric_version.time_dimension_id); None: its table's own.
+    time_dimension_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -131,6 +143,88 @@ class Layer:
     calendar: clock.Calendar = clock.DEFAULT
 
 
+FILTER_OPS = (
+    "in",
+    "not_in",
+    "=",
+    "!=",
+    "<",
+    ">",
+    "<=",
+    ">=",
+    "between",
+    "is_null",
+    "is_not_null",
+)
+_COMPARISONS: dict[str, type[exp.Expression]] = {
+    "=": exp.EQ,
+    "!=": exp.NEQ,
+    "<": exp.LT,
+    ">": exp.GT,
+    "<=": exp.LTE,
+    ">=": exp.GTE,
+}
+
+
+@dataclass(frozen=True)
+class Filter:
+    """One condition on a dimension (GEN-22)."""
+
+    dimension: str  # dimension code
+    op: str = "in"
+    values: tuple[object, ...] = ()
+
+
+def filter_of(raw: Mapping[str, object]) -> Filter:
+    """A metric version's stored filter ({"dimension", "op", "values" | "value"}) as a Filter.
+
+    The earlier form `{"column": …}` and `op` "<>" or "not in" read as before. A filter with an
+    unknown op, or the wrong number of values for it, is refused rather than ignored: a dropped
+    filter changes the figure without saying so."""
+    code = str(raw.get("dimension") or raw.get("column") or "")
+    op = str(raw.get("op") or "in").lower()
+    found = raw.get("values", raw.get("value"))
+    # A list is membership: {"op": "!=", "values": [...]} has always meant NOT IN.
+    listed = isinstance(found, list | tuple)
+    if op in ("!=", "<>", "not in", "not_in"):
+        op = "not_in" if listed or op in ("not in", "not_in") else "!="
+    elif op in ("=", "=="):
+        op = "in" if listed else "="
+    values: tuple[object, ...] = (
+        tuple(found) if isinstance(found, list | tuple) else () if found is None else (found,)
+    )
+    f = Filter(code, op, values)
+    check_filter(f)
+    return f
+
+
+def check_filter(f: Filter) -> None:
+    if not f.dimension:
+        raise CompileError("CONTRACT_MISMATCH", "a filter names no dimension")
+    if f.op not in FILTER_OPS:
+        raise CompileError("CONTRACT_MISMATCH", f"unknown filter op {f.op}")
+    wanted = {"between": 2, "is_null": 0, "is_not_null": 0}.get(f.op)
+    if wanted is None:
+        wanted = 1 if f.op in _COMPARISONS else -1
+    if (wanted == -1 and not f.values) or (wanted >= 0 and len(f.values) != wanted):
+        raise CompileError(
+            "CONTRACT_MISMATCH", f"filter {f.dimension} {f.op} has {len(f.values)} values"
+        )
+
+
+def _condition(expr: exp.Expression, f: Filter) -> exp.Expression:
+    if f.op in ("in", "not_in"):
+        cond: exp.Expression = exp.In(this=expr, expressions=[_literal(v) for v in f.values])
+        return exp.not_(cond) if f.op == "not_in" else cond
+    if f.op == "between":
+        low, high = f.values
+        return exp.Between(this=expr, low=_literal(low), high=_literal(high))
+    if f.op in ("is_null", "is_not_null"):
+        null = exp.Is(this=expr, expression=exp.Null())
+        return exp.not_(null) if f.op == "is_not_null" else null
+    return _COMPARISONS[f.op](this=expr, expression=_literal(f.values[0]))
+
+
 @dataclass(frozen=True)
 class Period:
     start: datetime.date  # inclusive
@@ -142,6 +236,8 @@ class Request:
     metric: MetricVersion
     group_by: Sequence[str] = ()  # dimension codes
     filters: Mapping[str, Sequence[str]] = field(default_factory=dict)  # dimension code → values
+    # Typed conditions of the question ("dư nợ trên 1 tỷ"), held on every side like `filters`.
+    conditions: Sequence[Filter] = ()
     period: Period | None = None
     # The grain of a cut along time ("theo tháng"); None: the metric version's time_grain.
     grain: str | None = None
@@ -209,6 +305,20 @@ def _swap(tree: exp.Expression, by_code: Mapping[str, exp.Expression]) -> exp.Ex
         return node
 
     return tree.transform(swap)
+
+
+def _safe_division(tree: exp.Expression) -> exp.Expression:
+    """Every division of the metric's expression by NULLIF(denominator, 0)."""
+
+    def guard(node: exp.Expression) -> exp.Expression:
+        if isinstance(node, exp.Div) and not isinstance(node.expression, exp.Nullif):
+            node.set(
+                "expression",
+                exp.Nullif(this=node.expression, expression=exp.Literal.number(0)),
+            )
+        return node
+
+    return tree.transform(guard)
 
 
 def _qualify(expression: str, alias: str) -> exp.Expression:
@@ -400,6 +510,36 @@ def _reaches(layer: Layer, entity: uuid.UUID, code: str) -> bool:
     return True
 
 
+def _on(join: Join, from_alias: str, alias: str) -> exp.Expression:
+    return exp.and_(
+        *(
+            exp.EQ(
+                this=exp.column(fc, table=from_alias, quoted=True),
+                expression=exp.column(tc, table=alias, quoted=True),
+            )
+            for fc, tc in zip(join.from_columns, join.to_columns, strict=True)
+        )
+    )
+
+
+def time_dimension_for(metric: MetricVersion, layer: Layer, entity: uuid.UUID) -> Dimension | None:
+    """The time one table of a metric is read along: the version's time_dimension_id when the
+    table reaches it, else the table's own time dimension, else the one time dimension the table
+    reaches through approved joins (a fact keyed to a date table). Two reachable and none chosen
+    is None: which date a sale counts on (ordered, shipped) is the owner's to say."""
+    by_id = {d.id: d for d in layer.dimensions.values()}
+    chosen = by_id.get(metric.time_dimension_id) if metric.time_dimension_id else None
+    if chosen is not None and _reaches(layer, entity, chosen.code):
+        return chosen
+    own = next((d for d in layer.dimensions.values() if d.is_time and d.entity_id == entity), None)
+    if own is not None:
+        return own
+    reached = [
+        d for d in layer.dimensions.values() if d.is_time and _reaches(layer, entity, d.code)
+    ]
+    return reached[0] if len(reached) == 1 else None
+
+
 @dataclass
 class _Side:
     """One entity's part of a metric: its select and the datasets it read."""
@@ -418,6 +558,7 @@ def _side(
     shared: bool = False,
     *,
     dialect: str,
+    balance: bool,
 ) -> _Side:
     """The select of one entity: the requested dimensions, then `outputs`, grouped by the
     dimensions (and by day when the period is averaged), filtered and cut to the period.
@@ -429,9 +570,7 @@ def _side(
     base = layer.entity_tables.get(entity)
     if base is None:
         raise CompileError("NO_DATA_FOR_PERIOD", "the metric's table is not in the catalogue")
-    time_dim = next(
-        (d for d in layer.dimensions.values() if d.is_time and d.entity_id == entity), None
-    )
+    time_dim = time_dimension_for(metric, layer, entity)
 
     aliases: dict[uuid.UUID, str] = {base.dataset_id: "t0"}
     # The joins that reached each table: a table already joined is reused only by the same way.
@@ -506,7 +645,7 @@ def _side(
     if by_day:
         if time_dim is None:
             raise CompileError("NO_DATA_FOR_PERIOD", "the metric's table has no time dimension")
-        day = _qualify(time_dim.expression, "t0")
+        day = _qualify(time_dim.expression, alias_for(time_dim))
         select = select.select(exp.alias_(day, _DAY, quoted=True))
         group.append(day.copy())
     for name, expr in outputs:
@@ -525,33 +664,43 @@ def _side(
         )
         conditions.append(exp.LTE(this=knowledge_when, expression=knowledge_value))
     # The metric's own default filters were set by its owner; the question's go through BR-81.
-    filters: list[tuple[str, Sequence[object], bool]] = []
+    filters: list[Filter] = []
     for code in request.filters:
         dimension(code)
-    for f in metric.filters:
-        code = str(f.get("dimension") or f.get("column") or "")
-        values = f.get("values", f.get("value"))
-        values = values if isinstance(values, list) else [values]
-        if shared and not _reaches(layer, entity, code):
+    for condition in request.conditions:
+        check_filter(condition)
+        dimension(condition.dimension)
+    for raw in metric.filters:
+        f = filter_of(raw)
+        if shared and not _reaches(layer, entity, f.dimension):
             continue
-        filters.append((code, values, str(f.get("op", "in")) in ("!=", "not_in", "<>")))
-    filters += [(code, list(values), False) for code, values in request.filters.items()]
-    for code, values, negated in filters:
-        filter_dim = layer.dimensions.get(code)
+        filters.append(f)
+    filters += [Filter(code, "in", tuple(values)) for code, values in request.filters.items()]
+    filters += list(request.conditions)
+    for f in filters:
+        filter_dim = layer.dimensions.get(f.dimension)
         if filter_dim is None:
-            raise CompileError("CONTRACT_MISMATCH", f"filter on an unknown dimension {code}")
-        expr = _qualify(filter_dim.expression, alias_for(filter_dim))
-        cond: exp.Expression = exp.In(this=expr, expressions=[_literal(v) for v in values])
-        conditions.append(exp.not_(cond) if negated else cond)
+            raise CompileError("CONTRACT_MISMATCH", f"filter on an unknown dimension {f.dimension}")
+        conditions.append(_condition(_qualify(filter_dim.expression, alias_for(filter_dim)), f))
 
-    balance = metric.period_semantics == "end_of_period"
     cut_by_day = time_cut is not None and grain == "day"
+    # The last-day subquery reads the base table again ("l"), joined to the time's table the way
+    # the main query is when the time is on a date table.
+    l_alias = "l"
+    l_joins: list[tuple[Table, str, Join, str]] = []
+    if time_dim is not None and time_dim.entity_id != entity:
+        time_table = layer.entity_tables.get(time_dim.entity_id)
+        if time_table is not None and time_table.dataset_id != base.dataset_id:
+            for hop, join in enumerate(join_path(layer, base.dataset_id, time_table.dataset_id)):
+                hop_table = tables[join.to_dataset_id]
+                l_joins.append((hop_table, f"l{hop + 1}", join, "l" if hop == 0 else f"l{hop}"))
+            l_alias = l_joins[-1][1] if l_joins else "l"
     in_range: exp.Expression | None = None
     in_range_of_l: exp.Expression | None = None
     if request.period is not None:
         if time_dim is None:
             raise CompileError("NO_DATA_FOR_PERIOD", "the metric's table has no time dimension")
-        when = _qualify(time_dim.expression, "t0")
+        when = _qualify(time_dim.expression, alias_for(time_dim))
         start: exp.Expression
         end: exp.Expression
         if time_dim.value_type == "string":
@@ -563,21 +712,25 @@ def _side(
             )
         in_range = exp.and_(exp.GTE(this=when, expression=start), exp.LT(this=when, expression=end))
         in_range_of_l = exp.and_(
-            exp.GTE(this=_qualify(time_dim.expression, "l"), expression=start.copy()),
-            exp.LT(this=_qualify(time_dim.expression, "l"), expression=end.copy()),
+            exp.GTE(this=_qualify(time_dim.expression, l_alias), expression=start.copy()),
+            exp.LT(this=_qualify(time_dim.expression, l_alias), expression=end.copy()),
         )
     if balance and time_dim is not None and not cut_by_day:
         # A balance is read on the last day with data, not summed over days: of the range (or of
         # all data when no period is asked), or of each month, quarter or year of a time cut.
-        last_of_l = _qualify(time_dim.expression, "l")
+        last_of_l = _qualify(time_dim.expression, l_alias)
         last = exp.select(exp.Max(this=last_of_l)).from_(_table(base, "l"))
+        for table, alias, join, from_alias in l_joins:
+            last = last.join(
+                _table(table, alias), on=_on(join, from_alias, alias), join_type="left"
+            )
         if in_range_of_l is not None:
             last = last.where(in_range_of_l)
-        when_t0 = _qualify(time_dim.expression, "t0")
+        when_t0 = _qualify(time_dim.expression, alias_for(time_dim))
         if time_cut is not None:
             last = last.group_by(
                 _at_grain(
-                    _qualify(time_dim.expression, "l"), time_dim, grain, layer.calendar, dialect
+                    _qualify(time_dim.expression, l_alias), time_dim, grain, layer.calendar, dialect
                 )
             )
             conditions.append(exp.In(this=when_t0, query=last.subquery()))
@@ -593,16 +746,9 @@ def _side(
     # FROM and JOINs last: a filter on another table's dimension adds its join too.
     select = select.from_(_table(base, "t0"))
     for table, alias, join, from_alias in joins:
-        on = exp.and_(
-            *(
-                exp.EQ(
-                    this=exp.column(fc, table=from_alias, quoted=True),
-                    expression=exp.column(tc, table=alias, quoted=True),
-                )
-                for fc, tc in zip(join.from_columns, join.to_columns, strict=True)
-            )
+        select = select.join(
+            _table(table, alias), on=_on(join, from_alias, alias), join_type="left"
         )
-        select = select.join(_table(table, alias), on=on, join_type="left")
     if conditions:
         select = select.where(exp.and_(*conditions))
     if group:
@@ -612,10 +758,31 @@ def _side(
 
 def time_dimension_of(metric: MetricVersion, layer: Layer) -> Dimension | None:
     """The time dimension a cut along time of this metric reads ("theo tháng"): that of its
-    first measure's table; None when that table has none."""
+    first measure's table (time_dimension_for); None when that table has none."""
     _, _, by_entity = _measures(metric, layer)
-    entity = next(iter(by_entity))
-    return next((d for d in layer.dimensions.values() if d.is_time and d.entity_id == entity), None)
+    return time_dimension_for(metric, layer, next(iter(by_entity)))
+
+
+def _groups(
+    metric: MetricVersion, layer: Layer, by_entity: Mapping[uuid.UUID, list[str]]
+) -> list[tuple[uuid.UUID, bool, list[str]]]:
+    """The metric's measures by the table they are read on and whether they are read on the
+    period's last day: all of them for an end_of_period metric; in a sum_over_period one, the
+    measures declared `semi` (a balance), apart from those that add up over time."""
+    groups: list[tuple[uuid.UUID, bool, list[str]]] = []
+    for entity, codes in by_entity.items():
+        if metric.period_semantics == "end_of_period":
+            groups.append((entity, True, codes))
+            continue
+        if metric.period_semantics != "sum_over_period":
+            groups.append((entity, False, codes))
+            continue
+        stock = [c for c in codes if layer.measures[c].additivity == "semi"]
+        flow = [c for c in codes if c not in stock]
+        groups += [
+            (entity, balance, part) for balance, part in ((False, flow), (True, stock)) if part
+        ]
+    return groups
 
 
 def _ordered(select: exp.Select, request: Request, dims: Sequence[exp.Expression]) -> exp.Select:
@@ -631,6 +798,8 @@ def _ordered(select: exp.Select, request: Request, dims: Sequence[exp.Expression
 def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
     metric = request.metric
     tree, measures, by_entity = _measures(metric, layer)
+    tree = _safe_division(tree)
+    groups = _groups(metric, layer, by_entity)
     grain = request.grain or metric.time_grain
     if grain not in GRAINS:
         raise CompileError("CONTRACT_MISMATCH", f"unknown time grain {grain}")
@@ -638,15 +807,17 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
     codes = list(request.group_by)
 
     sides: list[_Side] = []
-    if len(by_entity) == 1:
+    if len(groups) == 1:
+        entity, balance, _ = groups[0]
         side = _side(
             request,
             layer,
-            next(iter(by_entity)),
+            entity,
             [("value", _swap(tree, measures))],
             grain,
             by_day,
             dialect=dialect,
+            balance=balance,
         )
         sides.append(side)
         select = side.select
@@ -657,14 +828,15 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
         else:
             select = _ordered(select, request, dims)
     else:
-        # Aggregated per entity, then combined by the dimensions (the fan trap, module docstring).
+        # Aggregated per entity (and apart for a balance), then combined by the dimensions (the
+        # fan trap, module docstring).
         names = {code: f"m_{code}" for code in measures}
-        for f in metric.filters:
-            code = str(f.get("dimension") or f.get("column") or "")
+        for raw in metric.filters:
+            code = filter_of(raw).dimension
             if not any(_reaches(layer, entity, code) for entity in by_entity):
                 raise CompileError("CONTRACT_MISMATCH", f"filter on an unknown dimension {code}")
         parts: list[exp.Select] = []
-        for entity, entity_codes in by_entity.items():
+        for entity, balance, entity_codes in groups:
             side = _side(
                 request,
                 layer,
@@ -674,6 +846,7 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
                 by_day,
                 shared=True,
                 dialect=dialect,
+                balance=balance,
             )
             sides.append(side)
             keys = [*codes, _DAY] if by_day else codes

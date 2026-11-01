@@ -178,6 +178,7 @@ async def load(
             allowed_dimension_ids=frozenset(v.allowed_dimensions or ()),
             certified=v.status == "certified",
             time_grain=v.time_grain,
+            time_dimension_id=v.time_dimension_id,
         )
         for mid, v in version_rows.items()
     }
