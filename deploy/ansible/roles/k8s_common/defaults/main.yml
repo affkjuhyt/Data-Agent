@@ -163,8 +163,10 @@ job_inputs:
   # Not image:migrate: that image COPYs all of backend/, so it is rebuilt for
   # any backend change, while only a new revision needs the Job.
   migrate: [backend/alembic]
-  # grant-roles.sql grants on ALL TABLES, so tables a migration adds need it again.
-  db-init: [deploy/docker/sql/grant-roles.sql, deploy/docker/sql/platform-seed.sql, "job:migrate"]
+  # grant-roles.sql grants on ALL TABLES, so tables a migration adds need it again. Every
+  # file of deploy/docker/sql/ is applied by db-init (the db-init-sql ConfigMap): a seed
+  # edited there (the pilot's verified queries) reaches the cluster only if it reruns.
+  db-init: [deploy/docker/sql/, "job:migrate"]
   minio-init: []
   kafka-topics: []
   # Its manifest pins the admin-tools version; the schema is upgraded when that moves.
