@@ -15,6 +15,7 @@ from __future__ import annotations
 import decimal
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
@@ -32,8 +33,15 @@ Run = Callable[[str], Awaitable[tuple[list[dict[str, str]], list[list[Any]]]]]
 TOP_VALUES = 10
 
 
-def _in_list(values: Sequence[str]) -> str:
-    return ", ".join("'" + v.replace("'", "''") + "'" for v in values)
+# ClickHouse reads backslash escapes inside quoted identifiers, so a quote-doubling quoter can be
+# escaped out of; a name it profiles must be a plain identifier (as its scan already requires).
+_CLICKHOUSE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _in_list(values: Sequence[str], dialect: str) -> str:
+    """String literals rendered by sqlglot in the source's dialect: on MySQL a backslash escapes,
+    so doubling quotes alone would let a schema name like `a\\' OR 1=1 --` close the string."""
+    return ", ".join(exp.Literal.string(v).sql(dialect=dialect) for v in values)
 
 
 def schemas_of(source: catalog.Source) -> list[str]:
@@ -45,6 +53,7 @@ def schemas_of(source: catalog.Source) -> list[str]:
 
 
 def _columns_sql(kind: str, schemas: Sequence[str]) -> str:
+    dialect = dialect_of(kind)
     rows = "t.TABLE_ROWS" if kind == "mysql" else "0"
     return f"""
         SELECT c.TABLE_SCHEMA, c.TABLE_NAME, t.TABLE_TYPE, {rows}, c.COLUMN_NAME, c.DATA_TYPE,
@@ -52,12 +61,13 @@ def _columns_sql(kind: str, schemas: Sequence[str]) -> str:
         FROM INFORMATION_SCHEMA.COLUMNS c
         JOIN INFORMATION_SCHEMA.TABLES t
           ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
-        WHERE c.TABLE_SCHEMA IN ({_in_list(schemas)})
+        WHERE c.TABLE_SCHEMA IN ({_in_list(schemas, dialect)})
         ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION
     """
 
 
-def _keys_sql(schemas: Sequence[str]) -> str:
+def _keys_sql(kind: str, schemas: Sequence[str]) -> str:
+    dialect = dialect_of(kind)
     # MySQL names every primary key PRIMARY: the table belongs in the join.
     return f"""
         SELECT tc.TABLE_SCHEMA, tc.TABLE_NAME, tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE, k.COLUMN_NAME
@@ -65,17 +75,19 @@ def _keys_sql(schemas: Sequence[str]) -> str:
         JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k
           ON k.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA AND k.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
          AND k.TABLE_SCHEMA = tc.TABLE_SCHEMA AND k.TABLE_NAME = tc.TABLE_NAME
-        WHERE tc.CONSTRAINT_TYPE IN ('PRIMARY KEY', 'UNIQUE') AND tc.TABLE_SCHEMA IN ({_in_list(schemas)})
+        WHERE tc.CONSTRAINT_TYPE IN ('PRIMARY KEY', 'UNIQUE')
+          AND tc.TABLE_SCHEMA IN ({_in_list(schemas, dialect)})
     """
 
 
 def _foreign_keys_sql(kind: str, schemas: Sequence[str]) -> str:
+    dialect = dialect_of(kind)
     if kind == "mysql":
         return f"""
             SELECT k.TABLE_SCHEMA, k.TABLE_NAME, k.CONSTRAINT_NAME, k.COLUMN_NAME,
                    k.REFERENCED_TABLE_SCHEMA, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME
             FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE k
-            WHERE k.REFERENCED_TABLE_NAME IS NOT NULL AND k.TABLE_SCHEMA IN ({_in_list(schemas)})
+            WHERE k.REFERENCED_TABLE_NAME IS NOT NULL AND k.TABLE_SCHEMA IN ({_in_list(schemas, dialect)})
             ORDER BY k.TABLE_SCHEMA, k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION
         """
     # SQL Server keeps the referenced side as the unique constraint the key points at.
@@ -88,7 +100,7 @@ def _foreign_keys_sql(kind: str, schemas: Sequence[str]) -> str:
         JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE p
           ON p.CONSTRAINT_SCHEMA = r.UNIQUE_CONSTRAINT_SCHEMA
          AND p.CONSTRAINT_NAME = r.UNIQUE_CONSTRAINT_NAME AND p.ORDINAL_POSITION = k.ORDINAL_POSITION
-        WHERE k.TABLE_SCHEMA IN ({_in_list(schemas)})
+        WHERE k.TABLE_SCHEMA IN ({_in_list(schemas, dialect)})
         ORDER BY k.TABLE_SCHEMA, k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION
     """
 
@@ -104,7 +116,7 @@ async def scan(
     schemas = schemas_of(source)
     requested = set(tables or [])
     _, column_rows = await run(_columns_sql(source.kind, schemas))
-    _, key_rows = await run(_keys_sql(schemas))
+    _, key_rows = await run(_keys_sql(source.kind, schemas))
     _, fk_rows = await run(_foreign_keys_sql(source.kind, schemas))
 
     constraints: dict[tuple[str, str, str], tuple[str, list[str]]] = {}
@@ -234,6 +246,13 @@ async def profile(
         schema_name, table_name = str(table["schema_name"]), str(table["table_name"])
         for column in table["columns"]:  # type: ignore[attr-defined]
             name = str(column["name"])
+            if dialect == "clickhouse" and not all(
+                _CLICKHOUSE_NAME.fullmatch(n) for n in (schema_name, table_name, name)
+            ):
+                log.warning(
+                    "profile skipped %s.%s.%s: not a plain name", schema_name, table_name, name
+                )
+                continue
             try:
                 _, stats = await run(stats_sql(schema_name, table_name, name, dialect))
                 top: list[list[Any]] = []

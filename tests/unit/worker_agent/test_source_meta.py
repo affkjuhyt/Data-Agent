@@ -123,3 +123,24 @@ def test_engine_type_names_normalize(data_type: str, normalized: str) -> None:
 def test_profile_sql_is_written_in_the_sources_dialect() -> None:
     assert source_meta.top_values_sql("dbo", "t", "Số tiền", "tsql").startswith("SELECT TOP 10")
     assert "`Số tiền`" in source_meta.stats_sql("shop", "t", "Số tiền", "mysql")
+
+
+def test_a_schema_name_cannot_close_its_string_on_mysql() -> None:
+    # MySQL reads a backslash as an escape: doubling quotes alone let `a\' OR 1=1 --` out.
+    sql = source_meta._columns_sql("mysql", ["a\\' OR 1=1 -- "])
+    assert "IN ('a\\\\'' OR 1=1 -- ')" in sql
+
+
+async def test_a_clickhouse_column_that_is_not_a_plain_name_is_not_profiled() -> None:
+    sent: list[str] = []
+
+    async def run(sql: str) -> tuple[list[dict[str, str]], list[list[Any]]]:
+        sent.append(sql)
+        return [], [[1, 0, 1, "a", "a"]] if "sample_rows" in sql else [["a", 1]]
+
+    table = {"schema_name": "db", "table_name": "t", "columns": [{"name": 'x\\" y'}, {"name": "ok"}]}
+    profiles = await source_meta.profile(
+        _source("clickhouse"), [table], run, lambda name: False, lambda name, v: str(v)
+    )
+    assert set(profiles) == {("db", "t", "ok")}
+    assert all("x\\" not in sql for sql in sent)
