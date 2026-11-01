@@ -541,11 +541,14 @@ suspecting the pipeline.
 ### What a question cost (the turn trace)
 
 Every Ask turn is written as a run of the Data Space's built-in agent "Agent Hỏi
-đáp" (`agent.agent_def` code `QA`, created on the space's first question):
+đáp" (`agent.agent_def` code `QA`, created by the worker on the space's first
+question, retired so that it can never be configured or run: turns run as the
+asker; an agent a person created with code `QA` is not used, and turns are then
+left untraced with a warning in the worker log):
 one `agent.agent_run` with `trigger_ref = question:<id>`, whose `agent_step`
 rows are the analyst steps (understand → query → narrate) and every model call
 (`kind = llm_call`, `output` = model, tokens in and out, latency; never the
-prompt or the answer). `agent_run.tokens` and `cost` are the turn's totals.
+prompt, the answer or an error's message, only its type and HTTP status). `agent_run.tokens` and `cost` are the turn's totals.
 Cost prices tokens by `LLM_PRICES` in `worker-agent-env`, JSON per model or role
 alias, e.g. `{"responder": {"input_per_1k": 0.002, "output_per_1k": 0.006}}`;
 unset, calls cost 0, which is what the on-prem models cost per call.

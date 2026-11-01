@@ -122,5 +122,10 @@ async def test_each_call_lands_on_the_turns_trace_without_its_content(server: Se
         "output_tokens": 5,
     }
     assert "secret q" not in json.dumps(answered.output) and answered.summary is None
-    assert (failed.name, failed.status) == ("planner", "error") and failed.summary
+    # The kind of failure only, never the provider's message.
+    assert (failed.name, failed.status, failed.summary) == (
+        "planner",
+        "error",
+        "ModelHTTPError 500",
+    )
     assert trace.tokens == 15

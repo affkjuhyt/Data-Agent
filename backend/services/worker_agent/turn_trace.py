@@ -226,7 +226,7 @@ async def _write(trace: Trace, error: BaseException | None) -> None:
     finished = _now()
     run_id = uuid7()
     async with scoped_session(AGENT_ROLE, trace.org_id, trace.user_id) as session:
-        agent_id = await _qa_agent(session, trace.org_id, space_id, steward or trace.user_id)
+        agent_id = await _qa_agent(session, trace.org_id, space_id, steward)
         if agent_id is None:
             return
         session.add(
@@ -246,7 +246,8 @@ async def _write(trace: Trace, error: BaseException | None) -> None:
                 tokens=trace.tokens,
                 started_at=trace.started,
                 finished_at=finished,
-                error=f"{type(error).__name__}: {str(error)[:200]}" if error else None,
+                # The exception's type only: its text can carry SQL, values or a provider's body.
+                error=type(error).__name__ if error else None,
                 stop_reason=stop_reason,
             )
         )
@@ -277,7 +278,12 @@ async def _write(trace: Trace, error: BaseException | None) -> None:
 async def _qa_agent(
     session: Any, org_id: uuid.UUID, space_id: uuid.UUID, owner: uuid.UUID | None
 ) -> uuid.UUID | None:
-    """The Data Space's built-in Ask agent, created on its first traced turn."""
+    """The Data Space's built-in Ask agent, created on its first traced turn.
+
+    It only holds the runs of Ask turns, which run as the asker: it is created retired, so it can
+    never be configured, deployed or run (api agent routes refuse a retired agent) and never acts
+    as the steward it names. It is the one the worker created (created_by NULL): an agent a person
+    made with the same code is not taken for it, and the turn is then left untraced."""
     if owner is None:
         return None
     await session.execute(
@@ -292,15 +298,22 @@ async def _qa_agent(
             owner_user_id=owner,
             account_user_id=owner,
             current_config_version=CONFIG_VERSION,
-            status="running",
+            status="retired",
         )
         .on_conflict_do_nothing(index_elements=["data_space_id", "code"])
     )
     agent_id: uuid.UUID | None = await session.scalar(
         select(agent.AgentDef.id).where(
-            agent.AgentDef.data_space_id == space_id, agent.AgentDef.code == AGENT_CODE
+            agent.AgentDef.data_space_id == space_id,
+            agent.AgentDef.code == AGENT_CODE,
+            agent.AgentDef.kind == "analysis",
+            agent.AgentDef.status == "retired",
+            agent.AgentDef.created_by.is_(None),
         )
     )
+    if agent_id is None:
+        log.warning("worker-agent | Data Space %s has an agent %s of its own", space_id, AGENT_CODE)
+        return None
     await session.execute(
         insert(agent.AgentConfig)
         .values(

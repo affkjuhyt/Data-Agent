@@ -146,6 +146,10 @@ async def test_a_turn_is_a_run_of_the_data_spaces_ask_agent(seed: Seed) -> None:
         assert (trigger, status, stop) == ("manual", "succeeded", "completed")
         assert (code, name) == ("QA", "Agent Hỏi đáp")
         assert str(initiated) == str(first.users[0]) and str(owner) == str(first.users[0])
+    # The built-in agent only holds the runs: retired, it is never configured or run.
+    assert seed.one(
+        "SELECT status, created_by FROM agent.agent_def WHERE data_space_id = %s", first.space
+    ) == ("retired", None)
     # One built-in agent per Data Space, with the version its runs name.
     assert (
         seed.one("SELECT count(*) FROM agent.agent_def WHERE data_space_id = %s", first.space) == 1
@@ -174,3 +178,21 @@ async def test_a_redelivered_turn_leaves_no_second_run(seed: Seed) -> None:
         cur.execute("UPDATE qa.outbox SET published_at = NULL WHERE id = %s", (str(asked.outbox),))
     await drain()
     assert seed.one("SELECT count(*) FROM agent.agent_run WHERE org_id = %s", asked.org) == 1
+
+
+async def test_an_agent_a_person_named_qa_is_not_taken_for_the_built_in_one(seed: Seed) -> None:
+    asked = ask(seed)
+    seed.row(
+        "agent.agent_def",
+        org_id=asked.org,
+        data_space_id=asked.space,
+        code="QA",
+        name="Agent của tôi",
+        kind="analysis",
+        owner_user_id=asked.users[1],
+        account_user_id=asked.users[1],
+        created_by=asked.users[1],
+    )
+    await drain()
+    assert seed.one("SELECT status FROM qa.question WHERE id = %s", asked.question) == "refused"
+    assert seed.one("SELECT count(*) FROM agent.agent_run WHERE org_id = %s", asked.org) == 0

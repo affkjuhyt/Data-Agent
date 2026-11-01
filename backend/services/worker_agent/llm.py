@@ -104,16 +104,17 @@ class LiteLLMGateway:
             )
         except AgentRunError as exc:
             # Kept short: the message lands in a candidate's error and a run's trace.
-            reason = f"{type(exc).__name__}: {str(exc)[:200]}"
+            # The trace keeps the kind of failure only: the message can quote the provider's body.
+            status = getattr(exc, "status_code", None)
             turn_trace.model_call(
                 role=role,
                 model=role,
                 input_tokens=0,
                 output_tokens=0,
                 latency_ms=int((time.monotonic() - started) * 1000),
-                error=reason,
+                error=type(exc).__name__ + (f" {status}" if status else ""),
             )
-            raise ModelUnavailable(reason) from exc
+            raise ModelUnavailable(f"{type(exc).__name__}: {str(exc)[:200]}") from exc
         reply = Reply(
             content=result.output,
             model=result.response.model_name or role,
