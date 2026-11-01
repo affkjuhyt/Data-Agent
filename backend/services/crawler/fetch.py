@@ -323,7 +323,9 @@ async def crawl(
     return pages, refused
 
 
-def client() -> CrawlClient:
+def client(accept_language: str = "vi,en;q=0.8") -> CrawlClient:
+    """`accept_language` is the source's (its ingest profile's locale, GEN-11): a multilingual
+    site answers in the language its selectors were written against."""
     # The proxy is passed explicitly and the environment ignored: a NO_PROXY entry meant for MinIO
     # or OpenBao must never let a crawl request out without the proxy.
     proxy = os.environ.get("CRAWLER_EGRESS_PROXY") or None
@@ -343,7 +345,7 @@ def client() -> CrawlClient:
     return CrawlClient(
         backend,
         transport=transport,
-        headers={"User-Agent": USER_AGENT, "Accept-Language": "vi,en;q=0.8"},
+        headers={"User-Agent": USER_AGENT, "Accept-Language": accept_language},
         timeout=httpx.Timeout(TIMEOUT),
         follow_redirects=False,
         trust_env=False,

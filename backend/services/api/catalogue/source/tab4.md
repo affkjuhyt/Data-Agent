@@ -828,7 +828,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | Endpoint | Gửi lên | Trả về | Lỗi riêng |
 | --- | --- | --- | --- |
 | GET /v1/collections | — | Danh sách Collection | — |
-| POST /v1/collections | code\*, name\*, media\_kinds, purpose\*, pii\_policy, retention\_days | Collection | — |
+| POST /v1/collections | code\*, name\*, media\_kinds, purpose\*, pii\_policy, retention\_days, ingest\_profile | Collection | — |
 | POST /v1/document-sources | collection\_id\*, kind\*, location\*, sync\_cron\*, credentials | DocumentSource | — |
 | POST /v1/document-sources/{id}:sync | — | 202, Location tới document\_source | — |
 | POST /v1/documents | file\*, collection\_id\*, doc\_no, effective\_from | 202, Location tới document. multipart/form-data; trùng mã băm trong bộ sưu tập trả lại tài liệu đã có | 413 payload\_too\_large |
@@ -1051,8 +1051,8 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/me/onboarding:skip | — | Bỏ qua hướng dẫn bắt đầu | — |
 | POST /v1/me/onboarding:complete | — | Hoàn tất hướng dẫn bắt đầu | — |
 | POST /v1/me/onboarding:try-agent | template\_ref\* | Tạo agent mẫu và khởi chạy lượt thử | 422 invalid\_request |
-| POST /v1/data-spaces | code\*, name\*, description, steward\_id\*, backup\_steward\_id, default\_policy, work\_calendar\_id | DataSpace | 409 conflict (trùng mã) |
-| PATCH /v1/data-spaces/{id} | name, description, steward\_id, backup\_steward\_id, default\_policy, status, work\_calendar\_id | DataSpace | 422 business\_rule\_violated (gỡ người phụ trách cuối cùng, BR-143) |
+| POST /v1/data-spaces | code\*, name\*, description, steward\_id\*, backup\_steward\_id, default\_policy, work\_calendar\_id, ingest\_profile | DataSpace | 409 conflict (trùng mã) |
+| PATCH /v1/data-spaces/{id} | name, description, steward\_id, backup\_steward\_id, default\_policy, status, work\_calendar\_id, ingest\_profile | DataSpace | 422 business\_rule\_violated (gỡ người phụ trách cuối cùng, BR-143) |
 | PUT /v1/data-spaces/{id}/members | members\* | Danh sách DataSpaceMember | 403 policy\_denied (agent vượt quyền chủ sở hữu) |
 | PUT /v1/data-spaces/{id}/sources | source\_ids\* | DataSpace | — |
 | POST /v1/access-requests | data\_space\_id\*, capability\*, reason\*, requested\_until\* | AccessRequest | 422 business\_rule\_violated (thời hạn quá 90 ngày, BR-142) |
@@ -1150,9 +1150,9 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | Endpoint | Gửi lên | Trả về | Lỗi riêng |
 | --- | --- | --- | --- |
 | GET /v1/crawl-sources | ?status, ?kind, ?owner\_id, ?has\_issue | Danh sách CrawlSource. Kèm lần thu cuối, độ mới so với lịch, tỷ lệ trích đúng, số mục chờ duyệt, lỗi tải gần nhất | — |
-| POST /v1/crawl-sources | name\*, goal\*, kind\*, seed\_urls\*, allowed\_domains\*, max\_depth, schedule\_cron, rate\_limit\_rps, auth\_mode, secret\_ref, review\_gate, trust\_level, openapi\_url, terms\_url | CrawlSource (status = draft). Kiểm robots.txt, điều khoản và thử tải 1 trang trước khi lưu; sự kiện acquire.source.created. Dữ liệu mang nhãn nguồn ngoài (BR-149, BR-156) | 422 business\_rule\_violated (robots.txt hoặc điều khoản cấm thu thập tự động; trang cần đăng nhập, captcha, BR-149); 422 validation\_failed (seed\_urls ngoài allowed\_domains) |
+| POST /v1/crawl-sources | name\*, goal\*, kind\*, seed\_urls\*, allowed\_domains\*, max\_depth, schedule\_cron, rate\_limit\_rps, auth\_mode, secret\_ref, review\_gate, trust\_level, openapi\_url, terms\_url, ingest\_profile | CrawlSource (status = draft). Kiểm robots.txt, điều khoản và thử tải 1 trang trước khi lưu; sự kiện acquire.source.created. Dữ liệu mang nhãn nguồn ngoài (BR-149, BR-156) | 422 business\_rule\_violated (robots.txt hoặc điều khoản cấm thu thập tự động; trang cần đăng nhập, captcha, BR-149); 422 validation\_failed (seed\_urls ngoài allowed\_domains) |
 | GET /v1/crawl-sources/{id} | — | CrawlSource. Kèm phiên bản schema active và 5 lượt gần nhất | — |
-| PATCH /v1/crawl-sources/{id} | name, goal, allowed\_domains, max\_depth, schedule\_cron, rate\_limit\_rps, review\_gate, trust\_level, owner\_id | CrawlSource | 422 business\_rule\_violated (review\_gate = auto khi độ chính xác mẫu ngẫu nhiên chưa đạt 98% trong 4 lượt liên tiếp) |
+| PATCH /v1/crawl-sources/{id} | name, goal, allowed\_domains, max\_depth, schedule\_cron, rate\_limit\_rps, review\_gate, trust\_level, owner\_id, ingest\_profile | CrawlSource | 422 business\_rule\_violated (review\_gate = auto khi độ chính xác mẫu ngẫu nhiên chưa đạt 98% trong 4 lượt liên tiếp) |
 | POST /v1/crawl-sources/{id}:legal-review | legal\_status\* (approved, rejected), terms\_url\*, legal\_checklist\*, legal\_evidence\*, legal\_review\_due\_at, note | CrawlSource. Ghi terms\_sha256 từ bản điều khoản vừa chụp, legal\_reviewed\_by, legal\_reviewed\_at; hạn xem lại mặc định 6 tháng; đóng yêu cầu Cần bạn kind = legal\_review; sự kiện acquire.source.legal\_reviewed (BR-174) | 403 policy\_denied (người duyệt là người phụ trách nguồn, BR-174); 422 validation\_failed (thiếu bằng chứng hoặc thiếu một trong bốn mục terms, robots, copyright, personal\_data; hạn xem lại quá 184 ngày) |
 | POST /v1/crawl-sources/{id}:pause | reason\* | CrawlSource (status = paused) | 409 invalid\_state |
 | POST /v1/crawl-sources/{id}:resume | — | CrawlSource (status = active) | 409 invalid\_state (chưa có schema active hoặc còn schema\_drift nặng chưa xử lý, BR-152); 422 business\_rule\_violated (duyệt pháp lý chưa có, hết hiệu lực hoặc quá hạn xem lại, BR-174) |

@@ -5858,6 +5858,16 @@
       "title": "Code",
       "type": "string"
      },
+     "ingest_profile": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/IngestProfile"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "media_kinds": {
       "anyOf": [
        {
@@ -5968,6 +5978,11 @@
       "title": "Id",
       "type": "string"
      },
+     "ingest_profile": {
+      "additionalProperties": true,
+      "title": "Ingest Profile",
+      "type": "object"
+     },
      "media_kinds": {
       "items": {
        "type": "string"
@@ -6024,6 +6039,7 @@
      "extraction_schema_id",
      "qdrant_collection",
      "embed_model",
+     "ingest_profile",
      "status",
      "created_at",
      "updated_at"
@@ -9320,6 +9336,16 @@
       "title": "Goal",
       "type": "string"
      },
+     "ingest_profile": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/IngestProfile"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "kind": {
       "enum": [
        "web_page",
@@ -9530,6 +9556,11 @@
       "format": "uuid",
       "title": "Id",
       "type": "string"
+     },
+     "ingest_profile": {
+      "additionalProperties": true,
+      "title": "Ingest Profile",
+      "type": "object"
      },
      "kind": {
       "title": "Kind",
@@ -9841,6 +9872,7 @@
      "robots_checked_at",
      "terms_note",
      "terms_url",
+     "ingest_profile",
      "terms_sha256",
      "terms_observed_sha256",
      "terms_checked_at",
@@ -9894,6 +9926,16 @@
        }
       ],
       "title": "Goal"
+     },
+     "ingest_profile": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/IngestProfile"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "max_depth": {
       "anyOf": [
@@ -10100,6 +10142,11 @@
       "format": "uuid",
       "title": "Id",
       "type": "string"
+     },
+     "ingest_profile": {
+      "additionalProperties": true,
+      "title": "Ingest Profile",
+      "type": "object"
      },
      "kind": {
       "title": "Kind",
@@ -10404,6 +10451,7 @@
      "robots_checked_at",
      "terms_note",
      "terms_url",
+     "ingest_profile",
      "terms_sha256",
      "terms_observed_sha256",
      "terms_checked_at",
@@ -10478,6 +10526,11 @@
       "format": "uuid",
       "title": "Id",
       "type": "string"
+     },
+     "ingest_profile": {
+      "additionalProperties": true,
+      "title": "Ingest Profile",
+      "type": "object"
      },
      "kind": {
       "title": "Kind",
@@ -10709,6 +10762,7 @@
      "robots_checked_at",
      "terms_note",
      "terms_url",
+     "ingest_profile",
      "terms_sha256",
      "terms_observed_sha256",
      "terms_checked_at",
@@ -11545,6 +11599,16 @@
       ],
       "title": "Description"
      },
+     "ingest_profile": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/IngestProfile"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "name": {
       "maxLength": 500,
       "minLength": 1,
@@ -11612,6 +11676,16 @@
        }
       ],
       "title": "Description"
+     },
+     "ingest_profile": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/IngestProfile"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "name": {
       "anyOf": [
@@ -11844,6 +11918,11 @@
       "title": "Id",
       "type": "string"
      },
+     "ingest_profile": {
+      "additionalProperties": true,
+      "title": "Ingest Profile",
+      "type": "object"
+     },
      "name": {
       "title": "Name",
       "type": "string"
@@ -11896,6 +11975,7 @@
      "backup_steward_id",
      "status",
      "default_policy",
+     "ingest_profile",
      "work_calendar_id",
      "opened_at",
      "created_at",
@@ -21806,6 +21886,75 @@
      "updated_at"
     ],
     "title": "HitlView",
+    "type": "object"
+   },
+   "IngestProfile": {
+    "additionalProperties": false,
+    "properties": {
+     "date_order": {
+      "anyOf": [
+       {
+        "enum": [
+         "dmy",
+         "mdy"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Date Order"
+     },
+     "decimal_mark": {
+      "anyOf": [
+       {
+        "enum": [
+         ".",
+         ","
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Decimal Mark"
+     },
+     "locale": {
+      "anyOf": [
+       {
+        "maxLength": 35,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "examples": [
+       "vi-VN",
+       "en-US"
+      ],
+      "title": "Locale"
+     },
+     "ocr_languages": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 5,
+        "minItems": 1,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ocr Languages"
+     }
+    },
+    "title": "IngestProfile",
     "type": "object"
    },
    "IngestionJobDryRun": {

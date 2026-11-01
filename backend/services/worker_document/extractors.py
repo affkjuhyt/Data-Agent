@@ -25,6 +25,7 @@ import io
 import posixpath
 import re
 import zipfile
+from collections.abc import Sequence
 from email.message import EmailMessage
 from html.parser import HTMLParser
 from xml.etree.ElementTree import Element
@@ -33,6 +34,7 @@ import pymupdf
 from defusedxml import ElementTree
 
 from services.worker_document.processing import (
+    DEFAULT_OCR_LANGUAGES,
     ExtractedImage,
     ExtractedPage,
     LayoutBlock,
@@ -473,7 +475,9 @@ def email_pages(content: bytes, file_name: str = "") -> list[ExtractedPage]:
 # --- image --------------------------------------------------------------------------------------
 
 
-def image_pages(content: bytes) -> list[ExtractedPage]:
+def image_pages(
+    content: bytes, ocr_languages: Sequence[str] = DEFAULT_OCR_LANGUAGES
+) -> list[ExtractedPage]:
     kind = next((name for magic, name in IMAGE_MAGIC if content.startswith(magic)), None)
     if kind is None and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
         kind = "webp"
@@ -487,7 +491,9 @@ def image_pages(content: bytes) -> list[ExtractedPage]:
     with picture:
         for frame in picture:
             png = frame.get_pixmap(dpi=144, alpha=False).tobytes("png")
-            text, conf = ocr_page(frame.get_pixmap(dpi=300, alpha=False).tobytes("png"))
+            text, conf = ocr_page(
+                frame.get_pixmap(dpi=300, alpha=False).tobytes("png"), ocr_languages
+            )
             blocks = (
                 [LayoutBlock("paragraph", text, (0, 0, frame.rect.width, frame.rect.height))]
                 if text

@@ -24,13 +24,16 @@ from typing import Any
 from lxml import etree, html
 from lxml.cssselect import CSSSelector
 
+from libs import tabular
+from libs.tabular import profile
+
 LOW_CONFIDENCE = 0.85  # extracted_record.record_confidence: below this the record is reviewed
 SAMPLE_SHARE = 0.02
 SAMPLE_MIN = 5
 
 _NUMBER = re.compile(r"[-+]?\d[\d.,\s]*")
-_THOUSANDS_DOT = re.compile(r"^\d{1,3}(\.\d{3})+$")
-_DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y")
+# A source that names neither reads as its organization's locale would (libs/tabular.profile).
+_FALLBACK = profile.resolve(None)
 
 
 class ExtractionError(ValueError):
@@ -46,45 +49,42 @@ class Record:
     review_reasons: list[str] = field(default_factory=list)
 
 
-def number(text: str) -> Decimal | None:
-    """A number as Vietnamese and English pages write it: 4,8 / 4.8 / 1.234,5 / 1,234.5."""
+def number(text: str, decimal_mark: str = _FALLBACK.decimal_mark) -> Decimal | None:
+    """The first figure in `text`. Its decimal mark is the one only it fits ("1.234,5", "4.8",
+    "1.234.567"), else the source's: "1,234" is 1234 on an English page and 1,234 on a
+    Vietnamese one, which no reading of the figure alone can tell (GEN-11)."""
     match = _NUMBER.search(text)
     if match is None:
         return None
-    raw = re.sub(r"\s", "", match.group(0))
-    if "," in raw and "." in raw:
-        decimal_mark = "," if raw.rfind(",") > raw.rfind(".") else "."
-        raw = raw.replace("." if decimal_mark == "," else ",", "").replace(decimal_mark, ".")
-    elif "," in raw:
-        raw = raw.replace(",", ".") if raw.count(",") == 1 else raw.replace(",", "")
-    elif _THOUSANDS_DOT.match(raw):
-        raw = raw.replace(".", "")
+    figure = re.sub(r"\s", "", match.group(0)).rstrip(".,")
     try:
-        return Decimal(raw.rstrip("."))
-    except InvalidOperation:
+        return tabular.to_number(figure, tabular.decimal_mark([figure]) or decimal_mark)
+    except ValueError:
         return None
 
 
-def _date(text: str) -> datetime.date | None:
-    value = text.strip()
-    for fmt in _DATE_FORMATS:
-        try:
-            return datetime.datetime.strptime(value, fmt).date()
-        except ValueError:
-            continue
-    return None
+def _date(text: str, date_order: str) -> datetime.date | None:
+    try:
+        return tabular.to_date(text, "mdy" if date_order == "mdy" else "dmy")
+    except ValueError:
+        return None
 
 
-def typed(kind: str, text: str) -> tuple[Any, float]:
+def typed(
+    kind: str,
+    text: str,
+    decimal_mark: str = _FALLBACK.decimal_mark,
+    date_order: str = _FALLBACK.date_order,
+) -> tuple[Any, float]:
     """(value, confidence): 1 when the text reads as the field's type, 0.5 when it is there but
     does not, so a person sees the raw text instead of a silent null."""
     if kind in ("number", "decimal", "integer", "percent", "money"):
-        value = number(text)
+        value = number(text, decimal_mark)
         if value is None:
             return text, 0.5
         return (int(value) if kind == "integer" else str(value)), 1.0
     if kind == "date":
-        day = _date(text)
+        day = _date(text, date_order)
         return (day.isoformat(), 1.0) if day else (text, 0.5)
     return text, 1.0
 
@@ -186,7 +186,12 @@ def _out_of_domain(value: Any, constraints: dict[str, Any]) -> bool:
 
 
 def extract(
-    content: bytes, content_type: str, selector: str, fields: list[dict[str, Any]]
+    content: bytes,
+    content_type: str,
+    selector: str,
+    fields: list[dict[str, Any]],
+    decimal_mark: str = _FALLBACK.decimal_mark,
+    date_order: str = _FALLBACK.date_order,
 ) -> list[Record]:
     kind, rows = _rows(content, content_type, selector)
     keys = [f["name"] for f in fields if f.get("key") or f.get("is_key")] or [fields[0]["name"]]
@@ -202,7 +207,7 @@ def extract(
                 if f.get("required"):
                     reasons.add("missing_required")
                 continue
-            value, sure = typed(str(f.get("type") or "text"), raw)
+            value, sure = typed(str(f.get("type") or "text"), raw, decimal_mark, date_order)
             values[f["name"]], confidence[f["name"]] = value, sure
             if sure == 1.0 and _out_of_domain(value, f.get("value_constraints") or {}):
                 reasons.add("out_of_domain")

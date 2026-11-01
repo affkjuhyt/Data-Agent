@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import acquire, catalog, org
 from services.api.catalogue import endpoint
+from services.api.kernel import ingest_profile
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -640,6 +641,7 @@ async def create_crawl_source(
             secret_ref=secret_ref,
             openapi_url=body.openapi_url,
             terms_url=body.terms_url,
+            ingest_profile=ingest_profile.stored(body.ingest_profile),
             review_gate=body.review_gate,
             trust_level=body.trust_level,
             owner_id=principal.user_id,
@@ -736,6 +738,8 @@ async def patch_crawl_source(
             await _check_active_user(session, principal, changes["owner_id"], "owner_id")
         if "name" in changes:
             changes["name"] = changes["name"].strip()
+        if "ingest_profile" in changes:
+            changes["ingest_profile"] = ingest_profile.stored(body.ingest_profile)
         previous = row.status
         for key, value in changes.items():
             setattr(row, key, value)

@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from services.api.kernel.ingest_profile import IngestProfile
 from services.api.modules.org.schemas import RoleRef
 
 PrincipalType = Literal["user", "group", "agent"]
@@ -186,6 +187,7 @@ class DataSpaceCreate(BaseModel):
     backup_steward_id: uuid.UUID | None = None
     default_policy: DefaultPolicy | None = None
     work_calendar_id: uuid.UUID | None = None
+    ingest_profile: IngestProfile | None = None
 
 
 class DataSpacePatch(BaseModel):
@@ -196,6 +198,8 @@ class DataSpacePatch(BaseModel):
     default_policy: DefaultPolicy | None = None
     status: DataSpaceStatus | None = None
     work_calendar_id: uuid.UUID | None = None
+    # Replaces the stored profile; {} clears it (kernel/ingest_profile).
+    ingest_profile: IngestProfile | None = None
 
 
 class DataSpaceView(_Row):
@@ -207,6 +211,7 @@ class DataSpaceView(_Row):
     backup_steward_id: uuid.UUID | None
     status: str
     default_policy: dict[str, Any]
+    ingest_profile: dict[str, Any]
     work_calendar_id: uuid.UUID | None
     opened_at: datetime.datetime | None
     created_at: datetime.datetime

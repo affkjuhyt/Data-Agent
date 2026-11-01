@@ -109,3 +109,26 @@ def test_the_random_sample_is_two_percent_of_the_clean_records_and_at_least_five
     again = _records(120, 0)
     extract.sample(again, "run-2")
     assert [r.review_reasons for r in again] == [r.review_reasons for r in small]
+
+
+@pytest.mark.parametrize(
+    ("text", "mark", "value"),
+    [
+        ("1,234", ".", Decimal("1234")),  # an English page's thousands
+        ("1,234", ",", Decimal("1.234")),  # a Vietnamese page's decimal comma
+        ("1.234", ".", Decimal("1.234")),
+        ("1.234", ",", Decimal("1234")),
+        ("1.234,5", ".", Decimal("1234.5")),  # settled by the figure, whatever the source says
+    ],
+)
+def test_an_ambiguous_figure_reads_with_its_sources_decimal_mark(
+    text: str, mark: str, value: Decimal
+) -> None:
+    # GEN-11: "1,234" was always 1.234 and "1.234" always 1234, at full confidence.
+    assert extract.number(text, mark) == value
+
+
+def test_a_date_reads_in_its_sources_order() -> None:
+    assert extract.typed("date", "03/04/2026", ".", "mdy") == ("2026-03-04", 1.0)
+    assert extract.typed("date", "03/04/2026", ",", "dmy") == ("2026-04-03", 1.0)
+    assert extract.typed("date", "12/25/2026", ",", "dmy") == ("12/25/2026", 0.5)

@@ -17,6 +17,7 @@ from sqlalchemy import select, text
 from libs import tabular
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, ingest
+from libs.tabular import profile as ingest_profile
 from services.worker_agent.events import Event, Handler
 
 ROLE = "svc_ingest"
@@ -94,7 +95,9 @@ def _sheet_rows(content: bytes, file_name: str, sheet: str | None) -> list[list[
 
 class _Reader:
     """How each column's cells are read: its mapped kind, decimal mark and date order, settled
-    once over the whole column (libs/tabular), so validation and the table agree."""
+    once over the whole column (libs/tabular), so validation and the table agree. A column its
+    values do not settle, that neither its mapping nor the upload names, reads by the Data
+    Space's ingest profile (GEN-11)."""
 
     def __init__(
         self,
@@ -102,6 +105,7 @@ class _Reader:
         data: list[list[Any]],
         column_map: list[dict[str, Any]],
         decimal_sep: str | None,
+        profile: ingest_profile.Profile,
     ) -> None:
         """`width` is the header's (or the mapping's): cells past it are not read, a row that
         long is an invalid row, so a malformed one cannot widen the work."""
@@ -121,10 +125,10 @@ class _Reader:
                 mapped.get("decimal_sep")
                 or decimal_sep
                 or tabular.decimal_mark(values)
-                or tabular.DEFAULT_DECIMAL_MARK
+                or profile.decimal_mark
             )
             self.orders.append(
-                mapped.get("date_order") or tabular.date_order(values) or tabular.DEFAULT_DATE_ORDER
+                mapped.get("date_order") or tabular.date_order(values) or profile.date_order
             )
 
     def kind(self, index: int) -> str:
@@ -154,14 +158,19 @@ class _Reader:
 
 
 def _validate(
-    rows: list[list[Any]], column_map: list[dict[str, Any]], decimal_sep: str | None = None
+    rows: list[list[Any]],
+    column_map: list[dict[str, Any]],
+    decimal_sep: str | None = None,
+    profile: ingest_profile.Profile | None = None,
 ) -> tuple[dict[str, Any], float]:
     if not rows:
         raise ValueError("the upload has no readable rows")
     expected = max(len(rows[0]), len(column_map))
     # The first uploaded event can arrive before the user saves a mapping: an unmapped column is
     # read as a string, so validation still produces a result for the review screen.
-    reader = _Reader(expected, rows[1:], column_map, decimal_sep)
+    reader = _Reader(
+        expected, rows[1:], column_map, decimal_sep, profile or ingest_profile.resolve(None)
+    )
     invalid = 0
     for row in rows[1:]:
         if len(row) != expected or any(
@@ -213,7 +222,8 @@ async def _materialize(
     rows: list[list[Any]],
     column_map: list[dict[str, Any]],
     decimal_sep: str | None = None,
-) -> list[dict[str, str]]:
+    profile: ingest_profile.Profile | None = None,
+) -> list[dict[str, str | None]]:
     """Writes the workspace table; returns its columns as created (name, PostgreSQL type, label)."""
     if not rows:
         raise ValueError("the upload has no readable rows")
@@ -223,7 +233,9 @@ async def _materialize(
         {"name": name, "type": _postgres_type(column_map, index), "label": _label(rows[0][index])}
         for index, name in enumerate(names)
     ]
-    reader = _Reader(len(names), rows[1:], column_map, decimal_sep)
+    reader = _Reader(
+        len(names), rows[1:], column_map, decimal_sep, profile or ingest_profile.resolve(None)
+    )
     rows_json = [
         [
             reader.value(row[index] if index < len(row) else None, index)
@@ -272,6 +284,7 @@ async def _validate_upload(event: Event) -> None:
             ),
             row.column_map or [],
             row.decimal_sep,
+            await ingest_profile.load(session, row.data_space_id),
         )
         row.validation = validation
         row.error_ratio = ratio
@@ -297,7 +310,12 @@ async def _register_dataset(event: Event) -> None:
             content, row.file_name, row.sheet, encoding=row.encoding, header_row=row.header_row
         )
         columns = await _materialize(
-            session, table_name, upload_rows, row.column_map or [], row.decimal_sep
+            session,
+            table_name,
+            upload_rows,
+            row.column_map or [],
+            row.decimal_sep,
+            await ingest_profile.load(session, data_space_id),
         )
         row.validation = {**(row.validation or {}), "materialized": True, "table_name": table_name}
     async with scoped_session(
@@ -342,8 +360,8 @@ async def _register_dataset(event: Event) -> None:
                     dataset_version=1,
                     name=column["name"],
                     ordinal=ordinal,
-                    data_type=column["type"],
-                    normalized_type=_NORMALIZED[column["type"]],
+                    data_type=str(column["type"]),
+                    normalized_type=_NORMALIZED[str(column["type"])],
                     display_name=column["label"] if column["label"] != column["name"] else None,
                     created_by=row.uploader_id,
                     updated_by=row.uploader_id,

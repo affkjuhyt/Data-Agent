@@ -1933,12 +1933,13 @@
     "media_kinds": false,
     "purpose": true,
     "pii_policy": false,
-    "retention_days": false
+    "retention_days": false,
+    "ingest_profile": false
    },
    "query": [],
    "returns": "Collection",
    "errors": [],
-   "request_text": "code*, name*, media_kinds, purpose*, pii_policy, retention_days"
+   "request_text": "code*, name*, media_kinds, purpose*, pii_policy, retention_days, ingest_profile"
   },
   "POST /v1/document-sources": {
    "group": "Tài liệu",
@@ -4984,7 +4985,8 @@
     "steward_id": true,
     "backup_steward_id": false,
     "default_policy": false,
-    "work_calendar_id": false
+    "work_calendar_id": false,
+    "ingest_profile": false
    },
    "query": [],
    "returns": "DataSpace",
@@ -4994,7 +4996,7 @@
      "conflict"
     ]
    ],
-   "request_text": "code*, name*, description, steward_id*, backup_steward_id, default_policy, work_calendar_id"
+   "request_text": "code*, name*, description, steward_id*, backup_steward_id, default_policy, work_calendar_id, ingest_profile"
   },
   "PATCH /v1/data-spaces/{id}": {
    "group": "Quản trị",
@@ -5008,7 +5010,8 @@
     "backup_steward_id": false,
     "default_policy": false,
     "status": false,
-    "work_calendar_id": false
+    "work_calendar_id": false,
+    "ingest_profile": false
    },
    "query": [],
    "returns": "DataSpace",
@@ -5018,7 +5021,7 @@
      "business_rule_violated"
     ]
    ],
-   "request_text": "name, description, steward_id, backup_steward_id, default_policy, status, work_calendar_id"
+   "request_text": "name, description, steward_id, backup_steward_id, default_policy, status, work_calendar_id, ingest_profile"
   },
   "PUT /v1/data-spaces/{id}/members": {
    "group": "Quản trị",
@@ -6249,7 +6252,8 @@
     "review_gate": false,
     "trust_level": false,
     "openapi_url": false,
-    "terms_url": false
+    "terms_url": false,
+    "ingest_profile": false
    },
    "query": [],
    "returns": "CrawlSource (status = draft). Kiểm robots.txt, điều khoản và thử tải 1 trang trước khi lưu; sự kiện acquire.source.created. Dữ liệu mang nhãn nguồn ngoài (BR-149, BR-156)",
@@ -6263,7 +6267,7 @@
      "validation_failed"
     ]
    ],
-   "request_text": "name*, goal*, kind*, seed_urls*, allowed_domains*, max_depth, schedule_cron, rate_limit_rps, auth_mode, secret_ref, review_gate, trust_level, openapi_url, terms_url"
+   "request_text": "name*, goal*, kind*, seed_urls*, allowed_domains*, max_depth, schedule_cron, rate_limit_rps, auth_mode, secret_ref, review_gate, trust_level, openapi_url, terms_url, ingest_profile"
   },
   "GET /v1/crawl-sources/{id}": {
    "group": "Thu thập",
@@ -6290,7 +6294,8 @@
     "rate_limit_rps": false,
     "review_gate": false,
     "trust_level": false,
-    "owner_id": false
+    "owner_id": false,
+    "ingest_profile": false
    },
    "query": [],
    "returns": "CrawlSource",
@@ -6300,7 +6305,7 @@
      "business_rule_violated"
     ]
    ],
-   "request_text": "name, goal, allowed_domains, max_depth, schedule_cron, rate_limit_rps, review_gate, trust_level, owner_id"
+   "request_text": "name, goal, allowed_domains, max_depth, schedule_cron, rate_limit_rps, review_gate, trust_level, owner_id, ingest_profile"
   },
   "POST /v1/crawl-sources/{id}:legal-review": {
    "group": "Thu thập",

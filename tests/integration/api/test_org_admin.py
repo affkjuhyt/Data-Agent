@@ -623,6 +623,39 @@ async def test_only_an_org_wide_admin_creates_a_data_space(world: World) -> None
     assert world.one("SELECT count(*) FROM org.data_space WHERE code = 'DS-DENIED'") == 0
 
 
+async def test_a_data_space_says_how_its_data_is_read(world: World) -> None:
+    # GEN-11: an English-language space names its locale once; a patch replaces the profile.
+    body = {
+        "code": "DS-EN",
+        "name": "Sales US",
+        "steward_id": str(world.users["steward"]),
+        "ingest_profile": {"locale": "en-US"},
+    }
+    async with client(world) as api:
+        made = await api.post("/v1/data-spaces", json=body, headers=world.headers("admin"))
+        assert made.status_code == 201, made.text
+        space = made.json()["id"]
+        assert made.json()["ingest_profile"] == {"locale": "en-US"}
+
+        async def patch(profile: object) -> Any:
+            return await api.patch(
+                f"/v1/data-spaces/{space}",
+                json={"ingest_profile": profile},
+                headers=world.headers("admin"),
+            )
+
+        replaced = await patch({"decimal_mark": ",", "ocr_languages": ["deu", "eng"]})
+        assert replaced.status_code == 200, replaced.text
+        assert replaced.json()["ingest_profile"] == {
+            "decimal_mark": ",",
+            "ocr_languages": ["deu", "eng"],
+        }
+        assert (await patch({})).json()["ingest_profile"] == {}
+        for bad in ({"currency": "USD"}, {"locale": "English"}, {"ocr_languages": ["en"]}):
+            assert (await patch(bad)).status_code == 422, bad
+    assert world.one("SELECT ingest_profile FROM org.data_space WHERE id = %s", space) == {}
+
+
 async def test_patch_moves_a_data_space_through_its_states(world: World) -> None:
     draft = world.seed.row(
         "org.data_space",

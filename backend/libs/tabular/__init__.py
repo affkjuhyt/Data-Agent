@@ -4,7 +4,7 @@ One reader for the api's first look at an upload and for the worker that writes 
 value the review screen showed as a number is the number the table holds. A column is read as a
 whole: whether "," or "." marks its decimals, and whether its dates put the day or the month
 first, is settled by the values that cannot be read the other way ("1.234,5", "13/02/2024"), then
-by what the upload says, then by a default. Nothing is left for the database to guess: a date
+by what the column or the upload says, then by the Data Space's ingest profile (profile.py). Nothing is left for the database to guess: a date
 goes in as ISO, so the server's DateStyle never decides which day "02/03/2024" is.
 """
 
@@ -20,11 +20,6 @@ from collections.abc import Iterable, Sequence
 from typing import Any, Literal
 
 DateOrder = Literal["dmy", "mdy"]
-# The order an ambiguous column (every value has both fields <= 12) is read in when neither the
-# column nor the upload says: day first, the convention of the market the product ships to.
-# GEN-11 replaces it with the upload's locale.
-DEFAULT_DATE_ORDER: DateOrder = "dmy"
-DEFAULT_DECIMAL_MARK = "."
 
 TRUE_WORDS = frozenset({"true", "1", "yes", "y", "có", "co", "đúng"})
 FALSE_WORDS = frozenset({"false", "0", "no", "n", "không", "khong", "sai"})

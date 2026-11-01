@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import logging
 import re
 import subprocess
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from statistics import median
 
@@ -17,6 +18,8 @@ MAX_CHUNK_CHARS = 4_000
 OCR_THRESHOLD = 0.85
 OCR_DPI = 300
 OCR_TIMEOUT_S = 120
+# The languages read when no ingest profile names any (libs/tabular.profile resolves one).
+DEFAULT_OCR_LANGUAGES = ("vie", "eng")
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +103,12 @@ def _chunks(text: str, limit: int = MAX_CHUNK_CHARS) -> Iterable[str]:
         yield current.strip()
 
 
-def extract_pages(content: bytes, media: str, file_name: str = "") -> list[ExtractedPage]:
+def extract_pages(
+    content: bytes,
+    media: str,
+    file_name: str = "",
+    ocr_languages: Sequence[str] = DEFAULT_OCR_LANGUAGES,
+) -> list[ExtractedPage]:
     """Extract deterministic page text for the first production document path.
 
     PDF text extraction is intentionally local and deterministic; OCR for scanned pages is a
@@ -117,7 +125,7 @@ def extract_pages(content: bytes, media: str, file_name: str = "") -> list[Extra
                 images: list[ExtractedImage] = []
                 if not text_layer:
                     text, ocr_conf = ocr_page(
-                        page.get_pixmap(dpi=OCR_DPI, alpha=False).tobytes("png")
+                        page.get_pixmap(dpi=OCR_DPI, alpha=False).tobytes("png"), ocr_languages
                     )
                     if text:
                         blocks.append(
@@ -172,7 +180,7 @@ def extract_pages(content: bytes, media: str, file_name: str = "") -> list[Extra
     if media == "email":
         return extractors.email_pages(content, file_name)
     if media == "image":
-        return extractors.image_pages(content)
+        return extractors.image_pages(content, ocr_languages)
     if media == "audio":
         raise ValueError("Recordings are not transcribed yet")
     raise ValueError(f"No text extractor is configured for media={media}")
@@ -191,8 +199,32 @@ def source_hash(page: ExtractedPage) -> str:
     return hashlib.sha256(page.image).hexdigest()
 
 
-def ocr_page(png: bytes) -> tuple[str, float]:
-    """Text and confidence (0..1) of a scanned page, from tesseract's TSV output.
+@functools.cache
+def installed_ocr_languages() -> frozenset[str]:
+    """The tesseract language packs this image has (Dockerfile OCR_LANGS)."""
+    try:
+        done = subprocess.run(
+            ["tesseract", "--list-langs"], capture_output=True, timeout=30, check=True
+        )
+    except (OSError, subprocess.SubprocessError):
+        return frozenset()
+    return frozenset(line.strip() for line in done.stdout.decode().splitlines()[1:] if line.strip())
+
+
+def ocr_language_arg(languages: Sequence[str]) -> str:
+    """The -l argument: the profile's languages this image can read. A missing pack would make
+    tesseract fail the whole page, so it is left out, said in the log; none left reads English."""
+    installed = installed_ocr_languages()
+    usable = [code for code in languages if not installed or code in installed]
+    missing = [code for code in languages if code not in usable]
+    if missing:
+        log.warning("OCR language packs not installed, read without them: %s", missing)
+    return "+".join(usable or ["eng"])
+
+
+def ocr_page(png: bytes, languages: Sequence[str] = DEFAULT_OCR_LANGUAGES) -> tuple[str, float]:
+    """Text and confidence (0..1) of a scanned page, from tesseract's TSV output, in the
+    collection's OCR languages (its ingest profile, GEN-11).
 
     The confidence is the mean of the word confidences weighted by word length, so a page of
     long words read well is not dragged down by stray marks. A page tesseract cannot read at
@@ -201,7 +233,16 @@ def ocr_page(png: bytes) -> tuple[str, float]:
     """
     try:
         done = subprocess.run(
-            ["tesseract", "stdin", "stdout", "-l", "vie+eng", "--psm", "3", "tsv"],
+            [
+                "tesseract",
+                "stdin",
+                "stdout",
+                "-l",
+                ocr_language_arg(languages),
+                "--psm",
+                "3",
+                "tsv",
+            ],
             input=png,
             capture_output=True,
             timeout=OCR_TIMEOUT_S,

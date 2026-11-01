@@ -75,6 +75,11 @@ class Collection(Base):
     embed_model: Mapped[str] = mapped_column(
         Text, comment="Mô hình embedding; đổi mô hình thì lập chỉ mục mới song song (BR-18)"
     )
+    ingest_profile: Mapped[Any] = mapped_column(
+        JSONB,
+        server_default=sql_text("'{}'"),
+        comment="Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal_mark (. hoặc ,), date_order (dmy, mdy), ocr_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: data_space.ingest_profile, rồi organization.locale",
+    )
     status: Mapped[str] = mapped_column(
         Text, server_default=sql_text("'active'"), comment="active, reindexing, archived"
     )

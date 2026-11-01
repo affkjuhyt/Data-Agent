@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import acquire
+from libs.tabular import profile as ingest_profile
 from services.crawler import extract, fetch
 from services.crawler.events import Event
 from services.crawler.secrets import Reader, SecretUnavailable
@@ -151,6 +152,7 @@ async def _start(
             )
             return None
         run.status, run.started_at, run.schema_version_id = "fetching", _now(), version.id
+        reading = await ingest_profile.load(session, source.data_space_id, source.ingest_profile)
         return (
             {
                 "id": source.id,
@@ -164,6 +166,9 @@ async def _start(
                 "review_gate": source.review_gate,
                 "data_space_id": source.data_space_id,
                 "trigger": run.trigger,
+                "decimal_mark": reading.decimal_mark,
+                "date_order": reading.date_order,
+                "accept_language": reading.accept_language,
             },
             {
                 "id": version.id,
@@ -278,7 +283,12 @@ async def _write_records(
             found += [
                 (page, r)
                 for r in extract.extract(
-                    page.content, page.content_type, schema["selector"], schema["fields"]
+                    page.content,
+                    page.content_type,
+                    schema["selector"],
+                    schema["fields"],
+                    source["decimal_mark"],
+                    source["date_order"],
                 )
             ]
         except extract.ExtractionError as exc:
@@ -367,7 +377,7 @@ async def handle(event: Event, store: RawStore, reader: Reader | None = None) ->
                 run.status = "extracting"
         else:
             headers = await _headers(org_id, source, reader or Reader())
-            async with fetch.client() as http:
+            async with fetch.client(source["accept_language"]) as http:
                 fetcher = fetch.Fetcher(
                     http, domains=source["domains"], rate_limit_rps=source["rate"]
                 )

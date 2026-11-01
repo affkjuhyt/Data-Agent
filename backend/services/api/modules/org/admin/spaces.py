@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import org
 from services.api.catalogue import endpoint
+from services.api.kernel import ingest_profile
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import Page
@@ -163,6 +164,7 @@ async def create_data_space(body: DataSpaceCreate, principal: CurrentPrincipal) 
             if body.default_policy
             else {},
             work_calendar_id=body.work_calendar_id,
+            ingest_profile=ingest_profile.stored(body.ingest_profile),
             status="draft",
             created_by=principal.user_id,
             updated_by=principal.user_id,
@@ -239,6 +241,8 @@ async def update_data_space(
             space.name = body.name
         if "description" in fields:
             space.description = body.description
+        if "ingest_profile" in fields:
+            space.ingest_profile = ingest_profile.stored(body.ingest_profile)
         if "default_policy" in fields:
             assert body.default_policy is not None
             space.default_policy = {

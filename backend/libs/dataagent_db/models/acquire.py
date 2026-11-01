@@ -169,6 +169,11 @@ class CrawlSource(Base):
     last_run_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    ingest_profile: Mapped[Any] = mapped_column(
+        JSONB,
+        server_default=sql_text("'{}'"),
+        comment="Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal_mark (. hoặc ,), date_order (dmy, mdy), ocr_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: data_space.ingest_profile, rồi organization.locale",
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )

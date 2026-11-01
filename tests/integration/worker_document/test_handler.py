@@ -90,7 +90,9 @@ def event(u: Uploaded, kind: str = handler.DOCUMENT_RECEIVED, **payload: Any) ->
 def pages(monkeypatch: pytest.MonkeyPatch) -> list[ExtractedPage]:
     given: list[ExtractedPage] = []
     monkeypatch.setattr(handler, "MinIOClient", FakeMinio)
-    monkeypatch.setattr(handler, "extract_pages", lambda content, media, file_name="": list(given))
+    monkeypatch.setattr(
+        handler, "extract_pages", lambda content, media, file_name="", ocr_languages=(): list(given)
+    )
     return given
 
 
@@ -279,3 +281,40 @@ async def test_a_document_that_replaces_another_proposes_the_link(seed: Seed, pa
     payload = proposed[0][0]
     assert payload["supersedes_id"] == str(old) and payload["effective_from"] == "2026-04-01"
     assert "thay thế Quyết định số 10/QĐ-NH" in payload["excerpt"]
+
+
+async def test_a_scan_is_read_in_its_collections_ocr_languages(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # GEN-11: a collection's ingest profile over its space's, no longer always vie+eng.
+    asked: list[tuple[str, ...]] = []
+
+    def extract(content: bytes, media: str, file_name: str = "", ocr_languages=()) -> list:
+        asked.append(tuple(ocr_languages))
+        return [page(TEXT)]
+
+    monkeypatch.setattr(handler, "MinIOClient", FakeMinio)
+    monkeypatch.setattr(handler, "extract_pages", extract)
+
+    def profile(u: Uploaded, space: str, collection: str) -> None:
+        collection_id = seed.one(
+            "SELECT collection_id FROM document.document WHERE id = %s", u.document
+        )
+        with seed.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE document.collection SET ingest_profile = %s WHERE id = %s",
+                (collection, str(collection_id)),
+            )
+            cur.execute(
+                "UPDATE org.data_space SET ingest_profile = %s"
+                " WHERE id = (SELECT data_space_id FROM document.collection WHERE id = %s)",
+                (space, str(collection_id)),
+            )
+
+    english = upload(seed)
+    profile(english, '{"locale": "en-US"}', "{}")
+    await handler.process_document(event(english))
+    japanese = upload(seed)
+    profile(japanese, '{"locale": "en-US"}', '{"ocr_languages": ["jpn", "eng"]}')
+    await handler.process_document(event(japanese))
+    assert asked == [("eng",), ("jpn", "eng")]

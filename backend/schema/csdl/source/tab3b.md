@@ -112,11 +112,12 @@ Không gian dữ liệu của một nhóm nghiệp vụ; ranh giới quyền, ng
 | backup\_steward\_id | uuid | Người dự phòng (BR-143); FK app\_user |
 | status | text, bắt buộc, mặc định 'draft' | draft, onboarding, active, read\_only, archived |
 | default\_policy | jsonb, bắt buộc, mặc định '{}' | Bốn cờ trên màn Tạo Data Space: mask\_pii, agent\_write\_derived\_only, show\_filed\_and\_current, allow\_external\_channels |
+| ingest\_profile | jsonb, bắt buộc, mặc định '{}' | Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal\_mark (. hoặc ,), date\_order (dmy, mdy), ocr\_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: organization.locale |
 | work\_calendar\_id | uuid | FK work\_calendar |
 | opened\_at | timestamptz | Lúc mở cho người dùng sau khi bộ đánh giá đạt (BR-122) |
 | deleted\_at | timestamptz | Xoá mềm |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (org\_id, code); CHECK (status IN ('draft','onboarding','active','read\_only','archived')); FOREIGN KEY (steward\_id) REFERENCES org.app\_user(id); FOREIGN KEY (backup\_steward\_id) REFERENCES org.app\_user(id).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (org\_id, code); CHECK (status IN ('draft','onboarding','active','read\_only','archived')); CHECK (jsonb\_typeof(ingest\_profile) = 'object'); FOREIGN KEY (steward\_id) REFERENCES org.app\_user(id); FOREIGN KEY (backup\_steward\_id) REFERENCES org.app\_user(id).
 
 #### org.data\_space\_member
 
@@ -2395,10 +2396,11 @@ Bộ sưu tập tài liệu theo mục đích; tài liệu kế thừa quyền v
 | extraction\_schema\_id | uuid | FK extraction\_schema đang dùng |
 | qdrant\_collection | text, bắt buộc | Tên collection Qdrant chứa vector đoạn |
 | embed\_model | text, bắt buộc | Mô hình embedding; đổi mô hình thì lập chỉ mục mới song song (BR-18) |
+| ingest\_profile | jsonb, bắt buộc, mặc định '{}' | Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal\_mark (. hoặc ,), date\_order (dmy, mdy), ocr\_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: data\_space.ingest\_profile, rồi organization.locale |
 | status | text, bắt buộc, mặc định 'active' | active, reindexing, archived |
 | deleted\_at | timestamptz | Xoá mềm |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (data\_space\_id, code); CHECK (pii\_policy IN ('mask','keep\_for\_authorized','reject')); CHECK (status IN ('active','reindexing','archived')).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (data\_space\_id, code); CHECK (pii\_policy IN ('mask','keep\_for\_authorized','reject')); CHECK (status IN ('active','reindexing','archived')); CHECK (jsonb\_typeof(ingest\_profile) = 'object').
 
 #### document.document\_source
 
@@ -3142,8 +3144,9 @@ Nguồn thu thập bên ngoài cùng phạm vi, lịch và cổng duyệt, ví d
 | active\_schema\_version\_id | uuid | FK crawl\_schema\_version đang active |
 | consecutive\_blocked | integer, bắt buộc, mặc định 0 | Bị chặn 3 lượt liên tiếp thì tạm ngưng (UC-14-06) |
 | last\_run\_at | timestamptz |  |
+| ingest\_profile | jsonb, bắt buộc, mặc định '{}' | Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal\_mark (. hoặc ,), date\_order (dmy, mdy), ocr\_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: data\_space.ingest\_profile, rồi organization.locale |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('web\_page','web\_listing','public\_api','feed','file\_drop')); CHECK (auth\_mode IN ('none','api\_key')); CHECK (auth\_mode <> 'api\_key' OR secret\_ref IS NOT NULL); CHECK (review\_gate IN ('all','exceptions','auto')); CHECK (trust\_level BETWEEN 0 AND 1); CHECK (rate\_limit\_rps > 0); CHECK (status IN ('draft','active','paused','quarantined','retired')); CHECK (status <> 'active' OR active\_schema\_version\_id IS NOT NULL); UNIQUE (data\_space\_id, name); FOREIGN KEY (active\_schema\_version\_id) REFERENCES acquire.crawl\_schema\_version(id) DEFERRABLE INITIALLY DEFERRED. Chỉ mục: (data\_space\_id, status); (last\_run\_at) WHERE status = 'active'. Trigger: review\_gate = 'auto' chỉ đặt được khi 4 lượt gần nhất có sample\_accuracy ≥ 0,98 (UC-14-04). Bổ sung 10/10/2026 (BR-174): CHECK (legal\_status IN ('pending','approved','rejected','expired')); CHECK (legal\_status <> 'approved' OR (legal\_reviewed\_by, legal\_reviewed\_at, terms\_url, terms\_sha256 có giá trị AND legal\_review\_due\_at > legal\_reviewed\_at AND legal\_review\_due\_at <= legal\_reviewed\_at + interval '184 days' AND legal\_checklist ?& ARRAY\['terms','robots','copyright','personal\_data'\] AND jsonb\_array\_length(legal\_evidence) >= 1)); CHECK (legal\_reviewed\_by IS NULL OR legal\_reviewed\_by <> owner\_id); hai cột băm khớp '^\[0-9a-f\]{64}$'. Trigger crawl\_source\_legal\_guard: terms\_observed\_sha256 khác terms\_sha256 thì legal\_status = 'expired'; nguồn active mất duyệt thì tự chuyển paused; chuyển active khi chưa approved hoặc legal\_review\_due\_at <= now() thì chặn. Chỉ mục: (legal\_review\_due\_at) WHERE legal\_status = 'approved', cho việc nhắc xem lại 14 ngày trước hạn.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('web\_page','web\_listing','public\_api','feed','file\_drop')); CHECK (jsonb\_typeof(ingest\_profile) = 'object'); CHECK (auth\_mode IN ('none','api\_key')); CHECK (auth\_mode <> 'api\_key' OR secret\_ref IS NOT NULL); CHECK (review\_gate IN ('all','exceptions','auto')); CHECK (trust\_level BETWEEN 0 AND 1); CHECK (rate\_limit\_rps > 0); CHECK (status IN ('draft','active','paused','quarantined','retired')); CHECK (status <> 'active' OR active\_schema\_version\_id IS NOT NULL); UNIQUE (data\_space\_id, name); FOREIGN KEY (active\_schema\_version\_id) REFERENCES acquire.crawl\_schema\_version(id) DEFERRABLE INITIALLY DEFERRED. Chỉ mục: (data\_space\_id, status); (last\_run\_at) WHERE status = 'active'. Trigger: review\_gate = 'auto' chỉ đặt được khi 4 lượt gần nhất có sample\_accuracy ≥ 0,98 (UC-14-04). Bổ sung 10/10/2026 (BR-174): CHECK (legal\_status IN ('pending','approved','rejected','expired')); CHECK (legal\_status <> 'approved' OR (legal\_reviewed\_by, legal\_reviewed\_at, terms\_url, terms\_sha256 có giá trị AND legal\_review\_due\_at > legal\_reviewed\_at AND legal\_review\_due\_at <= legal\_reviewed\_at + interval '184 days' AND legal\_checklist ?& ARRAY\['terms','robots','copyright','personal\_data'\] AND jsonb\_array\_length(legal\_evidence) >= 1)); CHECK (legal\_reviewed\_by IS NULL OR legal\_reviewed\_by <> owner\_id); hai cột băm khớp '^\[0-9a-f\]{64}$'. Trigger crawl\_source\_legal\_guard: terms\_observed\_sha256 khác terms\_sha256 thì legal\_status = 'expired'; nguồn active mất duyệt thì tự chuyển paused; chuyển active khi chưa approved hoặc legal\_review\_due\_at <= now() thì chặn. Chỉ mục: (legal\_review\_due\_at) WHERE legal\_status = 'approved', cho việc nhắc xem lại 14 ngày trước hạn.
 
 #### acquire.crawl\_schema\_version
 

@@ -243,13 +243,32 @@ def test_outlook_msg_is_refused_with_a_way_out() -> None:
         extract_pages(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 64, "email", "thu.msg")
 
 
-def test_an_image_is_one_ocr_page(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(extractors, "ocr_page", lambda png: ("Kỳ hạn 12 tháng", 0.91))
+def test_an_image_is_one_ocr_page_read_in_its_collections_languages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked: list[tuple[str, ...]] = []
+
+    def fake(png: bytes, languages: tuple[str, ...]) -> tuple[str, float]:
+        asked.append(tuple(languages))
+        return "Kỳ hạn 12 tháng", 0.91
+
+    monkeypatch.setattr(extractors, "ocr_page", fake)
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 20), 0)
     pix.clear_with(255)
-    page = extract_pages(pix.tobytes("png"), "image")[0]
+    page = extract_pages(pix.tobytes("png"), "image", ocr_languages=("jpn", "eng"))[0]
     assert (page.text, page.ocr_conf, page.text_layer) == ("Kỳ hạn 12 tháng", 0.91, False)
     assert page.image is not None and page.image.startswith(b"\x89PNG")
+    assert asked == [("jpn", "eng")]
+
+
+def test_ocr_reads_only_the_language_packs_the_image_has(monkeypatch: pytest.MonkeyPatch) -> None:
+    # GEN-11: a pack not installed would fail the whole page in tesseract.
+    from services.worker_document import processing
+
+    monkeypatch.setattr(processing, "installed_ocr_languages", lambda: frozenset({"eng", "vie"}))
+    assert processing.ocr_language_arg(["jpn", "eng"]) == "eng"
+    assert processing.ocr_language_arg(["vie", "eng"]) == "vie+eng"
+    assert processing.ocr_language_arg(["jpn"]) == "eng"
 
 
 def test_recordings_are_not_transcribed_yet() -> None:

@@ -1087,6 +1087,17 @@
      "pii": false
     },
     {
+     "name": "ingest_profile",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'{}'",
+     "unique": false,
+     "comment": "Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal_mark (. hoặc ,), date_order (dmy, mdy), ocr_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: organization.locale",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "work_calendar_id",
      "type": "uuid",
      "not_null": false,
@@ -1136,6 +1147,10 @@
     {
      "kind": "check",
      "sql": "CHECK (status IN ('draft','onboarding','active','read_only','archived'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (jsonb_typeof(ingest_profile) = 'object')"
     },
     {
      "kind": "fk",
@@ -20493,6 +20508,17 @@
      "pii": false
     },
     {
+     "name": "ingest_profile",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'{}'",
+     "unique": false,
+     "comment": "Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal_mark (. hoặc ,), date_order (dmy, mdy), ocr_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: data_space.ingest_profile, rồi organization.locale",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "status",
      "type": "text",
      "not_null": true,
@@ -20535,6 +20561,10 @@
     {
      "kind": "check",
      "sql": "CHECK (status IN ('active','reindexing','archived'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (jsonb_typeof(ingest_profile) = 'object')"
     },
     {
      "kind": "fk",
@@ -26631,6 +26661,17 @@
      "fk": null,
      "logic_ref": null,
      "pii": false
+    },
+    {
+     "name": "ingest_profile",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'{}'",
+     "unique": false,
+     "comment": "Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal_mark (. hoặc ,), date_order (dmy, mdy), ocr_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: data_space.ingest_profile, rồi organization.locale",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
     }
    ],
    "common_columns": [
@@ -26645,6 +26686,10 @@
     {
      "kind": "check",
      "sql": "CHECK (kind IN ('web_page','web_listing','public_api','feed','file_drop'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (jsonb_typeof(ingest_profile) = 'object')"
     },
     {
      "kind": "check",

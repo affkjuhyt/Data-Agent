@@ -141,3 +141,50 @@ async def test_a_vietnamese_csv_lands_with_its_numbers_dates_and_header_row(
         ("Đà Nẵng", "-2000", "7", "2024-02-13"),
         ("Hà Nội", "1234.5", "12.5", "2024-03-02"),
     ]
+
+
+async def test_an_ambiguous_column_reads_by_its_data_spaces_ingest_profile(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # GEN-11: "1,234" and "02/03/2024" fit both conventions; an en-US space reads them its way.
+    org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Upload US")
+    user = seed.row(
+        "org.app_user", org_id=org, external_id="kc-us", username="us", display_name="U"
+    )
+    space = seed.row(
+        "org.data_space",
+        org_id=org,
+        code="DS-US",
+        name="US",
+        steward_id=user,
+        ingest_profile=json.dumps({"locale": "en-US"}),
+    )
+    upload = seed.row(
+        "ingest.file_upload",
+        org_id=org,
+        data_space_id=space,
+        uploader_id=user,
+        file_name="sales.csv",
+        object_key="k",
+        size_bytes=1,
+        column_map=json.dumps(
+            [{"name": "amount", "type": "number"}, {"name": "day", "type": "date"}]
+        ),
+        target_dataset_id=uuid.uuid4(),
+        error_ratio=0,
+        status="committed",
+    )
+
+    async def _read(_key: str) -> bytes:
+        return b'amount,day\n"1,234",02/03/2024\n'
+
+    monkeypatch.setattr(uploads, "_read_object", _read)
+    event = Event(
+        uuid.uuid4(), org, uploads.COMMITTED, "file_upload", upload, {"uploader_id": str(user)}
+    )
+    await uploads.handle(event)
+    table = seed.one(
+        "SELECT validation->>'table_name' FROM ingest.file_upload WHERE id = %s", upload
+    )
+    [(amount, day)] = seed.all(f'SELECT amount, day FROM workspace."{table}"')
+    assert (str(amount), day.isoformat()) == ("1234", "2024-02-03")

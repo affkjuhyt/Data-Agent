@@ -8920,6 +8920,7 @@ export interface components {
         CollectionCreate: {
             /** Code */
             code: string;
+            ingest_profile?: components["schemas"]["IngestProfile"] | null;
             /** Media Kinds */
             media_kinds?: ("pdf" | "image" | "docx" | "email" | "audio" | "html")[] | null;
             /** Name */
@@ -8954,6 +8955,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Ingest Profile */
+            ingest_profile: {
+                [key: string]: unknown;
+            };
             /** Media Kinds */
             media_kinds: string[];
             /** Name */
@@ -10016,6 +10021,7 @@ export interface components {
             auth_mode?: "none" | "api_key";
             /** Goal */
             goal: string;
+            ingest_profile?: components["schemas"]["IngestProfile"] | null;
             /**
              * Kind
              * @enum {string}
@@ -10095,6 +10101,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Ingest Profile */
+            ingest_profile: {
+                [key: string]: unknown;
+            };
             /** Kind */
             kind: string;
             last_fetch_error?: components["schemas"]["LastFetchError"] | null;
@@ -10181,6 +10191,7 @@ export interface components {
             allowed_domains?: string[] | null;
             /** Goal */
             goal?: string | null;
+            ingest_profile?: components["schemas"]["IngestProfile"] | null;
             /** Max Depth */
             max_depth?: number | null;
             /** Name */
@@ -10248,6 +10259,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Ingest Profile */
+            ingest_profile: {
+                [key: string]: unknown;
+            };
             /** Kind */
             kind: string;
             last_fetch_error?: components["schemas"]["LastFetchError"] | null;
@@ -10358,6 +10373,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Ingest Profile */
+            ingest_profile: {
+                [key: string]: unknown;
+            };
             /** Kind */
             kind: string;
             /** Last Run At */
@@ -10693,6 +10712,7 @@ export interface components {
             default_policy?: components["schemas"]["DefaultPolicy"] | null;
             /** Description */
             description?: string | null;
+            ingest_profile?: components["schemas"]["IngestProfile"] | null;
             /** Name */
             name: string;
             /**
@@ -10710,6 +10730,7 @@ export interface components {
             default_policy?: components["schemas"]["DefaultPolicy"] | null;
             /** Description */
             description?: string | null;
+            ingest_profile?: components["schemas"]["IngestProfile"] | null;
             /** Name */
             name?: string | null;
             /** Status */
@@ -10786,6 +10807,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Ingest Profile */
+            ingest_profile: {
+                [key: string]: unknown;
+            };
             /** Name */
             name: string;
             /** Opened At */
@@ -14362,6 +14387,17 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** IngestProfile */
+        IngestProfile: {
+            /** Date Order */
+            date_order?: ("dmy" | "mdy") | null;
+            /** Decimal Mark */
+            decimal_mark?: ("." | ",") | null;
+            /** Locale */
+            locale?: string | null;
+            /** Ocr Languages */
+            ocr_languages?: string[] | null;
         };
         /**
          * IngestionJobDryRun

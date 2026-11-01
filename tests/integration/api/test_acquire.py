@@ -477,6 +477,26 @@ async def test_create_source_is_a_draft_with_its_event(w: World) -> None:
     assert event["status"] == "draft"
 
 
+async def test_a_source_reads_its_pages_by_its_own_ingest_profile(w: World) -> None:
+    # GEN-11: an English site's figures and dates read the English way, and a patch replaces it.
+    async with w.client("owner") as c:
+        made = await c.post(
+            "/v1/crawl-sources", json={**_source_body(), "ingest_profile": {"locale": "en-US"}}
+        )
+        assert made.status_code == 201, made.text
+        source = made.json()["id"]
+        assert made.json()["ingest_profile"] == {"locale": "en-US"}
+        patched = await c.patch(
+            f"/v1/crawl-sources/{source}", json={"ingest_profile": {"date_order": "dmy"}}
+        )
+        bad = await c.patch(
+            f"/v1/crawl-sources/{source}", json={"ingest_profile": {"decimal_mark": " "}}
+        )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["ingest_profile"] == {"date_order": "dmy"}
+    assert bad.status_code == 422, bad.text
+
+
 async def test_create_source_refuses_urls_outside_its_domains(w: World) -> None:
     async with w.client("owner") as c:
         seeds = await c.post(

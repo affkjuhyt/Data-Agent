@@ -29,6 +29,7 @@ from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import document as doc
 from services.api.catalogue import endpoint
+from services.api.kernel import ingest_profile
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -292,6 +293,7 @@ async def create_collection(
             # One Qdrant collection per document collection, so purposes never share an index.
             qdrant_collection=f"doc_{collection_id.hex}",
             embed_model=EMBED_MODEL,
+            ingest_profile=ingest_profile.stored(body.ingest_profile),
             created_by=principal.user_id,
             updated_by=principal.user_id,
         )

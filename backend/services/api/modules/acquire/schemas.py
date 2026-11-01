@@ -15,6 +15,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from libs import cron
+from services.api.kernel.ingest_profile import IngestProfile
 from services.api.modules.acquire import rules
 
 SourceKind = Literal["web_page", "web_listing", "public_api", "feed", "file_drop"]
@@ -88,6 +89,7 @@ class CrawlSourceCreate(_Body):
     trust_level: TrustLevel = Field(default=decimal.Decimal("0.5"), ge=0, le=1, decimal_places=2)
     openapi_url: str | None = Field(default=None, max_length=2_000)
     terms_url: str | None = Field(default=None, max_length=2_000)
+    ingest_profile: IngestProfile | None = None
 
     @field_validator("allowed_domains")
     @classmethod
@@ -128,6 +130,8 @@ class CrawlSourcePatch(_Body):
     review_gate: ReviewGate | None = None
     trust_level: TrustLevel | None = Field(default=None, ge=0, le=1, decimal_places=2)
     owner_id: uuid.UUID | None = None
+    # Replaces the stored profile; {} clears it (kernel/ingest_profile).
+    ingest_profile: IngestProfile | None = None
 
     @field_validator("allowed_domains")
     @classmethod
@@ -228,6 +232,7 @@ class CrawlSourceView(_View):
     robots_checked_at: datetime.datetime | None
     terms_note: str | None
     terms_url: str | None
+    ingest_profile: dict[str, Any]
     terms_sha256: str | None
     terms_observed_sha256: str | None
     terms_checked_at: datetime.datetime | None

@@ -31,9 +31,11 @@ from sqlalchemy import delete, func, select, update
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import audit, document
 from libs.shared import pii_detector
+from libs.tabular import profile as ingest_profile
 from services.worker_document import validity
 from services.worker_document.indexing import Point, VectorIndex
 from services.worker_document.processing import (
+    DEFAULT_OCR_LANGUAGES,
     OCR_THRESHOLD,
     ChunkDraft,
     ExtractedPage,
@@ -85,6 +87,8 @@ class Meta:
     qdrant_collection: str
     embed_model: str
     pii_policy: str
+    # The collection's ingest profile resolved over its Data Space and organization (GEN-11).
+    ocr_languages: tuple[str, ...] = DEFAULT_OCR_LANGUAGES
 
 
 @dataclass
@@ -126,6 +130,9 @@ async def _meta(session: Any, org_id: uuid.UUID, row: document.Document) -> Meta
         qdrant_collection=collection.qdrant_collection,
         embed_model=collection.embed_model,
         pii_policy=collection.pii_policy,
+        ocr_languages=(
+            await ingest_profile.load(session, collection.data_space_id, collection.ingest_profile)
+        ).ocr_languages,
     )
 
 
@@ -376,7 +383,7 @@ async def process_document(event: Any, *, again: bool = False) -> None:
     try:
         try:
             content = await minio.download(RAW_BUCKET, meta.object_key)
-            pages = extract_pages(content, meta.media, meta.file_name)
+            pages = extract_pages(content, meta.media, meta.file_name, meta.ocr_languages)
             if not pages:
                 raise ValueError("The document has no readable pages")
         except Exception as exc:  # any extraction failure ends in `failed`, said

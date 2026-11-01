@@ -278,6 +278,11 @@ class DataSpace(Base):
         server_default=sql_text("'{}'"),
         comment="Bốn cờ trên màn Tạo Data Space: mask_pii, agent_write_derived_only, show_filed_and_current, allow_external_channels",
     )
+    ingest_profile: Mapped[Any] = mapped_column(
+        JSONB,
+        server_default=sql_text("'{}'"),
+        comment="Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal_mark (. hoặc ,), date_order (dmy, mdy), ocr_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: organization.locale",
+    )
     work_calendar_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("org.work_calendar.id"),

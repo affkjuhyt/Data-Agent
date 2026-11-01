@@ -349,3 +349,35 @@ def test_the_industry_packs_are_removed_from_a_migrated_cluster(admin):
         )
         == "{ask}"
     )
+
+
+def test_the_ingest_profile_reaches_a_migrated_cluster(admin):
+    # v3_0018 (01/11/2026, GEN-11): a cluster migrated before it has no ingest_profile; the
+    # baseline is generated with it, so the test takes it away before the upgrade.
+    _fresh(admin, "chain_profile", "chain_profile_audit")
+    db = _db(admin, "chain_profile")
+    _alembic(db, "upgrade", "v3_0017")
+    tables = ("org.data_space", "document.collection", "acquire.crawl_source")
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        for table in tables:
+            cur.execute(f"ALTER TABLE {table} DROP COLUMN ingest_profile")
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    for table in tables:
+        schema, name = table.split(".")
+        assert (
+            _one(
+                db,
+                "SELECT column_default FROM information_schema.columns WHERE table_schema = "
+                f"'{schema}' AND table_name = '{name}' AND column_name = 'ingest_profile'"
+                " AND is_nullable = 'NO'",
+            )
+            == "'{}'::jsonb"
+        ), table
+        assert "jsonb_typeof(ingest_profile)" in _one(
+            db,
+            "SELECT string_agg(pg_get_constraintdef(oid), ' | ') FROM pg_constraint"
+            f" WHERE conrelid = '{table}'::regclass AND contype = 'c'",
+        ), table

@@ -320,6 +320,7 @@ async def test_admin_creates_a_collection_with_its_purpose_and_pii_policy(ds: Sp
         assert collection["purpose"] == "xử lý khiếu nại"
         assert collection["qdrant_collection"] == f"doc_{uuid.UUID(collection['id']).hex}"
         assert collection["embed_model"]
+        assert collection["ingest_profile"] == {}
         [(kind, payload)] = ds.events(collection["id"])
         assert kind == "collection.created"
         assert payload["qdrant_collection"] == collection["qdrant_collection"]
@@ -1218,6 +1219,25 @@ def _schema(ds: Space, collection: uuid.UUID, version: int, **values: Any) -> uu
         fields=Json(FIELDS),
         **values,
     )
+
+
+async def test_a_collection_of_scans_names_the_languages_its_pages_are_read_in(ds: Space) -> None:
+    # GEN-11: OCR in the collection's languages, not always Vietnamese and English.
+    body = {"code": "scan-jp", "name": "Scans", "purpose": "tra cứu", "media_kinds": ["image"]}
+    async with client(ds) as api:
+        made = await api.post(
+            "/v1/collections",
+            json={**body, "ingest_profile": {"ocr_languages": ["jpn", "eng"]}},
+            headers=ds.headers("admin"),
+        )
+        unknown = await api.post(
+            "/v1/collections",
+            json={**body, "code": "scan-x", "ingest_profile": {"ocr": "jpn"}},
+            headers=ds.headers("admin"),
+        )
+    assert made.status_code == 201, made.text
+    assert made.json()["ingest_profile"] == {"ocr_languages": ["jpn", "eng"]}
+    assert unknown.status_code == 422, unknown.text
 
 
 async def test_a_test_run_is_queued_on_samples_of_the_collection(ds: Space) -> None:

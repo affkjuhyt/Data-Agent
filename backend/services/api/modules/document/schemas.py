@@ -14,6 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from libs import cron
+from services.api.kernel.ingest_profile import IngestProfile
 
 Media = Literal["pdf", "image", "docx", "email", "audio", "html"]
 SourceKind = Literal[
@@ -51,6 +52,7 @@ class CollectionView(BaseModel):
     extraction_schema_id: uuid.UUID | None
     qdrant_collection: str
     embed_model: str
+    ingest_profile: dict[str, Any]
     status: str
     created_at: datetime.datetime
     updated_at: datetime.datetime
@@ -63,6 +65,7 @@ class CollectionCreate(BaseModel):
     purpose: str = Field(min_length=1, max_length=500)
     pii_policy: Literal["mask", "keep_for_authorized", "reject"] | None = None
     retention_days: int | None = Field(default=None, ge=1, le=36_500)
+    ingest_profile: IngestProfile | None = None
 
     _texts = field_validator("name", "purpose")(_text)
 

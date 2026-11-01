@@ -360,6 +360,7 @@ CREATE TABLE org.data_space (
   backup_steward_id uuid,
   status text NOT NULL DEFAULT 'draft',
   default_policy jsonb NOT NULL DEFAULT '{}',
+  ingest_profile jsonb NOT NULL DEFAULT '{}',
   work_calendar_id uuid,
   opened_at timestamptz,
   deleted_at timestamptz,
@@ -369,13 +370,15 @@ CREATE TABLE org.data_space (
   updated_by uuid,
   CONSTRAINT data_space_pkey PRIMARY KEY (id),
   UNIQUE (org_id, code),
-  CHECK (status IN ('draft','onboarding','active','read_only','archived'))
+  CHECK (status IN ('draft','onboarding','active','read_only','archived')),
+  CHECK (jsonb_typeof(ingest_profile) = 'object')
 );
 COMMENT ON TABLE org.data_space IS 'Không gian dữ liệu của một nhóm nghiệp vụ; ranh giới quyền, nguồn, chỉ số và agent. Use case: UC-04-04, UC-11-08.';
 COMMENT ON COLUMN org.data_space.steward_id IS 'Người phụ trách dữ liệu; FK app_user';
 COMMENT ON COLUMN org.data_space.backup_steward_id IS 'Người dự phòng (BR-143); FK app_user';
 COMMENT ON COLUMN org.data_space.status IS 'draft, onboarding, active, read_only, archived';
 COMMENT ON COLUMN org.data_space.default_policy IS 'Bốn cờ trên màn Tạo Data Space: mask_pii, agent_write_derived_only, show_filed_and_current, allow_external_channels';
+COMMENT ON COLUMN org.data_space.ingest_profile IS 'Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal_mark (. hoặc ,), date_order (dmy, mdy), ocr_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: organization.locale';
 COMMENT ON COLUMN org.data_space.work_calendar_id IS 'FK work_calendar';
 COMMENT ON COLUMN org.data_space.opened_at IS 'Lúc mở cho người dùng sau khi bộ đánh giá đạt (BR-122)';
 COMMENT ON COLUMN org.data_space.deleted_at IS 'Xoá mềm';
@@ -4355,6 +4358,7 @@ CREATE TABLE document.collection (
   extraction_schema_id uuid,
   qdrant_collection text NOT NULL,
   embed_model text NOT NULL,
+  ingest_profile jsonb NOT NULL DEFAULT '{}',
   status text NOT NULL DEFAULT 'active',
   deleted_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -4364,7 +4368,8 @@ CREATE TABLE document.collection (
   CONSTRAINT collection_pkey PRIMARY KEY (id),
   UNIQUE (data_space_id, code),
   CHECK (pii_policy IN ('mask','keep_for_authorized','reject')),
-  CHECK (status IN ('active','reindexing','archived'))
+  CHECK (status IN ('active','reindexing','archived')),
+  CHECK (jsonb_typeof(ingest_profile) = 'object')
 );
 COMMENT ON TABLE document.collection IS 'Bộ sưu tập tài liệu theo mục đích; tài liệu kế thừa quyền và mục đích của bộ sưu tập (BR-59, BR-107). Use case: UC-05-01, UC-05-06.';
 COMMENT ON COLUMN document.collection.media_kinds IS 'pdf, image, docx, email, audio, html';
@@ -4373,6 +4378,7 @@ COMMENT ON COLUMN document.collection.pii_policy IS 'mask, keep_for_authorized, 
 COMMENT ON COLUMN document.collection.extraction_schema_id IS 'FK extraction_schema đang dùng';
 COMMENT ON COLUMN document.collection.qdrant_collection IS 'Tên collection Qdrant chứa vector đoạn';
 COMMENT ON COLUMN document.collection.embed_model IS 'Mô hình embedding; đổi mô hình thì lập chỉ mục mới song song (BR-18)';
+COMMENT ON COLUMN document.collection.ingest_profile IS 'Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal_mark (. hoặc ,), date_order (dmy, mdy), ocr_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: data_space.ingest_profile, rồi organization.locale';
 COMMENT ON COLUMN document.collection.status IS 'active, reindexing, archived';
 COMMENT ON COLUMN document.collection.deleted_at IS 'Xoá mềm';
 
@@ -5460,12 +5466,14 @@ CREATE TABLE acquire.crawl_source (
   active_schema_version_id uuid,
   consecutive_blocked integer NOT NULL DEFAULT 0,
   last_run_at timestamptz,
+  ingest_profile jsonb NOT NULL DEFAULT '{}',
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT crawl_source_pkey PRIMARY KEY (id),
   CHECK (kind IN ('web_page','web_listing','public_api','feed','file_drop')),
+  CHECK (jsonb_typeof(ingest_profile) = 'object'),
   CHECK (auth_mode IN ('none','api_key')),
   CHECK (auth_mode <> 'api_key' OR secret_ref IS NOT NULL),
   CHECK (review_gate IN ('all','exceptions','auto')),
@@ -5506,6 +5514,7 @@ COMMENT ON COLUMN acquire.crawl_source.status IS 'draft, active, paused, quarant
 COMMENT ON COLUMN acquire.crawl_source.owner_id IS 'logic → org.app_user; người phụ trách nguồn';
 COMMENT ON COLUMN acquire.crawl_source.active_schema_version_id IS 'FK crawl_schema_version đang active';
 COMMENT ON COLUMN acquire.crawl_source.consecutive_blocked IS 'Bị chặn 3 lượt liên tiếp thì tạm ngưng (UC-14-06)';
+COMMENT ON COLUMN acquire.crawl_source.ingest_profile IS 'Cách đọc dữ liệu nạp vào (GEN-11): locale, decimal_mark (. hoặc ,), date_order (dmy, mdy), ocr_languages (mã tesseract). Khoá không ghi lấy từ tầng trên: data_space.ingest_profile, rồi organization.locale';
 
 CREATE TABLE acquire.crawl_schema_version (
   id uuid NOT NULL,
