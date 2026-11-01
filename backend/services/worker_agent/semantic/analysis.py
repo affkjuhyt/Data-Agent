@@ -150,7 +150,7 @@ def compile_share(request: Request, layer: Layer, *, dialect: str) -> Compiled:
     times = _time_codes(request, layer)
     if not [code for code in request.group_by if code not in times]:
         raise CompileError(
-            "CONTRACT_MISMATCH", "Hãy nêu chiều cần chia, ví dụ: tỷ trọng dư nợ theo vùng."
+            "CONTRACT_MISMATCH", "Hãy nêu chiều cần chia, ví dụ: tỷ trọng doanh thu theo khu vực."
         )
     _refuse_unless_additive(metric, layer, "tỷ trọng")
     if metric.period_semantics == "average_over_period":

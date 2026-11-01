@@ -214,7 +214,7 @@ export default function CreateAgentPage() {
               setCorrections({});
             }}
             rows={5}
-            placeholder="Ví dụ: mỗi sáng thứ Hai, xem nợ quá hạn theo chi nhánh và gửi tóm tắt cho tôi qua Teams."
+            placeholder="Ví dụ: mỗi sáng thứ Hai, xem doanh thu theo khu vực và gửi tóm tắt cho tôi qua Teams."
             className="w-full"
           />
           <p className="text-muted-foreground da-caption">Hoặc bắt đầu từ mẫu</p>
