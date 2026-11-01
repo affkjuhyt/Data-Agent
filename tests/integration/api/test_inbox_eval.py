@@ -936,3 +936,39 @@ async def test_a_proposal_reaches_cần_bạn_and_leaves_it_once_decided(team: T
         closed = {str(ref): (status, str(by)) for ref, status, by in cur.fetchall()}
     reviewer = str(team.users["reviewer"])
     assert closed == {str(accepted): ("approved", reviewer), str(rejected): ("rejected", reviewer)}
+
+
+async def test_a_proposals_request_follows_its_chain_and_is_closed_by_the_decision_only(
+    team: Team,
+) -> None:
+    # Resolving the approve_proposal request itself would hide an undecided proposal; and after the
+    # first acceptance of a BR-119 change the request is the controller's to see.
+    proposal = _proposal(team, kind="metric_change", requires_compliance=True)
+    request = _hitl(
+        team,
+        kind="approve_proposal",
+        source_service="inbox",
+        source_ref=proposal,
+        assignee_capability="approve",
+        created_by=team.users["proposer"],
+    )
+    async with client(team) as api:
+        resolved = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("reviewer"),
+            json={"decision": "approve"},
+        )
+        assert resolved.status_code == 409, resolved.text
+        assert f"/v1/proposals/{proposal}:decide" in resolved.json()["detail"]
+        first = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            headers=team.headers("reviewer"),
+            json={"decision": "accept"},
+        )
+        assert first.status_code == 200, first.text
+    with team.seed.conn.cursor() as cur:
+        cur.execute(
+            "SELECT status, assignee_capability FROM inbox.hitl_request WHERE id = %s",
+            (str(request),),
+        )
+        assert cur.fetchone() == ("open", "compliance")

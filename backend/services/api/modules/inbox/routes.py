@@ -413,6 +413,14 @@ async def resolve_hitl(
         row = await _hitl(session, request_id, principal, data_space, org_caps, lock=True)
         if row.status not in PENDING:
             raise Problem(409, "invalid_state", f"The request is already {row.status}.")
+        if row.kind == "approve_proposal":
+            # Resolving it here would close it with the proposal still undecided, hidden from
+            # every reviewer: the proposal's own decision closes it.
+            raise Problem(
+                409,
+                "invalid_state",
+                f"Decide the proposal instead: POST /v1/proposals/{row.source_ref}:decide.",
+            )
         steps = await _steps(session, row.id)
         chained = any(s.decision is None for s in steps)
         # In a chain the step's named approver may decide even when the request names another assignee.
@@ -656,6 +664,20 @@ async def decide_proposal(
             # BR-119: the change waits for the controller's step; nothing is published yet.
             row.status = "pending_review"
             event_type = "proposal.step_decided"
+            # Its request moves to the controller, so compliance finds it in Cần bạn.
+            await session.execute(
+                update(inbox.HitlRequest)
+                .where(
+                    inbox.HitlRequest.kind == "approve_proposal",
+                    inbox.HitlRequest.source_ref == row.id,
+                    inbox.HitlRequest.status.in_(PENDING),
+                )
+                .values(
+                    assignee_capability="compliance",
+                    updated_by=principal.user_id,
+                    updated_at=_now(),
+                )
+            )
         else:
             row.status = PROPOSAL_STATUS[body.decision]
             event_type = "proposal.decided"
