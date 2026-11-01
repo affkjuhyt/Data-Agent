@@ -8456,12 +8456,18 @@ export interface components {
         CalendarPut: {
             /** Days */
             days?: components["schemas"]["CalendarDay"][] | null;
+            /** Fiscal Year Named By */
+            fiscal_year_named_by?: ("start" | "end") | null;
+            /** Fiscal Year Start Month */
+            fiscal_year_start_month?: number | null;
             /** Is Default */
             is_default?: boolean | null;
             /** Name */
             name?: string | null;
             /** Time Zone */
             time_zone?: string | null;
+            /** Week Start */
+            week_start?: number | null;
             /** Weekend Days */
             weekend_days?: number[] | null;
         };
@@ -23621,6 +23627,13 @@ export interface components {
             /** Days */
             days: components["schemas"]["CalendarDay"][];
             /**
+             * Fiscal Year Named By
+             * @enum {string}
+             */
+            fiscal_year_named_by: "start" | "end";
+            /** Fiscal Year Start Month */
+            fiscal_year_start_month: number;
+            /**
              * Id
              * Format: uuid
              */
@@ -23636,6 +23649,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Week Start */
+            week_start: number;
             /** Weekend Days */
             weekend_days: number[];
         };

@@ -12,6 +12,7 @@ from dataclasses import replace
 
 import pytest
 
+from libs import clock
 from services.worker_agent.semantic.analysis import (
     RUNNING_TOTAL,
     SHARE_OF_TOTAL,
@@ -246,6 +247,16 @@ def test_a_running_total_that_has_no_meaning_is_refused(
     with pytest.raises(CompileError) as raised:
         compile_running(request_, LAYER, dialect="sqlite", restart=restart)
     assert raised.value.code == "CONTRACT_MISMATCH" and words in str(raised.value)
+
+
+def test_to_date_runs_from_the_start_of_the_fiscal_year() -> None:
+    april = clock.Calendar(fiscal_year_start_month=4)
+    september = Period(datetime.date(2026, 9, 1), datetime.date(2026, 10, 1))
+    assert to_date(september, "year", metric(), april).start == datetime.date(2026, 4, 1)
+    assert to_date(september, "quarter", metric(), april).start == datetime.date(2026, 7, 1)
+    february = Period(datetime.date(2027, 2, 1), datetime.date(2027, 3, 1))
+    assert to_date(february, "year", metric(), april).start == datetime.date(2026, 4, 1)
+    assert to_date(february, "week", metric()).start == datetime.date(2027, 2, 22)
 
 
 def test_to_date_runs_from_the_start_of_the_unit_of_the_last_day(db: sqlite3.Connection) -> None:

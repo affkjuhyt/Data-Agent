@@ -25,6 +25,7 @@ from typing import Any
 
 from sqlalchemy import update
 
+from libs import clock
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, context
 from services.worker_agent import evaluation
@@ -203,9 +204,9 @@ async def example_changed(event: Event) -> None:
         space_id, question, stored_sql = row.data_space_id, row.question, row.sql
         # Run as it will answer (sqlgen/verified.py): its period placeholders bound to its own
         # question's period, on the source its tables are datasets of.
-        sql = verified.bind(
-            stored_sql, find_period(question, datetime.date.today()), datetime.date.today()
-        )
+        today = clock.today(await clock.space_zone(session, space_id))
+        cal = await clock.space_calendar(session, space_id)
+        sql = verified.bind(stored_sql, find_period(question, today, cal), today)
         if actor is None:
             return
         origin = await verified.origin_of(session, space_id, sql, actor)

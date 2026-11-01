@@ -5,8 +5,11 @@ to spaces, whitespace collapsed. context.synonym.phrase_norm, glossary_term.term
 value_index.label_norm hold the same form, so a question matches whichever way it was typed.
 
 `find_period` reads the period a question names, relative to `today` (the question's as_of or the
-day it was asked): a month, a quarter, a year, a day, or "this/last" month, quarter and year. It
-returns the span it read and the half-open date range; None when the question names no period.
+day it was asked): a month, a quarter, a year, a day, "this/last" week, month, quarter and year,
+and a fiscal year or quarter ("năm tài chính 2026", "FY2026", "quý 1 năm tài chính 2026") on the
+Data Space's calendar (GEN-21). A plain "năm", "quý" is the calendar's: only the words "tài chính"
+or FY name the fiscal one. It returns the span it read and the half-open date range; None when
+the question names no period.
 """
 
 from __future__ import annotations
@@ -16,6 +19,8 @@ import datetime
 import re
 import unicodedata
 from dataclasses import dataclass
+
+from libs import clock
 
 _ROMAN = {"i": 1, "ii": 2, "iii": 3, "iv": 4}
 
@@ -84,9 +89,36 @@ def _shift_month(day: datetime.date, by: int) -> tuple[int, int]:
     return index // 12, index % 12 + 1
 
 
-def find_period(question: str, today: datetime.date) -> FoundPeriod | None:
+_FISCAL = r"(?:nam tai chinh|fy)\s?(\d{4})"
+
+
+def _fiscal_period(t: str, today: datetime.date, cal: clock.Calendar) -> FoundPeriod | None:
+    if m := re.search(rf"\b(?:quy (\d|i{{1,3}}|iv)|q([1-4])) {_FISCAL}\b", t):
+        q = int(m.group(2) or (m.group(1) if m.group(1).isdigit() else _ROMAN[m.group(1)]))
+        if 1 <= q <= 4:
+            number = int(m.group(3))
+            start, end = clock.fiscal_quarter(number, q, cal)
+            return FoundPeriod(start, end, f"quý {q} FY{number}", m.group(0))
+    if m := re.search(rf"\b{_FISCAL}\b", t):
+        number = int(m.group(1))
+        start, end = clock.fiscal_year(number, cal)
+        return FoundPeriod(start, end, f"FY{number}", m.group(0))
+    for words, by in (("nam tai chinh nay", 0), ("nam tai chinh truoc", -1)):
+        if re.search(rf"\b{words}\b", t):
+            number = clock.fiscal_year_of(today, cal) + by
+            start, end = clock.fiscal_year(number, cal)
+            return FoundPeriod(start, end, f"FY{number}", words)
+    return None
+
+
+def find_period(
+    question: str, today: datetime.date, cal: clock.Calendar = clock.DEFAULT
+) -> FoundPeriod | None:
     t = norm(question)
     year_of = lambda y: int(y) if y else today.year  # noqa: E731
+
+    if found := _fiscal_period(t, today, cal):
+        return found
 
     if m := re.search(r"\bngay (\d{1,2})/(\d{1,2})/(\d{4})\b", t) or re.search(
         r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b", t
@@ -136,6 +168,11 @@ def find_period(question: str, today: datetime.date) -> FoundPeriod | None:
             return FoundPeriod(
                 datetime.date(y, 1, 1), datetime.date(y + 1, 1, 1), f"năm {y}", words
             )
+    for words, by in (("tuan nay", 0), ("tuan truoc", -1)):
+        if re.search(rf"\b{words}\b", t):
+            start, end = clock.week_of(today + datetime.timedelta(weeks=by), cal)
+            last = end - datetime.timedelta(days=1)
+            return FoundPeriod(start, end, f"tuần {start:%d/%m} đến {last:%d/%m/%Y}", words)
     if re.search(r"\bhom nay\b", t):
         return FoundPeriod(today, today + datetime.timedelta(days=1), "hôm nay", "hom nay")
     return None

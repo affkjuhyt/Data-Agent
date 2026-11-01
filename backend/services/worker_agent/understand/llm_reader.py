@@ -145,8 +145,8 @@ async def read(
         for dim, members in answer.filters.items()
         for member in members
     ]
-    period = find_period(question, today) or (
-        find_period(answer.period, today) if answer.period else None
+    period = find_period(question, today, vocab.calendar) or (
+        find_period(answer.period, today, vocab.calendar) if answer.period else None
     )
     if period is not None:
         chips.append(

@@ -24,8 +24,11 @@ never an LLM. What it does:
     `end_of_period` the last day of the range that has data (a balance is not summed over days),
     `average_over_period` the mean of the metric's daily values over the range (R1-06);
   * a cut along time is at a grain (R1-06): the question's ("theo tháng") or the metric version's
-    time_grain. Month, quarter and year are labelled '2026-09', '2026-Q3', '2026'. A balance cut
-    by month is read on the last day with data of each month, not summed over its days;
+    time_grain. Month, quarter and year are labelled '2026-09', '2026-Q3', '2026'; a week by its
+    first day '2026-10-26', on the Data Space's week_start (GEN-21); a fiscal year and quarter
+    'FY2026', 'FY2026-Q1' by the calendar's fiscal_year_start_month and naming (the calendar
+    year's labels when it starts in January). A balance cut by month is read on the last day with
+    data of each month, not summed over its days;
   * output: the requested dimensions, then `value`, grouped and ordered by the dimensions.
 
 The SQL hash and COMPILER_VERSION go on the receipt (qa.answer_receipt, ADR-43), so a figure can be
@@ -43,9 +46,11 @@ from dataclasses import dataclass, field
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError
 
+from libs import clock
+
 COMPILER_VERSION = "v3-compiler-3"
 MAX_HOPS = 3
-GRAINS = ("day", "month", "quarter", "year")
+GRAINS = ("day", "week", "month", "quarter", "year", "fiscal_quarter", "fiscal_year")
 # The day a value was read on, carried from a side to the average over the period.
 _DAY = "_day"
 
@@ -122,6 +127,8 @@ class Layer:
     dimensions: dict[str, Dimension]  # by code
     entity_tables: dict[uuid.UUID, Table]  # entity id → its primary dataset
     joins: tuple[Join, ...] = ()
+    # Where the Data Space's weeks and fiscal years start (its work calendar).
+    calendar: clock.Calendar = clock.DEFAULT
 
 
 @dataclass(frozen=True)
@@ -237,15 +244,72 @@ def _text_bounds(period: Period) -> tuple[str, str]:
     return start.isoformat(), end.isoformat()
 
 
-def _at_grain(when: exp.Expression, dim: Dimension, grain: str) -> exp.Expression:
+# The first day of the week a date is in, per dialect: sqlglot 25 does not translate a
+# day-of-week function between dialects, and each one counts weekdays its own way. {d} is the
+# date as the dialect writes it, {s} the ISO weekday weeks start on. SQL Server counts from
+# 1900-01-01, a Monday, so its DATEFIRST setting plays no part.
+_WEEK_START = {
+    "postgres": "CAST({d} AS DATE) - CAST((EXTRACT(ISODOW FROM {d}) + 7 - {s}) AS INT) % 7",
+    "mysql": "DATE_SUB({d}, INTERVAL ((WEEKDAY({d}) + 8 - {s}) % 7) DAY)",
+    "tsql": "DATEADD(DAY, -((DATEDIFF(DAY, CAST('19000101' AS DATE), {d}) + 8 - {s}) % 7), {d})",
+    "clickhouse": "addDays(toDate({d}), -((toDayOfWeek({d}) + 7 - {s}) % 7))",
+    "snowflake": "DATEADD(DAY, -((DAYOFWEEKISO({d}) + 7 - {s}) % 7), {d})",
+    "bigquery": "DATE_SUB(DATE({d}), INTERVAL MOD(MOD(EXTRACT(DAYOFWEEK FROM {d}) + 5, 7) + 8 - {s}, 7) DAY)",
+}
+
+
+def fiscal_shift(cal: clock.Calendar) -> int:
+    """The months a day moves by so that its calendar year and quarter are its fiscal ones."""
+    if not cal.fiscal:
+        return 0
+    start = cal.fiscal_year_start_month
+    return 13 - start if cal.fiscal_year_named_by == "end" else 1 - start
+
+
+def _at_grain(
+    when: exp.Expression,
+    dim: Dimension,
+    grain: str,
+    cal: clock.Calendar = clock.DEFAULT,
+    dialect: str = "postgres",
+) -> exp.Expression:
     """A time value at a grain, as text that orders like the periods: '2026-09', '2026-Q3'.
 
     A date is formatted (TO_CHAR, DATE_FORMAT, FORMAT… per dialect); ISO text is cut. A quarter is
     worked out from the month with CASE: Postgres has no QUARTER(), and Oracle's CONCAT takes two
-    arguments, so the year and '-Qn' are joined by one CONCAT.
+    arguments, so the year and '-Qn' are joined by one CONCAT. A fiscal year or quarter is the
+    calendar one of the day moved by fiscal_shift months, labelled 'FY…'.
     """
     if grain == "day":
         return when
+    if grain in ("fiscal_year", "fiscal_quarter"):
+        shift = fiscal_shift(cal)
+        calendar_grain = grain.removeprefix("fiscal_")
+        if not shift:
+            return _at_grain(when, dim, calendar_grain)
+        if dim.value_type == "string":
+            raise CompileError(
+                "CONTRACT_MISMATCH",
+                f"{dim.name} là văn bản, chưa chia theo năm tài chính được; hãy khai báo cột ngày.",
+            )
+        moved = exp.DateAdd(
+            this=when.copy(), expression=exp.Literal.number(shift), unit=exp.var("MONTH")
+        )
+        return exp.Concat(
+            expressions=[exp.Literal.string("FY"), _at_grain(moved, dim, calendar_grain)],
+            safe=True,
+        )
+    if grain == "week":
+        template = _WEEK_START.get(dialect)
+        if template is None or dim.value_type == "string":
+            raise CompileError(
+                "CONTRACT_MISMATCH",
+                f"chưa chia {dim.name} theo tuần trên nguồn này; hãy chia theo ngày hoặc tháng.",
+            )
+        first = parse_one(
+            template.format(d=when.sql(dialect=dialect), s=cal.week_start), read=dialect
+        )
+        return exp.TimeToStr(this=first, format=exp.Literal.string("%Y-%m-%d"))
 
     def part(start: int, length: int, fmt: str) -> exp.Expression:
         if dim.value_type == "string":
@@ -352,6 +416,8 @@ def _side(
     grain: str,
     by_day: bool,
     shared: bool = False,
+    *,
+    dialect: str,
 ) -> _Side:
     """The select of one entity: the requested dimensions, then `outputs`, grouped by the
     dimensions (and by day when the period is averaged), filtered and cut to the period.
@@ -434,7 +500,7 @@ def _side(
         expr = _qualify(dim.expression, alias_for(dim))
         if dim.is_time:
             time_cut = dim
-            expr = _at_grain(expr, dim, grain)
+            expr = _at_grain(expr, dim, grain, layer.calendar, dialect)
         select = select.select(exp.alias_(expr, code, quoted=True))
         group.append(expr)
     if by_day:
@@ -509,7 +575,11 @@ def _side(
             last = last.where(in_range_of_l)
         when_t0 = _qualify(time_dim.expression, "t0")
         if time_cut is not None:
-            last = last.group_by(_at_grain(_qualify(time_dim.expression, "l"), time_dim, grain))
+            last = last.group_by(
+                _at_grain(
+                    _qualify(time_dim.expression, "l"), time_dim, grain, layer.calendar, dialect
+                )
+            )
             conditions.append(exp.In(this=when_t0, query=last.subquery()))
             if in_range is not None:
                 conditions.append(in_range)
@@ -570,7 +640,13 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
     sides: list[_Side] = []
     if len(by_entity) == 1:
         side = _side(
-            request, layer, next(iter(by_entity)), [("value", _swap(tree, measures))], grain, by_day
+            request,
+            layer,
+            next(iter(by_entity)),
+            [("value", _swap(tree, measures))],
+            grain,
+            by_day,
+            dialect=dialect,
         )
         sides.append(side)
         select = side.select
@@ -597,6 +673,7 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
                 grain,
                 by_day,
                 shared=True,
+                dialect=dialect,
             )
             sides.append(side)
             keys = [*codes, _DAY] if by_day else codes

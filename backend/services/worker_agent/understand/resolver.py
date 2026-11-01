@@ -20,6 +20,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Literal
 
+from libs import clock
 from services.worker_agent.understand.text import FoundPeriod, find_period, norm
 from services.worker_agent.understand.value_retrieval import sem_value_retrieval, value_targets
 
@@ -68,6 +69,8 @@ class Vocabulary:
     values: list[ValueEntry] = field(default_factory=list)
     # phrase_norm → ("metric", metric_id) | ("dimension", dimension_id) | ("value", dim_code, code)
     synonyms: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Where the space's weeks and fiscal years start: "tuần này", "năm tài chính 2026".
+    calendar: clock.Calendar = clock.DEFAULT
 
 
 @dataclass(frozen=True)
@@ -126,7 +129,7 @@ def _phrases(vocab: Vocabulary) -> list[tuple[str, tuple[str, ...], float]]:
 
 def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Understanding:
     text = norm(question)
-    period = find_period(question, today)
+    period = find_period(question, today, vocab.calendar)
     if period:
         text = text.replace(period.span, " ")
     # Read after the period is taken out: in "tháng 9 cao nhất" the 9 is a month, not a top 9.
@@ -238,7 +241,7 @@ def grounding(
     model proposes; this decides whether its reading may be answered without asking (invariant 3)."""
     assert u.metric is not None
     text = norm(question)
-    period = find_period(question, today)
+    period = find_period(question, today, vocab.calendar)
     if period:
         text = text.replace(period.span, " ")
     named = set(norm(u.metric.name).split()) | set(norm(u.metric.code.replace("_", " ")).split())

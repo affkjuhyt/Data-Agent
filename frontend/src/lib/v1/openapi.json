@@ -4557,6 +4557,34 @@
       ],
       "title": "Days"
      },
+     "fiscal_year_named_by": {
+      "anyOf": [
+       {
+        "enum": [
+         "start",
+         "end"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fiscal Year Named By"
+     },
+     "fiscal_year_start_month": {
+      "anyOf": [
+       {
+        "maximum": 12.0,
+        "minimum": 1.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fiscal Year Start Month"
+     },
      "is_default": {
       "anyOf": [
        {
@@ -4593,6 +4621,19 @@
        }
       ],
       "title": "Time Zone"
+     },
+     "week_start": {
+      "anyOf": [
+       {
+        "maximum": 7.0,
+        "minimum": 1.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Week Start"
      },
      "weekend_days": {
       "anyOf": [
@@ -46742,6 +46783,18 @@
       "title": "Days",
       "type": "array"
      },
+     "fiscal_year_named_by": {
+      "enum": [
+       "start",
+       "end"
+      ],
+      "title": "Fiscal Year Named By",
+      "type": "string"
+     },
+     "fiscal_year_start_month": {
+      "title": "Fiscal Year Start Month",
+      "type": "integer"
+     },
      "id": {
       "format": "uuid",
       "title": "Id",
@@ -46764,6 +46817,10 @@
       "title": "Updated At",
       "type": "string"
      },
+     "week_start": {
+      "title": "Week Start",
+      "type": "integer"
+     },
      "weekend_days": {
       "items": {
        "type": "integer"
@@ -46778,6 +46835,9 @@
      "name",
      "time_zone",
      "weekend_days",
+     "week_start",
+     "fiscal_year_start_month",
+     "fiscal_year_named_by",
      "is_default",
      "days",
      "created_at",

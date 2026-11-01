@@ -206,7 +206,7 @@ def test_a_filter_value_is_quoted_never_spliced() -> None:
             "CONTRACT_MISMATCH",
         ),
         (Request(metric(), group_by=["khong_co"]), "UNRESOLVED_ENTITY"),
-        (Request(metric(), group_by=["ngay"], grain="week"), "CONTRACT_MISMATCH"),
+        (Request(metric(), group_by=["ngay"], grain="decade"), "CONTRACT_MISMATCH"),
     ],
 )
 def test_what_cannot_be_compiled_says_why(request_: Request, code: str) -> None:

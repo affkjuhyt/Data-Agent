@@ -3,13 +3,16 @@ measures sit on several tables."""
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import uuid
 
 import pytest
 import sqlglot
 
+from libs import clock
 from services.worker_agent.semantic.compiler import (
+    CompileError,
     Dimension,
     Layer,
     Measure,
@@ -208,3 +211,58 @@ def test_every_dialect_parses_it_back(dialect: str, request_: Request) -> None:
 
 def test_day_grain_dimensions_keep_their_type() -> None:
     assert DAY.value_type is None
+
+
+JULY = clock.Calendar(week_start=7, fiscal_year_start_month=7, fiscal_year_named_by="end")
+SUMS = metric(period_semantics="sum_over_period")
+
+
+def test_a_fiscal_year_is_the_calendar_year_of_the_day_moved_by_the_fiscal_start() -> None:
+    out = compile_metric(
+        Request(SUMS, group_by=["ngay"], grain="fiscal_year"),
+        dataclasses.replace(LAYER, calendar=JULY),
+        dialect="postgres",
+    )
+    # July 2025 + 6 months is 2026: FY2026, named by the year it ends in.
+    assert (
+        "CONCAT('FY', TO_CHAR(t0.as_of_date + INTERVAL '6 MONTH', 'YYYY')) AS \"ngay\"" in out.sql
+    )
+
+
+def test_without_a_fiscal_calendar_a_fiscal_quarter_is_the_calendar_quarter() -> None:
+    fiscal = compile_metric(
+        Request(SUMS, group_by=["ngay"], grain="fiscal_quarter"), LAYER, dialect="postgres"
+    )
+    plain = compile_metric(
+        Request(SUMS, group_by=["ngay"], grain="quarter"), LAYER, dialect="postgres"
+    )
+    assert fiscal.sql == plain.sql
+
+
+@pytest.mark.parametrize(
+    "dialect", ["postgres", "mysql", "tsql", "clickhouse", "snowflake", "bigquery"]
+)
+@pytest.mark.parametrize("grain", ["week", "fiscal_quarter", "fiscal_year"])
+def test_week_and_fiscal_grains_render_in_every_dialect_that_has_them(
+    dialect: str, grain: str
+) -> None:
+    out = compile_metric(
+        Request(SUMS, group_by=["ngay"], grain=grain),
+        dataclasses.replace(LAYER, calendar=JULY),
+        dialect=dialect,
+    )
+    sqlglot.parse_one(out.sql, read=dialect)
+
+
+def test_a_week_starts_on_the_calendars_weekday() -> None:
+    out = compile_metric(
+        Request(SUMS, group_by=["ngay"], grain="week"),
+        dataclasses.replace(LAYER, calendar=JULY),
+        dialect="postgres",
+    )
+    assert "EXTRACT(ISODOW FROM t0.as_of_date) + 7 - 7" in out.sql
+
+
+def test_a_week_where_no_dialect_template_exists_is_refused() -> None:
+    with pytest.raises(CompileError, match="theo tuần"):
+        compile_metric(Request(SUMS, group_by=["ngay"], grain="week"), LAYER, dialect="oracle")

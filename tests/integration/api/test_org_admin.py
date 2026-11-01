@@ -1219,6 +1219,28 @@ async def test_calendars_are_listed_for_askers_and_edited_by_admins(world: World
             f"/v1/calendars/{second}", json={"weekend_days": [0, 8]}, headers=world.headers("admin")
         )
         assert bad_days.status_code == 422
+        # GEN-21: where its weeks and fiscal years start.
+        fiscal = await api.put(
+            f"/v1/calendars/{second}",
+            json={"week_start": 7, "fiscal_year_start_month": 4, "fiscal_year_named_by": "start"},
+            headers=world.headers("admin"),
+        )
+        assert fiscal.status_code == 200, fiscal.text
+        assert (
+            fiscal.json()["week_start"],
+            fiscal.json()["fiscal_year_start_month"],
+            fiscal.json()["fiscal_year_named_by"],
+        ) == (7, 4, "start")
+        assert items["VN"]["fiscal_year_start_month"] == 1
+        for wrong in (
+            {"fiscal_year_start_month": 13},
+            {"week_start": 0},
+            {"fiscal_year_named_by": "mid"},
+        ):
+            refused = await api.put(
+                f"/v1/calendars/{second}", json=wrong, headers=world.headers("admin")
+            )
+            assert refused.status_code == 422, wrong
         foreign = await api.put(
             f"/v1/calendars/{world.foreign_calendar}",
             json={"name": "x"},

@@ -461,6 +461,21 @@ class WorkCalendar(Base):
         server_default=sql_text("'{6,7}'"),
         comment="Ngày nghỉ hằng tuần theo ISO (1 = thứ Hai)",
     )
+    week_start: Mapped[int] = mapped_column(
+        SmallInteger,
+        server_default=sql_text("1"),
+        comment='Ngày đầu tuần theo ISO (1 = thứ Hai, 7 = Chủ nhật), cho grain tuần và "tuần này" (GEN-21)',
+    )
+    fiscal_year_start_month: Mapped[int] = mapped_column(
+        SmallInteger,
+        server_default=sql_text("1"),
+        comment="Tháng bắt đầu năm tài chính (1 = năm dương lịch); luỹ kế từ đầu năm, quý và năm tài chính tính theo nó (GEN-21)",
+    )
+    fiscal_year_named_by: Mapped[str] = mapped_column(
+        Text,
+        server_default=sql_text("'end'"),
+        comment="Năm tài chính mang tên năm nó kết thúc (end: tháng 7/2025 đến 6/2026 là FY2026) hay năm nó bắt đầu (start)",
+    )
     is_default: Mapped[bool] = mapped_column(
         Boolean, server_default=sql_text("false"), comment="Mỗi tổ chức đúng một lịch mặc định"
     )

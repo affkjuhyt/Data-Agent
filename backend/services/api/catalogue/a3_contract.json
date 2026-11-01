@@ -5171,13 +5171,16 @@
     "name": false,
     "time_zone": false,
     "weekend_days": false,
+    "week_start": false,
+    "fiscal_year_start_month": false,
+    "fiscal_year_named_by": false,
     "is_default": false,
     "days": false
    },
    "query": [],
    "returns": "WorkCalendar",
    "errors": [],
-   "request_text": "name, time_zone, weekend_days, is_default, days"
+   "request_text": "name, time_zone, weekend_days, week_start, fiscal_year_start_month, fiscal_year_named_by, is_default, days"
   },
   "POST /v1/dsr": {
    "group": "Quản trị",

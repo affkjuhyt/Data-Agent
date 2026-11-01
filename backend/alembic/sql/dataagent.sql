@@ -481,16 +481,25 @@ CREATE TABLE org.work_calendar (
   name text NOT NULL,
   time_zone text NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
   weekend_days smallint[] NOT NULL DEFAULT '{6,7}',
+  week_start smallint NOT NULL DEFAULT 1,
+  fiscal_year_start_month smallint NOT NULL DEFAULT 1,
+  fiscal_year_named_by text NOT NULL DEFAULT 'end',
   is_default boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT work_calendar_pkey PRIMARY KEY (id),
-  UNIQUE (org_id, code)
+  UNIQUE (org_id, code),
+  CHECK (week_start BETWEEN 1 AND 7),
+  CHECK (fiscal_year_start_month BETWEEN 1 AND 12),
+  CHECK (fiscal_year_named_by IN ('start','end'))
 );
 COMMENT ON TABLE org.work_calendar IS 'Lịch làm việc của tổ chức, dùng cho lịch quét, pipeline, báo cáo, trigger và hạn xử lý. Use case: UC-02-04, UC-04-05, UC-06-03, UC-13-03.';
 COMMENT ON COLUMN org.work_calendar.weekend_days IS 'Ngày nghỉ hằng tuần theo ISO (1 = thứ Hai)';
+COMMENT ON COLUMN org.work_calendar.week_start IS 'Ngày đầu tuần theo ISO (1 = thứ Hai, 7 = Chủ nhật), cho grain tuần và "tuần này" (GEN-21)';
+COMMENT ON COLUMN org.work_calendar.fiscal_year_start_month IS 'Tháng bắt đầu năm tài chính (1 = năm dương lịch); luỹ kế từ đầu năm, quý và năm tài chính tính theo nó (GEN-21)';
+COMMENT ON COLUMN org.work_calendar.fiscal_year_named_by IS 'Năm tài chính mang tên năm nó kết thúc (end: tháng 7/2025 đến 6/2026 là FY2026) hay năm nó bắt đầu (start)';
 COMMENT ON COLUMN org.work_calendar.is_default IS 'Mỗi tổ chức đúng một lịch mặc định';
 
 CREATE TABLE org.work_calendar_day (

@@ -1690,6 +1690,39 @@
      "pii": false
     },
     {
+     "name": "week_start",
+     "type": "smallint",
+     "not_null": true,
+     "default": "1",
+     "unique": false,
+     "comment": "Ngày đầu tuần theo ISO (1 = thứ Hai, 7 = Chủ nhật), cho grain tuần và \"tuần này\" (GEN-21)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "fiscal_year_start_month",
+     "type": "smallint",
+     "not_null": true,
+     "default": "1",
+     "unique": false,
+     "comment": "Tháng bắt đầu năm tài chính (1 = năm dương lịch); luỹ kế từ đầu năm, quý và năm tài chính tính theo nó (GEN-21)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "fiscal_year_named_by",
+     "type": "text",
+     "not_null": true,
+     "default": "'end'",
+     "unique": false,
+     "comment": "Năm tài chính mang tên năm nó kết thúc (end: tháng 7/2025 đến 6/2026 là FY2026) hay năm nó bắt đầu (start)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "is_default",
      "type": "boolean",
      "not_null": true,
@@ -1713,6 +1746,18 @@
     {
      "kind": "unique",
      "sql": "UNIQUE (org_id, code)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (week_start BETWEEN 1 AND 7)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (fiscal_year_start_month BETWEEN 1 AND 12)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (fiscal_year_named_by IN ('start','end'))"
     }
    ],
    "indexes": [

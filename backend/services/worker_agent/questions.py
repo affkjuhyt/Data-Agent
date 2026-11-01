@@ -417,7 +417,7 @@ _ANALYSIS_LABEL = {
     analysis.RUNNING_TOTAL: "luỹ kế",
     TO_DATE: "luỹ kế từ đầu {unit}",
 }
-_UNIT_LABEL = {"year": "năm", "quarter": "quý", "month": "tháng"}
+_UNIT_LABEL = {"year": "năm", "quarter": "quý", "month": "tháng", "week": "tuần"}
 
 
 def _analysis_args(kind: str | None, unit: str | None) -> dict[str, Any] | None:
@@ -944,6 +944,7 @@ async def _understand_and_plan(
                         c.Period(asked_period.start, asked_period.end),
                         unit,
                         layer.versions[u.metric.metric_id],
+                        layer.layer.calendar,
                     )
                 except c.CompileError as exc:
                     problem = Refusal.of(

@@ -307,6 +307,10 @@ class CalendarPut(BaseModel):
     time_zone: str | None = Field(default=None, min_length=1, max_length=100)
     # ISO weekdays, 1 = Monday.
     weekend_days: list[int] | None = None
+    # GEN-21: the ISO weekday weeks start on, and the month and naming of the fiscal year.
+    week_start: int | None = Field(default=None, ge=1, le=7)
+    fiscal_year_start_month: int | None = Field(default=None, ge=1, le=12)
+    fiscal_year_named_by: Literal["start", "end"] | None = None
     is_default: bool | None = None
     # Replaces the calendar's holidays and working overrides.
     days: list[CalendarDay] | None = None
@@ -318,6 +322,9 @@ class CalendarView(_Row):
     name: str
     time_zone: str
     weekend_days: list[int]
+    week_start: int
+    fiscal_year_start_month: int
+    fiscal_year_named_by: Literal["start", "end"]
     is_default: bool
     days: list[CalendarDay]
     created_at: datetime.datetime

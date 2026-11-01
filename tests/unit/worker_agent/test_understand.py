@@ -7,6 +7,8 @@ import uuid
 
 import pytest
 
+from libs import clock
+from services.worker_agent.understand.grain import find_grain
 from services.worker_agent.understand.resolver import (
     DimensionEntry,
     MetricEntry,
@@ -60,6 +62,55 @@ def test_vietnamese_periods(
 ) -> None:
     found = find_period(f"nợ xấu {text} là bao nhiêu", TODAY)
     assert found is not None and (found.start, found.end, found.label) == (start, end, label)
+
+
+JULY = clock.Calendar(week_start=7, fiscal_year_start_month=7, fiscal_year_named_by="end")
+D = datetime.date
+
+
+@pytest.mark.parametrize(
+    ("text", "start", "end", "label"),
+    [
+        ("năm tài chính 2026", D(2025, 7, 1), D(2026, 7, 1), "FY2026"),
+        ("FY2026", D(2025, 7, 1), D(2026, 7, 1), "FY2026"),
+        ("quý 2 năm tài chính 2026", D(2025, 10, 1), D(2026, 1, 1), "quý 2 FY2026"),
+        ("Q1 FY2027", D(2026, 7, 1), D(2026, 10, 1), "quý 1 FY2027"),
+        ("năm tài chính nay", D(2026, 7, 1), D(2027, 7, 1), "FY2027"),
+        ("năm tài chính trước", D(2025, 7, 1), D(2026, 7, 1), "FY2026"),
+        # 12/10/2026 is a Monday; this calendar's weeks start on Sunday.
+        ("tuần này", D(2026, 10, 11), D(2026, 10, 18), "tuần 11/10 đến 17/10/2026"),
+        ("tuần trước", D(2026, 10, 4), D(2026, 10, 11), "tuần 04/10 đến 10/10/2026"),
+        # A plain year and quarter stay the calendar's.
+        ("năm 2025", D(2025, 1, 1), D(2026, 1, 1), "năm 2025"),
+        ("quý 1", D(2026, 1, 1), D(2026, 4, 1), "quý 1/2026"),
+    ],
+)
+def test_fiscal_and_week_periods_follow_the_calendar(
+    text: str, start: datetime.date, end: datetime.date, label: str
+) -> None:
+    found = find_period(f"doanh thu {text} là bao nhiêu", TODAY, JULY)
+    assert found is not None and (found.start, found.end, found.label) == (start, end, label)
+
+
+def test_without_a_fiscal_calendar_the_fiscal_year_is_the_calendar_year() -> None:
+    found = find_period("doanh thu năm tài chính 2026", TODAY)
+    assert found is not None and (found.start, found.end) == (D(2026, 1, 1), D(2027, 1, 1))
+    week = find_period("doanh thu tuần này", TODAY)
+    assert week is not None and week.start == D(2026, 10, 12)
+
+
+@pytest.mark.parametrize(
+    ("text", "grain"),
+    [
+        ("doanh thu theo tuần", "week"),
+        ("doanh thu theo năm tài chính", "fiscal_year"),
+        ("doanh thu từng quý tài chính", "fiscal_quarter"),
+        ("doanh thu theo quý", "quarter"),
+    ],
+)
+def test_week_and_fiscal_grains(text: str, grain: str) -> None:
+    found = find_grain(text)
+    assert found is not None and found.grain == grain and found.rest == "doanh thu"
 
 
 def test_norm_strips_accents_and_d() -> None:

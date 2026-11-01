@@ -39,6 +39,9 @@ def _view(calendar: org.WorkCalendar, days: list[org.WorkCalendarDay]) -> Calend
         name=calendar.name,
         time_zone=calendar.time_zone,
         weekend_days=list(calendar.weekend_days),
+        week_start=calendar.week_start,
+        fiscal_year_start_month=calendar.fiscal_year_start_month,
+        fiscal_year_named_by=calendar.fiscal_year_named_by,  # type: ignore[arg-type]
         is_default=calendar.is_default,
         days=[CalendarDay.model_validate(d) for d in sorted(days, key=lambda d: d.day)],
         created_at=calendar.created_at,
@@ -87,7 +90,16 @@ async def list_calendars(
 
 def _check(body: CalendarPut) -> None:
     fields = body.model_fields_set
-    for required in ("name", "time_zone", "weekend_days", "is_default", "days"):
+    for required in (
+        "name",
+        "time_zone",
+        "weekend_days",
+        "week_start",
+        "fiscal_year_start_month",
+        "fiscal_year_named_by",
+        "is_default",
+        "days",
+    ):
         if required in fields and getattr(body, required) is None:
             raise Problem(422, "validation_failed", f"{required} cannot be null.")
     if body.time_zone is not None:
@@ -127,6 +139,9 @@ async def put_calendar(
             calendar.time_zone = body.time_zone
         if body.weekend_days is not None:
             calendar.weekend_days = sorted(body.weekend_days)
+        for field in ("week_start", "fiscal_year_start_month", "fiscal_year_named_by"):
+            if (value := getattr(body, field)) is not None:
+                setattr(calendar, field, value)
         if body.is_default is not None and body.is_default != calendar.is_default:
             if not body.is_default:
                 raise Problem(
@@ -175,7 +190,13 @@ async def put_calendar(
             action="work_calendar.updated",
             object_kind="work_calendar",
             object_id=calendar.id,
-            after={"time_zone": calendar.time_zone, "weekend_days": list(calendar.weekend_days)},
+            after={
+                "time_zone": calendar.time_zone,
+                "weekend_days": list(calendar.weekend_days),
+                "week_start": calendar.week_start,
+                "fiscal_year_start_month": calendar.fiscal_year_start_month,
+                "fiscal_year_named_by": calendar.fiscal_year_named_by,
+            },
         )
         await session.flush()
         days = list(

@@ -253,7 +253,10 @@ async def answer_verified_first(
         user_id, space_id = conversation.user_id, conversation.data_space_id
         today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         found = verified.match(
-            question.text, await verified.active_examples(session, space_id), today
+            question.text,
+            await verified.active_examples(session, space_id),
+            today,
+            await clock.space_calendar(session, space_id),
         )
         if found is None or not await can_ask_data_space(
             session, data_space_id=space_id, principal_id=user_id
@@ -316,7 +319,10 @@ async def _answer_verified(
         space_id = conversation.data_space_id
         today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         found = verified.match(
-            question.text, await verified.active_examples(session, space_id), today
+            question.text,
+            await verified.active_examples(session, space_id),
+            today,
+            await clock.space_calendar(session, space_id),
         )
         if found is None:
             return False

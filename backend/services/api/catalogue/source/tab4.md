@@ -1062,7 +1062,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | PUT /v1/admin/ai-settings/{key} | value\* | AiSetting | — |
 | GET /v1/admin/system/health | — | JSON. Lấy từ Prometheus: dịch vụ, mô hình, GPU, hàng đợi, sao lưu, DR; trả trạng thái no\_data khi không truy cập được | — |
 | GET /v1/calendars | — | Danh sách WorkCalendar | — |
-| PUT /v1/calendars/{id} | name, time\_zone, weekend\_days, is\_default, days | WorkCalendar | — |
+| PUT /v1/calendars/{id} | name, time\_zone, weekend\_days, week\_start, fiscal\_year\_start\_month, fiscal\_year\_named\_by, is\_default, days | WorkCalendar | — |
 | POST /v1/dsr | request\_kind\*, received\_at\*, due\_at\*, subject\_identifier | 202, Location tới dsr\_request. subject\_identifier chỉ dùng để tính băm, không lưu; hệ thống tìm vị trí dữ liệu rồi chuyển sang review | — |
 | GET /v1/dsr/{id} | — | DsrRequest. Kèm dsr\_item: vị trí, hành động đề xuất, căn cứ | — |
 | POST /v1/dsr/{id}:execute | items\* | 202, Location tới dsr\_request | 422 business\_rule\_violated (giữ lại thiếu căn cứ) |

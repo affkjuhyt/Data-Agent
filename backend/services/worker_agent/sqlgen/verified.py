@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import clock
 from libs.dataagent_db.models import catalog, context
 from libs.sql_guard import SqlRejected, check_read_only, tables_of
 from services.worker_agent.understand.text import FoundPeriod, find_period, norm
@@ -37,10 +38,10 @@ class Verified:
     period: FoundPeriod | None
 
 
-def _key(text: str, today: datetime.date) -> str:
+def _key(text: str, today: datetime.date, cal: clock.Calendar) -> str:
     """The question's words without its period, normalised."""
     t = norm(text)
-    found = find_period(text, today)
+    found = find_period(text, today, cal)
     if found is not None:
         t = re.sub(rf"\b{re.escape(found.span)}\b", " ", t)
     return " ".join(t.split())
@@ -63,18 +64,21 @@ def bind(sql: str, period: FoundPeriod | None, today: datetime.date) -> str:
 
 
 def match(
-    question: str, examples: list[tuple[uuid.UUID, str, str]], today: datetime.date
+    question: str,
+    examples: list[tuple[uuid.UUID, str, str]],
+    today: datetime.date,
+    cal: clock.Calendar = clock.DEFAULT,
 ) -> Verified | None:
     """The approved example the question is, with its SQL bound; None when none is."""
-    asked, key = norm(question), _key(question, today)
+    asked, key = norm(question), _key(question, today, cal)
     for example_id, text, sql in examples:
         if has_placeholders(sql):
-            if _key(text, today) != key:
+            if _key(text, today, cal) != key:
                 continue
-            period = find_period(question, today) or find_period(text, today)
+            period = find_period(question, today, cal) or find_period(text, today, cal)
             return Verified(example_id, text, bind(sql, period, today), period)
         if norm(text) == asked:
-            return Verified(example_id, text, sql, find_period(text, today))
+            return Verified(example_id, text, sql, find_period(text, today, cal))
     return None
 
 

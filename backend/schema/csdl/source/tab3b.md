@@ -182,9 +182,12 @@ Lịch làm việc của tổ chức, dùng cho lịch quét, pipeline, báo cá
 | name | text, bắt buộc |  |
 | time\_zone | text, bắt buộc, mặc định 'Asia/Ho\_Chi\_Minh' |  |
 | weekend\_days | smallint\[\], bắt buộc, mặc định '{6,7}' | Ngày nghỉ hằng tuần theo ISO (1 = thứ Hai) |
+| week\_start | smallint, bắt buộc, mặc định 1 | Ngày đầu tuần theo ISO (1 = thứ Hai, 7 = Chủ nhật), cho grain tuần và "tuần này" (GEN-21) |
+| fiscal\_year\_start\_month | smallint, bắt buộc, mặc định 1 | Tháng bắt đầu năm tài chính (1 = năm dương lịch); luỹ kế từ đầu năm, quý và năm tài chính tính theo nó (GEN-21) |
+| fiscal\_year\_named\_by | text, bắt buộc, mặc định 'end' | Năm tài chính mang tên năm nó kết thúc (end: tháng 7/2025 đến 6/2026 là FY2026) hay năm nó bắt đầu (start) |
 | is\_default | boolean, bắt buộc, mặc định false | Mỗi tổ chức đúng một lịch mặc định |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (org\_id, code). Chỉ mục: duy nhất (org\_id) WHERE is\_default.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (org\_id, code); CHECK (week\_start BETWEEN 1 AND 7); CHECK (fiscal\_year\_start\_month BETWEEN 1 AND 12); CHECK (fiscal\_year\_named\_by IN ('start','end')). Chỉ mục: duy nhất (org\_id) WHERE is\_default.
 
 #### org.work\_calendar\_day
 

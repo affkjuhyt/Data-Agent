@@ -18,7 +18,7 @@ from services.worker_agent.understand.text import norm, words_of
 
 TO_DATE = "to_date"
 
-_UNIT = {"nam": "year", "quy": "quarter", "thang": "month"}
+_UNIT = {"nam": "year", "quy": "quarter", "thang": "month", "tuan": "week"}
 _PATTERNS: tuple[tuple[re.Pattern[str], str, str | None, bool], ...] = (
     (
         re.compile(r"\b(?:chiem (?:bao nhieu )?(?:phan tram|%)|chiem bao nhieu)(?!\w)"),
@@ -37,16 +37,17 @@ _PATTERNS: tuple[tuple[re.Pattern[str], str, str | None, bool], ...] = (
     ),
     (
         re.compile(
-            r"\b(?:(?:luy ke|cong don) )?tu dau (nam|quy|thang)(?: (?:den|toi) (?:nay|hien tai))?\b"
+            r"\b(?:(?:luy ke|cong don) )?tu dau (nam|quy|thang|tuan)(?: tai chinh)?"
+            r"(?: (?:den|toi) (?:nay|hien tai))?\b"
         ),
         TO_DATE,
         "",
         False,
     ),
-    (re.compile(r"\b(ytd|qtd|mtd)\b"), TO_DATE, "", False),
+    (re.compile(r"\b(ytd|qtd|mtd|wtd)\b"), TO_DATE, "", False),
     (re.compile(r"\b(?:luy ke|cong don)\b"), RUNNING_TOTAL, None, False),
 )
-_ABBREVIATION = {"ytd": "year", "qtd": "quarter", "mtd": "month"}
+_ABBREVIATION = {"ytd": "year", "qtd": "quarter", "mtd": "month", "wtd": "week"}
 
 
 @dataclass(frozen=True)

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError
 
+from libs import clock
 from libs.dataagent_db.models import catalog, context, governance
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.understand.resolver import (
@@ -255,6 +256,7 @@ async def load(
             targets[s.phrase_norm] = ("dimension", str(s.target_id))
         elif s.target_kind == "value" and s.target_value and s.target_id in dim_by_id:
             targets[s.phrase_norm] = ("value", dim_by_id[s.target_id].code, s.target_value)
+    calendar = await clock.space_calendar(session, space_id)
     vocabulary = Vocabulary(
         metrics=[
             MetricEntry(
@@ -273,6 +275,7 @@ async def load(
             if v.dimension_id in dim_by_id
         ],
         synonyms=targets,
+        calendar=calendar,
     )
     layer = c.Layer(
         measures={
@@ -295,5 +298,6 @@ async def load(
             )
             for j in joins
         ),
+        calendar=calendar,
     )
     return SpaceLayer(vocabulary, layer, versions, version_rows, datasets, blocked_metric_ids)

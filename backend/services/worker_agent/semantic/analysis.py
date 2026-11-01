@@ -12,6 +12,9 @@ next to the analysed figure is exactly what the same question without the analys
   * to_date: the period from the start of its year, quarter or month to its end ("doanh thu luỹ kế
     tháng 9" is January to September). A plain period, compiled by the compiler itself.
 
+A year and a quarter to date start where the Data Space's fiscal year does (GEN-21): with a fiscal
+year from April, "luỹ kế từ đầu năm" in September is April to September, as its books read it.
+
 Both columns are window functions over the compiled values (SUM() OVER), which every dialect a
 source may speak has. A sum of values is only a total when the metric adds up: one SUM or COUNT
 measure. A ratio, an average or a distinct count does not (the shares of a ratio do not sum to
@@ -28,6 +31,7 @@ from dataclasses import replace
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError
 
+from libs import clock
 from services.worker_agent.semantic.compiler import (
     Compiled,
     CompileError,
@@ -41,7 +45,7 @@ from services.worker_agent.semantic.compiler import (
 
 SHARE_OF_TOTAL = "share_of_total"
 RUNNING_TOTAL = "running_total"
-TO_DATE_UNITS = ("year", "quarter", "month")
+TO_DATE_UNITS = ("year", "quarter", "month", "week")
 
 
 def additive_measures(layer: Layer) -> dict[str, str]:
@@ -85,16 +89,11 @@ def _refuse_unless_additive(metric: MetricVersion, layer: Layer, what: str) -> N
         )
 
 
-def _start_of(day: datetime.date, unit: str) -> datetime.date:
-    if unit == "year":
-        return day.replace(month=1, day=1)
-    if unit == "quarter":
-        return day.replace(month=3 * ((day.month - 1) // 3) + 1, day=1)
-    return day.replace(day=1)
-
-
-def to_date(period: Period, unit: str, metric: MetricVersion) -> Period:
-    """The period from the start of the year, quarter or month its last day is in, to its end."""
+def to_date(
+    period: Period, unit: str, metric: MetricVersion, cal: clock.Calendar = clock.DEFAULT
+) -> Period:
+    """The period from the start of the (fiscal) year, quarter or month its last day is in, to
+    its end."""
     if unit not in TO_DATE_UNITS:
         raise CompileError("CONTRACT_MISMATCH", f"unknown to-date unit {unit}")
     if metric.period_semantics == "end_of_period":
@@ -104,7 +103,7 @@ def to_date(period: Period, unit: str, metric: MetricVersion) -> Period:
             " hãy hỏi số dư cuối kỳ.",
         )
     last = period.end - datetime.timedelta(days=1)
-    return Period(_start_of(last, unit), period.end)
+    return Period(clock.start_of(last, unit, cal), period.end)
 
 
 def _inner(request: Request, layer: Layer, dialect: str) -> tuple[Compiled, exp.Subquery]:
@@ -178,8 +177,18 @@ def compile_share(request: Request, layer: Layer, *, dialect: str) -> Compiled:
     return _finish(request, compiled, select, "share", dialect)
 
 
-def _bucket_label(day: datetime.date, grain: str, dim: Dimension) -> exp.Expression:
+def _bucket_label(
+    day: datetime.date, grain: str, dim: Dimension, cal: clock.Calendar
+) -> exp.Expression:
     """The label the compiler gives the bucket a day is in (compiler._at_grain), as a literal."""
+    if grain in ("fiscal_year", "fiscal_quarter") and cal.fiscal:
+        year, quarter = clock.fiscal_quarter_of(day, cal)
+        return exp.Literal.string(
+            f"FY{year}" + (f"-Q{quarter}" if grain == "fiscal_quarter" else "")
+        )
+    grain = grain.removeprefix("fiscal_")
+    if grain == "week":
+        return exp.Literal.string(clock.week_of(day, cal)[0].isoformat())
     if grain == "month":
         return exp.Literal.string(f"{day:%Y-%m}")
     if grain == "quarter":
@@ -191,12 +200,46 @@ def _bucket_label(day: datetime.date, grain: str, dim: Dimension) -> exp.Express
     return exp.cast(exp.Literal.string(day.isoformat()), "DATE")
 
 
-def _year_of(bucket: exp.Expression, grain: str, dim: Dimension) -> exp.Expression:
-    """The year a bucket is in: the first four characters of a label ('2026-09', '2026-Q3') or of
-    an ISO text day, the year of a date."""
-    if grain != "day" or dim.value_type == "string":
-        return exp.Substring(this=bucket, start=exp.Literal.number(1), length=exp.Literal.number(4))
-    return exp.Year(this=bucket)
+def _year_of(
+    bucket: exp.Expression, grain: str, dim: Dimension, cal: clock.Calendar
+) -> exp.Expression:
+    """The (fiscal) year a bucket is in: the first four characters of a label ('2026-09',
+    '2026-Q3') or of an ISO text day, the year of a date; 'FY2026' of a fiscal label.
+
+    With a fiscal year from month s, a day, week or month label before s is in the year that
+    started the calendar year before: CASE on its month, as a number every dialect compares."""
+
+    def part(start: int, length: int) -> exp.Expression:
+        return exp.Substring(
+            this=bucket.copy(), start=exp.Literal.number(start), length=exp.Literal.number(length)
+        )
+
+    if grain in ("fiscal_year", "fiscal_quarter") and cal.fiscal:
+        return part(1, 6)
+    grain = grain.removeprefix("fiscal_")
+    text = grain != "day" or dim.value_type == "string"
+    year = part(1, 4) if text else exp.Year(this=bucket.copy())
+    if not cal.fiscal:
+        return year
+    if grain in ("quarter", "year"):
+        raise CompileError(
+            "CONTRACT_MISMATCH",
+            "Năm tài chính không trùng năm dương lịch: hãy luỹ kế theo quý tài chính hoặc theo"
+            " tháng.",
+        )
+    month = exp.cast(part(6, 2), "INT") if text else exp.Month(this=bucket.copy())
+    number = exp.cast(year, "INT")
+    return exp.Case(
+        ifs=[
+            exp.If(
+                this=exp.GTE(
+                    this=month, expression=exp.Literal.number(cal.fiscal_year_start_month)
+                ),
+                true=number.copy(),
+            )
+        ],
+        default=exp.Sub(this=number, expression=exp.Literal.number(1)),
+    )
 
 
 def compile_running(
@@ -229,18 +272,21 @@ def compile_running(
         )
     (time_code,) = times
     dim = layer.dimensions[time_code]
+    cal = layer.calendar
     grain = request.grain or metric.time_grain
     asked: Period | None = request.period
     widened = request
     if restart is not None and asked is not None:
-        widened = replace(request, period=Period(_start_of(asked.start, restart), asked.end))
+        widened = replace(
+            request, period=Period(clock.start_of(asked.start, restart, cal), asked.end)
+        )
     compiled, inner = _inner(widened, layer, dialect)
     bucket = exp.column(time_code, quoted=True)
     partition: list[exp.Expression] = [
         exp.column(code, quoted=True) for code in request.group_by if code != time_code
     ]
     if restart is not None:
-        partition.append(_year_of(bucket.copy(), grain, dim))
+        partition.append(_year_of(bucket.copy(), grain, dim, cal))
     cumulative = exp.Window(
         this=exp.Sum(this=exp.column("value", quoted=True)),
         partition_by=partition,
@@ -261,6 +307,8 @@ def compile_running(
                 *(exp.column(c, quoted=True) for c in (*request.group_by, "value", "cumulative"))
             )
             .from_(select.subquery("r"))
-            .where(exp.GTE(this=bucket.copy(), expression=_bucket_label(asked.start, grain, dim)))
+            .where(
+                exp.GTE(this=bucket.copy(), expression=_bucket_label(asked.start, grain, dim, cal))
+            )
         )
     return _finish(request, compiled, select, "cumulative", dialect)

@@ -38,6 +38,7 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: u
     covers, BR-45) hold for the prompt too, so a table's names and values never reach the model
     when its rows could not."""
     today = clock.today(await clock.space_zone(session, space_id))
+    cal = await clock.space_calendar(session, space_id)
     covered = select(governance.AccessPolicy.dataset_id).where(
         governance.AccessPolicy.status == "active"
     )
@@ -168,7 +169,10 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: u
                 ],
                 # A verified query's period placeholders bound to its own question's period, so
                 # the model is shown SQL that runs (sqlgen/verified.py).
-                [(str(q), bind(str(s), find_period(str(q), today), today)) for q, s in examples],
+                [
+                    (str(q), bind(str(s), find_period(str(q), today, cal), today))
+                    for q, s in examples
+                ],
             )
         ),
         {d.id: d.source_id for d in datasets},
