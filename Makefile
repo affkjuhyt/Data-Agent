@@ -276,6 +276,18 @@ semantic-import:  ## import SEMANTIC_FILE as SEMANTIC_AS (dry run unless SEMANTI
 	@$(SEMANTIC_YAML) import - --org "$(SEMANTIC_ORG)" --space "$(SEMANTIC_SPACE)" \
 		--as "$(SEMANTIC_AS)" $(if $(filter 1,$(SEMANTIC_APPLY)),,--dry-run) < "$(SEMANTIC_FILE)"
 
+# Document retrieval scored against gold passages, in the worker-agent pod so it uses the
+# cluster's vector index and reranker; the report says which of them ran (RG-02).
+RETRIEVAL_ORG ?=
+RETRIEVAL_SPACE ?= DS-BH
+RETRIEVAL_CASES ?= model/eval/cases/retrieval.jsonl
+.PHONY: eval-retrieval
+
+eval-retrieval:  ## recall@k, MRR and not-found accuracy of document retrieval (RETRIEVAL_ORG, RETRIEVAL_SPACE)
+	@kubectl -n dataagent-service exec -i deploy/worker-agent -- \
+		python -m services.worker_agent.documents.retrieval_eval \
+		--org "$(RETRIEVAL_ORG)" --space "$(RETRIEVAL_SPACE)" - < "$(RETRIEVAL_CASES)"
+
 # R1-09: what each way of writing SQL earns on a Data Space's eval set, with the served model, in
 # the worker pod (worker_agent/sqlgen/ablation.py). Reads as ABLATION_AS; writes only query runs.
 ABLATION_ORG ?=

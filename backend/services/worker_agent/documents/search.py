@@ -46,6 +46,10 @@ class SearchServices:
     def reranks(self) -> bool:
         return self._rerank is not None
 
+    @property
+    def dense_configured(self) -> bool:
+        return self._qdrant is not None and self._embed is not None
+
     async def dense(
         self, targets: list[Target], query: str, limit: int
     ) -> list[tuple[uuid.UUID, float]]:
