@@ -103897,9 +103897,9 @@
        "anyOf": [
         {
          "enum": [
-          "low",
+          "high",
           "medium",
-          "high"
+          "low"
          ],
          "type": "string"
         },
@@ -105289,50 +105289,6 @@
     ]
    }
   },
-  "/v1/questions/{id}:cancel": {
-   "post": {
-    "operationId": "cancelQuestion",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "id",
-      "required": true,
-      "schema": {
-       "format": "uuid",
-       "title": "Id",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "202": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/JobAccepted"
-        }
-       }
-      },
-      "description": "Successful Response"
-     }
-    },
-    "security": [
-     {
-      "HTTPBearer": []
-     }
-    ],
-    "summary": "Dừng một câu hỏi đang chạy",
-    "tags": [
-     "Hỏi đáp"
-    ],
-    "x-capability": [
-     "ask"
-    ],
-    "x-use-cases": [
-     "UC-01-01"
-    ]
-   }
-  },
   "/v1/questions/{id}/plan": {
    "patch": {
     "operationId": "editQuestionPlan",
@@ -105633,6 +105589,161 @@
      }
     ],
     "summary": "Luồng SSE: cách hiểu, tiến độ, câu trả lời",
+    "tags": [
+     "Hỏi đáp"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-01-01"
+    ]
+   }
+  },
+  "/v1/questions/{id}:cancel": {
+   "post": {
+    "description": "Request cooperative cancellation without mutating the question from the API process.",
+    "operationId": "cancelQuestion",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobAccepted"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     },
+     "503": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "service_unavailable"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Dừng một câu hỏi đang chạy",
     "tags": [
      "Hỏi đáp"
     ],

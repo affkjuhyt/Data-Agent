@@ -5254,23 +5254,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/questions/{id}:cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dừng một câu hỏi đang chạy */
-        post: operations["cancelQuestion"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/questions/{id}/plan": {
         parameters: {
             query?: never;
@@ -5299,6 +5282,26 @@ export interface paths {
         get: operations["streamQuestion"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/questions/{id}:cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dừng một câu hỏi đang chạy
+         * @description Request cooperative cancellation without mutating the question from the API process.
+         */
+        post: operations["cancelQuestion"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7626,7 +7629,7 @@ export interface components {
         AnswerView: {
             /** Agent Name */
             agent_name: string | null;
-            /** Composable response blocks for chat renderers */
+            /** Blocks */
             blocks?: {
                 [key: string]: unknown;
             }[];
@@ -62863,7 +62866,7 @@ export interface operations {
         parameters: {
             query?: {
                 dataset_id?: string | null;
-                severity?: ("low" | "medium" | "high") | null;
+                severity?: ("high" | "medium" | "low") | null;
                 status?: string | null;
                 page_size?: number;
                 page_token?: string;
@@ -63887,20 +63890,6 @@ export interface operations {
             };
         };
     };
-    cancelQuestion: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: { id: string };
-            cookie?: never;
-        };
-        responses: {
-            202: {
-                headers: { [name: string]: unknown };
-                content: { "application/json": components["schemas"]["JobAccepted"] };
-            };
-        };
-    };
     editQuestionPlan: {
         parameters: {
             query?: never;
@@ -64121,6 +64110,128 @@ export interface operations {
             };
             /** @description Rate limited */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    cancelQuestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description service_unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
