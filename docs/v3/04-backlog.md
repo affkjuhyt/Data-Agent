@@ -73,7 +73,7 @@ Ra R1 khi: Eval Set pilot ≥ 0,95 trên VERIFIED/GOVERNED, `unsupported_number_
 
 | Đợt | ID | Việc |
 | --- | --- | --- |
-| R2 | R2-01…R2-10 | Capability Registry bảng (gộp `TOOL_REGISTRY`, node registry, `/capabilities`); supervisor chọn capability/chuyên gia; `libs/analytics` (contribution, driver decomposition, anomaly MAD/STL, forecast baseline); Deep analysis; Workspace đầy đủ (cây artifact, plan canvas, inspector, chạy lại xuôi dòng); ReconciliationNote; Report builder; Dashboard; hybrid số + tài liệu qua catalog/graph; MCP server phơi Data Space (D12); cache theo dependency |
+| R2 | R2-01…R2-10 | Capability Registry bảng (gộp `TOOL_REGISTRY`, node registry, `/capabilities`); supervisor chọn capability/chuyên gia; `libs/analytics` (contribution, driver decomposition, anomaly MAD/STL, forecast baseline); Deep analysis; Workspace đầy đủ (cây artifact, plan canvas, inspector, chạy lại xuôi dòng); ReconciliationNote; Report builder; Dashboard; hybrid số + tài liệu qua catalog/graph; MCP server phơi Data Space (D12); cache theo dependency. Phần hỏi đáp phân tích, nhận định, dashboard qua agent và chất lượng RAG đã chi tiết ở §3e (AN-, RG-) |
 | R3 | R3-01…R3-08 | Scheduler; Monitor vùng an toàn (lõi `detector` V2); alert gom nhóm + kênh Zalo/Teams/email (D10); proposal/action có duyệt; correction memory + Context Studio theo lớp lỗi; SOP có duyệt; gợi ý chủ động; forecast baseline nhãn experimental. **Precursor (không đóng R3-01):** Analysis › Công việc (`JobMonitorPage`) đọc GET `/v1/jobs` chỉ xem; Job nạp vẫn là màn điều khiển đầy đủ |
 | R4 | R4-01…R4-07 | Agent Studio (T2: từ mô tả + Data Space, eval trước publish); skill có cổng (T3); danh tính agent; PII masking result set; giới hạn chi phí; A2A; HA/restore/security eval; Publisher chỉ khi D8 mở lại |
 
@@ -125,6 +125,58 @@ trigger agent) chạy bằng Temporal Schedules thay vòng quét mỗi phút c�
 | TM-01 | Temporal server trên Postgres chung (database `temporal`, `temporal_visibility`, login riêng từ vault), Job `temporal-schema`, Temporal UI; manifest dev và production, NetworkPolicy, Ansible, `make deploy-local` | | Ops | M | `operator cluster health` = SERVING trên cụm dev; nâng phiên bản server và admin-tools cùng một commit | done 667def3e |
 | TM-02 | Đồng bộ lịch sang Temporal Schedule (tạo, sửa, xoá theo sự kiện outbox; đối chiếu toàn bộ khi worker khởi động) và workflow chạy một lượt; chuyển job, pipeline, báo cáo, chất lượng; bỏ vòng quét mỗi phút | TM-01 | BE | L | Test tích hợp: lịch đổi thì Schedule đổi; một lượt tới giờ tạo đúng một run; ngày nghỉ của lịch làm việc bị bỏ qua | done e777139f |
 | TM-03 | Lượt thu theo `schedule_cron` của nguồn thu thập và trigger agent theo lịch (`temporal_schedule_id`) | TM-02 | BE | M | Nguồn có lịch tạo `crawl_run` đúng giờ; KB-02 bỏ ghi chú "chờ Temporal" | done: `tests/integration/worker_agent/test_schedule_targets.py` |
+
+## 3e. Hỏi đáp phân tích, nhận định và chất lượng RAG
+
+Thêm 01/11/2026, sau khi đối chiếu Ask AI của Holistics (demo4, các màn "Insights from the chart" và
+"Create a data visualization") với mã hiện tại. Ba kết luận dẫn tới các việc dưới đây:
+
+1. **Bố cục câu trả lời do agent chọn, không theo khuôn.** Holistics lúc trả văn → bảng, lúc văn → chart
+   → Plan; Plan chỉ có khi việc nhiều bước. 01 §5.5 đã định "agent chỉ chọn khối"; thiếu là quy tắc ghép:
+   bất biến (số nào cũng có EvidenceFrame, nhãn theo khối, giả thuyết ở khối riêng, ghi qua ApprovalCard),
+   mặc định mềm (hỏi thì trả lời trước, hành động thì tóm tắt việc đã làm trước, Plan khi ≥ 2 bước hoặc bật
+   Plan mode), còn lại tự do. Eval chấm hợp đồng và bất biến, không chấm hình thức.
+2. **Agent phải có ý kiến về dữ liệu, có kiểm chứng.** Holistics ghi biên bản thao tác hoặc một khối văn
+   tự do, có khi tính tỷ trọng trên COUNT DISTINCT. Ta có phần mô tả tất định (`answer/insights.py`), thiếu
+   hình dạng phân bố, đối chiếu tự động, giả thuyết và gợi ý chạy được. Narrator vẫn cấm nêu nguyên nhân;
+   giả thuyết nằm ở khối có nhãn riêng, mỗi cái kèm một truy vấn kiểm.
+3. **Truy hồi tài liệu chưa được đo.** Phía sinh kiểm chặt (trích nguyên văn ≥ 0,9, số nằm trong đoạn
+   trích), nhưng `model/eval/cases/grounding.jsonl` có 16 case và đưa sẵn `contexts`, nên recall/MRR chưa
+   từng có; ngưỡng `DOCUMENT_MIN_DENSE/RERANK/OVERLAP` là mặc định env; FTS `'simple'` không bỏ dấu, không
+   tách từ; bảng trong PDF bị `get_text("text")` dẹt thành chữ rồi chunk, trái bất biến V2 "dữ liệu có cấu
+   trúc không đi qua chunk/embedding".
+
+Cột **Đợt**: `R1` là việc phục vụ tiêu chí ra R1 hoặc sửa vi phạm bất biến, làm được ngay; `R2` chờ R1 đạt
+tiêu chí ra (§4). AN-04 và AN-05 là R2 nhưng chỉ là mã tất định, không đụng đường đang nghiệm thu: mở
+sớm là ngoại lệ của §4, cần anh Linh duyệt.
+
+| ID | Đợt | Việc | Phụ thuộc | Vai | Cỡ | Tiêu chí | TT |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| AN-01 | R2 | Câu trả lời ghép khối: output contract liệt kê khối dự kiến; validator kiểm bất biến của mục 1 ở trên, không kiểm thứ tự; FE render theo luồng `__block`; các bước chạy giữ lại sau khi trả lời (gập, có thời gian chạy, skill đã gọi là một bước) thay vì bị `AgentSteps` thay | R0-10, R1-14 | FE, BE (Hải Long) | M | Bốn yêu cầu mẫu (một số KPI, giải thích chart, dựng dashboard, "vì sao") ra bốn bố cục khác nhau và cùng qua validator | todo |
+| AN-02 | R2 | Ngữ cảnh trong câu hỏi: `context[]` (data_space, tile, chart, metric); server đọc lại query, result set, metric version của đối tượng, không tin nội dung client gửi; "N ngữ cảnh" trên câu hỏi; "Giải thích chart này" từ tile và Khám phá | R1-10, R1-13 | BE (Đức Long), FE (Hải Long) | M | Test: ngữ cảnh ngoài quyền người hỏi → FORBIDDEN, không lộ tên | todo |
+| AN-03 | R2 | Kiểm chart trước khi trả lời hoặc thêm vào dashboard: measure hằng số hoặc không đổi theo dimension, cột trùng nghĩa, grain lệch, nhãn mơ hồ, cộng hoặc tính tỷ trọng trên measure không cộng được, nhãn trục bị ẩn; đề xuất sửa model đi vào Review Inbox, không tự áp | AN-02, AN-05 | BE, AI (Linh) | M | Mỗi lỗi có case trong AN-13 và bị bắt bằng code, không bằng LLM | todo |
+| AN-04 | R2 | Insights v2 tất định trong `answer/insights.py`: độ tập trung top-k (chỉ measure cộng được), bậc thang hay đuôi dài, điểm gãy, xu hướng nhiều kỳ (độ dốc, chuỗi tăng/giảm), tự đối chiếu kỳ trước và mục tiêu khi có (`comparison.py`, `thresholds.py`) | AN-05 | AI (Linh) | M | Mỗi nhận định là figure có `expr`, replay tính lại được | todo |
+| AN-05 | R2 | Semantic model khai báo đủ về measure: tính cộng được (mặc định đọc từ AST như `is_additive`, steward ghi đè có duyệt), grain, đơn vị, mô tả nghiệp vụ, measure khác mức chi tiết (pre-grouped); hiện trong Data Studio | R1-06, R1-07 | DB, BE (Đức Long) | M | Import/export YAML giữ đủ các trường | todo |
+| AN-06 | R2 | Narrator v2: khối Nhận định (từ AN-04), khối Giả thuyết (chọn từ danh mục phép kiểm, mỗi giả thuyết kèm truy vấn kiểm và nút "Kiểm tra", nhãn Khám phá), "Nên xem tiếp" chạy được; ngoài khối Giả thuyết vẫn cấm nêu nguyên nhân | AN-01, AN-04, AN-07 | AI (Linh), FE | L | `causal_claim_rate` = 0 ngoài khối Giả thuyết; `unsupported_number_rate` = 0 | todo |
+| AN-07 | R2 | Ngữ cảnh nghiệp vụ cho nhận định: mục tiêu/KPI theo kỳ, phân cấp danh mục, lịch mùa vụ và sự kiện, quan hệ giữa metric (đơn hàng ↔ doanh thu ↔ AOV ↔ biên lợi nhuận) | R1-07 | DB, BE (Đức Long) | M | Dữ liệu pilot R1-16 có mục tiêu và phân cấp | todo |
+| AN-08 | R2 | DQ trên giá trị dimension: lỗi chính tả, trùng gần đúng, null; cảnh báo trong câu trả lời và đề xuất gộp vào Review Inbox | R1-03, R1-05 | DE (Đức Long) | M | Bẫy tên nhóm sai chính tả trong R1-16 bị bắt khi profiling | todo |
+| AN-09 | R2 | Ô nhập có ngữ cảnh: chip pin, picker `@` có tìm kiếm và dấu đã chứng nhận, `/` gọi skill, menu `+` (tệp/ảnh, ngữ cảnh, skill); Preferences: nạp hội thoại cũ (chỉ là cờ cho phép, server quyết, giữ B5), tìm kết quả có sẵn, Plan mode, skill tự gọi | R1-10, AN-02 | FE (Hải Long) | M | Picker chỉ liệt kê thứ người hỏi được thấy | todo |
+| AN-10 | R2 | Tìm kết quả có sẵn trước khi sinh query: mở rộng khớp verified query của R1-08 sang tile và dashboard đã lưu | R1-08, R1-13 | BE | S | Câu đã có tile trả về tile đó, có nhãn nguồn | todo |
+| AN-11 | R2 | Agent dựng dashboard: Plan N/M, dựng chart → AN-03 → ApprovalCard → ghi vào Workspace; trình sửa dashboard gọi agent theo ngữ cảnh màn hình | AN-01, AN-03, Dashboard của R2-01…R2-10 | FE, BE | L | Không ghi gì khi chưa duyệt; chart lỗi AN-03 không vào dashboard | todo |
+| AN-12 | R2 | Danh sách hội thoại: tìm kiếm, biểu tượng theo loại câu trả lời, nhóm "sắp hết hạn" theo retention | R1-13 | FE | S | | todo |
+| AN-13 | R1 | Eval nhận định: bộ chart vàng có đáp án nhận định; bẫy (tỷ trọng trên COUNT DISTINCT, measure hằng số, tên nhóm sai chính tả, nhãn trục bị ẩn); chấm theo hợp đồng, không theo hình thức. Ở R1 chỉ viết case (ngoại lệ "viết kịch bản kiểm thử" của §5) | R1-12, R1-16 | QA (Quân) | M | ≥ 40 case, hai người giải mù | todo |
+| RG-01 | R1 | Bộ vàng truy hồi ≥ 150 câu trên tài liệu pilot: đoạn đúng (tài liệu, trang, Điều); biến thể không dấu, lỗi chính tả, follow-up, hỏi về bảng, không có đáp án, văn bản đã bị thay thế | R1-16 | QA (Quân) | M | Hai người gán mù | todo |
+| RG-02 | R1 | Eval chạy truy hồi thật: đường online không dùng `contexts` đưa sẵn; điểm truy hồi (recall@10, MRR, độ đúng của "không tìm thấy") tách khỏi điểm sinh (faithfulness, `unsupported_number_rate`, độ đúng trích dẫn); baseline đầu thay các ngưỡng `provisional` | RG-01, R1-12 | QA (Quân), AI (Linh) | M | Báo cáo eval có đủ các chỉ số; gate đọc được | todo |
+| RG-03 | R2 | Hiệu chỉnh `DOCUMENT_MIN_DENSE/RERANK/OVERLAP` từ RG-02 (đường precision/recall), lưu theo Data Space thay vì env | RG-02 | AI (Linh) | S | Ngưỡng có số đo đi kèm | todo |
+| RG-04 | R2 | Nửa từ khoá cho tiếng Việt: vector sparse bge-m3 (tab 5) hoặc cột bỏ dấu + khớp cụm thay FTS `'simple'`; mở rộng truy vấn bằng glossary/synonym của Data Space | RG-02 | AI (Linh), DB | M | Recall@10 nhóm câu không dấu đo trên RG-02, ngưỡng đặt sau baseline | todo |
+| RG-05 | R1 | Bảng trong tài liệu thành dữ liệu có cấu trúc: nhận diện bảng PDF/DOCX, lưu với tiêu đề hàng/cột và vị trí trang/ô; câu hỏi số trên bảng đi đường SQL có trích dẫn về ô; chunk không mang bảng số | | DE (Đức Long) | L | Số lấy từ bảng trong tài liệu không đi qua chunk; trích dẫn mở đúng trang | todo |
+| RG-06 | R2 | Chunk có ngữ cảnh: tiền tố "tài liệu › Chương › Điều" khi nhúng, re-index qua `worker_document.reprocess` (BR-18 giữ hai model tách nhau); chọn kích thước chunk bằng RG-02 | RG-02 | DE | S | | todo |
+| RG-07 | R2 | Câu follow-up được viết lại theo hội thoại trước khi truy hồi (dùng bộ giải slot); kiểm đường hiện tại trước, chỉ làm khi đang truy hồi bằng nguyên văn | RG-02 | AI (Linh) | S | Recall nhóm follow-up của RG-01 | todo |
+| RG-08 | R2 | Câu đếm/tổng trên cả kho ("bao nhiêu hợp đồng có điều khoản X") đi đường trích trường (`documents/extraction.py`) → bảng → SQL, báo coverage (`sem_extract`, 01 §3.3) | RG-05 | AI, BE | M | Câu trả lời có coverage; không trả lời bằng top-k | todo |
+| RG-09 | R2 | Màn sức khoẻ kho tài liệu theo Data Space: trang dưới ngưỡng OCR, chunk chưa vào Qdrant, đoạn nghi injection, văn bản hết hiệu lực hoặc bị thay thế, tài liệu đọc lỗi | | BE, FE | S | | todo |
+
+Thứ tự: RG-01 → RG-02 và RG-05 song song ngay trong R1, AN-13 viết case song song; sau R1: AN-05 → AN-04 →
+AN-01 → AN-02 → AN-03 → AN-07 → AN-06 → AN-09/AN-10 → AN-11; RG-03…RG-09 theo số đo của RG-02.
 
 ## 4. Quy tắc theo dõi
 
