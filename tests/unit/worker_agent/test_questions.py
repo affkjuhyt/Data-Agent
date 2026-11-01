@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from services.worker_agent.questions import _internal_workspace_source
+
+pytestmark = [pytest.mark.unit]
 
 
 def test_workspace_dataset_uses_the_internal_query_source() -> None:

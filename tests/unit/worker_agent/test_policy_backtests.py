@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from libs.dataagent_db.models import governance
 from services.worker_agent.policy_backtests import _applies, _mentions_table
+
+pytestmark = [pytest.mark.unit]
 
 
 def test_ac_11_02_02_policy_backtest_matches_direct_user() -> None:

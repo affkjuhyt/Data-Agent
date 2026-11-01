@@ -1,7 +1,11 @@
+import pytest
+
 from services.api.modules.workspace.report_storage import (
     UnconfiguredReportStore,
     report_store,
 )
+
+pytestmark = [pytest.mark.unit]
 
 
 def test_report_store_is_unconfigured_without_minio_secret(monkeypatch):
