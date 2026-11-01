@@ -184,3 +184,53 @@ async def test_only_the_asker_proposes_their_question(
     while await run_once(qa_source, liked.HANDLERS, batch=10):
         pass
     assert seed.one("SELECT count(*) FROM context.example_query WHERE org_id = %s", bank.org) == 0
+
+
+async def test_an_approved_query_wins_over_the_semantic_reading_of_its_question(
+    seed: Seed,
+    credit: dict[str, Any],  # noqa: F811  (the fixture)
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Invariant 14: Đã kiểm above Có quản trị. The semantic layer reads this question as the NPL
+    # ratio; a steward approved an SQL for these very words, so that SQL answers it.
+    bank = build(seed, credit, monkeypatch)
+    text = "Tỷ lệ nợ xấu theo vùng tháng 9/2026"
+    example(bank, question=text)
+    q = bank.ask(text)
+    await drain()
+    status, kind, _, figures, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data")
+    assert figures and all(f["trust"] == TRUST_VERIFIED for f in figures)
+    plans = seed.all(
+        "SELECT steps->>'path' FROM qa.plan WHERE question_id = %s ORDER BY version", q
+    )
+    assert plans == [("verified_query",)]
+
+
+async def test_an_approved_query_is_not_a_way_around_the_data_space_grant(
+    seed: Seed,
+    credit: dict[str, Any],  # noqa: F811  (the fixture)
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    text = "Tỷ lệ nợ xấu theo vùng tháng 9/2026"
+    example(bank, question=text)
+    outsider = seed.row(
+        "org.app_user", org_id=bank.org, external_id="kc-o2", username="o2", display_name="O2"
+    )
+    ask_role = seed.row(
+        "org.role", org_id=bank.org, code="ASK-VQ", name="Ask", capabilities=["ask"]
+    )
+    seed.row(
+        "org.data_space_member",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        principal_type="user",
+        principal_id=bank.user,
+        role_id=ask_role,
+    )
+    bank.user = outsider
+    q = bank.ask(text)
+    await drain()
+    _, kind, text_out, figures, _, _ = answer_of(seed, q)
+    assert kind == "refusal" and not figures, text_out

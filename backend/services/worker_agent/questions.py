@@ -72,7 +72,7 @@ from services.worker_agent.query.secrets import SecretReader, StaticReader, read
 from services.worker_agent.semantic import analysis, compare
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer, load
-from services.worker_agent.sqlgen.answer import answer_by_sql
+from services.worker_agent.sqlgen.answer import answer_by_sql, answer_verified_first
 from services.worker_agent.understand import llm_reader
 from services.worker_agent.understand.analysis import TO_DATE, find_analysis
 from services.worker_agent.understand.comparison import find_comparison
@@ -609,6 +609,11 @@ async def answer_edited_plan(event: Event) -> None:
 
 
 async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUID | None) -> None:
+    # A question an approved query answers is answered by it first (sqlgen/verified.py, R1-08).
+    if edited_plan_id is None and await answer_verified_first(
+        event, question_id, secrets=secrets(), workspace_source=_internal_workspace_source
+    ):
+        return
     await publish(str(question_id), "planning", {"question_id": str(question_id)})
     prepared = await _understand_and_plan(event, question_id, edited_plan_id)
     if prepared is None:

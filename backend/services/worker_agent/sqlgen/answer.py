@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, qa
@@ -28,6 +28,7 @@ from services.worker_agent.events import Event
 from services.worker_agent.llm import Gateway
 from services.worker_agent.progress import publish
 from services.worker_agent.query.executor import QueryOutcome, run_query
+from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.query.secrets import SecretReader
 from services.worker_agent.sqlgen import verified
 from services.worker_agent.sqlgen.run import Exploration, explore
@@ -150,22 +151,9 @@ async def answer_by_sql(
     secrets: SecretReader,
     workspace_source: Callable[[uuid.UUID, uuid.UUID], catalog.Source],
 ) -> bool:
-    if user_id is None:
+    if gateway is None or user_id is None:
         return False
     started = datetime.datetime.now(datetime.UTC)
-    # An approved query for this question answers it before any SQL is written (R1-08).
-    if await _answer_verified(
-        event,
-        question_id,
-        user_id,
-        plan_id,
-        started,
-        secrets=secrets,
-        workspace_source=workspace_source,
-    ):
-        return True
-    if gateway is None:
-        return False
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         question = await session.get(qa.Question, question_id)
         if question is None or question.status != "received":
@@ -238,6 +226,72 @@ async def answer_by_sql(
         consensus=(e.agreeing, len(e.tried)),
     )
     return True
+
+
+async def answer_verified_first(
+    event: Event,
+    question_id: uuid.UUID,
+    *,
+    secrets: SecretReader,
+    workspace_source: Callable[[uuid.UUID, uuid.UUID], catalog.Source],
+) -> bool:
+    """A question that is an approved query's is answered by it before the semantic layer reads
+    it (R1-08; invariant 14: Đã kiểm above Có quản trị): a steward approved this SQL for these
+    words, so no metric reading nor clarification comes first. Not for an agent version's eval
+    run, whose data_scope the semantic path applies (agent_evals.py). The asker's ask grant in the
+    Data Space is checked here, as the semantic path checks it; run_query checks the rest."""
+    if event.payload.get("data_scope"):
+        return False
+    async with scoped_session(ROLE, event.org_id, event.payload.get("user_id")) as session:
+        question = await session.get(qa.Question, question_id)
+        if question is None or question.status != "received":
+            return False
+        conversation = await session.get(qa.Conversation, question.conversation_id)
+        if conversation is None or conversation.user_id is None:
+            return False
+        user_id, space_id = conversation.user_id, conversation.data_space_id
+        today = question.as_of or datetime.date.today()
+        found = verified.match(
+            question.text, await verified.active_examples(session, space_id), today
+        )
+        if found is None or not await can_ask_data_space(
+            session, data_space_id=space_id, principal_id=user_id
+        ):
+            return False
+        plan_id = uuid7()
+        version = int(
+            await session.scalar(
+                select(func.coalesce(func.max(qa.Plan.version), 0) + 1).where(
+                    qa.Plan.question_id == question_id
+                )
+            )
+        )
+        session.add(
+            qa.Plan(
+                id=plan_id,
+                org_id=event.org_id,
+                question_id=question_id,
+                version=version,
+                chips=[
+                    {
+                        "kind": "verified_query",
+                        "value": str(found.example_id),
+                        "label": found.question,
+                    }
+                ],
+                steps={"goal": "answer", "path": "verified_query", "steps": []},
+            )
+        )
+    await publish(str(question_id), "planning", {"question_id": str(question_id)})
+    return await _answer_verified(
+        event,
+        question_id,
+        user_id,
+        plan_id,
+        datetime.datetime.now(datetime.UTC),
+        secrets=secrets,
+        workspace_source=workspace_source,
+    )
 
 
 async def _answer_verified(
