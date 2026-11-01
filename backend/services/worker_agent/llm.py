@@ -27,6 +27,8 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
+from services.worker_agent import turn_trace
+
 T = TypeVar("T", bound=BaseModel)
 
 # One more request with the validation errors when an answer does not fit its model.
@@ -102,13 +104,31 @@ class LiteLLMGateway:
             )
         except AgentRunError as exc:
             # Kept short: the message lands in a candidate's error and a run's trace.
-            raise ModelUnavailable(f"{type(exc).__name__}: {str(exc)[:200]}") from exc
-        return Reply(
+            reason = f"{type(exc).__name__}: {str(exc)[:200]}"
+            turn_trace.model_call(
+                role=role,
+                model=role,
+                input_tokens=0,
+                output_tokens=0,
+                latency_ms=int((time.monotonic() - started) * 1000),
+                error=reason,
+            )
+            raise ModelUnavailable(reason) from exc
+        reply = Reply(
             content=result.output,
             model=result.response.model_name or role,
             tokens=result.usage.total_tokens,
             latency_ms=int((time.monotonic() - started) * 1000),
         )
+        # What was asked of the model, without its content, on the turn's trace (turn_trace.py).
+        turn_trace.model_call(
+            role=role,
+            model=reply.model,
+            input_tokens=result.usage.input_tokens or 0,
+            output_tokens=result.usage.output_tokens or 0,
+            latency_ms=reply.latency_ms,
+        )
+        return reply
 
 
 def gateway_from_env() -> Gateway | None:

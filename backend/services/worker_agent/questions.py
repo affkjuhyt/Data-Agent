@@ -45,6 +45,7 @@ from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
+from services.worker_agent import turn_trace
 from services.worker_agent.analyst_plan import build_analysis_plan
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.comparison import (
@@ -705,7 +706,9 @@ def _code(code: str) -> ErrorCode:
 async def _analyst_step(
     question_id: uuid.UUID, step_id: str, status: str, *, detail: str | None = None
 ) -> None:
-    """Expose the validated analyst DAG as replayable chat milestones."""
+    """Expose the validated analyst DAG as replayable chat milestones, and keep it on the turn's
+    trace (turn_trace.py)."""
+    turn_trace.step(step_id, status, detail=detail)
     labels = {
         "understand": "Hiểu mục tiêu câu hỏi",
         "resolve_scope": "Xác định phạm vi dữ liệu",
@@ -728,18 +731,23 @@ async def _analyst_step(
     )
 
 
+def _user_of(event: Event) -> uuid.UUID | None:
+    user = event.payload.get("user_id")
+    return uuid.UUID(str(user)) if user else None
+
+
 async def answer_question(event: Event) -> None:
-    await _run(event, uuid.UUID(str(event.payload["question_id"])), edited_plan_id=None)
+    question_id = uuid.UUID(str(event.payload["question_id"]))
+    async with turn_trace.turn(event.org_id, question_id, _user_of(event)):
+        await _run(event, question_id, edited_plan_id=None)
 
 
 async def answer_edited_plan(event: Event) -> None:
     """UC-01-03: the person corrected the chips; the api wrote the new plan version without steps
     and set the question back to planning. Re-answer from those chips."""
-    await _run(
-        event,
-        uuid.UUID(str(event.payload["question_id"])),
-        edited_plan_id=uuid.UUID(str(event.payload["plan_id"])),
-    )
+    question_id = uuid.UUID(str(event.payload["question_id"]))
+    async with turn_trace.turn(event.org_id, question_id, _user_of(event)):
+        await _run(event, question_id, edited_plan_id=uuid.UUID(str(event.payload["plan_id"])))
 
 
 async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUID | None) -> None:
@@ -845,6 +853,7 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
 
 async def _cancel(event: Event, question_id: uuid.UUID, prepared: Prepared) -> None:
     """Persist a normal refusal while exposing cancellation as a distinct stream event."""
+    turn_trace.cancelled()
     await publish(str(question_id), "cancelled", {"question_id": str(question_id)})
     await _refuse(
         event,

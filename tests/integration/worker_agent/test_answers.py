@@ -402,6 +402,22 @@ async def test_ac_01_01_01_a_ratio_by_region_in_scope_with_a_sealed_receipt(
         seed.one("SELECT number_check->>'untraceable_final' FROM qa.answer WHERE id = %s", answer)
         == "0"
     )
+    # The turn's run: each analyst step, in order, ending in the written answer.
+    status, stop, steps = seed.one(
+        "SELECT r.status, r.stop_reason, array_agg(s.kind || ':' || s.name || ':' || s.status"
+        " ORDER BY s.seq) FROM agent.agent_run r JOIN agent.agent_step s ON s.run_id = r.id"
+        " WHERE r.trigger_ref = %s GROUP BY r.id",
+        f"question:{q}",
+    )
+    assert (status, stop) == ("succeeded", "completed")
+    assert [s for s in steps if not s.startswith("llm_call")] == [
+        "plan:understand:ok",
+        "plan:resolve_scope:ok",
+        "query:query:ok",
+        "plan:validate:ok",
+        "plan:visualize:ok",
+        "message:narrate:ok",
+    ]
 
 
 async def test_ac_10_01_01_as_submitted_uses_period_snapshot_not_live_data(

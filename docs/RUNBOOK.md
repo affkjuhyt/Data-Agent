@@ -538,6 +538,27 @@ issue in the quality queue until someone corrects or drops the page.
 If retrieval quality is poor, first check the GPU services answer, before
 suspecting the pipeline.
 
+### What a question cost (the turn trace)
+
+Every Ask turn is written as a run of the Data Space's built-in agent "Agent Hỏi
+đáp" (`agent.agent_def` code `QA`, created on the space's first question):
+one `agent.agent_run` with `trigger_ref = question:<id>`, whose `agent_step`
+rows are the analyst steps (understand → query → narrate) and every model call
+(`kind = llm_call`, `output` = model, tokens in and out, latency; never the
+prompt or the answer). `agent_run.tokens` and `cost` are the turn's totals.
+Cost prices tokens by `LLM_PRICES` in `worker-agent-env`, JSON per model or role
+alias, e.g. `{"responder": {"input_per_1k": 0.002, "output_per_1k": 0.006}}`;
+unset, calls cost 0, which is what the on-prem models cost per call.
+
+```sql
+SELECT r.trigger_ref, r.status, r.tokens, r.cost, s.seq, s.kind, s.name, s.duration_ms, s.output
+FROM agent.agent_run r JOIN agent.agent_step s ON s.run_id = r.id
+WHERE r.trigger_ref = 'question:<id>' ORDER BY s.seq;
+```
+
+A trace that cannot be written is logged ("the trace of question … was not
+written") and never fails the answer.
+
 ## 12. Troubleshooting
 
 | Symptom | Cause → fix |

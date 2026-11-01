@@ -50,10 +50,10 @@ def source() -> OutboxTableSource:
 
 def repeat(seed: Seed, asked: Asked, text: str) -> Asked:
     conv = seed.one("SELECT conversation_id FROM qa.question WHERE id = %s", asked.question)
-    seq = seed.one("SELECT coalesce(max(seq), 0) + 1 FROM qa.question WHERE conversation_id = %s", conv)
-    question = seed.row(
-        "qa.question", org_id=asked.org, conversation_id=conv, seq=seq, text=text
+    seq = seed.one(
+        "SELECT coalesce(max(seq), 0) + 1 FROM qa.question WHERE conversation_id = %s", conv
     )
+    question = seed.row("qa.question", org_id=asked.org, conversation_id=conv, seq=seq, text=text)
     outbox = seed.row(
         "qa.outbox",
         org_id=asked.org,
@@ -129,3 +129,48 @@ async def test_questions_of_several_organisations_are_each_answered_in_their_own
             "SELECT org_id FROM qa.answer WHERE question_id = %s", asked.question
         )
         assert str(org_of_answer) == str(asked.org)
+
+
+async def test_a_turn_is_a_run_of_the_data_spaces_ask_agent(seed: Seed) -> None:
+    first = ask(seed)
+    second = repeat(seed, first, "Thuật ngữ khác chưa ánh xạ")
+    await drain()
+    runs = seed.all(
+        "SELECT r.id, r.trigger_kind, r.trigger_ref, r.status, r.stop_reason, r.initiated_by,"
+        " d.code, d.name, d.owner_user_id FROM agent.agent_run r"
+        " JOIN agent.agent_def d ON d.id = r.agent_id WHERE r.org_id = %s ORDER BY r.created_at",
+        first.org,
+    )
+    assert [r[2] for r in runs] == [f"question:{first.question}", f"question:{second.question}"]
+    for _, trigger, _, status, stop, initiated, code, name, owner in runs:
+        assert (trigger, status, stop) == ("manual", "succeeded", "completed")
+        assert (code, name) == ("QA", "Agent Hỏi đáp")
+        assert str(initiated) == str(first.users[0]) and str(owner) == str(first.users[0])
+    # One built-in agent per Data Space, with the version its runs name.
+    assert (
+        seed.one("SELECT count(*) FROM agent.agent_def WHERE data_space_id = %s", first.space) == 1
+    )
+    assert (
+        seed.one(
+            "SELECT count(*) FROM agent.agent_config c JOIN agent.agent_def d ON d.id = c.agent_id"
+            " WHERE d.data_space_id = %s AND c.version = 1",
+            first.space,
+        )
+        == 1
+    )
+    run_id = runs[0][0]
+    steps = seed.all(
+        "SELECT seq, kind, name, status FROM agent.agent_step WHERE run_id = %s ORDER BY seq",
+        run_id,
+    )
+    # Nothing could be placed: the turn stopped at understanding.
+    assert [(kind, name) for _, kind, name, _ in steps][:1] == [("plan", "understand")]
+
+
+async def test_a_redelivered_turn_leaves_no_second_run(seed: Seed) -> None:
+    asked = ask(seed)
+    await drain()
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE qa.outbox SET published_at = NULL WHERE id = %s", (str(asked.outbox),))
+    await drain()
+    assert seed.one("SELECT count(*) FROM agent.agent_run WHERE org_id = %s", asked.org) == 1

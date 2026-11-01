@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import threading
+import uuid
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
@@ -12,6 +13,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from services.worker_agent import turn_trace
 from services.worker_agent.llm import LiteLLMGateway, ModelUnavailable
 
 pytestmark = [pytest.mark.unit]
@@ -99,3 +101,26 @@ async def test_no_usable_answer_is_model_unavailable(server: Server) -> None:
     server.script = [(500, "")] * 3
     with pytest.raises(ModelUnavailable):
         await LiteLLMGateway(server.url, "k").json_chat("planner", "s", "q", Draft)
+
+
+async def test_each_call_lands_on_the_turns_trace_without_its_content(server: Server) -> None:
+    trace = turn_trace.Trace(org_id=uuid.uuid4(), question_id=uuid.uuid4(), user_id=None)
+    token = turn_trace._current.set(trace)
+    try:
+        server.script = [(200, '{"sql": "SELECT 1"}')]
+        await LiteLLMGateway(server.url, "k").json_chat("text_to_sql", "rules", "secret q", Draft)
+        server.script = [(500, "")] * 3
+        with pytest.raises(ModelUnavailable):
+            await LiteLLMGateway(server.url, "k").json_chat("planner", "s", "q", Draft)
+    finally:
+        turn_trace._current.reset(token)
+    answered, failed = trace.steps
+    assert (answered.kind, answered.name, answered.status) == ("llm_call", "text_to_sql", "ok")
+    assert {k: v for k, v in answered.output.items() if k != "latency_ms"} == {
+        "model": "agent-main",
+        "input_tokens": 10,
+        "output_tokens": 5,
+    }
+    assert "secret q" not in json.dumps(answered.output) and answered.summary is None
+    assert (failed.name, failed.status) == ("planner", "error") and failed.summary
+    assert trace.tokens == 15
