@@ -30,11 +30,13 @@ import uuid
 from typing import Any
 
 from sqlalchemy import select, text, update
+from sqlglot import exp
 
 from libs import tabular
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import pipeline as pl
+from libs.sql_guard import dialect_of
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
 
@@ -73,6 +75,38 @@ def chain(steps: list[dict[str, Any]], upto: int, sample: str | None = None) -> 
             code = _PREVIOUS.sub(rf"\1 s{i - 1} AS t", code)
         ctes.append(f"s{i} AS ({code})")
     return "WITH " + ", ".join(ctes) + f" SELECT * FROM s{upto}"
+
+
+_INNER = "da_inner_query"
+
+
+def over(inner: str, dialect: str, *columns: exp.Expression, limit: int | None = None) -> str:
+    """A SELECT over `inner` (the steps' query, in the source's own dialect and kept verbatim),
+    written in `dialect`: quoting, the cast of a total and LIMIT/TOP are the source's. Written as
+    PostgreSQL, `sum("amount")` is the sum of a string literal on MySQL, 0 at every step, and the
+    money totals check matched whatever the steps did (GEN-12)."""
+    statement = exp.select(*(columns or [exp.Star()])).from_(exp.table_(_INNER).as_("q"))
+    if limit is not None:
+        statement = statement.limit(limit)
+    return statement.sql(dialect=dialect).replace(_INNER, f"({inner})", 1)
+
+
+def total(column: str, dialect: str) -> exp.Expression:
+    """SUM(column) as an exact decimal: PostgreSQL's unbounded NUMERIC; elsewhere 38 digits with
+    10 after the point (a bare DECIMAL is DECIMAL(10, 0) on MySQL and would round the total)."""
+    kind = "NUMERIC" if dialect == "postgres" else "DECIMAL(38, 10)"
+    return exp.alias_(
+        exp.cast(exp.Sum(this=exp.column(column, quoted=True)), kind), column, quoted=True
+    )
+
+
+def sample_of(schema: str, table: str, rows: int, dialect: str) -> str:
+    return (
+        exp.select(exp.Star())
+        .from_(exp.table_(table, db=schema, quoted=True))
+        .limit(rows)
+        .sql(dialect=dialect)
+    )
 
 
 def physical_name(name: str, dataset_id: uuid.UUID) -> str:
@@ -154,9 +188,10 @@ async def _query(ctx: dict[str, Any], event: Event, sql: str, limit: int) -> Any
 async def _measure(ctx: dict[str, Any], event: Event, sample: str | None) -> dict[str, Any] | str:
     """Row counts per step, rows dropped, the money totals check; or why it could not run."""
     steps = ctx["steps"]
+    dialect = dialect_of(ctx["source"].kind)
     shapes = []
     for i in range(len(steps)):
-        out = await _query(ctx, event, f"SELECT * FROM ({chain(steps, i, sample)}) q LIMIT 0", 1)
+        out = await _query(ctx, event, over(chain(steps, i, sample), dialect, limit=0), 1)
         if not out.ok:
             return f"step {i + 1}: {out.error or out.status}"
         shapes.append({c["name"]: c["type"] for c in out.columns})
@@ -183,10 +218,8 @@ async def _measure(ctx: dict[str, Any], event: Event, sample: str | None) -> dic
     totals: list[dict[str, decimal.Decimal | None]] = []
     for i in range(len(steps)):
         cols = [m for m in money if shapes[i].get(m) in _NUMERIC]
-        sums = "".join(f', sum("{m}")::numeric AS "{m}"' for m in cols)
-        out = await _query(
-            ctx, event, f"SELECT count(*) AS n{sums} FROM ({chain(steps, i, sample)}) q", 1
-        )
+        counted = [exp.alias_(exp.Count(this=exp.Star()), "n"), *(total(m, dialect) for m in cols)]
+        out = await _query(ctx, event, over(chain(steps, i, sample), dialect, *counted), 1)
         if not out.ok:
             return f"step {i + 1}: {out.error or out.status}"
         names = [c["name"] for c in out.columns]
@@ -290,7 +323,8 @@ async def run_requested(event: Event) -> None:
     if run.mode == "preview" and ctx["datasets"] and run.sample_rows is not None:
         first = ctx["datasets"][0]
         limit = int(run.sample_rows)
-        sample = f'{first.table_name}|SELECT * FROM "{first.schema_name}"."{first.table_name}" LIMIT {limit}'
+        rows = sample_of(first.schema_name, first.table_name, limit, dialect_of(ctx["source"].kind))
+        sample = f"{first.table_name}|{rows}"
     result = await _measure(ctx, event, sample)
     if isinstance(result, str):
         await _fail(event, run.id, result)

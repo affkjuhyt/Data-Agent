@@ -32,7 +32,7 @@ from libs.dataagent_db.models import pipeline as pl
 from libs.sql_guard import SqlRejected, check_read_only, dialect_of, tables_of
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.llm import ModelUnavailable
-from services.worker_agent.pipelines import _PREVIOUS, chain
+from services.worker_agent.pipelines import _PREVIOUS, chain, over, sample_of
 from services.worker_agent.query.executor import run_query
 
 logger = logging.getLogger(__name__)
@@ -190,7 +190,7 @@ async def requested(event: Event) -> None:
                 caller_kind="pipeline",
                 caller_id=pipeline_id,
                 source=source,
-                sql=f'SELECT * FROM "{d.schema_name}"."{d.table_name}" LIMIT 0',
+                sql=sample_of(d.schema_name, d.table_name, 0, dialect),
                 secrets=secrets(),
                 limit=1,
             )
@@ -242,7 +242,7 @@ async def requested(event: Event) -> None:
                 caller_kind="pipeline",
                 caller_id=pipeline_id,
                 source=source,
-                sql=f"SELECT * FROM ({chain(steps, i)}) q LIMIT 0",
+                sql=over(chain(steps, i), dialect, limit=0),
                 secrets=secrets(),
                 limit=1,
             )
