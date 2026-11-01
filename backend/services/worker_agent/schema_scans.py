@@ -35,6 +35,10 @@ from services.worker_agent.understand.value_retrieval import (
 # Shown in the catalog's column profile; the value index takes the whole category.
 TOP_VALUES = 10
 _CLICKHOUSE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# PostgreSQL has no min()/max() of boolean, and no equality at all for xml and json (so no
+# count(DISTINCT) or GROUP BY): such a column failed the whole profile run. It is profiled through
+# its text form; every other type keeps its own order, so a number's min is not a string's.
+_PROFILED_AS_TEXT = frozenset({"boolean", "xml", "json"})
 
 EVENT_TYPE = "scan_run.created"
 ROLE = "svc_catalog"
@@ -459,6 +463,8 @@ async def _profile_source(
             for column in table["columns"]:
                 name = str(column["name"])
                 column_sql = f'"{name.replace(chr(34), chr(34) * 2)}"'
+                if str(column.get("data_type", "")).lower() in _PROFILED_AS_TEXT:
+                    column_sql = f"{column_sql}::text"
                 stats = await conn.fetchrow(
                     f"""
                     SELECT count(*)::bigint AS sample_rows,
