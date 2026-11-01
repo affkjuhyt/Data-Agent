@@ -33,7 +33,7 @@ forbidden_modules =
     services
     libs.database_connector
 
-# V2 (docs/v2/07 ADR-V2-38). libs.indicator is a pure calculation library:
+# V2 (ADR-V2-38). libs.indicator is a pure calculation library:
 # no I/O, no storage client, no ingestion, no service code.
 [importlinter:contract:indicator-is-pure]
 name = libs.indicator (V2 numeric core) must not depend on storage, ingestion or services

@@ -2,8 +2,8 @@
 
 > Thư mục này là định hướng sản phẩm và thiết kế đang có hiệu lực từ 06/10/2026, khi Data Agent không còn
 > là POC dầu/vàng mà là sản phẩm cho doanh nghiệp (quyết định của anh Linh sau khi họp chuyên gia).
-> `docs/v2/` vẫn có hiệu lực cho **Observation Engine** (chuỗi chỉ số, as-of, DQ, HITL số liệu) và là
-> Data Space tham chiếu đầu tiên; mười hai bất biến của `docs/v2/00` giữ nguyên, V3 thêm 13–17.
+> Đây là thiết kế duy nhất: `docs/v2/` đã xoá ngày 01/11/2026 (còn trong lịch sử git). Mười hai bất biến
+> mang từ V2 và 13–17 của V3 nằm ở [00 §5](00-product-strategy.md) và [01](01-agent-core-and-ui.md).
 
 ## Đọc theo thứ tự
 

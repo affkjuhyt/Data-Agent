@@ -379,4 +379,4 @@ not here:
 
 | Component | Why |
 | --- | --- |
-| Central log store | Node log collection needs a `hostPath` agent running as root, a cluster add-on rather than an application workload. The Elasticsearch/Kibana pair was removed after it held 0 indices for 16 days (27/09/2026). Read logs with `kubectl logs`; the target (Loki, after the POC) is in `docs/v2/11-ops.md` §7. |
+| Central log store | Node log collection needs a `hostPath` agent running as root, a cluster add-on rather than an application workload. The Elasticsearch/Kibana pair was removed after it held 0 indices for 16 days (27/09/2026). Read logs with `kubectl logs`; the target is Loki, after the POC. |

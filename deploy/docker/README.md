@@ -58,7 +58,7 @@ images keep their native port.
   the internal topics at the default factor of 3, and consumers then hang on
   `GroupCoordinatorNotAvailableError`.
 - **Kafka's `INTERNAL` listener (`:8352`) is plaintext and its principal is a
-  super-user.** The `kafka-topics` Job uses it (`docs/v2/11-ops.md` §5, K7).
+  super-user.** The `kafka-topics` Job uses it (K7 of the V2 ops plan).
 - **Redis has no password.** Langfuse must not send `AUTH`.
 - **`GATEWAY_KEY` must equal the `aeroflow-jwks` plugin's key** set by
   `kong/kong-setup.sh`.

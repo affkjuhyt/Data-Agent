@@ -1,8 +1,7 @@
 """Row-level security for one V2 table, as the SQL a migration runs (NOP-148).
 
 Why this exists: every V2 table carries `tenant_id` and must be isolated by
-Postgres itself, not by each query remembering its `WHERE` (docs/v2/10
-ADR-V2-28). The v1 migrations each pasted their own `tenant_isolation` policy;
+Postgres itself, not by each query remembering its `WHERE` (ADR-V2-28). The v1 migrations each pasted their own `tenant_isolation` policy;
 V2 has a dozen table stories (NOP-90, 95, 104, 106, 109, 117, 120, 124, 126,
 131, 137…) in different hands, so the policy lives here once and each of them
 calls it in the migration that creates its table:
@@ -26,7 +25,7 @@ What a table gets:
     it got from its schema's default privileges (NOP-147, 5b7d9f1a3c6e); reads
     from another schema are granted per table by the table's own migration.
   * `cross_tenant_roles`: roles that legitimately work across tenants (the
-    outbox relay, docs/v2/14 §9.1; the maintenance role, ADR-V2-33) get their
+    outbox relay; the maintenance role, ADR-V2-33) get their
     own SELECT/UPDATE (and DELETE with `allow_delete`) policy with `USING (true)`
     scoped `TO` that role only. Never INSERT: a cross-tenant role does not create
     tenant rows. Privileges still decide which commands the role may run.

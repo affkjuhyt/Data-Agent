@@ -1,4 +1,4 @@
-"""Unit tests for backend/libs/indicator/threshold.py (NC-T4 in docs/v2/12-numeric-core.md).
+"""Unit tests for backend/libs/indicator/threshold.py (NC-T4 of the V2 numeric core).
 
 The trap under test is NC-R3: a 2025 figure judged against the
 2026-2030 resolution. It is graded above rounding errors in the risk list

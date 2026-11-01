@@ -1,6 +1,6 @@
 """The seed sources parse with the contract (bổ sung 30/09 to NOP-150).
 
-docs/v2/data/sources-oil-gold.yaml was written against SourceConfigV2 and
+tests/fixtures/sources-oil-gold.yaml was written against SourceConfigV2 and
 MappingRules; reading it here, not a copy, makes any drift between the seed and
 the contract a red test instead of a surprise at Bulk Import.
 """
@@ -17,7 +17,7 @@ from libs.contracts.v1 import MappingRules, SourceConfigV2
 
 pytestmark = [pytest.mark.unit, pytest.mark.contract, pytest.mark.req("NOP-150")]
 
-SEED = Path(__file__).resolve().parents[3] / "docs" / "v2" / "data" / "sources-oil-gold.yaml"
+SEED = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "sources-oil-gold.yaml"
 
 # Keys of a seed entry that are not SourceConfigV2: Bulk Import's v1 fields, the
 # meaning (`mapping`, a separate MappingRules), source-level `locale` (only for

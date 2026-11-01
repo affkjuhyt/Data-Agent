@@ -55,7 +55,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             )
 
 
-# ─── Requirement coverage (docs/v2/15-test-strategy.md §7) ─────────────────
+# ─── Requirement coverage (tests/README.md) ────────────────────────────────
 # `@pytest.mark.req("UC07", "NOP-234")` names what a test proves. A typo'd ID
 # would silently drop the test out of the coverage report, so a bad ID fails
 # collection instead. `--req-report-dir DIR` writes one JSON per run (the

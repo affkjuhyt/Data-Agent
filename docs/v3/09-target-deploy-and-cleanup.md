@@ -144,3 +144,38 @@ Thứ tự:
 | `model_service` → TEI/Infinity | Có, ở G5 |
 | MongoDB | Bỏ khi canvas workflow không còn trong V3 |
 | Python | 3.12 cho khối mới (ADR-29); dịch vụ cũ giữ 3.11 tới khi xoá |
+
+## Phụ lục A. Kế hoạch bỏ script
+
+Chuyển từ `docs/v2/11-ops.md` ngày 01/11/2026, khi `docs/v2` bị xoá. Quy tắc ở `CLAUDE.md` mục 5: không
+thêm `.sh` mới để điều phối. Bảng dưới là kế hoạch cho từng script còn lại (15 file `.sh` được theo dõi
+trong repo, số dòng đo 01/11/2026).
+
+| Script | Dòng | Làm gì | Kế hoạch |
+| --- | ---: | --- | --- |
+| `deploy/docker/kong/kong-setup.sh` | 540 | Tạo service, route, consumer, plugin JWT/ACL của Kong qua Admin API; chạy trong Job `setup` | **Thay bằng decK**: xuất cấu hình đang chạy, commit `kong.yaml`, `deck sync` từ Job. Khai báo, diff được, idempotent |
+| `deploy/k8s/create-secrets.sh` | 286 | Từ `secrets.env` tạo Secret theo workload; Ansible gọi | **External Secrets Operator** đọc OpenBao; trước đó là task `kubernetes.core.k8s` của Ansible |
+| `deploy/docker/keycloak/setup-audience-mappers.sh` | 224 | Thêm audience mapper cho client của realm | Gộp vào `realm-export.json` để realm nhập vào đã đúng |
+| `deploy/docker/certs/gen-certs.sh` | 127 | Sinh CA và chứng chỉ mTLS cho dev | Giữ: chỉ dùng ở dev, không phụ thuộc cụm |
+| `deploy/k8s/gen-secrets-env.sh` | 96 | Sinh `secrets.env` cho `dev/up.sh` | Như `create-secrets.sh`: template Ansible, rồi ESO |
+| `deploy/k8s/bootstrap-openbao.sh` | 95 | Init/unseal OpenBao cho `dev/up.sh` | Role `k8s_openbao` của Ansible đã làm việc này khi deploy; giữ làm bootstrap tay, đưa khoá unseal ra khỏi file |
+| `deploy/k8s/switch-gpu-containers-to-host-network.sh` | 82 | Chạy container vLLM/TEI với `--gpus all` | **Manifest**: GPU Operator + Deployment ghim tag. Hôm nay là định nghĩa duy nhất của cách model chạy, nên thay trước |
+| `deploy/k8s/fix-docker-userland-proxy.sh` | 60 | Sửa một lần daemon Docker trên host | Task Ansible + một dòng trong RUNBOOK; xoá khi đã áp dụng ở mọi host |
+| `deploy/k8s/create-configmaps.sh` | 58 | Tạo ConfigMap từ `deploy/docker/**` và file seed `tests/e2e/` | Giữ (Ansible gọi); thành `configMapGenerator` của Kustomize khi có GitOps |
+| `deploy/k8s/build-push-images.sh` | 56 | Build và push image | `deploy.yml` đã build (song song, theo input của từng image); giữ làm đường tay tới khi CI build image |
+| `deploy/k8s/dev/up.sh` | 51 | Dựng dev lần đầu (legacy) | Gộp vào `make deploy`, rồi xoá |
+| `deploy/k8s/ops/disk-alert.sh` | 51 | Cron kiểm `/data`, chỉ ghi syslog | **Xoá** khi có Prometheus + Alertmanager (rule `DiskFillingUp`) |
+| `deploy/k8s/fix-pod-to-host-docker-networking.sh` | 42 | Sửa một lần mạng pod → container Docker trên host | Như các `fix-*` khác: Ansible + RUNBOOK |
+| `deploy/k8s/ops/backup-registry.sh` | 26 | Cron backup registry | Giữ tới khi có Harbor replication |
+| `deploy/k8s/gen-kafka-jaas-secret.sh` | 18 | Tạo Secret JAAS của Kafka bằng tay | `deploy.yml` đã tự tạo Secret này; gộp vào đường secret ở trên |
+
+Đã xoá: `tests/e2e/e2e.sh`, `deploy/docker/kafka/kafka-setup.sh`,
+`deploy/docker/openbao/openbao-approle-setup.sh` (28/09/2026), `tests/loadtest/ingestion_throughput.sh`, và hai script host của
+`sandbox_executor/ops/` (gVisor, iptables) cùng service đó (01/11/2026).
+
+Thứ tự làm:
+
+1. `switch-gpu-containers-to-host-network.sh` → manifest (bỏ runtime cuối cùng chưa được khai báo).
+2. `kong-setup.sh` → decK (script lớn nhất, rủi ro lệch cao nhất).
+3. Bộ ba secret (`create-secrets`, `gen-secrets-env`, `gen-kafka-jaas-secret`) → ESO.
+4. Xoá các `fix-*.sh` và `disk-alert.sh` khi phần thay thế đã chạy.

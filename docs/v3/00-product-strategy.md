@@ -1,7 +1,7 @@
 # 00. Data Agent: định vị, quyết định sản phẩm, kiến trúc đích
 
 > Vai trò viết: BA/PO. Ngày 06/10/2026. Đầu vào: rà mã thực tế ở HEAD `33e963d` (agent core, tầng dữ
-> liệu, frontend), bộ tài liệu [`docs/v2/`](../v2/README.md), và khảo sát thị trường data agent tới
+> liệu, frontend), bộ tài liệu V2 (đã xoá 01/11/2026, còn trong lịch sử git), và khảo sát thị trường data agent tới
 > 10/2026 (nguồn ở mục 11).
 >
 > Tài liệu này là **đầu vào để thiết kế hệ thống**, không phải thiết kế chi tiết. Nó trả lời: sản
@@ -235,6 +235,9 @@ R0 là điều kiện để mọi đo đạc chất lượng sau đó có nghĩa
 câu trả lời sai vì B1.
 
 ## 5. Bất biến: giữ, mở rộng, thêm
+
+Danh sách chính thức của mười lăm bất biến (16–17 ở [01](01-agent-core-and-ui.md)); bản V2 gốc đã xoá
+ngày 01/11/2026.
 
 | V2 | Quyết định cho sản phẩm |
 | --- | --- |

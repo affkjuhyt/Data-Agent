@@ -1,7 +1,7 @@
 """Deterministic evaluation of an indicator's formula. The LLM never does this.
 
 An indicator is a formula over atomic variables, not an aggregate over a
-warehouse column (docs/v2/12-numeric-core.md section 0). This module holds the
+warehouse column (V2 numeric core, section 0). This module holds the
 formula as a typed DAG, checks it BEFORE any data is fetched, and then evaluates
 it with every edge carrying a `Quantity`, so unit and scale errors surface as
 exceptions rather than as plausible numbers.
@@ -12,7 +12,7 @@ never produce a meaningful figure — mismatched units, a stock silently divided
 by a flow, a cycle — is rejected when the indicator version is authored, not
 when a user asks a question.
 
-**The error this module exists to prevent** (NC-R2 in docs/v2/12-numeric-core.md):
+**The error this module exists to prevent** (NC-R2 of the V2 numeric core):
 end-of-period debt divided by a period's GDP is the standard debt-to-GDP ratio
 when the period is a year, and nonsense when it is a quarter — off by a factor
 of about four, in the direction that makes the number look reassuring. Nothing about the arithmetic

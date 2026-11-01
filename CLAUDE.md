@@ -104,7 +104,7 @@ No new `.sh` for orchestration. A new operational step goes, in order of prefere
 4. a small Python CLI under the service that owns it.
 
 Bash stays only for host bootstrap that runs before those tools exist. The per-script
-plan is the appendix "Kế hoạch bỏ script" of [`docs/v2/11-ops.md`](docs/v2/11-ops.md).
+plan is appendix A "Kế hoạch bỏ script" of [`docs/v3/09-target-deploy-and-cleanup.md`](docs/v3/09-target-deploy-and-cleanup.md).
 
 ## 6. Secrets
 
@@ -154,8 +154,7 @@ tests/integration/test_*.py                         e2e tests (make e2e)
 tests/e2e           demo seed data (k8s seed Job), eval and Playwright harnesses
 tests/loadtest      k6
 docs                RUNBOOK, SECURITY, v3/ (product direction, agent core, R0 design,
-                    backlog — start here), v2/ (Observation Engine spec and the oil/gold reference Data
-                    Space; v2/data/ fixtures are read by tests)
+                    backlog — the only design; start here)
 ```
 
 ## 8. Definition of done
@@ -167,7 +166,7 @@ docs                RUNBOOK, SECURITY, v3/ (product direction, agent core, R0 de
 - Docs updated in the same commit when behaviour, commands or layout change.
 - Deleted code is deleted, not commented out.
 
-## 9. Product work (Data Agent V3) and the V2 Observation Engine
+## 9. Product work (Data Agent V3)
 
 Since 06/10/2026 Data Agent is an enterprise product, not a POC. Any product, agent-core or
 frontend work starts at `docs/v3/README.md`: `docs/v3/00-product-strategy.md` is the source of truth
@@ -176,11 +175,11 @@ for scope and architecture, `docs/v3/01-agent-core-and-ui.md` for the agent core
 backlog with the `TT` column (`todo` → `doing` → `done <commit>`), updated in the same commit that
 finishes an item. Pick the first `todo` whose dependencies are `done`.
 
-The twelve invariants of `docs/v2/00-architecture-v2.md` (immutable raw, structured data never
-goes through chunk/embedding, LLM proposes and deterministic checks plus a human decide,
-point-in-time by `available_at`, OCC instead of last-write-wins, …) still hold, plus V3's 13–17
-(permissions checked before generation, a trust label on every answer, query in place by default,
-an output contract before execution, a statically validated plan DAG). `docs/v2/` remains the spec of
-the Observation Engine (indicator series, as-of, DQ, HITL on numbers) and of the oil/gold reference
-Data Space; its `05` IDs stay valid for that work. Do not take product direction from `docs/v2/`
-where it conflicts with `docs/v3/`.
+The invariants are listed in `docs/v3/00-product-strategy.md` §5: the twelve carried over from V2
+(immutable raw, structured data never goes through chunk/embedding, LLM proposes and deterministic
+checks plus a human decide, point-in-time by `available_at`, OCC instead of last-write-wins, …) and
+V3's 13–17 (permissions checked before generation, a trust label on every answer, query in place by
+default, an output contract before execution, a statically validated plan DAG). `docs/v3/` is the
+only design: the V2 documents (`docs/v2/`) were removed on 01/11/2026 and are in git history only.
+A V2 ID still written in code (`ADR-V2-…`, `NC-…`, a `05` step) names a decision of that history,
+not a document to read.

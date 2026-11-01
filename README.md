@@ -6,9 +6,7 @@ sources) into certified metrics, evidence-backed answers and automated monitorin
 carries a trust label and opens to the SQL or document it came from.
 
 Product direction, agent-core design, the R0 code fixes and the backlog start at
-[`docs/v3/README.md`](./docs/v3/README.md). The Observation Engine (indicator series, as-of, data
-quality, human review of numbers) and the oil/gold reference Data Space are specified in
-[`docs/v2/README.md`](./docs/v2/README.md). Working rules for humans and agents: [`CLAUDE.md`](./CLAUDE.md).
+[`docs/v3/README.md`](./docs/v3/README.md), the only design. Working rules for humans and agents: [`CLAUDE.md`](./CLAUDE.md).
 
 ## Repository Layout
 

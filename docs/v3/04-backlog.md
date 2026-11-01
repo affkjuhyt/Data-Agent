@@ -1,7 +1,7 @@
 # 04. Backlog V3: R0 và R1
 
 > Ngày 06/10/2026. Cột **TT** là nơi ghi tiến độ: `todo` → `doing` → `done <commit>`; cắt ghi `cut`. Ai làm
-> xong một ID thì sửa cột này trong cùng commit (cùng quy ước với `docs/v2/05`). Cỡ: S < 1 tuần-người,
+> xong một ID thì sửa cột này trong cùng commit (cùng quy ước với bản kế hoạch V2 cũ). Cỡ: S < 1 tuần-người,
 > M 1–3, L > 3. Thiết kế kỹ thuật của R0 ở [03](03-r0-technical-design.md); R1 trở đi tham chiếu
 > [00](00-product-strategy.md), [01](01-agent-core-and-ui.md), [02](02-market-solution.md).
 >
@@ -44,8 +44,8 @@ R0-6 → R0-5 → R0-3 → R0-4 → R0-2 → R0-12.
 
 ## 2. R1 Hỏi đúng trên kho + ngữ cảnh
 
-Gộp W1–W3 của bản v1.0 và phần V2 đang làm (ingest, release, DQ, review, effective; `docs/v2/05` giữ ID
-của chúng, không đánh lại). Chỉ liệt kê việc **mới** so với V2.
+Gộp W1–W3 của bản v1.0 và phần V2 đang làm (ingest, release, DQ, review, effective; ID của V2 giữ
+nguyên trong mã, không đánh lại). Chỉ liệt kê việc **mới** so với V2.
 
 | ID | Việc | Phụ thuộc | Vai | Cỡ | Xong khi | TT |
 | --- | --- | --- | --- | --- | --- | --- |

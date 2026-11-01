@@ -1,4 +1,4 @@
-"""Unit tests for backend/libs/indicator/quantity.py (NC-T1 in docs/v2/12-numeric-core.md).
+"""Unit tests for backend/libs/indicator/quantity.py (NC-T1 of the V2 numeric core).
 
 The module exists to make four mistakes impossible rather than merely
 discouraged, so the tests are organised around those four: float creeping in,

@@ -58,8 +58,8 @@ On top of the level, a test may carry kinds — `contract`, `security`, `resilie
 `performance`, `ai_eval` — and `@pytest.mark.req("NOP-148", "UC07")`, the requirements
 it proves. A malformed req ID fails collection. `--req-report-dir DIR` writes one JSON
 per run and `python3 tests/req_coverage.py DIR/*.json` merges them into coverage per
-requirement. Which issue needs which level, and the V2 rules behind the tags:
-[docs/v2/15-test-strategy.md](../docs/v2/15-test-strategy.md).
+requirement. Which acceptance criterion a test proves is declared the same way
+(`pytest.mark.req("AC-…")`, [docs/v3/checklist/README.md](../docs/v3/checklist/README.md)).
 
 ## Running
 

@@ -1,4 +1,4 @@
-"""Unit tests for backend/libs/indicator/formula.py (NC-T3 in docs/v2/12-numeric-core.md).
+"""Unit tests for backend/libs/indicator/formula.py (NC-T3 of the V2 numeric core).
 
 Two things carry the weight here. The first is that compiling happens without
 data, so an unusable formula is rejected when it is authored. The second is the

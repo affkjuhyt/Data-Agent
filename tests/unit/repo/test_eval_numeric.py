@@ -1,5 +1,5 @@
 """Unit tests for libs/indicator/numeric.py and the grounding scorer's use of it
-(NC-E2 in docs/v2/12-numeric-core.md).
+(NC-E2 of the V2 numeric core).
 
 The defect being pinned: the scorer compared figures as digit strings with
 separators deleted, so "128,4" and "1284" were one token. These tests assert

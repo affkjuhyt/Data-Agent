@@ -5,7 +5,7 @@ Physical reading only — which file, sheet, selector and locale. What a column
 change goes through review while a reading change is caught as drift by the
 profile fingerprint (14 section 6.1).
 
-Every source in docs/v2/data/sources-oil-gold.yaml parses with these models
+Every source in tests/fixtures/sources-oil-gold.yaml parses with these models
 (tests/unit/contracts/test_seed.py).
 """
 

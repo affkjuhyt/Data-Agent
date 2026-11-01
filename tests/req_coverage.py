@@ -3,10 +3,10 @@
 Merges the per-suite JSON that `pytest --req-report-dir DIR` writes (tests/conftest.py)
 and vitest's JSON reporter output (`vitest run --reporter=json --outputFile=…`, requirement
 IDs in square brackets in the test name, e.g. `[NOP-248][contract] shows 409`) into one
-table per requirement ID. Rules and the ID format: docs/v2/15-test-strategy.md §7.
+table per requirement ID. Rules and the ID format: tests/README.md.
 
     python tests/req_coverage.py reports/req/*.json
-    python tests/req_coverage.py reports/req/*.json --expect docs/v2/data/test-traceability.csv --milestone C1
+    python tests/req_coverage.py reports/req/*.json --expect <traceability.csv> --milestone C1
 
 `--expect FILE` lists every expected requirement that is failing, has no passing test, or
 lacks a passing test at one of the levels/kinds it needs, and exits 1 when there is one, so a milestone gate can fail on an
@@ -61,7 +61,7 @@ def load(paths: list[Path]) -> list[dict]:
 
 
 _TAGS = {"unit", "integration", "e2e"} | _KINDS
-# Rows that are judged by people, not by a test (docs/v2/15-test-strategy.md §3).
+# Rows that are judged by people, not by a test.
 _UNTESTED_LAYERS = {"Feature", "PM"}
 
 
