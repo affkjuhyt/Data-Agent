@@ -155,10 +155,8 @@ With `seed_demo: true` (the dev inventory's setting) the `db-init` Job loads:
 | Source | What |
 | --- | --- |
 | `deploy/docker/sql/v3-demo-seed.sql` | V3 demo organisation directory: `helios-engineer`, `DS-DEMO` membership and Data Engineer capabilities |
-| `deploy/docker/sql/v3-credit-demo.sql` | `DS-TD` "Tín dụng": a synthetic loan book (`workspace.credit_loan_snapshot`, 2 400 loans × 6 month-ends) with its certified semantic layer (Dư nợ, Nợ xấu, Tỷ lệ nợ xấu), the NPL threshold watch (> 3%, early from 2%) and the "Phân rã biến động" skill. Rebuilt on every apply |
 | `deploy/docker/sql/v3-pilot-seed.sql` | `DS-BH` "Bán hàng": sales lines, order headers, receivables, month-end stock and three policy documents. The book contains the five pilot traps (join fan-out, unweighted margin, summed stock, an expired promotion, two editions of September). The 20 metrics of `deploy/docker/semantic/ds-bh.yaml`, certified, and 34 verified queries (R1-08). Rebuilt on every apply; db-init reruns when any file of `deploy/docker/sql/` changes |
 | `deploy/docker/sql/v3-agent-seed.sql` | `DS-BH`: four agents (biên gộp, công nợ, tồn kho, điều phối), their runs, a rolling deployment, one skill waiting for review and one suggestion. Re-applied, the runs move back into the last day so the operations screen stays populated |
-| `deploy/docker/sql/v3-banking-demo.sql` | `DS-DEMO`: binds the uploaded CFPB complaints table to a certified `COMPLAINT_COUNT` metric and banking dimensions (`product`, `issue`, `state`, `submitted_via`, `date_received`). It is skipped until the upload has been materialized, then re-applied idempotently |
 | `k8s_openbao` role | OpenBao secret `secret/tenants/<tenant>/demo-postgres`, the demo PostgreSQL source's login |
 
 Everything is idempotent. Knowledge-base **documents** are not seeded; upload them through the UI.
@@ -167,7 +165,7 @@ Check it:
 
 ```bash
 kubectl -n dataagent-database exec postgres-0 -- psql -U admin -d dataagent \
-  -Atc "select 'credit_loan_snapshot', count(*) from workspace.credit_loan_snapshot"
+  -Atc "select 'pilot_sales_line', count(*) from workspace.pilot_sales_line"
 ```
 
 **Reseed** without a full pipeline run (after `create-configmaps.sh` if a seed file changed):

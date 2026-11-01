@@ -37,9 +37,9 @@ industry pack is locked (UC-07-01 2a) and left as it is.
 
 Run where the api runs (it reads DATAAGENT_DB_URL__SVC_CONTEXT):
 
-    python -m services.api.modules.context.semantic_yaml export --org <org id> --space DS-TD
+    python -m services.api.modules.context.semantic_yaml export --org <org id> --space <code>
     python -m services.api.modules.context.semantic_yaml import model.yaml --org <org id> \
-        --space DS-TD --as steward [--dry-run]
+        --space <code> --as steward [--dry-run]
 
 (`make semantic-export` / `make semantic-import` run it in the api pod.)
 """
