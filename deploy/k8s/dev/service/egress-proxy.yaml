@@ -75,6 +75,11 @@ spec:
         app.kubernetes.io/part-of: dataagent
     spec:
       enableServiceLinks: false
+      # Squid started as root drops to its proxy user (uid 13) and then cannot write the root-owned
+      # /dev/stderr its cache_log goes to; started as that user, it never switches.
+      securityContext:
+        runAsUser: 13
+        runAsGroup: 13
       containers:
       - name: egress-proxy
         image: docker.io/ubuntu/squid:6.6-24.04_beta
