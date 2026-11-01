@@ -62,11 +62,10 @@ rm -f kong-client.csr kong-client.ext ca.srl
 echo "  → Kong client:   kong-client.crt / kong-client.key (clientAuth EKU)"
 
 # ── workflow_runtime client cert ──────────────────────────────────────
-# Second client identity under the same CA. workflow_runtime calls kb-backend
-# directly (kb_search -> /api/pipeline/light-rag/retrieve), not through Kong,
-# so it needs its own cert rather than sharing Kong's: distinct subjects mean
-# an upstream can tell the two callers apart, and either can be revoked
-# without disturbing the other.
+# Second client identity under the same CA. workflow_runtime calls upstreams
+# directly, not through Kong, so it needs its own cert rather than sharing
+# Kong's: distinct subjects mean an upstream can tell the two callers apart,
+# and either can be revoked without disturbing the other.
 cat > workflow_runtime-client.ext <<'EOF'
 basicConstraints = CA:FALSE
 keyUsage = digitalSignature

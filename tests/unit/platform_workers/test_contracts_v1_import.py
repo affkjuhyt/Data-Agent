@@ -1,6 +1,6 @@
 """Contract v1 imports in the platform_workers image without importing another service (NOP-150).
 
-The contract test suite itself runs in the kb-backend image; this proves the
+The contract test suite itself runs in the api image; this proves the
 same package loads here, with this image's pydantic, and that loading it pulls
 in no service module.
 """

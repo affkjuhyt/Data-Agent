@@ -487,6 +487,31 @@
       changed_when: "'deleted' in eval_nightly_delete.stdout"
       when: apply_services | bool
 
+    # The legacy knowledge base and web-crawler (KB-08): their manifests are gone, and an apply
+    # never deletes what it no longer names, so a cluster that ran them keeps their objects (k8s-local
+    # still had their six Secrets). The two PVCs are the promote workers' caches, nothing original.
+    - name: Remove the retired knowledge base and web-crawler
+      ansible.builtin.command: >-
+        {{ kubectl }} -n {{ ns_service }} delete
+        deployment/kb-backend deployment/kb-conflict-resolution deployment/kb-promote-gold
+        deployment/kb-promote-silver deployment/kb-structured-data
+        deployment/platform-workers-web-crawler
+        horizontalpodautoscaler/kb-backend service/kb-backend
+        serviceaccount/kb-backend serviceaccount/kb-conflict-resolution
+        serviceaccount/kb-promote-gold serviceaccount/kb-promote-silver
+        serviceaccount/kb-structured-data serviceaccount/platform-workers-web-crawler
+        configmap/kb-backend-env configmap/kb-conflict-resolution-env configmap/kb-promote-gold-env
+        configmap/kb-promote-silver-env configmap/kb-structured-data-env
+        configmap/platform-workers-web-crawler-env
+        secret/kb-backend-secrets secret/kb-conflict-resolution-secrets
+        secret/kb-promote-gold-secrets secret/kb-promote-silver-secrets
+        secret/kb-structured-data-secrets secret/platform-workers-web-crawler-secrets
+        persistentvolumeclaim/kb-promote-silver-cache persistentvolumeclaim/kb-structured-data-cache
+        --ignore-not-found=true
+      register: kb_delete
+      changed_when: "'deleted' in kb_delete.stdout"
+      when: apply_services | bool
+
     - name: Remove the retired legacy seed Job
       ansible.builtin.command: >-
         {{ kubectl }} -n {{ ns_service }} delete

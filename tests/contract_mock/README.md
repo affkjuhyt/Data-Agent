@@ -8,7 +8,7 @@ permissions, no storage.
 ## Run it
 
 ```bash
-make mock-api                          # kb-backend image, http://localhost:8090
+make mock-api                          # api image, http://localhost:8090
 python -m tests.contract_mock          # Python 3.11+ with PYTHONPATH=backend:. (repo root)
 python -m tests.contract_mock --port 9000
 ```
