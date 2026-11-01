@@ -23,7 +23,7 @@ import logging
 import uuid
 from typing import Any
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from libs import clock
 from libs.dataagent_db import scoped_session
@@ -154,6 +154,24 @@ async def synonym_created(event: Event) -> None:
     )
 
 
+async def _relationship_title(session: Any, row: context.Relationship) -> str:
+    """The tables and columns a relationship joins, as the reviewer reads them in Cần bạn: a scan
+    proposes tens at once (45 on AdventureWorksDW), and one title for all of them left nobody able
+    to tell the one to accept from the one to reject."""
+    names = dict(
+        (
+            await session.execute(
+                select(catalog.Dataset.id, catalog.Dataset.table_name).where(
+                    catalog.Dataset.id.in_([row.from_dataset_id, row.to_dataset_id])
+                )
+            )
+        ).all()
+    )
+    left = f"{names.get(row.from_dataset_id, '?')}({', '.join(row.from_columns)})"
+    right = f"{names.get(row.to_dataset_id, '?')}({', '.join(row.to_columns)})"
+    return f"Quan hệ {left} → {right}"
+
+
 async def relationship_created(event: Event) -> None:
     rel_id = uuid.UUID(str(event.aggregate_id))
     async with scoped_session(ROLE, event.org_id) as session:
@@ -175,6 +193,7 @@ async def relationship_created(event: Event) -> None:
             "to_columns": list(row.to_columns),
             "cardinality": row.cardinality,
         }
+        title = await _relationship_title(session, row)
     if actor is None:
         return
     run, impact = await evaluate_overlay(
@@ -190,7 +209,7 @@ async def relationship_created(event: Event) -> None:
         space_id=space_id,
         kind="relationship",
         target_ref=rel_id,
-        title="Quan hệ giữa hai bảng",
+        title=title,
         diff={**diff, "impact": impact},
         proposed_by=actor,
         eval_run_id=run,
