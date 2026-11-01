@@ -32,6 +32,7 @@ FILES = {
     ),
     "tests/integration/worker_agent/test_pilot.py": 'SEED = "v3-pilot-seed.sql"\n',
     "tests/integration/worker_agent/test_runs.py": "from services.worker_agent import runs\n",
+    "tests/integration/worker_agent/test_follow.py": "from .test_sql import Script\n",
     "tests/integration/api/test_qa_answers.py": "async def test_x(): ...\n",
     "tests/integration/api/test_qa_query.py": "async def test_y(): ...\n",
     "tests/integration/api/test_agent.py": "async def test_z(): ...\n",
@@ -45,9 +46,11 @@ def related(paths: list[str], suite: object) -> tuple[list[str], bool]:
 def test_a_changed_module_runs_the_tests_that_import_it() -> None:
     picked, whole = related(["backend/services/worker_agent/sqlgen/verified.py"], WORKER)
     assert picked == ["tests/integration/worker_agent/test_verified.py"] and not whole
+    # And, transitively, the tests that borrow from those (test_follow uses test_sql).
     picked, _ = related(["backend/services/worker_agent/questions.py"], WORKER)
     assert picked == [
         "tests/integration/worker_agent/test_answers.py",
+        "tests/integration/worker_agent/test_follow.py",
         "tests/integration/worker_agent/test_sql.py",
     ]
 
@@ -69,6 +72,7 @@ def test_a_changed_test_runs_with_the_tests_that_borrow_from_it() -> None:
     picked, _ = related(["tests/integration/worker_agent/test_answers.py"], WORKER)
     assert picked == [
         "tests/integration/worker_agent/test_answers.py",
+        "tests/integration/worker_agent/test_follow.py",
         "tests/integration/worker_agent/test_sql.py",
     ]
 

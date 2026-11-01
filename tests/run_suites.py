@@ -192,14 +192,7 @@ def related_tests(paths: list[str], suite: Suite, files: dict[str, str]) -> tupl
     for path in paths:
         if path.startswith(root):
             if Path(path).name.startswith("test_") and path in mine:
-                stem = Path(path).stem
-                # It, and the test files that borrow its fixtures or helpers.
                 picked.add(path)
-                picked |= {
-                    p
-                    for p, t in mine.items()
-                    if re.search(rf"from \.{stem} import|from \. import[^\n]*\b{stem}\b", t)
-                }
             elif path.endswith(".py"):
                 whole = True  # a conftest or a helper every test may lean on
             continue
@@ -221,6 +214,21 @@ def related_tests(paths: list[str], suite: Suite, files: dict[str, str]) -> tupl
         # `changed` picks for it run whole, and a test naming the file (a seed it reads) runs.
         whole = whole or bool(suites_for_paths([path], [suite]))
         picked |= {p for p, t in mine.items() if Path(path).name in t}
+    # And the test files that borrow a picked one's fixtures or helpers (`from .test_x import`),
+    # transitively: they run the code it drives (test_answers.drain runs the QA handler).
+    while True:
+        borrowing = {
+            p
+            for p, t in mine.items()
+            if p not in picked
+            and any(
+                re.search(rf"from \.{Path(q).stem} import|from \. import[^\n]*\b{Path(q).stem}\b", t)
+                for q in picked
+            )
+        }
+        if not borrowing:
+            break
+        picked |= borrowing
     return sorted(picked), whole
 
 
