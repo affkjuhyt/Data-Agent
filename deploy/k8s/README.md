@@ -323,6 +323,7 @@ band. Nothing in `deploy/k8s/` may use it.
 | keycloak | service | 8080 | **8110** | `KC_HTTP_PORT` |
 | keycloak (health) | service | 9000 | **8111** | `KC_HTTP_MANAGEMENT_PORT` |
 | openbao | database | 8200 | **8120** | `config.hcl` listener |
+| egress-proxy | service | 3128 | **8130** | `http_port` in its `squid.conf` ConfigMap |
 | auth-api | service | 8200 | **8200** | manifest `command` (unchanged) |
 | model-service | service | 8001 | **8230** | manifest `command` |
 | workflow-runtime | service | 8001 | **8240** | manifest `command` |

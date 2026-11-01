@@ -288,6 +288,49 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: allow-egress-proxy
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: egress-proxy
+  policyTypes:
+  - Ingress
+  - Egress
+  # Only the crawler sends through it (09 §4.4); no other pod of the namespace goes out at all.
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: crawler
+    ports:
+    - protocol: TCP
+      port: 8130
+  # The one pod allowed to the internet, on 80 and 443, never to an internal range: Squid refuses
+  # those destinations itself, and this holds if its config is ever wrong.
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 100.64.0.0/10
+        - 127.0.0.0/8
+        - 169.254.0.0/16
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-temporal
   namespace: dataagent-service
   labels:

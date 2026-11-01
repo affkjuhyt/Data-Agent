@@ -27,10 +27,10 @@ data:
   CRAWLER_MAX_PAGES_PER_RUN: "200"
   # Intermediate CAs some sources leave out of their chain (hnx.vn); empty until one is needed.
   CRAWLER_EXTRA_CA_FILE: ""
-  # 09 §4.4: the crawler goes out only through the egress proxy. The proxy is not deployed yet;
-  # until it is, a run fails with a connection error rather than reaching the internet directly.
-  # Given to the HTTP client itself, not as HTTPS_PROXY/NO_PROXY: no crawl request bypasses it.
-  CRAWLER_EGRESS_PROXY: http://egress-proxy.dataagent-service.svc.cluster.local:3128
+  # 09 §4.4: the crawler goes out only through the egress proxy (service/egress-proxy.yaml), and
+  # its NetworkPolicy gives it no other way to the internet. Given to the HTTP client itself, not
+  # as HTTPS_PROXY/NO_PROXY: no crawl request bypasses it.
+  CRAWLER_EGRESS_PROXY: http://egress-proxy.dataagent-service.svc.cluster.local:8130
 ---
 apiVersion: apps/v1
 kind: Deployment

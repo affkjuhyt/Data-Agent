@@ -392,14 +392,16 @@ The run stops at `in_review`; publishing is a person's action. Its event is `acq
 - **Scope.** One request per second per domain whatever the sources ask, robots.txt honoured,
   redirects followed only inside the declared domains, nothing posted. One replica: the pace is held
   in the process.
-- **Egress.** Dev goes out directly. Production sets `CRAWLER_EGRESS_PROXY` to
-  `egress-proxy.dataagent-service:3128` (handed to the HTTP client, so `NO_PROXY` cannot exempt a
-  crawl request), which is not deployed yet: until it is, every production run fails with a
-  connection error. The crawler refuses internal names (`localhost`, `.svc`, `.cluster.local`,
-  `.internal`, `.local`) and any host resolving to a private, loopback, link-local or reserved
-  address, on the first request and every redirect; the api refuses such domains on the source.
-  Without a proxy the connection is pinned to the checked address (no DNS rebinding); through the
-  proxy it is the proxy that resolves, so it must refuse private ranges itself.
+- **Egress.** Every crawl request goes through `egress-proxy:8130` (Squid,
+  `deploy/k8s/*/service/egress-proxy.yaml`; handed to the HTTP client, so `NO_PROXY` cannot exempt a
+  crawl request), on dev as in production. The proxy resolves each destination and refuses an
+  internal address, allows ports 80 and 443 only, caches nothing and logs every request to stdout:
+  `kubectl -n dataagent-service logs deploy/egress-proxy` (`TCP_TUNNEL/200` went out, `TCP_DENIED/403`
+  was refused). In production it is the only pod with a NetworkPolicy to the internet. The crawler
+  also refuses internal names (`localhost`, `.svc`, `.cluster.local`, `.internal`, `.local`) and any
+  host resolving to a private, loopback, link-local or reserved address, on the first request and
+  every redirect; the api refuses such domains on the source. Run without a proxy
+  (`CRAWLER_EGRESS_PROXY` empty), the connection is pinned to the checked address instead.
 - **API keys.** A source with `auth_mode = api_key` names a key under
   `tenants/<org>/crawl-sources/` of the `secret` mount (the api refuses any other path); the value is
   in field `api_key`. The crawler's own AppRole (`dataagent-crawler-policy`) reads only those paths.

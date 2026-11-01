@@ -1009,6 +1009,8 @@ class TestImageReferencesAreIntact:
         "docker.io/temporalio/server:1.32.1",
         "docker.io/temporalio/admin-tools:1.32.1",
         "docker.io/temporalio/ui:2.56.0",
+        # The crawler's egress proxy (09 §4.4).
+        "docker.io/ubuntu/squid:6.6-24.04_beta",
     }
 
     @staticmethod

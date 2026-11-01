@@ -27,9 +27,9 @@ data:
   CRAWLER_MAX_PAGES_PER_RUN: "200"
   # Intermediate CAs some sources leave out of their chain (hnx.vn); empty until one is needed.
   CRAWLER_EXTRA_CA_FILE: ""
-  # No egress proxy on the dev cluster: its NetworkPolicy lets every pod out. The crawler still
-  # refuses internal names and private addresses itself.
-  CRAWLER_EGRESS_PROXY: ""
+  # Through the egress proxy as in production (service/egress-proxy.yaml), so the path a production
+  # crawl takes is the one dev runs, though dev's NetworkPolicy would let the crawler out directly.
+  CRAWLER_EGRESS_PROXY: http://egress-proxy.dataagent-service.svc.cluster.local:8130
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -130,6 +130,7 @@ service_workloads:
   - worker-ingest
   - worker-document
   - crawler
+  - egress-proxy
   - temporal
   - temporal-ui
   - litellm
