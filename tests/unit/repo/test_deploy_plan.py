@@ -367,6 +367,12 @@ class TestJobsToRerun:
     def test_a_new_revision_reruns_migrate_and_then_the_grants(self):
         assert _rerun(["backend/alembic/versions/0042_x.py"]) == ["migrate", "db-init"]
 
+    def test_any_seed_db_init_applies_reruns_it(self):
+        # db-init applies every file of deploy/docker/sql/ (the db-init-sql ConfigMap).
+        assert _rerun(["deploy/docker/sql/v3-pilot-seed.sql"]) == ["db-init"]
+        assert _rerun(["deploy/docker/sql/grant-roles.sql"]) == ["db-init"]
+        assert _rerun(["deploy/docker/semantic/ds-bh.yaml"]) == []
+
     def test_a_job_manifest_reruns_only_that_job(self):
         assert _rerun(["deploy/k8s/dev/job/kafka-topics.yaml"]) == ["kafka-topics"]
         assert _rerun(["deploy/k8s/production/job/kafka-topics.yaml"]) == []

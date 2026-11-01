@@ -167,7 +167,7 @@ job_inputs:
   # grant-roles.sql grants on ALL TABLES, so tables a migration adds need it again. Every
   # file of deploy/docker/sql/ is applied by db-init (the db-init-sql ConfigMap): a seed
   # edited there (the pilot's verified queries) reaches the cluster only if it reruns.
-  db-init: [deploy/docker/sql/, "job:migrate"]
+  db-init: [deploy/docker/sql, "job:migrate"]
   minio-init: []
   kafka-topics: []
   # Its manifest pins the admin-tools version; the schema is upgraded when that moves.
