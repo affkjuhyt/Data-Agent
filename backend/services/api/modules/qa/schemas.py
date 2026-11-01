@@ -162,6 +162,7 @@ class AnswerView(_Row):
     data_product_id: uuid.UUID | None
     product_scope: str
     created_at: datetime.datetime
+    blocks: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class MetricVersionRef(BaseModel):

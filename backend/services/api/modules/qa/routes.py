@@ -39,6 +39,7 @@ from services.api.kernel.sse import Event, event_stream
 from services.api.kernel.sse import last_event_id as get_last_event_id
 from services.api.modules.eval.public import eval_set_accepts_items
 from services.api.modules.qa import progress, scope
+from services.api.modules.qa.answer_blocks import blocks_of
 from services.api.modules.qa.export_storage import export_links
 from services.api.modules.qa.questions import insert_question
 from services.api.modules.qa.schemas import (
@@ -234,6 +235,29 @@ async def get_question(
     async with transaction(ROLE, principal) as session:
         question = await _question(session, question_id, principal, data_space)
         return await _question_view(session, question)
+
+
+@router.post(
+    "/v1/questions/{id}:cancel",
+    status_code=202,
+    response_model=JobAccepted,
+    **endpoint("POST", "/v1/questions/{id}:cancel", operation_id="cancelQuestion"),
+)
+async def cancel_question(
+    question_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    response: Response,
+) -> JobAccepted:
+    """Request cooperative cancellation without mutating the question from the API process."""
+    async with transaction(ROLE, principal) as session:
+        question = await _question(session, question_id, principal, data_space)
+        if question.status in QUESTION_DONE:
+            raise Problem(409, "invalid_state", "The question has already finished.")
+    if not await progress.request_cancel(str(question_id)):
+        raise Problem(503, "service_unavailable", "Question cancellation is temporarily unavailable.")
+    response.headers["Location"] = f"/v1/questions/{question_id}"
+    return JobAccepted(id=question_id, status="cancellation_requested", poll_after_ms=250)
 
 
 def _stream_events(view: QuestionView, answer_kind: str | None) -> list[Event]:
@@ -535,7 +559,9 @@ async def get_answer(
 ) -> AnswerView:
     async with transaction(ROLE, principal) as session:
         answer = await _answer(session, answer_id, principal, data_space)
-    return AnswerView.model_validate(answer)
+    view = AnswerView.model_validate(answer)
+    view.blocks = blocks_of(answer)
+    return view
 
 
 def _figure_key(figure: dict[str, Any]) -> str | None:

@@ -14,8 +14,9 @@ never holds a lock on the question:
    from them (answer/narrate.py), the trust label, and, when the metric is in an active data
    product, the freshness gate and a receipt sealed in the same transaction (ADR-43, BR-175..178).
 
-Only single-metric questions take this path; planning several steps with a model and
-comparisons are R1 S5. A question that names no metric is tried in exploratory SQL, then looked up
+The semantic path now records an analyst DAG: understand intent, resolve scope, query, validate,
+select a visualization and narrate. The legacy execution step remains during the transition so
+existing verified-query and evaluation consumers keep working. A question that names no metric is tried in exploratory SQL, then looked up
 in the Data Space's documents (UC-05-04, documents/), then answered generally when neither source
 can support it. The general answer has no figures or citations and is labeled insufficient evidence.
 The handler is idempotent: a question past `received` is left alone.
@@ -44,6 +45,7 @@ from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
+from services.worker_agent.analyst_plan import build_analysis_plan
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.comparison import (
     PERIOD_CODE,
@@ -63,7 +65,7 @@ from services.worker_agent.documents.retrieve import retrieve
 from services.worker_agent.documents.search import SearchServices, services_from_env
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.llm import Gateway, gateway_from_env
-from services.worker_agent.progress import publish
+from services.worker_agent.progress import is_cancel_requested, publish
 from services.worker_agent.providers.registry import ProviderRegistry
 from services.worker_agent.query.executor import record_period_snapshot, run_query
 from services.worker_agent.query.scope import (
@@ -229,6 +231,8 @@ class Prepared:
     filed_rows: list[dict[str, Any]] | None = None
     # The analysis the answer shows (semantic/analysis.py): share_of_total or running_total.
     analysis: str | None = None
+    # A requested cut was unavailable; the answer is still useful as an aggregate.
+    best_effort_note: str | None = None
 
 
 def _plan_ir(
@@ -301,6 +305,22 @@ def _plan_ir(
                     " so với tháng trước",
                 }
             )
+    analyst_plan = None
+    if compiled is not None and u.metric is not None:
+        analyst_plan = build_analysis_plan(
+            goal="Phân tích dữ liệu và trả lời câu hỏi",
+            metric_version_id=str(compiled.metric_version_id),
+            metric_name=u.metric.name,
+            group_by=list(u.group_by),
+            filters=u.filters,
+            period=(u.period.start, u.period.end) if u.period else None,
+            top_n=u.top_n,
+            top_desc=u.top_desc,
+            compare_to=compare_to,
+            grain=grain,
+            analysis=analysis_args,
+            explain_by=explain_by,
+        )
     return {
         "version": 2,
         "goal": "answer",
@@ -312,6 +332,7 @@ def _plan_ir(
         "budget": {"max_steps": 15, "max_tokens": 0, "max_duration": 120},
         "phase": 1,
         "max_phases": 1,
+        "analyst_plan": analyst_plan,
     }
 
 
@@ -559,6 +580,33 @@ def _dimension_name(layer: SpaceLayer, code: str | None) -> str | None:
     return dim.name if dim else None
 
 
+def _auto_select_single_metric(u: Understanding) -> bool:
+    """Use the only ranked metric candidate instead of creating a needless clarification turn."""
+    if u.decision != "clarify" or u.unplaced_cut is not None or len(u.options) != 1:
+        return False
+    u.metric = u.options[0]
+    u.options = []
+    u.decision = "proceed"
+    return True
+
+
+def _unsupported_cut_codes(u: Understanding, layer: SpaceLayer) -> set[str]:
+    assert u.metric is not None
+    allowed_ids = layer.versions[u.metric.metric_id].allowed_dimension_ids
+    return {
+        code
+        for code in [*u.group_by, *u.filters]
+        if code in layer.layer.dimensions
+        and not layer.layer.dimensions[code].is_time
+        and layer.layer.dimensions[code].id not in allowed_ids
+    }
+
+
+def _drop_unsupported_cuts(u: Understanding, codes: set[str]) -> None:
+    u.group_by = [code for code in u.group_by if code not in codes]
+    u.filters = {code: values for code, values in u.filters.items() if code not in codes}
+
+
 def _explain_cut(u: Understanding, layer: SpaceLayer) -> str | None:
     """The cut a "vì sao" decomposes by: the one asked for, else the metric's first allowed one.
     None when there is no single month to compare with the month before."""
@@ -584,11 +632,7 @@ def _cut_not_allowed(u: Understanding, layer: SpaceLayer) -> str | None:
     assert u.metric is not None
     allowed_ids = layer.versions[u.metric.metric_id].allowed_dimension_ids
     dims = layer.layer.dimensions
-    bad = [
-        dims[code]
-        for code in [*u.group_by, *u.filters]
-        if code in dims and not dims[code].is_time and dims[code].id not in allowed_ids
-    ]
+    bad = [dims[code] for code in _unsupported_cut_codes(u, layer)]
     if not bad:
         return None
     entity = bad[0].entity_id
@@ -658,6 +702,32 @@ def _code(code: str) -> ErrorCode:
         return ErrorCode.TOOL_UNAVAILABLE
 
 
+async def _analyst_step(
+    question_id: uuid.UUID, step_id: str, status: str, *, detail: str | None = None
+) -> None:
+    """Expose the validated analyst DAG as replayable chat milestones."""
+    labels = {
+        "understand": "Hiểu mục tiêu câu hỏi",
+        "resolve_scope": "Xác định phạm vi dữ liệu",
+        "query": "Truy vấn dữ liệu",
+        "validate": "Kiểm tra kết quả",
+        "visualize": "Chọn cách trực quan hóa",
+        "narrate": "Soạn câu trả lời",
+    }
+    await publish(
+        str(question_id),
+        "activity",
+        {
+            "kind": "plan_step",
+            "stage": step_id,
+            "step_id": step_id,
+            "status": status,
+            "label": labels.get(step_id, step_id),
+            "detail": detail,
+        },
+    )
+
+
 async def answer_question(event: Event) -> None:
     await _run(event, uuid.UUID(str(event.payload["question_id"])), edited_plan_id=None)
 
@@ -679,9 +749,26 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
     ):
         return
     await publish(str(question_id), "planning", {"question_id": str(question_id)})
+    await publish(
+        str(question_id),
+        "activity",
+        {"kind": "stage", "stage": "planning", "status": "running"},
+    )
+    await _analyst_step(question_id, "understand", "running")
     prepared = await _understand_and_plan(event, question_id, edited_plan_id)
     if prepared is None:
         return
+    if await is_cancel_requested(str(question_id)):
+        await _cancel(event, question_id, prepared)
+        return
+    await publish(
+        str(question_id),
+        "activity",
+        {"kind": "stage", "stage": "planning", "status": "done"},
+    )
+    await _analyst_step(question_id, "understand", "done")
+    await _analyst_step(question_id, "resolve_scope", "done")
+    await _analyst_step(question_id, "query", "running")
     await publish(
         str(question_id), "progress", {"question_id": str(question_id), "status": "running"}
     )
@@ -713,7 +800,11 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
             rows=prepared.period_rows or [],
         )
     )
+    if await is_cancel_requested(str(question_id)):
+        await _cancel(event, question_id, prepared)
+        return
     if not outcome.ok:
+        await _analyst_step(question_id, "query", "failed")
         name = prepared.source.name
         message = (
             f"Nguồn {name} không trả kết quả trong thời gian cho phép; câu hỏi vẫn mở, bạn có thể thử lại."
@@ -734,7 +825,9 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
             status="failed",
         )
         return
+    await _analyst_step(question_id, "query", "done")
     if not outcome.rows or _no_value(prepared.compiled.columns, outcome.rows):
+        await _analyst_step(question_id, "validate", "failed", detail="Không có dữ liệu hợp lệ")
         await _refuse(
             event,
             question_id,
@@ -743,7 +836,29 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
             Refusal.of(ErrorCode.NO_DATA_FOR_PERIOD, detail_id=str(outcome.query_run_id)),
         )
         return
+    await _analyst_step(question_id, "validate", "done")
+    await _analyst_step(question_id, "visualize", "done")
+    await _analyst_step(question_id, "narrate", "running")
     await _answer(event, question_id, prepared, outcome)
+    await _analyst_step(question_id, "narrate", "done")
+
+
+async def _cancel(event: Event, question_id: uuid.UUID, prepared: Prepared) -> None:
+    """Persist a normal refusal while exposing cancellation as a distinct stream event."""
+    await publish(str(question_id), "cancelled", {"question_id": str(question_id)})
+    await _refuse(
+        event,
+        question_id,
+        prepared.user_id,
+        prepared.plan_id,
+        Refusal.of(
+            ErrorCode.TOOL_UNAVAILABLE,
+            message="Đã dừng lượt phân tích theo yêu cầu của bạn.",
+            next_action=NextAction.RETRY,
+            detail_id=str(question_id),
+        ),
+        status="failed",
+    )
 
 
 async def _within(
@@ -961,8 +1076,11 @@ async def _understand_and_plan(
                     {"task": "understand", "model_name": reply.model, "tokens": reply.tokens}
                 )
 
+        _auto_select_single_metric(u)
+
         compiled: c.Compiled | None = None
         problem: Refusal | None = access_problem
+        best_effort_note: str | None = None
         compile_request: c.Request | None = None
         if grain is not None and u.decision == "proceed" and u.metric is not None:
             # The cut is along the metric's own time; a metric without one is not cut by month
@@ -1041,11 +1159,11 @@ async def _understand_and_plan(
             _cut_not_allowed(u, layer) if u.decision == "proceed" and problem is None else None
         )
         if not_cut is not None:
-            # AC-01-04-04: said in words, with the cuts the metric does allow.
-            problem = Refusal.of(
-                ErrorCode.CONTRACT_MISMATCH, message=not_cut, detail_id=str(question.id)
-            )
-        elif problem is None and u.decision == "proceed" and u.metric is not None:
+            # Keep the answer useful: remove only unsupported cuts and make the limitation explicit
+            # in the answer. The requested metric and period still run through the governed path.
+            _drop_unsupported_cuts(u, _unsupported_cut_codes(u, layer))
+            best_effort_note = f"{not_cut} Trả về số tổng hợp theo các chiều dữ liệu được phép."
+        if problem is None and u.decision == "proceed" and u.metric is not None:
             version = layer.versions[u.metric.metric_id]
             compile_request = c.Request(
                 version,
@@ -1328,6 +1446,7 @@ async def _understand_and_plan(
                 filed_period_label=filed_period_label,
                 filed_rows=filed_rows,
                 analysis=shown[0] if shown is not None else None,
+                best_effort_note=best_effort_note,
             )
 
     if u.decision == "clarify":
@@ -1670,6 +1789,8 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             if u.period
             else "Không nêu kỳ: số liệu là dữ liệu mới nhất có trong nguồn."
         )
+        if p.best_effort_note:
+            latest_note = f"{p.best_effort_note} {latest_note}"
         # What the table and chart show, by arithmetic: each number a figure with its expression.
         ins = (
             comparison_insights(

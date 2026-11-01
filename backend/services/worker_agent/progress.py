@@ -14,6 +14,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _MAX_EVENTS = 100
+_CANCEL_TTL_SECONDS = 900
 _redis: Any = None
 
 
@@ -54,6 +55,29 @@ async def publish(question_id: str, event: str, data: dict[str, Any]) -> str | N
             "worker-agent | progress publish failed question=%s", question_id, exc_info=True
         )
         return None
+
+
+async def request_cancel(question_id: str) -> bool:
+    """Ask the worker to stop a question; Redis is deliberately only a control signal."""
+    client = _client()
+    if client is None:
+        return False
+    try:
+        return bool(await client.set(f"cancel:{question_id}", "1", ex=_CANCEL_TTL_SECONDS))
+    except Exception:  # noqa: BLE001 - cancellation must not break the worker
+        logger.warning("worker-agent | cancel request failed question=%s", question_id, exc_info=True)
+        return False
+
+
+async def is_cancel_requested(question_id: str) -> bool:
+    client = _client()
+    if client is None:
+        return False
+    try:
+        return bool(await client.get(f"cancel:{question_id}"))
+    except Exception:  # noqa: BLE001 - Redis outage falls back to normal processing
+        logger.warning("worker-agent | cancel check failed question=%s", question_id, exc_info=True)
+        return False
 
 
 async def close() -> None:

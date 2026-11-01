@@ -66,6 +66,11 @@ type QuestionWire = components['schemas']['QuestionView'];
 export const getQuestion = async (id: string) =>
   ok<QuestionWire>(api.GET('/v1/questions/{id}', { params: { path: { id } } }));
 
+export const cancelQuestion = async (id: string) =>
+  ok<components['schemas']['JobAccepted']>(
+    api.POST('/v1/questions/{id}:cancel', { params: { path: { id } } }),
+  );
+
 /** Reopen an Ask thread: ordered turns with answer_id when answered (R1-13). */
 export const getConversation = async (id: string) =>
   okAs<ConversationDetail>(api.GET('/v1/conversations/{id}', { params: { path: { id } } }));

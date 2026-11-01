@@ -38,6 +38,7 @@ import { ReceiptDrawer } from '../answer-receipt/AnswerReceiptPage';
 import { requestPage } from '../documents/focusPage';
 import type { AskMessage, Citation } from './types';
 import { CHAT_COMMANDS, commandHelp, commandPrompt, parseChatInput } from './chatCommands';
+import { layoutForCommand } from './answerLayout';
 
 /* ─── per-viewer bookmarks (not the conversation thread) ─────────── */
 
@@ -201,7 +202,8 @@ export default function AskDataPage() {
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSelectedId(null);
-    void send(q);
+    const layout = parsed.command ? layoutForCommand(parsed.command.name) : undefined;
+    void (layout ? send(q, layout) : send(q));
   };
 
   // A question handed over from elsewhere (Trang chủ's question bar, ⌘K) arrives as ?q=.

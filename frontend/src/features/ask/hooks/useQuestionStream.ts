@@ -13,6 +13,7 @@ import { V1Error } from '../../../lib/v1/client';
 import { getQuerySql } from '../../../lib/v1/explore';
 import {
   askQuestion,
+  cancelQuestion,
   getAnswer,
   getConversation,
   getQuestion,
@@ -20,6 +21,7 @@ import {
   type ConversationDetail,
 } from '../../../lib/v1/questions';
 import { fromAnswer } from '../answerMessage';
+import type { AnswerLayout } from '../answerLayout';
 import { readPlan } from '../dataAnswer';
 import type { AskMessage, ClarificationReply } from '../types';
 
@@ -31,6 +33,7 @@ const GIVE_UP_MS = 5 * 60_000;
 const nowIso = () => new Date().toISOString();
 let seq = 0;
 const nextId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
+type PendingTurn = { text: string; layout: AnswerLayout };
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
     const timer = setTimeout(resolve, ms);
@@ -147,8 +150,9 @@ export function useQuestionStream() {
   const [hydrating, setHydrating] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const runningRef = useRef(false);
-  const queueRef = useRef<string[]>([]);
+  const queueRef = useRef<PendingTurn[]>([]);
   const conversationRef = useRef<string | null>(null);
+  const currentQuestionRef = useRef<string | null>(null);
   const mounted = useRef(true);
 
   useEffect(
@@ -166,6 +170,7 @@ export function useQuestionStream() {
   const follow = useCallback(
     async (assistantId: string, questionId: string, signal: AbortSignal) => {
       const started = Date.now();
+      let cancelled = false;
       let lastId: string | undefined;
       for (;;) {
         const events = await questionEvents(questionId, lastId, signal);
@@ -181,7 +186,30 @@ export function useQuestionStream() {
                 steps: stepsFor(status),
               },
             }));
+          } else if (e.event === 'activity' && typeof data.kind === 'string') {
+            patch(assistantId, (m) => ({
+              ...m,
+              activities: [
+                ...(m.activities ?? []).filter((a) => a.stage !== data.stage),
+                {
+                  kind: data.kind as string,
+                  stage: typeof data.stage === 'string' ? data.stage : undefined,
+                  status: typeof data.status === 'string' ? data.status : undefined,
+                  label: typeof data.label === 'string' ? data.label : undefined,
+                  detail: typeof data.detail === 'string' ? data.detail : undefined,
+                },
+              ],
+            }));
+          } else if (e.event === 'cancelled') {
+            cancelled = true;
+            patch(assistantId, (m) => ({
+              ...m,
+              status: 'error',
+              content: 'Đã dừng lượt phân tích theo yêu cầu của bạn.',
+              progress: undefined,
+            }));
           } else if (e.event === 'answer' && typeof data.answer_id === 'string') {
+            if (cancelled) continue;
             const answer = await getAnswer(data.answer_id);
             const drawn = fromAnswer(answer);
             patch(assistantId, (m) => ({ ...m, ...drawn, answerId: answer.id }));
@@ -251,7 +279,7 @@ export function useQuestionStream() {
   );
 
   const runTurn = useCallback(
-    async (text: string) => {
+    async (text: string, layout: AnswerLayout = 'auto') => {
       const q = text.trim();
       if (!q) return;
       const assistantId = nextId();
@@ -264,6 +292,7 @@ export function useQuestionStream() {
           content: '',
           timestamp: nowIso(),
           status: 'streaming',
+          layout,
         },
       ]);
       setSending(true);
@@ -272,6 +301,7 @@ export function useQuestionStream() {
       try {
         const accepted = await askQuestion(q, conversationRef.current);
         conversationRef.current = accepted.conversation_id;
+        currentQuestionRef.current = accepted.question_id;
         if (mounted.current) setConversationId(accepted.conversation_id);
         patch(assistantId, (m) => ({ ...m, questionId: accepted.question_id }));
         await follow(assistantId, accepted.question_id, controller.signal);
@@ -293,20 +323,21 @@ export function useQuestionStream() {
         }));
       } finally {
         abortRef.current = null;
+        currentQuestionRef.current = null;
       }
     },
     [follow, patch],
   );
 
   const drain = useCallback(
-    async (first: string) => {
+    async (first: PendingTurn) => {
       runningRef.current = true;
       try {
-        await runTurn(first);
+        await runTurn(first.text, first.layout);
         while (queueRef.current.length > 0 && mounted.current) {
           const next = queueRef.current.shift();
-          setQueued([...queueRef.current]);
-          if (next) await runTurn(next);
+          setQueued(queueRef.current.map((turn) => turn.text));
+          if (next) await runTurn(next.text, next.layout);
         }
       } finally {
         runningRef.current = false;
@@ -317,15 +348,15 @@ export function useQuestionStream() {
   );
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, layout: AnswerLayout = 'auto') => {
       const q = text.trim();
       if (!q) return;
       if (runningRef.current) {
-        queueRef.current.push(q);
-        setQueued([...queueRef.current]);
+        queueRef.current.push({ text: q, layout });
+        setQueued(queueRef.current.map((turn) => turn.text));
         return;
       }
-      await drain(q);
+      await drain({ text: q, layout });
     },
     [drain],
   );
@@ -357,6 +388,8 @@ export function useQuestionStream() {
   const stop = useCallback(() => {
     queueRef.current = [];
     setQueued([]);
+    const questionId = currentQuestionRef.current;
+    if (questionId) void cancelQuestion(questionId).catch(() => undefined);
     abortRef.current?.abort();
   }, []);
 

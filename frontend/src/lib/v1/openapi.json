@@ -2157,6 +2157,14 @@
       ],
       "title": "Agent Name"
      },
+     "blocks": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Blocks",
+      "type": "array"
+     },
      "chart_spec": {
       "anyOf": [
        {},
@@ -105259,6 +105267,50 @@
      }
     ],
     "summary": "Trạng thái câu hỏi, kế hoạch hiện hành",
+    "tags": [
+     "Hỏi đáp"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-01-01"
+    ]
+   }
+  },
+  "/v1/questions/{id}:cancel": {
+   "post": {
+    "operationId": "cancelQuestion",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobAccepted"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Dừng một câu hỏi đang chạy",
     "tags": [
      "Hỏi đáp"
     ],

@@ -154,6 +154,18 @@
   },
   {
    "group": "Hỏi đáp",
+   "method": "POST",
+   "path": "/v1/questions/{id}:cancel",
+   "summary": "Dừng một câu hỏi đang chạy",
+   "use_cases": [
+    "01-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
    "method": "PATCH",
    "path": "/v1/questions/{id}/plan",
    "summary": "Sửa chip cách hiểu, chạy lại",

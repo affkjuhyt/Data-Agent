@@ -22,6 +22,10 @@ class FakeRedis:
             )
         ]
 
+    async def set(self, key: str, value: str, *, ex: int) -> bool:
+        self.set_call = (key, value, ex)
+        return True
+
 
 async def test_read_progress_maps_redis_stream_entries_to_sse_events(
     monkeypatch: pytest.MonkeyPatch,
@@ -40,3 +44,11 @@ async def test_read_progress_returns_nothing_without_redis(monkeypatch: pytest.M
     monkeypatch.setattr(progress, "_client", lambda: None)
 
     assert await progress.read("q-1") == []
+
+
+async def test_request_cancel_sets_a_short_lived_redis_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    redis = FakeRedis()
+    monkeypatch.setattr(progress, "_client", lambda: redis)
+
+    assert await progress.request_cancel("q-1") is True
+    assert redis.set_call == ("cancel:q-1", "1", 900)

@@ -11,6 +11,7 @@
 import type { DecompositionProposal, Drill } from './dataAnswer';
 import type { ReadingChip } from './interpretation';
 import type { AnswerTrust } from './trust';
+import type { AnswerLayout } from './answerLayout';
 
 export interface ChartSpec {
   chart_type: 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'radar' | 'radialBar' | 'composed';
@@ -299,6 +300,8 @@ export interface AskMessage {
   /** ISO timestamp */
   timestamp: string;
   status?: 'streaming' | 'done' | 'error';
+  /** Presentation preference selected by a chat command; answer data remains server-owned. */
+  layout?: AnswerLayout;
   sessionId?: string;
   suggestions?: string[];
   chartSpecs?: ChartSpec[];
@@ -322,7 +325,17 @@ export interface AskMessage {
   refusal?: Refusal;
   /** while streaming: what the agent is doing (cleared from view once the answer is done) */
   progress?: AgentProgress;
+  /** Structured server-side milestones shown while a question is running. */
+  activities?: ChatActivity[];
   /** the agent's reading of the question; waits for a check when `check_required` */
   understanding?: Understanding;
   latencyMs?: number;
+}
+
+export interface ChatActivity {
+  kind: string;
+  stage?: string;
+  status?: string;
+  label?: string;
+  detail?: string;
 }

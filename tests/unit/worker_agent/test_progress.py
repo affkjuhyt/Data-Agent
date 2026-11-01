@@ -22,6 +22,13 @@ class FakeRedis:
         self.calls.append((key, fields, maxlen))
         return "1-0"
 
+    async def set(self, key: str, value: str, *, ex: int) -> bool:
+        self.set_call = (key, value, ex)
+        return True
+
+    async def get(self, key: str) -> str | None:
+        return "1" if key == "cancel:q-1" else None
+
 
 async def test_publish_progress_appends_a_replayable_question_event(
     monkeypatch: pytest.MonkeyPatch,
@@ -50,3 +57,14 @@ async def test_progress_is_a_noop_when_redis_is_not_configured(
     monkeypatch.delenv("REDIS_URL", raising=False)
 
     assert await progress.publish("q-1", "planning", {}) is None
+
+
+async def test_cancel_request_is_written_and_can_be_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+    monkeypatch.setattr(progress, "_redis", redis)
+
+    assert await progress.request_cancel("q-1") is True
+    assert redis.set_call == ("cancel:q-1", "1", 900)
+    assert await progress.is_cancel_requested("q-1") is True

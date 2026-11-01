@@ -7,6 +7,7 @@ from a service.
 
 from __future__ import annotations
 
+from libs.contracts.v1.analysis_plan import AnalysisOutput, AnalysisPlan, AnalysisStep
 from libs.contracts.v1.base import ContractModel
 from libs.contracts.v1.errors import (
     HTTP_STATUS,
@@ -35,6 +36,9 @@ __all__ = [
     "HTTP_STATUS",
     "NEXT_ACTION",
     "USER_MESSAGE_VI",
+    "AnalysisOutput",
+    "AnalysisPlan",
+    "AnalysisStep",
     "ContractModel",
     "ErrorBody",
     "ErrorCode",

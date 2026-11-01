@@ -9,7 +9,7 @@
  * (AgentProgress). The trust label is on every finished answer (invariant 14). Used by the Ask screen and the
  * agent Playground.
  */
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
 import { Badge } from '../../../design-system/Badge';
 import { StatusDot } from '../../../design-system/StatusDot';
 import { SuggestionChip } from '../../../design-system/SuggestionChip';
@@ -34,6 +34,9 @@ import { RefusalCard } from './RefusalCard';
 import { AgentSteps, PartialResult } from './AgentProgress';
 import { InterpretationCheck } from './InterpretationCheck';
 import { VerifierBadge } from './VerifierBadge';
+import { responseOrder } from '../answerLayout';
+import type { AnswerLayout, ResponseSection } from '../answerLayout';
+import { blocksForMessage, sectionForBlock } from '../answerBlocks';
 
 const ChartRenderer = lazy(() =>
   import('./ChartRenderer').then(module => ({ default: module.ChartRenderer })),
@@ -116,6 +119,25 @@ function CopyLink({ text }: { text: string }) {
   );
 }
 
+function ResponseSectionBlock({
+  layout,
+  section,
+  children,
+}: {
+  layout: AnswerLayout;
+  section: ResponseSection;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-response-section={section}
+      style={{ order: responseOrder(layout, section) }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function AnswerBlock({
   msg, question, busy, onSuggestion, onAnswerClarification, onSave, onOpenEvidence,
   showEvidenceStrip = true, showTimestamp = true, onRetry, onRephrase, showRefusalDetail,
@@ -132,9 +154,14 @@ export function AnswerBlock({
     ? { runs: resultRuns, clarifications: msg.evidence?.clarifications ?? [], warnings: msg.evidence?.warnings ?? [] }
     : msg.evidence, [msg.evidence, resultRuns]);
   const streaming = msg.status === 'streaming';
+  const layout = msg.layout ?? 'auto';
   const allRuns = displayEvidence?.runs ?? [];
   const trust = useMemo(() => msg.trust ?? answerTrust(allRuns, msg.citations ?? []), [msg.trust, allRuns, msg.citations]);
   const reading = useMemo(() => msg.reading ?? interpretationChips(run), [msg.reading, run]);
+  const contentBlocks = useMemo(
+    () => blocksForMessage({ ...msg, evidence: displayEvidence }),
+    [displayEvidence, msg],
+  );
 
   const exportCsv = (target: EvidenceRun | null = run) => {
     if (!target || !target.rows.length) return;
@@ -160,94 +187,141 @@ export function AnswerBlock({
   const answered = !streaming && (!!msg.content || allRuns.length > 0) && !(msg.clarification && !allRuns.length);
 
   return (
-    <div data-testid="answer-block" className="flex flex-col gap-da-lg">
-      {streaming && msg.progress && <AgentSteps progress={msg.progress} />}
-
-      {msg.understanding && onConfirmUnderstanding && (
-        <InterpretationCheck
-          understanding={msg.understanding}
-          disabled={busy}
-          onConfirm={onConfirmUnderstanding}
-          onEdit={onEditUnderstanding}
-        />
-      )}
-
-      {reading.length > 0 && (
-        <div className="flex flex-col gap-da-md">
-          <span className="text-muted-foreground da-caption">
-            Hệ thống hiểu là{msg.newQuestion ? ' · Câu hỏi mới' : ''}
-          </span>
-          <ul aria-label="Hệ thống hiểu là" className="m-0 flex list-none flex-wrap gap-da-sm p-0">
-            {reading.map(chip => (
-              <li key={chip.key} className="inline-flex items-center gap-da-sm rounded-sm border border-border px-[10px] py-[5px]">
-                <span className="text-muted-foreground da-caption">{chip.label}</span>
-                <span className="text-foreground da-body-strong">{chip.value}</span>
-                {chip.inherited && <span className="text-muted-foreground da-caption">từ câu trước</span>}
+    <div data-testid="answer-block" data-response-layout={layout} className="flex flex-col gap-da-lg">
+      <ResponseSectionBlock layout={layout} section="progress">
+        {streaming && msg.progress && <AgentSteps progress={msg.progress} />}
+        {streaming && msg.activities?.length ? (
+          <ul aria-label="Hoạt động của agent" className="m-0 flex list-none flex-col gap-da-xs p-0">
+            {msg.activities.map((activity) => (
+              <li key={`${activity.stage ?? activity.kind}-${activity.status ?? ''}`} className="da-caption text-muted-foreground">
+                {activity.label ?? activity.stage ?? activity.kind}
+                {activity.status === 'done' ? ' · xong' : activity.status === 'running' ? ' · đang chạy' : ''}
               </li>
             ))}
           </ul>
-        </div>
+        ) : null}
+      </ResponseSectionBlock>
+
+      {msg.understanding && onConfirmUnderstanding && (
+        <ResponseSectionBlock layout={layout} section="reading">
+          <InterpretationCheck
+            understanding={msg.understanding}
+            disabled={busy}
+            onConfirm={onConfirmUnderstanding}
+            onEdit={onEditUnderstanding}
+          />
+        </ResponseSectionBlock>
       )}
 
-      {msg.content ? <MarkdownContent text={msg.content} citations={msg.citations} onOpenCitation={onOpenCitation} /> : streaming ? <TypingDots /> : null}
+      {reading.length > 0 && (
+        <ResponseSectionBlock layout={layout} section="reading">
+          <div className="flex flex-col gap-da-md">
+            <span className="text-muted-foreground da-caption">
+              Hệ thống hiểu là{msg.newQuestion ? ' · Câu hỏi mới' : ''}
+            </span>
+            <ul aria-label="Hệ thống hiểu là" className="m-0 flex list-none flex-wrap gap-da-sm p-0">
+              {reading.map(chip => (
+                <li key={chip.key} className="inline-flex items-center gap-da-sm rounded-sm border border-border px-[10px] py-[5px]">
+                  <span className="text-muted-foreground da-caption">{chip.label}</span>
+                  <span className="text-foreground da-body-strong">{chip.value}</span>
+                  {chip.inherited && <span className="text-muted-foreground da-caption">từ câu trước</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </ResponseSectionBlock>
+      )}
 
-      {streaming && msg.progress?.partial && <PartialResult partial={msg.progress.partial} onStop={onStop} />}
+      {contentBlocks.map((block) => (
+        <ResponseSectionBlock key={block.id} layout={layout} section={sectionForBlock(block)}>
+          {block.type === 'markdown' && (
+            block.content ? <MarkdownContent text={block.content} citations={block.citations} onOpenCitation={onOpenCitation} /> : streaming ? <TypingDots /> : null
+          )}
+          {block.type === 'chart' && (
+            <Suspense fallback={<div className="min-h-[180px] rounded-md border border-border" />}>
+              <ChartRenderer
+                spec={block.spec}
+                onPick={msg.drill && onSuggestion && !busy ? setPicked : undefined}
+              />
+            </Suspense>
+          )}
+          {block.type === 'table' && (
+            <DataGrid
+              columns={block.run.columns}
+              columnUnits={block.run.column_units}
+              rows={block.run.rows}
+              rowCount={block.run.row_count}
+              capped={block.run.rows_capped}
+              truncation={block.run.truncation}
+              title={block.title}
+              onExport={block.run.rows.length ? () => exportCsv(block.run) : undefined}
+            />
+          )}
+          {block.type === 'sql' && (
+            <details className="rounded-md border border-border p-da-md">
+              <summary className="cursor-pointer text-muted-foreground da-caption">SQL đã chạy</summary>
+              <pre className="m-0 mt-da-sm overflow-x-auto whitespace-pre-wrap text-foreground da-caption">{block.sql}</pre>
+            </details>
+          )}
+          {block.type === 'citations' && (
+            <CitationPanel citations={block.citations} onOpen={onOpenCitation} />
+          )}
+          {block.type === 'suggestions' && !streaming && onSuggestion && (
+            <div className="flex flex-wrap gap-da-md">
+              {block.items.map((item, index) => (
+                <SuggestionChip key={index} label={item} showIcon={false} onSelect={() => { if (!busy) onSuggestion(item); }} />
+              ))}
+            </div>
+          )}
+        </ResponseSectionBlock>
+      ))}
+
+      {streaming && msg.progress?.partial && (
+        <ResponseSectionBlock layout={layout} section="partial">
+          <PartialResult partial={msg.progress.partial} onStop={onStop} />
+        </ResponseSectionBlock>
+      )}
 
       {msg.clarification && onAnswerClarification && (
-        <ClarificationCard clarification={msg.clarification} disabled={busy} onAnswer={onAnswerClarification} />
-      )}
-
-      {!!msg.chartSpecs?.length && (
-        <Suspense fallback={<div className="min-h-[180px] rounded-md border border-border" />}>
-          {msg.chartSpecs.map((spec, i) => (
-            <ChartRenderer
-              key={i}
-              spec={spec}
-              onPick={msg.drill && onSuggestion && !busy ? setPicked : undefined}
-            />
-          ))}
-        </Suspense>
+        <ResponseSectionBlock layout={layout} section="clarification">
+          <ClarificationCard clarification={msg.clarification} disabled={busy} onAnswer={onAnswerClarification} />
+        </ResponseSectionBlock>
       )}
 
       {msg.drill && onSuggestion && !streaming && (
-        <DrillPicker
-          drill={msg.drill}
-          members={(msg.chartSpecs?.[0]?.data ?? []).map(d => String(d[msg.chartSpecs![0].x_key] ?? ''))}
-          picked={picked}
-          onPick={setPicked}
-          onAsk={onSuggestion}
-          disabled={busy}
-        />
+        <ResponseSectionBlock layout={layout} section="drill">
+          <DrillPicker
+            drill={msg.drill}
+            members={(msg.chartSpecs?.[0]?.data ?? []).map(d => String(d[msg.chartSpecs![0].x_key] ?? ''))}
+            picked={picked}
+            onPick={setPicked}
+            onAsk={onSuggestion}
+            disabled={busy}
+          />
+        </ResponseSectionBlock>
       )}
 
-      {displayedRuns.map((displayRun, index) => {
-        return (
-          <DataGrid
-            key={displayRun.id ?? index}
-            columns={displayRun.columns}
-            columnUnits={displayRun.column_units}
-            rows={displayRun.rows}
-            rowCount={displayRun.row_count}
-            capped={displayRun.rows_capped}
-            truncation={displayRun.truncation}
-            title={displayedRuns.length > 1 ? `Kết quả truy vấn ${index + 1}` : 'Bảng dữ liệu'}
-            onExport={displayRun.rows.length ? () => exportCsv(displayRun) : undefined}
-          />
-        );
-      })}
-
-      {!streaming && msg.proposal && <DecompositionCard proposal={msg.proposal} />}
+      {!streaming && msg.proposal && (
+        <ResponseSectionBlock layout={layout} section="proposal">
+          <DecompositionCard proposal={msg.proposal} />
+        </ResponseSectionBlock>
+      )}
 
       {showEvidenceStrip && displayEvidence && hasEvidence(displayEvidence) && (
-        <EvidenceStrip evidence={displayEvidence} onOpenPanel={onOpenEvidence} />
+        <ResponseSectionBlock layout={layout} section="evidence">
+          <EvidenceStrip evidence={displayEvidence} onOpenPanel={onOpenEvidence} />
+        </ResponseSectionBlock>
       )}
 
-      {!streaming && msg.verification && <VerifierBadge verification={msg.verification} />}
-
-      {msg.citations && msg.citations.length > 0 && <CitationPanel citations={msg.citations} onOpen={onOpenCitation} />}
+      {!streaming && msg.verification && (
+        <ResponseSectionBlock layout={layout} section="verification">
+          <VerifierBadge verification={msg.verification} />
+        </ResponseSectionBlock>
+      )}
 
       {answered && (
-        <div className="flex flex-wrap items-center gap-x-da-xl gap-y-da-sm">
+        <ResponseSectionBlock layout={layout} section="meta">
+          <div className="flex flex-wrap items-center gap-x-da-xl gap-y-da-sm">
           <span data-testid="trust-label" title={trust.meaning} className="inline-flex items-center gap-da-sm">
             <StatusDot tone={TRUST_DOT[trust.tone]}>{trust.label}</StatusDot>
             {trust.breakdown && <span className="text-muted-foreground da-caption">({trust.breakdown})</span>}
@@ -289,15 +363,8 @@ export function AnswerBlock({
           {onReport && (
             <button type="button" className={LINK} onClick={onReport} disabled={reported}>Báo sai</button>
           )}
-        </div>
-      )}
-
-      {!streaming && !!msg.suggestions?.length && onSuggestion && (
-        <div className="flex flex-wrap gap-da-md">
-          {msg.suggestions.map((s, i) => (
-            <SuggestionChip key={i} label={s} showIcon={false} onSelect={() => { if (!busy) onSuggestion(s); }} />
-          ))}
-        </div>
+          </div>
+        </ResponseSectionBlock>
       )}
 
       {exportable && (

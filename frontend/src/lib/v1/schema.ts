@@ -5254,6 +5254,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/questions/{id}:cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dừng một câu hỏi đang chạy */
+        post: operations["cancelQuestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/questions/{id}/plan": {
         parameters: {
             query?: never;
@@ -7609,6 +7626,10 @@ export interface components {
         AnswerView: {
             /** Agent Name */
             agent_name: string | null;
+            /** Composable response blocks for chat renderers */
+            blocks?: {
+                [key: string]: unknown;
+            }[];
             /** Chart Spec */
             chart_spec: unknown | null;
             /** Citations */
@@ -63861,6 +63882,20 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemBody"];
                     "application/problem+json": unknown;
                 };
+            };
+        };
+    };
+    cancelQuestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: { id: string };
+            cookie?: never;
+        };
+        responses: {
+            202: {
+                headers: { [name: string]: unknown };
+                content: { "application/json": components["schemas"]["JobAccepted"] };
             };
         };
     };
