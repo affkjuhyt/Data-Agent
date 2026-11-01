@@ -37,10 +37,14 @@ image_import: ""
 image_registry: ""
 image_deploy_prefix: "{{ (image_registry ~ '/') if (image_registry | length) > 0 else '' }}{{ image_prefix }}"
 
+# The third rule also rewrites an image named in a value rather than an `image:` line
+# (sandbox-executor's SANDBOX_RUNNER_IMAGE, the pool pods it starts): left on localhost:5000, those
+# pods never pulled on a cluster whose registry is elsewhere.
 manifest_sed_rewrite: >-
   sed
   -e "s|image: {{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|image: {{ image_deploy_prefix }}/\1:{{ image_tag }}|g"
   -e "s|image: localhost:5000/{{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|image: {{ image_deploy_prefix }}/\1:{{ image_tag }}|g"
+  -e "s|localhost:5000/{{ image_prefix }}/|{{ image_deploy_prefix }}/|g"
   -e "s|imagePullPolicy: IfNotPresent|imagePullPolicy: Always|g"
 manifest_sed: >-
   {{ manifest_sed_rewrite if (image_registry | length) > 0
