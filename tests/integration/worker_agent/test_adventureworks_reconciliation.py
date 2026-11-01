@@ -5,42 +5,37 @@ reconciles with SQL written by hand on AdventureWorksDW as `make adventureworks`
 The reference SQL reads the tables directly, as an analyst would write the definition, so a
 difference is the compiler's (a fan-out through the snowflaked product tables, a stock balance
 summed over days, a finance scenario left in) or the model's, never both the same way.
+
+The same data runs DS-AW's verified queries and the reference SQL of its eval set
+(deploy/docker/sql/v3-adventureworks-context.sql, deploy/docker/eval/ds-aw-cases.yaml), so what
+they claim about the warehouse is what it holds. The data is the `adventureworks` fixture of
+conftest.py.
 """
 
 from __future__ import annotations
 
 import datetime
 import decimal
-import importlib.util
-import io
 import math
-import os
 import pathlib
 import re
 import uuid
-from collections.abc import Iterator
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
-import psycopg2
 import pytest
 import yaml
 
 from services.worker_agent.semantic import compiler as c
+from services.worker_agent.sqlgen.verified import bind, match
+from services.worker_agent.understand.text import find_period
 
 pytestmark = [pytest.mark.integration]
 
 REPO = pathlib.Path(__file__).parents[3]
 MODEL = REPO / "deploy" / "docker" / "semantic" / "ds-aw.yaml"
-LOADER = REPO / "tests" / "e2e" / "adventureworks" / "load.py"
-CACHE = pathlib.Path(os.environ.get("AW_CACHE") or LOADER.with_name(".cache"))
-DATABASE = "adventureworks_test"
+CONTEXT = REPO / "deploy" / "docker" / "sql" / "v3-adventureworks-context.sql"
+EVAL_CASES = REPO / "deploy" / "docker" / "eval" / "ds-aw-cases.yaml"
 _AGGS = {"sum": "SUM", "count": "COUNT", "avg": "AVG", "min": "MIN", "max": "MAX"}
-
-_spec = importlib.util.spec_from_file_location("aw_load", LOADER)
-assert _spec is not None and _spec.loader is not None
-aw = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(aw)
 
 Y2013 = c.Period(datetime.date(2013, 1, 1), datetime.date(2014, 1, 1))
 DEC2013 = c.Period(datetime.date(2013, 12, 1), datetime.date(2014, 1, 1))
@@ -304,46 +299,6 @@ def _layer() -> tuple[c.Layer, dict[str, c.MetricVersion]]:
     return c.Layer(measures, dims, tables, joins), metrics
 
 
-def _load(dsn: str) -> None:
-    aw.fetch(CACHE)
-    script = (CACHE / "instawdbdw.sql").read_text(encoding="utf-8")
-    found = aw.tables(script)
-    conn = psycopg2.connect(dsn)
-    try:
-        with conn, conn.cursor() as cur:
-            for name, columns in found.items():
-                body = ", ".join(f"{aw.snake(col)} {t}" for col, t, _ in columns)
-                cur.execute(f"CREATE TABLE {aw.snake(name)} ({body})")
-                data = (CACHE / f"{name}.csv").read_bytes()
-                text = "".join(line + "\n" for line in aw.rows(data, name, columns))
-                cur.copy_expert(f"COPY {aw.snake(name)} FROM STDIN", io.StringIO(text))
-            for statement in aw.constraints(script):
-                cur.execute(statement)
-    finally:
-        conn.close()
-
-
-@pytest.fixture(scope="module")
-def adventureworks(request: pytest.FixtureRequest) -> Iterator[Any]:
-    admin = os.environ.get("DATAAGENT_TEST_ADMIN_DSN")
-    if not admin:
-        admin = request.getfixturevalue("postgres_container")["dsn"]
-    server = psycopg2.connect(admin)
-    server.autocommit = True
-    with server.cursor() as cur:
-        cur.execute(f"DROP DATABASE IF EXISTS {DATABASE}")
-        cur.execute(f"CREATE DATABASE {DATABASE}")
-    dsn = urlunsplit(urlsplit(admin)._replace(path=f"/{DATABASE}"))
-    _load(dsn)
-    conn = psycopg2.connect(dsn)
-    conn.autocommit = True
-    yield conn
-    conn.close()
-    with server.cursor() as cur:
-        cur.execute(f"DROP DATABASE {DATABASE}")
-    server.close()
-
-
 def _rows(conn: Any, sql: str) -> dict[tuple[str, ...], decimal.Decimal | float | None]:
     with conn.cursor() as cur:
         cur.execute(sql)
@@ -408,3 +363,145 @@ def test_two_date_roles_are_refused_rather_than_guessed() -> None:
             two_roles,
             dialect="postgres",
         )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="data: dim_date.fiscal_year of AdventureWorksDW calls July-December 2010 fiscal 2011 and"
+    " January-June 2011 fiscal 2010, and the model reads the fiscal year from it",
+)
+def test_fiscal_2011_is_july_2011_to_june_2012(adventureworks: Any) -> None:
+    layer, metrics = _layer()
+    compiled = c.compile_metric(
+        c.Request(metrics["DOANH_THU_INTERNET"], group_by=["nam_tai_chinh"]),
+        layer,
+        dialect="postgres",
+    )
+    by_year = _rows(adventureworks, compiled.sql)
+    want = _rows(
+        adventureworks,
+        "SELECT SUM(sales_amount) FROM fact_internet_sales"
+        " WHERE order_date >= DATE '2011-07-01' AND order_date < DATE '2012-07-01'",
+    )
+    assert _close(by_year[("2011",)], want[()])
+
+
+def test_the_traps_give_what_the_model_says(adventureworks: Any) -> None:
+    layer, metrics = _layer()
+
+    def value(code: str, group_by: list[str], period: c.Period) -> dict[Any, Any]:
+        sql = c.compile_metric(
+            c.Request(metrics[code], group_by=group_by, period=period), layer, dialect="postgres"
+        ).sql
+        return _rows(adventureworks, sql)
+
+    def one(sql: str) -> float:
+        [(found)] = _rows(adventureworks, sql).values()
+        return float(found)
+
+    # Two facts: both channels is each one's sum added, not a join of the two that repeats rows.
+    total = float(value("DOANH_THU", [], Y2013)[()])
+    internet = one(f"SELECT SUM(sales_amount) FROM fact_internet_sales WHERE {IN_2013}")
+    resellers = one(f"SELECT SUM(sales_amount) FROM fact_reseller_sales WHERE {IN_2013}")
+    assert math.isclose(total, internet + resellers, rel_tol=1e-9)
+    # dim_product is slowly changing: cut by product name, every sale is counted once.
+    by_product = value("DOANH_THU_INTERNET", ["ten_san_pham"], Y2013)
+    assert math.isclose(sum(float(v) for v in by_product.values()), internet, rel_tol=1e-9)
+    # Margin is the ratio of the sums, not the mean of the categories' ratios.
+    margin = float(value("BIEN_GOP_INTERNET", [], Y2013)[()])
+    by_category = value("BIEN_GOP_INTERNET", ["nhom_hang"], Y2013)
+    assert not math.isclose(margin, sum(float(v) for v in by_category.values()) / len(by_category))
+    # Stock is the balance of December's last day, not the sum of its days.
+    stock = float(value("TON_KHO", [], DEC2013)[()])
+    assert stock == one(
+        "SELECT SUM(units_balance) FROM fact_product_inventory WHERE movement_date = DATE '2013-12-31'"
+    )
+    assert stock * 20 < one(
+        "SELECT SUM(units_balance) FROM fact_product_inventory"
+        " WHERE movement_date >= DATE '2013-12-01' AND movement_date < DATE '2014-01-01'"
+    )
+
+
+def _verified() -> list[tuple[uuid.UUID, str, str]]:
+    """DS-AW's verified queries as the seed writes them (R1-08)."""
+    found = re.findall(
+        r"\('(a0000000-0000-0000-0000-00000000aa[0-9a-f]{2})', :org::uuid, :space::uuid,\s*'([^']+)',"
+        r"\s*\$vq\$(.*?)\$vq\$",
+        CONTEXT.read_text(encoding="utf-8"),
+        flags=re.S,
+    )
+    return [(uuid.UUID(i), q, sql) for i, q, sql in found]
+
+
+def test_every_verified_query_answers_its_question_clear_of_the_traps(adventureworks: Any) -> None:
+    examples = _verified()
+    assert len(examples) >= 20
+    today = datetime.date(2026, 11, 1)
+
+    def run(question: str) -> dict[tuple[str, ...], Any]:
+        sql = next(s for _, q, s in examples if q == question)
+        return _rows(adventureworks, bind(sql, find_period(question, today), today))
+
+    for example_id, question, _ in examples:
+        # Each answers its own question, and only it.
+        found = match(question, examples, today)
+        assert found is not None and found.example_id == example_id, question
+        with adventureworks.cursor() as cur:
+            cur.execute(found.sql)
+            assert cur.fetchall(), question
+    # Each channel summed apart: Components, sold to resellers only, keeps the resellers' sum (the
+    # group the compiler's cross-table sum loses), and the categories add up to both channels.
+    by_category = run("Doanh thu theo nhóm hàng năm 2013")
+    both = (
+        f"SELECT (SELECT SUM(sales_amount) FROM fact_internet_sales WHERE {IN_2013})"
+        f" + (SELECT SUM(sales_amount) FROM fact_reseller_sales WHERE {IN_2013})"
+    )
+    assert _close(sum(by_category.values()), next(iter(_rows(adventureworks, both).values())))
+    resellers = _rows(adventureworks, RESELLER_BY_CATEGORY)
+    assert _close(by_category[("Components",)], resellers[("Components",)])
+    # The fiscal year from the order date: fiscal 2012 is July 2012 - June 2013.
+    fiscal = _rows(
+        adventureworks, next(s for _, q, s in examples if q == "Doanh thu theo năm tài chính")
+    )
+    july_to_june = (
+        "SELECT (SELECT SUM(sales_amount) FROM fact_internet_sales WHERE order_date >= DATE '2012-07-01'"
+        " AND order_date < DATE '2013-07-01') + (SELECT SUM(sales_amount) FROM fact_reseller_sales"
+        " WHERE order_date >= DATE '2012-07-01' AND order_date < DATE '2013-07-01')"
+    )
+    assert _close(fiscal[("2012",)], next(iter(_rows(adventureworks, july_to_june).values())))
+    # Stock: one day's balance, the last of December.
+    stock = run("Tồn kho theo nhóm hàng cuối tháng 12/2013")
+    assert sum(stock.values()) == next(
+        iter(
+            _rows(
+                adventureworks,
+                "SELECT SUM(units_balance) FROM fact_product_inventory"
+                " WHERE movement_date = DATE '2013-12-31'",
+            ).values()
+        )
+    )
+    # Sales reasons are counted per order: no reason has more orders than there are.
+    orders = _rows(
+        adventureworks,
+        f"SELECT COUNT(DISTINCT sales_order_number) FROM fact_internet_sales WHERE {IN_2013}",
+    )[()]
+    assert all(n <= orders for n in run("Số đơn Internet theo lý do mua hàng năm 2013").values())
+
+
+def test_every_eval_answer_is_what_its_reference_sql_gives(adventureworks: Any) -> None:
+    # R1-12: the expected numbers of the DS-AW eval set come from these SQL on the real data, one
+    # figure per row in the order the reference gives them.
+    cases = yaml.safe_load(EVAL_CASES.read_text(encoding="utf-8"))["cases"]
+    numbers = [case for case in cases if case["expected"].get("kind") == "data"]
+    assert len(numbers) >= 40
+    for case in numbers:
+        with adventureworks.cursor() as cur:
+            cur.execute(case["reference_sql"])
+            rows = cur.fetchall()
+        got = [round(float(r[-1]), 4) for r in rows]
+        want = case["expected"]["values"]
+        assert len(got) == len(want), case["id"]
+        assert all(_close(g, w) for g, w in zip(got, want, strict=True)), case["id"]
+        names = case["expected"].get("text_contains")
+        if names:
+            assert names == [str(r[0]) for r in rows[: len(names)]], case["id"]

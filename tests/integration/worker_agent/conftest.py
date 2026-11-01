@@ -1,11 +1,17 @@
 """worker-agent against the V3 database (backend/alembic/sql, applied by the migrate suite's
 `ddl_server`), connecting as the roles it uses in production: svc_qa for the answer, the
-relay role for claiming outbox rows across organisations."""
+relay role for claiming outbox rows across organisations. `adventureworks` is the dataset the
+product is tested on, in a database of its own on the same server."""
 
 from __future__ import annotations
 
+import importlib.util
+import io
+import os
+import pathlib
 import uuid
 from collections.abc import Iterator
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg2
@@ -15,6 +21,10 @@ from libs.dataagent_db import engine_for
 from tests.integration.migrate.conftest import ddl_server  # noqa: F401  (fixture)
 
 PASSWORD = "worker-agent-integration"
+
+AW_LOADER = pathlib.Path(__file__).parents[3] / "tests" / "e2e" / "adventureworks" / "load.py"
+AW_CACHE = pathlib.Path(os.environ.get("AW_CACHE") or AW_LOADER.with_name(".cache"))
+AW_DATABASE = "adventureworks_test"
 
 
 def _login_url(dsn: str, role: str) -> str:
@@ -132,3 +142,50 @@ def seed(worker_database: str) -> Iterator[Seed]:
     s = Seed(worker_database)
     yield s
     s.conn.close()
+
+
+def _load_adventureworks(dsn: str) -> None:
+    """tests/e2e/adventureworks/load.py's conversion, fetched once into its .cache/ at the pinned
+    commit, written into `dsn` the way `make adventureworks` writes the cluster's database."""
+    spec = importlib.util.spec_from_file_location("aw_load", AW_LOADER)
+    assert spec is not None and spec.loader is not None
+    aw = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(aw)
+    aw.fetch(AW_CACHE)
+    script = (AW_CACHE / "instawdbdw.sql").read_text(encoding="utf-8")
+    found = aw.tables(script)
+    conn = psycopg2.connect(dsn)
+    try:
+        with conn, conn.cursor() as cur:
+            for name, columns in found.items():
+                body = ", ".join(f"{aw.snake(col)} {t}" for col, t, _ in columns)
+                cur.execute(f"CREATE TABLE {aw.snake(name)} ({body})")
+                data = (AW_CACHE / f"{name}.csv").read_bytes()
+                text = "".join(line + "\n" for line in aw.rows(data, name, columns))
+                cur.copy_expert(f"COPY {aw.snake(name)} FROM STDIN", io.StringIO(text))
+            for statement in aw.constraints(script):
+                cur.execute(statement)
+    finally:
+        conn.close()
+
+
+@pytest.fixture(scope="session")
+def adventureworks(request: pytest.FixtureRequest) -> Iterator[Any]:
+    """AdventureWorksDW in its own database, loaded once for every module that reads it."""
+    admin = os.environ.get("DATAAGENT_TEST_ADMIN_DSN")
+    if not admin:
+        admin = request.getfixturevalue("postgres_container")["dsn"]
+    server = psycopg2.connect(admin)
+    server.autocommit = True
+    with server.cursor() as cur:
+        cur.execute(f"DROP DATABASE IF EXISTS {AW_DATABASE}")
+        cur.execute(f"CREATE DATABASE {AW_DATABASE}")
+    dsn = urlunsplit(urlsplit(admin)._replace(path=f"/{AW_DATABASE}"))
+    _load_adventureworks(dsn)
+    conn = psycopg2.connect(dsn)
+    conn.autocommit = True
+    yield conn
+    conn.close()
+    with server.cursor() as cur:
+        cur.execute(f"DROP DATABASE {AW_DATABASE}")
+    server.close()

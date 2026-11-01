@@ -260,9 +260,9 @@ eval-retrieval:  ## recall@k, MRR and not-found accuracy of document retrieval (
 # R1-09: what each way of writing SQL earns on a Data Space's eval set, with the served model, in
 # the worker pod (worker_agent/sqlgen/ablation.py). Reads as ABLATION_AS; writes only query runs.
 ABLATION_ORG ?=
-ABLATION_SPACE ?=
+ABLATION_SPACE ?= DS-AW
 ABLATION_AS ?=
-ABLATION_SET ?=
+ABLATION_SET ?= Câu hỏi AdventureWorks
 ABLATION_ARGS ?=
 .PHONY: sqlgen-ablation
 

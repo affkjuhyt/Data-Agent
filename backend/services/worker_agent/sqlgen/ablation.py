@@ -11,8 +11,8 @@ of its right and wrong answers (the vote's share, the confidence meter of R1-14)
 
 It writes nothing but the query runs (caller_kind eval) and reads as the person named, so it sees
 what they may. In the worker pod:
-    make sqlgen-ablation ABLATION_ORG=<org id> ABLATION_SPACE=DS-BH ABLATION_AS=<username> \\
-         ABLATION_SET="Câu hỏi pilot Bán hàng"
+    make sqlgen-ablation ABLATION_ORG=<org id> ABLATION_SPACE=DS-AW ABLATION_AS=<username> \\
+         ABLATION_SET="Câu hỏi AdventureWorks"
 """
 
 from __future__ import annotations

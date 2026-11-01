@@ -1,0 +1,663 @@
+# DS-AW eval cases: what a business user of the bicycle maker would ask of "AdventureWorks", the
+# answer on AdventureWorksDW as `make adventureworks` loads it, and the hand-written SQL it comes from.
+# deploy/docker/sql/v3-adventureworks-context.sql loads them as the eval set "Câu hỏi AdventureWorks";
+# tests/unit/repo/test_adventureworks_eval_cases.py keeps the seed and this file the same, and
+# tests/integration/worker_agent/test_adventureworks_reconciliation.py reruns every reference SQL on the
+# real data. Several figures are a list: one per row in the order the answer gives them (a cut in its
+# members' order, a top-N from the first, a comparison the period asked then the base period). The
+# answers are a draft: two people solve docs/v3/eval/ds-aw-blind-sheet.md blind and a case they
+# disagree on is reviewed.
+eval_set: Câu hỏi AdventureWorks
+cases:
+- id: aw001
+  question: Doanh thu năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 49926384.4972
+  reference_sql: SELECT (SELECT SUM(sales_amount) FROM fact_internet_sales WHERE order_date >= DATE '2013-01-01'
+    AND order_date < DATE '2014-01-01') + (SELECT SUM(sales_amount) FROM fact_reseller_sales WHERE order_date
+    >= DATE '2013-01-01' AND order_date < DATE '2014-01-01')
+  note: both channels, each summed on its own table
+- id: aw002
+  question: Doanh thu tháng 6/2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 3305725.1042
+  reference_sql: SELECT (SELECT SUM(sales_amount) FROM fact_internet_sales WHERE order_date >= DATE '2013-06-01'
+    AND order_date < DATE '2013-07-01') + (SELECT SUM(sales_amount) FROM fact_reseller_sales WHERE order_date
+    >= DATE '2013-06-01' AND order_date < DATE '2013-07-01')
+- id: aw003
+  question: Doanh thu Internet năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 16351550.34
+  reference_sql: SELECT SUM(sales_amount) FROM fact_internet_sales WHERE order_date >= DATE '2013-01-01'
+    AND order_date < DATE '2014-01-01'
+- id: aw004
+  question: Doanh thu Internet quý 4/2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 5328573.76
+  reference_sql: SELECT SUM(sales_amount) FROM fact_internet_sales WHERE order_date >= DATE '2013-10-01'
+    AND order_date < DATE '2014-01-01'
+- id: aw005
+  question: Doanh thu Internet tháng 1/2014
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 45694.72
+  reference_sql: SELECT SUM(sales_amount) FROM fact_internet_sales WHERE order_date >= DATE '2014-01-01'
+    AND order_date < DATE '2014-02-01'
+  note: the last month of the data, partial (orders up to 28/01/2014)
+- id: aw006
+  question: Doanh thu đại lý năm 2012
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_DAI_LY
+    values:
+    - 28193631.5321
+  reference_sql: SELECT SUM(sales_amount) FROM fact_reseller_sales WHERE order_date >= DATE '2012-01-01'
+    AND order_date < DATE '2013-01-01'
+- id: aw007
+  question: Lãi gộp Internet năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: LAI_GOP_INTERNET
+    values:
+    - 6765410.971
+  reference_sql: SELECT SUM(sales_amount - total_product_cost) FROM fact_internet_sales WHERE order_date
+    >= DATE '2013-01-01' AND order_date < DATE '2014-01-01'
+- id: aw008
+  question: Biên lợi nhuận gộp Internet năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_INTERNET
+    values:
+    - 41.3747
+  reference_sql: SELECT SUM(sales_amount - total_product_cost) / SUM(sales_amount) * 100 FROM fact_internet_sales
+    WHERE order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01'
+  note: ratio of the sums, not the mean of the lines' ratios
+- id: aw009
+  question: Lãi gộp đại lý năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: LAI_GOP_DAI_LY
+    values:
+    - -491870.0066
+  reference_sql: SELECT SUM(sales_amount - total_product_cost) FROM fact_reseller_sales WHERE order_date
+    >= DATE '2013-01-01' AND order_date < DATE '2014-01-01'
+  note: 'negative on this data: resellers bought below standard cost that year'
+- id: aw010
+  question: Số đơn Internet năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_DON_INTERNET
+    values:
+    - 21289.0
+  reference_sql: SELECT COUNT(DISTINCT sales_order_number) FROM fact_internet_sales WHERE order_date >=
+    DATE '2013-01-01' AND order_date < DATE '2014-01-01'
+  note: orders, not order lines
+- id: aw011
+  question: Giá trị đơn bình quân Internet năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_DON_TB_INTERNET
+    values:
+    - 768.0751
+  reference_sql: SELECT SUM(sales_amount) / COUNT(DISTINCT sales_order_number) FROM fact_internet_sales
+    WHERE order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01'
+- id: aw012
+  question: Chỉ tiêu doanh số năm 2012
+  category: correct_result
+  expected:
+    kind: data
+    metric: CHI_TIEU_DOANH_SO
+    values:
+    - 36339000.0
+  reference_sql: SELECT SUM(sales_amount_quota) FROM fact_sales_quota WHERE date >= DATE '2012-01-01'
+    AND date < DATE '2013-01-01'
+- id: aw013
+  question: Số cuộc gọi tổng đài tháng 5/2014
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_CUOC_GOI
+    values:
+    - 43349.0
+  reference_sql: SELECT SUM(calls) FROM fact_call_center WHERE date >= DATE '2014-05-01' AND date < DATE
+    '2014-06-01'
+- id: aw014
+  question: Sự cố trên 100 cuộc gọi tháng 5/2014
+  category: correct_result
+  expected:
+    kind: data
+    metric: SU_CO_TREN_CUOC_GOI
+    values:
+    - 0.3737
+  reference_sql: SELECT SUM(issues_raised)::numeric / SUM(calls) * 100 FROM fact_call_center WHERE date
+    >= DATE '2014-05-01' AND date < DATE '2014-06-01'
+- id: aw015
+  question: Tồn kho cuối tháng 12/2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: TON_KHO
+    values:
+    - 258794.0
+  reference_sql: SELECT SUM(i.units_balance) FROM fact_product_inventory i WHERE i.movement_date = (SELECT
+    max(movement_date) FROM fact_product_inventory WHERE movement_date >= DATE '2013-12-01' AND movement_date
+    < DATE '2014-01-01')
+  note: 'a daily balance: the last day of December, never the sum of its days'
+- id: aw016
+  question: Giá trị tồn kho cuối tháng 6/2014
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_TON_KHO
+    values:
+    - 23603975.57
+  reference_sql: SELECT SUM(i.units_balance * i.unit_cost) FROM fact_product_inventory i WHERE i.movement_date
+    = (SELECT max(movement_date) FROM fact_product_inventory WHERE movement_date >= DATE '2014-06-01'
+    AND movement_date < DATE '2014-07-01')
+- id: aw017
+  question: Doanh thu Internet nhóm hàng Bikes năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 15359502.36
+  reference_sql: SELECT SUM(f.sales_amount) FROM fact_internet_sales f JOIN dim_product p ON p.product_key
+    = f.product_key JOIN dim_product_subcategory ps ON ps.product_subcategory_key = p.product_subcategory_key
+    JOIN dim_product_category pc ON pc.product_category_key = ps.product_category_key WHERE pc.english_product_category_name
+    = 'Bikes' AND f.order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01'
+- id: aw018
+  question: Doanh thu đại lý nhóm hàng Components năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_DAI_LY
+    values:
+    - 5374393.7749
+  reference_sql: SELECT SUM(f.sales_amount) FROM fact_reseller_sales f JOIN dim_product p ON p.product_key
+    = f.product_key JOIN dim_product_subcategory ps ON ps.product_subcategory_key = p.product_subcategory_key
+    JOIN dim_product_category pc ON pc.product_category_key = ps.product_category_key WHERE pc.english_product_category_name
+    = 'Components' AND f.order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01'
+- id: aw019
+  question: Doanh thu nhóm hàng Clothing năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 1202657.6937
+  reference_sql: SELECT (SELECT SUM(f.sales_amount) FROM fact_internet_sales f JOIN dim_product p ON p.product_key
+    = f.product_key JOIN dim_product_subcategory ps ON ps.product_subcategory_key = p.product_subcategory_key
+    JOIN dim_product_category pc ON pc.product_category_key = ps.product_category_key WHERE pc.english_product_category_name
+    = 'Clothing' AND f.order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01') + (SELECT SUM(f.sales_amount)
+    FROM fact_reseller_sales f JOIN dim_product p ON p.product_key = f.product_key JOIN dim_product_subcategory
+    ps ON ps.product_subcategory_key = p.product_subcategory_key JOIN dim_product_category pc ON pc.product_category_key
+    = ps.product_category_key WHERE pc.english_product_category_name = 'Clothing' AND f.order_date >=
+    DATE '2013-01-01' AND order_date < DATE '2014-01-01')
+- id: aw020
+  question: Doanh thu nhóm hàng Components năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 5374393.7749
+  reference_sql: SELECT SUM(f.sales_amount) FROM fact_reseller_sales f JOIN dim_product p ON p.product_key
+    = f.product_key JOIN dim_product_subcategory ps ON ps.product_subcategory_key = p.product_subcategory_key
+    JOIN dim_product_category pc ON pc.product_category_key = ps.product_category_key WHERE pc.english_product_category_name
+    = 'Components' AND f.order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01'
+  note: 'Components are sold to resellers only: both channels is the reseller figure (the compiler''s
+    cross-table sum gives NULL here, xfail in test_adventureworks_reconciliation)'
+- id: aw021
+  question: Doanh thu Internet khu vực Europe năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 5464395.45
+  reference_sql: SELECT SUM(f.sales_amount) FROM fact_internet_sales f JOIN dim_sales_territory t ON t.sales_territory_key
+    = f.sales_territory_key WHERE t.sales_territory_group = 'Europe' AND f.order_date >= DATE '2013-01-01'
+    AND order_date < DATE '2014-01-01'
+- id: aw022
+  question: Doanh thu đại lý loại Warehouse năm 2012
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_DAI_LY
+    values:
+    - 13190641.0288
+  reference_sql: SELECT SUM(f.sales_amount) FROM fact_reseller_sales f JOIN dim_reseller r ON r.reseller_key
+    = f.reseller_key WHERE r.business_type = 'Warehouse' AND f.order_date >= DATE '2012-01-01' AND order_date
+    < DATE '2013-01-01'
+- id: aw023
+  question: Doanh thu Internet từ khách hàng nữ năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 8242436.56
+  reference_sql: SELECT SUM(f.sales_amount) FROM fact_internet_sales f JOIN dim_customer cu ON cu.customer_key
+    = f.customer_key WHERE cu.gender = 'F' AND f.order_date >= DATE '2013-01-01' AND order_date < DATE
+    '2014-01-01'
+  note: gender is stored as F / M
+- id: aw024
+  question: Doanh thu Internet tiểu nhóm Mountain Bikes tháng 12/2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 765191.79
+  reference_sql: SELECT SUM(f.sales_amount) FROM fact_internet_sales f JOIN dim_product p ON p.product_key
+    = f.product_key JOIN dim_product_subcategory ps ON ps.product_subcategory_key = p.product_subcategory_key
+    JOIN dim_product_category pc ON pc.product_category_key = ps.product_category_key WHERE ps.english_product_subcategory_name
+    = 'Mountain Bikes' AND f.order_date >= DATE '2013-12-01' AND order_date < DATE '2014-01-01'
+- id: aw025
+  question: Doanh thu Internet của khách hàng ở California năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 3355851.39
+  reference_sql: SELECT SUM(f.sales_amount) FROM fact_internet_sales f JOIN dim_customer cu ON cu.customer_key
+    = f.customer_key JOIN dim_geography g ON g.geography_key = cu.geography_key WHERE g.state_province_name
+    = 'California' AND f.order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01'
+  note: the customer's state (dim_geography), not the sales territory
+- id: aw026
+  question: Doanh thu đại lý chương trình Volume Discount 11 to 14 năm 2012
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_DAI_LY
+    values:
+    - 956113.377
+  reference_sql: SELECT SUM(f.sales_amount) FROM fact_reseller_sales f JOIN dim_promotion pr ON pr.promotion_key
+    = f.promotion_key WHERE pr.english_promotion_name = 'Volume Discount 11 to 14' AND f.order_date >=
+    DATE '2012-01-01' AND order_date < DATE '2013-01-01'
+- id: aw027
+  question: Tồn kho nhóm hàng Bikes cuối tháng 12/2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: TON_KHO
+    values:
+    - 10631.0
+  reference_sql: SELECT SUM(i.units_balance) FROM fact_product_inventory i JOIN dim_product p ON p.product_key
+    = i.product_key LEFT JOIN dim_product_subcategory ps ON ps.product_subcategory_key = p.product_subcategory_key
+    LEFT JOIN dim_product_category pc ON pc.product_category_key = ps.product_category_key WHERE pc.english_product_category_name
+    = 'Bikes' AND i.movement_date = (SELECT max(movement_date) FROM fact_product_inventory WHERE movement_date
+    >= DATE '2013-12-01' AND movement_date < DATE '2014-01-01')
+- id: aw028
+  question: Doanh thu Internet theo quý năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 2678946.04
+    - 3973793.48
+    - 4370237.06
+    - 5328573.76
+  reference_sql: SELECT date_trunc('quarter', order_date), SUM(sales_amount) FROM fact_internet_sales
+    WHERE order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01' GROUP BY 1 ORDER BY 1
+- id: aw029
+  question: Doanh thu đại lý năm 2013 theo từng nhóm hàng
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_DAI_LY
+    values:
+    - 378897.9843
+    - 26942691.1543
+    - 878851.2437
+    - 5374393.7749
+  reference_sql: SELECT pc.english_product_category_name, SUM(f.sales_amount) FROM fact_reseller_sales
+    f JOIN dim_product p ON p.product_key = f.product_key JOIN dim_product_subcategory ps ON ps.product_subcategory_key
+    = p.product_subcategory_key JOIN dim_product_category pc ON pc.product_category_key = ps.product_category_key
+    WHERE f.order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01' GROUP BY 1 ORDER BY 1
+- id: aw030
+  question: Doanh thu Internet theo khu vực năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 5464395.45
+    - 6547711.51
+    - 4339443.38
+  reference_sql: SELECT t.sales_territory_group, SUM(f.sales_amount) FROM fact_internet_sales f JOIN dim_sales_territory
+    t ON t.sales_territory_key = f.sales_territory_key WHERE f.order_date >= DATE '2013-01-01' AND order_date
+    < DATE '2014-01-01' GROUP BY 1 ORDER BY 1
+- id: aw031
+  question: Lãi gộp đại lý theo loại đại lý năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: LAI_GOP_DAI_LY
+    values:
+    - -57480.0591
+    - -95714.6375
+    - -338675.31
+  reference_sql: SELECT r.business_type, SUM(f.sales_amount - f.total_product_cost) FROM fact_reseller_sales
+    f JOIN dim_reseller r ON r.reseller_key = f.reseller_key WHERE f.order_date >= DATE '2013-01-01' AND
+    order_date < DATE '2014-01-01' GROUP BY 1 ORDER BY 1
+- id: aw032
+  question: 5 sản phẩm có doanh thu Internet cao nhất năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 970780.77
+    - 967435.83
+    - 947830.87
+    - 947830.87
+    - 923356.02
+    text_contains:
+    - Mountain-200 Black, 42
+    - Mountain-200 Silver, 38
+    - Mountain-200 Black, 46
+    - Mountain-200 Black, 38
+    - Mountain-200 Silver, 46
+  reference_sql: SELECT p.english_product_name, SUM(f.sales_amount) FROM fact_internet_sales f JOIN dim_product
+    p ON p.product_key = f.product_key WHERE f.order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01'
+    GROUP BY 1 ORDER BY 2 DESC LIMIT 5
+  note: a product's versions (dim_product is slowly changing) are one product
+- id: aw033
+  question: 3 đại lý có doanh thu đại lý cao nhất năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_DAI_LY
+    values:
+    - 436921.6551
+    - 427305.5875
+    - 397237.2419
+    text_contains:
+    - Roadway Bicycle Supply
+    - Field Trip Store
+    - Brakes and Gears
+  reference_sql: SELECT r.reseller_name, SUM(f.sales_amount) FROM fact_reseller_sales f JOIN dim_reseller
+    r ON r.reseller_key = f.reseller_key WHERE f.order_date >= DATE '2013-01-01' AND order_date < DATE
+    '2014-01-01' GROUP BY 1 ORDER BY 2 DESC LIMIT 3
+- id: aw034
+  question: 3 tiểu nhóm sản phẩm có số lượng bán Internet nhiều nhất năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_LUONG_BAN_INTERNET
+    values:
+    - 16373.0
+    - 7718.0
+    - 6174.0
+    text_contains:
+    - Tires and Tubes
+    - Bottles and Cages
+    - Helmets
+  reference_sql: SELECT ps.english_product_subcategory_name, SUM(f.order_quantity) FROM fact_internet_sales
+    f JOIN dim_product p ON p.product_key = f.product_key JOIN dim_product_subcategory ps ON ps.product_subcategory_key
+    = p.product_subcategory_key JOIN dim_product_category pc ON pc.product_category_key = ps.product_category_key
+    WHERE f.order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01' GROUP BY 1 ORDER BY 2 DESC
+    LIMIT 3
+- id: aw035
+  question: 2 quốc gia có doanh thu Internet thấp nhất năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 1085632.65
+    - 1578511.8
+    text_contains:
+    - Canada
+    - France
+  reference_sql: SELECT t.sales_territory_country, SUM(f.sales_amount) FROM fact_internet_sales f JOIN
+    dim_sales_territory t ON t.sales_territory_key = f.sales_territory_key WHERE f.order_date >= DATE
+    '2013-01-01' AND order_date < DATE '2014-01-01' GROUP BY 1 ORDER BY 2 ASC LIMIT 2
+- id: aw036
+  question: Doanh thu Internet năm 2013 so với cùng kỳ năm trước
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 16351550.34
+    - 5842485.1952
+  reference_sql: SELECT 1, SUM(sales_amount) FROM fact_internet_sales WHERE order_date >= DATE '2013-01-01'
+    AND order_date < DATE '2014-01-01' UNION ALL SELECT 2, SUM(sales_amount) FROM fact_internet_sales
+    WHERE order_date >= DATE '2012-01-01' AND order_date < DATE '2013-01-01' ORDER BY 1
+- id: aw037
+  question: Doanh thu đại lý quý 3/2013 so với quý trước
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_DAI_LY
+    values:
+    - 7644679.6351
+    - 8656657.4593
+  reference_sql: SELECT 1, SUM(sales_amount) FROM fact_reseller_sales WHERE order_date >= DATE '2013-07-01'
+    AND order_date < DATE '2013-10-01' UNION ALL SELECT 2, SUM(sales_amount) FROM fact_reseller_sales
+    WHERE order_date >= DATE '2013-04-01' AND order_date < DATE '2013-07-01' ORDER BY 1
+- id: aw038
+  question: Biên lợi nhuận gộp Internet năm 2013 so với năm trước
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_INTERNET
+    values:
+    - 41.3747
+    - 41.5578
+  reference_sql: SELECT 1, SUM(sales_amount - total_product_cost) / SUM(sales_amount) * 100 FROM fact_internet_sales
+    WHERE order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01' UNION ALL SELECT 2, SUM(sales_amount
+    - total_product_cost) / SUM(sales_amount) * 100 FROM fact_internet_sales WHERE order_date >= DATE
+    '2012-01-01' AND order_date < DATE '2013-01-01' ORDER BY 1
+- id: aw039
+  question: Tỷ trọng doanh thu Internet theo khu vực năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 33.4182
+    - 40.0434
+    - 26.5384
+  reference_sql: SELECT t.sales_territory_group, 100 * SUM(f.sales_amount) / SUM(SUM(f.sales_amount))
+    OVER () FROM fact_internet_sales f JOIN dim_sales_territory t ON t.sales_territory_key = f.sales_territory_key
+    WHERE f.order_date >= DATE '2013-01-01' AND order_date < DATE '2014-01-01' GROUP BY 1 ORDER BY 1
+  note: the shares, in percent
+- id: aw040
+  question: Doanh thu Internet luỹ kế từ đầu năm đến hết tháng 6/2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 6652739.52
+  reference_sql: SELECT SUM(sales_amount) FROM fact_internet_sales WHERE order_date >= DATE '2013-01-01'
+    AND order_date < DATE '2013-07-01'
+- id: aw041
+  question: Doanh thu đại lý luỹ kế theo quý năm 2012
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_DAI_LY
+    values:
+    - 8288704.1255
+    - 14845275.4997
+    - 20659355.6057
+    - 28193631.5321
+  reference_sql: SELECT date_trunc('quarter', order_date), SUM(SUM(sales_amount)) OVER (ORDER BY date_trunc('quarter',
+    order_date)) FROM fact_reseller_sales WHERE order_date >= DATE '2012-01-01' AND order_date < DATE
+    '2013-01-01' GROUP BY 1 ORDER BY 1
+  note: the running total, quarter by quarter
+- id: aw042
+  question: Doanh thu Internet năm tài chính 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 9744505.54
+  reference_sql: SELECT SUM(sales_amount) FROM fact_internet_sales WHERE order_date >= DATE '2013-07-01'
+    AND order_date < DATE '2014-07-01'
+  note: fiscal 2013 is July 2013 - June 2014
+- id: aw043
+  question: Doanh thu đại lý năm tài chính 2012
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_DAI_LY
+    values:
+    - 32547674.916
+  reference_sql: SELECT SUM(sales_amount) FROM fact_reseller_sales WHERE order_date >= DATE '2012-07-01'
+    AND order_date < DATE '2013-07-01'
+- id: aw044
+  question: Doanh thu Internet năm tài chính 2011
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_INTERNET
+    values:
+    - 6542788.276
+  reference_sql: SELECT SUM(sales_amount) FROM fact_internet_sales WHERE order_date >= DATE '2011-07-01'
+    AND order_date < DATE '2012-07-01'
+  note: dim_date.fiscal_year of this warehouse calls July-December 2010 fiscal 2011 and January-June 2011
+    fiscal 2010; the year by the dates is July 2011 - June 2012
+- id: aw045
+  question: Doanh số Trade Sales thực tế năm 2011
+  category: correct_result
+  expected:
+    kind: data
+    metric: TAI_CHINH_THUC_TE
+    values:
+    - 24535580.58
+  reference_sql: SELECT SUM(f.amount) FROM fact_finance f JOIN dim_scenario s ON s.scenario_key = f.scenario_key
+    JOIN dim_account a ON a.account_key = f.account_key WHERE s.scenario_name = 'Actual' AND a.account_description
+    = 'Trade Sales' AND f.date >= DATE '2011-01-01' AND f.date < DATE '2012-01-01'
+- id: aw046
+  question: Doanh số Trade Sales theo ngân sách năm 2011
+  category: correct_result
+  expected:
+    kind: data
+    metric: TAI_CHINH_NGAN_SACH
+    values:
+    - 23579200.0
+  reference_sql: SELECT SUM(f.amount) FROM fact_finance f JOIN dim_scenario s ON s.scenario_key = f.scenario_key
+    JOIN dim_account a ON a.account_key = f.account_key WHERE s.scenario_name = 'Budget' AND a.account_description
+    = 'Trade Sales' AND f.date >= DATE '2011-01-01' AND f.date < DATE '2012-01-01'
+  note: Budget rows stop at 2011
+- id: aw047
+  question: Chi phí lương Salaries thực tế năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: TAI_CHINH_THUC_TE
+    values:
+    - 12198229.33
+  reference_sql: SELECT SUM(f.amount) FROM fact_finance f JOIN dim_scenario s ON s.scenario_key = f.scenario_key
+    JOIN dim_account a ON a.account_key = f.account_key WHERE s.scenario_name = 'Actual' AND a.account_description
+    = 'Salaries' AND f.date >= DATE '2013-01-01' AND f.date < DATE '2014-01-01'
+- id: aw048
+  question: Doanh thu theo ngày giao hàng tháng 12/2013
+  category: ask_at_right_time
+  expected:
+    behavior: clarify
+  note: only the order-date role of dim_date is declared
+- id: aw049
+  question: Lãi gộp năm 2013
+  category: ask_at_right_time
+  expected:
+    behavior: clarify
+  note: 'gross margin is per channel: Internet or resellers'
+- id: aw050
+  question: Số lượng bán năm 2013
+  category: ask_at_right_time
+  expected:
+    behavior: clarify
+  note: per channel
+- id: aw051
+  question: Số tài chính năm 2013
+  category: ask_at_right_time
+  expected:
+    behavior: clarify
+  note: a scenario and an account are needed
+- id: aw052
+  question: Doanh thu theo nhân viên bán hàng năm 2013
+  category: ask_at_right_time
+  expected:
+    behavior: clarify
+  note: the employee is not in the model
+- id: aw053
+  question: Doanh thu Internet theo lý do mua hàng năm 2013
+  category: ask_at_right_time
+  expected:
+    behavior: clarify
+  note: 'sales reasons are not modelled: joining them multiplies revenue'
+- id: aw054
+  question: Dự báo doanh thu năm 2015
+  category: refusal
+  expected:
+    behavior: refuse
+  note: forecasts are not answered
+- id: aw055
+  question: Doanh thu năm 2009
+  category: refusal
+  expected:
+    behavior: refuse
+  note: 'no data: sales start on 29/12/2010'
+- id: aw056
+  question: Doanh thu Internet tháng 3/2015
+  category: refusal
+  expected:
+    behavior: refuse
+  note: 'no data: sales end on 28/01/2014'
+- id: aw057
+  question: Số cuộc gọi tổng đài tháng 1/2013
+  category: refusal
+  expected:
+    behavior: refuse
+  note: 'no data: the call centre has May 2014 only'
+- id: aw058
+  question: Doanh số Trade Sales theo ngân sách năm 2013
+  category: refusal
+  expected:
+    behavior: refuse
+  note: 'no data: the Budget scenario ends in 2011'
+- id: aw059
+  question: Giá cổ phiếu của công ty hôm nay
+  category: refusal
+  expected:
+    behavior: refuse
+- id: aw060
+  question: Tỷ lệ khách hàng rời bỏ năm 2013
+  category: refusal
+  expected:
+    behavior: refuse
