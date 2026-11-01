@@ -17,7 +17,6 @@ tests/
 │   ├── platform_workers/    #   There is no single image that can import every
 │   ├── auth_api/            #   service (their pins conflict: OTel, boto3), so the
 │   │                        #   suites are never run together.
-│   ├── model_service/
 │   ├── contracts/           # libs/contracts (NOP-150), run in the api image (PyYAML, pinned pydantic)
 │   └── repo/                # repo-wide: k8s manifests, db-init, Ansible deploy plan, migrate image,
 │                            #   cross-service auth/tenant policy, model/bench and model/eval.

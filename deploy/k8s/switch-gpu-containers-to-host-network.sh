@@ -77,6 +77,6 @@ echo "=== verifying from a pod in the cluster ==="
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
 for port in 8001 8002 8003 8004; do
   kubectl -n dataagent-service run hostnet-check-$port --rm -i --restart=Never --image=curlimages/curl:latest \
-    --overrides='{"metadata":{"labels":{"app":"model-service"}},"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":100,"runAsGroup":101,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"curlimages/curl:latest","command":["curl","-s","-m","5","-o","/dev/null","-w","port '"$port"': %{http_code}\n","http://10.10.55.101:'"$port"'/health"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}' \
+    --overrides='{"metadata":{"labels":{"app":"litellm"}},"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":100,"runAsGroup":101,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"curlimages/curl:latest","command":["curl","-s","-m","5","-o","/dev/null","-w","port '"$port"': %{http_code}\n","http://10.10.55.101:'"$port"'/health"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}' \
     -- true 2>&1 | grep -v "recorded in container\|command prompt\|^pod "
 done

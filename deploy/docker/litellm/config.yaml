@@ -5,7 +5,7 @@
 #   agent-main  Qwen3-14B-AWQ   vLLM   :8001  (accuracy tier)
 #   agent-fast  Qwen3-4B-AWQ    vLLM   :8002  (routing/rewrite tier)
 #   BAAI/bge-m3 TEI             :8003  (OpenAI-compatible /v1/embeddings)
-#   bge-reranker-v2-m3 TEI      :8004  (reached via model_service /rerank, not litellm)
+#   bge-reranker-v2-m3 TEI      :8004  (DOCUMENT_RERANK_URL, called by worker-agent directly)
 #
 # Services address ALIASES only — swap a backend here, no code changes.
 # `chat_template_kwargs.enable_thinking: false` — Qwen3 defaults to emitting
@@ -152,8 +152,7 @@ model_list:
           enable_thinking: false
 
   # ── embeddings → TEI bge-m3 (OpenAI-compatible /v1) ────────────────────────
-  # Same model/vector space (1024-dim bge-m3) the stack already used via
-  # model_service, so agent_memories / workflow_memory / schema_catalog stay valid.
+  # 1024-dim bge-m3: the vector space every Qdrant collection was built in.
   - model_name: embedder
     litellm_params:
       model: openai/BAAI/bge-m3

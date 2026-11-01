@@ -88,12 +88,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: model-service
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: langfuse
     - namespaceSelector:
         matchLabels:
@@ -185,12 +179,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: grafana
     # Temporal's own databases (ADR-33): the server and the Job that upgrades their schema.
     - namespaceSelector:
         matchLabels:
@@ -248,12 +236,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: model-service
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: langfuse
     - namespaceSelector:
         matchLabels:
@@ -333,12 +315,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: grafana
     ports:
     - protocol: TCP
       port: 8310
@@ -376,12 +352,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: model-service
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: langfuse
     - namespaceSelector:
         matchLabels:
@@ -461,12 +431,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: grafana
     # The V3 blocks that use it (KB-02): from the connections their code makes.
     - namespaceSelector:
         matchLabels:
@@ -517,12 +481,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: model-service
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: langfuse
     - namespaceSelector:
         matchLabels:
@@ -602,12 +560,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: grafana
     # The V3 blocks that use it (KB-02): from the connections their code makes.
     - namespaceSelector:
         matchLabels:
@@ -666,12 +618,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: model-service
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: langfuse
     - namespaceSelector:
         matchLabels:
@@ -751,12 +697,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: grafana
     ports:
     - protocol: TCP
       port: 8341
@@ -796,12 +736,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: model-service
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: langfuse
     - namespaceSelector:
         matchLabels:
@@ -881,12 +815,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: grafana
     # The V3 blocks that use it (KB-02): from the connections their code makes.
     - namespaceSelector:
         matchLabels:
@@ -951,12 +879,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: model-service
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: langfuse
     - namespaceSelector:
         matchLabels:
@@ -1036,12 +958,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: grafana
     ports:
     - protocol: TCP
       port: 8370
@@ -1081,12 +997,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: model-service
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: langfuse
     - namespaceSelector:
         matchLabels:
@@ -1166,12 +1076,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: grafana
     # The V3 blocks that use it (KB-02): from the connections their code makes.
     - namespaceSelector:
         matchLabels:
@@ -1234,12 +1138,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: model-service
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: langfuse
     - namespaceSelector:
         matchLabels:
@@ -1319,12 +1217,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: grafana
     # The V3 blocks that use it (KB-02): from the connections their code makes.
     - namespaceSelector:
         matchLabels:
@@ -1393,12 +1285,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: model-service
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: langfuse
     - namespaceSelector:
         matchLabels:
@@ -1478,12 +1364,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: grafana
     ports:
     - protocol: TCP
       port: 8350

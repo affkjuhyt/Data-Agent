@@ -48,11 +48,3 @@ cm "$SVC" kong-scripts     --from-file=$K/kong/kong-setup.sh
 cm "$SVC" litellm-config   --from-file=config.yaml=$K/litellm/config.yaml
 cm "$SVC" prometheus-config --from-file=$K/monitoring/prometheus.yml
 
-# `--from-file=<dir>` is NOT recursive and monitoring/grafana/provisioning/ holds
-# only subdirectories, so Grafana needs one ConfigMap per directory.
-cm "$SVC" grafana-datasources \
-  --from-file=$K/monitoring/grafana/provisioning/datasources/
-cm "$SVC" grafana-dashboards-provider \
-  --from-file=$K/monitoring/grafana/provisioning/dashboards/
-cm "$SVC" grafana-dashboards \
-  --from-file=$K/monitoring/grafana/dashboards/

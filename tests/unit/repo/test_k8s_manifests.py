@@ -597,42 +597,6 @@ class TestPortsFollowThePlan:
                         bad.append(f"{path.name}:{k}={v}")
         assert not bad, f"env still on a pre-migration port: {bad}"
 
-    def test_grafana_datasources_point_at_a_real_service_port(self):
-        """The datasource files become the grafana-datasources ConfigMap
-        (create-configmaps.sh), so nothing in the manifests would flag a wrong
-        port: Grafana starts fine and every panel just shows "no data"."""
-        ports = {
-            (s["metadata"]["name"], s["metadata"]["namespace"]): {
-                p["port"] for p in s["spec"]["ports"]
-            }
-            for s in self._services()
-        }
-        url = re.compile(r"url:\s*https?://([a-z0-9-]+)\.([a-z0-9-]+)\.svc\.cluster\.local:(\d+)")
-        datasources = (
-            REPO_ROOT
-            / "deploy"
-            / "docker"
-            / "monitoring"
-            / "grafana"
-            / "provisioning"
-            / "datasources"
-        )
-        bad, checked = [], 0
-        for path in sorted(datasources.glob("*.y*ml")):
-            for line in path.read_text(encoding="utf-8").splitlines():
-                if not line.strip().startswith("url:"):
-                    continue
-                m = url.search(line)
-                if not m:
-                    bad.append(f"{path.name}: {line.strip()} is not a Service FQDN")
-                    continue
-                checked += 1
-                name, namespace, port = m.group(1), m.group(2), int(m.group(3))
-                if port not in ports.get((name, namespace), set()):
-                    bad.append(f"{path.name}: {name}.{namespace}:{port} is not a Service port")
-        assert checked, "no datasource URL found"
-        assert not bad, bad
-
 
 # ── namespaces, identity and network isolation ─────────────────────────────
 
@@ -836,9 +800,7 @@ class TestCrossNamespaceHostnamesAreQualified:
             "langfuse",
             "jaeger",
             "prometheus",
-            "grafana",
             "auth-api",
-            "model-service",
             "workflow-runtime",
             "api",
             "frontend",
@@ -975,7 +937,6 @@ class TestImageReferencesAreIntact:
         "docker.io/langfuse/langfuse-worker:3",
         "jaegertracing/all-in-one:1.55",
         "prom/prometheus:v2.54.1",
-        "grafana/grafana:11.2.0",
         "python:3.12-alpine",
         # Temporal (ADR-33): server and admin-tools move together (job/temporal-schema.yaml).
         "docker.io/temporalio/server:1.32.1",
@@ -1151,7 +1112,7 @@ class TestDockerfilesCarryNoDeploymentConfig:
     }
 
     def test_the_set_is_not_empty(self):
-        assert len(self.DOCKERFILES) >= 10, "Dockerfile discovery broke"
+        assert len(self.DOCKERFILES) >= 8, "Dockerfile discovery broke"
 
     @pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.parent.name)
     def test_no_expose_or_start_command(self, path):

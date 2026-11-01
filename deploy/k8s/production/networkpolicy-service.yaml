@@ -139,32 +139,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-model-service
-  namespace: dataagent-service
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: model-service
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: workflow-runtime
-    - podSelector:
-        matchLabels:
-          app: prometheus
-    ports:
-    - protocol: TCP
-      port: 8230
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: allow-workflow-runtime
   namespace: dataagent-service
   labels:
@@ -467,9 +441,6 @@ spec:
   - Ingress
   ingress:
   - from:
-    - podSelector:
-        matchLabels:
-          app: grafana
     # V3 blocks (KB-02).
     - podSelector:
         matchLabels:
@@ -477,29 +448,6 @@ spec:
     ports:
     - protocol: TCP
       port: 8400
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-grafana
-  namespace: dataagent-service
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: grafana
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: kong
-    ports:
-    - protocol: TCP
-      port: 8410
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -589,7 +537,6 @@ spec:
     - key: app
       operator: In
       values:
-      - model-service
       - litellm
   policyTypes:
   - Egress

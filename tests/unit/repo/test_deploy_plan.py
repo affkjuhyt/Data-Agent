@@ -93,7 +93,7 @@ class TestRealImages:
     def test_a_service_image_sees_its_own_tree_and_not_the_others(self):
         # They used to copy all of backend/services, so an edit to one service rebuilt
         # and restarted every one of them (and the migrate image).
-        services = ("auth_api", "model_service")
+        services = ("api", "worker_agent", "crawler")
         for service in services:
             inputs = _inputs(f"backend/services/{service}")
             assert plan.paths_touching([f"backend/services/{service}/main.py"], inputs), service
@@ -120,7 +120,6 @@ class TestRealImages:
             ("deploy/docker/kong", "Dockerfile"),
             ("deploy/docker/setup", "Dockerfile"),
             ("frontend", "Dockerfile.dev"),
-            ("backend/services/model_service", "Dockerfile"),
         ):
             assert not plan.paths_touching(
                 ["backend/libs/shared/x.py", "pyproject.toml", "uv.lock"],

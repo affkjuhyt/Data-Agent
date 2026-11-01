@@ -66,7 +66,7 @@ jobs:
           for target in \
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
             backend/libs/contracts backend/libs/sql_guard backend/libs/cron \
-            backend/services/auth_api backend/services/model_service; do
+            backend/services/auth_api; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent \
@@ -102,9 +102,6 @@ jobs:
           - suite: auth_api
             python: "3.12"
             install: -r backend/services/auth_api/requirements.txt
-          - suite: model_service
-            python: "3.11"
-            install: -r backend/services/model_service/requirements.txt
           # The `api` block (ADR-28); its suite also holds the OpenAPI to tab 4 A2 (ADR-48).
           - suite: api
             python: "3.12"

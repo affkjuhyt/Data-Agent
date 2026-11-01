@@ -8,8 +8,8 @@ things:
   JWT plugin), `keycloak` (bakes `kc.sh build --db=postgres`) and `setup` (bash +
   curl for the `setup` Job);
 - the files the cluster reads as ConfigMaps or Job inputs: SQL, the Kong and
-  Keycloak setup scripts, the Keycloak realm, LiteLLM routing, Prometheus/Grafana
-  provisioning — plus the dev TLS tool and the Kafka JAAS template.
+  Keycloak setup scripts, the Keycloak realm, LiteLLM routing, the Prometheus
+  config — plus the dev TLS tool and the Kafka JAAS template.
 
 ## What is here
 
@@ -24,7 +24,6 @@ things:
 | `sql/grant-roles.sql`, `platform-seed.sql` | ConfigMap `db-init-sql` → `job/db-init.yaml` |
 | `litellm/config.yaml` | ConfigMap `litellm-config` |
 | `monitoring/prometheus.yml` | ConfigMap `prometheus-config` |
-| `monitoring/grafana/provisioning/{datasources,dashboards}/`, `grafana/dashboards/` | ConfigMaps `grafana-datasources`, `grafana-dashboards-provider`, `grafana-dashboards` |
 | `certs/gen-certs.sh` | dev TLS material, generated files git-ignored |
 | `kafka/kafka-broker-jaas.config.example` | filled by `deploy/k8s/gen-kafka-jaas-secret.sh` → Secret `kafka-jaas` (never baked into an image) |
 
@@ -47,9 +46,7 @@ Images are named `dataagent/<service_name>`; push them as
 
 Ports are not in the Dockerfiles. Each image has no `EXPOSE` and no `CMD` — the
 start command and the port live in the workload's manifest, so there is one place
-to change them: auth-api 8200, model-service
-8230, workflow-runtime 8240 (also the agent/workflow authoring API, ex flow-builder),
-llm-exporter 8270. `8000–8099` stays reserved for the LLM tier. Third-party
+to change them (the table in `deploy/k8s/README.md`). `8000–8099` stays reserved for the LLM tier. Third-party
 images keep their native port.
 
 ## Constraints to keep in mind
@@ -66,6 +63,5 @@ images keep their native port.
   `apt-get` take it as a build arg (empty keeps `deb.debian.org`); the k8s-local inventory
   passes BizFly's mirror through `image_build_flags`, because deb.debian.org was ~0.3 MB/s
   from that host. apt verifies the archive signatures, so the mirror cannot alter a package.
-- **`model_service` runs no local models.** `REMOTE_EMBED_URL` /
-  `REMOTE_RERANK_URL` / `REMOTE_LLM_URL` are required. Embeddings are `bge-m3`
-  (1024-dim) — a KB ingested against the old 384-dim backend must be re-ingested.
+- **No service runs a local model.** LLM calls go through LiteLLM, embeddings and
+  reranking to TEI. Embeddings are `bge-m3` (1024-dim).

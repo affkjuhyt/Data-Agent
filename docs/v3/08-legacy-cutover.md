@@ -26,7 +26,7 @@
 | `kb-promote-*` | đã xoá mã 22/10/2026 (KB-08) | `worker-document` + `worker-agent` (`document.indexed`) | Đã xoá, cổng §4 đạt 01/11/2026 | Kafka consumer/group mới xử lý đủ Bronze/Silver/Gold, retry và DLQ |
 | `indicator-api` | đã xoá 12/10/2026 | module của `api` (mọi route của nó chỉ trả 501) | Đã xoá | không còn Kong route, lời gọi frontend, import hay topic nào; manifest, Ansible, Makefile, CI, secret xoá cùng commit |
 | `platform-workers-*` | đã xoá 01/11/2026 | — | Đã xoá | audit, memory nhận topic chỉ `workflow-runtime` (đã xoá) phát; schema-crawler đọc/ghi bảng KB cũ (`KBWarehouse*`, `SchemaCatalog`) không có trong CSDL V3, V3 quét schema trong `worker-agent` (`schema_scans.py`); topic, ACL, group Kafka và user SASL của chúng xoá cùng commit |
-| `model-service` | `service/model-service.yaml`, `dataagent/model_service` | Chưa được đặc tả rõ trong V3 | Giữ | Có quyết định riêng về LLM/model proxy; không xoá theo suy đoán |
+| `model-service` | đã xoá 01/11/2026 | TEI cho embedding, rerank (ADR-35); sinh văn bản qua LiteLLM (ADR-41) | Đã xoá | client duy nhất (`libs/database_connector/model_connector.py`) không còn ai import; Grafana (chỉ có dashboard `kb-ccu` vẽ số của nó và llm-exporter) xoá cùng |
 | `sandbox-executor` | đã xoá 01/11/2026 | — (V3 không chạy code người dùng; sandbox, khi cần, nằm trong `worker-agent`, tab 1 §7.2) | Đã xoá | bên gọi duy nhất là `workflow-runtime` (đã xoá); không khối V3 nào gọi; manifest, namespace `dataagent-sandbox`, RBAC, Ansible, OpenBao, CI, suite và các ca eval của nó xoá cùng commit |
 | `llm-exporter` | đã xoá 01/11/2026 | `model/bench` (TTFT, decode, throughput theo vai trò) | Đã xoá | chỉ dashboard Grafana `kb-ccu` của KB cũ đọc số của nó |
 

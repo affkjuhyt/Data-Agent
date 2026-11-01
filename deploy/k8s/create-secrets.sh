@@ -128,12 +128,6 @@ kubectl -n dataagent-service create secret generic crawler-secrets \
   --from-literal=OPENBAO_SECRET_ID="${CRAWLER_OPENBAO_SECRET_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n dataagent-service create secret generic model-service-secrets \
-  --from-literal=POSTGRES_DSN="${APP_DATABASE_URL}" \
-  --from-literal=REMOTE_API_KEY="${REMOTE_API_KEY}" \
-  --from-literal=REMOTE_LLM_KEY="${REMOTE_LLM_KEY}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 kubectl -n dataagent-service create secret generic frontend-secrets \
   --from-literal=VITE_KEYCLOAK_URL="${KEYCLOAK_PUBLIC_URL}" \
   --from-literal=VITE_API_BASE_URL="${PUBLIC_API_URL}" \
@@ -214,10 +208,6 @@ kubectl -n dataagent-service create secret generic langfuse-worker-secrets \
   --from-literal=LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY="${MINIO_ROOT_PASSWORD}" \
   --from-literal=LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID="${MINIO_ROOT_USER}" \
   --from-literal=LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY="${MINIO_ROOT_PASSWORD}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n dataagent-service create secret generic grafana-secrets \
-  --from-literal=GF_SECURITY_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic migrate-secrets \

@@ -23,7 +23,6 @@ data:
   KAFKA_SASL_MECHANISM: PLAIN
   KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
-  MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
   KEYCLOAK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KC_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
@@ -35,10 +34,6 @@ data:
   LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
   OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger.dataagent-service.svc.cluster.local:8431
   OTEL_SDK_DISABLED: 'false'
-  REMOTE_EMBED_URL: http://10.10.55.101:8003
-  REMOTE_RERANK_URL: http://10.10.55.101:8004
-  REMOTE_LLM_URL: http://10.10.55.101:8002
-  REMOTE_LLM_MODEL: agent-fast
   EMBEDDING_DIM: '1024'
   RUNTIME_ALLOWED_SERVICES: ''
 ---
@@ -66,7 +61,6 @@ data:
   KAFKA_SASL_MECHANISM: PLAIN
   KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
-  MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
   KEYCLOAK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KC_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
@@ -75,9 +69,5 @@ data:
   LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
   OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger.dataagent-service.svc.cluster.local:8431
   OTEL_SDK_DISABLED: 'false'
-  REMOTE_EMBED_URL: http://10.10.55.101:8003
-  REMOTE_RERANK_URL: http://10.10.55.101:8004
-  REMOTE_LLM_URL: http://10.10.55.101:8002
-  REMOTE_LLM_MODEL: agent-fast
   EMBEDDING_DIM: '1024'
   RUNTIME_ALLOWED_SERVICES: ''

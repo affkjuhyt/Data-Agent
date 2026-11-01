@@ -67,7 +67,7 @@ spec:
             memory: 256Mi
           limits:
             # Halved — jaeger isn't on the request path; headroom goes to
-            # kong/workflow-runtime/model-service instead.
+            # kong and the api instead.
             cpu: 250m
             memory: 256Mi
         readinessProbe:

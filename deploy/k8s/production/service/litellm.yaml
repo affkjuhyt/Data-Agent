@@ -26,8 +26,7 @@ data:
   REDIS_PORT: '8320'
   # deploy/docker/litellm/config.yaml's model list reads these two directly
   # (os.environ/LLM_MAIN_BASE_URL, os.environ/LLM_FAST_BASE_URL) — the shared
-  # dataagent-config only has REMOTE_LLM_URL (model-service's own naming),
-  # which litellm's config doesn't reference at all. Without these, litellm
+  # dataagent-config does not carry them. Without these, litellm
   # falls back to the real https://api.openai.com default base URL and every
   # completion request hangs/500s trying to reach the internet (correctly
   # blocked by NetworkPolicy — see allow-egress-remote-llm). vllm-main/

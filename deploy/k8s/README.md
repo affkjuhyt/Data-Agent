@@ -60,7 +60,7 @@ flow at a time:
 | `allow-<service>` (service ns) | ingress to one service, from the named callers only |
 | `allow-kong-admin` | port 8101 only from `auth-api` and `setup` |
 | `allow-ingress-controller-to-kong` | the only ingress from outside the platform |
-| `allow-egress-remote-llm` | `10.10.55.101` on 8001–8004, from the workloads that call the GPU box: `model-service`, `litellm`, `llm-exporter` and the four KB workers |
+| `allow-egress-remote-llm` | `10.10.55.101` on 8001–8004, from the one workload that calls the GPU box: `litellm` |
 
 Because egress is coarse (platform-only) and ingress is per-caller, a flow has to
 be allowed at both ends to work. Adding a service means adding its ingress
@@ -131,7 +131,7 @@ A ConfigMap change does **not** reach a running pod through `envFrom` — restar
 There is no shared Secret mounted everywhere. Each workload gets a
 `<workload>-secrets` holding only the keys its code actually reads, under the
 names the code expects — so `crawler` gets six keys and never sees
-`GRAFANA_ADMIN_PASSWORD` or the Snowflake crawler password.
+the Langfuse or LiteLLM keys.
 
 `GATEWAY_KEY` and `SERVICE_AUTH_SECRET` go to the services that import
 `libs.shared.auth` (which imports `service_identity`): `auth-api`
@@ -179,7 +179,7 @@ correct failure.
 ## File-backed ConfigMaps
 
 Some config is a *file*, not a set of env vars — SQL, a Keycloak realm export, the
-Kong setup script, Prometheus and Grafana provisioning. Those files live once, in
+Kong setup script, the Prometheus config. Those files live once, in
 `deploy/docker/`, where they are also read directly by anyone running the script
 by hand. Rather than copy them into YAML, they are turned into ConfigMaps and
 mounted as volumes:
@@ -195,15 +195,9 @@ mounted ConfigMap must be created by it (or declared inline), it must not create
 anything nothing mounts, and each must land in the namespace of the pod that
 mounts it.
 
-Two of those are easy to get wrong:
-
-- **`db-init-sql` belongs to `dataagent-service`**, not the database namespace —
-  the SQL targets Postgres, but a ConfigMap has to live where the *pod* runs, and
-  the `db-init` Job runs in the service namespace.
-- **`--from-file=<dir>` is not recursive.** `monitoring/grafana/provisioning/`
-  contains only subdirectories, so Grafana takes three ConfigMaps
-  (`grafana-datasources`, `grafana-dashboards-provider`, `grafana-dashboards`),
-  not one.
+One of those is easy to get wrong: **`db-init-sql` belongs to `dataagent-service`**,
+not the database namespace — the SQL targets Postgres, but a ConfigMap has to live where
+the *pod* runs, and the `db-init` Job runs in the service namespace.
 
 Neither `envFrom` nor a volume mount picks up a ConfigMap change on a running
 pod. After editing one of these files, re-run the script and restart:
@@ -317,9 +311,7 @@ band. Nothing in `deploy/k8s/` may use it.
 | openbao | database | 8200 | **8120** | `config.hcl` listener |
 | egress-proxy | service | 3128 | **8130** | `http_port` in its `squid.conf` ConfigMap |
 | auth-api | service | 8200 | **8200** | manifest `command` (unchanged) |
-| model-service | service | 8001 | **8230** | manifest `command` |
 | workflow-runtime | service | 8001 | **8240** | manifest `command` |
-| llm-exporter | service | 9200 | **8270** | `LISTEN_PORT` in its ConfigMap (runs as `WORKER=llm-exporter` of the platform-workers image) |
 | frontend | service | 3000 | **8280** | manifest `command` (vite `--port`) |
 | postgres | database | 5432 | **8300** | `PGPORT` |
 | mongo | database | 27017 | **8310** | `mongod --port` |
@@ -339,7 +331,6 @@ band. Nothing in `deploy/k8s/` may use it.
 | temporal-ui | service | 8080 | **8381** | `TEMPORAL_UI_PORT` |
 | pgbouncer | database | 6432 | **8390** | `LISTEN_PORT` |
 | prometheus | service | 9090 | **8400** | `--web.listen-address` |
-| grafana | service | 3000 | **8410** | `GF_SERVER_HTTP_PORT` |
 | langfuse | service | 3000 | **8420** | `PORT` |
 | langfuse-worker | service | 3030 | **8421** | `PORT` (no Service — queue consumer) |
 | jaeger (ui) | service | 16686 | **8430** | `QUERY_HTTP_SERVER_HOST_PORT` |
@@ -354,8 +345,7 @@ numbers above — `postgres:8300`, `redis://redis:8320`, `bolt://neo4j:8341`,
 `http://litellm:8500`, `http://jaeger:8431`, and so on.
 
 Service DNS names are DNS-1123, so an underscore is not legal in a hostname:
-`model-service`, `workflow-runtime`, `auth-api`,
-`llm-exporter`. `env` in the manifest wins
+`worker-agent`, `worker-ingest`, `worker-document`, `auth-api`. `env` in the manifest wins
 over whatever default the image ships, so the underscored defaults compiled into
 the Python services never apply in-cluster.
 

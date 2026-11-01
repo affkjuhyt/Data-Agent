@@ -40,10 +40,6 @@ data:
   #Litellm
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
 
-  #Model Service
-  MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
-
-
   #Kong
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
 
@@ -77,10 +73,6 @@ data:
   OTEL_SDK_DISABLED: 'false'
 
   #LLM
-  REMOTE_EMBED_URL: http://10.10.55.101:8003
-  REMOTE_RERANK_URL: http://10.10.55.101:8004
-  REMOTE_LLM_URL: http://10.10.55.101:8002
-  REMOTE_LLM_MODEL: agent-fast
   EMBEDDING_DIM: '1024'
   RUNTIME_ALLOWED_SERVICES: ''
 
@@ -129,10 +121,6 @@ data:
   #Litellm
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
 
-  #Model Service
-  MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
-
-
   #Kong
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
 
@@ -150,10 +138,6 @@ data:
   OTEL_SDK_DISABLED: 'false'
 
   #LLM
-  REMOTE_EMBED_URL: http://10.10.55.101:8003
-  REMOTE_RERANK_URL: http://10.10.55.101:8004
-  REMOTE_LLM_URL: http://10.10.55.101:8002
-  REMOTE_LLM_MODEL: agent-fast
   EMBEDDING_DIM: '1024'
   RUNTIME_ALLOWED_SERVICES: ''
 

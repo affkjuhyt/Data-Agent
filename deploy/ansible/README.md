@@ -41,7 +41,7 @@ non-blocking stdio.
 > **On the OrbStack cluster use `make deploy-local`.** That cluster runs only the V3
 > slice (api, worker-agent, worker-ingest, worker-document, crawler, frontend, migrate, gateway,
 > litellm, mailpit). `make deploy` plans the whole stack and also rebuilds
-> auth_api, model-service and platform-workers when `backend/libs` changes — images nothing
+> auth_api when `backend/libs` changes — images nothing
 > there runs; on 20/10/2026 that cost 30 minutes for no running change. It also leaves Neo4j
 > out of the database tier (`LOCAL_DATABASES` in the Makefile): nothing in V3 reads it, and its
 > 2 GiB request left the one-node cluster no memory to schedule worker-agent on 22/10/2026. A

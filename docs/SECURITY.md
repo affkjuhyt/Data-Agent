@@ -110,13 +110,11 @@ release-hardening pass:
 
 | Runs as non-root (`USER` in the image) | Root in the image — documented |
 |---|---|
-| api, worker-agent, worker-ingest, worker-document, crawler, workflow-runtime (incl. the orchestrator and agent/workflow authoring), auth-api, model-service, llm-exporter, platform-workers (memory / schema-crawler / audit) | **sandbox-executor** — the image stays root for `SANDBOX_BACKEND=docker`, which spawns containers through the host Docker socket. On k8s it runs `SANDBOX_BACKEND=kubernetes` (runner pods in `dataagent-sandbox` via its ServiceAccount), and the production manifest sets `runAsNonRoot` / `runAsUser: 10001`. |
+| api, worker-agent, worker-ingest, worker-document, crawler, workflow-runtime (incl. the orchestrator and agent/workflow authoring), auth-api | **sandbox-executor** — the image stays root for `SANDBOX_BACKEND=docker`, which spawns containers through the host Docker socket. On k8s it runs `SANDBOX_BACKEND=kubernetes` (runner pods in `dataagent-sandbox` via its ServiceAccount), and the production manifest sets `runAsNonRoot` / `runAsUser: 10001`. |
 
 `frontend/Dockerfile.dev` (dev-only) is out of scope for the prod non-root requirement.
 
 Notes on special cases:
-- **model-service** downloads no weights: it runs no local model and proxies embed,
-  rerank and generate to the GPU services (`REMOTE_*_URL`).
 - **crawler** fetches without a browser (no Chromium in any image since the web-crawler and
   kb-worker were removed); it refuses internal names and private addresses (docs/RUNBOOK.md §10d).
 
@@ -169,7 +167,7 @@ with an existing baseline to burn down. Ratchet plan:
   | `backend/libs/{basemodel,database_connector,shared}` | **0**, enforced |
   | `backend/services/workflow_runtime` (incl. `workflow_runtime/application/orchestrator`) | **0**, enforced |
   | `backend/services/{api,worker_agent,crawler}` (`--disallow-untyped-defs --disallow-any-generics`) | CI blocking step (`make type-v3`) |
-  | `backend/services/{auth_api,model_service,platform_workers}` | **0**, enforced |
+  | `backend/services/auth_api` | **0**, enforced |
 
   Not on the strict list: `backend/libs/{semantic,indicator}`. The whole-tree run is report-only (`|| true`).
 

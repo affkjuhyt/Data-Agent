@@ -64,8 +64,6 @@ vault_demo_password_executive_viewer: ""
 vault_litellm_api_key: ""
 vault_openai_api_key: ""
 vault_gemini_api_key: ""
-vault_remote_api_key: ""
-vault_remote_llm_key: ""
 
 # ── observability ─────────────────────────────────────────────────────
 vault_langfuse_salt: ""
@@ -74,4 +72,3 @@ vault_langfuse_nextauth_secret: ""
 vault_langfuse_public_key: ""
 vault_langfuse_secret_key: ""
 vault_langfuse_init_password: ""
-vault_grafana_admin_password: ""

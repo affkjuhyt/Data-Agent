@@ -49,7 +49,6 @@ _NOT_APP_SERVICES = {
     "keycloak",
     "litellm",
     "prometheus",
-    "grafana",
     "loki",
     "langfuse",
     "clickhouse",
@@ -63,7 +62,6 @@ _NOT_APP_SERVICES = {
 _LIVE_SERVICES = (
     "api",
     "auth_api",
-    "model_service",
     "worker_agent",
 )
 

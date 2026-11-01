@@ -34,7 +34,7 @@ any machine on the `10.10.55.x` network; no port-forwarding is needed.
 | Kong proxy — all API traffic | http://10.10.55.101:30100 |
 | Keycloak (realm `aeroflow`) | http://10.10.55.101:30110 |
 | Langfuse | http://10.10.55.101:30420 |
-| Grafana / Prometheus | http://10.10.55.101:30410 / :30400 |
+| Prometheus | http://10.10.55.101:30400 |
 | Jaeger | http://10.10.55.101:30430 |
 | Temporal UI: schedules and their workflows (namespace `dataagent`; dev only, production is port-forward) | http://10.10.55.101:30381 |
 | LiteLLM | http://10.10.55.101:30500 |
@@ -55,8 +55,6 @@ from the `set_password` lines in
 ```bash
 kubectl -n dataagent-service get secret keycloak-secrets \
   -o jsonpath='{.data.KEYCLOAK_ADMIN_PASSWORD}' | base64 -d; echo   # Keycloak user: admin
-kubectl -n dataagent-service get secret grafana-secrets \
-  -o jsonpath='{.data.GF_SECURITY_ADMIN_PASSWORD}' | base64 -d; echo # Grafana user: admin
 ```
 
 ## 3. Deploy a change
@@ -461,17 +459,16 @@ The GPU services on `10.10.55.101` run outside k8s: vLLM main `:8001`
 (Qwen3-14B-AWQ, LiteLLM role `agent-main`), vLLM fast `:8002` (Qwen3-4B-AWQ,
 `agent-fast`), TEI embed `:8003`, TEI rerank `:8004`.
 
-`model-service` (`:8230`) runs no local models. It proxies embed, rerank and
-generate to them (generate goes to the fast tier, `:8002`) through
-`REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` / `REMOTE_LLM_URL` in the shared
-ConfigMap `dataagent-config` (`deploy/k8s/dev/configmap.yaml`; restart the
-workloads after changing it). LiteLLM reaches both vLLM tiers through
+No service runs a local model. The api, worker-document and worker-agent embed through
+LiteLLM's `embedder` (`DOCUMENT_EMBED_URL`, else `LITELLM_BASE_URL`), which LiteLLM sends
+to TEI `:8003` (`EMBEDDING_V1_BASE_URL`); worker-agent reranks at TEI `:8004` directly
+when `DOCUMENT_RERANK_URL` is set (dev only: production's egress policy lets only LiteLLM
+reach the GPU box). LiteLLM reaches both vLLM tiers through
 `LLM_MAIN_BASE_URL` / `LLM_FAST_BASE_URL` (`litellm-env`); its model routing is
 `deploy/docker/litellm/config.yaml` (ConfigMap `litellm-config`). Embeddings are `bge-m3` (1024-dim): a knowledge base
 ingested against another embedding model must be re-ingested.
 
-worker-agent (`services/worker_agent/llm.py`) and platform-workers (memory, schema
-crawler: `common/llm.py`) call LiteLLM through PydanticAI. Every call names the
+worker-agent (`services/worker_agent/llm.py`) calls LiteLLM through PydanticAI. Every call names the
 Pydantic model its answer must fit and sends that model's JSON schema as
 `response_format: json_schema`, which vLLM enforces with its structured-outputs
 backend (xgrammar by default) — LiteLLM passes it through. The OpenAI SDK retries

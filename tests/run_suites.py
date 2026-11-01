@@ -42,7 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # runs on the local dev-tools image (`make dev-tools` builds it) instead of a registry image.
 DEFAULT_UNIT = (
     "contracts:api "
-    "auth_api:auth_api model_service:model_service api:api worker_agent:worker-agent worker_ingest:worker-ingest "
+    "auth_api:auth_api api:api worker_agent:worker-agent worker_ingest:worker-ingest "
     "worker_document:worker-document crawler:crawler repo:dataagent/dev-tools:local"
 )
 DEFAULT_INTEGRATION = (
@@ -61,7 +61,6 @@ SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
     "worker_document": {("unit", "worker_document"), ("integration", "worker_document")},
     "crawler": {("unit", "crawler"), ("integration", "crawler")},
     "auth_api": {("unit", "auth_api")},
-    "model_service": {("unit", "model_service")},
 }
 
 # The repo suite (tests/unit/repo) reads every service's Dockerfile and scans their
@@ -73,7 +72,7 @@ REPO_SUITE = ("unit", "repo")
 OTHER_PREFIXES: dict[str, set[tuple[str, str]]] = {
     "deploy/": {REPO_SUITE},
     "frontend/": {REPO_SUITE},
-    "model/": {REPO_SUITE, ("unit", "model_service")},
+    "model/": {REPO_SUITE},
 }
 
 # Per-suite pytest flags, (kind, suite) -> extra arguments.

@@ -137,12 +137,10 @@ service_workloads:
   - temporal-ui
   - litellm
   - auth-api
-  - model-service
   - langfuse
   - langfuse-worker
   - jaeger
   - prometheus
-  - grafana
   - frontend
 
 # Empty means apply every manifest under service/ (the existing full-stack

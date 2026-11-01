@@ -62,7 +62,7 @@ spec:
           limits:
             # Modest cut — still needs to scrape every service, but not on
             # the request path; headroom goes to
-            # kong/workflow-runtime/model-service instead.
+            # kong and the api instead.
             cpu: 300m
             memory: 384Mi
         readinessProbe:

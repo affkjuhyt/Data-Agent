@@ -506,6 +506,20 @@
       changed_when: "'deleted' in kb_delete.stdout"
       when: apply_services | bool
 
+    # model-service served embeddings and an LLM gateway nothing calls any more (V3 embeds and
+    # reranks at TEI, calls LLMs through LiteLLM); Grafana's only dashboard charted its metrics.
+    - name: Remove the retired model-service and Grafana
+      ansible.builtin.command: >-
+        {{ kubectl }} -n {{ ns_service }} delete --ignore-not-found=true
+        deployment/model-service service/model-service horizontalpodautoscaler/model-service
+        serviceaccount/model-service configmap/model-service-env secret/model-service-secrets
+        deployment/grafana service/grafana serviceaccount/grafana configmap/grafana-env
+        secret/grafana-secrets persistentvolumeclaim/grafana-data
+        configmap/grafana-datasources configmap/grafana-dashboards-provider configmap/grafana-dashboards
+      register: model_service_delete
+      changed_when: "'deleted' in model_service_delete.stdout"
+      when: apply_services | bool
+
     # The platform workers (audit, memory, schema-crawler) consumed Kafka topics only
     # workflow-runtime produced and wrote tables V3 does not have; llm-exporter fed the legacy
     # Grafana dashboard. audit-bridge-state was the audit bridge's Keycloak-events cursor.
