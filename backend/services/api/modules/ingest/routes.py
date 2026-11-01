@@ -9,7 +9,6 @@ catalog_read grant (definitions.json cross_reads) and never written.
 
 from __future__ import annotations
 
-import csv
 import datetime
 import decimal
 import io
@@ -26,6 +25,7 @@ from fastapi._compat import get_cached_model_fields
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import tabular
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, ingest
 from services.api.catalogue import endpoint
@@ -854,7 +854,10 @@ def _analyse_upload(content: bytes, file_name: str, requested_sheet: str | None)
             raise Problem(422, "validation_failed", "The selected sheet does not exist.")
         worksheet = workbook.sheet_by_name(sheet_name)
         row_count = max(0, worksheet.nrows - 1)
-        rows = [worksheet.row_values(index) for index in range(min(worksheet.nrows, 1001))]
+        rows = [
+            tabular.xls_row(worksheet, index, workbook.datemode)
+            for index in range(min(worksheet.nrows, 1001))
+        ]
         workbook.release_resources()
         encoding = None
     elif extension == ".csv":
@@ -863,11 +866,7 @@ def _analyse_upload(content: bytes, file_name: str, requested_sheet: str | None)
             text = content.decode(encoding)
         except UnicodeDecodeError as exc:
             raise Problem(422, "validation_failed", "The file encoding is not readable.") from exc
-        try:
-            dialect = csv.Sniffer().sniff(text[:8192], delimiters=",;\t|")
-        except csv.Error:
-            dialect = csv.excel
-        rows = [list(values) for values in csv.reader(io.StringIO(text), dialect)]
+        rows = tabular.csv_rows(text)
         row_count = max(0, len(rows) - 1)
     else:
         raise Problem(422, "validation_failed", "Only CSV and Excel analysis is supported.")
@@ -1052,9 +1051,9 @@ async def preview_upload(
         sheet_name = row.sheet or workbook.sheet_names()[0]
         if sheet_name not in workbook.sheet_names():
             raise Problem(422, "validation_failed", "The selected sheet does not exist.")
+        worksheet = workbook.sheet_by_name(sheet_name)
         rows = [
-            workbook.sheet_by_name(sheet_name).row_values(index)
-            for index in range(workbook.sheet_by_name(sheet_name).nrows)
+            tabular.xls_row(worksheet, index, workbook.datemode) for index in range(worksheet.nrows)
         ]
         workbook.release_resources()
     elif extension == ".csv":
@@ -1063,11 +1062,7 @@ async def preview_upload(
             text = content.decode(encoding)
         except UnicodeDecodeError as exc:
             raise Problem(422, "validation_failed", "The file encoding is not readable.") from exc
-        try:
-            dialect = csv.Sniffer().sniff(text[:8192], delimiters=",;\t|")
-        except csv.Error:
-            dialect = csv.excel
-        rows = [list(item) for item in csv.reader(io.StringIO(text), dialect)]
+        rows = tabular.csv_rows(text, row.header_row, from_header=False)
     else:
         raise Problem(422, "validation_failed", "Only CSV and Excel previews are supported.")
     if not rows:

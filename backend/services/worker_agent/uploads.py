@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import datetime
 import io
 import json
@@ -15,6 +14,7 @@ from urllib.parse import urlparse
 import aioboto3
 from sqlalchemy import select, text
 
+from libs import tabular
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, ingest
 from services.worker_agent.events import Event, Handler
@@ -50,15 +50,23 @@ async def _read_object(key: str) -> bytes:
         return await response["Body"].read()
 
 
-def _rows(content: bytes, file_name: str, sheet: str | None) -> list[list[Any]]:
+def _rows(
+    content: bytes,
+    file_name: str,
+    sheet: str | None,
+    *,
+    encoding: str | None = None,
+    header_row: int | None = None,
+) -> list[list[Any]]:
+    """The sheet's rows from its header row on (1-based, as the review screen counts them)."""
+    if os.path.splitext(file_name)[1].lower() == ".csv":
+        return tabular.csv_rows(content.decode(encoding or "utf-8-sig"), header_row)
+    rows = _sheet_rows(content, file_name, sheet)
+    return rows[max((header_row or 1) - 1, 0) :]
+
+
+def _sheet_rows(content: bytes, file_name: str, sheet: str | None) -> list[list[Any]]:
     extension = os.path.splitext(file_name)[1].lower()
-    if extension == ".csv":
-        text = content.decode("utf-8-sig")
-        try:
-            dialect = csv.Sniffer().sniff(text[:8192], delimiters=",;\t|")
-        except csv.Error:
-            dialect = csv.excel
-        return [list(row) for row in csv.reader(io.StringIO(text), dialect)]
     if extension in {".xlsx", ".xlsm"}:
         from openpyxl import load_workbook
 
@@ -73,39 +81,78 @@ def _rows(content: bytes, file_name: str, sheet: str | None) -> list[list[Any]]:
         workbook = xlrd.open_workbook(file_contents=content, on_demand=True)
         sheet_name = sheet or workbook.sheet_names()[0]
         worksheet = workbook.sheet_by_name(sheet_name)
-        rows = [worksheet.row_values(index) for index in range(worksheet.nrows)]
+        rows = [
+            tabular.xls_row(worksheet, index, workbook.datemode) for index in range(worksheet.nrows)
+        ]
         workbook.release_resources()
         return rows
     raise ValueError("unsupported upload format")
 
 
-def _matches(value: Any, kind: str) -> bool:
-    if value in (None, ""):
-        return True
-    if kind == "number":
+class _Reader:
+    """How each column's cells are read: its mapped kind, decimal mark and date order, settled
+    once over the whole column (libs/tabular), so validation and the table agree."""
+
+    def __init__(
+        self, data: list[list[Any]], column_map: list[dict[str, Any]], decimal_sep: str | None
+    ) -> None:
+        self.kinds: list[str] = []
+        self.marks: list[str] = []
+        self.orders: list[tabular.DateOrder] = []
+        width = max([len(column_map), *(len(row) for row in data)], default=0)
+        for index in range(width):
+            mapped = column_map[index] if index < len(column_map) else {}
+            values = [row[index] for row in data if index < len(row)]
+            self.kinds.append(str(mapped.get("type", "string")))
+            self.marks.append(
+                mapped.get("decimal_sep")
+                or decimal_sep
+                or tabular.decimal_mark(values)
+                or tabular.DEFAULT_DECIMAL_MARK
+            )
+            self.orders.append(
+                mapped.get("date_order") or tabular.date_order(values) or tabular.DEFAULT_DATE_ORDER
+            )
+
+    def kind(self, index: int) -> str:
+        return self.kinds[index] if index < len(self.kinds) else "string"
+
+    def value(self, raw: Any, index: int) -> Any:
+        """The cell as its column's type. Raises ValueError when it is not one."""
+        if raw in (None, ""):
+            return None
+        kind = self.kind(index)
+        if kind == "number":
+            return tabular.to_number(raw, self.marks[index])
+        if kind == "percent":
+            return tabular.to_percent(raw, self.marks[index])
+        if kind == "boolean":
+            return tabular.to_boolean(raw)
+        if kind == "date":
+            return tabular.to_date(raw, self.orders[index])
+        return raw
+
+    def matches(self, raw: Any, index: int) -> bool:
         try:
-            float(str(value).replace(",", "."))
+            self.value(raw, index)
         except ValueError:
             return False
-    if kind == "boolean":
-        return str(value).strip().lower() in {"true", "false", "0", "1", "yes", "no"}
-    return True
+        return True
 
 
-def _validate(rows: list[list[Any]], column_map: list[dict[str, Any]]) -> tuple[dict[str, Any], float]:
+def _validate(
+    rows: list[list[Any]], column_map: list[dict[str, Any]], decimal_sep: str | None = None
+) -> tuple[dict[str, Any], float]:
     if not rows:
         raise ValueError("the upload has no readable rows")
     expected = max(len(rows[0]), len(column_map))
-    # The first uploaded event can arrive before the user saves a mapping. Treat unmapped
-    # columns as strings so validation still produces a result for the review screen.
-    effective_map = [*column_map, *({} for _ in range(expected - len(column_map)))]
+    # The first uploaded event can arrive before the user saves a mapping: an unmapped column is
+    # read as a string, so validation still produces a result for the review screen.
+    reader = _Reader(rows[1:], column_map, decimal_sep)
     invalid = 0
     for row in rows[1:]:
         if len(row) != expected or any(
-            not _matches(
-                row[index] if index < len(row) else None,
-                str(effective_map[index].get("type", "string")),
-            )
+            not reader.matches(row[index] if index < len(row) else None, index)
             for index in range(expected)
         ):
             invalid += 1
@@ -148,20 +195,12 @@ def _postgres_type(column_map: list[dict[str, Any]], index: int) -> str:
     )
 
 
-def _value(value: Any, kind: str) -> Any:
-    if value in (None, ""):
-        return None
-    if kind in {"number", "percent"}:
-        return float(str(value).replace(",", "."))
-    if kind == "boolean":
-        return str(value).strip().lower() in {"true", "1", "yes"}
-    if kind == "date" and isinstance(value, datetime.datetime):
-        return value.date()
-    return value
-
-
 async def _materialize(
-    session: Any, table_name: str, rows: list[list[Any]], column_map: list[dict[str, Any]]
+    session: Any,
+    table_name: str,
+    rows: list[list[Any]],
+    column_map: list[dict[str, Any]],
+    decimal_sep: str | None = None,
 ) -> list[dict[str, str]]:
     """Writes the workspace table; returns its columns as created (name, PostgreSQL type)."""
     if not rows:
@@ -171,13 +210,19 @@ async def _materialize(
         {"name": name, "type": _postgres_type(column_map, index)}
         for index, name in enumerate(names)
     ]
+    reader = _Reader(rows[1:], column_map, decimal_sep)
     rows_json = [
-        [_value(row[index] if index < len(row) else None, str(column_map[index].get("type", "string")) if index < len(column_map) else "string") for index in range(len(names))]
+        [
+            reader.value(row[index] if index < len(row) else None, index)
+            for index in range(len(names))
+        ]
         for row in rows[1:]
     ]
     for start in range(0, len(rows_json), 1_000):
         await session.execute(
-            text("SELECT public.da_materialize_upload(:table_name, CAST(:columns AS jsonb), CAST(:rows AS jsonb), :replace)"),
+            text(
+                "SELECT public.da_materialize_upload(:table_name, CAST(:columns AS jsonb), CAST(:rows AS jsonb), :replace)"
+            ),
             {
                 "table_name": table_name,
                 "columns": json.dumps(columns),
@@ -189,6 +234,8 @@ async def _materialize(
 
 
 def _json_value(value: Any) -> str:
+    # The materialiser inserts every cell as a quoted literal the column type parses: a Decimal
+    # stays exact as text, and an ISO date reads the same under any DateStyle.
     if isinstance(value, datetime.datetime | datetime.date):
         return value.isoformat()
     return str(value)
@@ -196,11 +243,23 @@ def _json_value(value: Any) -> str:
 
 async def _validate_upload(event: Event) -> None:
     async with scoped_session(ROLE, event.org_id, event.payload.get("uploader_id")) as session:
-        row = await session.scalar(select(ingest.FileUpload).where(ingest.FileUpload.id == event.aggregate_id))
+        row = await session.scalar(
+            select(ingest.FileUpload).where(ingest.FileUpload.id == event.aggregate_id)
+        )
         if row is None:
             return
         content = await _read_object(row.object_key)
-        validation, ratio = _validate(_rows(content, row.file_name, row.sheet), row.column_map or [])
+        validation, ratio = _validate(
+            _rows(
+                content,
+                row.file_name,
+                row.sheet,
+                encoding=row.encoding,
+                header_row=row.header_row,
+            ),
+            row.column_map or [],
+            row.decimal_sep,
+        )
         row.validation = validation
         row.error_ratio = ratio
         if row.status != "committed":
@@ -209,7 +268,9 @@ async def _validate_upload(event: Event) -> None:
 
 async def _register_dataset(event: Event) -> None:
     async with scoped_session(ROLE, event.org_id, event.payload.get("uploader_id")) as session:
-        row = await session.scalar(select(ingest.FileUpload).where(ingest.FileUpload.id == event.aggregate_id))
+        row = await session.scalar(
+            select(ingest.FileUpload).where(ingest.FileUpload.id == event.aggregate_id)
+        )
         if row is None or row.target_dataset_id is None:
             return
         dataset_id = row.target_dataset_id
@@ -219,10 +280,16 @@ async def _register_dataset(event: Event) -> None:
         row_count = (row.validation or {}).get("row_count", 0)
         quality_state = "ok" if (row.error_ratio or 0) == 0 else "warning"
         content = await _read_object(row.object_key)
-        upload_rows = _rows(content, row.file_name, row.sheet)
-        columns = await _materialize(session, table_name, upload_rows, row.column_map or [])
+        upload_rows = _rows(
+            content, row.file_name, row.sheet, encoding=row.encoding, header_row=row.header_row
+        )
+        columns = await _materialize(
+            session, table_name, upload_rows, row.column_map or [], row.decimal_sep
+        )
         row.validation = {**(row.validation or {}), "materialized": True, "table_name": table_name}
-    async with scoped_session(CATALOG_ROLE, event.org_id, event.payload.get("uploader_id")) as session:
+    async with scoped_session(
+        CATALOG_ROLE, event.org_id, event.payload.get("uploader_id")
+    ) as session:
         if await session.get(catalog.Dataset, dataset_id) is None:
             session.add(
                 catalog.Dataset(
@@ -247,7 +314,9 @@ async def _register_dataset(event: Event) -> None:
         # The columns as materialized, so the semantic layer knows a text month from a date.
         if (
             await session.scalar(
-                select(catalog.ColumnMeta.id).where(catalog.ColumnMeta.dataset_id == dataset_id).limit(1)
+                select(catalog.ColumnMeta.id)
+                .where(catalog.ColumnMeta.dataset_id == dataset_id)
+                .limit(1)
             )
             is None
         ):
