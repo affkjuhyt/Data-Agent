@@ -29,6 +29,7 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlglot import exp
 
+from libs import tabular
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import pipeline as pl
@@ -111,7 +112,11 @@ async def _build(
     if not out.columns:
         raise _Refused("câu truy vấn không trả cột nào")
     columns = [
-        {"name": c["name"].lower(), "type": _TYPES.get(c["type"], "text")} for c in out.columns
+        # A result column may be "Doanh thu" or "Order Date": the table takes physical names.
+        {"name": name, "type": _TYPES.get(c["type"], "text")}
+        for name, c in zip(
+            tabular.physical_names([c["name"] for c in out.columns]), out.columns, strict=True
+        )
     ]
     rows = [[None if v is None else str(v) for v in row] for row in out.rows]
     async with scoped_session("svc_catalog", event.org_id, actor) as session:

@@ -125,6 +125,18 @@ async def test_a_vietnamese_csv_lands_with_its_numbers_dates_and_header_row(
     rows = seed.all(
         f'SELECT chi_nhanh, doanh_thu, ty_le, ngay FROM workspace."{table}" ORDER BY ngay'
     )
+    labels = seed.all(
+        "SELECT name, display_name FROM catalog.column_meta c JOIN ingest.file_upload u"
+        " ON u.target_dataset_id = c.dataset_id WHERE u.id = %s ORDER BY ordinal",
+        upload,
+    )
+    # The mapped names are physical already; the headers as written are kept as labels.
+    assert labels == [
+        ("chi_nhanh", "Chi nhánh"),
+        ("doanh_thu", "Doanh thu"),
+        ("ty_le", "Tỷ lệ"),
+        ("ngay", "Ngày"),
+    ]
     assert [(r[0], str(r[1]), str(r[2]), r[3].isoformat()) for r in rows] == [
         ("Đà Nẵng", "-2000", "7", "2024-02-13"),
         ("Hà Nội", "1234.5", "12.5", "2024-03-02"),

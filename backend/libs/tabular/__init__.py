@@ -15,7 +15,8 @@ import datetime
 import decimal
 import io
 import re
-from collections.abc import Iterable
+import unicodedata
+from collections.abc import Iterable, Sequence
 from typing import Any, Literal
 
 DateOrder = Literal["dmy", "mdy"]
@@ -63,6 +64,32 @@ def xls_row(worksheet: Any, index: int, datemode: int) -> list[Any]:
         else cell.value
         for cell in worksheet.row(index)
     ]
+
+
+def physical_name(label: Any, fallback: str) -> str:
+    """A column name every engine takes unquoted, [a-z][a-z0-9_]{0,62}: accents folded ("Số
+    lượng" → so_luong, "đ" → d), a leading digit prefixed ("2023" → c_2023). A label with no Latin
+    letter or digit left (CJK, Arabic) takes `fallback`; the label itself is kept as the column's
+    display name, so nothing the reader wrote is lost (GEN-13)."""
+    text = str(label or "").replace("đ", "d").replace("Đ", "D")
+    folded = "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+    name = re.sub(r"[^a-z0-9]+", "_", folded.lower()).strip("_")
+    if not name:
+        return fallback
+    if name[0].isdigit():
+        name = f"c_{name}"
+    return name[:63].rstrip("_")
+
+
+def physical_names(labels: Sequence[Any]) -> list[str]:
+    """`physical_name` for each label, made unique by the column's position (column_3, so_luong_4)."""
+    names: list[str] = []
+    for index, label in enumerate(labels):
+        name = physical_name(label, f"column_{index + 1}")
+        if name in names:
+            name = f"{name}_{index + 1}"[:63]
+        names.append(name)
+    return names
 
 
 def _compact(text: str) -> tuple[str, bool]:

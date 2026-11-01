@@ -185,20 +185,19 @@ def _table_name(file_name: str, upload_id: uuid.UUID) -> str:
     return f"upload_{stem[:40] or 'file'}_{upload_id.hex[-8:]}"
 
 
-def _identifier(value: Any, fallback: str) -> str:
-    name = re.sub(r"[^a-zA-Z0-9_]+", "_", str(value or "").strip()).strip("_").lower()
-    return name or fallback
-
-
 def _column_names(header: list[Any], column_map: list[dict[str, Any]]) -> list[str]:
-    names: list[str] = []
-    for index, value in enumerate(header):
-        mapped = column_map[index].get("name") if index < len(column_map) else None
-        name = _identifier(mapped or value, f"column_{index + 1}")
-        if name in names:
-            name = f"{name}_{index + 1}"
-        names.append(name)
-    return names
+    """The table's column names: the mapped name, else the header, made physical (GEN-13)."""
+    return tabular.physical_names(
+        [
+            (column_map[index].get("name") if index < len(column_map) else None) or value
+            for index, value in enumerate(header)
+        ]
+    )
+
+
+def _label(value: Any) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None
 
 
 def _postgres_type(column_map: list[dict[str, Any]], index: int) -> str:
@@ -215,12 +214,13 @@ async def _materialize(
     column_map: list[dict[str, Any]],
     decimal_sep: str | None = None,
 ) -> list[dict[str, str]]:
-    """Writes the workspace table; returns its columns as created (name, PostgreSQL type)."""
+    """Writes the workspace table; returns its columns as created (name, PostgreSQL type, label)."""
     if not rows:
         raise ValueError("the upload has no readable rows")
     names = _column_names(rows[0], column_map)
+    # The header as written is the column's label; the materialiser reads name and type only.
     columns = [
-        {"name": name, "type": _postgres_type(column_map, index)}
+        {"name": name, "type": _postgres_type(column_map, index), "label": _label(rows[0][index])}
         for index, name in enumerate(names)
     ]
     reader = _Reader(len(names), rows[1:], column_map, decimal_sep)
@@ -344,6 +344,7 @@ async def _register_dataset(event: Event) -> None:
                     ordinal=ordinal,
                     data_type=column["type"],
                     normalized_type=_NORMALIZED[column["type"]],
+                    display_name=column["label"] if column["label"] != column["name"] else None,
                     created_by=row.uploader_id,
                     updated_by=row.uploader_id,
                 )

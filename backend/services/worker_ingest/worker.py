@@ -15,6 +15,7 @@ from typing import Any
 import asyncpg
 from sqlalchemy import select, text, update
 
+from libs import tabular
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, ingest
 from services.worker_ingest.events import Event, Handler
@@ -82,9 +83,14 @@ async def _read_source(
     try:
         statement = await conn.prepare(f'SELECT * FROM "{schema}"."{table}"')
         records = await statement.fetch()
+        attributes = statement.get_attributes()
+        # The source's own names ("CustomerID", "Ngày hạch toán") are labels; the table takes
+        # physical ones (GEN-13).
         columns = [
-            {"name": attr.name, "type": _WORKSPACE_TYPES.get(attr.type.name, "text")}
-            for attr in statement.get_attributes()
+            {"name": name, "label": attr.name, "type": _WORKSPACE_TYPES.get(attr.type.name, "text")}
+            for name, attr in zip(
+                tabular.physical_names([a.name for a in attributes]), attributes, strict=True
+            )
         ]
         return columns, [[_plain(value) for value in record] for record in records]
     finally:
@@ -99,7 +105,7 @@ def _table_name(job: ingest.IngestionJob) -> str:
 async def _materialize(
     session: Any, table_name: str, columns: list[dict[str, str]], rows: list[list[Any]]
 ) -> None:
-    typed = [{"name": _identifier(column["name"]), "type": column["type"]} for column in columns]
+    typed = [{"name": column["name"], "type": column["type"]} for column in columns]
     await session.execute(
         text(
             "SELECT public.da_materialize_upload(:table_name, CAST(:columns AS jsonb), CAST(:rows AS jsonb), true)"
@@ -213,6 +219,7 @@ async def handle(event: Event) -> None:
                         ordinal=ordinal,
                         data_type=column["type"],
                         normalized_type=_NORMALIZED[column["type"]],
+                        display_name=column["label"] if column["label"] != column["name"] else None,
                         created_by=principal_id,
                         updated_by=principal_id,
                     )

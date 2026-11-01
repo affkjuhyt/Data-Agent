@@ -31,6 +31,7 @@ from typing import Any
 
 from sqlalchemy import select, text, update
 
+from libs import tabular
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import pipeline as pl
@@ -333,7 +334,11 @@ async def materialize_requested(event: Event) -> None:
         await _fail(event, run.id, f"More than {MATERIALIZE_ROWS} rows: not saved as a table yet.")
         return
     columns = [
-        {"name": c["name"].lower(), "type": _TYPES.get(c["type"], "text")} for c in out.columns
+        # A result column may be "Doanh thu" or "Order Date": the table takes physical names.
+        {"name": name, "type": _TYPES.get(c["type"], "text")}
+        for name, c in zip(
+            tabular.physical_names([c["name"] for c in out.columns]), out.columns, strict=True
+        )
     ]
     rows = [[None if v is None else str(v) for v in row] for row in out.rows]
     actor = ctx["actor"]

@@ -86,3 +86,11 @@ def test_booleans_in_english_and_vietnamese() -> None:
     ]
     with pytest.raises(ValueError):
         tabular.to_boolean("maybe")
+
+
+def test_physical_names_fold_accents_prefix_digits_and_stay_unique() -> None:
+    # GEN-13: "Số lượng" became s_l_ng, "2023" was refused, a CJK header became column_N only.
+    assert tabular.physical_names(
+        ["Số lượng", "2023", "Đơn giá (VNĐ)", "CustomerID", "销售额", "so luong", "Order Date"]
+    ) == ["so_luong", "c_2023", "don_gia_vnd", "customerid", "column_5", "so_luong_6", "order_date"]
+    assert len(tabular.physical_name("x" * 100, "c")) == 63
