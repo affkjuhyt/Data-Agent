@@ -1,4 +1,4 @@
-"""The Agents rail against the deployed cluster: DS-BH has a team, runs, a rollout and skills.
+"""The Agents rail against the deployed cluster: DS-AW has a team, runs, a rollout and skills.
 
 Needs the v3-agent-seed applied (db-init, or the SQL file on its own) and the same
 live login as the other e2e tests.
@@ -15,8 +15,8 @@ from tests.conftest import live_token
 
 pytestmark = pytest.mark.e2e
 
-DATA_SPACE = os.environ.get("E2E_AGENT_SPACE", "DS-BH")
-MARGIN = "Biên lợi nhuận gộp"
+DATA_SPACE = os.environ.get("E2E_AGENT_SPACE", "DS-AW")
+MARGIN = "Biên lợi nhuận gộp Internet"
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -33,7 +33,7 @@ def kong(live_stack: dict[str, str]) -> str:
     return live_stack["kong"]
 
 
-def test_agent_screens_read_the_pilot_team(kong: str, token: str) -> None:
+def test_agent_screens_read_the_seeded_team(kong: str, token: str) -> None:
     headers = _headers(token)
     agents = httpx.get(f"{kong}/v1/agents", headers=headers, params={"page_size": 100}, timeout=20)
     assert agents.status_code == 200, agents.text[:300]
@@ -65,8 +65,10 @@ def test_agent_screens_read_the_pilot_team(kong: str, token: str) -> None:
     skills = httpx.get(f"{kong}/v1/skills", headers=headers, params={"page_size": 100}, timeout=20)
     assert skills.status_code == 200, skills.text[:300]
     names = {row["name"] for row in skills.json()["items"]}
-    assert "Giải thích biên gộp" in names
-    waiting = next(row for row in skills.json()["items"] if row["name"] == "Đối chiếu công nợ")
+    assert "Giải thích biên gộp Internet" in names
+    waiting = next(
+        row for row in skills.json()["items"] if row["name"] == "So doanh thu với chỉ tiêu"
+    )
     skill = httpx.get(f"{kong}/v1/skills/{waiting['id']}", headers=headers, timeout=20)
     assert skill.status_code == 200, skill.text[:300]
     assert any(version["status"] == "pending_review" for version in skill.json()["versions"])

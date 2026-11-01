@@ -132,7 +132,7 @@ schema and role the migrations created; never hand-roll a `DROP SCHEMA public`.
 
 ```bash
 read -r -s 'E2E_PASS?helios-engineer password: '; export E2E_PASS        # zsh/bash
-# V3 question E2E uses the local `DS-DEMO` Data Space by default; override with
+# V3 question E2E uses the local `DS-AW` (AdventureWorks) Data Space by default; override with
 # `E2E_DATA_SPACE=<id-or-code>` when testing another active Data Space.
 read -rsp 'platform-admin password: ' E2E_ADMIN_PASS; export E2E_ADMIN_PASS # tenant 1, JWT audience
 read -rsp 'helios-admin password: ' E2E_T2_ADMIN_PASS; export E2E_T2_ADMIN_PASS # tenant 2

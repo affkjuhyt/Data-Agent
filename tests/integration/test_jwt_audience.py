@@ -24,7 +24,7 @@ from tests.conftest import live_token
 
 pytestmark = pytest.mark.e2e
 
-DATA_SPACE = os.environ.get("E2E_DATA_SPACE", "DS-DEMO")
+DATA_SPACE = os.environ.get("E2E_DATA_SPACE", "DS-AW")
 # Any /v1 route behind the api's plugin; the gate runs before the api sees the request.
 GATED = "/v1/datasets"
 

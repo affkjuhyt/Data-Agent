@@ -3,7 +3,7 @@
 Through Kong on the deployed cluster: the kb-backend routes (/api/data, /api/knowledge,
 /api/pipeline, /api/fleet) match nothing any more, and the /v1 resources that replaced them
 (documents, collections, document sources, the catalog, crawl sources, conflicts and document
-search) answer a signed-in user of the demo Data Space.
+search) answer a signed-in user of the AdventureWorks Data Space (DS-AW).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from tests.conftest import live_token
 
 pytestmark = pytest.mark.e2e
 
-DATA_SPACE = os.environ.get("E2E_DATA_SPACE", "DS-DEMO")
+DATA_SPACE = os.environ.get("E2E_DATA_SPACE", "DS-AW")
 
 RETIRED = (
     "/api/data/health",

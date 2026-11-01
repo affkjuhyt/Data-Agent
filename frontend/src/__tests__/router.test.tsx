@@ -51,9 +51,9 @@ describe('router', () => {
   });
 
   it('reads the area, the page and the record from the path', async () => {
-    at('/admin/data_spaces/a0000000-0000-0000-0000-000000000061');
+    at('/admin/data_spaces/a0000000-0000-0000-0000-000000000a01');
     await waitFor(() =>
-      expect(where()).toBe('admin|DATA_SPACES|a0000000-0000-0000-0000-000000000061'),
+      expect(where()).toBe('admin|DATA_SPACES|a0000000-0000-0000-0000-000000000a01'),
     );
   });
 

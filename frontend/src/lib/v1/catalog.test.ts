@@ -5,9 +5,9 @@ import type { Dataset } from './types';
 const dataset = (over: Partial<Dataset>): Dataset =>
   ({
     id: 'dataset-1',
-    display_name: 'Dòng bán',
-    schema_name: 'workspace',
-    table_name: 'pilot_sales_line',
+    display_name: 'Bán qua Internet',
+    schema_name: 'public',
+    table_name: 'fact_internet_sales',
     origin: 'derived',
     source_id: null,
     ...over,
@@ -20,9 +20,9 @@ describe('catalogAssets', () => {
       [
         {
           id: 'doc-1',
-          title: 'Quy định giá vốn',
-          file_name: 'QD-GV-2026-02.html',
-          doc_no: 'QD-GV-2026/02',
+          title: 'Định nghĩa chỉ số',
+          file_name: 'AW-KPI-01.html',
+          doc_no: 'AW-KPI-01',
           collection_id: 'col-1',
           document_source_id: 'src-doc',
         },
@@ -30,8 +30,8 @@ describe('catalogAssets', () => {
       [{ id: 'ledger~fm~e5', label: 'Xăng E5' }],
     );
     expect(rows.map((row) => [row.kind, row.name, row.open.page])).toEqual([
-      ['table', 'Dòng bán', 'TABLE'],
-      ['document', 'Quy định giá vốn', 'DOCUMENT'],
+      ['table', 'Bán qua Internet', 'TABLE'],
+      ['document', 'Định nghĩa chỉ số', 'DOCUMENT'],
       ['series', 'Xăng E5', 'FORECAST_LEDGER'],
     ]);
     expect(rows[0].sourceLink).toBeNull();
@@ -45,14 +45,14 @@ describe('catalogAssets', () => {
         dataset({
           source_id: 'source-1',
           origin: 'source',
-          schema_name: 'dbo',
-          table_name: 'sales',
+          schema_name: 'public',
+          table_name: 'fact_reseller_sales',
         }),
       ],
       [],
       [],
     );
-    expect(row.source).toBe('dbo.sales');
+    expect(row.source).toBe('public.fact_reseller_sales');
     expect(row.sourceLink).toEqual({ area: 'data', page: 'SOURCE', id: 'source-1' });
   });
 
@@ -62,13 +62,13 @@ describe('catalogAssets', () => {
       [],
       [],
       [],
-      new Map([['dataset-1', [{ id: 'col-branch', name: 'branch', display_name: 'Chi nhánh' }]]]),
+      new Map([['dataset-1', [{ id: 'col-order-date', name: 'order_date', display_name: 'Ngày đặt hàng' }]]]),
     );
     const column = rows.find((row) => row.kind === 'column');
     expect(column).toMatchObject({
-      id: 'col-branch',
-      name: 'Chi nhánh',
-      source: 'workspace.pilot_sales_line',
+      id: 'col-order-date',
+      name: 'Ngày đặt hàng',
+      source: 'public.fact_internet_sales',
       open: { area: 'data', page: 'TABLE', id: 'dataset-1' },
       sourceLink: { area: 'data', page: 'SOURCE', id: 'source-1' },
     });

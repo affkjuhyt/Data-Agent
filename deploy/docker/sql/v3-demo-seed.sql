@@ -1,6 +1,8 @@
 -- Local V3 demo identity seed.
 -- Keycloak is the identity source; these rows materialise its demo users in the
--- organisation directory so API requests can be scoped by org and Data Space.
+-- organisation directory so API requests can be scoped by org and Data Space. The Data Spaces
+-- they work in come from their own seeds (DS-AW: v3-adventureworks-seed.sql, which grants this
+-- file's data-engineer role to helios-engineer).
 
 INSERT INTO org.app_user (id, org_id, external_id, username, display_name, email, status)
 VALUES (
@@ -33,43 +35,22 @@ ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     is_system = EXCLUDED.is_system;
 
-INSERT INTO org.data_space (
-    id, org_id, code, name, description, steward_id, status, opened_at, created_by, updated_by
-)
-VALUES (
-    'a0000000-0000-0000-0000-000000000061',
-    'a0000000-0000-0000-0000-000000000001',
-    'DS-DEMO',
-    'Demo Data Space',
-    'Local V3 demo data space for the engineer E2E account.',
-    'a0000000-0000-0000-0000-000000000022',
-    'active',
-    now(),
-    'a0000000-0000-0000-0000-000000000022',
-    'a0000000-0000-0000-0000-000000000022'
-)
-ON CONFLICT (id) DO UPDATE SET
-    code = EXCLUDED.code,
-    name = EXCLUDED.name,
-    description = EXCLUDED.description,
-    steward_id = EXCLUDED.steward_id,
-    status = EXCLUDED.status,
-    opened_at = COALESCE(org.data_space.opened_at, EXCLUDED.opened_at),
-    updated_by = EXCLUDED.updated_by;
+-- DS-DEMO, the Data Space this seed used to open for the engineer, is retired: AdventureWorks
+-- (DS-AW, v3-adventureworks-seed.sql) is the one the product is tested on. A cluster seeded before
+-- keeps rows that point at DS-DEMO in schemas without a foreign key to org.data_space (questions,
+-- documents, datasets), so the space is archived, which hides it from the switcher and from
+-- identity resolution, rather than deleted from under them. Only the membership goes, unless an
+-- access request still names it.
+UPDATE org.app_user
+SET default_data_space_id = NULL
+WHERE default_data_space_id = 'a0000000-0000-0000-0000-000000000061';
 
-INSERT INTO org.data_space_member (
-    id, org_id, data_space_id, principal_type, principal_id, role_id, source
-)
-VALUES (
-    'a0000000-0000-0000-0000-000000000022',
-    'a0000000-0000-0000-0000-000000000001',
-    'a0000000-0000-0000-0000-000000000061',
-    'user',
-    'a0000000-0000-0000-0000-000000000022',
-    'a0000000-0000-0000-0000-000000000022',
-    'manual'
-)
-ON CONFLICT (id) DO UPDATE SET
-    data_space_id = EXCLUDED.data_space_id,
-    principal_id = EXCLUDED.principal_id,
-    role_id = EXCLUDED.role_id;
+DELETE FROM org.data_space_member m
+WHERE m.id = 'a0000000-0000-0000-0000-000000000022'
+  AND m.data_space_id = 'a0000000-0000-0000-0000-000000000061'
+  AND NOT EXISTS (SELECT 1 FROM org.access_request r WHERE r.member_id = m.id);
+
+UPDATE org.data_space
+SET status = 'archived', deleted_at = COALESCE(deleted_at, now())
+WHERE id = 'a0000000-0000-0000-0000-000000000061'
+  AND (status <> 'archived' OR deleted_at IS NULL);

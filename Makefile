@@ -187,7 +187,7 @@ bench-gate:  ## judge a benchmark report against model/bench/thresholds.json (0 
 # LAN cluster or another deployed environment.
 E2E_KONG_URL ?= http://localhost:30100
 E2E_KEYCLOAK_URL ?= http://localhost:30110
-E2E_DATA_SPACE ?= DS-DEMO
+E2E_DATA_SPACE ?= DS-AW
 E2E_TESTS ?= tests/integration/test_v3_question_e2e.py
 E2E_FORWARD_VARS = E2E_USER E2E_PASS E2E_ADMIN_USER E2E_ADMIN_PASS E2E_T2_ADMIN_USER E2E_T2_ADMIN_PASS \
                    E2E_DATA_SPACE E2E_STRICT E2E_TURN_TIMEOUT

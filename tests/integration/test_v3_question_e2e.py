@@ -14,8 +14,14 @@ from tests.conftest import live_token
 
 pytestmark = pytest.mark.e2e
 
-DATA_SPACE = os.environ.get("E2E_DATA_SPACE", "DS-DEMO")
+DATA_SPACE = os.environ.get("E2E_DATA_SPACE", "DS-AW")
 QUESTION_TIMEOUT = float(os.environ.get("E2E_TURN_TIMEOUT", "240"))
+
+QUESTION = "Doanh thu Internet năm 2013 là bao nhiêu?"
+# sum(fact_internet_sales.sales_amount) over the orders of 2013 in AdventureWorksDW, in USD.
+INTERNET_REVENUE_2013 = 16_351_550.34
+# The tolerance worker_agent/eval_runs.py scores an expected value with.
+RELATIVE_TOLERANCE = 0.005
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -76,7 +82,7 @@ def _ask(kong: str, token: str, text: str) -> tuple[dict[str, Any], dict[str, An
 def test_v3_questions_reject_anonymous_requests(kong: str) -> None:
     response = httpx.post(
         f"{kong}/v1/questions",
-        json={"text": "Doanh thu thuần tháng này", "stream": True},
+        json={"text": QUESTION, "stream": True},
         headers={"X-Data-Space": DATA_SPACE},
         timeout=15,
     )
@@ -84,7 +90,7 @@ def test_v3_questions_reject_anonymous_requests(kong: str) -> None:
 
 
 def test_v3_question_reaches_worker_and_streams_done(kong: str, token: str) -> None:
-    accepted, view = _ask(kong, token, "Doanh thu thuần tháng này theo vùng")
+    accepted, view = _ask(kong, token, QUESTION)
     assert accepted["stream_url"] == f"/v1/questions/{accepted['question_id']}/stream"
     assert view["status"] in {"answered", "clarifying", "refused", "failed"}
 
@@ -100,3 +106,15 @@ def test_v3_question_reaches_worker_and_streams_done(kong: str, token: str) -> N
         body = answer.json()
         assert body["question_id"] == accepted["question_id"]
         assert body["text"].strip()
+        if body["kind"] == "data":
+            # The answer's own figures, not the totals derived from them, read as eval_runs._values
+            # reads them: a value is stored as text.
+            values = [
+                float(figure["value"])
+                for figure in body["figures"] or []
+                if isinstance(figure, dict) and "expr" not in (figure.get("source") or {})
+            ]
+            assert any(
+                abs(value - INTERNET_REVENUE_2013) <= INTERNET_REVENUE_2013 * RELATIVE_TOLERANCE
+                for value in values
+            ), body["figures"]
