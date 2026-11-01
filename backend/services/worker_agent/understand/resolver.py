@@ -169,6 +169,28 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
                 out.filters[dim_code].append(value)
                 out.chips.append(Chip("filter", f"{dim_code}={value}", hit.label, "default", score))
 
+    # A value the question says only in part (sem_value_retrieval's near pass) is a filter when
+    # its words were not read as something else.
+    for hit in retrieved.values():
+        if hit.score >= 1.0 or not hit.span:
+            continue
+        span = rf"(?<!\w){re.escape(hit.span)}(?!\w)"
+        if not re.search(span, taken):
+            continue
+        out.filters.setdefault(hit.dimension_code, [])
+        if hit.value_code not in out.filters[hit.dimension_code]:
+            out.filters[hit.dimension_code].append(hit.value_code)
+            out.chips.append(
+                Chip(
+                    "filter",
+                    f"{hit.dimension_code}={hit.value_code}",
+                    hit.label,
+                    "default",
+                    hit.score,
+                )
+            )
+        taken = re.sub(span, lambda m: "#" * len(m.group(0)), taken)
+
     cut = _UNPLACED_CUT.search(taken)
     out.unplaced_cut = cut.group(1).strip() if cut else None
     leftover = " ".join(w for w in re.sub(r"#+", " ", taken).split() if len(w) > 3)

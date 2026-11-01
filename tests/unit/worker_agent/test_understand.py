@@ -148,3 +148,15 @@ def test_as_submitted_phrase_selects_period_close_before_metric_matching() -> No
 def test_current_data_phrase_keeps_latest_mode() -> None:
     hint = find_knowledge_hint("NPL_RATIO tháng 6/2026 theo dữ liệu hiện tại")
     assert hint is not None and hint.mode == "latest"
+
+
+def test_a_value_said_in_part_becomes_its_filter() -> None:
+    # R1-05: "Hồ Chí Minh" names the stored value "TP. Hồ Chí Minh".
+    vocab = Vocabulary(
+        metrics=[BAL],
+        dimensions=[REGION],
+        values=[ValueEntry("vung", "HCM", "TP. Hồ Chí Minh"), ValueEntry("vung", "HN", "Hà Nội")],
+    )
+    u = understand("Dư nợ Hồ Chí Minh tháng 9/2026", vocab, today=TODAY)
+    assert u.decision == "proceed" and u.filters == {"vung": ["HCM"]}
+    assert [c.label for c in u.chips if c.kind == "filter"] == ["TP. Hồ Chí Minh"]

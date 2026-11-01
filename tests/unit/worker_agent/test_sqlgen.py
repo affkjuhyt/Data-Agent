@@ -54,6 +54,19 @@ def test_a_question_is_linked_to_the_tables_it_names_and_their_keys() -> None:
     assert ("credit_loan", "product", "Thẻ tín dụng") in linked.values
 
 
+def test_a_value_said_in_part_links_its_column() -> None:
+    # R1-05: "Hồ Chí Minh" is the column value "TP. Hồ Chí Minh".
+    cities = Tbl(
+        uuid.uuid4(),
+        "workspace",
+        "city_sales",
+        "Doanh số",
+        (Col("city", "Nơi bán", "string", samples=("TP. Hồ Chí Minh", "Hà Nội")),),
+    )
+    linked = link("doanh số ở Hồ Chí Minh", Schema(tables=[cities], fks=[]))
+    assert ("city_sales", "city", "TP. Hồ Chí Minh") in linked.values
+
+
 def test_a_question_about_nothing_in_the_tables_links_nothing() -> None:
     assert link("Fed nói gì về lạm phát", SCHEMA).tables == []
 

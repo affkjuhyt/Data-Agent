@@ -16,6 +16,7 @@ from sqlglot import exp
 from sqlglot.errors import ParseError
 
 from services.worker_agent.understand.text import norm
+from services.worker_agent.understand.value_retrieval import near_matches
 
 MAX_TABLES = 4
 
@@ -99,14 +100,19 @@ def link(question: str, schema: Schema, *, max_tables: int = MAX_TABLES) -> Link
     q = f" {norm(question)} "
     scored: list[tuple[int, int, Tbl]] = []
     values: list[tuple[str, str, str]] = []
+    words = q.split()
     for order, t in enumerate(schema.tables):
         score = 3 * (_says(q, t.label) or _says(q, t.name))
         for c in t.columns:
             score += 2 * (_says(q, c.label) or _says(q, c.name))
-            for v in c.samples:
-                if _says(q, v):
-                    score += 2
-                    values.append((t.name, c.name, v))
+            said = [v for v in c.samples if _says(q, v)]
+            # A value said only in part ("Hồ Chí Minh" for "TP. Hồ Chí Minh"), by the value
+            # index's near pass (understand/value_retrieval.py, R1-05).
+            unsaid = {norm(v): v for v in c.samples if v not in said}
+            said += [unsaid[label] for label, _, _ in near_matches(words, list(unsaid))]
+            for v in said:
+                score += 2
+                values.append((t.name, c.name, v))
         if score:
             scored.append((-score, order, t))
     chosen = [t for _, _, t in sorted(scored, key=lambda x: (x[0], x[1]))][:max_tables]

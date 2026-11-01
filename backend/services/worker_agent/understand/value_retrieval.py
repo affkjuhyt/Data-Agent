@@ -5,10 +5,12 @@ profile when the dimension asks for it). Matching is exact on `text.norm`, the s
 form `label_norm` stores, longest phrase first, so "Hải Phòng" resolves to the code
 the column actually holds and a word the index does not hold is not invented.
 
-A near spelling stays unmapped. The trigram ≥ 0.8 / Qdrant ≥ 0.82 pass named in the
-Understander belongs to the later model path; a one-character typo of a short
-Vietnamese label scores well below 0.8, so guessing it here would attach the wrong
-filter.
+A label the question says only in part is found by a second pass (R1-05, the FTS of 01 §3.4): the
+words the exact pass left are compared with each label by trigram similarity, as pg_trgm counts it,
+and a label at FUZZY_AT or above is a hit, scored by that similarity. "Hồ Chí Minh" finds
+"TP. Hồ Chí Minh" (0.80). A one-character typo of a short Vietnamese label scores below it, a
+single short word is never compared, and two values a window scores the same for are both left
+out: a near match never picks between two values.
 """
 
 from __future__ import annotations
@@ -43,6 +45,69 @@ class ValueHit:
     value_code: str
     label: str
     score: float
+    # The question's words it was read from, normalised: the label itself for an exact hit.
+    span: str = ""
+
+
+FUZZY_AT = 0.8
+# A near match must beat every other label on its window by this much, or it is a guess between
+# two values ("kho hà nội" is about as near "Kho Hà Nội Một" as "Kho Hà Nội Hai").
+_FUZZY_MARGIN = 0.15
+# A one-word window is compared only from this length: "nam", "ha", "tp" match too much.
+_FUZZY_MIN_WORD = 5
+
+
+def _trigrams(text: str) -> set[str]:
+    """pg_trgm's trigrams: each word padded with two spaces before and one after."""
+    out: set[str] = set()
+    for word in text.split():
+        padded = f"  {word} "
+        out |= {padded[i : i + 3] for i in range(len(padded) - 2)}
+    return out
+
+
+def similarity(a: str, b: str) -> float:
+    ta, tb = _trigrams(a), _trigrams(b)
+    union = ta | tb
+    return len(ta & tb) / len(union) if union else 0.0
+
+
+def near_matches(words: Sequence[str], labels: Sequence[str]) -> list[tuple[str, str, float]]:
+    """(label, the window of `words` it was found in, score) for each label a window of about its
+    length scores FUZZY_AT or more; windows never overlap, the best score is taken first, and a
+    window another label scores within _FUZZY_MARGIN of is given to neither. A word masked with
+    '#' (used by the exact pass) is not compared."""
+    best: dict[str, tuple[float, int, int]] = {}
+    for label in dict.fromkeys(labels):
+        size = len(label.split())
+        for n in {max(1, size - 1), size, size + 1}:
+            for i in range(len(words) - n + 1):
+                window = words[i : i + n]
+                if any("#" in w for w in window):
+                    continue
+                if n == 1 and len(window[0]) < _FUZZY_MIN_WORD:
+                    continue
+                score = similarity(" ".join(window), label)
+                if score >= FUZZY_AT and score > best.get(label, (0.0, 0, 0))[0]:
+                    best[label] = (score, i, i + n)
+    by_window: dict[tuple[int, int], list[tuple[float, str]]] = {}
+    for label, (score, start, end) in best.items():
+        by_window.setdefault((start, end), []).append((score, label))
+    taken: set[int] = set()
+    out: list[tuple[str, str, float]] = []
+    ranked = sorted(by_window.items(), key=lambda item: -max(s for s, _ in item[1]))
+    for (start, end), scored in ranked:
+        top = max(s for s, _ in scored)
+        winners = [label for s, label in scored if s == top]
+        window = " ".join(words[start:end])
+        runner_up = max(
+            (similarity(window, label) for label in labels if label != winners[0]), default=0.0
+        )
+        if len(winners) > 1 or top - runner_up < _FUZZY_MARGIN or taken & set(range(start, end)):
+            continue
+        taken |= set(range(start, end))
+        out.append((winners[0], window, top))
+    return out
 
 
 @dataclass(frozen=True)
@@ -120,15 +185,21 @@ def sem_value_retrieval(question: str, values: Sequence[IndexedValue]) -> list[V
             labels[key] = value.label
     hits: list[ValueHit] = []
     taken = text
-    for phrase, target, score in sorted(value_targets(values), key=lambda item: -len(item[0])):
+    targets = sorted(value_targets(values), key=lambda item: -len(item[0]))
+    for phrase, target, score in targets:
         if not re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", taken):
             continue
-        hits.append(ValueHit(target[1], target[2], labels.get(phrase, phrase), score))
+        hits.append(ValueHit(target[1], target[2], labels.get(phrase, phrase), score, phrase))
         taken = re.sub(
             rf"(?<!\w){re.escape(phrase)}(?!\w)",
             lambda match: "#" * len(match.group(0)),
             taken,
         )
+    found = {(h.dimension_code, h.value_code) for h in hits}
+    rest = {phrase: target for phrase, target, _ in targets if (target[1], target[2]) not in found}
+    for phrase, span, score in near_matches(taken.split(), list(rest)):
+        target = rest[phrase]
+        hits.append(ValueHit(target[1], target[2], labels.get(phrase, phrase), score, span))
     return hits
 
 
