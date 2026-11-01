@@ -145,3 +145,59 @@ async def test_schema_and_profile_scans_record_keys_stats_and_join_hints(
         profile_run,
     )
     assert email_profile[0] == [] and email_profile[1] is None
+
+
+async def test_a_category_column_is_profiled_whole_for_the_value_index(
+    ddl_server: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # GEN-23: the index took the profile's top ten, so a filter on the eleventh branch was not
+    # recognised. A category keeps every value; a column past the cap keeps none for the index.
+    dsn = ddl_server["dataagent"]
+    parts = urlsplit(dsn)
+    with psycopg2.connect(dsn) as conn:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("CREATE SCHEMA IF NOT EXISTS scan_gen23")
+            cur.execute("DROP TABLE IF EXISTS scan_gen23.sales")
+            cur.execute("CREATE TABLE scan_gen23.sales (branch text, ref text)")
+            cur.execute(
+                "INSERT INTO scan_gen23.sales SELECT 'B' || (i % 15), 'R' || i"
+                " FROM generate_series(1, 600) AS i"
+            )
+            cur.execute(
+                "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dw_reader') "
+                "THEN CREATE ROLE dw_reader LOGIN; END IF; END $$"
+            )
+            cur.execute("ALTER ROLE dw_reader PASSWORD 'warehouse-reader'")
+            cur.execute("GRANT USAGE ON SCHEMA scan_gen23 TO dw_reader")
+            cur.execute("GRANT SELECT ON ALL TABLES IN SCHEMA scan_gen23 TO dw_reader")
+    org = uuid.uuid4()
+    source = schema_scans.catalog.Source(
+        org_id=org,
+        kind="postgresql",
+        host=parts.hostname,
+        port=parts.port,
+        database_name=parts.path.lstrip("/"),
+        conn_options={"sslmode": "disable"},
+        secret_ref=f"secret/tenants/{org}/sources/gen23",
+        query_timeout_s=30,
+    )
+    reader = StaticReader(
+        {
+            f"secret/tenants/{org}/sources/gen23": {
+                "user": "dw_reader",
+                "password": "warehouse-reader",
+            }
+        }
+    )
+    monkeypatch.setattr(schema_scans, "secrets", lambda: reader)
+    table = {
+        "schema_name": "scan_gen23",
+        "table_name": "sales",
+        "columns": [{"name": "branch"}, {"name": "ref"}],
+    }
+    profiles = await schema_scans._profile_source(source, [table])
+    branch = profiles[("scan_gen23", "sales", "branch")]
+    assert len(branch["top_values"]) == 10 and len(branch["category_values"]) == 15
+    ref = profiles[("scan_gen23", "sales", "ref")]
+    assert len(ref["top_values"]) == 10 and ref["category_values"] == []

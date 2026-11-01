@@ -26,6 +26,7 @@ from libs.dataagent_db.models import catalog
 from libs.sql_guard import dialect_of
 from services.worker_agent.query.executor import SourceDriverError, driver_for
 from services.worker_agent.query.scope import default_schema
+from services.worker_agent.understand.value_retrieval import MAX_CATEGORY_CARDINALITY
 
 log = logging.getLogger(__name__)
 
@@ -213,7 +214,9 @@ def stats_sql(schema: str, table: str, column: str, dialect: str) -> str:
     return statement.sql(dialect=dialect)
 
 
-def top_values_sql(schema: str, table: str, column: str, dialect: str) -> str:
+def top_values_sql(
+    schema: str, table: str, column: str, dialect: str, limit: int = TOP_VALUES
+) -> str:
     """The most frequent values as text with their counts, in `dialect` (TOP on SQL Server)."""
     col = exp.column(column, quoted=True)
     statement = (
@@ -225,7 +228,7 @@ def top_values_sql(schema: str, table: str, column: str, dialect: str) -> str:
         .where(exp.Not(this=exp.Is(this=col.copy(), expression=exp.Null())))
         .group_by(col.copy())
         .order_by(exp.Ordered(this=exp.column("value_count"), desc=True), exp.column("value"))
-        .limit(TOP_VALUES)
+        .limit(limit)
     )
     return statement.sql(dialect=dialect)
 
@@ -255,9 +258,13 @@ async def profile(
                 continue
             try:
                 _, stats = await run(stats_sql(schema_name, table_name, name, dialect))
+                category = int(stats[0][2] or 0) <= MAX_CATEGORY_CARDINALITY
                 top: list[list[Any]] = []
                 if not is_sensitive(name):
-                    _, top = await run(top_values_sql(schema_name, table_name, name, dialect))
+                    limit = MAX_CATEGORY_CARDINALITY if category else TOP_VALUES
+                    _, top = await run(
+                        top_values_sql(schema_name, table_name, name, dialect, limit)
+                    )
             except SourceDriverError:
                 log.warning("profile skipped %s.%s.%s", schema_name, table_name, name)
                 continue
@@ -271,7 +278,12 @@ async def profile(
                 "distinct_est": int(distinct or 0),
                 "min_value": None if is_sensitive(name) else (None if low is None else str(low)),
                 "max_value": None if is_sensitive(name) else (None if high is None else str(high)),
-                "top_values": [{"value": shown(name, v), "count": int(n)} for v, n in top],
+                "top_values": [{"value": shown(name, v), "count": int(n)} for v, n in top][
+                    :TOP_VALUES
+                ],
+                "category_values": [{"value": shown(name, v), "count": int(n)} for v, n in top]
+                if category
+                else [],
             }
     return out
 

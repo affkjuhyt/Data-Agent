@@ -32,6 +32,8 @@ from services.worker_agent.understand.value_retrieval import (
     index_writes,
 )
 
+# Shown in the catalog's column profile; the value index takes the whole category.
+TOP_VALUES = 10
 _CLICKHOUSE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 EVENT_TYPE = "scan_run.created"
@@ -467,7 +469,9 @@ async def _profile_source(
                     FROM {table_sql}
                     """
                 )
-                top_values: list[dict[str, object]] = []
+                distinct = int(stats["distinct_est"] or 0)
+                category = distinct <= MAX_CATEGORY_CARDINALITY
+                values: list[dict[str, object]] = []
                 if not _is_sensitive_column(name):
                     top = await conn.fetch(
                         f"""
@@ -476,10 +480,10 @@ async def _profile_source(
                         WHERE {column_sql} IS NOT NULL
                         GROUP BY {column_sql}
                         ORDER BY value_count DESC, value
-                        LIMIT 10
+                        LIMIT {MAX_CATEGORY_CARDINALITY if category else TOP_VALUES}
                         """
                     )
-                    top_values = [
+                    values = [
                         {
                             "value": _profile_value(name, row["value"]),
                             "count": int(row["value_count"]),
@@ -495,7 +499,9 @@ async def _profile_source(
                     "distinct_est": int(stats["distinct_est"] or 0),
                     "min_value": None if _is_sensitive_column(name) else stats["min_value"],
                     "max_value": None if _is_sensitive_column(name) else stats["max_value"],
-                    "top_values": top_values,
+                    "top_values": values[:TOP_VALUES],
+                    # Every value of a category column, for the value index (GEN-23).
+                    "category_values": values if category else [],
                 }
     finally:
         await conn.close()
@@ -667,13 +673,15 @@ async def scan_schema(event: Event) -> None:
                         # hand-seeded rather than matching a question to a sentence.
                         distinct_raw = profile["distinct_est"]
                         distinct = distinct_raw if isinstance(distinct_raw, int) else 0
-                        top_values = profile["top_values"]
+                        # The whole category, not its top ten: a filter on a member past the
+                        # tenth ("Hải Phòng" of 63 provinces) was otherwise never recognised.
+                        category_values = profile.get("category_values") or profile["top_values"]
                         if (
                             distinct <= MAX_CATEGORY_CARDINALITY
-                            and isinstance(top_values, list)
-                            and top_values
+                            and isinstance(category_values, list)
+                            and category_values
                         ):
-                            value_samples.append((dataset.id, column.name, top_values))
+                            value_samples.append((dataset.id, column.name, category_values))
             run.tables_total = len(found)
             run.tables_scanned = len(found)
             run.status = "succeeded"
