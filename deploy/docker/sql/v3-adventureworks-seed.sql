@@ -50,15 +50,21 @@ WHERE u.org_id = :org::uuid AND u.username = 'helios-admin'
 ON CONFLICT (data_space_id, principal_type, principal_id, role_id) DO NOTHING;
 
 INSERT INTO catalog.source (
-    id, org_id, data_space_id, name, kind, host, port, database_name, secret_ref, mode,
-    authority_level, scan_schemas, status, created_by, updated_by
+    id, org_id, data_space_id, name, kind, host, port, database_name, conn_options, secret_ref,
+    mode, authority_level, scan_schemas, status, created_by, updated_by
 )
 VALUES (
     'a0000000-0000-0000-0000-000000000a03', :org::uuid, :space::uuid, 'AdventureWorksDW',
     'postgresql', 'postgres.dataagent-database.svc.cluster.local', 8300, 'adventureworks_dw',
+    -- The cluster's own PostgreSQL has no TLS: a query defaults to verify-full
+    -- (query/executor.py) and every SQL answer and metric preview of DS-AW failed on the
+    -- missing root certificate. The API cannot set it (POST and PATCH /v1/sources carry no
+    -- conn_options), so the seed says it.
+    '{"sslmode": "disable"}',
     'secret/tenants/a0000000-0000-0000-0000-000000000001/demo-postgres', 'federated',
     'level_1', ARRAY['public'], 'active', :engineer::uuid, :engineer::uuid
 )
 ON CONFLICT (id) DO UPDATE SET
     host = EXCLUDED.host, port = EXCLUDED.port, database_name = EXCLUDED.database_name,
+    conn_options = EXCLUDED.conn_options,
     secret_ref = EXCLUDED.secret_ref, scan_schemas = EXCLUDED.scan_schemas;
