@@ -21,9 +21,18 @@ pytestmark = [pytest.mark.unit]
         "ten_khach",
         "account_no",
         "tax_id",
+        "tax_code",
+        "ma_so_thue",
         "cccd",
         "home_address",
         "date_of_birth_dob",
+        "name",
+        "ten",
+        "account",
+        "so_tai_khoan",
+        "ten_kh",
+        "ten_nv",
+        "customer_type_name",
     ],
 )
 def test_a_name_that_says_personal_is_never_sampled(name: str) -> None:
@@ -31,7 +40,17 @@ def test_a_name_that_says_personal_is_never_sampled(name: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["product_name", "name", "account_type", "tax_amount", "invoice_no", "region_name"]
+    "name",
+    [
+        "product_name",
+        "account_type",
+        "tax_amount",
+        "invoice_no",
+        "region_name",
+        "ten_san_pham",
+        "loai_tai_khoan",
+        "tien_thue",
+    ],
 )
 def test_a_name_that_does_not_is_sampled(name: str) -> None:
     assert not _is_sensitive_column(name)

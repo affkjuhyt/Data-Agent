@@ -49,10 +49,11 @@ EVENT_TYPE = "scan_run.created"
 ROLE = "svc_catalog"
 RELATIONSHIP_ROLE = "svc_context"
 
-# A column whose name says it holds personal data is never sampled (GEN-14). Narrow on purpose:
-# "name", "account" and "tax" alone are in product_name, account_type and tax_amount, which a
-# catalogue needs to show; they count only beside a word that makes them a person's. A column
-# whose name says nothing is still checked by its values (_redact_personal).
+# A column whose name says it holds personal data is never sampled (GEN-14). "name", "ten",
+# "account", "khoan" (tai_khoan) and "tax"/"thue" are personal unless a word beside them says what
+# else they name (product_name, account_type, tax_amount, tien_thue): fail closed, the catalogue
+# loses a sample at worst. A name that says nothing is still checked by its values
+# (_redact_personal).
 _PII_NAME_PARTS = frozenset(
     {
         "address",
@@ -68,16 +69,57 @@ _PII_NAME_PARTS = frozenset(
         "birthdate",
     }
 )
+_AMBIGUOUS_PARTS = frozenset({"name", "ten", "account", "khoan", "tax", "thue"})
+# Words beside an ambiguous one that make it no person's.
+_NOT_PERSONAL_PARTS = frozenset(
+    {
+        "product",
+        "item",
+        "sku",
+        "region",
+        "branch",
+        "category",
+        "brand",
+        "store",
+        "shop",
+        "company",
+        "department",
+        "file",
+        "table",
+        "column",
+        "city",
+        "province",
+        "country",
+        "channel",
+        "segment",
+        "promotion",
+        "campaign",
+        "project",
+        "metric",
+        "type",
+        "amount",
+        "rate",
+        "total",
+        "status",
+        "group",
+        "class",
+        "kind",
+        "sp",
+        "san",
+        "pham",
+        "vung",
+        "tinh",
+        "nhanh",
+        "loai",
+        "nhom",
+        "tien",
+    }
+)
+# Words that make an ambiguous one a person's even beside one above ("customer_type_name").
 _PERSON_PARTS = frozenset(
     {
         "customer",
         "client",
-        "full",
-        "first",
-        "last",
-        "given",
-        "family",
-        "middle",
         "contact",
         "person",
         "employee",
@@ -87,14 +129,11 @@ _PERSON_PARTS = frozenset(
         "member",
         "user",
         "khach",
+        "kh",
+        "nv",
+        "ho",
     }
 )
-_QUALIFIED = {
-    "name": _PERSON_PARTS,
-    "ten": _PERSON_PARTS | {"ho"},
-    "account": {"no", "number", "num", "iban"},
-    "tax": {"id", "code", "no", "number"},
-}
 # Share of a column's sampled values that, holding personal data, makes the column personal.
 PERSONAL_SHARE = 0.5
 
@@ -113,12 +152,13 @@ def _profile_value(column_name: str, value: Any) -> str:
 
 def _is_sensitive_column(column_name: str) -> bool:
     parts = re.sub(r"([a-z])([A-Z])", r"\1_\2", column_name).lower().replace("-", "_").split("_")
-    if any(part in _PII_NAME_PARTS for part in parts) or parts == ["ho", "ten"]:
+    if any(part in _PII_NAME_PARTS for part in parts):
         return True
-    return any(
-        word in parts and any(q in parts for q in qualifiers)
-        for word, qualifiers in _QUALIFIED.items()
-    )
+    if not any(part in _AMBIGUOUS_PARTS for part in parts):
+        return False
+    if any(part in _PERSON_PARTS for part in parts):
+        return True
+    return not any(part in _NOT_PERSONAL_PARTS for part in parts)
 
 
 def _redact_personal(

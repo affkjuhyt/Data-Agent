@@ -54,7 +54,10 @@ def test_numbers_that_only_look_personal_are_kept(text: str) -> None:
 def test_a_pack_applies_only_where_it_is_chosen() -> None:
     assert pii.packs_for("vi-VN") == ("GLOBAL", "VN")
     assert pii.packs_for("en-US") == ("GLOBAL", "US")
-    assert pii.packs_for("fr-FR") == ("GLOBAL",)
+    assert pii.packs_for("vi") == ("GLOBAL", "VN")
+    # A locale nothing maps keeps the default set: never fewer packs than before.
+    assert pii.packs_for("fr-FR") == pii.DEFAULT_PACKS
+    assert pii.packs_for(None) == pii.DEFAULT_PACKS
     assert pii.packs_for("vi-VN", ["us"]) == ("GLOBAL", "US")
     # A US team's text keeps a 12-digit number that a Vietnamese one would mask.
     assert pii.mask("id 079203001234", packs=pii.packs_for("en-US"))[1] == {}

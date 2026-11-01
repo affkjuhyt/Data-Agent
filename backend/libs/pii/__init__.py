@@ -15,8 +15,9 @@ data. A pattern now only names a candidate; the value decides:
     landline area code (02x), after 0, +84 or 0084.
   * US: an SSN as 3-2-4 digits outside the ranges never issued (000, 666, 9xx; 00; 0000).
 
-Which packs read a text is the reader's ingest profile (`pii_packs`, else the region of its locale:
-vi-VN → VN); GLOBAL always applies.
+Which packs read a text is the reader's ingest profile (`pii_packs`, else the region of its locale,
+else its language: vi-VN or vi → VN); GLOBAL always applies. A locale that names no pack keeps the
+default (GLOBAL and VN): an unresolved locale never masks less than before the packs existed.
 
   * ``mask(text, types, packs)``  -> (masked_text, {type: count})
   * ``scan(text, types, packs)``  -> {"counts", "total", "preview"}: never the raw value.
@@ -140,15 +141,24 @@ _RULES: dict[str, tuple[_Rule, ...]] = {
 }
 
 
+# A locale's language when its region names no pack.
+_LANGUAGE_PACKS = {"vi": "VN", "en": "US"}
+
+
 def packs_for(locale: str | None, wanted: Sequence[str] | None = None) -> tuple[str, ...]:
-    """The packs a reader applies: `wanted` (an ingest profile's pii_packs), else the region of
-    `locale` when a pack has it; GLOBAL always."""
+    """The packs a reader applies: `wanted` (an ingest profile's pii_packs, chosen on purpose),
+    else the pack of `locale`'s region, else of its language, else DEFAULT_PACKS; GLOBAL always.
+    Fail closed: a locale nothing maps falls back to the default set, never to GLOBAL alone."""
     if wanted:
-        chosen = [p.upper() for p in wanted]
+        chosen = [p.upper() for p in wanted if p.upper() in _RULES]
     else:
-        region = (locale or "").split("-")[-1].upper() if locale and "-" in locale else ""
-        chosen = [region] if region in _RULES else []
-    return tuple(dict.fromkeys(["GLOBAL", *(p for p in chosen if p in _RULES)]))
+        parts = (locale or "").replace("_", "-").split("-")
+        region = parts[-1].upper() if len(parts) > 1 else ""
+        language = _LANGUAGE_PACKS.get(parts[0].lower(), "")
+        chosen = [region] if region in _RULES else [language] if language else []
+        if not chosen:
+            return DEFAULT_PACKS
+    return tuple(dict.fromkeys(["GLOBAL", *chosen]))
 
 
 def _normalize_types(types: Iterable[str] | None) -> tuple[str, ...]:
