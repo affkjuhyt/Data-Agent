@@ -47,6 +47,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 
+from libs import source_drivers
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, governance, org
 from libs.dataagent_db.models import query as q
@@ -197,8 +198,8 @@ class QueryOutcome:
         return self.status == "succeeded"
 
 
-class SourceDriverError(RuntimeError):
-    """A source driver failed without exposing credentials or source SQL."""
+# The drivers live in libs/source_drivers (GEN-12), shared with worker-ingest.
+SourceDriverError = source_drivers.DriverError
 
 
 def _plain(value: Any) -> Any:
@@ -256,102 +257,22 @@ async def _run_postgres(
     return columns, [[_plain(v) for v in r] for r in records]
 
 
-def _rows(cursor: Any) -> tuple[list[dict[str, str]], list[list[Any]]]:
-    description = cursor.description or ()
-    columns = [{"name": str(item[0]), "type": str(item[1] or "unknown")} for item in description]
-    return columns, [[_plain(value) for value in row] for row in cursor.fetchall()]
-
-
-def _mysql_sync(
-    source: catalog.Source, user: str, password: str, sql: str, timeout_s: int
-) -> tuple[list[dict[str, str]], list[list[Any]]]:
-    try:
-        import pymysql
-
-        options = source.conn_options or {}
-        connect_options: dict[str, Any] = {
-            "host": source.host,
-            "port": source.port or 3306,
-            "user": user,
-            "password": password,
-            "database": source.database_name,
-            "connect_timeout": min(timeout_s, 30),
-            "read_timeout": timeout_s,
-            "write_timeout": timeout_s,
-            "charset": str(options.get("charset") or "utf8mb4"),
-        }
-        if options.get("sslmode") not in (None, "disable"):
-            ca = options.get("ssl_ca")
-            if not ca:
-                raise SourceDriverError("mysql TLS requires conn_options.ssl_ca")
-            connect_options["ssl"] = {
-                "ca": str(ca),
-                "check_hostname": options["sslmode"] == "verify-full",
-            }
-        conn = pymysql.connect(**connect_options)
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("SET SESSION TRANSACTION READ ONLY")
-                cursor.execute("START TRANSACTION READ ONLY")
-                if options.get("schema"):
-                    cursor.execute(f"USE `{str(options['schema']).replace('`', '``')}`")
-                cursor.execute(sql)
-                result = _rows(cursor)
-            conn.rollback()
-            return result
-        finally:
-            conn.close()
-    except SourceDriverError:
-        raise
-    except Exception as exc:
-        raise SourceDriverError(f"mysql query failed ({type(exc).__name__})") from exc
-
-
 async def _run_mysql(
     source: catalog.Source, user: str, password: str, sql: str, timeout_s: int
 ) -> tuple[list[dict[str, str]], list[list[Any]]]:
-    return await asyncio.to_thread(_mysql_sync, source, user, password, sql, timeout_s)
-
-
-def _sqlserver_sync(
-    source: catalog.Source, user: str, password: str, sql: str, timeout_s: int
-) -> tuple[list[dict[str, str]], list[list[Any]]]:
-    try:
-        import pymssql
-
-        options = source.conn_options or {}
-        conn = pymssql.connect(
-            server=str(source.host),
-            port=int(source.port or 1433),
-            user=user,
-            password=password,
-            database=source.database_name or "master",
-            login_timeout=min(timeout_s, 30),
-            timeout=timeout_s,
-            appname="dataagent-worker-agent",
-            tds_version=str(options.get("tds_version") or "7.4"),
-        )
-        try:
-            with conn.cursor() as cursor:
-                # No READ ONLY transaction exists in T-SQL: the rollback below undoes a write the
-                # guard missed, and the source login is expected to be db_datareader.
-                cursor.execute("BEGIN TRANSACTION")
-                cursor.execute(sql)
-                result = _rows(cursor)
-            conn.rollback()
-            return result
-        finally:
-            conn.close()
-    except SourceDriverError:
-        raise
-    except Exception as exc:
-        raise SourceDriverError(f"sqlserver query failed ({type(exc).__name__})") from exc
+    columns, rows = await asyncio.to_thread(
+        source_drivers.mysql, source, user, password, sql, timeout_s
+    )
+    return columns, [[_plain(value) for value in row] for row in rows]
 
 
 async def _run_sqlserver(
     source: catalog.Source, user: str, password: str, sql: str, timeout_s: int
 ) -> tuple[list[dict[str, str]], list[list[Any]]]:
-    return await asyncio.to_thread(_sqlserver_sync, source, user, password, sql, timeout_s)
+    columns, rows = await asyncio.to_thread(
+        source_drivers.sqlserver, source, user, password, sql, timeout_s, "dataagent-worker-agent"
+    )
+    return columns, [[_plain(value) for value in row] for row in rows]
 
 
 def driver_for(kind: str) -> Any:

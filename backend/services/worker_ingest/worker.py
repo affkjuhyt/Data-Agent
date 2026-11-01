@@ -1,12 +1,14 @@
-"""Source-table ingestion for the first real worker-ingest slice.
+"""Source-table ingestion: a table of a customer's database copied into the workspace.
 
-Only PostgreSQL table sources are enabled here. The worker refuses unsupported source kinds and
-records a failed run; it never marks a job successful without materializing and cataloguing rows.
+PostgreSQL through asyncpg; MySQL, SQL Server and ClickHouse through libs/source_drivers, the
+drivers worker-agent's executor uses (GEN-12). Another engine is refused and the run recorded as
+failed; a job is never marked successful without materializing and cataloguing rows.
 """
 
 from __future__ import annotations
 
 import datetime
+import decimal
 import json
 import re
 import uuid
@@ -15,7 +17,7 @@ from typing import Any
 import asyncpg
 from sqlalchemy import select, text, update
 
-from libs import tabular
+from libs import source_drivers, tabular
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, ingest
 from services.worker_ingest.events import Event, Handler
@@ -55,21 +57,75 @@ def _plain(value: Any) -> Any:
     return value
 
 
+# The table's name in each engine's quoting; both parts are plain identifiers (_IDENTIFIER).
+_QUOTED = {
+    "mysql": "`{schema}`.`{table}`",
+    "clickhouse": "`{schema}`.`{table}`",
+    "sqlserver": "[{schema}].[{table}]",
+}
+# The schema a bare table name is in, by engine.
+_DEFAULT_SCHEMA = {"postgresql": "public", "sqlserver": "dbo"}
+
+
+def _workspace_type(values: list[Any]) -> str:
+    """The workspace type of a column read through a DB-API driver, from its values: the drivers
+    name types by their own codes, the values say the same in Python's terms."""
+    present = [v for v in values if v is not None]
+    if not present:
+        return "text"
+    if all(isinstance(v, bool) for v in present):
+        return "boolean"
+    if all(
+        isinstance(v, int | float | decimal.Decimal) and not isinstance(v, bool) for v in present
+    ):
+        return "numeric"
+    if all(isinstance(v, datetime.date) and not isinstance(v, datetime.datetime) for v in present):
+        return "date"
+    return "text"
+
+
+async def _read_driver(
+    source: catalog.Source, schema: str, table: str, org_id: uuid.UUID
+) -> tuple[list[dict[str, str]], list[list[Any]]]:
+    if source.kind not in _QUOTED:
+        raise ValueError(f"source connector {source.kind} is not wired for ingestion")
+    credentials = await Reader().read(org_id, source.secret_ref)
+    names, rows = await source_drivers.read(
+        source,
+        credentials.user,
+        credentials.password,
+        "SELECT * FROM " + _QUOTED[source.kind].format(schema=schema, table=table),
+        min(int(source.query_timeout_s or 120), 300),
+    )
+    labels = [c["name"] for c in names]
+    columns = [
+        {"name": name, "label": label, "type": _workspace_type([row[i] for row in rows])}
+        for i, (name, label) in enumerate(zip(tabular.physical_names(labels), labels, strict=True))
+    ]
+    return columns, [[_plain(value) for value in row] for row in rows]
+
+
 async def _read_source(
     source: catalog.Source, object_name: str, org_id: uuid.UUID
 ) -> tuple[list[dict[str, str]], list[list[Any]]]:
-    if source.kind != "postgresql":
-        raise ValueError(f"source connector {source.kind} is not wired for ingestion")
     parts = object_name.split(".")
+    options = source.conn_options or {}
     if len(parts) == 1:
-        schema, table = str((source.conn_options or {}).get("schema") or "public"), parts[0]
+        schema = str(
+            options.get("schema")
+            or _DEFAULT_SCHEMA.get(source.kind)
+            or source.database_name
+            or "public"
+        )
+        table = parts[0]
     elif len(parts) == 2:
         schema, table = parts
     else:
         raise ValueError("source_object must be table or schema.table")
     schema, table = _identifier(schema), _identifier(table)
+    if source.kind != "postgresql":
+        return await _read_driver(source, schema, table, org_id)
     credentials = await Reader().read(org_id, source.secret_ref)
-    options = source.conn_options or {}
     conn = await asyncpg.connect(
         host=source.host,
         port=source.port or 5432,
@@ -225,7 +281,12 @@ async def handle(event: Event) -> None:
                     )
                     for ordinal, column in enumerate(columns)
                 )
-    except (SecretUnavailable, ValueError, asyncpg.PostgresError) as exc:
+    except (
+        SecretUnavailable,
+        ValueError,
+        asyncpg.PostgresError,
+        source_drivers.DriverError,
+    ) as exc:
         await _fail(event, run_id, str(exc))
 
 

@@ -80,15 +80,28 @@ def chain(steps: list[dict[str, Any]], upto: int, sample: str | None = None) -> 
 _INNER = "da_inner_query"
 
 
+# The last SELECT of chain(): what is left after its CTEs.
+_CHAIN_TAIL = re.compile(r" SELECT \* FROM s\d+$")
+
+
 def over(inner: str, dialect: str, *columns: exp.Expression, limit: int | None = None) -> str:
     """A SELECT over `inner` (the steps' query, in the source's own dialect and kept verbatim),
     written in `dialect`: quoting, the cast of a total and LIMIT/TOP are the source's. Written as
     PostgreSQL, `sum("amount")` is the sum of a string literal on MySQL, 0 at every step, and the
-    money totals check matched whatever the steps did (GEN-12)."""
+    money totals check matched whatever the steps did (GEN-12).
+
+    The steps' CTEs (chain) lead the statement and `inner`'s last SELECT becomes one more CTE the
+    outer SELECT reads: SQL Server refuses a WITH inside a subquery, and every engine with CTEs
+    takes them at the top."""
     statement = exp.select(*(columns or [exp.Star()])).from_(exp.table_(_INNER).as_("q"))
     if limit is not None:
         statement = statement.limit(limit)
-    return statement.sql(dialect=dialect).replace(_INNER, f"({inner})", 1)
+    outer = statement.sql(dialect=dialect)
+    tail = _CHAIN_TAIL.search(inner)
+    if inner.startswith("WITH ") and tail is not None:
+        ctes, last = inner[: tail.start()], inner[tail.start() + 1 :]
+        return f"{ctes}, {_INNER} AS ({last}) {outer}"
+    return outer.replace(_INNER, f"({inner})", 1)
 
 
 def total(column: str, dialect: str) -> exp.Expression:

@@ -13,7 +13,6 @@ PostgreSQL stays on pg_catalog in schema_scans: it also gives the planner's row 
 from __future__ import annotations
 
 import decimal
-import json
 import logging
 import re
 from collections.abc import Awaitable, Callable, Sequence
@@ -22,6 +21,7 @@ from typing import Any
 import httpx
 from sqlglot import exp
 
+from libs import source_drivers
 from libs.dataagent_db.models import catalog
 from libs.sql_guard import dialect_of
 from services.worker_agent.query.executor import SourceDriverError, driver_for
@@ -303,21 +303,13 @@ def driver_run(source: catalog.Source, user: str, password: str) -> Run:
 
 
 def clickhouse_run(
-    client: httpx.AsyncClient, url: str, database: str, auth: tuple[str, str]
+    client: httpx.AsyncClient, url: str, database: str, auth: tuple[str, str], source: Any = None
 ) -> Run:
-    """`run` over ClickHouse's HTTP interface, rows as JSON arrays."""
+    """`run` over ClickHouse's HTTP interface, rows as JSON arrays (libs/source_drivers)."""
 
     async def run(sql: str) -> tuple[list[dict[str, str]], list[list[Any]]]:
-        response = await client.post(
-            url,
-            params={"database": database, "default_format": "JSONCompact", "readonly": "1"},
-            content=sql.encode(),
-            auth=auth,
+        return await source_drivers.clickhouse(
+            source, auth[0], auth[1], sql, 300, client=client, url=url, database=database
         )
-        if response.status_code != 200:
-            raise SourceDriverError(f"clickhouse query failed ({response.status_code})")
-        body = json.loads(response.text)
-        columns = [{"name": m["name"], "type": m["type"]} for m in body.get("meta", [])]
-        return columns, [list(row) for row in body.get("data", [])]
 
     return run
