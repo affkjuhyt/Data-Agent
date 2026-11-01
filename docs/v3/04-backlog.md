@@ -147,16 +147,17 @@ Thêm 01/11/2026, sau khi đối chiếu Ask AI của Holistics (demo4, các mà
    trúc không đi qua chunk/embedding".
 
 Cột **Đợt**: `R1` là việc phục vụ tiêu chí ra R1 hoặc sửa vi phạm bất biến, làm được ngay; `R2` chờ R1 đạt
-tiêu chí ra (§4). AN-04 và AN-05 là R2 nhưng chỉ là mã tất định, không đụng đường đang nghiệm thu: mở
-sớm là ngoại lệ của §4, cần anh Linh duyệt.
+tiêu chí ra (§4). **Ngoại lệ §4, anh Linh duyệt 01/11/2026:** AN-04 và AN-05 mở sớm (đợt `R1*`) vì chỉ là mã
+tất định, không đụng đường đang nghiệm thu, và làm nền cho cả phần nhận định; chúng không được làm chậm
+R1-05, R1-09, R1-10 đang làm, việc nào trễ thì AN-04/AN-05 nhường.
 
 | ID | Đợt | Việc | Phụ thuộc | Vai | Cỡ | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AN-01 | R2 | Câu trả lời ghép khối: output contract liệt kê khối dự kiến; validator kiểm bất biến của mục 1 ở trên, không kiểm thứ tự; FE render theo luồng `__block`; các bước chạy giữ lại sau khi trả lời (gập, có thời gian chạy, skill đã gọi là một bước) thay vì bị `AgentSteps` thay | R0-10, R1-14 | FE, BE (Hải Long) | M | Bốn yêu cầu mẫu (một số KPI, giải thích chart, dựng dashboard, "vì sao") ra bốn bố cục khác nhau và cùng qua validator | todo |
 | AN-02 | R2 | Ngữ cảnh trong câu hỏi: `context[]` (data_space, tile, chart, metric); server đọc lại query, result set, metric version của đối tượng, không tin nội dung client gửi; "N ngữ cảnh" trên câu hỏi; "Giải thích chart này" từ tile và Khám phá | R1-10, R1-13 | BE (Đức Long), FE (Hải Long) | M | Test: ngữ cảnh ngoài quyền người hỏi → FORBIDDEN, không lộ tên | todo |
 | AN-03 | R2 | Kiểm chart trước khi trả lời hoặc thêm vào dashboard: measure hằng số hoặc không đổi theo dimension, cột trùng nghĩa, grain lệch, nhãn mơ hồ, cộng hoặc tính tỷ trọng trên measure không cộng được, nhãn trục bị ẩn; đề xuất sửa model đi vào Review Inbox, không tự áp | AN-02, AN-05 | BE, AI (Linh) | M | Mỗi lỗi có case trong AN-13 và bị bắt bằng code, không bằng LLM | todo |
-| AN-04 | R2 | Insights v2 tất định trong `answer/insights.py`: độ tập trung top-k (chỉ measure cộng được), bậc thang hay đuôi dài, điểm gãy, xu hướng nhiều kỳ (độ dốc, chuỗi tăng/giảm), tự đối chiếu kỳ trước và mục tiêu khi có (`comparison.py`, `thresholds.py`) | AN-05 | AI (Linh) | M | Mỗi nhận định là figure có `expr`, replay tính lại được | todo |
-| AN-05 | R2 | Semantic model khai báo đủ về measure: tính cộng được (mặc định đọc từ AST như `is_additive`, steward ghi đè có duyệt), grain, đơn vị, mô tả nghiệp vụ, measure khác mức chi tiết (pre-grouped); hiện trong Data Studio | R1-06, R1-07 | DB, BE (Đức Long) | M | Import/export YAML giữ đủ các trường | todo |
+| AN-04 | R1* | Insights v2 tất định trong `answer/insights.py`: độ tập trung top-k (chỉ measure cộng được), bậc thang hay đuôi dài, điểm gãy, xu hướng nhiều kỳ (độ dốc, chuỗi tăng/giảm), tự đối chiếu kỳ trước và mục tiêu khi có (`comparison.py`, `thresholds.py`) | AN-05 | AI (Linh) | M | Mỗi nhận định là figure có `expr`, replay tính lại được | todo |
+| AN-05 | R1* | Semantic model khai báo đủ về measure: tính cộng được (mặc định đọc từ AST như `is_additive`, steward ghi đè có duyệt), grain, đơn vị, mô tả nghiệp vụ, measure khác mức chi tiết (pre-grouped); hiện trong Data Studio | R1-06, R1-07 | DB, BE (Đức Long) | M | Import/export YAML giữ đủ các trường | todo |
 | AN-06 | R2 | Narrator v2: khối Nhận định (từ AN-04), khối Giả thuyết (chọn từ danh mục phép kiểm, mỗi giả thuyết kèm truy vấn kiểm và nút "Kiểm tra", nhãn Khám phá), "Nên xem tiếp" chạy được; ngoài khối Giả thuyết vẫn cấm nêu nguyên nhân | AN-01, AN-04, AN-07 | AI (Linh), FE | L | `causal_claim_rate` = 0 ngoài khối Giả thuyết; `unsupported_number_rate` = 0 | todo |
 | AN-07 | R2 | Ngữ cảnh nghiệp vụ cho nhận định: mục tiêu/KPI theo kỳ, phân cấp danh mục, lịch mùa vụ và sự kiện, quan hệ giữa metric (đơn hàng ↔ doanh thu ↔ AOV ↔ biên lợi nhuận) | R1-07 | DB, BE (Đức Long) | M | Dữ liệu pilot R1-16 có mục tiêu và phân cấp | todo |
 | AN-08 | R2 | DQ trên giá trị dimension: lỗi chính tả, trùng gần đúng, null; cảnh báo trong câu trả lời và đề xuất gộp vào Review Inbox | R1-03, R1-05 | DE (Đức Long) | M | Bẫy tên nhóm sai chính tả trong R1-16 bị bắt khi profiling | todo |
@@ -175,7 +176,7 @@ sớm là ngoại lệ của §4, cần anh Linh duyệt.
 | RG-08 | R2 | Câu đếm/tổng trên cả kho ("bao nhiêu hợp đồng có điều khoản X") đi đường trích trường (`documents/extraction.py`) → bảng → SQL, báo coverage (`sem_extract`, 01 §3.3) | RG-05 | AI, BE | M | Câu trả lời có coverage; không trả lời bằng top-k | todo |
 | RG-09 | R2 | Màn sức khoẻ kho tài liệu theo Data Space: trang dưới ngưỡng OCR, chunk chưa vào Qdrant, đoạn nghi injection, văn bản hết hiệu lực hoặc bị thay thế, tài liệu đọc lỗi | | BE, FE | S | | todo |
 
-Thứ tự: RG-01 → RG-02 và RG-05 song song ngay trong R1, AN-13 viết case song song; sau R1: AN-05 → AN-04 →
+Thứ tự: RG-01 → RG-02 và RG-05 song song ngay trong R1, AN-13 viết case song song, AN-05 → AN-04 theo ngoại lệ; sau R1:
 AN-01 → AN-02 → AN-03 → AN-07 → AN-06 → AN-09/AN-10 → AN-11; RG-03…RG-09 theo số đo của RG-02.
 
 ## 4. Quy tắc theo dõi
