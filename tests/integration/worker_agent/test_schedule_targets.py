@@ -125,6 +125,19 @@ async def test_a_crawl_source_on_a_schedule_queues_a_run_its_crawler_claims(
     assert payload["trigger"] == "schedule"  # type: ignore[index]
 
 
+async def test_a_schedule_runs_in_the_organisations_time_zone(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # GEN-21: 08:00 is the customer's 08:00, not Vietnam's.
+    bank = build(seed, warehouse, monkeypatch)
+    source = crawl_source(bank, "0 8 * * *")
+    execute(seed, "UPDATE org.organization SET time_zone = 'Europe/Berlin' WHERE id = %s", bank.org)
+    wanted = {t.schedule_id: t for t in await targets.wanted(bank.org)}
+    assert wanted[f"crawl:{bank.org}:{source}"].zone == "Europe/Berlin"
+
+
 async def test_a_crawl_source_whose_legal_review_lapsed_is_not_run(
     seed: Seed,
     warehouse: dict[str, Any],  # noqa: F811

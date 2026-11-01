@@ -19,6 +19,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from libs import clock
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, qa
 from libs.sql_guard import dialect_of
@@ -250,7 +251,7 @@ async def answer_verified_first(
         if conversation is None or conversation.user_id is None:
             return False
         user_id, space_id = conversation.user_id, conversation.data_space_id
-        today = question.as_of or datetime.date.today()
+        today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         found = verified.match(
             question.text, await verified.active_examples(session, space_id), today
         )
@@ -313,7 +314,7 @@ async def _answer_verified(
         conversation = await session.get(qa.Conversation, question.conversation_id)
         assert conversation is not None
         space_id = conversation.data_space_id
-        today = question.as_of or datetime.date.today()
+        today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         found = verified.match(
             question.text, await verified.active_examples(session, space_id), today
         )

@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs import cron
+from libs import clock, cron
 from libs.dataagent_db import scoped_session, unscoped_session, uuid7
 from libs.dataagent_db.models import acquire, agent, ingest, monitor, org
 from libs.dataagent_db.models import pipeline as pl
@@ -134,6 +134,8 @@ async def wanted(org_id: uuid.UUID) -> list[Target]:
                 zone = await _calendar_zone(session, calendar_id)
                 out.append(Target("pipeline", checked, zone, org_id, pipeline_id))
     async with scoped_session(report_runs.ROLE, org_id) as session:
+        # A report or a crawl at 07:00 is 07:00 where the organisation is (GEN-21).
+        org_zone = (await clock.org_zone(session, org_id)).key
         for schedule_id, expr in await session.execute(
             select(monitor.ReportSchedule.id, monitor.ReportSchedule.cron).where(
                 monitor.ReportSchedule.status == "active",
@@ -141,7 +143,7 @@ async def wanted(org_id: uuid.UUID) -> list[Target]:
             )
         ):
             if (checked := _valid(expr)) is not None:
-                out.append(Target("report", checked, report_runs.ZONE.key, org_id, schedule_id))
+                out.append(Target("report", checked, org_zone, org_id, schedule_id))
     async with scoped_session(CRAWL_ROLE, org_id) as session:
         for source_id, expr in await session.execute(
             select(acquire.CrawlSource.id, acquire.CrawlSource.schedule_cron).where(
@@ -150,7 +152,7 @@ async def wanted(org_id: uuid.UUID) -> list[Target]:
             )
         ):
             if (checked := _valid(expr)) is not None:
-                out.append(Target("crawl", checked, report_runs.ZONE.key, org_id, source_id))
+                out.append(Target("crawl", checked, org_zone, org_id, source_id))
     async with scoped_session(AGENT_ROLE, org_id) as session:
         for trigger_id, expr in await session.execute(
             select(agent.AgentTrigger.id, agent.AgentTrigger.cron)
@@ -170,7 +172,7 @@ async def wanted(org_id: uuid.UUID) -> list[Target]:
 
 def global_targets() -> list[Target]:
     """Schedules of no one organisation: nightly_evals finds the eval sets itself."""
-    return [Target("nightly-evals", NIGHTLY_EVALS_CRON, report_runs.ZONE.key)]
+    return [Target("nightly-evals", NIGHTLY_EVALS_CRON, nightly_evals.ZONE.key)]
 
 
 async def _calendar_zone(session: AsyncSession, calendar_id: uuid.UUID | None) -> str:
@@ -345,8 +347,8 @@ async def _pipeline(org_id: uuid.UUID, pipeline_id: uuid.UUID, minute: datetime.
 
 
 async def _report(org_id: uuid.UUID, schedule_id: uuid.UUID, minute: datetime.datetime) -> str:
-    local = minute.astimezone(report_runs.ZONE)
     async with scoped_session(report_runs.ROLE, org_id) as session:
+        local = minute.astimezone(await clock.org_zone(session, org_id))
         row = await session.scalar(
             select(monitor.ReportSchedule).where(
                 monitor.ReportSchedule.id == schedule_id,
@@ -405,8 +407,8 @@ async def _report(org_id: uuid.UUID, schedule_id: uuid.UUID, minute: datetime.da
 
 
 async def _crawl(org_id: uuid.UUID, source_id: uuid.UUID, minute: datetime.datetime) -> str:
-    local = minute.astimezone(report_runs.ZONE)
     async with scoped_session(CRAWL_ROLE, org_id) as session:
+        local = minute.astimezone(await clock.org_zone(session, org_id))
         # The source row first, as the api's run-now locks it: two firings never both start one.
         source = await session.scalar(
             select(acquire.CrawlSource)

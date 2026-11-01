@@ -37,6 +37,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import clock
 from libs.contracts.v1.errors import ErrorCode, NextAction, Refusal
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
@@ -771,7 +772,7 @@ async def _understand_and_plan(
             # The explicit API field wins.  Only infer from prose when the caller left the
             # default in place; this prevents a UI chip from being overwritten by text.
             question.knowledge_mode = knowledge_hint.mode
-        today = question.as_of or datetime.date.today()
+        today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         layer = await load(session, space_id)
         # Answering for an agent version's eval run (agent_evals.py): what its config lets it
         # read, as its runs would (runs.py); a person's question carries no scope.
@@ -1370,7 +1371,9 @@ async def _answer_from_documents(
             return False
         conversation = await session.get(qa.Conversation, question.conversation_id)
         assert conversation is not None
-        as_of = question.as_of or datetime.date.today()
+        as_of = question.as_of or clock.today(
+            await clock.space_zone(session, conversation.data_space_id)
+        )
         passages = await retrieve(
             session,
             search_services(),

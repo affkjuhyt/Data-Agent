@@ -29,6 +29,7 @@ import os
 import uuid
 from typing import Any
 
+from libs import clock
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog
 from libs.sql_guard import SqlRejected, dialect_of
@@ -83,14 +84,14 @@ async def answer(
     owner_id = uuid.UUID(str(question["owner_id"]))
     space_id = uuid.UUID(str(question["data_space_id"]))
     question_id = uuid.UUID(str(question["id"]))
-    today = (
-        datetime.date.fromisoformat(str(question["as_of"]))
-        if question.get("as_of")
-        else datetime.date.today()
-    )
     text = str(question.get("text") or "")
 
     async with scoped_session("svc_qa", org_id, owner_id) as session:
+        today = (
+            datetime.date.fromisoformat(str(question["as_of"]))
+            if question.get("as_of")
+            else clock.today(await clock.space_zone(session, space_id))
+        )
         layer = await load(session, space_id)
         u = understand(text, layer.vocabulary, today=today)
         model = gateway()

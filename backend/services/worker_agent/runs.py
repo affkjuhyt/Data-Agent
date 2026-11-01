@@ -37,6 +37,7 @@ from typing import Any, Literal
 from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError
 
+from libs import clock
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import agent, catalog, notify, qa
 from libs.sql_guard import SqlRejected
@@ -324,8 +325,8 @@ async def _plan_step(
 ) -> Planned:
     """The goal read against the Data Space's semantic layer, as Hỏi đáp reads a question. A run
     that resumes reads the chips it planned with, so it carries on with the same plan."""
-    today = run.as_of or datetime.date.today()
     async with scoped_session(QA_ROLE, run.org_id, principal) as session:
+        today = run.as_of or clock.today(await clock.space_zone(session, run.data_space_id))
         layer = await load(session, run.data_space_id)
         # The planner and the model are shown only the metrics the config lets the agent read.
         vocab = scope.narrow(layer.vocabulary)

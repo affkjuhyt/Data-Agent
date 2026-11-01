@@ -31,7 +31,6 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
@@ -60,8 +59,6 @@ DELIVERED = "report.delivered"
 BUCKET = "da-results"
 ROWS = 1_000
 QUERIED = frozenset({"sql", "table", "chart"})
-# The schedules' clock: a cron and an as_of rule are read in the bank's time zone.
-ZONE = ZoneInfo("Asia/Ho_Chi_Minh")
 CONTENT_TYPES = {
     "html": "text/html; charset=utf-8",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
