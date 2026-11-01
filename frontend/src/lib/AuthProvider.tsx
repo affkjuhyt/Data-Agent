@@ -56,7 +56,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const account = await getMe();
       // Numbers read the organisation's way on every screen (GEN-41).
-      setNumberLocale(account.locale);
+      setNumberLocale(account.locale, account.currency);
       setMe(account);
       setAccount('active');
       setError(null);

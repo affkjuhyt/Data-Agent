@@ -18,7 +18,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from libs import clock
+from libs import clock, language
 
 # An analysis from the start of a year, quarter, month or week (understand/analysis.py).
 TO_DATE = "to_date"
@@ -88,25 +88,37 @@ def shift_month(day: datetime.date, by: int) -> tuple[int, int]:
     return index // 12, index % 12 + 1
 
 
-# The chip labels, one place for GEN-41 to put in the organisation's language.
+# The chip labels, in the language of the work in hand (libs/language.use_locale, GEN-41): the
+# organisation's, whatever language the question was asked in. Vietnamese, else English.
+def _english() -> bool:
+    return language.current_language() != "vi"
+
+
+_MONTHS_EN = (
+    "January February March April May June July August September October November December"
+).split()
+
+
 def month_label(year: int, month: int) -> str:
-    return f"tháng {month}/{year}"
+    return f"{_MONTHS_EN[month - 1]} {year}" if _english() else f"tháng {month}/{year}"
 
 
 def quarter_label(year: int, q: int) -> str:
-    return f"quý {q}/{year}"
+    return f"Q{q} {year}" if _english() else f"quý {q}/{year}"
 
 
 def year_label(year: int) -> str:
-    return f"năm {year}"
+    return f"{year}" if _english() else f"năm {year}"
 
 
 def day_label(day: datetime.date) -> str:
-    return day.strftime("%d/%m/%Y")
+    return day.isoformat() if _english() else day.strftime("%d/%m/%Y")
 
 
 def week_label(start: datetime.date, end: datetime.date) -> str:
     last = end - datetime.timedelta(days=1)
+    if _english():
+        return f"week {start.isoformat()} to {last.isoformat()}"
     return f"tuần {start:%d/%m} đến {last:%d/%m/%Y}"
 
 
@@ -115,10 +127,11 @@ def fiscal_year_label(number: int) -> str:
 
 
 def fiscal_quarter_label(number: int, q: int) -> str:
-    return f"quý {q} FY{number}"
+    return f"Q{q} FY{number}" if _english() else f"quý {q} FY{number}"
 
 
-TODAY_LABEL = "hôm nay"
+def today_label() -> str:
+    return "today" if _english() else "hôm nay"
 
 
 def month(year: int, m: int, span: str) -> FoundPeriod | None:
@@ -150,7 +163,7 @@ def relative(
     if unit == "day":
         d = today + datetime.timedelta(days=by)
         found = day(d, span)
-        return found if by else FoundPeriod(found.start, found.end, TODAY_LABEL, span)
+        return found if by else FoundPeriod(found.start, found.end, today_label(), span)
     if unit == "week":
         start, end = clock.week_of(today + datetime.timedelta(weeks=by), cal)
         return FoundPeriod(start, end, week_label(start, end), span)
@@ -207,7 +220,8 @@ def iso_answer(text: str) -> FoundPeriod | None:
             return None
         if end - start == datetime.timedelta(days=1):
             return day(start, written)
-        label = f"{day_label(start)} đến {day_label(end - datetime.timedelta(days=1))}"
+        to = " to " if _english() else " đến "
+        label = f"{day_label(start)}{to}{day_label(end - datetime.timedelta(days=1))}"
         return FoundPeriod(start, end, label, written)
     if m := _ISO_YEAR.match(written):
         return year(int(m.group(1)), written)

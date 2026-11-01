@@ -143,3 +143,24 @@ def test_a_figure_reads_in_the_organisations_locale() -> None:
     nbsp = chr(0xA0)
     assert number(value, 0, "fr-FR") == f"1{nbsp}234{nbsp}568"
     assert number(decimal.Decimal("-2.5"), 0, "en-US") == "-3"
+
+
+def test_labels_refusals_and_numbers_follow_the_locale_of_the_work() -> None:
+    import decimal
+
+    from libs.contracts.v1 import ErrorCode, Refusal
+    from libs.language import number, use_locale
+
+    today = datetime.date(2026, 10, 12)
+    with use_locale("en-US"):
+        found = find_period("doanh thu tháng 9/2026", today)
+        assert found is not None and found.label == "September 2026"
+        quarter = find_period("revenue in Q3 2026", today)
+        assert quarter is not None and quarter.label == "Q3 2026"
+        assert Refusal.of(ErrorCode.ACCESS_DENIED).message.startswith("You do not have access")
+        assert number(decimal.Decimal("1234.5"), 1) == "1,234.5"
+    # Outside it, the organisation default: Vietnamese.
+    found = find_period("revenue in September 2026", today)
+    assert found is not None and found.label == "tháng 9/2026"
+    assert Refusal.of(ErrorCode.ACCESS_DENIED).message.startswith("Bạn không có quyền")
+    assert number(decimal.Decimal("1234.5"), 1) == "1.234,5"

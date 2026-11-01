@@ -56,6 +56,8 @@ class Me(BaseModel):
     default_data_space_id: uuid.UUID | None
     locale: str
     time_zone: str
+    # ISO 4217, organization.settings.currency (GEN-41); None before bootstrap sets one.
+    currency: str | None = None
     roles: list[RoleGrant]
     capabilities: list[str]
 

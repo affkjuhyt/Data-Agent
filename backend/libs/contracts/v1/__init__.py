@@ -12,12 +12,15 @@ from libs.contracts.v1.base import ContractModel
 from libs.contracts.v1.errors import (
     HTTP_STATUS,
     NEXT_ACTION,
+    USER_MESSAGE_EN,
     USER_MESSAGE_VI,
+    USER_MESSAGES,
     ErrorBody,
     ErrorCode,
     ErrorDetail,
     NextAction,
     Refusal,
+    user_message,
 )
 from libs.contracts.v1.provider import ProviderRequest
 from libs.contracts.v1.result import (
@@ -35,7 +38,9 @@ from libs.contracts.v1.verification import (
 __all__ = [
     "HTTP_STATUS",
     "NEXT_ACTION",
+    "USER_MESSAGE_EN",
     "USER_MESSAGE_VI",
+    "USER_MESSAGES",
     "AnalysisOutput",
     "AnalysisPlan",
     "AnalysisStep",
@@ -53,4 +58,5 @@ __all__ = [
     "VerificationCheck",
     "VerificationConsensus",
     "VerificationFrame",
+    "user_message",
 ]

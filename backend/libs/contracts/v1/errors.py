@@ -16,6 +16,7 @@ from typing import Any
 
 from pydantic import Field
 
+from libs import language
 from libs.contracts.v1.base import ContractModel, NonEmptyStr
 
 
@@ -84,6 +85,32 @@ USER_MESSAGE_VI: dict[ErrorCode, str] = {
     ErrorCode.TOOL_UNAVAILABLE: "Công cụ cần để trả lời đang tạm thời không dùng được.",
 }
 
+USER_MESSAGE_EN: dict[ErrorCode, str] = {
+    ErrorCode.NO_DATA_FOR_PERIOD: "There is no data for the period asked.",
+    ErrorCode.FREQUENCY_NOT_AVAILABLE: "This metric has no data at the frequency asked.",
+    ErrorCode.SERIES_NOT_APPROVED: "This series is not approved yet, so it is not used to answer.",
+    ErrorCode.STALE_SOURCE: "The data source is past its update deadline, so it is not used yet.",
+    ErrorCode.ACCESS_DENIED: "You do not have access to the data this question needs.",
+    ErrorCode.INSUFFICIENT_EVIDENCE: "There is not enough evidence to answer with confidence.",
+    ErrorCode.UNRESOLVED_ENTITY: "What the question asks about could not be identified.",
+    ErrorCode.VERSION_CONFLICT: "Someone else just changed this data. Reload and try again.",
+    ErrorCode.AGENT_CONFIG_ERROR: "This agent's configuration could not be read, so it did not answer.",
+    ErrorCode.PLANNER_ERROR: "The system could not work out how to answer this question.",
+    ErrorCode.CONTRACT_MISMATCH: "The result is not in the shape the question asked for.",
+    ErrorCode.NO_JOIN_PATH: "No way was found to join the tables this question needs.",
+    ErrorCode.TOOL_UNAVAILABLE: "A tool needed to answer is temporarily unavailable.",
+}
+
+# The sentences by language (GEN-41); a language without its own reads the Vietnamese.
+USER_MESSAGES: dict[str, dict[ErrorCode, str]] = {"vi": USER_MESSAGE_VI, "en": USER_MESSAGE_EN}
+
+
+def user_message(code: ErrorCode, locale: str | None = None) -> str:
+    """The sentence a person is shown for `code`, in `locale`'s language."""
+    language = (locale or "vi").split("-")[0].lower()
+    return USER_MESSAGES.get(language, USER_MESSAGE_VI)[code]
+
+
 NEXT_ACTION: dict[ErrorCode, NextAction] = {
     ErrorCode.NO_DATA_FOR_PERIOD: NextAction.REPHRASE,
     ErrorCode.FREQUENCY_NOT_AVAILABLE: NextAction.REPHRASE,
@@ -138,10 +165,13 @@ class Refusal(ContractModel):
         detail_id: str = "",
         message: str | None = None,
         next_action: NextAction | None = None,
+        locale: str | None = None,
     ) -> Refusal:
+        """The code's own sentence, in `locale` or the locale of the work in hand
+        (libs/language.use_locale), unless the producer says a narrower one."""
         return cls(
             code=code,
-            message=message or USER_MESSAGE_VI[code],
+            message=message or user_message(code, locale or language.current_locale()),
             next_action=next_action or NEXT_ACTION[code],
             detail_id=detail_id,
         )

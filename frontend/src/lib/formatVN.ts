@@ -21,6 +21,14 @@
 // organisation without each one being told.
 let GROUP = '.';
 let DECIMAL = ',';
+let CURRENCY = '₫';
+let CURRENCY_FIRST = false;
+let MONTH_FIRST = false;
+
+// A currency's sign; a code no sign is listed for is written as the code.
+const CURRENCY_SIGN: Record<string, string> = { VND: '₫', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
+// Numeric dates written month first (as libs/tabular.profile reads them).
+const MONTH_FIRST_LOCALES = new Set(['en-US', 'en-PH', 'en-CA']);
 
 // Languages that write a decimal comma (libs/language.marks says the same for the backend).
 const COMMA_DECIMAL = new Set(
@@ -28,9 +36,16 @@ const COMMA_DECIMAL = new Set(
 );
 const SPACE_GROUP = new Set('fr nb sv fi pl cs ru uk sk'.split(' '));
 
-/** Write numbers with `locale`'s marks ("vi-VN" → 1.284,5; "en-US" → 1,284.5). */
-export function setNumberLocale(locale: string | null | undefined): void {
-  const language = (locale || 'vi-VN').split('-')[0].toLowerCase();
+/** Write numbers, dates and money the organisation's way: `locale`'s marks ("vi-VN" → 1.284,5;
+ *  "en-US" → 1,284.5), its date order, and `currency`'s sign (₫ after the figure in a
+ *  comma-decimal locale, $ before it otherwise). */
+export function setNumberLocale(locale: string | null | undefined, currency?: string | null): void {
+  const tag = locale || 'vi-VN';
+  const language = tag.split('-')[0].toLowerCase();
+  MONTH_FIRST = MONTH_FIRST_LOCALES.has(tag);
+  const code = (currency || 'VND').toUpperCase();
+  CURRENCY = CURRENCY_SIGN[code] ?? code;
+  CURRENCY_FIRST = !COMMA_DECIMAL.has(language) && code !== 'VND';
   if (SPACE_GROUP.has(language)) [GROUP, DECIMAL] = ['\u00a0', ','];
   else if (COMMA_DECIMAL.has(language)) [GROUP, DECIMAL] = ['.', ','];
   else [GROUP, DECIMAL] = [',', '.'];
@@ -115,9 +130,9 @@ export function formatCompact(value: Numeric, maxFractionDigits = 2): string {
 export function formatCurrency(value: Numeric, opts: { compact?: boolean; currency?: string } = {}): string {
   const n = toNumber(value);
   if (n === null) return DASH;
-  const symbol = opts.currency ?? '₫';
+  const symbol = opts.currency ?? CURRENCY;
   const body = opts.compact ? formatCompact(n) : formatNumber(n, { maxFractionDigits: 0 });
-  return `${body} ${symbol}`;
+  return CURRENCY_FIRST && opts.currency === undefined ? `${symbol}${body}` : `${body} ${symbol}`;
 }
 
 /** 0.125 → "12.5%". Takes a ratio, not a percentage. */
@@ -141,7 +156,9 @@ const pad = (n: number) => String(n).padStart(2, '0');
 export function formatDate(value: DateInput): string {
   const d = toDate(value);
   if (!d) return DASH;
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  return MONTH_FIRST
+    ? `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()}`
+    : `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
 /** HH:mm (24h) */

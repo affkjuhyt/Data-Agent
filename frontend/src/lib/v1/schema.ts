@@ -15591,6 +15591,8 @@ export interface components {
         Me: {
             /** Capabilities */
             capabilities: string[];
+            /** Currency */
+            currency?: string | null;
             /** Default Data Space Id */
             default_data_space_id: string | null;
             /** Department */

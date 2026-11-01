@@ -257,6 +257,7 @@ async def get_me(principal: CurrentPrincipal) -> Me:
         default_data_space_id=user.default_data_space_id,
         locale=organization.locale,
         time_zone=organization.time_zone,
+        currency=(organization.settings or {}).get("currency"),
         roles=grants,
         capabilities=sorted(principal.capabilities),
     )

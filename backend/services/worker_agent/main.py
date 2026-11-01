@@ -19,11 +19,15 @@ import contextlib
 import logging
 import os
 import signal
+import time
+import uuid
 from collections.abc import Mapping
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
-from libs.dataagent_db import unscoped_session
+from libs import language
+from libs.dataagent_db import scoped_session, unscoped_session
+from libs.dataagent_db.models import org
 from services.worker_agent import (
     agent_evals,
     derived,
@@ -66,13 +70,40 @@ POLL_SECONDS = float(os.environ.get("WORKER_AGENT_POLL_SECONDS", "0.5"))
 BATCH = int(os.environ.get("WORKER_AGENT_BATCH", "10"))
 
 
+# The organisations' locales, read once per process lifetime and kept LOCALE_TTL_S: a locale
+# changes seldom, and an event should not pay a query for it.
+LOCALE_TTL_S = 600.0
+_locales: dict[uuid.UUID, tuple[float, str | None]] = {}
+
+
+async def org_locale(org_id: uuid.UUID | None) -> str | None:
+    if org_id is None:
+        return None
+    cached = _locales.get(org_id)
+    if cached is not None and time.monotonic() - cached[0] < LOCALE_TTL_S:
+        return cached[1]
+    try:
+        async with scoped_session("svc_qa", org_id) as session:
+            locale = await session.scalar(
+                select(org.Organization.locale).where(org.Organization.id == org_id)
+            )
+    except Exception:  # noqa: BLE001 - presentation only: the default locale, never a lost event
+        logger.warning("worker-agent | locale of org %s unread, using the default", org_id)
+        return None
+    _locales[org_id] = (time.monotonic(), locale)
+    return locale
+
+
 async def run_once(source: EventSource, handlers: Mapping[str, Handler], batch: int = BATCH) -> int:
     """Claim one batch and handle it; returns how many events were handled."""
     async with source.claim(batch) as events:
         for event in events:
-            # Within one claim a failure aborts the batch: nothing is acknowledged and the
-            # events come back on the next claim, already-handled ones as no-ops.
-            await handlers[event.event_type](event)
+            # What the handler writes for a person (a number, a chip, a refusal's sentence) is in
+            # the organisation's locale (GEN-41).
+            with language.use_locale(await org_locale(event.org_id)):
+                # Within one claim a failure aborts the batch: nothing is acknowledged and the
+                # events come back on the next claim, already-handled ones as no-ops.
+                await handlers[event.event_type](event)
         return len(events)
 
 

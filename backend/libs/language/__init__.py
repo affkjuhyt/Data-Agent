@@ -11,13 +11,20 @@ an ISO date's dashes, a comparison's ">".
 `number` writes a figure the way the organisation's locale reads it (GEN-41): "1.234.567,89" in
 vi-VN, "1,234,567.89" in en-US. A figure keeps its full value elsewhere (A1.1); this is only how
 it reads in a sentence.
+
+`use_locale` sets the locale of what is being written for the work in hand (a ContextVar): the
+worker sets it per event to the organisation's, so a number, a chip's label or a refusal's
+default sentence follows the organisation without each caller being handed it.
 """
 
 from __future__ import annotations
 
+import contextlib
 import decimal
 import re
 import unicodedata
+from collections.abc import Iterator
+from contextvars import ContextVar
 
 _PUNCT = re.compile(r"[^\w%/]+")
 _SPACES = re.compile(r"\s+")
@@ -36,6 +43,26 @@ def norm(text: str) -> str:
 
 
 DEFAULT_LOCALE = "vi-VN"
+_CURRENT: ContextVar[str | None] = ContextVar("dataagent_locale", default=None)
+
+
+def current_locale() -> str:
+    return _CURRENT.get() or DEFAULT_LOCALE
+
+
+def current_language() -> str:
+    return current_locale().split("-")[0].lower()
+
+
+@contextlib.contextmanager
+def use_locale(locale: str | None) -> Iterator[None]:
+    token = _CURRENT.set(locale)
+    try:
+        yield
+    finally:
+        _CURRENT.reset(token)
+
+
 # Languages that write a decimal comma and group thousands with a dot (or a space, for fr):
 # the rest write a decimal point and group with a comma.
 _COMMA_DECIMAL = frozenset(
@@ -46,7 +73,7 @@ _SPACE_GROUP = frozenset("fr nb sv fi pl cs ru uk sk".split())
 
 def marks(locale: str | None) -> tuple[str, str]:
     """(thousands separator, decimal mark) of a locale tag such as vi-VN, en-US, fr-FR."""
-    language = (locale or DEFAULT_LOCALE).split("-")[0].lower()
+    language = (locale or current_locale()).split("-")[0].lower()
     if language in _SPACE_GROUP:
         return "\u00a0", ","
     if language in _COMMA_DECIMAL:

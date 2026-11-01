@@ -26,10 +26,15 @@ describe('setNumberLocale', () => {
       expect(formatNumber(1284.5)).toBe('1,284.5');
       setNumberLocale('de-DE');
       expect(formatNumber(1284.5)).toBe('1.284,5');
+      setNumberLocale('en-US', 'USD');
+      expect(formatCurrency(1284)).toBe('$1,284');
+      expect(formatDate(new Date(2026, 9, 31))).toBe('10/31/2026');
     } finally {
       setNumberLocale(null);
     }
     expect(formatNumber(1284.5)).toBe('1.284,5');
+    expect(formatCurrency(1284)).toBe('1.284 ₫');
+    expect(formatDate(new Date(2026, 9, 31))).toBe('31/10/2026');
   });
 });
 

@@ -25390,6 +25390,17 @@
       "title": "Capabilities",
       "type": "array"
      },
+     "currency": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Currency"
+     },
      "default_data_space_id": {
       "anyOf": [
        {
