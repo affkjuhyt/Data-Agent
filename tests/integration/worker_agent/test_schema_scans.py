@@ -44,6 +44,13 @@ async def test_schema_and_profile_scans_record_keys_stats_and_join_hints(
                 "(1, 'alice@example.com', 'HN'), (2, 'bob@example.com', NULL)"
             )
             cur.execute("INSERT INTO scan_r1_03.orders VALUES (10, 1, 120.50), (11, 1, NULL)")
+            # The reader this test logs in as, made here: it was made only by test_executor.py, so
+            # this test failed whenever it ran without that one first.
+            cur.execute(
+                "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dw_reader') "
+                "THEN CREATE ROLE dw_reader LOGIN; END IF; END $$"
+            )
+            cur.execute("ALTER ROLE dw_reader PASSWORD 'warehouse-reader'")
             cur.execute("GRANT USAGE ON SCHEMA scan_r1_03 TO dw_reader")
             cur.execute("GRANT SELECT ON ALL TABLES IN SCHEMA scan_r1_03 TO dw_reader")
 
