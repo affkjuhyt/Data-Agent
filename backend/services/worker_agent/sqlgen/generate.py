@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from pydantic import BaseModel
@@ -108,14 +109,16 @@ async def candidates(
     linked: Linked,
     dialect: str,
     examples: list[tuple[str, str]],
+    methods: Sequence[str] = METHODS,
 ) -> list[Candidate]:
-    """Six candidates, three ways twice, asked together."""
+    """Six candidates, three ways twice, asked together. `methods` narrows the ways, for the
+    ablation of the N-version (sqlgen/ablation.py)."""
     user = f"{schema_text(linked)}\n\nQuestion: {question}"
     return list(
         await asyncio.gather(
             *(
                 _ask(gateway, m, _system(m, dialect, examples), user, t)
-                for m in METHODS
+                for m in methods
                 for t in TEMPERATURES
             )
         )
