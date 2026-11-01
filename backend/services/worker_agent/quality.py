@@ -28,10 +28,13 @@ import logging
 import uuid
 from typing import Any
 
+import sqlglot
 from sqlalchemy import select, update
+from sqlglot import exp
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, ingest, org
+from libs.sql_guard import SqlRejected, dialect_of
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
 
@@ -64,12 +67,44 @@ def _literal(value: Any) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def violation_sql(rule: ingest.QualityRule, table: str) -> str:
-    """The query counting the rule's violations, as one row with column `n`."""
+def violation_sql(rule: ingest.QualityRule, table: str, dialect: str = "postgres") -> str:
+    """The query counting the rule's violations, as one row with column `n`, in the source's
+    `dialect` (`table` quoted the PostgreSQL way). The checks are written for PostgreSQL and
+    rendered by sqlglot: sent as written, a quoted "col" is a string literal in MySQL's default
+    mode, so `"col" IS NULL` counted nothing and a failing rule passed (GEN-12). A custom_sql rule
+    is its author's, already in the source's dialect, and runs as written."""
+    if rule.kind == "custom_sql":
+        return f"SELECT count(*) AS n FROM ({str(dict(rule.params or {})['sql']).strip().rstrip(';')}) v"
+    if rule.kind == "freshness":
+        return _freshness_sql(rule, table).sql(dialect=dialect)
+    sql = _postgres_violation_sql(rule, table)
+    return (
+        sql if dialect == "postgres" else sqlglot.transpile(sql, read="postgres", write=dialect)[0]
+    )
+
+
+def _freshness_sql(rule: ingest.QualityRule, table: str) -> exp.Select:
+    """Built as an expression: "now() - interval '24 hours'" has no T-SQL rendering, a DateAdd
+    has one in every dialect (DATEADD(HOUR, -24, GETDATE()))."""
+    if not rule.column_name:
+        raise ValueError("a freshness rule names a column")
+    hours = int(dict(rule.params or {}).get("max_age_hours", 24))
+    newest = exp.Max(this=exp.column(rule.column_name, quoted=True))
+    cutoff = exp.DateAdd(
+        this=exp.CurrentTimestamp(), expression=exp.Literal.number(-hours), unit=exp.var("HOUR")
+    )
+    stale = exp.or_(
+        exp.Is(this=newest, expression=exp.Null()), exp.LT(this=newest.copy(), expression=cutoff)
+    )
+    source = sqlglot.parse_one(f"SELECT 1 FROM {table}", read="postgres").args["from"]
+    return exp.select(
+        exp.alias_(exp.Case().when(stale, exp.Literal.number(1)).else_(exp.Literal.number(0)), "n")
+    ).from_(source.this)
+
+
+def _postgres_violation_sql(rule: ingest.QualityRule, table: str) -> str:
     p = dict(rule.params or {})
     col = _ident(rule.column_name) if rule.column_name else None
-    if rule.kind == "custom_sql":
-        return f"SELECT count(*) AS n FROM ({str(p['sql']).strip().rstrip(';')}) v"
     if col is None:
         raise ValueError(f"a {rule.kind} rule names a column")
     if rule.kind == "not_null":
@@ -105,12 +140,6 @@ def violation_sql(rule: ingest.QualityRule, table: str) -> str:
         tolerance = _literal(p.get("tolerance", 0))
         return (
             f"SELECT CASE WHEN abs(coalesce(sum({col}), 0) - {_literal(p['expected'])}) > {tolerance}"
-            f" THEN 1 ELSE 0 END AS n FROM {table}"
-        )
-    if rule.kind == "freshness":
-        hours = int(p.get("max_age_hours", 24))
-        return (
-            f"SELECT CASE WHEN max({col}) IS NULL OR max({col}) < now() - interval '{hours} hours'"
             f" THEN 1 ELSE 0 END AS n FROM {table}"
         )
     raise ValueError(f"unknown rule kind {rule.kind}")
@@ -166,8 +195,8 @@ async def evaluate(
     else:
         table = f"{_ident(dataset.schema_name)}.{_ident(dataset.table_name)}"
         try:
-            sql = violation_sql(rule, table)
-        except (KeyError, ValueError) as exc:
+            sql = violation_sql(rule, table, dialect_of(source.kind))
+        except (KeyError, ValueError, SqlRejected) as exc:
             failure, detail = "rule incomplete", str(exc)
         else:
             for principal in principals:
