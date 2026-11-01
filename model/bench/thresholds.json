@@ -18,9 +18,7 @@
     "                       nothing else in the repo notices.",
     "  decode_tps_min     — varied under 1% run to run at concurrency 1. Fails when a model,",
     "                       a quantisation or a kernel got slower. Only set where the forced",
-    "                       output is long enough to measure: guardrail generates 64 tokens",
-    "                       and its decode rate came back bimodal (84 or 220 tok/s across",
-    "                       four runs), so it has no floor rather than a floor that lies.",
+    "                       output is long enough to measure.",
     "  prefix_cache_hit_rate_min — fails when something per-request gets placed ahead of the",
     "                       stable prefix, which costs a full prefill and shows up nowhere",
     "                       else. Held loose where the baseline itself is loose.",
@@ -30,11 +28,6 @@
     "no decode rate worth comparing."
   ],
   "profiles": {
-    "guardrail": {
-      "prompt_tokens_max": 560,
-      "prefix_cache_hit_rate_min": 0.90,
-      "_why_no_decode_floor": "64 forced tokens measured 84 or 220 tok/s across four runs — the window is too short to be a measurement."
-    },
     "planner": {
       "prompt_tokens_max": 2000,
       "decode_tps_min": 190,

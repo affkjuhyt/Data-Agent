@@ -15,14 +15,6 @@ root_packages =
 # (indicator-domains-are-pure forbids fastapi and the storage clients).
 include_external_packages = True
 
-[importlinter:contract:basemodel-is-independent]
-name = basemodel (shared data models) must not depend on services
-type = forbidden
-source_modules =
-    libs.basemodel
-forbidden_modules =
-    services
-
 [importlinter:contract:shared-is-a-leaf]
 name = libs.shared must not depend on concrete services
 type = forbidden
@@ -30,7 +22,6 @@ source_modules =
     libs.shared
 forbidden_modules =
     services
-    libs.database_connector
 
 # V2 (ADR-V2-38). libs.indicator is a pure calculation library:
 # no I/O, no storage client, no ingestion, no service code.
@@ -41,7 +32,6 @@ source_modules =
     libs.indicator
 forbidden_modules =
     services
-    libs.database_connector
 
 # NOP-150. libs.contracts holds the wire shapes worker_agent consumes; a service import here would make every
 # consumer import that service. libs.indicator (numeric core) is the only libs
@@ -55,25 +45,9 @@ forbidden_modules =
     services
     libs.shared
     libs.semantic
-    libs.database_connector
-    libs.basemodel
-
-# V2 data boundary (ADR-V2-38): V2 business data never lands in MongoDB (ADR-V2-09,
-# ADR-V2-34). The v1 structured-KB path it also kept V2 numbers out of was deleted with
-# kb-backend (KB-08). Every new V2 package is added to source_modules in the commit that
-# creates it.
-[importlinter:contract:v2-data-boundary]
-name = V2 packages must not use MongoDB
-type = forbidden
-source_modules =
-    libs.indicator
-    libs.contracts
-forbidden_modules =
-    libs.database_connector.mongo_connector
 
 # The `api` block (ADR-28, docs/v3/06-api-v1.md). The shared kernel
-# serves every module and may not depend on one; the api is new code and takes
-# nothing from the services it replaces. Module-to-module rules (only through a
+# serves every module and may not depend on one. Module-to-module rules (only through a
 # module's package __init__) are added with the second module.
 [importlinter:contract:api-kernel-is-a-leaf]
 name = services.api.kernel must not depend on api modules or the catalogue
@@ -85,34 +59,23 @@ forbidden_modules =
     services.api.catalogue
     services.api.app
 
-[importlinter:contract:api-is-independent]
-name = services.api must not import the legacy services
-type = forbidden
-source_modules =
-    services.api
-forbidden_modules =
-    services.workflow_runtime
-
 # worker-agent (ADR-28): talks to the api only through the database and events, never by
-# importing it, and takes nothing from the legacy runtime it replaces.
+# importing it.
 [importlinter:contract:worker-agent-is-independent]
-name = services.worker_agent must not import the api or the legacy services
+name = services.worker_agent must not import the api
 type = forbidden
 source_modules =
     services.worker_agent
 forbidden_modules =
     services.api
-    services.workflow_runtime
 
 # crawler (ADR-28, KB-02): reaches the api and worker-agent only through acquire's tables and
-# events, and takes nothing from the web-crawler it replaces.
+# events.
 [importlinter:contract:crawler-is-independent]
-name = services.crawler must not import the api, worker-agent or the legacy services
+name = services.crawler must not import the api or worker-agent
 type = forbidden
 source_modules =
     services.crawler
 forbidden_modules =
     services.api
     services.worker_agent
-    libs.database_connector
-    libs.basemodel

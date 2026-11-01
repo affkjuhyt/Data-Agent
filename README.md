@@ -25,7 +25,7 @@ model/       eval/ (release gate: cases, scorers incl. RAGAS faithfulness, thres
 |---|---|
 | [`frontend/src/`](./frontend/src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI + Ask). `frontend/src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity). Root `package.json` is an npm workspace that forwards `npm run dev/test/typecheck` here |
 | [`backend/services/`](./backend/services) | Backend services: the V3 blocks `api`, `worker_agent`, `worker_ingest`, `worker_document`, `crawler`. Each owns its `Dockerfile` (build context = repo root) |
-| [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/contracts` (V2 wire contract), `libs/dataagent_db` (V3 ORM), `libs/semantic` (metric contracts), `libs/indicator` (numeric core). Innermost architecture layer |
+| [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/shared` (PII detection, embeddings, freshness and aggregation checks), `libs/contracts` (V2 wire contract), `libs/dataagent_db` (V3 ORM), `libs/semantic` (metric contracts), `libs/indicator` (numeric core). Innermost architecture layer |
 | [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
 | [`deploy/ansible/`](./deploy/ansible) | The deploy pipeline — `deploy.yml` builds what changed, renders Secrets from the vault, applies the manifests, reruns Jobs, restarts what changed |
 | [`deploy/k8s/`](./deploy/k8s) | Kubernetes manifests: `production/` (hardened) and `dev/` (the single-node dev server) |

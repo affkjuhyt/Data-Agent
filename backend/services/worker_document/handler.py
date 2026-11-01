@@ -30,7 +30,6 @@ from sqlalchemy import delete, func, select, update
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import audit, document
-from libs.database_connector.minio_connector import MinIOClient
 from libs.shared import pii_detector
 from services.worker_document import validity
 from services.worker_document.indexing import Point, VectorIndex
@@ -45,6 +44,7 @@ from services.worker_document.processing import (
     layout_json,
     source_hash,
 )
+from services.worker_document.storage import MinIOClient
 
 log = logging.getLogger(__name__)
 DOCUMENT_RECEIVED = "document.received"

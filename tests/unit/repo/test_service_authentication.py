@@ -192,23 +192,6 @@ class TestNoTenantComesFromAClientHeader:
         assert not offenders, f"dev-tenant fallback still reachable: {offenders}"
 
 
-class TestFailClosedOnAMissingTenant:
-    def test_require_tenant_refuses_rather_than_defaulting(self):
-        """Authentication proves who is calling; it does not by itself say which
-        tenant's data they may touch. A verified caller with no tenant used to
-        become the dev tenant."""
-        from fastapi import HTTPException
-
-        from libs.shared.auth import require_tenant
-
-        assert require_tenant({"tenant_id": "t-1"}) == "t-1"
-
-        for empty in ({}, {"tenant_id": ""}, {"tenant_id": None}, None):
-            with pytest.raises(HTTPException) as exc:
-                require_tenant(empty)
-            assert exc.value.status_code == 403
-
-
 # The Kong service names of the application services behind the gateway.
 _KONG_SERVICES = ("api",)
 

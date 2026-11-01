@@ -34,7 +34,7 @@ pytestmark = pytest.mark.unit
 
 def test_every_profile_loads_a_real_prompt_and_real_limits():
     loaded = bench_profiles.load()
-    assert set(loaded) == {"guardrail", "planner", "responder"}
+    assert set(loaded) == {"planner", "responder"}
     for name, profile in loaded.items():
         assert profile.system.strip(), f"{name} has an empty system prompt"
         assert profile.user_turns, f"{name} has no user turns"
@@ -48,7 +48,6 @@ def test_every_profile_loads_a_real_prompt_and_real_limits():
         # The numbers each call site passes to litellm. If one of these changes
         # in the service, the benchmark is measuring a workload the product no
         # longer sends — so this test is the alarm, not documentation.
-        ("guardrail", 64, 0.0),
         ("planner", 400, 0.0),
         ("responder", 600, 0.0),
     ],

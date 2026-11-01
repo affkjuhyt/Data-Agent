@@ -338,28 +338,19 @@ When adding an MCP endpoint, verify its OpenBao `api_key_ref`, protocol and
 allow-list in the owning API/plan configuration. Never put the token itself in a
 manifest, ConfigMap, plan payload or test fixture.
 
-## 10b. Kafka outbox (`OutboxEvents`)
+## 10b. Outbox (`<schema>.outbox`)
 
-Services do not publish Kafka events directly any more: they insert a row into `OutboxEvents`
-(in the same transaction as their own change where they have one) and a relay in that service
-publishes it (`libs/shared/outbox.py`). A broker outage or a crash between "commit" and "publish"
-therefore delays an event instead of losing it. Delivery is at-least-once; consumers are idempotent.
-
-| `producer` | Service | Topics |
-| --- | --- | --- |
-| `api` / `worker-agent` | V3 question outbox and worker | `question.received`, progress and terminal answer events |
-
-Not on the outbox: `audit.data.access` (best-effort `produce_event`, delivery errors are logged).
+A module writes its events to its own `<schema>.outbox` in the transaction that changes the data
+(ADR-06/32). The target is Debezium publishing them to Kafka; until Kafka Connect exists,
+worker-agent claims them straight from the tables (`services/worker_agent/events.py`, role
+`svc_outbox_relay`, `FOR UPDATE SKIP LOCKED`) and stamps `published_at` once its handler has
+committed. A crash between the two delays an event instead of losing it; handlers are idempotent.
+worker-agent handles `question.received` (qa), `hitl.resolved` (inbox), `writeback.submitted`
+(pipeline) and `hitl.requested` from every schema's outbox, the audit database's included.
 
 ```sql
--- what is waiting, per service (should be ~0 and drain within seconds)
-SELECT producer, count(*), min(created_at) FROM "OutboxEvents"
- WHERE published_at IS NULL AND dead_at IS NULL GROUP BY 1;
--- parked after 20 failed publishes: fix the cause (broker ACL, payload size), then re-queue
-SELECT id, producer, topic, attempts, last_error FROM "OutboxEvents" WHERE dead_at IS NOT NULL;
-UPDATE "OutboxEvents" SET dead_at = NULL, attempts = 0 WHERE id = :id;
--- housekeeping: sent rows are kept for inspection; trim them by hand when they get large
-DELETE FROM "OutboxEvents" WHERE published_at < now() - interval '7 days';
+-- what is waiting in one schema (should be ~0 and drain within seconds)
+SELECT event_type, count(*), min(created_at) FROM qa.outbox WHERE published_at IS NULL GROUP BY 1;
 ```
 
 ## 10c. Nightly eval runs

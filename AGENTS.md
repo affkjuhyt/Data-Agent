@@ -110,8 +110,8 @@ from a literal.
 ## 7. Repo layout
 
 ```
-backend/libs        shared libraries (basemodel, database_connector, shared, contracts,
-                    semantic, indicator)
+backend/libs        shared libraries (shared, contracts, semantic, indicator, sql_guard, cron;
+                    dataagent_db = generated V3 models + scoped_session)
 backend/services    one deployable per directory, Dockerfile inside. The KB stack and the web-crawler
                     were removed (docs/v3/04-backlog.md §3c); llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
                     queue consumer
@@ -123,9 +123,10 @@ backend/services    one deployable per directory, Dockerfile inside. The KB stac
                     are entrypoints outside the layers; prompts/ holds the templates (PROMPTS_DIR).
                     It also serves agent/workflow/canvas authoring (ex flow_builder)
 
-                    Kafka events go through the outbox (libs/shared/outbox.py, docs/RUNBOOK.md §10b):
-                    a service writes the event to OutboxEvents — in its own transaction when it has
-                    one — and its relay publishes it. Do not add a direct publish after a commit.
+                    Events go through the outbox (ADR-06, docs/RUNBOOK.md §10b): a module writes the
+                    event to its <schema>.outbox in the transaction that changes the data, and
+                    worker-agent's relay (services/worker_agent/events.py) claims it. Do not add a
+                    direct publish after a commit.
                     Concurrent writers of one aggregate lock the parent row (FOR UPDATE) and the
                     "at most one active/published" rules are partial unique indexes
 backend/alembic     Postgres migrations (the `migrate` image)

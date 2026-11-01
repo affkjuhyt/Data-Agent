@@ -23,13 +23,6 @@ _.fill
 _.font
 _.freeze_panes
 
-# libs/shared/audit.py AuditEvent fields: serialised with dataclasses.asdict()
-# into the audit record, never read attribute by attribute.
-_.statement_redacted
-_.statement_sha256
-_.event_id
-_.occurred_at
-
 # Test hook: tests/unit/workflow_runtime/test_platform_routers.py clears the LiteLLM health cache
 # between cases (kept on purpose in the 2026-09 dead-code sweep).
 _.reset_health_cache

@@ -226,7 +226,7 @@ exclude = [
 # `disallow_untyped_defs` + `disallow_any_generics` and are kept green (0 errors)
 # — enforced BLOCKING by the CI "Strict typecheck · core libs" step, not just
 # reported. Expand this list as each service is cleaned up (see the burn-down in
-# docs/SECURITY.md / docs/RUNBOOK.md: database_connector, orchestrator next).
+# docs/SECURITY.md).
 #
 # NOTE: these globs only match real importable packages. Hyphenated service dirs
 # (no `__init__.py`) are NOT importable as `services.<name>.*`, so such a
@@ -234,8 +234,6 @@ exclude = [
 # directly in CI instead.
 [[tool.mypy.overrides]]
 module = [
-    "libs.basemodel.*",
-    "libs.database_connector.*",
     "libs.shared.*",
 ]
 disallow_untyped_defs = true

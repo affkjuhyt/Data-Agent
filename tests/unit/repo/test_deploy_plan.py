@@ -102,16 +102,12 @@ class TestRealImages:
                     [f"backend/services/{other}/main.py"], inputs
                 ), service
 
-    def test_the_migrate_image_sees_migrations_and_the_orm_only(self):
+    def test_the_migrate_image_sees_migrations_only(self):
         inputs = _inputs("backend/alembic")
         assert plan.paths_touching(["backend/alembic/versions/x.py"], inputs)
-        # V3 migrations apply generated SQL directly; the image intentionally
-        # no longer copies the legacy ORM package.
+        # V3 migrations apply generated SQL directly; the image copies no libs.
         assert not plan.paths_touching(
-            ["backend/libs/basemodel/services_databaseconnector/postgres_model.py"], inputs
-        )
-        assert not plan.paths_touching(
-            ["backend/services/api/main.py", "backend/libs/shared/outbox.py"], inputs
+            ["backend/services/api/main.py", "backend/libs/shared/freshness.py"], inputs
         )
 
     def test_images_that_never_copy_libs_ignore_a_libs_change(self):

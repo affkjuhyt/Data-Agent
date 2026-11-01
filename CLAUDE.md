@@ -116,8 +116,8 @@ from a literal.
 ## 7. Repo layout
 
 ```
-backend/libs        shared libraries (basemodel, database_connector, shared, contracts,
-                    semantic, indicator; dataagent_db = generated V3 models + scoped_session)
+backend/libs        shared libraries (shared, contracts, semantic, indicator, sql_guard, cron;
+                    dataagent_db = generated V3 models + scoped_session)
 backend/services    one deployable per directory, Dockerfile inside. `api` is the V3 modular monolith
                     (ADR-28, docs/v3/06-api-v1.md): every /v1 module goes there, one package per schema,
                     and its routes take their metadata and capability check from the A2 snapshot
@@ -134,9 +134,10 @@ backend/services    one deployable per directory, Dockerfile inside. `api` is th
                     are entrypoints outside the layers; prompts/ holds the templates (PROMPTS_DIR).
                     It also serves agent/workflow/canvas authoring (ex flow_builder)
 
-                    Kafka events go through the outbox (libs/shared/outbox.py, docs/RUNBOOK.md §10b):
-                    a service writes the event to OutboxEvents — in its own transaction when it has
-                    one — and its relay publishes it. Do not add a direct publish after a commit.
+                    Events go through the outbox (ADR-06, docs/RUNBOOK.md §10b): a module writes the
+                    event to its <schema>.outbox in the transaction that changes the data, and
+                    worker-agent's relay (services/worker_agent/events.py) claims it. Do not add a
+                    direct publish after a commit.
                     Concurrent writers of one aggregate lock the parent row (FOR UPDATE) and the
                     "at most one active/published" rules are partial unique indexes
 backend/schema      the V3 database generator: design export → definitions.json → DDL and ORM, plus the

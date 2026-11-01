@@ -8,9 +8,7 @@ metadata:
 data:
   #Postgres
   POSTGRES_DB: dataagent
-  POSTGRES_USER: admin
   POSTGRES_HOST: postgres.dataagent-database.svc.cluster.local
-
 
   #Redis
   REDIS_URL: redis://redis.dataagent-database.svc.cluster.local:8320
@@ -18,18 +16,8 @@ data:
   #Qdrant
   QDRANT_URL: http://qdrant.dataagent-database.svc.cluster.local:8330
 
-
-  #Minio
-  MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360
-
   #Openbao
   OPENBAO_ADDR: http://openbao.dataagent-database.svc.cluster.local:8120
-
-  #Kafka
-  KAFKA_BOOTSTRAP_SERVERS: kafka.dataagent-database.svc.cluster.local:8350
-  KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-  KAFKA_SASL_MECHANISM: PLAIN
-  KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
 
   #Litellm
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
@@ -39,7 +27,6 @@ data:
 
   #KeyCloak
   KEYCLOAK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
-  KC_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   # kong-setup.sh builds the aeroflow-jwks plugin's jwks_uri from this var,
   # separately from KEYCLOAK_URL above — its fallback default is the short
   # name keycloak on 8080, Keycloak's stock port. The Service exposes Keycloak
@@ -48,29 +35,17 @@ data:
   # connection refused" the moment Kong's cached JWKS entry expires.
   KEYCLOAK_NETWORK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KEYCLOAK_REALM: aeroflow
-  KC_REALM: aeroflow
 
-  # kong-setup.sh's Kong-upstream host fields for these 3 services default
-  # to the backend/services/<name> directory names (underscores). k8s
+  # kong-setup.sh's Kong-upstream host field defaults to the backend/services/<name>
+  # directory name (underscores). k8s
   # Service objects can't contain underscores (DNS-1035), so the Services
   # are named with hyphens — override here so Kong's upstream DNS lookup resolves.
   # Without this, JWT/CORS checks can pass fine (they don't touch the
   # upstream) but the request 503s the moment Kong actually proxies it.
   API_HOST: api
 
-  #Langfuse
-  LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
-
-  #Otel / Jaeger
-  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger.dataagent-service.svc.cluster.local:8431
-  OTEL_SDK_DISABLED: 'false'
-
   #LLM
   EMBEDDING_DIM: '1024'
-  RUNTIME_ALLOWED_SERVICES: ''
-
-  #Others
-
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -82,9 +57,7 @@ metadata:
 data:
   #Postgres
   POSTGRES_DB: dataagent
-  POSTGRES_USER: admin
   POSTGRES_HOST: postgres.dataagent-database.svc.cluster.local
-
 
   #Redis
   REDIS_URL: redis://redis.dataagent-database.svc.cluster.local:8320
@@ -92,18 +65,8 @@ data:
   #Qdrant
   QDRANT_URL: http://qdrant.dataagent-database.svc.cluster.local:8330
 
-
-  #Minio
-  MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360
-
   #Openbao
   OPENBAO_ADDR: http://openbao.dataagent-database.svc.cluster.local:8120
-
-  #Kafka
-  KAFKA_BOOTSTRAP_SERVERS: kafka.dataagent-database.svc.cluster.local:8350
-  KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-  KAFKA_SASL_MECHANISM: PLAIN
-  KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
 
   #Litellm
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
@@ -113,19 +76,8 @@ data:
 
   #Keycloak
   KEYCLOAK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
-  KC_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KEYCLOAK_REALM: aeroflow
-  KC_REALM: aeroflow
-
-  #Langfuse
-  LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
-
-  #Otel / Jaeger
-  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger.dataagent-service.svc.cluster.local:8431
-  OTEL_SDK_DISABLED: 'false'
 
   #LLM
   EMBEDDING_DIM: '1024'
-  RUNTIME_ALLOWED_SERVICES: ''
 
-  #Others

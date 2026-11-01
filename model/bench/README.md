@@ -23,7 +23,6 @@ it cost.
 
 | Profile | Alias → tier | Out | Where it sits |
 |---|---|---|---|
-| `guardrail` | `guardrail` → fast | 64 | every request, blocking |
 | `planner` | `planner` → fast | 256 | every request, blocking |
 | `judge` | `judge` → fast | 128 | after the answer |
 | `text_to_sql` | `text_to_sql` → main | 512 | data path |

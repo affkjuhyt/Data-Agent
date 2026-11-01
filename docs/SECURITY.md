@@ -95,7 +95,8 @@ with an existing baseline to burn down. Ratchet plan:
 ## 5. Architecture & code integrity gates
 
 - **import-linter** (`lint-imports`) is **blocking** — enforces the layered dependency
-  rule (`libs.basemodel` innermost; no `libs.database_connector` leakage).
+  rule (`libs.contracts` and `libs.shared` are leaves, the api kernel depends on no module,
+  worker-agent and crawler import neither the api nor each other).
 - **ruff** (incl. `BLE` blind-except, `ASYNC` blocking-call lints) runs in CI
   (`python-lint`) but does **not** gate anything yet: the tree has ~1,500 findings and was
   never formatted, so the job is red on `main`. Until the repo-wide cleanup lands, a change
@@ -110,7 +111,7 @@ with an existing baseline to burn down. Ratchet plan:
 
   | Surface | strict errors |
   | --- | --- |
-  | `backend/libs/{basemodel,database_connector,shared}` | **0**, enforced |
+  | `backend/libs/shared` | **0**, enforced |
   | `backend/services/workflow_runtime` (incl. `workflow_runtime/application/orchestrator`) | **0**, enforced |
   | `backend/services/{api,worker_agent,crawler}` (`--disallow-untyped-defs --disallow-any-generics`) | CI blocking step (`make type-v3`) |
 

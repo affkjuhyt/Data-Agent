@@ -9,7 +9,6 @@ these is that a change to `planner_system.txt` shows up in the next run.
 Prompt size is the whole story for time-to-first-token, and the six roles differ
 by more than an order of magnitude in it, so they cannot share one measurement:
 
-    guardrail     ~0.6k prefix  64 out    fast tier   every request, blocking
     planner       catalogue-sized 400 out fast tier   question understanding
     responder     figures-sized 600 out  main tier   the final answer
 
@@ -26,7 +25,6 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-_SHARED_PROMPTS = REPO_ROOT / "backend" / "libs" / "shared" / "prompts"
 _EVAL_CASES = REPO_ROOT / "model" / "eval" / "cases"
 
 _PLANNER_SYSTEM = """Bạn đọc một câu hỏi số liệu tiếng Việt và chọn đúng các mã trong danh mục được cho.
@@ -193,18 +191,6 @@ def _questions() -> tuple[str, ...]:
     )
 
 
-def _guardrail_turns() -> tuple[str, ...]:
-    """Mirrors guardrail_check.llm_guardrail_check: CHECK_TYPE header + the text.
-
-    Ordinary questions *and* the policy corpus's adversarial inputs, because
-    that mix is what the guardrail sees. A guardrail benchmarked only on benign
-    input is being asked an easier question than production asks it, and the
-    refusal path is not the same length as the pass-through path.
-    """
-    texts = [*_questions(), *(case["input"] for case in _cases("policy"))]
-    return tuple(f"CHECK_TYPE: input\nCONTENT: {text}" for text in texts)
-
-
 def _judge_turns() -> tuple[str, ...]:
     """An answer and the sources it was built from.
 
@@ -273,10 +259,6 @@ def load() -> dict[str, Profile]:
     """Every profile, keyed by name. Built at call time, not import time, so a
     missing prompt file fails the run that needs it with a path in the message."""
     profiles = [
-        # guardrail_check.py: max_tokens 64, temperature 0, alias "guardrail".
-        Profile("guardrail", "guardrail", "fast",
-                _prompt(_SHARED_PROMPTS / "guardrail_system.txt"), 64, 0.0,
-                _guardrail_turns()),
         # worker-agent understander: max_tokens 400, temperature 0.
         Profile("planner", "planner", "fast",
                 _PLANNER_SYSTEM, 400, 0.0,

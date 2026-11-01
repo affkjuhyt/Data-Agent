@@ -8,29 +8,17 @@ metadata:
     app.kubernetes.io/part-of: dataagent
 data:
   POSTGRES_DB: dataagent
-  POSTGRES_USER: admin
   POSTGRES_HOST: postgres.dataagent-database.svc.cluster.local
   REDIS_URL: redis://redis.dataagent-database.svc.cluster.local:8320
   QDRANT_URL: http://qdrant.dataagent-database.svc.cluster.local:8330
-  MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360
   OPENBAO_ADDR: http://openbao.dataagent-database.svc.cluster.local:8120
-  KAFKA_BOOTSTRAP_SERVERS: kafka.dataagent-database.svc.cluster.local:8350
-  KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-  KAFKA_SASL_MECHANISM: PLAIN
-  KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
   KEYCLOAK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
-  KC_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KEYCLOAK_NETWORK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KEYCLOAK_REALM: aeroflow
-  KC_REALM: aeroflow
   API_HOST: api
-  LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
-  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger.dataagent-service.svc.cluster.local:8431
-  OTEL_SDK_DISABLED: 'false'
   EMBEDDING_DIM: '1024'
-  RUNTIME_ALLOWED_SERVICES: ''
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -41,24 +29,12 @@ metadata:
     app.kubernetes.io/part-of: dataagent
 data:
   POSTGRES_DB: dataagent
-  POSTGRES_USER: admin
   POSTGRES_HOST: postgres.dataagent-database.svc.cluster.local
   REDIS_URL: redis://redis.dataagent-database.svc.cluster.local:8320
   QDRANT_URL: http://qdrant.dataagent-database.svc.cluster.local:8330
-  MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360
   OPENBAO_ADDR: http://openbao.dataagent-database.svc.cluster.local:8120
-  KAFKA_BOOTSTRAP_SERVERS: kafka.dataagent-database.svc.cluster.local:8350
-  KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-  KAFKA_SASL_MECHANISM: PLAIN
-  KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
   KEYCLOAK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
-  KC_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KEYCLOAK_REALM: aeroflow
-  KC_REALM: aeroflow
-  LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
-  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger.dataagent-service.svc.cluster.local:8431
-  OTEL_SDK_DISABLED: 'false'
   EMBEDDING_DIM: '1024'
-  RUNTIME_ALLOWED_SERVICES: ''
