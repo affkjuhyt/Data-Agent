@@ -30,7 +30,6 @@ function entry(
     regression: null,
     timeline: [],
     history_text: '',
-    pack_candidate: null,
     dismissed_reason: null,
     ...e,
   };
@@ -76,7 +75,6 @@ function entriesFixture(): ErrorBookEntry[] {
       ],
       history_text:
         '02/07 Vũ Lan báo sai · 02/07 Nguyễn Thị Hạnh xác nhận · 09/07 đã sửa · 11/07 đã có hồi quy · mở lại 0 lần',
-      pack_candidate: { pack_id: 'pack-energy', pack_name: 'Năng lượng · giá điều hành' },
     }),
     // The two missed fuel-forecast periods the forecast ledger (P15 Sổ dự báo) links to.
     entry({
@@ -292,10 +290,6 @@ export function createErrorBookHandlers() {
             timeline: [...e.timeline, { label: 'Bỏ qua', at: 'hôm nay' }],
           }),
         );
-      }
-      if (verb === 'propose-to-pack') {
-        if (e.status === 'open') return problem(409, 'conflict', 'Mục chưa sửa.');
-        return HttpResponse.json({ pack_proposal_ref: `pc-${id}` });
       }
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),

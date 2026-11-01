@@ -207,7 +207,6 @@ class DataSpaceView(_Row):
     backup_steward_id: uuid.UUID | None
     status: str
     default_policy: dict[str, Any]
-    pack_install_id: uuid.UUID | None
     work_calendar_id: uuid.UUID | None
     opened_at: datetime.datetime | None
     created_at: datetime.datetime

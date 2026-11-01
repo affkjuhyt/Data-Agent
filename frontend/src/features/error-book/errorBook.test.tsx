@@ -37,13 +37,6 @@ describe('ErrorBookPage', () => {
     expect(within(entry).getByText('1.055 đ/lít')).toBeInTheDocument();
     expect(within(entry).getByText('Đã chấp nhận')).toBeInTheDocument();
     expect(within(entry).getByText('Lượt CI nightly 11/07 đạt')).toBeInTheDocument();
-    fireEvent.click(within(entry).getByRole('button', { name: 'Đề xuất cho gói ngành' }));
-    const dialog = screen.getByRole('dialog', { name: 'Đề xuất cho gói ngành' });
-    fireEvent.change(within(dialog).getByLabelText('Tóm tắt cách sửa'), {
-      target: { value: 'Kỳ liền trước theo lịch điều hành' },
-    });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Gửi đề xuất' }));
-    expect(await screen.findByText('Đã gửi đề xuất cho người biên soạn gói')).toBeInTheDocument();
   });
 
   it('filters by status and fixes an open entry once its cause is written', async () => {

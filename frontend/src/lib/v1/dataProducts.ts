@@ -373,7 +373,6 @@ type ResultRow = Schemas['QualityResultView'];
 const ORIGIN: Record<string, string> = {
   manual: 'Người tạo',
   agent_suggested: 'Agent đề xuất',
-  pack: 'Gói ngành',
 };
 
 /** high blocks the report (BR-116); medium and low warn. */

@@ -312,12 +312,13 @@ def tools(api_database: str) -> list[dict[str, Any]]:
     return SEED
 
 
-def test_the_seed_is_the_59_tools_of_g2_and_meets_tool_defs_checks(
+def test_the_seed_is_the_57_tools_of_g2_and_meets_tool_defs_checks(
     tools: list[dict[str, Any]], seed: Seed
 ) -> None:
-    # Tab 5 G2: 48 tools plus the 11 of ADR-54; tab 3b: "Dữ liệu khởi tạo: 59 dòng".
-    assert len(tools) == 59
-    assert len({t["code"] for t in tools}) == 59
+    # Tab 5 G2: 48 tools plus the 11 of ADR-54, less pack.suggest_mappings and
+    # pack.propose_decisions (industry packs dropped 01/11/2026); tab 3b: "57 dòng".
+    assert len(tools) == 57
+    assert len({t["code"] for t in tools}) == 57
     for t in tools:
         code = t["code"]
         assert re.fullmatch(r"[a-z]+(\.[a-z_]+)+", code), code

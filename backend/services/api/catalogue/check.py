@@ -8,7 +8,7 @@ A violation is:
     x-use-cases differ from its A2 row: the code drifted from the spec;
   * an A2 endpoint missing from a group listed in COMPLETE_GROUPS.
 
-A2 has 378 endpoints and the api is built group by group, so a missing
+A2 has 454 endpoints and the api is built group by group, so a missing
 endpoint only fails once its group is declared complete here. Add a group to
 COMPLETE_GROUPS in the commit that serves its last endpoint; from then on
 dropping one is a failure.
@@ -40,7 +40,6 @@ COMPLETE_GROUPS: frozenset[str] = frozenset(
         "Nguồn và danh mục",
         "Nạp dữ liệu",
         "Tài liệu",
-        "Gói ngành",
         "Kỳ chốt",
         "Thu thập",
         "Lớp riêng lãnh đạo",

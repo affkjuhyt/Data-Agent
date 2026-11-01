@@ -22,8 +22,8 @@ import { useV1 } from '../../lib/v1/useV1';
 /*
  * "v3.1 · Quản trị · Tạo Data Space" (2232:15011, UC-11-08): four numbered sections in cards
  * (thông tin chung, nguồn, chính sách mặc định, thành viên) then "Tạo Data Space" / "Lưu nháp";
- * on the right, what happens after creation. The "Gói ngành" line of section 2 is not drawn:
- * there is no pack endpoint for it yet.
+ * on the right, what happens after creation. The design's "Gói ngành" line of section 2 and its
+ * mapping step are not drawn: industry packs were dropped (01/11/2026).
  */
 const POLICY_FLAGS: { key: keyof DefaultPolicy; label: string }[] = [
   { key: 'mask_pii', label: 'Che dữ liệu cá nhân (CMND, số tài khoản, số điện thoại) cho mọi vai trò trừ Kiểm soát' },
@@ -34,9 +34,8 @@ const POLICY_FLAGS: { key: keyof DefaultPolicy; label: string }[] = [
 
 const NEXT_STEPS = [
   { title: '1. Kết nối hoặc chọn nguồn', text: 'Chỉ đọc qua tài khoản kỹ thuật' },
-  { title: '2. Ánh xạ gói ngành', text: 'Agent đề xuất, người phụ trách xác nhận theo lô' },
-  { title: '3. Chạy bộ đánh giá', text: 'Đạt ngưỡng mới mở cho người dùng' },
-  { title: '4. Mời thành viên', text: 'Theo nhóm AD hoặc từng người' },
+  { title: '2. Chạy bộ đánh giá', text: 'Đạt ngưỡng mới mở cho người dùng' },
+  { title: '3. Mời thành viên', text: 'Theo nhóm AD hoặc từng người' },
 ];
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -145,7 +144,7 @@ export default function CreateDataSpacePage() {
             />
           </Field>
         </Section>
-        <Section title="2. Nguồn và gói ngành">
+        <Section title="2. Nguồn">
           <AsyncRegion state={sources} what="nguồn dữ liệu">
             {(p) => (
               <div className="flex flex-wrap gap-da-sm" role="group" aria-label="Nguồn">

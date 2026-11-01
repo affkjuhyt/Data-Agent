@@ -16,7 +16,6 @@ Tổ chức (khách hàng) dùng hệ thống; gốc của org\_id. Use case: UC
 | --- | --- | --- |
 | code | text, bắt buộc | Mã tổ chức, duy nhất toàn hệ thống |
 | name | text, bắt buộc |  |
-| industry\_code | text | Ngành chính, khớp pack.industry\_pack.code; chỉ để gợi ý gói |
 | status | text, bắt buộc, mặc định 'active' | active, suspended |
 | locale | text, bắt buộc, mặc định 'vi-VN' | Ngôn ngữ mặc định |
 | time\_zone | text, bắt buộc, mặc định 'Asia/Ho\_Chi\_Minh' |  |
@@ -113,7 +112,6 @@ Không gian dữ liệu của một nhóm nghiệp vụ; ranh giới quyền, ng
 | backup\_steward\_id | uuid | Người dự phòng (BR-143); FK app\_user |
 | status | text, bắt buộc, mặc định 'draft' | draft, onboarding, active, read\_only, archived |
 | default\_policy | jsonb, bắt buộc, mặc định '{}' | Bốn cờ trên màn Tạo Data Space: mask\_pii, agent\_write\_derived\_only, show\_filed\_and\_current, allow\_external\_channels |
-| pack\_install\_id | uuid | logic → pack.pack\_install |
 | work\_calendar\_id | uuid | FK work\_calendar |
 | opened\_at | timestamptz | Lúc mở cho người dùng sau khi bộ đánh giá đạt (BR-122) |
 | deleted\_at | timestamptz | Xoá mềm |
@@ -238,7 +236,7 @@ Chính sách hành vi của agent và hệ thống: chặn, che, cần duyệt, 
 | condition | jsonb, bắt buộc, mặc định '{}' | Điều kiện, ví dụ lệch dưới 0,05% và là ngày chốt kỳ |
 | action | jsonb, bắt buộc, mặc định '{}' | Hành động, ví dụ dùng nguồn A, không hỏi lại |
 | exceptions | jsonb, bắt buộc, mặc định '\[\]' | Trường hợp vẫn phải hỏi người |
-| origin | text, bắt buộc, mặc định 'manual' | manual, hitl, pack |
+| origin | text, bắt buộc, mặc định 'manual' | manual, hitl |
 | origin\_ref | uuid | logic → inbox.hitl\_request khi origin = hitl |
 | status | text, bắt buộc, mặc định 'draft' | draft, active, disabled, expired |
 | review\_at | date | Hạn xem lại; quy tắc từ HITL là 90 ngày (BR-65) |
@@ -246,7 +244,7 @@ Chính sách hành vi của agent và hệ thống: chặn, che, cần duyệt, 
 | approved\_by | uuid |  |
 | approved\_at | timestamptz |  |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (scope IN ('system','org','data\_space','agent','user')); CHECK (kind IN ('block','mask','require\_approval','auto\_handle','allow','budget')); CHECK (origin IN ('manual','hitl','pack')); CHECK (status IN ('draft','active','disabled','expired')); CHECK (origin <> 'hitl' OR review\_at IS NOT NULL); CHECK (scope <> 'data\_space' OR data\_space\_id IS NOT NULL). Chỉ mục: (scope, data\_space\_id) WHERE status = 'active'; (review\_at) WHERE status = 'active'.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (scope IN ('system','org','data\_space','agent','user')); CHECK (kind IN ('block','mask','require\_approval','auto\_handle','allow','budget')); CHECK (origin IN ('manual','hitl')); CHECK (status IN ('draft','active','disabled','expired')); CHECK (origin <> 'hitl' OR review\_at IS NOT NULL); CHECK (scope <> 'data\_space' OR data\_space\_id IS NOT NULL). Chỉ mục: (scope, data\_space\_id) WHERE status = 'active'; (review\_at) WHERE status = 'active'.
 
 #### governance.policy\_backtest
 
@@ -699,7 +697,6 @@ Thực thể trong mô hình ngữ nghĩa của Data Space (ví dụ khách hàn
 | description | text |  |
 | primary\_dataset\_id | uuid, bắt buộc | logic → catalog.dataset |
 | key\_columns | text\[\], bắt buộc |  |
-| canonical\_entity\_id | uuid | logic → pack.canonical\_entity nếu sinh từ gói ngành |
 | status | text, bắt buộc, mặc định 'active' | draft, active, retired |
 
 Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (data\_space\_id, code); CHECK (status IN ('draft','active','retired')).
@@ -749,7 +746,6 @@ Chỉ số nghiệp vụ; định nghĩa nằm ở metric\_version. Mã không �
 | owner\_id | uuid, bắt buộc | Chủ sở hữu duyệt mọi thay đổi; logic → org.app\_user |
 | consumer\_group | text | Người dùng chính, nhận thông báo khi đổi phiên bản |
 | canonical\_dataset\_id | uuid | Nguồn chuẩn; logic → catalog.dataset |
-| pack\_metric\_id | uuid | logic → pack.pack\_metric nếu đến từ gói ngành |
 | current\_version | integer | Phiên bản đang dùng |
 | in\_filed\_report | boolean, bắt buộc, mặc định false | Có trong báo cáo đã nộp; không xoá được (BR-27) |
 | status | text, bắt buộc, mặc định 'draft' | draft, active, retired |
@@ -776,7 +772,6 @@ Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. R�
 | allowed\_dimensions | uuid\[\], bắt buộc, mặc định '{}' | logic → semantic\_dimension |
 | additivity | text, bắt buộc, mặc định 'none' | full, semi, none (BR-117) |
 | legal\_basis | text | Căn cứ, ví dụ điều khoản văn bản |
-| override\_id | uuid | logic → pack.metric\_override nếu là bản hiệu chỉnh (BR-129) |
 | change\_note | text | Ví dụ Loại vay nội bộ |
 | status | text, bắt buộc, mặc định 'draft' | draft, testing, pending\_review, certified, superseded, broken |
 | certified\_by | uuid |  |
@@ -799,11 +794,11 @@ Quan hệ giữa hai bảng; quan hệ suy ra chỉ dùng sau khi duyệt (BR-10
 | to\_dataset\_id | uuid, bắt buộc |  |
 | to\_columns | text\[\], bắt buộc |  |
 | cardinality | text, bắt buộc | one\_to\_one, many\_to\_one, one\_to\_many |
-| origin | text, bắt buộc, mặc định 'declared' | declared, inferred, manual, pack |
+| origin | text, bắt buộc, mặc định 'declared' | declared, inferred, manual |
 | overlap\_ratio | numeric(5,4) | Độ trùng giá trị khi suy ra |
 | status | text, bắt buộc, mặc định 'pending\_review' | pending\_review, active, rejected |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (cardinality IN ('one\_to\_one','many\_to\_one','one\_to\_many')); CHECK (origin IN ('declared','inferred','manual','pack')); CHECK (status IN ('pending\_review','active','rejected')); CHECK (origin <> 'inferred' OR status <> 'active' OR updated\_by IS NOT NULL).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (cardinality IN ('one\_to\_one','many\_to\_one','one\_to\_many')); CHECK (origin IN ('declared','inferred','manual')); CHECK (status IN ('pending\_review','active','rejected')); CHECK (origin <> 'inferred' OR status <> 'active' OR updated\_by IS NOT NULL).
 
 #### context.synonym
 
@@ -817,10 +812,10 @@ Cách gọi khác của chỉ số, chiều, cột hoặc giá trị. Use case: 
 | target\_kind | text, bắt buộc | metric, dimension, measure, entity, value, column |
 | target\_id | uuid, bắt buộc |  |
 | target\_value | text | Giá trị cụ thể khi target\_kind = value |
-| origin | text, bắt buộc, mặc định 'manual' | manual, agent\_suggested, pack |
+| origin | text, bắt buộc, mặc định 'manual' | manual, agent\_suggested |
 | status | text, bắt buộc, mặc định 'pending\_review' | pending\_review, active, rejected |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (target\_kind IN ('metric','dimension','measure','entity','value','column')); CHECK (origin IN ('manual','agent\_suggested','pack')); CHECK (status IN ('pending\_review','active','rejected')). Chỉ mục: duy nhất (data\_space\_id, phrase\_norm, target\_kind, target\_id) WHERE status = 'active'.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (target\_kind IN ('metric','dimension','measure','entity','value','column')); CHECK (origin IN ('manual','agent\_suggested')); CHECK (status IN ('pending\_review','active','rejected')). Chỉ mục: duy nhất (data\_space\_id, phrase\_norm, target\_kind, target\_id) WHERE status = 'active'.
 
 #### context.value\_index
 
@@ -849,11 +844,11 @@ Câu hỏi mẫu kèm SQL đúng; chỉ dùng làm mẫu khi đã duyệt và c�
 | sql | text, bắt buộc |  |
 | metric\_ids | uuid\[\], bắt buộc, mặc định '{}' |  |
 | qdrant\_point\_id | uuid | Điểm vector trong collection example\_queries |
-| origin | text, bắt buộc, mặc định 'manual' | manual, agent\_suggested, feedback, pack |
+| origin | text, bắt buộc, mặc định 'manual' | manual, agent\_suggested, feedback |
 | last\_verified\_at | timestamptz |  |
 | status | text, bắt buộc, mặc định 'draft' | draft, pending\_review, active, stale, rejected |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (origin IN ('manual','agent\_suggested','feedback','pack')); CHECK (status IN ('draft','pending\_review','active','stale','rejected')).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (origin IN ('manual','agent\_suggested','feedback')); CHECK (status IN ('draft','pending\_review','active','stale','rejected')).
 
 #### context.glossary\_term
 
@@ -1111,7 +1106,6 @@ Data product: phạm vi trả lời có cam kết của một Data Space, gồm 
 | freshness\_statement | text, bắt buộc | Cam kết hiển thị cho người dùng, ví dụ “Giá xăng dầu trong nước: cập nhật trước 16:30 ngày điều hành” |
 | classification | text, bắt buộc, mặc định 'internal' | public, internal, confidential, restricted; mức cao nhất của các thành phần, trigger tính; dùng cho định tuyến mô hình (BR-180) |
 | eval\_set\_id | uuid | logic → eval.eval\_set (subject\_type context) chứa câu hỏi mẫu và ca hồi quy Error Book |
-| pack\_version\_id | uuid | logic → pack.pack\_version nếu dựng từ mẫu của gói ngành |
 | version | integer, bắt buộc, mặc định 1 | Tăng khi đổi phạm vi, thành phần primary hoặc cam kết sau khi active |
 | status | text, bắt buộc, mặc định 'draft' | draft, pending\_review, active, suspended, retired |
 | suspended\_reason | text | Bắt buộc khi suspended, ví dụ metric\_decertified, dataset\_decertified, manual |
@@ -1426,7 +1420,7 @@ Agent: tên, loại, chủ sở hữu, tài khoản agent, trạng thái; cấu 
 | kind | text, bắt buộc | analysis, monitor, report, reconcile, data\_prep, data\_quality, document, custom |
 | owner\_user\_id | uuid, bắt buộc | Người thật sở hữu (BR-147); logic → org.app\_user |
 | account\_user\_id | uuid, bắt buộc | Tài khoản agent (app\_user.kind = agent) |
-| template\_ref | uuid | logic → pack.pack\_skill nếu tạo từ agent mẫu |
+| template\_ref | uuid | Agent mẫu mà agent được tạo từ đó |
 | current\_config\_version | integer |  |
 | status | text, bắt buộc, mặc định 'draft' | draft, testing, running, paused, retired, locked (khoá khẩn cấp qua POST /v1/agents/{id}:lock, thêm 12/10/2026) |
 | paused\_reason | text | Ví dụ chủ sở hữu rời tổ chức |
@@ -1493,7 +1487,7 @@ Sổ công cụ của agent (tab 5 G2, G2.1): một dòng mỗi công cụ, là 
 | schema\_sha256 | text | Băm JSON Schema sinh từ OpenAPI ở lần build gần nhất (ADR-48) |
 | status | text, bắt buộc, mặc định 'active' | draft, active, deprecated |
 
-Cột chung: id, created\_at, updated\_at (không có org\_id). Ràng buộc: UNIQUE (code); CHECK (code \~ '^\[a-z\]+(\\.\[a-z\_\]+)+$'); CHECK (permission\_level IN ('read','write\_derived','send\_external')); CHECK (default\_checkpoint IN ('none','on\_condition','before','always')); CHECK (status IN ('draft','active','deprecated')); CHECK (execution\_kinds <@ ARRAY\['interactive','plan','workflow'\] AND cardinality(execution\_kinds) > 0); CHECK (char\_length(model\_description) <= 400); CHECK (permission\_level <> 'send\_external' OR (default\_checkpoint = 'always' AND NOT mcp\_exposed)); CHECK (status <> 'active' OR cardinality(use\_cases) > 0); CHECK (NOT mcp\_exposed OR code !\~ '^exec\\.'). Chỉ mục: GIN (toolsets); GIN (use\_cases). Quyền: mọi vai trò svc\_\* đọc; chỉ vai trò migration ghi. Dữ liệu khởi tạo: 59 dòng của tab 5 G2, gồm use\_cases lấy từ ma trận tab 2 mục 11.4.
+Cột chung: id, created\_at, updated\_at (không có org\_id). Ràng buộc: UNIQUE (code); CHECK (code \~ '^\[a-z\]+(\\.\[a-z\_\]+)+$'); CHECK (permission\_level IN ('read','write\_derived','send\_external')); CHECK (default\_checkpoint IN ('none','on\_condition','before','always')); CHECK (status IN ('draft','active','deprecated')); CHECK (execution\_kinds <@ ARRAY\['interactive','plan','workflow'\] AND cardinality(execution\_kinds) > 0); CHECK (char\_length(model\_description) <= 400); CHECK (permission\_level <> 'send\_external' OR (default\_checkpoint = 'always' AND NOT mcp\_exposed)); CHECK (status <> 'active' OR cardinality(use\_cases) > 0); CHECK (NOT mcp\_exposed OR code !\~ '^exec\\.'). Chỉ mục: GIN (toolsets); GIN (use\_cases). Quyền: mọi vai trò svc\_\* đọc; chỉ vai trò migration ghi. Dữ liệu khởi tạo: 57 dòng của tab 5 G2 (bỏ hai công cụ pack.\* theo quyết định 01/11/2026), gồm use\_cases lấy từ ma trận tab 2 mục 11.4.
 
 #### agent.agent\_trigger
 
@@ -1624,14 +1618,14 @@ Ghi nhớ của agent; không chứa dữ liệu cá nhân, chính sách luôn t
 | user\_id | uuid | Khi scope = user |
 | kind | text, bắt buộc | decision, preference, data\_insight, domain\_context |
 | content | text, bắt buộc |  |
-| source\_kind | text, bắt buộc | hitl, run, manual, pack |
+| source\_kind | text, bắt buộc | hitl, run, manual |
 | source\_ref | uuid |  |
 | expires\_at | timestamptz |  |
 | use\_count | integer, bắt buộc, mặc định 0 |  |
 | correction\_count | smallint, bắt buộc, mặc định 0 | Đến 2 thì tự vô hiệu |
 | status | text, bắt buộc, mặc định 'active' | pending\_review, active, disabled, conflict |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (scope IN ('agent','user','data\_space')); CHECK ((scope = 'agent' AND agent\_id IS NOT NULL) OR (scope = 'user' AND user\_id IS NOT NULL) OR scope = 'data\_space'); CHECK (kind IN ('decision','preference','data\_insight','domain\_context')); CHECK (source\_kind IN ('hitl','run','manual','pack')); CHECK (status IN ('pending\_review','active','disabled','conflict')); CHECK (scope <> 'data\_space' OR status <> 'active' OR updated\_by IS NOT NULL); FOREIGN KEY (agent\_id) REFERENCES agent.agent\_def(id).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (scope IN ('agent','user','data\_space')); CHECK ((scope = 'agent' AND agent\_id IS NOT NULL) OR (scope = 'user' AND user\_id IS NOT NULL) OR scope = 'data\_space'); CHECK (kind IN ('decision','preference','data\_insight','domain\_context')); CHECK (source\_kind IN ('hitl','run','manual')); CHECK (status IN ('pending\_review','active','disabled','conflict')); CHECK (scope <> 'data\_space' OR status <> 'active' OR updated\_by IS NOT NULL); FOREIGN KEY (agent\_id) REFERENCES agent.agent\_def(id).
 
 #### agent.background\_task
 
@@ -1654,19 +1648,19 @@ Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. R�
 
 #### eval.eval\_set
 
-Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng, agent và gói ngành. Use case: UC-07-03, UC-07-06, UC-13-04.
+Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng và agent. Use case: UC-07-03, UC-07-06, UC-13-04.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
-| data\_space\_id | uuid | Null với bộ của gói ngành |
-| subject\_type | text, bắt buộc | context, skill, agent, pack |
-| subject\_id | uuid | Kỹ năng, agent hoặc phiên bản gói; null với lớp ngữ cảnh của Data Space |
+| data\_space\_id | uuid | Null với bộ dùng chung cho cả tổ chức |
+| subject\_type | text, bắt buộc | context, skill, agent |
+| subject\_id | uuid | Kỹ năng hoặc agent; null với lớp ngữ cảnh của Data Space |
 | name | text, bắt buộc |  |
 | pass\_threshold | numeric(5,4), bắt buộc, mặc định 0.95 | Tỷ lệ đạt tối thiểu |
 | min\_items | integer, bắt buộc, mặc định 100 | Lớp ngữ cảnh cần ít nhất 100 câu |
 | status | text, bắt buộc, mặc định 'active' | active, archived |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (subject\_type IN ('context','skill','agent','pack')); CHECK ((subject\_type = 'context' AND data\_space\_id IS NOT NULL) OR (subject\_type <> 'context' AND subject\_id IS NOT NULL)); CHECK (status IN ('active','archived')).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (subject\_type IN ('context','skill','agent')); CHECK ((subject\_type = 'context' AND data\_space\_id IS NOT NULL) OR (subject\_type <> 'context' AND subject\_id IS NOT NULL)); CHECK (status IN ('active','archived')).
 
 #### eval.eval\_item
 
@@ -1680,11 +1674,11 @@ Một mục đánh giá kèm đáp án: câu hỏi chuẩn, ca kiểm thử kỹ
 | as\_of | date |  |
 | expected | jsonb, bắt buộc | Cách hiểu, con số kèm dung sai, hành vi mong đợi |
 | tolerance | numeric(10,6) |  |
-| origin | text, bắt buộc, mặc định 'manual' | manual, feedback, real\_run, hitl\_rule, generated, pack, error\_book (ca hồi quy từ Error Book, origin\_ref = eval.error\_book\_entry.id, UC-07-14) |
+| origin | text, bắt buộc, mặc định 'manual' | manual, feedback, real\_run, hitl\_rule, generated, error\_book (ca hồi quy từ Error Book, origin\_ref = eval.error\_book\_entry.id, UC-07-14) |
 | origin\_ref | uuid | Ví dụ qa.feedback.id |
 | status | text, bắt buộc, mặc định 'active' | active, needs\_update, retired |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (category IN ('correct\_result','ask\_at\_right\_time','respect\_permission','correct\_format','refusal')); CHECK (origin IN ('manual','feedback','real\_run','hitl\_rule','generated','pack','error\_book')); CHECK (origin <> 'error\_book' OR origin\_ref IS NOT NULL); CHECK (status IN ('active','needs\_update','retired')); FOREIGN KEY (eval\_set\_id) REFERENCES eval.eval\_set(id).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (category IN ('correct\_result','ask\_at\_right\_time','respect\_permission','correct\_format','refusal')); CHECK (origin IN ('manual','feedback','real\_run','hitl\_rule','generated','error\_book')); CHECK (origin <> 'error\_book' OR origin\_ref IS NOT NULL); CHECK (status IN ('active','needs\_update','retired')); FOREIGN KEY (eval\_set\_id) REFERENCES eval.eval\_set(id).
 
 #### eval.eval\_run
 
@@ -1730,7 +1724,7 @@ Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (eval\_run\_id, eval
 
 #### eval.error\_book\_entry
 
-Mục Error Book: một lỗi đã xác nhận của câu trả lời hoặc một dự báo lệch vượt ngưỡng, kèm loại lỗi, nguyên nhân gốc, người xử lý, cách sửa và ca hồi quy tự thêm vào bộ đánh giá chạy trong CI. Trạng thái open → fixed → regression\_added; dismissed khi không phải lỗi hoặc trùng (BR-179). Là kênh “tốt dần theo thời gian” cùng gói ngành: cách sửa dùng chung được đề xuất về P09. Thêm 10/10/2026. Use case: UC-07-14, UC-01-05, UC-01-07, UC-15-06.
+Mục Error Book: một lỗi đã xác nhận của câu trả lời hoặc một dự báo lệch vượt ngưỡng, kèm loại lỗi, nguyên nhân gốc, người xử lý, cách sửa và ca hồi quy tự thêm vào bộ đánh giá chạy trong CI. Trạng thái open → fixed → regression\_added; dismissed khi không phải lỗi hoặc trùng (BR-179). Thêm 10/10/2026. Use case: UC-07-14, UC-01-05, UC-01-07, UC-15-06.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
@@ -1752,8 +1746,8 @@ Mục Error Book: một lỗi đã xác nhận của câu trả lời hoặc m�
 | error\_kind | text | definition, synonym, data, freshness, model, formula, retrieval; bắt buộc từ fixed |
 | root\_cause | text | Nguyên nhân gốc bằng lời; bắt buộc từ fixed |
 | assignee\_id | uuid | logic → org.app\_user; mặc định steward của data product, không có thì người phụ trách Data Space |
-| fix\_kind | text | metric\_version, synonym, example, knowledge\_page, pack\_version, source\_data, model\_config, prompt, code, none |
-| fix\_proposal\_id | uuid | logic → inbox.proposal; đề xuất sửa chỉ số, đồng nghĩa, trang tri thức, gói ngành |
+| fix\_kind | text | metric\_version, synonym, example, knowledge\_page, source\_data, model\_config, prompt, code, none |
+| fix\_proposal\_id | uuid | logic → inbox.proposal; đề xuất sửa chỉ số, đồng nghĩa, trang tri thức |
 | fix\_ref | text | Tham chiếu khác: mã commit, phiên bản model\_config, phiên bản dataset đã sửa |
 | fixed\_by | uuid | logic → org.app\_user |
 | fixed\_at | timestamptz |  |
@@ -1763,10 +1757,8 @@ Mục Error Book: một lỗi đã xác nhận của câu trả lời hoặc m�
 | dismiss\_reason | text | Bắt buộc khi dismissed mà không trùng mục khác |
 | duplicate\_of\_id | uuid | FK error\_book\_entry |
 | reopened\_count | integer, bắt buộc, mặc định 0 | Ca hồi quy trượt sau khi đóng thì mở lại và tăng |
-| pack\_contribution | text, bắt buộc, mặc định 'none' | none, proposed, accepted, rejected; đề xuất đưa cách sửa về gói ngành (UC-09-05) |
-| pack\_proposal\_ref | text | Mã đề xuất phía gói ngành, đã bỏ dữ liệu của khách |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (org\_id, entry\_no); CHECK (source\_kind IN ('user\_report','number\_check','reviewer\_reject','replay\_mismatch','forecast\_miss','knowledge\_lint')); CHECK (source\_kind <> 'user\_report' OR feedback\_id IS NOT NULL); CHECK (source\_kind <> 'reviewer\_reject' OR hitl\_request\_id IS NOT NULL); CHECK (source\_kind <> 'replay\_mismatch' OR replay\_id IS NOT NULL); CHECK (source\_kind <> 'forecast\_miss' OR (accuracy\_log\_id IS NOT NULL AND forecast\_detail IS NOT NULL)); CHECK (source\_kind <> 'knowledge\_lint' OR lint\_finding\_id IS NOT NULL); CHECK (source\_kind NOT IN ('user\_report','number\_check','reviewer\_reject') OR answer\_id IS NOT NULL); CHECK (severity IN ('low','medium','high')); CHECK (error\_kind IS NULL OR error\_kind IN ('definition','synonym','data','freshness','model','formula','retrieval')); CHECK (fix\_kind IS NULL OR fix\_kind IN ('metric\_version','synonym','example','knowledge\_page','pack\_version','source\_data','model\_config','prompt','code','none')); CHECK (status IN ('open','fixed','regression\_added','dismissed')); CHECK (status NOT IN ('fixed','regression\_added') OR (error\_kind IS NOT NULL AND root\_cause IS NOT NULL AND assignee\_id IS NOT NULL AND fix\_kind IS NOT NULL AND fixed\_by IS NOT NULL AND fixed\_at IS NOT NULL)); CHECK (status NOT IN ('fixed','regression\_added') OR fix\_kind = 'none' OR fix\_proposal\_id IS NOT NULL OR fix\_ref IS NOT NULL); CHECK (status <> 'regression\_added' OR (eval\_item\_id IS NOT NULL AND regression\_run\_id IS NOT NULL)); CHECK (status <> 'dismissed' OR dismiss\_reason IS NOT NULL OR duplicate\_of\_id IS NOT NULL); CHECK (duplicate\_of\_id IS NULL OR duplicate\_of\_id <> id); CHECK (pack\_contribution IN ('none','proposed','accepted','rejected')); CHECK (pack\_contribution = 'none' OR status IN ('fixed','regression\_added')); FOREIGN KEY (duplicate\_of\_id) REFERENCES eval.error\_book\_entry(id); FOREIGN KEY (regression\_run\_id) REFERENCES eval.eval\_run(id). Chỉ mục: duy nhất (feedback\_id) WHERE feedback\_id IS NOT NULL; duy nhất (accuracy\_log\_id) WHERE accuracy\_log\_id IS NOT NULL; duy nhất (replay\_id) WHERE replay\_id IS NOT NULL; (data\_space\_id, status); (data\_product\_id, status); (assignee\_id) WHERE status = 'open'. RLS: org\_isolation; đọc theo quyền Data Space, cột detail che theo quyền người xem.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (org\_id, entry\_no); CHECK (source\_kind IN ('user\_report','number\_check','reviewer\_reject','replay\_mismatch','forecast\_miss','knowledge\_lint')); CHECK (source\_kind <> 'user\_report' OR feedback\_id IS NOT NULL); CHECK (source\_kind <> 'reviewer\_reject' OR hitl\_request\_id IS NOT NULL); CHECK (source\_kind <> 'replay\_mismatch' OR replay\_id IS NOT NULL); CHECK (source\_kind <> 'forecast\_miss' OR (accuracy\_log\_id IS NOT NULL AND forecast\_detail IS NOT NULL)); CHECK (source\_kind <> 'knowledge\_lint' OR lint\_finding\_id IS NOT NULL); CHECK (source\_kind NOT IN ('user\_report','number\_check','reviewer\_reject') OR answer\_id IS NOT NULL); CHECK (severity IN ('low','medium','high')); CHECK (error\_kind IS NULL OR error\_kind IN ('definition','synonym','data','freshness','model','formula','retrieval')); CHECK (fix\_kind IS NULL OR fix\_kind IN ('metric\_version','synonym','example','knowledge\_page','source\_data','model\_config','prompt','code','none')); CHECK (status IN ('open','fixed','regression\_added','dismissed')); CHECK (status NOT IN ('fixed','regression\_added') OR (error\_kind IS NOT NULL AND root\_cause IS NOT NULL AND assignee\_id IS NOT NULL AND fix\_kind IS NOT NULL AND fixed\_by IS NOT NULL AND fixed\_at IS NOT NULL)); CHECK (status NOT IN ('fixed','regression\_added') OR fix\_kind = 'none' OR fix\_proposal\_id IS NOT NULL OR fix\_ref IS NOT NULL); CHECK (status <> 'regression\_added' OR (eval\_item\_id IS NOT NULL AND regression\_run\_id IS NOT NULL)); CHECK (status <> 'dismissed' OR dismiss\_reason IS NOT NULL OR duplicate\_of\_id IS NOT NULL); CHECK (duplicate\_of\_id IS NULL OR duplicate\_of\_id <> id); FOREIGN KEY (duplicate\_of\_id) REFERENCES eval.error\_book\_entry(id); FOREIGN KEY (regression\_run\_id) REFERENCES eval.eval\_run(id). Chỉ mục: duy nhất (feedback\_id) WHERE feedback\_id IS NOT NULL; duy nhất (accuracy\_log\_id) WHERE accuracy\_log\_id IS NOT NULL; duy nhất (replay\_id) WHERE replay\_id IS NOT NULL; (data\_space\_id, status); (data\_product\_id, status); (assignee\_id) WHERE status = 'open'. RLS: org\_isolation; đọc theo quyền Data Space, cột detail che theo quyền người xem.
 
 Trigger: trước INSERT: cấp entry\_no; assignee\_id null thì Eval service điền steward của data product. Trước UPDATE: chuyển trạng thái chỉ theo open → fixed → regression\_added, open → dismissed, và regression\_added → open khi mở lại; sang fixed với fix\_proposal\_id thì đề xuất phải ở accepted (Eval service kiểm qua inbox\_read); regression\_added chỉ do Eval service đặt khi eval\_result của eval\_item\_id passed trong một eval\_run trigger deploy hoặc nightly có started\_at sau fixed\_at. Sau INSERT: phát eval.error\_book.opened để Notification service báo người xử lý. Hàm eval.error\_book\_on\_regression\_failed(eval\_item\_id), gọi khi eval\_result passed = false: mục regression\_added tương ứng về open, reopened\_count tăng 1, phát eval.error\_book.reopened.
 
@@ -1774,12 +1766,12 @@ Trigger: trước INSERT: cấp entry\_no; assignee\_id null thì Eval service �
 
 #### inbox.proposal
 
-Đề xuất thay đổi chờ duyệt: lớp ngữ cảnh, schema, kỹ năng, gói ngành, ghi ngược, hiệu lực văn bản. Use case: UC-01-05, UC-03-05, UC-04-03, UC-05-05, UC-06-04, UC-07-01, UC-07-02, UC-07-03, UC-07-05, UC-07-06, UC-09-02, UC-09-03, UC-09-04.
+Đề xuất thay đổi chờ duyệt: lớp ngữ cảnh, schema, kỹ năng, ghi ngược, hiệu lực văn bản. Use case: UC-01-05, UC-03-05, UC-04-03, UC-05-05, UC-06-04, UC-07-01, UC-07-02, UC-07-03, UC-07-05, UC-07-06.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
 | data\_space\_id | uuid, bắt buộc |  |
-| kind | text, bắt buộc | metric\_change, synonym, relationship, example, glossary, schema\_change, skill\_publish, pack\_activate, pack\_upgrade, metric\_override, source\_authority, writeback, document\_validity, feedback\_fix, data\_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge\_page |
+| kind | text, bắt buộc | metric\_change, synonym, relationship, example, glossary, schema\_change, skill\_publish, source\_authority, writeback, document\_validity, feedback\_fix, data\_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge\_page |
 | target\_service | text, bắt buộc | Dịch vụ sở hữu đối tượng, sẽ phát hành khi chấp nhận |
 | target\_ref | uuid | Đối tượng bị thay đổi |
 | title | text, bắt buộc |  |
@@ -1796,7 +1788,7 @@ Trigger: trước INSERT: cấp entry\_no; assignee\_id null thì Eval service �
 | expires\_at | timestamptz, bắt buộc, mặc định now() + interval '30 days' | Quá hạn chuyển expired (BR-29) |
 | applied\_at | timestamptz |  |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('metric\_change','synonym','relationship','example','glossary','schema\_change','skill\_publish','pack\_activate','pack\_upgrade','metric\_override','source\_authority','writeback','document\_validity','feedback\_fix','knowledge\_page','data\_product')); CHECK (impact\_level IN ('low','medium','high')); CHECK (status IN ('open','evaluating','pending\_review','accepted','applied','apply\_failed','rejected','expired','withdrawn')). Chỉ mục: (data\_space\_id, status) WHERE status IN ('open','evaluating','pending\_review'); (assignee\_id) WHERE status = 'pending\_review'.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('metric\_change','synonym','relationship','example','glossary','schema\_change','skill\_publish','source\_authority','writeback','document\_validity','feedback\_fix','knowledge\_page','data\_product')); CHECK (impact\_level IN ('low','medium','high')); CHECK (status IN ('open','evaluating','pending\_review','accepted','applied','apply\_failed','rejected','expired','withdrawn')). Chỉ mục: (data\_space\_id, status) WHERE status IN ('open','evaluating','pending\_review'); (assignee\_id) WHERE status = 'pending\_review'.
 
 #### inbox.proposal\_review
 
@@ -2021,14 +2013,14 @@ Kỹ năng phân tích dùng lại được (ví dụ phân rã biến động);
 | category | text, bắt buộc | decomposition, causal, forecast, reconciliation, quality, report, custom |
 | scope | text, bắt buộc, mặc định 'personal' | personal, data\_space, org (BR-96) |
 | owner\_id | uuid, bắt buộc |  |
-| origin | text, bắt buộc, mặc định 'manual' | manual, from\_session, agent\_suggested, pack |
+| origin | text, bắt buộc, mặc định 'manual' | manual, from\_session, agent\_suggested |
 | origin\_ref | uuid |  |
 | current\_version | integer |  |
 | replaced\_by\_skill\_id | uuid | Khi ngừng dùng có kỹ năng thay thế (UC-03-06) |
 | run\_count\_30d | integer, bắt buộc, mặc định 0 |  |
 | deleted\_at | timestamptz | Xoá mềm |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (category IN ('decomposition','causal','forecast','reconciliation','quality','report','custom')); CHECK (scope IN ('personal','data\_space','org')); CHECK (scope = 'org' OR data\_space\_id IS NOT NULL); CHECK (origin IN ('manual','from\_session','agent\_suggested','pack')); UNIQUE NULLS NOT DISTINCT (org\_id, data\_space\_id, code).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (category IN ('decomposition','causal','forecast','reconciliation','quality','report','custom')); CHECK (scope IN ('personal','data\_space','org')); CHECK (scope = 'org' OR data\_space\_id IS NOT NULL); CHECK (origin IN ('manual','from\_session','agent\_suggested')); UNIQUE NULLS NOT DISTINCT (org\_id, data\_space\_id, code).
 
 #### skill.skill\_version
 
@@ -2687,7 +2679,7 @@ Lịch chốt kỳ của Data Space: loại kỳ, ngày chốt dự kiến, bả
 | work\_calendar\_id | uuid | logic → org.work\_calendar |
 | dataset\_ids | uuid\[\], bắt buộc | Bảng được chụp khi chốt; logic → catalog.dataset |
 | reconciliation\_items | jsonb, bắt buộc, mặc định '\[\]' | Chỉ tiêu đối soát và dung sai, ví dụ tổng dư nợ khớp sổ cái |
-| report\_codes | text\[\], bắt buộc, mặc định '{}' | Báo cáo cần đóng băng, khai báo bởi gói ngành hoặc tổ chức |
+| report\_codes | text\[\], bắt buộc, mặc định '{}' | Báo cáo cần đóng băng, khai báo bởi tổ chức |
 | status | text, bắt buộc, mặc định 'active' | active, paused |
 
 Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (period\_kind IN ('month','quarter','year','custom')); CHECK (status IN ('active','paused')).
@@ -2785,255 +2777,6 @@ Thay đổi hồi tố phát hiện sau ngày chốt trên một số đã công
 | detected\_at | timestamptz, bắt buộc, mặc định now() |  |
 
 Cột chung: id, org\_id. Ràng buộc: CHECK (decision IS NULL OR decision IN ('new\_version','no\_action')); CHECK (decision IS NULL OR decision\_note IS NOT NULL); FOREIGN KEY (period\_close\_id) REFERENCES period.period\_close(id); FOREIGN KEY (published\_result\_id) REFERENCES period.published\_result(id).
-
-### D4.18 Schema pack
-
-#### pack.industry\_pack
-
-Gói ngành do nhà cung cấp hoặc khối kiến trúc phát hành. Use case: UC-09-01.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| code | text, bắt buộc | Ví dụ banking, retail, hospitality |
-| name | text, bắt buộc |  |
-| industry\_code | text, bắt buộc |  |
-| publisher | text, bắt buộc | Nhà cung cấp hoặc khối kiến trúc của tổ chức |
-| publisher\_key\_id | text | Khoá công khai dùng kiểm chữ ký (BR-128); bắt buộc với gói vendor, gói của tổ chức có khoá khi phát hành phiên bản đầu (sửa 12/10/2026) |
-| origin | text, bắt buộc, mặc định 'vendor' | vendor, organisation: organisation là gói tổ chức tự soạn qua POST /v1/packs; industry\_code lấy theo organization.industry\_code (thêm 12/10/2026) |
-| description | text |  |
-
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (org\_id, code); CHECK (origin IN ('vendor','organisation')); CHECK (origin = 'organisation' OR publisher\_key\_id IS NOT NULL).
-
-#### pack.pack\_version
-
-Phiên bản gói ngành: manifest, chữ ký, ghi chú phát hành, thay đổi phá vỡ. Use case: UC-09-01, UC-09-05.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| pack\_id | uuid, bắt buộc | FK industry\_pack |
-| version | text, bắt buộc | Ví dụ 2026.3 |
-| manifest | jsonb, bắt buộc |  |
-| signature | text, bắt buộc |  |
-| signature\_verified\_at | timestamptz |  |
-| min\_core\_version | text, bắt buộc |  |
-| release\_notes | text |  |
-| breaking\_changes | jsonb, bắt buộc, mặc định '\[\]' | Có thì bắt buộc kèm hướng dẫn chuyển đổi và báo trước 30 ngày (BR-131) |
-| object\_key | text, bắt buộc | MinIO da-packs |
-| status | text, bắt buộc, mặc định 'draft' | draft, released, available, withdrawn |
-| released\_at | timestamptz |  |
-
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (pack\_id, version); CHECK (status IN ('draft','released','available','withdrawn')); CHECK (status <> 'available' OR signature\_verified\_at IS NOT NULL); FOREIGN KEY (pack\_id) REFERENCES pack.industry\_pack(id).
-
-#### pack.canonical\_entity
-
-Thực thể trong mô hình chuẩn của ngành (ví dụ khoản vay, khách hàng). Use case: UC-09-01, UC-09-05.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| pack\_version\_id | uuid, bắt buộc | FK pack\_version |
-| code | text, bắt buộc |  |
-| name | text, bắt buộc |  |
-| description | text |  |
-| key\_attributes | text\[\], bắt buộc |  |
-
-Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (pack\_version\_id, code); FOREIGN KEY (pack\_version\_id) REFERENCES pack.pack\_version(id) ON DELETE CASCADE.
-
-#### pack.canonical\_attribute
-
-Thuộc tính của thực thể chuẩn, kèm kiểu, bắt buộc, bảng mã chuẩn. Use case: UC-09-01, UC-09-05.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| entity\_id | uuid, bắt buộc | FK canonical\_entity |
-| code | text, bắt buộc |  |
-| name | text, bắt buộc |  |
-| data\_type | text, bắt buộc | string, integer, decimal, boolean, date, timestamp, code |
-| required | boolean, bắt buộc, mặc định false |  |
-| code\_list | jsonb | Bảng mã chuẩn khi data\_type = code |
-| pii | boolean, bắt buộc, mặc định false |  |
-
-Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (entity\_id, code); CHECK (data\_type IN ('string','integer','decimal','boolean','date','timestamp','code')); FOREIGN KEY (entity\_id) REFERENCES pack.canonical\_entity(id) ON DELETE CASCADE.
-
-#### pack.pack\_metric
-
-Chỉ số chuẩn của gói, kèm căn cứ pháp lý hoặc nhãn “chỉ số nội bộ”. Use case: UC-09-01, UC-09-03, UC-09-05.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| pack\_version\_id | uuid, bắt buộc | FK pack\_version |
-| code | text, bắt buộc | Không tái sử dụng cho nghĩa khác (BR-131) |
-| name | text, bắt buộc |  |
-| expression | text, bắt buộc | Công thức trên thực thể và thuộc tính chuẩn |
-| unit | text |  |
-| additivity | text, bắt buộc, mặc định 'none' | full, semi, none |
-| legal\_basis | text |  |
-| is\_internal | boolean, bắt buộc, mặc định false | Chỉ số nội bộ, không có căn cứ pháp lý |
-| in\_regulatory\_report | boolean, bắt buộc, mặc định false | Có trong báo cáo gửi cơ quan quản lý (BR-36) |
-
-Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (pack\_version\_id, code); CHECK (is\_internal OR legal\_basis IS NOT NULL); CHECK (additivity IN ('full','semi','none')); FOREIGN KEY (pack\_version\_id) REFERENCES pack.pack\_version(id) ON DELETE CASCADE.
-
-#### pack.validation\_rule
-
-Luật kiểm tra của gói (ví dụ tổng khớp sổ cái, mỗi bản ghi có đúng một phân loại). Use case: UC-09-01, UC-09-05.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| pack\_version\_id | uuid, bắt buộc | FK pack\_version |
-| code | text, bắt buộc |  |
-| description | text, bắt buộc |  |
-| expression | text, bắt buộc |  |
-| tolerance | numeric |  |
-| severity | text, bắt buộc, mặc định 'blocking' | blocking, warning |
-
-Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (pack\_version\_id, code); CHECK (severity IN ('blocking','warning')); FOREIGN KEY (pack\_version\_id) REFERENCES pack.pack\_version(id) ON DELETE CASCADE.
-
-#### pack.pack\_skill
-
-Kỹ năng, agent mẫu và bộ câu hỏi mẫu đi kèm gói ngành. Use case: UC-09-01, UC-13-01.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| pack\_version\_id | uuid, bắt buộc | FK pack\_version |
-| kind | text, bắt buộc | skill, agent\_template, eval\_set |
-| code | text, bắt buộc |  |
-| name | text, bắt buộc |  |
-| definition | jsonb, bắt buộc | Định nghĩa kỹ năng, cấu hình agent mẫu hoặc danh sách câu hỏi |
-
-Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (pack\_version\_id, kind, code); CHECK (kind IN ('skill','agent\_template','eval\_set')); FOREIGN KEY (pack\_version\_id) REFERENCES pack.pack\_version(id) ON DELETE CASCADE.
-
-#### pack.pack\_install
-
-Gói đã cài ở một Data Space; mỗi Data Space một bản cài đang hoạt động. Use case: UC-09-02, UC-09-04.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| data\_space\_id | uuid, bắt buộc | logic → org.data\_space |
-| pack\_version\_id | uuid, bắt buộc | FK pack\_version |
-| previous\_pack\_version\_id | uuid | Giữ 30 ngày để quay lại sau nâng cấp |
-| status | text, bắt buộc, mặc định 'mapping' | mapping, calibrating, pending\_activation, active, upgrading, rolled\_back, uninstalled |
-| activated\_at | timestamptz |  |
-| activated\_by | uuid |  |
-| proposal\_id | uuid | logic → inbox.proposal |
-
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (status IN ('mapping','calibrating','pending\_activation','active','upgrading','rolled\_back','uninstalled')); FOREIGN KEY (pack\_version\_id) REFERENCES pack.pack\_version(id); FOREIGN KEY (previous\_pack\_version\_id) REFERENCES pack.pack\_version(id). Chỉ mục: duy nhất (data\_space\_id) WHERE status NOT IN ('uninstalled','rolled\_back').
-
-#### pack.entity\_mapping
-
-Ánh xạ thuộc tính chuẩn sang bảng, cột của tổ chức; có thời hiệu (BR-16, BR-37). Use case: UC-04-03, UC-09-02, UC-09-04, UC-10-01.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| pack\_install\_id | uuid, bắt buộc | FK pack\_install |
-| attribute\_id | uuid, bắt buộc | FK canonical\_attribute |
-| dataset\_id | uuid, bắt buộc | logic → catalog.dataset |
-| column\_expr | text, bắt buộc | Cột hoặc biểu thức |
-| confidence | numeric(4,3) | Độ tin của đề xuất ánh xạ |
-| origin | text, bắt buộc, mặc định 'suggested' | suggested, confirmed, manual |
-| valid\_from | timestamptz, bắt buộc, mặc định now() |  |
-| valid\_to | timestamptz |  |
-| confirmed\_by | uuid |  |
-
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (origin IN ('suggested','confirmed','manual')); CHECK (valid\_to IS NULL OR valid\_to > valid\_from); FOREIGN KEY (pack\_install\_id) REFERENCES pack.pack\_install(id); FOREIGN KEY (attribute\_id) REFERENCES pack.canonical\_attribute(id). Chỉ mục: duy nhất (pack\_install\_id, attribute\_id) WHERE valid\_to IS NULL.
-
-#### pack.code\_mapping
-
-Bảng mã của tổ chức sang mã chuẩn (ví dụ phân loại, loại tiền). Use case: UC-09-02.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| pack\_install\_id | uuid, bắt buộc | FK pack\_install |
-| attribute\_id | uuid, bắt buộc | FK canonical\_attribute (data\_type = code) |
-| source\_code | text, bắt buộc |  |
-| canonical\_code | text, bắt buộc |  |
-| valid\_from | timestamptz, bắt buộc, mặc định now() |  |
-| valid\_to | timestamptz |  |
-
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: FOREIGN KEY (pack\_install\_id) REFERENCES pack.pack\_install(id); FOREIGN KEY (attribute\_id) REFERENCES pack.canonical\_attribute(id). Chỉ mục: duy nhất (pack\_install\_id, attribute\_id, source\_code) WHERE valid\_to IS NULL.
-
-#### pack.metric\_override
-
-Hiệu chỉnh chỉ số ở lớp tổ chức kèm lý do; tham gia gộp ba chiều khi nâng cấp (BR-129). Use case: UC-09-02, UC-09-03, UC-09-04.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| pack\_install\_id | uuid, bắt buộc | FK pack\_install |
-| pack\_metric\_code | text, bắt buộc | Mã chỉ số chuẩn; giữ qua các phiên bản gói |
-| expression | text, bắt buộc |  |
-| scope\_condition | text | Chỉ áp cho một phạm vi (UC-09-03 2a) |
-| reason | text, bắt buộc |  |
-| status | text, bắt buộc, mặc định 'draft' | draft, pending\_review, active, superseded |
-| approved\_by | uuid |  |
-| compliance\_approved\_by | uuid | Chỉ số báo cáo cơ quan quản lý cần thêm AC06 |
-| calibration\_run\_id | uuid | FK calibration\_run; lần chạy thử công thức trên dữ liệu thật (UC-09-03 bước 3, thêm 12/10/2026) |
-
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (status IN ('draft','pending\_review','active','superseded')); CHECK (status <> 'active' OR approved\_by IS NOT NULL); FOREIGN KEY (pack\_install\_id) REFERENCES pack.pack\_install(id); FOREIGN KEY (calibration\_run\_id) REFERENCES pack.calibration\_run(id). Chỉ mục: duy nhất (pack\_install\_id, pack\_metric\_code) WHERE status = 'active'.
-
-#### pack.calibration\_run
-
-Một lần đối chiếu số khi đưa vào ngành, hiệu chỉnh hoặc nâng cấp gói. Use case: UC-09-02, UC-09-03, UC-09-04.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| pack\_install\_id | uuid, bắt buộc | FK pack\_install |
-| trigger | text, bắt buộc | onboarding, override, upgrade |
-| periods | text\[\], bắt buộc | Kỳ đối chiếu, ví dụ 2 kỳ gần nhất |
-| tolerance\_pp | numeric(6,4), bắt buộc, mặc định 0.01 | Ngưỡng lệch, mặc định 0,01 điểm phần trăm (BR-36) |
-| passed | integer, bắt buộc, mặc định 0 |  |
-| failed | integer, bắt buộc, mặc định 0 |  |
-| status | text, bắt buộc, mặc định 'running' | running, passed, failed |
-| finished\_at | timestamptz |  |
-
-Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (trigger IN ('onboarding','override','upgrade')); CHECK (status IN ('running','passed','failed')); FOREIGN KEY (pack\_install\_id) REFERENCES pack.pack\_install(id).
-
-#### pack.calibration\_item
-
-Kết quả đối chiếu một chỉ số hoặc một luật trong một lần đối chiếu. Use case: UC-09-02.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| calibration\_run\_id | uuid, bắt buộc | FK calibration\_run |
-| item\_kind | text, bắt buộc | metric, rule |
-| item\_code | text, bắt buộc |  |
-| period | text |  |
-| computed\_value | numeric |  |
-| filed\_value | numeric |  |
-| delta | numeric |  |
-| passed | boolean, bắt buộc |  |
-| suggested\_cause | text |  |
-
-Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (item\_kind IN ('metric','rule')); FOREIGN KEY (calibration\_run\_id) REFERENCES pack.calibration\_run(id) ON DELETE CASCADE.
-
-#### pack.pack\_upgrade
-
-Một lần nâng cấp gói bằng gộp ba chiều (SD-21); không làm khi có kỳ đang chốt (BR-38). Use case: UC-09-04.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| pack\_install\_id | uuid, bắt buộc | FK pack\_install |
-| from\_version\_id | uuid, bắt buộc | FK pack\_version |
-| to\_version\_id | uuid, bắt buộc | FK pack\_version |
-| merge\_result | jsonb, bắt buộc, mặc định '{}' | Theo từng chỉ số và ánh xạ: lấy gói mới, giữ của tổ chức, xung đột |
-| conflicts\_open | integer, bắt buộc, mặc định 0 |  |
-| calibration\_run\_id | uuid | FK calibration\_run |
-| status | text, bắt buộc, mặc định 'available' | available, merging, needs\_decision, testing, pending\_approval, applied, rolled\_back, cancelled |
-| apply\_from\_period | text | Áp dụng từ kỳ sau; kỳ đã chốt không đổi |
-| rollback\_until | timestamptz | 30 ngày sau khi áp dụng |
-| approved\_by | uuid |  |
-
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (status IN ('available','merging','needs\_decision','testing','pending\_approval','applied','rolled\_back','cancelled')); CHECK (status <> 'applied' OR (conflicts\_open = 0 AND approved\_by IS NOT NULL)); FOREIGN KEY (pack\_install\_id) REFERENCES pack.pack\_install(id); FOREIGN KEY (from\_version\_id) REFERENCES pack.pack\_version(id); FOREIGN KEY (to\_version\_id) REFERENCES pack.pack\_version(id); FOREIGN KEY (calibration\_run\_id) REFERENCES pack.calibration\_run(id).
-
-#### pack.pack\_check\_run
-
-Kết quả kiểm tra một phiên bản gói trước khi phát hành. Use case: UC-09-05.
-
-| Cột | Kiểu | Ý nghĩa |
-| --- | --- | --- |
-| pack\_version\_id | uuid, bắt buộc | FK pack\_version |
-| checks | jsonb, bắt buộc | Căn cứ đầy đủ; chạy trên 3 bộ dữ liệu mẫu lệch ≤ 0,01%; câu hỏi mẫu không giảm |
-| passed | boolean, bắt buộc |  |
-| ran\_by | uuid, bắt buộc |  |
-
-Cột chung: id, org\_id, created\_at. Ràng buộc: FOREIGN KEY (pack\_version\_id) REFERENCES pack.pack\_version(id).
 
 ### D4.19 Schema pipeline
 
@@ -3268,10 +3011,10 @@ Quy tắc chất lượng trên bảng hoặc cột kèm mức nghiêm trọng. 
 | kind | text, bắt buộc | not\_null, range, unique, in\_list, sum\_matches, freshness, custom\_sql |
 | params | jsonb, bắt buộc, mặc định '{}' |  |
 | severity | text, bắt buộc, mặc định 'medium' | high (chặn báo cáo, BR-116), medium, low |
-| origin | text, bắt buộc, mặc định 'manual' | manual, agent\_suggested, pack |
+| origin | text, bắt buộc, mặc định 'manual' | manual, agent\_suggested |
 | status | text, bắt buộc, mặc định 'active' | draft, active, disabled |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('not\_null','range','unique','in\_list','sum\_matches','freshness','custom\_sql')); CHECK (severity IN ('high','medium','low')); CHECK (origin IN ('manual','agent\_suggested','pack')); CHECK (status IN ('draft','active','disabled')). Chỉ mục: (dataset\_id) WHERE status = 'active'.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('not\_null','range','unique','in\_list','sum\_matches','freshness','custom\_sql')); CHECK (severity IN ('high','medium','low')); CHECK (origin IN ('manual','agent\_suggested')); CHECK (status IN ('draft','active','disabled')). Chỉ mục: (dataset\_id) WHERE status = 'active'.
 
 #### ingest.quality\_result
 
@@ -3412,7 +3155,7 @@ Phiên bản schema thu thập của một nguồn: vùng bản ghi, trường, 
 | version | integer, bắt buộc |  |
 | status | text, bắt buộc, mặc định 'draft' | draft, testing, active, superseded, rejected |
 | record\_selector | text, bắt buộc | Vùng bản ghi lặp: CSS/XPath, JSONPath, bảng hoặc vùng trang PDF |
-| fields | jsonb, bắt buộc, mặc định '\[\]' | Mảng {name, type, unit, required, is\_key, locator, canonical\_attr, value\_constraints}; canonical\_attr trỏ tới thuộc tính chuẩn của lớp ngữ cảnh hoặc gói ngành; value\_constraints là miền hợp lệ {min, max, unit, scale, max\_change\_pp, label\_terms}, bắt buộc min, max, unit với trường number, percent, money khi active (BR-168). Ví dụ lãi suất 12 tháng: {min: 0, max: 15, unit: “%/năm”, max\_change\_pp: 1,5, label\_terms: \[“tại quầy”\]} |
+| fields | jsonb, bắt buộc, mặc định '\[\]' | Mảng {name, type, unit, required, is\_key, locator, canonical\_attr, value\_constraints}; canonical\_attr trỏ tới thuộc tính chuẩn của lớp ngữ cảnh; value\_constraints là miền hợp lệ {min, max, unit, scale, max\_change\_pp, label\_terms}, bắt buộc min, max, unit với trường number, percent, money khi active (BR-168). Ví dụ lãi suất 12 tháng: {min: 0, max: 15, unit: “%/năm”, max\_change\_pp: 1,5, label\_terms: \[“tại quầy”\]} |
 | template\_fingerprint | jsonb | Dấu vân tay mẫu: cấu trúc DOM, tập khoá JSON, tiêu đề cột; dùng phát hiện thay đổi (UC-14-03) |
 | value\_rules | jsonb, bắt buộc, mặc định '\[\]' | Quan hệ nội tại giữa trường, chỉ cảnh báo, ví dụ {rule: gte, left: rate\_24m, right: rate\_12m, tolerance\_pp: 0.3} (BR-168) |
 | sample\_page\_ids | uuid\[\], bắt buộc, mặc định '{}' | logic → crawl\_page; mẫu giữ lại để chạy thử (tối thiểu 20 trang hoặc toàn bộ nếu ít hơn) |
@@ -3545,7 +3288,7 @@ Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. R�
 
 #### acquire.reference\_entity
 
-Danh mục thực thể chuẩn của tổ chức: ngân hàng, tổ chức tín dụng, chi nhánh ngân hàng nước ngoài, cơ quan, doanh nghiệp. Khoá là mã định danh gốc (mã ngân hàng do NHNN cấp, SWIFT/BIC, mã số thuế); tên, tên viết tắt và tên miền chính thức chỉ là thuộc tính để so khớp dự phòng (BR-169). Dùng chung cho mọi Data Space của tổ chức; nạp từ danh mục NHNN, danh bạ SWIFT, tra cứu mã số thuế hoặc gói ngành. pack.canonical\_entity và context.semantic\_entity mô tả loại thực thể, không giữ từng thực thể, nên không dùng lại được cho việc này. Use case: UC-14-05.
+Danh mục thực thể chuẩn của tổ chức: ngân hàng, tổ chức tín dụng, chi nhánh ngân hàng nước ngoài, cơ quan, doanh nghiệp. Khoá là mã định danh gốc (mã ngân hàng do NHNN cấp, SWIFT/BIC, mã số thuế); tên, tên viết tắt và tên miền chính thức chỉ là thuộc tính để so khớp dự phòng (BR-169). Dùng chung cho mọi Data Space của tổ chức; nạp từ danh mục NHNN, danh bạ SWIFT, tra cứu mã số thuế. context.semantic\_entity mô tả loại thực thể, không giữ từng thực thể, nên không dùng lại được cho việc này. Use case: UC-14-05.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
@@ -3557,7 +3300,7 @@ Danh mục thực thể chuẩn của tổ chức: ngân hàng, tổ chức tín
 | swift\_bic | text | 8 hoặc 11 ký tự theo ISO 9362 |
 | tax\_code | text | Mã số thuế 10 số, hoặc 13 số dạng 10-3 cho đơn vị phụ thuộc |
 | official\_domains | text\[\], bắt buộc, mặc định '{}' | Tên miền chính thức, dùng khớp trang nguồn |
-| registry\_source | text, bắt buộc | sbv\_registry, swift\_directory, tax\_registry, pack, manual |
+| registry\_source | text, bắt buộc | sbv\_registry, swift\_directory, tax\_registry, manual |
 | registry\_ref | text | Số văn bản, ngày trích danh mục gốc |
 | registry\_checked\_at | timestamptz | Lần đối chiếu danh mục gốc gần nhất |
 | status | text, bắt buộc, mặc định 'active' | active, merged, dissolved; đổi tên vẫn active, tên cũ vào short\_names |
@@ -3566,7 +3309,7 @@ Danh mục thực thể chuẩn của tổ chức: ngân hàng, tổ chức tín
 | valid\_to | date | Ngày hết hiệu lực (sáp nhập, giải thể) |
 | verified\_by | uuid | logic → org.app\_user; bắt buộc khi registry\_source = manual |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (entity\_type IN ('bank','credit\_institution','foreign\_bank\_branch','gov\_agency','enterprise')); CHECK (registry\_source IN ('sbv\_registry','swift\_directory','tax\_registry','pack','manual')); CHECK (status IN ('active','merged','dissolved')); `CHECK (canonical_key ~ '^(SBV|BIC|MST):[0-9A-Z-]+$')`; `CHECK (sbv_code IS NULL OR sbv_code ~ '^[0-9]{8}$')`; `CHECK (swift_bic IS NULL OR swift_bic ~ '^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$')`; `CHECK (tax_code IS NULL OR tax_code ~ '^[0-9]{10}(-[0-9]{3})?$')`; CHECK (sbv\_code IS NOT NULL OR swift\_bic IS NOT NULL OR tax\_code IS NOT NULL); CHECK (registry\_source <> 'manual' OR verified\_by IS NOT NULL); CHECK ((status = 'merged') = (successor\_id IS NOT NULL) AND (successor\_id IS NULL OR successor\_id <> id)); CHECK (valid\_to IS NULL OR valid\_from IS NULL OR valid\_to >= valid\_from); UNIQUE (org\_id, entity\_type, canonical\_key). Chỉ mục: duy nhất (org\_id, sbv\_code), (org\_id, swift\_bic), (org\_id, tax\_code) khi khác null; GIN trên official\_domains và short\_names. Chưa có API quản lý danh mục (điểm mở, tab 6 O4.4).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (entity\_type IN ('bank','credit\_institution','foreign\_bank\_branch','gov\_agency','enterprise')); CHECK (registry\_source IN ('sbv\_registry','swift\_directory','tax\_registry','manual')); CHECK (status IN ('active','merged','dissolved')); `CHECK (canonical_key ~ '^(SBV|BIC|MST):[0-9A-Z-]+$')`; `CHECK (sbv_code IS NULL OR sbv_code ~ '^[0-9]{8}$')`; `CHECK (swift_bic IS NULL OR swift_bic ~ '^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$')`; `CHECK (tax_code IS NULL OR tax_code ~ '^[0-9]{10}(-[0-9]{3})?$')`; CHECK (sbv\_code IS NOT NULL OR swift\_bic IS NOT NULL OR tax\_code IS NOT NULL); CHECK (registry\_source <> 'manual' OR verified\_by IS NOT NULL); CHECK ((status = 'merged') = (successor\_id IS NOT NULL) AND (successor\_id IS NULL OR successor\_id <> id)); CHECK (valid\_to IS NULL OR valid\_from IS NULL OR valid\_to >= valid\_from); UNIQUE (org\_id, entity\_type, canonical\_key). Chỉ mục: duy nhất (org\_id, sbv\_code), (org\_id, swift\_bic), (org\_id, tax\_code) khi khác null; GIN trên official\_domains và short\_names. Chưa có API quản lý danh mục (điểm mở, tab 6 O4.4).
 
 #### acquire.consolidation\_spec
 

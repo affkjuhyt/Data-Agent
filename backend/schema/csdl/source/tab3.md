@@ -10,10 +10,10 @@ Bổ sung 10/10/2026 (data product, biên nhận, Error Book, định tuyến m�
 
 Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case (tab 1, mục 5), 148 quy tắc nghiệp vụ và thiết kế giao diện v3.2. Nó thay cho mục 8 của tab 1 khi hoàn tất. Sản phẩm phục vụ nhiều tổ chức thuộc nhiều ngành; ngân hàng chỉ là ví dụ minh hoạ.
 
-1. Một cụm PostgreSQL 16 với hai CSDL: `dataagent` chứa 23 schema nghiệp vụ, mỗi dịch vụ một schema; `dataagent_audit` chứa schema `audit` (chỉ ghi thêm, thời hạn lưu và sao lưu riêng).
+1. Một cụm PostgreSQL 16 với hai CSDL: `dataagent` chứa 22 schema nghiệp vụ, mỗi dịch vụ một schema; `dataagent_audit` chứa schema `audit` (chỉ ghi thêm, thời hạn lưu và sao lưu riêng).
 2. Ranh giới dịch vụ: khoá ngoại chỉ dùng trong cùng một schema. Giữa hai schema là tham chiếu logic: cột `*_id` kiểu uuid, ghi “logic → schema.bảng” trong từ điển. Mỗi dịch vụ có một vai trò CSDL chỉ ghi được schema của mình; dịch vụ khác đọc qua view chỉ đọc do dịch vụ chủ cấp.
 3. Đa tổ chức: mọi bảng nghiệp vụ có `org_id uuid NOT NULL` và Row-Level Security theo `current_setting('app.org_id')`. Bảng thuộc một Data Space có thêm `data_space_id`; quyền trong Data Space do Policy engine kiểm ở tầng ứng dụng. Một bản cài cho một khách thì chỉ có một dòng trong `org.organization`.
-4. Không gắn với ngành: bảng và cột lõi không mang khái niệm riêng của một ngành. Ngữ nghĩa ngành (thực thể chuẩn, chỉ số, bảng mã, luật kiểm tra, lịch báo cáo) là dữ liệu trong schema `pack`.
+4. Không gắn với ngành: bảng và cột lõi không mang khái niệm riêng của một ngành. Ngữ nghĩa nghiệp vụ (thực thể, chỉ số, bảng mã, luật kiểm tra, lịch báo cáo) là dữ liệu của từng tổ chức trong lớp ngữ cảnh. Bản repo bỏ gói ngành và schema `pack` theo quyết định 01/11/2026 (sản phẩm tổng quát), khác với tài liệu thiết kế.
 5. Khoá: `id uuid` sinh ở ứng dụng theo UUIDv7 (có thứ tự thời gian, tốt cho chỉ mục). Mã nghiệp vụ hiển thị cho người dùng (`code`) là duy nhất trong phạm vi `org_id` hoặc `data_space_id`.
 6. Cột chung: `org_id`, `created_at`, `created_by`, `updated_at`, `updated_by`. Đối tượng người dùng tạo và có thể xoá dùng xoá mềm `deleted_at`. Bản ghi bất biến (phiên bản đã phát hành, số đã công bố, nhật ký) không có `updated_*` và bị chặn UPDATE bằng quyền.
 7. Phiên bản hoá: đối tượng có lịch sử dùng cặp bảng `X` và `X_version` (`version`, `status`, `valid_from`, `valid_to`). Phiên bản đã phát hành không sửa; sửa là tạo phiên bản mới.
@@ -37,7 +37,7 @@ Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case
 | qa | Agent runtime (hỏi đáp) | Hội thoại, câu hỏi, kế hoạch, câu trả lời, phản hồi, xuất tệp | P01 | 9 |
 | query | Query engine | Lượt chạy SQL và kết quả rút gọn | P01, P02 | 2 |
 | agent | Agent runtime (quản lý agent) | Định nghĩa, cấu hình, công cụ, trigger, triển khai, lượt chạy, bước, bộ nhớ | P08, P13 | 11 |
-| eval | Eval service | Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng, agent, gói ngành | P03, P07, P13 | 5 |
+| eval | Eval service | Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng, agent | P03, P07, P13 | 5 |
 | inbox | Inbox service | Đề xuất, quyết định duyệt, yêu cầu HITL, chuỗi duyệt | P07 | 4 |
 | workspace | Workspace service | Phiên, ô, kết quả lưu, chia sẻ, bình luận, báo cáo phiên | P02 | 8 |
 | skill | Skill service | Kỹ năng, phiên bản, lượt chạy, đề xuất, dữ liệu bên ngoài | P03 | 7 |
@@ -45,7 +45,6 @@ Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case
 | notify | Notification & channel gateway | Thông báo, cài đặt nhận, liên kết kênh, bản sao trên kênh | P08 | 4 |
 | document | Document service | Bộ sưu tập, tài liệu, trang, đoạn, chất lượng, trích xuất, ghi âm, email | P05 | 10 |
 | conflict | Conflict service | Khẳng định, xung đột, quy tắc giải quyết, thẩm quyền nguồn | P07 | 5 |
-| pack | Pack service | Gói ngành, phiên bản, mô hình chuẩn, cài đặt, ánh xạ, hiệu chỉnh, đối chiếu, nâng cấp | P09 | 15 |
 | period | Period service | Lịch chốt, kỳ chốt, tệp kỳ, đối soát, số đã công bố, hồi tố | P10 | 6 |
 | pipeline | Pipeline service | Pipeline, lượt chạy, dòng dữ liệu, data mart, sản phẩm dữ liệu, ghi ngược | P06 | 6 |
 | ingest | Ingestion service | Job nạp, lượt chạy, bản ghi lỗi, tải tệp, quy tắc và kết quả chất lượng | P04, P06 | 6 |
@@ -53,7 +52,7 @@ Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case
 | acquire | Acquisition service | Nguồn thu thập, phiên bản schema thu thập, lượt thu, trang gốc, bản ghi trích, quyết định duyệt, thay đổi cấu trúc, liên kết thực thể, danh mục thực thể chuẩn, đặc tả và lượt hợp nhất | P14 | 11 |
 | forecast | Forecast service | Việc dự báo, mô hình và phiên bản, backtest, kết quả dự báo, kịch bản, nhật ký độ chính xác, mô hình và tham số công thức, sổ dự báo | P15 | 10 |
 | exec | Exec vault service | Kho riêng lãnh đạo: kho và khoá bọc, luận điểm mã hoá, bằng chứng và điểm chấm niêm phong, bộ nhớ riêng, sổ truy cập khoá, bàn giao, bản công bố | P16 | 10 |
-| Tổng |  |  |  | 196 bảng, cộng một bảng outbox trong mỗi schema của dataagent (23 outbox) |
+| Tổng |  |  |  | 181 bảng, cộng một bảng outbox trong mỗi schema của dataagent (22 outbox) |
 
 ## D3. Danh mục thực thể
 
@@ -181,7 +180,7 @@ Mỗi bảng ghi mục đích, các use case đọc hoặc ghi nó (theo dòng �
 
 | Bảng | Mục đích | Use case dùng | So với v3.1 |
 | --- | --- | --- | --- |
-| eval\_set | Bộ đánh giá cho lớp ngữ cảnh, kỹ năng, agent hoặc gói ngành | 07-03, 07-06, 07-13 | Tách từ inbox, dùng chung |
+| eval\_set | Bộ đánh giá cho lớp ngữ cảnh, kỹ năng hoặc agent | 07-03, 07-06, 07-13 | Tách từ inbox, dùng chung |
 | eval\_item | Một mục đánh giá: câu hỏi chuẩn, ca kiểm thử kỹ năng hoặc tình huống thử agent, kèm đáp án | 01-05, 03-03, 03-04, 07-06, 07-13, 07-14, 13-04 | Gộp eval\_item (inbox), agent\_eval\_case (agent), skill\_test\_case (skill) |
 | eval\_run | Một lần chạy bộ đánh giá trên một phiên bản đối tượng | 07-03, 07-06, 07-13, 07-14, 11-05, 13-04 | Gộp eval\_run (inbox) và agent\_eval\_run (agent) |
 | eval\_result | Kết quả từng mục trong một lần đánh giá | 07-03, 07-06, 07-14 | Tách từ inbox |
@@ -268,26 +267,6 @@ Mỗi bảng ghi mục đích, các use case đọc hoặc ghi nó (theo dòng �
 | conflict\_claim | Khẳng định tham gia vụ xung đột | 07-04 | Giữ |
 | resolution\_rule | Quy tắc giải quyết đã duyệt | 07-04 | Giữ |
 | source\_authority | Thứ tự ưu tiên nguồn theo loại dữ liệu | 07-04, 07-05 | Giữ |
-
-#### pack · Pack service
-
-| Bảng | Mục đích | Use case dùng | So với v3.1 |
-| --- | --- | --- | --- |
-| industry\_pack | Gói ngành | 09-01 | Giữ |
-| pack\_version | Phiên bản gói ngành | 09-01, 09-05 | Giữ |
-| canonical\_entity | Thực thể trong mô hình chuẩn của ngành | 09-01, 09-05 | Giữ |
-| canonical\_attribute | Thuộc tính của thực thể chuẩn | 09-01, 09-05 | Giữ |
-| pack\_metric | Chỉ số chuẩn của gói | 09-01, 09-03, 09-05 | Giữ |
-| validation\_rule | Luật kiểm tra của gói (ví dụ tổng khớp sổ cái) | 09-01, 09-05 | Giữ |
-| pack\_skill | Kỹ năng và agent mẫu đi kèm gói ngành | 09-01, 13-01 | Mới |
-| pack\_install | Gói đã cài ở một Data Space | 09-02, 09-04 | Giữ |
-| entity\_mapping | Ánh xạ thực thể chuẩn sang bảng, cột của tổ chức | 04-03, 09-02, 09-04, 10-01 | Giữ |
-| code\_mapping | Bảng mã của tổ chức sang mã chuẩn (ví dụ phân loại, loại tiền) | 09-02 | Giữ |
-| metric\_override | Hiệu chỉnh chỉ số ở lớp tổ chức | 09-02, 09-03, 09-04 | Giữ |
-| calibration\_run | Một lần đối chiếu số khi đưa tổ chức vào ngành | 09-02, 09-03, 09-04 | Giữ |
-| calibration\_item | Kết quả đối chiếu từng chỉ số hoặc luật | 09-02 | Giữ |
-| pack\_upgrade | Một lần nâng cấp gói | 09-04 | Giữ |
-| pack\_check\_run | Kết quả kiểm tra một phiên bản gói trước khi phát hành | 09-05 | Giữ |
 
 #### period · Period service
 
@@ -410,10 +389,9 @@ Ngoại lệ chỉ ghi thêm: svc\_period không có UPDATE, DELETE trên period
 | svc\_qa | context, catalog, governance, org, period, document |
 | svc\_query | catalog, context, governance, org, period |
 | svc\_agent | context, catalog, skill, governance, org, qa |
-| svc\_context | catalog, pack, org, document, conflict, qa, governance (ba schema sau cho lớp tri thức biên soạn, dataagent\_knowledge.sql), exec (chỉ exec.publication qua exec\_read, nguồn trang hypothesis, BR-194) |
+| svc\_context | catalog, org, document, conflict, qa, governance (ba schema sau cho lớp tri thức biên soạn, dataagent\_knowledge.sql), exec (chỉ exec.publication qua exec\_read, nguồn trang hypothesis, BR-194) |
 | svc\_conflict | catalog, document, period |
 | svc\_period | catalog, context, org |
-| svc\_pack | catalog, context, org |
 | svc\_monitor | context, org, workspace |
 | svc\_notify | org, inbox |
 | svc\_inbox | org, eval |
@@ -425,7 +403,7 @@ Ngoại lệ chỉ ghi thêm: svc\_period không có UPDATE, DELETE trên period
 | svc\_document | org, catalog |
 | svc\_pipeline | catalog, org |
 | svc\_ingest | catalog, org |
-| svc\_acquire | catalog, context, governance, org, pack |
+| svc\_acquire | catalog, context, governance, org |
 | svc\_forecast | acquire, catalog, context, org, query, skill |
 | svc\_catalog | org |
 | svc\_org | — |
@@ -433,11 +411,11 @@ Ngoại lệ chỉ ghi thêm: svc\_period không có UPDATE, DELETE trên period
 | svc\_exec\_worker | — (quyền cột trên exec.vault, exec.thesis và INSERT ba bảng chỉ ghi thêm khi app.exec\_workflow = 'on', D4.24) |
 | svc\_audit\_worker | — (CSDL dataagent\_audit: SELECT audit.export\_job và UPDATE các cột status, approved\_by, approved\_at, updated\_at; chính sách RLS hạn chế chỉ cho đổi waiting\_approval sang queued (kèm approved\_by, approved\_at) hoặc failed; không có quyền trên audit\_log, security\_event, outbox. worker-agent dùng để phát hành bản xuất đã duyệt, thay svc\_audit; thêm 12/10/2026) |
 
-Lý do đọc chéo của hai dịch vụ mới. svc\_acquire: catalog cho dataset đích origin = consolidated; context và pack cho thuộc tính chuẩn mà fields.canonical\_attr trỏ tới; governance cho retention\_policy (retain\_until) và chính sách dữ liệu nguồn ngoài; org cho Data Space và người phụ trách. svc\_forecast: acquire cho mức tin cậy và nhãn nguồn ngoài của chuỗi hợp nhất làm biến ngoại sinh (BR-156); skill cho external\_observation; catalog và query cho data\_snapshot\_refs; context cho metric\_code; org. Chưa dịch vụ cũ nào được cấp acquire\_read, forecast\_read.
+Lý do đọc chéo của hai dịch vụ mới. svc\_acquire: catalog cho dataset đích origin = consolidated; context cho thuộc tính chuẩn mà fields.canonical\_attr trỏ tới; governance cho retention\_policy (retain\_until) và chính sách dữ liệu nguồn ngoài; org cho Data Space và người phụ trách. svc\_forecast: acquire cho mức tin cậy và nhãn nguồn ngoài của chuỗi hợp nhất làm biến ngoại sinh (BR-156); skill cho external\_observation; catalog và query cho data\_snapshot\_refs; context cho metric\_code; org. Chưa dịch vụ cũ nào được cấp acquire\_read, forecast\_read.
 
 Ghi sang schema khác luôn qua API hoặc sự kiện Kafka của dịch vụ sở hữu, không qua CSDL.
 
-Khối triển khai (tab 6 ADR-28, O7.4) dùng tập vai trò của các module nó chứa; mỗi module mở pool kết nối riêng bằng svc\_\<schema> của mình, kể cả khi nằm chung khối. api dùng svc\_ của cả 23 schema; worker-ingest dùng svc\_ingest, svc\_pipeline, svc\_document, svc\_conflict, svc\_catalog, svc\_context; worker-agent dùng svc\_agent, svc\_qa, svc\_query, svc\_period, svc\_eval, svc\_monitor, svc\_inbox, svc\_notify, svc\_exec\_worker (workflow chấm luận điểm trên Temporal); crawler dùng svc\_acquire; ml-forecast dùng svc\_forecast. Một vai trò có thể dùng ở cả api và worker của cùng module. Tách module thành dịch vụ riêng chỉ chuyển vai trò sang dịch vụ đó, không đổi quyền.
+Khối triển khai (tab 6 ADR-28, O7.4) dùng tập vai trò của các module nó chứa; mỗi module mở pool kết nối riêng bằng svc\_\<schema> của mình, kể cả khi nằm chung khối. api dùng svc\_ của cả 22 schema; worker-ingest dùng svc\_ingest, svc\_pipeline, svc\_document, svc\_conflict, svc\_catalog, svc\_context; worker-agent dùng svc\_agent, svc\_qa, svc\_query, svc\_period, svc\_eval, svc\_monitor, svc\_inbox, svc\_notify, svc\_exec\_worker (workflow chấm luận điểm trên Temporal); crawler dùng svc\_acquire; ml-forecast dùng svc\_forecast. Một vai trò có thể dùng ở cả api và worker của cùng module. Tách module thành dịch vụ riêng chỉ chuyển vai trò sang dịch vụ đó, không đổi quyền.
 
 ### D5.3 Outbox, phân vùng, chuỗi băm
 

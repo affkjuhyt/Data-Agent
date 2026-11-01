@@ -237,9 +237,6 @@ export default function CreateAgentPage() {
                       <span className="min-w-0 flex-1 text-foreground da-body-small">
                         {template.title}
                       </span>
-                      <span className="shrink-0 text-muted-foreground da-caption">
-                        {template.pack}
-                      </span>
                     </button>
                   </li>
                 ))}

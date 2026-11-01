@@ -82,7 +82,6 @@ def test_api04_inbox_and_eval_routes_are_registered() -> None:
         ("POST", "/v1/error-book-entries/{id}:mark-fixed"),
         ("POST", "/v1/error-book-entries/{id}:add-regression"),
         ("POST", "/v1/error-book-entries/{id}:dismiss"),
-        ("POST", "/v1/error-book-entries/{id}:propose-to-pack"),
     } <= routes
 
 

@@ -79,9 +79,10 @@ spec:
           ALTER ROLE pgbouncer_auth WITH LOGIN PASSWORD :'pgbouncer_auth_password';
           ALTER ROLE app_user WITH LOGIN PASSWORD :'app_user_password';
           ALTER ROLE temporal WITH LOGIN PASSWORD :'temporal_password';
+          -- A vault may still name a role a migration dropped (svc_pack, v3_0017): skip it.
           SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', key, value)
           FROM jsonb_each_text(:'passwords'::jsonb)
-          WHERE key LIKE 'svc\_%'
+          WHERE key LIKE 'svc\_%' AND key IN (SELECT rolname FROM pg_roles)
           \gexec
           SQL
         resources:

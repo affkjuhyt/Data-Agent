@@ -89,7 +89,6 @@ function detailFixture(m: CatalogMetric): Schemas['MetricDetail'] {
     canonical_dataset_id: null,
     consumer_group: null,
     in_filed_report: false,
-    pack_metric_id: null,
     created_at: at,
     updated_at: at,
     usage: { data_product_ids: [], knowledge_page_ids: [] },
@@ -112,7 +111,6 @@ function detailFixture(m: CatalogMetric): Schemas['MetricDetail'] {
         time_grain: 'month',
         unit: null,
         legal_basis: null,
-        override_id: null,
         proposal_id: null,
         valid_from: null,
         valid_to: null,
@@ -199,7 +197,6 @@ export function createMetricCatalogHandlers() {
         canonical_dataset_id: null,
         consumer_group: null,
         in_filed_report: false,
-        pack_metric_id: null,
         created_at: '2026-01-05T09:00:00+07:00',
         updated_at: '2026-10-08T09:00:00+07:00',
       }));

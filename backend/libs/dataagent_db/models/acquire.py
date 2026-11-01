@@ -202,7 +202,7 @@ class CrawlSchemaVersion(Base):
     fields: Mapped[Any] = mapped_column(
         JSONB,
         server_default=sql_text("'[]'"),
-        comment="Mảng {name, type, unit, required, is_key, locator, canonical_attr, value_constraints}; canonical_attr trỏ tới thuộc tính chuẩn của lớp ngữ cảnh hoặc gói ngành; value_constraints là miền hợp lệ {min, max, unit, scale, max_change_pp, label_terms}, bắt buộc min, max, unit với trường number, percent, money khi active (BR-168). Ví dụ lãi suất 12 tháng: {min: 0, max: 15, unit: “%/năm”, max_change_pp: 1,5, label_terms: [“tại quầy”]}",
+        comment="Mảng {name, type, unit, required, is_key, locator, canonical_attr, value_constraints}; canonical_attr trỏ tới thuộc tính chuẩn của lớp ngữ cảnh; value_constraints là miền hợp lệ {min, max, unit, scale, max_change_pp, label_terms}, bắt buộc min, max, unit với trường number, percent, money khi active (BR-168). Ví dụ lãi suất 12 tháng: {min: 0, max: 15, unit: “%/năm”, max_change_pp: 1,5, label_terms: [“tại quầy”]}",
     )
     template_fingerprint: Mapped[Any | None] = mapped_column(
         JSONB,
@@ -545,7 +545,7 @@ class EntityLink(Base):
 
 
 class ReferenceEntity(Base):
-    """Danh mục thực thể chuẩn của tổ chức: ngân hàng, tổ chức tín dụng, chi nhánh ngân hàng nước ngoài, cơ quan, doanh nghiệp. Khoá là mã định danh gốc (mã ngân hàng do NHNN cấp, SWIFT/BIC, mã số thuế); tên, tên viết tắt và tên miền chính thức chỉ là thuộc tính để so khớp dự phòng (BR-169). Dùng chung cho mọi Data Space của tổ chức; nạp từ danh mục NHNN, danh bạ SWIFT, tra cứu mã số thuế hoặc gói ngành. pack.canonical_entity và context.semantic_entity mô tả loại thực thể, không giữ từng thực thể, nên không dùng lại được cho việc này. Use case: UC-14-05."""
+    """Danh mục thực thể chuẩn của tổ chức: ngân hàng, tổ chức tín dụng, chi nhánh ngân hàng nước ngoài, cơ quan, doanh nghiệp. Khoá là mã định danh gốc (mã ngân hàng do NHNN cấp, SWIFT/BIC, mã số thuế); tên, tên viết tắt và tên miền chính thức chỉ là thuộc tính để so khớp dự phòng (BR-169). Dùng chung cho mọi Data Space của tổ chức; nạp từ danh mục NHNN, danh bạ SWIFT, tra cứu mã số thuế. context.semantic_entity mô tả loại thực thể, không giữ từng thực thể, nên không dùng lại được cho việc này. Use case: UC-14-05."""
 
     __tablename__ = "reference_entity"
     __table_args__ = ({"schema": "acquire"},)
@@ -580,7 +580,7 @@ class ReferenceEntity(Base):
         comment="Tên miền chính thức, dùng khớp trang nguồn",
     )
     registry_source: Mapped[str] = mapped_column(
-        Text, comment="sbv_registry, swift_directory, tax_registry, pack, manual"
+        Text, comment="sbv_registry, swift_directory, tax_registry, manual"
     )
     registry_ref: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Số văn bản, ngày trích danh mục gốc"

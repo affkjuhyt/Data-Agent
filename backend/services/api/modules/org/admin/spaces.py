@@ -344,7 +344,7 @@ async def _validate_members(
     for role in roles.values():
         if org_only(role):
             # A steward hands out Data Space roles only (tab 3b D4.1: admin, compliance, audit_read,
-            # exec_vault, pack_author are organisation-wide).
+            # exec_vault are organisation-wide).
             raise Problem(
                 403,
                 "policy_denied",

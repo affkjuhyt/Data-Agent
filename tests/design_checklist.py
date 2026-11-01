@@ -183,17 +183,23 @@ def audit(
     findings: list[str] = []
     design_gaps: list[str] = []
     rows = []
+    # A use case declared `na` is left out of the product on purpose (industry packs, 01/11/2026):
+    # its endpoints and tables are gone from A2 and the DDL by decision, not a gap of the design.
+    # Another use case's matrix naming one of them is the same decision.
+    dropped = [uc for uc in snap["use_cases"] if st.get(uc["id"], Status()).status == "na"]
+    dropped_apis = {a for uc in dropped for a in (_norm_api(x) for x in uc["apis"]) if a}
+    dropped_tables = {t.split(".")[-1] for uc in dropped for t in uc["tables"]}
     for uc in snap["use_cases"]:
         s = st.get(uc["id"], Status())
         apis = [a for a in (_norm_api(x) for x in uc["apis"]) if a]
         for a in apis:
-            if a not in a2_keys:
+            if a not in a2_keys and a not in dropped_apis:
                 design_gaps.append(
                     f"{uc['id']}: ma trận 11.1 ghi `{a[0]} {a[1]}` nhưng A2 không có"
                 )
         tables = [t.split(".")[-1] for t in uc["tables"]]
         for t in tables:
-            if t not in ev.tables:
+            if t not in ev.tables and t not in dropped_tables:
                 design_gaps.append(f"{uc['id']}: ma trận 11.1 ghi bảng `{t}` nhưng DDL không có")
         required = [c for c in uc["criteria"] if c["type"] in REQUIRED_KINDS]
         covered = sum(1 for c in required if _ac_covered(c["id"], ev, st))

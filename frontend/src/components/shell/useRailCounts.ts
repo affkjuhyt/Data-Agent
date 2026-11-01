@@ -23,7 +23,6 @@ import { listAlerts } from '../../lib/v1/alerts';
 import { listCrawlSources } from '../../lib/v1/crawl';
 import { listCatalogMetrics } from '../../lib/v1/metricCatalog';
 import { listMonitors } from '../../lib/v1/monitors';
-import { listPackInstalls, listPacks } from '../../lib/v1/packs';
 import { listOpenRetroChanges, listPeriods } from '../../lib/v1/periods';
 import { listReports } from '../../lib/v1/reports';
 import { listGlossary } from '../../lib/v1/semanticLayer';
@@ -72,8 +71,6 @@ const COUNTERS: Partial<Record<AreaId, Record<string, Counter>>> = {
     RETRO: count(listOpenRetroChanges),
     METRIC_CATALOG: count(listCatalogMetrics),
     GLOSSARY: count(listGlossary),
-    PACKS: count(listPacks, (p) => p.installed !== null),
-    PACK_ONBOARD: count(listPackInstalls),
   },
   admin: {
     USERS: count(listAdminUsers, (u) => u.kind === 'person'),

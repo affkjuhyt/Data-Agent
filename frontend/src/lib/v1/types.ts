@@ -396,7 +396,7 @@ export interface BehaviorPolicy {
   kind: 'block' | 'mask' | 'require_approval' | 'auto_handle' | 'allow' | 'budget';
   /** "Mô tả bằng lời hiện trên giao diện" */
   description: string;
-  origin: 'manual' | 'hitl' | 'pack';
+  origin: 'manual' | 'hitl';
   status: 'draft' | 'active' | 'disabled' | 'expired';
   /** PROPOSAL: how often the rule handled a request instead of asking, this week. */
   applied_this_week: number;

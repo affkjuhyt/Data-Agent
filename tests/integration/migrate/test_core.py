@@ -1690,7 +1690,7 @@ def test_business_rules_agent_inbox_monitor_notify_workspace(db):
     )
 
 
-def test_business_rules_document_period_pipeline_pack(db):
+def test_business_rules_document_period_pipeline(db):
     org = new_org(db)
     # BR-19: a page OCR'd below 0.85 marked usable.
     collection = ins(
@@ -1770,52 +1770,6 @@ def test_business_rules_document_period_pipeline_pack(db):
     }
     refused(db, "pipeline.writeback_request", org, deletes=1, **wb)
     refused(db, "pipeline.writeback_request", org, approved_by=requester, **wb)
-    # A pack metric without a legal basis; applying an upgrade with open conflicts.
-    pack = ins(
-        db,
-        "pack.industry_pack",
-        org,
-        code="bank",
-        name="Ngân hàng",
-        industry_code="K64",
-        publisher="p",
-        publisher_key_id="k",
-    )
-    versions = [
-        ins(
-            db,
-            "pack.pack_version",
-            org,
-            pack_id=pack,
-            version=v,
-            manifest=Json({}),
-            signature="s",
-            min_core_version="3.0",
-            object_key="k",
-        )
-        for v in ("1.0", "1.1")
-    ]
-    refused(
-        db,
-        "pack.pack_metric",
-        org,
-        pack_version_id=versions[0],
-        code="car",
-        name="CAR",
-        expression="x",
-    )
-    install = ins(db, "pack.pack_install", org, data_space_id=new_id(), pack_version_id=versions[0])
-    refused(
-        db,
-        "pack.pack_upgrade",
-        org,
-        pack_install_id=install,
-        from_version_id=versions[0],
-        to_version_id=versions[1],
-        status="applied",
-        conflicts_open=2,
-        approved_by=new_id(),
-    )
 
 
 def test_consolidated_dataset_is_an_accepted_origin(db):

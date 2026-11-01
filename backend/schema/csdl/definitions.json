@@ -76,7 +76,7 @@
   {
    "name": "eval",
    "owner_service": "Eval service",
-   "content": "Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng, agent, gói ngành",
+   "content": "Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng, agent",
    "modules": "P03, P07, P13",
    "table_count": 5,
    "database": "dataagent",
@@ -142,15 +142,6 @@
    "content": "Khẳng định, xung đột, quy tắc giải quyết, thẩm quyền nguồn",
    "modules": "P07",
    "table_count": 5,
-   "database": "dataagent",
-   "intro": ""
-  },
-  {
-   "name": "pack",
-   "owner_service": "Pack service",
-   "content": "Gói ngành, phiên bản, mô hình chuẩn, cài đặt, ánh xạ, hiệu chỉnh, đối chiếu, nâng cấp",
-   "modules": "P09",
-   "table_count": 15,
    "database": "dataagent",
    "intro": ""
   },
@@ -244,7 +235,6 @@
   ],
   "svc_context": [
    "catalog",
-   "pack",
    "org",
    "document",
    "conflict",
@@ -258,11 +248,6 @@
    "period"
   ],
   "svc_period": [
-   "catalog",
-   "context",
-   "org"
-  ],
-  "svc_pack": [
    "catalog",
    "context",
    "org"
@@ -320,8 +305,7 @@
    "catalog",
    "context",
    "governance",
-   "org",
-   "pack"
+   "org"
   ],
   "svc_forecast": [
    "acquire",
@@ -399,17 +383,6 @@
      "default": null,
      "unique": false,
      "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "industry_code",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "Ngành chính, khớp pack.industry_pack.code; chỉ để gợi ý gói",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -1111,17 +1084,6 @@
      "comment": "Bốn cờ trên màn Tạo Data Space: mask_pii, agent_write_derived_only, show_filed_and_current, allow_external_channels",
      "fk": null,
      "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "pack_install_id",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "logic → pack.pack_install",
-     "fk": null,
-     "logic_ref": "pack.pack_install",
      "pii": false
     },
     {
@@ -2133,7 +2095,7 @@
      "not_null": true,
      "default": "'manual'",
      "unique": false,
-     "comment": "manual, hitl, pack",
+     "comment": "manual, hitl",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -2224,7 +2186,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (origin IN ('manual','hitl','pack'))"
+     "sql": "CHECK (origin IN ('manual','hitl'))"
     },
     {
      "kind": "check",
@@ -6070,17 +6032,6 @@
      "pii": false
     },
     {
-     "name": "canonical_entity_id",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "logic → pack.canonical_entity nếu sinh từ gói ngành",
-     "fk": null,
-     "logic_ref": "pack.canonical_entity",
-     "pii": false
-    },
-    {
      "name": "status",
      "type": "text",
      "not_null": true,
@@ -6434,17 +6385,6 @@
      "pii": false
     },
     {
-     "name": "pack_metric_id",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "logic → pack.pack_metric nếu đến từ gói ngành",
-     "fk": null,
-     "logic_ref": "pack.pack_metric",
-     "pii": false
-    },
-    {
      "name": "current_version",
      "type": "integer",
      "not_null": false,
@@ -6671,17 +6611,6 @@
      "pii": false
     },
     {
-     "name": "override_id",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "logic → pack.metric_override nếu là bản hiệu chỉnh (BR-129)",
-     "fk": null,
-     "logic_ref": "pack.metric_override",
-     "pii": false
-    },
-    {
      "name": "change_note",
      "type": "text",
      "not_null": false,
@@ -6893,7 +6822,7 @@
      "not_null": true,
      "default": "'declared'",
      "unique": false,
-     "comment": "declared, inferred, manual, pack",
+     "comment": "declared, inferred, manual",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -6936,7 +6865,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (origin IN ('declared','inferred','manual','pack'))"
+     "sql": "CHECK (origin IN ('declared','inferred','manual'))"
     },
     {
      "kind": "check",
@@ -7035,7 +6964,7 @@
      "not_null": true,
      "default": "'manual'",
      "unique": false,
-     "comment": "manual, agent_suggested, pack",
+     "comment": "manual, agent_suggested",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -7067,7 +6996,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (origin IN ('manual','agent_suggested','pack'))"
+     "sql": "CHECK (origin IN ('manual','agent_suggested'))"
     },
     {
      "kind": "check",
@@ -7271,7 +7200,7 @@
      "not_null": true,
      "default": "'manual'",
      "unique": false,
-     "comment": "manual, agent_suggested, feedback, pack",
+     "comment": "manual, agent_suggested, feedback",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -7310,7 +7239,7 @@
    "constraints": [
     {
      "kind": "check",
-     "sql": "CHECK (origin IN ('manual','agent_suggested','feedback','pack'))"
+     "sql": "CHECK (origin IN ('manual','agent_suggested','feedback'))"
     },
     {
      "kind": "check",
@@ -9643,17 +9572,6 @@
      "comment": "logic → eval.eval_set (subject_type context) chứa câu hỏi mẫu và ca hồi quy Error Book",
      "fk": null,
      "logic_ref": "eval.eval_set",
-     "pii": false
-    },
-    {
-     "name": "pack_version_id",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "logic → pack.pack_version nếu dựng từ mẫu của gói ngành",
-     "fk": null,
-     "logic_ref": "pack.pack_version",
      "pii": false
     },
     {
@@ -12499,9 +12417,9 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → pack.pack_skill nếu tạo từ agent mẫu",
+     "comment": "Agent mẫu mà agent được tạo từ đó",
      "fk": null,
-     "logic_ref": "pack.pack_skill",
+     "logic_ref": null,
      "pii": false
     },
     {
@@ -13115,7 +13033,7 @@
    "partition": null,
    "immutable": false,
    "notes": [
-    "Quyền: mọi vai trò svc_* đọc; chỉ vai trò migration ghi. Dữ liệu khởi tạo: 59 dòng của tab 5 G2, gồm use_cases lấy từ ma trận tab 2 mục 11.4."
+    "Quyền: mọi vai trò svc_* đọc; chỉ vai trò migration ghi. Dữ liệu khởi tạo: 57 dòng của tab 5 G2 (bỏ hai công cụ pack.* theo quyết định 01/11/2026), gồm use_cases lấy từ ma trận tab 2 mục 11.4."
    ],
    "common_note": "không có org_id"
   },
@@ -14200,7 +14118,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "hitl, run, manual, pack",
+     "comment": "hitl, run, manual",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -14284,7 +14202,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (source_kind IN ('hitl','run','manual','pack'))"
+     "sql": "CHECK (source_kind IN ('hitl','run','manual'))"
     },
     {
      "kind": "check",
@@ -14433,7 +14351,7 @@
    "schema": "eval",
    "name": "eval_set",
    "qualified": "eval.eval_set",
-   "description": "Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng, agent và gói ngành. Use case: UC-07-03, UC-07-06, UC-13-04.",
+   "description": "Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng và agent. Use case: UC-07-03, UC-07-06, UC-13-04.",
    "use_cases": [
     "UC-07-03",
     "UC-07-06",
@@ -14446,7 +14364,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "Null với bộ của gói ngành",
+     "comment": "Null với bộ dùng chung cho cả tổ chức",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -14457,7 +14375,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "context, skill, agent, pack",
+     "comment": "context, skill, agent",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -14468,7 +14386,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "Kỹ năng, agent hoặc phiên bản gói; null với lớp ngữ cảnh của Data Space",
+     "comment": "Kỹ năng hoặc agent; null với lớp ngữ cảnh của Data Space",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -14529,7 +14447,7 @@
    "constraints": [
     {
      "kind": "check",
-     "sql": "CHECK (subject_type IN ('context','skill','agent','pack'))"
+     "sql": "CHECK (subject_type IN ('context','skill','agent'))"
     },
     {
      "kind": "check",
@@ -14630,7 +14548,7 @@
      "not_null": true,
      "default": "'manual'",
      "unique": false,
-     "comment": "manual, feedback, real_run, hitl_rule, generated, pack, error_book (ca hồi quy từ Error Book, origin_ref = eval.error_book_entry.id, UC-07-14)",
+     "comment": "manual, feedback, real_run, hitl_rule, generated, error_book (ca hồi quy từ Error Book, origin_ref = eval.error_book_entry.id, UC-07-14)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -14673,7 +14591,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (origin IN ('manual','feedback','real_run','hitl_rule','generated','pack','error_book'))"
+     "sql": "CHECK (origin IN ('manual','feedback','real_run','hitl_rule','generated','error_book'))"
     },
     {
      "kind": "check",
@@ -15037,7 +14955,7 @@
    "schema": "eval",
    "name": "error_book_entry",
    "qualified": "eval.error_book_entry",
-   "description": "Mục Error Book: một lỗi đã xác nhận của câu trả lời hoặc một dự báo lệch vượt ngưỡng, kèm loại lỗi, nguyên nhân gốc, người xử lý, cách sửa và ca hồi quy tự thêm vào bộ đánh giá chạy trong CI. Trạng thái open → fixed → regression_added; dismissed khi không phải lỗi hoặc trùng (BR-179). Là kênh “tốt dần theo thời gian” cùng gói ngành: cách sửa dùng chung được đề xuất về P09. Thêm 10/10/2026. Use case: UC-07-14, UC-01-05, UC-01-07, UC-15-06.",
+   "description": "Mục Error Book: một lỗi đã xác nhận của câu trả lời hoặc một dự báo lệch vượt ngưỡng, kèm loại lỗi, nguyên nhân gốc, người xử lý, cách sửa và ca hồi quy tự thêm vào bộ đánh giá chạy trong CI. Trạng thái open → fixed → regression_added; dismissed khi không phải lỗi hoặc trùng (BR-179). Thêm 10/10/2026. Use case: UC-07-14, UC-01-05, UC-01-07, UC-15-06.",
    "use_cases": [
     "UC-01-05",
     "UC-01-07",
@@ -15249,7 +15167,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "metric_version, synonym, example, knowledge_page, pack_version, source_data, model_config, prompt, code, none",
+     "comment": "metric_version, synonym, example, knowledge_page, source_data, model_config, prompt, code, none",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -15260,7 +15178,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → inbox.proposal; đề xuất sửa chỉ số, đồng nghĩa, trang tri thức, gói ngành",
+     "comment": "logic → inbox.proposal; đề xuất sửa chỉ số, đồng nghĩa, trang tri thức",
      "fk": null,
      "logic_ref": "inbox.proposal",
      "pii": false
@@ -15363,28 +15281,6 @@
      "fk": null,
      "logic_ref": null,
      "pii": false
-    },
-    {
-     "name": "pack_contribution",
-     "type": "text",
-     "not_null": true,
-     "default": "'none'",
-     "unique": false,
-     "comment": "none, proposed, accepted, rejected; đề xuất đưa cách sửa về gói ngành (UC-09-05)",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "pack_proposal_ref",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "Mã đề xuất phía gói ngành, đã bỏ dữ liệu của khách",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
     }
    ],
    "common_columns": [
@@ -15438,7 +15334,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (fix_kind IS NULL OR fix_kind IN ('metric_version','synonym','example','knowledge_page','pack_version','source_data','model_config','prompt','code','none'))"
+     "sql": "CHECK (fix_kind IS NULL OR fix_kind IN ('metric_version','synonym','example','knowledge_page','source_data','model_config','prompt','code','none'))"
     },
     {
      "kind": "check",
@@ -15463,14 +15359,6 @@
     {
      "kind": "check",
      "sql": "CHECK (duplicate_of_id IS NULL OR duplicate_of_id <> id)"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (pack_contribution IN ('none','proposed','accepted','rejected'))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (pack_contribution = 'none' OR status IN ('fixed','regression_added'))"
     },
     {
      "kind": "fk",
@@ -15536,7 +15424,7 @@
    "schema": "inbox",
    "name": "proposal",
    "qualified": "inbox.proposal",
-   "description": "Đề xuất thay đổi chờ duyệt: lớp ngữ cảnh, schema, kỹ năng, gói ngành, ghi ngược, hiệu lực văn bản. Use case: UC-01-05, UC-03-05, UC-04-03, UC-05-05, UC-06-04, UC-07-01, UC-07-02, UC-07-03, UC-07-05, UC-07-06, UC-09-02, UC-09-03, UC-09-04.",
+   "description": "Đề xuất thay đổi chờ duyệt: lớp ngữ cảnh, schema, kỹ năng, ghi ngược, hiệu lực văn bản. Use case: UC-01-05, UC-03-05, UC-04-03, UC-05-05, UC-06-04, UC-07-01, UC-07-02, UC-07-03, UC-07-05, UC-07-06.",
    "use_cases": [
     "UC-01-05",
     "UC-03-05",
@@ -15547,10 +15435,7 @@
     "UC-07-02",
     "UC-07-03",
     "UC-07-05",
-    "UC-07-06",
-    "UC-09-02",
-    "UC-09-03",
-    "UC-09-04"
+    "UC-07-06"
    ],
    "columns": [
     {
@@ -15570,7 +15455,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, pack_activate, pack_upgrade, metric_override, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page",
+     "comment": "metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -15752,7 +15637,7 @@
    "constraints": [
     {
      "kind": "check",
-     "sql": "CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','pack_activate','pack_upgrade','metric_override','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product'))"
+     "sql": "CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product'))"
     },
     {
      "kind": "check",
@@ -17567,7 +17452,7 @@
      "not_null": true,
      "default": "'manual'",
      "unique": false,
-     "comment": "manual, from_session, agent_suggested, pack",
+     "comment": "manual, from_session, agent_suggested",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -17651,7 +17536,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (origin IN ('manual','from_session','agent_suggested','pack'))"
+     "sql": "CHECK (origin IN ('manual','from_session','agent_suggested'))"
     },
     {
      "kind": "unique",
@@ -22882,7 +22767,7 @@
      "not_null": true,
      "default": "'{}'",
      "unique": false,
-     "comment": "Báo cáo cần đóng băng, khai báo bởi gói ngành hoặc tổ chức",
+     "comment": "Báo cáo cần đóng băng, khai báo bởi tổ chức",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -23655,1824 +23540,6 @@
     {
      "kind": "fk",
      "sql": "FOREIGN KEY (published_result_id) REFERENCES period.published_result(id)"
-    }
-   ],
-   "indexes": [],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "industry_pack",
-   "qualified": "pack.industry_pack",
-   "description": "Gói ngành do nhà cung cấp hoặc khối kiến trúc phát hành. Use case: UC-09-01.",
-   "use_cases": [
-    "UC-09-01"
-   ],
-   "columns": [
-    {
-     "name": "code",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "Ví dụ banking, retail, hospitality",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "name",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "industry_code",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "publisher",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "Nhà cung cấp hoặc khối kiến trúc của tổ chức",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "publisher_key_id",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "Khoá công khai dùng kiểm chữ ký (BR-128); bắt buộc với gói vendor, gói của tổ chức có khoá khi phát hành phiên bản đầu (sửa 12/10/2026)",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "origin",
-     "type": "text",
-     "not_null": true,
-     "default": "'vendor'",
-     "unique": false,
-     "comment": "vendor, organisation: organisation là gói tổ chức tự soạn qua POST /v1/packs; industry_code lấy theo organization.industry_code (thêm 12/10/2026)",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "description",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at",
-    "created_by",
-    "updated_at",
-    "updated_by"
-   ],
-   "constraints": [
-    {
-     "kind": "unique",
-     "sql": "UNIQUE (org_id, code)"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (origin IN ('vendor','organisation'))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (origin = 'organisation' OR publisher_key_id IS NOT NULL)"
-    }
-   ],
-   "indexes": [],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "pack_version",
-   "qualified": "pack.pack_version",
-   "description": "Phiên bản gói ngành: manifest, chữ ký, ghi chú phát hành, thay đổi phá vỡ. Use case: UC-09-01, UC-09-05.",
-   "use_cases": [
-    "UC-09-01",
-    "UC-09-05"
-   ],
-   "columns": [
-    {
-     "name": "pack_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK industry_pack",
-     "fk": "industry_pack",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "version",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "Ví dụ 2026.3",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "manifest",
-     "type": "jsonb",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "signature",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "signature_verified_at",
-     "type": "timestamptz",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "min_core_version",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "release_notes",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "breaking_changes",
-     "type": "jsonb",
-     "not_null": true,
-     "default": "'[]'",
-     "unique": false,
-     "comment": "Có thì bắt buộc kèm hướng dẫn chuyển đổi và báo trước 30 ngày (BR-131)",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "object_key",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "MinIO da-packs",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "status",
-     "type": "text",
-     "not_null": true,
-     "default": "'draft'",
-     "unique": false,
-     "comment": "draft, released, available, withdrawn",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "released_at",
-     "type": "timestamptz",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at",
-    "created_by",
-    "updated_at",
-    "updated_by"
-   ],
-   "constraints": [
-    {
-     "kind": "unique",
-     "sql": "UNIQUE (pack_id, version)"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (status IN ('draft','released','available','withdrawn'))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (status <> 'available' OR signature_verified_at IS NOT NULL)"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_id) REFERENCES pack.industry_pack(id)"
-    }
-   ],
-   "indexes": [],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "canonical_entity",
-   "qualified": "pack.canonical_entity",
-   "description": "Thực thể trong mô hình chuẩn của ngành (ví dụ khoản vay, khách hàng). Use case: UC-09-01, UC-09-05.",
-   "use_cases": [
-    "UC-09-01",
-    "UC-09-05"
-   ],
-   "columns": [
-    {
-     "name": "pack_version_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_version",
-     "fk": "pack_version",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "code",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "name",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "description",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "key_attributes",
-     "type": "text[]",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at"
-   ],
-   "constraints": [
-    {
-     "kind": "unique",
-     "sql": "UNIQUE (pack_version_id, code)"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id) ON DELETE CASCADE"
-    }
-   ],
-   "indexes": [],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "canonical_attribute",
-   "qualified": "pack.canonical_attribute",
-   "description": "Thuộc tính của thực thể chuẩn, kèm kiểu, bắt buộc, bảng mã chuẩn. Use case: UC-09-01, UC-09-05.",
-   "use_cases": [
-    "UC-09-01",
-    "UC-09-05"
-   ],
-   "columns": [
-    {
-     "name": "entity_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK canonical_entity",
-     "fk": "canonical_entity",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "code",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "name",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "data_type",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "string, integer, decimal, boolean, date, timestamp, code",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "required",
-     "type": "boolean",
-     "not_null": true,
-     "default": "false",
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "code_list",
-     "type": "jsonb",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "Bảng mã chuẩn khi data_type = code",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "pii",
-     "type": "boolean",
-     "not_null": true,
-     "default": "false",
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at"
-   ],
-   "constraints": [
-    {
-     "kind": "unique",
-     "sql": "UNIQUE (entity_id, code)"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (data_type IN ('string','integer','decimal','boolean','date','timestamp','code'))"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (entity_id) REFERENCES pack.canonical_entity(id) ON DELETE CASCADE"
-    }
-   ],
-   "indexes": [],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "pack_metric",
-   "qualified": "pack.pack_metric",
-   "description": "Chỉ số chuẩn của gói, kèm căn cứ pháp lý hoặc nhãn “chỉ số nội bộ”. Use case: UC-09-01, UC-09-03, UC-09-05.",
-   "use_cases": [
-    "UC-09-01",
-    "UC-09-03",
-    "UC-09-05"
-   ],
-   "columns": [
-    {
-     "name": "pack_version_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_version",
-     "fk": "pack_version",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "code",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "Không tái sử dụng cho nghĩa khác (BR-131)",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "name",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "expression",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "Công thức trên thực thể và thuộc tính chuẩn",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "unit",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "additivity",
-     "type": "text",
-     "not_null": true,
-     "default": "'none'",
-     "unique": false,
-     "comment": "full, semi, none",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "legal_basis",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "is_internal",
-     "type": "boolean",
-     "not_null": true,
-     "default": "false",
-     "unique": false,
-     "comment": "Chỉ số nội bộ, không có căn cứ pháp lý",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "in_regulatory_report",
-     "type": "boolean",
-     "not_null": true,
-     "default": "false",
-     "unique": false,
-     "comment": "Có trong báo cáo gửi cơ quan quản lý (BR-36)",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at"
-   ],
-   "constraints": [
-    {
-     "kind": "unique",
-     "sql": "UNIQUE (pack_version_id, code)"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (is_internal OR legal_basis IS NOT NULL)"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (additivity IN ('full','semi','none'))"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id) ON DELETE CASCADE"
-    }
-   ],
-   "indexes": [],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "validation_rule",
-   "qualified": "pack.validation_rule",
-   "description": "Luật kiểm tra của gói (ví dụ tổng khớp sổ cái, mỗi bản ghi có đúng một phân loại). Use case: UC-09-01, UC-09-05.",
-   "use_cases": [
-    "UC-09-01",
-    "UC-09-05"
-   ],
-   "columns": [
-    {
-     "name": "pack_version_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_version",
-     "fk": "pack_version",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "code",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "description",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "expression",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "tolerance",
-     "type": "numeric",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "severity",
-     "type": "text",
-     "not_null": true,
-     "default": "'blocking'",
-     "unique": false,
-     "comment": "blocking, warning",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at"
-   ],
-   "constraints": [
-    {
-     "kind": "unique",
-     "sql": "UNIQUE (pack_version_id, code)"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (severity IN ('blocking','warning'))"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id) ON DELETE CASCADE"
-    }
-   ],
-   "indexes": [],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "pack_skill",
-   "qualified": "pack.pack_skill",
-   "description": "Kỹ năng, agent mẫu và bộ câu hỏi mẫu đi kèm gói ngành. Use case: UC-09-01, UC-13-01.",
-   "use_cases": [
-    "UC-09-01",
-    "UC-13-01"
-   ],
-   "columns": [
-    {
-     "name": "pack_version_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_version",
-     "fk": "pack_version",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "kind",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "skill, agent_template, eval_set",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "code",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "name",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "definition",
-     "type": "jsonb",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "Định nghĩa kỹ năng, cấu hình agent mẫu hoặc danh sách câu hỏi",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at"
-   ],
-   "constraints": [
-    {
-     "kind": "unique",
-     "sql": "UNIQUE (pack_version_id, kind, code)"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (kind IN ('skill','agent_template','eval_set'))"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id) ON DELETE CASCADE"
-    }
-   ],
-   "indexes": [],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "pack_install",
-   "qualified": "pack.pack_install",
-   "description": "Gói đã cài ở một Data Space; mỗi Data Space một bản cài đang hoạt động. Use case: UC-09-02, UC-09-04.",
-   "use_cases": [
-    "UC-09-02",
-    "UC-09-04"
-   ],
-   "columns": [
-    {
-     "name": "data_space_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "logic → org.data_space",
-     "fk": null,
-     "logic_ref": "org.data_space",
-     "pii": false
-    },
-    {
-     "name": "pack_version_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_version",
-     "fk": "pack_version",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "previous_pack_version_id",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "Giữ 30 ngày để quay lại sau nâng cấp",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "status",
-     "type": "text",
-     "not_null": true,
-     "default": "'mapping'",
-     "unique": false,
-     "comment": "mapping, calibrating, pending_activation, active, upgrading, rolled_back, uninstalled",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "activated_at",
-     "type": "timestamptz",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "activated_by",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "proposal_id",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "logic → inbox.proposal",
-     "fk": null,
-     "logic_ref": "inbox.proposal",
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at",
-    "created_by",
-    "updated_at",
-    "updated_by"
-   ],
-   "constraints": [
-    {
-     "kind": "check",
-     "sql": "CHECK (status IN ('mapping','calibrating','pending_activation','active','upgrading','rolled_back','uninstalled'))"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id)"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (previous_pack_version_id) REFERENCES pack.pack_version(id)"
-    }
-   ],
-   "indexes": [
-    {
-     "unique": true,
-     "method": "btree",
-     "expr": "data_space_id",
-     "where": "status NOT IN ('uninstalled','rolled_back')",
-     "comment": null
-    }
-   ],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "entity_mapping",
-   "qualified": "pack.entity_mapping",
-   "description": "Ánh xạ thuộc tính chuẩn sang bảng, cột của tổ chức; có thời hiệu (BR-16, BR-37). Use case: UC-04-03, UC-09-02, UC-09-04, UC-10-01.",
-   "use_cases": [
-    "UC-04-03",
-    "UC-09-02",
-    "UC-09-04",
-    "UC-10-01"
-   ],
-   "columns": [
-    {
-     "name": "pack_install_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_install",
-     "fk": "pack_install",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "attribute_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK canonical_attribute",
-     "fk": "canonical_attribute",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "dataset_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "logic → catalog.dataset",
-     "fk": null,
-     "logic_ref": "catalog.dataset",
-     "pii": false
-    },
-    {
-     "name": "column_expr",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "Cột hoặc biểu thức",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "confidence",
-     "type": "numeric(4,3)",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "Độ tin của đề xuất ánh xạ",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "origin",
-     "type": "text",
-     "not_null": true,
-     "default": "'suggested'",
-     "unique": false,
-     "comment": "suggested, confirmed, manual",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "valid_from",
-     "type": "timestamptz",
-     "not_null": true,
-     "default": "now()",
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "valid_to",
-     "type": "timestamptz",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "confirmed_by",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at",
-    "created_by",
-    "updated_at",
-    "updated_by"
-   ],
-   "constraints": [
-    {
-     "kind": "check",
-     "sql": "CHECK (origin IN ('suggested','confirmed','manual'))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (valid_to IS NULL OR valid_to > valid_from)"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id)"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (attribute_id) REFERENCES pack.canonical_attribute(id)"
-    }
-   ],
-   "indexes": [
-    {
-     "unique": true,
-     "method": "btree",
-     "expr": "pack_install_id, attribute_id",
-     "where": "valid_to IS NULL",
-     "comment": null
-    }
-   ],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "code_mapping",
-   "qualified": "pack.code_mapping",
-   "description": "Bảng mã của tổ chức sang mã chuẩn (ví dụ phân loại, loại tiền). Use case: UC-09-02.",
-   "use_cases": [
-    "UC-09-02"
-   ],
-   "columns": [
-    {
-     "name": "pack_install_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_install",
-     "fk": "pack_install",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "attribute_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK canonical_attribute (data_type = code)",
-     "fk": "canonical_attribute",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "source_code",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "canonical_code",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "valid_from",
-     "type": "timestamptz",
-     "not_null": true,
-     "default": "now()",
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "valid_to",
-     "type": "timestamptz",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at",
-    "created_by",
-    "updated_at",
-    "updated_by"
-   ],
-   "constraints": [
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id)"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (attribute_id) REFERENCES pack.canonical_attribute(id)"
-    }
-   ],
-   "indexes": [
-    {
-     "unique": true,
-     "method": "btree",
-     "expr": "pack_install_id, attribute_id, source_code",
-     "where": "valid_to IS NULL",
-     "comment": null
-    }
-   ],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "metric_override",
-   "qualified": "pack.metric_override",
-   "description": "Hiệu chỉnh chỉ số ở lớp tổ chức kèm lý do; tham gia gộp ba chiều khi nâng cấp (BR-129). Use case: UC-09-02, UC-09-03, UC-09-04.",
-   "use_cases": [
-    "UC-09-02",
-    "UC-09-03",
-    "UC-09-04"
-   ],
-   "columns": [
-    {
-     "name": "pack_install_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_install",
-     "fk": "pack_install",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "pack_metric_code",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "Mã chỉ số chuẩn; giữ qua các phiên bản gói",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "expression",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "scope_condition",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "Chỉ áp cho một phạm vi (UC-09-03 2a)",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "reason",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "status",
-     "type": "text",
-     "not_null": true,
-     "default": "'draft'",
-     "unique": false,
-     "comment": "draft, pending_review, active, superseded",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "approved_by",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "compliance_approved_by",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "Chỉ số báo cáo cơ quan quản lý cần thêm AC06",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "calibration_run_id",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "FK calibration_run; lần chạy thử công thức trên dữ liệu thật (UC-09-03 bước 3, thêm 12/10/2026)",
-     "fk": "calibration_run",
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at",
-    "created_by",
-    "updated_at",
-    "updated_by"
-   ],
-   "constraints": [
-    {
-     "kind": "check",
-     "sql": "CHECK (status IN ('draft','pending_review','active','superseded'))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (status <> 'active' OR approved_by IS NOT NULL)"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id)"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (calibration_run_id) REFERENCES pack.calibration_run(id)"
-    }
-   ],
-   "indexes": [
-    {
-     "unique": true,
-     "method": "btree",
-     "expr": "pack_install_id, pack_metric_code",
-     "where": "status = 'active'",
-     "comment": null
-    }
-   ],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "calibration_run",
-   "qualified": "pack.calibration_run",
-   "description": "Một lần đối chiếu số khi đưa vào ngành, hiệu chỉnh hoặc nâng cấp gói. Use case: UC-09-02, UC-09-03, UC-09-04.",
-   "use_cases": [
-    "UC-09-02",
-    "UC-09-03",
-    "UC-09-04"
-   ],
-   "columns": [
-    {
-     "name": "pack_install_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_install",
-     "fk": "pack_install",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "trigger",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "onboarding, override, upgrade",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "periods",
-     "type": "text[]",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "Kỳ đối chiếu, ví dụ 2 kỳ gần nhất",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "tolerance_pp",
-     "type": "numeric(6,4)",
-     "not_null": true,
-     "default": "0.01",
-     "unique": false,
-     "comment": "Ngưỡng lệch, mặc định 0,01 điểm phần trăm (BR-36)",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "passed",
-     "type": "integer",
-     "not_null": true,
-     "default": "0",
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "failed",
-     "type": "integer",
-     "not_null": true,
-     "default": "0",
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "status",
-     "type": "text",
-     "not_null": true,
-     "default": "'running'",
-     "unique": false,
-     "comment": "running, passed, failed",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "finished_at",
-     "type": "timestamptz",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at"
-   ],
-   "constraints": [
-    {
-     "kind": "check",
-     "sql": "CHECK (trigger IN ('onboarding','override','upgrade'))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (status IN ('running','passed','failed'))"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id)"
-    }
-   ],
-   "indexes": [],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "calibration_item",
-   "qualified": "pack.calibration_item",
-   "description": "Kết quả đối chiếu một chỉ số hoặc một luật trong một lần đối chiếu. Use case: UC-09-02.",
-   "use_cases": [
-    "UC-09-02"
-   ],
-   "columns": [
-    {
-     "name": "calibration_run_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK calibration_run",
-     "fk": "calibration_run",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "item_kind",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "metric, rule",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "item_code",
-     "type": "text",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "period",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "computed_value",
-     "type": "numeric",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "filed_value",
-     "type": "numeric",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "delta",
-     "type": "numeric",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "passed",
-     "type": "boolean",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "suggested_cause",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at"
-   ],
-   "constraints": [
-    {
-     "kind": "check",
-     "sql": "CHECK (item_kind IN ('metric','rule'))"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (calibration_run_id) REFERENCES pack.calibration_run(id) ON DELETE CASCADE"
-    }
-   ],
-   "indexes": [],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "pack_upgrade",
-   "qualified": "pack.pack_upgrade",
-   "description": "Một lần nâng cấp gói bằng gộp ba chiều (SD-21); không làm khi có kỳ đang chốt (BR-38). Use case: UC-09-04.",
-   "use_cases": [
-    "UC-09-04"
-   ],
-   "columns": [
-    {
-     "name": "pack_install_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_install",
-     "fk": "pack_install",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "from_version_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_version",
-     "fk": "pack_version",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "to_version_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_version",
-     "fk": "pack_version",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "merge_result",
-     "type": "jsonb",
-     "not_null": true,
-     "default": "'{}'",
-     "unique": false,
-     "comment": "Theo từng chỉ số và ánh xạ: lấy gói mới, giữ của tổ chức, xung đột",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "conflicts_open",
-     "type": "integer",
-     "not_null": true,
-     "default": "0",
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "calibration_run_id",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "FK calibration_run",
-     "fk": "calibration_run",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "status",
-     "type": "text",
-     "not_null": true,
-     "default": "'available'",
-     "unique": false,
-     "comment": "available, merging, needs_decision, testing, pending_approval, applied, rolled_back, cancelled",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "apply_from_period",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "Áp dụng từ kỳ sau; kỳ đã chốt không đổi",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "rollback_until",
-     "type": "timestamptz",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "30 ngày sau khi áp dụng",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "approved_by",
-     "type": "uuid",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at",
-    "created_by",
-    "updated_at",
-    "updated_by"
-   ],
-   "constraints": [
-    {
-     "kind": "check",
-     "sql": "CHECK (status IN ('available','merging','needs_decision','testing','pending_approval','applied','rolled_back','cancelled'))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (status <> 'applied' OR (conflicts_open = 0 AND approved_by IS NOT NULL))"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id)"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (from_version_id) REFERENCES pack.pack_version(id)"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (to_version_id) REFERENCES pack.pack_version(id)"
-    },
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (calibration_run_id) REFERENCES pack.calibration_run(id)"
-    }
-   ],
-   "indexes": [],
-   "partition": null,
-   "immutable": false,
-   "notes": []
-  },
-  {
-   "schema": "pack",
-   "name": "pack_check_run",
-   "qualified": "pack.pack_check_run",
-   "description": "Kết quả kiểm tra một phiên bản gói trước khi phát hành. Use case: UC-09-05.",
-   "use_cases": [
-    "UC-09-05"
-   ],
-   "columns": [
-    {
-     "name": "pack_version_id",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "FK pack_version",
-     "fk": "pack_version",
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "checks",
-     "type": "jsonb",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "Căn cứ đầy đủ; chạy trên 3 bộ dữ liệu mẫu lệch ≤ 0,01%; câu hỏi mẫu không giảm",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "passed",
-     "type": "boolean",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "ran_by",
-     "type": "uuid",
-     "not_null": true,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    }
-   ],
-   "common_columns": [
-    "id",
-    "org_id",
-    "created_at"
-   ],
-   "constraints": [
-    {
-     "kind": "fk",
-     "sql": "FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id)"
     }
    ],
    "indexes": [],
@@ -27411,7 +25478,7 @@
      "not_null": true,
      "default": "'manual'",
      "unique": false,
-     "comment": "manual, agent_suggested, pack",
+     "comment": "manual, agent_suggested",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -27447,7 +25514,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (origin IN ('manual','agent_suggested','pack'))"
+     "sql": "CHECK (origin IN ('manual','agent_suggested'))"
     },
     {
      "kind": "check",
@@ -28716,7 +26783,7 @@
      "not_null": true,
      "default": "'[]'",
      "unique": false,
-     "comment": "Mảng {name, type, unit, required, is_key, locator, canonical_attr, value_constraints}; canonical_attr trỏ tới thuộc tính chuẩn của lớp ngữ cảnh hoặc gói ngành; value_constraints là miền hợp lệ {min, max, unit, scale, max_change_pp, label_terms}, bắt buộc min, max, unit với trường number, percent, money khi active (BR-168). Ví dụ lãi suất 12 tháng: {min: 0, max: 15, unit: “%/năm”, max_change_pp: 1,5, label_terms: [“tại quầy”]}",
+     "comment": "Mảng {name, type, unit, required, is_key, locator, canonical_attr, value_constraints}; canonical_attr trỏ tới thuộc tính chuẩn của lớp ngữ cảnh; value_constraints là miền hợp lệ {min, max, unit, scale, max_change_pp, label_terms}, bắt buộc min, max, unit với trường number, percent, money khi active (BR-168). Ví dụ lãi suất 12 tháng: {min: 0, max: 15, unit: “%/năm”, max_change_pp: 1,5, label_terms: [“tại quầy”]}",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -29986,7 +28053,7 @@
    "schema": "acquire",
    "name": "reference_entity",
    "qualified": "acquire.reference_entity",
-   "description": "Danh mục thực thể chuẩn của tổ chức: ngân hàng, tổ chức tín dụng, chi nhánh ngân hàng nước ngoài, cơ quan, doanh nghiệp. Khoá là mã định danh gốc (mã ngân hàng do NHNN cấp, SWIFT/BIC, mã số thuế); tên, tên viết tắt và tên miền chính thức chỉ là thuộc tính để so khớp dự phòng (BR-169). Dùng chung cho mọi Data Space của tổ chức; nạp từ danh mục NHNN, danh bạ SWIFT, tra cứu mã số thuế hoặc gói ngành. pack.canonical_entity và context.semantic_entity mô tả loại thực thể, không giữ từng thực thể, nên không dùng lại được cho việc này. Use case: UC-14-05.",
+   "description": "Danh mục thực thể chuẩn của tổ chức: ngân hàng, tổ chức tín dụng, chi nhánh ngân hàng nước ngoài, cơ quan, doanh nghiệp. Khoá là mã định danh gốc (mã ngân hàng do NHNN cấp, SWIFT/BIC, mã số thuế); tên, tên viết tắt và tên miền chính thức chỉ là thuộc tính để so khớp dự phòng (BR-169). Dùng chung cho mọi Data Space của tổ chức; nạp từ danh mục NHNN, danh bạ SWIFT, tra cứu mã số thuế. context.semantic_entity mô tả loại thực thể, không giữ từng thực thể, nên không dùng lại được cho việc này. Use case: UC-14-05.",
    "use_cases": [
     "UC-14-05"
    ],
@@ -30085,7 +28152,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "sbv_registry, swift_directory, tax_registry, pack, manual",
+     "comment": "sbv_registry, swift_directory, tax_registry, manual",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -30183,7 +28250,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (registry_source IN ('sbv_registry','swift_directory','tax_registry','pack','manual'))"
+     "sql": "CHECK (registry_source IN ('sbv_registry','swift_directory','tax_registry','manual'))"
     },
     {
      "kind": "check",

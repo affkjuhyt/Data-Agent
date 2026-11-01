@@ -132,13 +132,6 @@ def test_mark_fixed_needs_fix_kind(api: TestClient) -> None:
     _problem(response, 422, "validation_failed")
 
 
-def test_propose_to_pack_needs_pack_and_summary(api: TestClient) -> None:
-    response = api.post(
-        f"/v1/error-book-entries/{ID}:propose-to-pack", headers=SPACE_HEADERS, json={"pack_id": ID}
-    )
-    _problem(response, 422, "validation_failed")
-
-
 def test_patch_rejects_an_unknown_error_kind(api: TestClient) -> None:
     response = api.patch(
         f"/v1/error-book-entries/{ID}", headers=SPACE_HEADERS, json={"error_kind": "typo"}

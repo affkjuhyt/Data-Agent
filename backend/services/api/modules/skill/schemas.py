@@ -15,7 +15,7 @@ Category = Literal[
     "decomposition", "causal", "forecast", "reconciliation", "quality", "report", "custom"
 ]
 Scope = Literal["personal", "data_space", "org"]
-Origin = Literal["manual", "from_session", "agent_suggested", "pack"]
+Origin = Literal["manual", "from_session", "agent_suggested"]
 SuggestionStatus = Literal["open", "accepted", "dismissed"]
 
 _CODE = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"

@@ -32,8 +32,7 @@ A measure is `agg` over `expr` (MetricFlow); an `expr` that already aggregates (
 kept whole. Importing never approves anything: a relationship is pending_review (BR-100), a new
 or changed metric gets a draft version (BR-26), each with the outbox event the API's own create
 emits, so review (UC-07-03) is the same as for a steward's edit. Entities, dimensions and
-measures have no review of their own; they are written as read, matched by code. A metric from an
-industry pack is locked (UC-07-01 2a) and left as it is.
+measures have no review of their own; they are written as read, matched by code.
 
 Run where the api runs (it reads DATAAGENT_DB_URL__SVC_CONTEXT):
 
@@ -147,7 +146,6 @@ class ImportReport:
     created: dict[str, int] = field(default_factory=dict)
     updated: dict[str, int] = field(default_factory=dict)
     unchanged: dict[str, int] = field(default_factory=dict)
-    skipped: list[str] = field(default_factory=list)
 
     def count(self, kind: str, what: Literal["created", "updated", "unchanged"]) -> None:
         bucket = getattr(self, what)
@@ -555,10 +553,6 @@ async def import_model(
     for defn in file.metrics:
         values = _version_values(defn, dim_ids)
         metric = await by_code(context.Metric, defn.name)
-        if metric is not None and metric.pack_metric_id is not None:
-            # UC-07-01 2a: a pack metric's formula is locked; changes are overrides (UC-09-03).
-            report.skipped.append(f"{defn.name}: chỉ số của gói ngành, công thức bị khoá")
-            continue
         if metric is None:
             metric = context.Metric(
                 id=uuid7(),
@@ -768,7 +762,6 @@ async def _import(
                 "created": report.created,
                 "updated": report.updated,
                 "unchanged": report.unchanged,
-                "skipped": report.skipped,
             }
         )
     )

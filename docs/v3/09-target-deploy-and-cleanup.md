@@ -11,7 +11,7 @@ ADR-28: modular monolith, 5 khối triển khai, ranh giới module là schema v
 
 | Khối | Mã | Image | Nội dung (O7.4) | Vai trò CSDL |
 | --- | --- | --- | --- | --- |
-| `api` | `backend/services/api` | `dataagent/api` | Mọi module phục vụ yêu cầu đồng bộ, mỗi module một schema | `svc_` của 23 schema |
+| `api` | `backend/services/api` | `dataagent/api` | Mọi module phục vụ yêu cầu đồng bộ, mỗi module một schema | `svc_` của 22 schema |
 | `worker-agent` | `backend/services/worker_agent` | `dataagent/worker-agent` | Lượt chạy agent (runtime mỏng trên Pydantic, ADR-37), chốt kỳ, đánh giá, theo dõi; Temporal từ R3 | `svc_agent`, `svc_qa`, `svc_query`, `svc_period`, `svc_eval`, `svc_monitor`, `svc_inbox`, `svc_notify`, `svc_exec_worker` |
 | `worker-ingest` | `backend/services/worker_ingest` | `dataagent/worker-ingest` | Nạp, parse tài liệu (Docling, ADR-34), embedding, biên soạn tri thức | `svc_ingest`, `svc_pipeline`, `svc_document`, `svc_conflict`, `svc_catalog`, `svc_context` |
 | `crawler` | `backend/services/crawler` | `dataagent/crawler` | HTTP và Playwright trong sandbox, chỉ ra ngoài qua egress proxy | `svc_acquire` |

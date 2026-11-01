@@ -1306,46 +1306,6 @@
     "status": "active"
   },
   {
-    "code": "pack.suggest_mappings",
-    "permission_level": "write_derived",
-    "owner_service": "Pack service",
-    "endpoints": [
-      "POST /v1/pack-installs/{id}:suggest-mappings"
-    ],
-    "model_description": "Dùng khi đưa khách vào gói ngành: đề xuất ánh xạ bảng, cột của khách vào mô hình chuẩn của gói, kèm độ tin và mục độ tin thấp. Người xác nhận ánh xạ. Không dùng để kích hoạt gói.",
-    "toolsets": [],
-    "execution_kinds": [
-      "plan"
-    ],
-    "restricted_agent_kinds": [],
-    "mcp_exposed": false,
-    "default_checkpoint": "always",
-    "use_cases": [
-      "UC-09-02"
-    ],
-    "status": "active"
-  },
-  {
-    "code": "pack.propose_decisions",
-    "permission_level": "write_derived",
-    "owner_service": "Pack service",
-    "endpoints": [
-      "PUT /v1/pack-upgrades/{id}/decisions"
-    ],
-    "model_description": "Dùng khi nâng cấp gói: điền phương án đề xuất cho từng xung đột của gộp ba chiều, kèm lý do. Phương án là gợi ý tới khi người xác nhận. Không dùng để áp dụng nâng cấp; chỉ người có quyền approve áp dụng.",
-    "toolsets": [],
-    "execution_kinds": [
-      "plan"
-    ],
-    "restricted_agent_kinds": [],
-    "mcp_exposed": false,
-    "default_checkpoint": "always",
-    "use_cases": [
-      "UC-09-04"
-    ],
-    "status": "active"
-  },
-  {
     "code": "period.check",
     "permission_level": "read",
     "owner_service": "Period service",

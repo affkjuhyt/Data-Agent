@@ -1,17 +1,13 @@
 """Proposals that a module asks the inbox to open, and the decisions that come back.
 
-Opening (svc_inbox): `skill_version.publish_requested` (UC-03-05), `skill.share_requested`
-(UC-03-07) and `pack_install.activation_requested` (UC-09-02 step 6) each open one inbox.proposal
-whose target is the object waiting for it. The proposal's id is derived from the event's, so a
+Opening (svc_inbox): `skill_version.publish_requested` (UC-03-05) and `skill.share_requested`
+(UC-03-07) each open one inbox.proposal whose target is the object waiting for it. The proposal's id is derived from the event's, so a
 redelivered event opens nothing twice.
 
 Applying: `proposal.decided` (inbox.outbox) is routed by kind to the role that owns the object:
 - skill_publish, accepted: the version is published (the one before it retired, as the api does
   for a personal skill), or, for a share, the skill's scope widens; `request_changes` or a
   rejection sends the version back to draft (AC-03-05-02);
-- pack_activate, accepted: the install becomes active, unless a period of its Data Space is
-  closing (AC-09-02-05): it then stays accepted and is activated by `activate_waiting` once the
-  close ends; rejected, it goes back to calibrating.
 - knowledge_page (UC-07-10 step 6, opened from `knowledge_page_version.submitted` with the id the
   api reserved): accepted, the version becomes `reviewed` and the database's trigger serves it
   (the one served before becomes superseded, BR-164); rejected, the version is rejected;
@@ -41,14 +37,13 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import context, inbox, pack, period, pipeline, skill
+from libs.dataagent_db.models import context, inbox, pipeline, skill
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
 
 PUBLISH = "skill_version.publish_requested"
 SHARE = "skill.share_requested"
-ACTIVATE = "pack_install.activation_requested"
 WRITEBACK = "writeback.submitted"
 DECIDED = "proposal.decided"
 KNOWLEDGE_SUBMITTED = "knowledge_page_version.submitted"
@@ -187,32 +182,6 @@ async def share_requested(event: Event) -> None:
         proposed_by=uuid.UUID(str(p["requested_by"])),
         eval_run_id=_uuid(p.get("eval_run_id")),
     )
-
-
-async def activation_requested(event: Event) -> None:
-    p = event.payload
-    install_id = uuid.UUID(str(p["pack_install_id"]))
-    actor = uuid.UUID(str(p["requested_by"]))
-    pid = await _open(
-        event,
-        data_space_id=uuid.UUID(str(p["data_space_id"])),
-        kind="pack_activate",
-        target_service="pack",
-        target_ref=install_id,
-        title="Kích hoạt gói ngành",
-        diff={
-            "pack_version_id": p["pack_version_id"],
-            "calibration_run_id": p.get("calibration_run_id"),
-        },
-        proposed_by=actor,
-        eval_run_id=None,
-    )
-    async with scoped_session("svc_pack", event.org_id, actor) as session:
-        await session.execute(
-            update(pack.PackInstall)
-            .where(pack.PackInstall.id == install_id, pack.PackInstall.proposal_id.is_(None))
-            .values(proposal_id=pid)
-        )
 
 
 async def writeback_submitted(event: Event) -> None:
@@ -365,65 +334,6 @@ async def _apply_skill(event: Event, proposal: dict[str, Any]) -> bool:
         return True
 
 
-async def _closing(org: uuid.UUID, space: uuid.UUID, actor: uuid.UUID) -> bool:
-    # svc_pack reads no period table; svc_query does (period_read), read-only.
-    async with scoped_session("svc_query", org, actor) as session:
-        return (
-            await session.scalar(
-                select(period.PeriodClose.id)
-                .where(
-                    period.PeriodClose.data_space_id == space,
-                    period.PeriodClose.status == "closing",
-                )
-                .limit(1)
-            )
-        ) is not None
-
-
-async def _activate(
-    org: uuid.UUID, install: pack.PackInstall, actor: uuid.UUID, session: Any
-) -> None:
-    install.status = "active"
-    install.activated_at, install.activated_by = _now(), actor
-    install.updated_at, install.updated_by = _now(), actor
-    session.add(
-        pack.Outbox(
-            id=uuid7(),
-            org_id=org,
-            aggregate_type="pack_install",
-            aggregate_id=install.id,
-            event_type="pack_install.activated",
-            payload=_plain(
-                {
-                    "pack_install_id": install.id,
-                    "data_space_id": install.data_space_id,
-                    "pack_version_id": install.pack_version_id,
-                    "status": "active",
-                }
-            ),
-        )
-    )
-
-
-async def _apply_pack(event: Event, proposal: dict[str, Any]) -> bool | None:
-    """True applied, False moved on, None deferred (a period is closing)."""
-    org, reviewer = event.org_id, uuid.UUID(str(event.payload["reviewer_id"]))
-    accepted = event.payload.get("status") == "accepted"
-    install_id = uuid.UUID(str(proposal["target_ref"]))
-    if accepted and await _closing(org, proposal["data_space_id"], reviewer):
-        return None
-    async with scoped_session("svc_pack", org, reviewer) as session:
-        install = await session.get(pack.PackInstall, install_id, with_for_update=True)
-        if install is None or install.status != "pending_activation":
-            return False
-        if not accepted:
-            install.status = "calibrating"
-            install.updated_at, install.updated_by = _now(), reviewer
-            return True
-        await _activate(org, install, reviewer, session)
-        return True
-
-
 async def _apply_writeback(event: Event, proposal: dict[str, Any]) -> bool:
     """Reflect the inbox decision back into the pipeline aggregate."""
     reviewer = uuid.UUID(str(event.payload["reviewer_id"]))
@@ -532,7 +442,6 @@ async def decided(event: Event) -> None:
     proposal = await _proposal(event)
     applied_here = (
         "skill_publish",
-        "pack_activate",
         "writeback",
         "metric_change",
         "knowledge_page",
@@ -543,7 +452,7 @@ async def decided(event: Event) -> None:
         return
     if proposal["status"] not in ("accepted", "open", "rejected"):
         return  # already applied, or no longer waiting
-    outcome: bool | None
+    outcome: bool
     if proposal["kind"] == "metric_change":
         # metric_changes checks again what the version would break before it certifies it;
         # imported here because it opens its proposals through this module.
@@ -556,15 +465,10 @@ async def decided(event: Event) -> None:
         outcome = await reviews.apply(event, proposal)
     elif proposal["kind"] == "skill_publish":
         outcome = await _apply_skill(event, proposal)
-    elif proposal["kind"] == "pack_activate":
-        outcome = await _apply_pack(event, proposal)
     elif proposal["kind"] == "knowledge_page":
         outcome = await _apply_knowledge(event, proposal)
     else:
         outcome = await _apply_writeback(event, proposal)
-    if outcome is None:
-        logger.info("worker-agent | pack activation %s waits for the period close", proposal["id"])
-        return
     accepted = event.payload.get("status") == "accepted"
     if accepted:
         await _finish(event, proposal["id"], "applied" if outcome else "apply_failed")
@@ -573,40 +477,9 @@ async def decided(event: Event) -> None:
         await _finish(event, proposal["id"], "withdrawn")
 
 
-async def activate_waiting(org: uuid.UUID, space: uuid.UUID, actor: uuid.UUID) -> int:
-    """Activate the installs of `space` whose activation was accepted during a period close
-    (AC-09-02-05); the period close worker calls this when the close ends. Returns how many."""
-    async with scoped_session("svc_inbox", org) as session:
-        accepted = (
-            await session.scalars(
-                select(inbox.Proposal.target_ref).where(
-                    inbox.Proposal.data_space_id == space,
-                    inbox.Proposal.kind == "pack_activate",
-                    inbox.Proposal.status == "accepted",
-                )
-            )
-        ).all()
-    done = 0
-    for install_id in accepted:
-        async with scoped_session("svc_pack", org, actor) as session:
-            install = await session.get(pack.PackInstall, install_id, with_for_update=True)
-            if install is None or install.status != "pending_activation":
-                continue
-            await _activate(org, install, actor, session)
-            done += 1
-        async with scoped_session("svc_inbox", org) as session:
-            await session.execute(
-                update(inbox.Proposal)
-                .where(inbox.Proposal.target_ref == install_id, inbox.Proposal.status == "accepted")
-                .values(status="applied", applied_at=_now(), updated_at=_now())
-            )
-    return done
-
-
 HANDLERS: dict[str, Handler] = {
     PUBLISH: publish_requested,
     SHARE: share_requested,
-    ACTIVATE: activation_requested,
     WRITEBACK: writeback_submitted,
     DECIDED: decided,
     KNOWLEDGE_SUBMITTED: knowledge_page_submitted,

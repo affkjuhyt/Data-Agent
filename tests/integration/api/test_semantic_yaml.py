@@ -5,7 +5,6 @@ changed formula is a new draft version, and nothing is approved by an import."""
 from __future__ import annotations
 
 import pathlib
-import uuid
 from typing import Any
 
 import pytest
@@ -217,19 +216,6 @@ async def test_a_file_that_does_not_resolve_writes_nothing(seed: Seed) -> None:
     assert space.all("SELECT count(*) FROM context.semantic_entity WHERE data_space_id = %s") == [
         (0,)
     ]
-
-
-async def test_a_pack_metric_is_left_as_it_is(seed: Seed) -> None:
-    space = Space(seed)
-    await space.load(MODEL)
-    with space.seed.conn.cursor() as cur:
-        cur.execute(
-            "UPDATE context.metric SET pack_metric_id = %s WHERE data_space_id = %s"
-            " AND code = 'DU_NO'",
-            (str(uuid.uuid4()), str(space.id)),
-        )
-    report = await space.load(MODEL.replace("label: Dư nợ\n    expr", "label: Dư nợ mới\n    expr"))
-    assert report.skipped == ["DU_NO: chỉ số của gói ngành, công thức bị khoá"]
 
 
 def test_the_command_line_exports_and_dry_runs(

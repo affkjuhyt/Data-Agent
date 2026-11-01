@@ -777,7 +777,6 @@ export function metricsFixture(): Metric[] {
     canonical_dataset_id: null,
     consumer_group: null,
     in_filed_report: i === 0,
-    pack_metric_id: null,
     created_at: minutesFromNow(-90 * 24 * 60),
     updated_at: minutesFromNow(-24 * 60),
   }));

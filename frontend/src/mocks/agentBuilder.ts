@@ -40,21 +40,18 @@ const templatesFixture = (): AgentTemplate[] => [
   {
     ref: 'banking/metric-watch',
     title: 'Theo dõi chỉ số và giải thích biến động',
-    pack: 'từ gói Ngân hàng',
     description:
       'Mỗi sáng thứ Hai, xem chỉ số theo chi nhánh. Nếu chi nhánh nào tăng hơn 10% so với tuần trước thì tìm nguyên nhân và gửi tóm tắt cho tôi qua Teams.',
   },
   {
     ref: 'banking/reconcile-filed',
     title: 'Đối soát với báo cáo đã nộp',
-    pack: 'từ gói Ngân hàng',
     description:
       'Khi kỳ chốt chuyển sang “Đang chốt”, đối chiếu số trên kho với báo cáo đã nộp và báo cho tôi các dòng lệch vượt ngưỡng trọng yếu.',
   },
   {
     ref: 'general/weekly-brief',
     title: 'Soạn bản tin tuần',
-    pack: 'chung',
     description: 'Mỗi chiều thứ Sáu, soạn bản tin tuần từ các chỉ số chính và gửi cho nhóm qua Teams.',
   },
 ];

@@ -9,21 +9,26 @@
 
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
-| Use case (tab 8) | 115 | 8 UC đủ tiêu chí bắt buộc | todo 13, partial 94, done 8 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 353 có test nhắc mã AC | todo 778 |
-| Endpoint A2 (tab 4) | 477 (A2 ghi 478 dòng; POST /v1/data-products ở hai nhóm) | 477 được `api` phục vụ | — |
-| Bảng (tab 3/3b) | 222 trong DDL | DDL sinh từ thiết kế | — |
-| Quy tắc nghiệp vụ | 195 | 163 có mã nhắc tới | todo 195 |
-| Màn hình (SCR) | 75 | 15 có mã nhắc tới | todo 75 |
+| Use case (tab 8) | 115 | 13 UC đủ tiêu chí bắt buộc | todo 13, partial 89, done 8, na 5 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 333 có test nhắc mã AC | todo 739, na 39 |
+| Endpoint A2 (tab 4) | 453 (A2 ghi 454 dòng; POST /v1/data-products ở hai nhóm) | 453 được `api` phục vụ | — |
+| Bảng (tab 3/3b) | 206 trong DDL | DDL sinh từ thiết kế | — |
+| Quy tắc nghiệp vụ | 195 | 156 có mã nhắc tới | todo 188, na 7 |
+| Màn hình (SCR) | 75 | 15 có mã nhắc tới | todo 72, na 3 |
 | ADR (tab 6) | 48 | — | todo 45, partial 2, done 1 |
 
 ## Audit
 
 Không có điểm khai nào trái với bằng chứng.
 
-Tài liệu thiết kế tự lệch (0 chỗ): ma trận 11.1 nhắc endpoint hoặc bảng mà A2 hay DDL không có. Sửa ở
+Tài liệu thiết kế tự lệch (1 chỗ): ma trận 11.1 nhắc endpoint hoặc bảng mà A2 hay DDL không có. Sửa ở
 tài liệu (hoặc A2, DDL) rồi chụp lại; không phải lỗi của mã.
 
+<details><summary>Danh sách</summary>
+
+- UC-07-14: ma trận 11.1 ghi `POST /v1/error-book-entries/{id}:propose-to-pack` nhưng A2 không có
+
+</details>
 
 ## Use case theo phân hệ
 
@@ -120,7 +125,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC-07-11 | Rà soát tri thức định kỳ | todo | 4/4 | 5/5 | 0/5 |  |
 | UC-07-12 | Lưu câu trả lời thành tri thức | todo | 2/2 | 6/6 | 0/4 |  |
 | UC-07-13 | Quản lý data product | partial | 12/12 | 11/11 | 3/7 | claude · 3/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
-| UC-07-14 | Error Book | partial | 9/9 | 11/11 | 4/5 | claude · 4/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
+| UC-07-14 | Error Book | partial | 8/9 | 11/11 | 4/5 | claude · 4/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
 
 ### P08 Theo dõi, cảnh báo, báo cáo và kênh ngoài
 
@@ -139,11 +144,11 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-09-01 | Cài gói ngành | partial | 1/1 | 4/4 | 4/5 | claude · 4/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
-| UC-09-02 | Đưa khách vào ngành | partial | 2/2 | 3/3 | 3/5 | claude · 3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
-| UC-09-03 | Hiệu chỉnh chỉ số theo khách | partial | 2/2 | 2/2 | 2/6 | claude · 2/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
-| UC-09-04 | Nâng cấp gói | partial | 2/2 | 2/2 | 3/7 | claude · 3/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
-| UC-09-05 | Biên soạn và phát hành gói | partial | 2/2 | 3/3 | 4/6 | claude · 4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
+| UC-09-01 | Cài gói ngành | na | 0/1 | 0/4 | 5/5 | claude · Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành |
+| UC-09-02 | Đưa khách vào ngành | na | 0/2 | 0/3 | 5/5 | claude · Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành |
+| UC-09-03 | Hiệu chỉnh chỉ số theo khách | na | 0/2 | 1/2 | 6/6 | claude · Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành |
+| UC-09-04 | Nâng cấp gói | na | 0/2 | 0/2 | 7/7 | claude · Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành |
+| UC-09-05 | Biên soạn và phát hành gói | na | 0/2 | 0/3 | 6/6 | claude · Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành |
 
 ### P10 Kỳ chốt và dữ liệu theo thời điểm
 
@@ -181,8 +186,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-13-01 | Tạo agent từ mô tả | partial | 2/2 | 3/3 | 2/5 | claude · 2/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
-| UC-13-02 | Cấu hình agent | partial | 2/2 | 3/3 | 8/9 | claude · 8/9 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
+| UC-13-01 | Tạo agent từ mô tả | partial | 2/2 | 2/3 | 2/5 | claude · 2/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
+| UC-13-02 | Cấu hình agent | partial | 2/2 | 2/3 | 8/9 | claude · 8/9 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
 | UC-13-03 | Đặt trigger | partial | 1/1 | 1/1 | 3/5 | claude · 3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
 | UC-13-04 | Chạy thử và đánh giá agent | partial | 2/2 | 2/2 | 1/6 | claude · 1/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
 | UC-13-05 | Triển khai và quay lui phiên bản agent | partial | 2/2 | 2/2 | 1/6 | claude · 1/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
@@ -239,10 +244,9 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | Biến đổi dữ liệu | 26/26 |  |
 | Lớp ngữ cảnh | 49/49 |  |
 | Xung đột | 6/6 |  |
-| Cần bạn và đánh giá | 19/19 |  |
+| Cần bạn và đánh giá | 18/18 |  |
 | Chính sách | 8/8 |  |
 | Theo dõi, báo cáo, thông báo | 35/35 |  |
-| Gói ngành | 23/23 |  |
 | Kỳ chốt | 10/10 |  |
 | Quản trị | 45/45 |  |
 | Kiểm toán | 5/5 |  |
@@ -271,7 +275,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-13 | UC-03-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-14 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +12 |
 | BR-15 | UC-04-02 | todo |  |
-| BR-16 | UC-04-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/pack.py` +2 |
+| BR-16 | UC-04-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-17 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-18 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-19 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +8 |
@@ -291,9 +295,9 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-33 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-34 | UC-08-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-35 | UC-08-03 | todo | `backend/services/worker_agent/channels/cards.py`, `backend/services/worker_agent/report_runs.py`, `backend/services/worker_agent/session_reports.py` +1 |
-| BR-36 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-37 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-38 | UC-09-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-36 | UC-09-02 | na |  |
+| BR-37 | UC-09-02 | na |  |
+| BR-38 | UC-09-04 | na |  |
 | BR-39 | UC-10-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-40 | UC-10-01 | todo |  |
 | BR-41 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +2 |
@@ -317,7 +321,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-59 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/libs/dataagent_db/models/qa.py` +8 |
 | BR-60 | UC-06-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-61 | UC-07-07 | todo |  |
-| BR-62 | UC-07-07 | todo | `backend/services/api/modules/inbox/public.py`, `backend/services/api/modules/inbox/routes.py`, `backend/services/api/modules/pack/routes.py` +1 |
+| BR-62 | UC-07-07 | todo | `backend/services/api/modules/inbox/public.py`, `backend/services/api/modules/inbox/routes.py`, `tests/integration/api/test_inbox_eval.py` |
 | BR-63 | UC-07-07 | todo |  |
 | BR-64 | UC-07-07 | todo |  |
 | BR-65 | UC-07-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/schema/csdl/definitions.json` +2 |
@@ -383,10 +387,10 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-125 | UC-08-04 | todo | `backend/services/worker_agent/digests.py`, `backend/services/worker_agent/report_runs.py` |
 | BR-126 | UC-08-05 | todo | `backend/services/api/modules/agent/tasks.py`, `tests/integration/api/test_agent_tasks.py` |
 | BR-127 | UC-08-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/libs/dataagent_db/models/notify.py` +8 |
-| BR-128 | UC-09-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-129 | UC-09-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/pack.py` +6 |
-| BR-130 | UC-09-04 | todo | `backend/services/api/modules/pack/routes.py` |
-| BR-131 | UC-09-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-128 | UC-09-01 | na |  |
+| BR-129 | UC-09-03 | na |  |
+| BR-130 | UC-09-04 | na |  |
+| BR-131 | UC-09-05 | na |  |
 | BR-132 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0010_hitl_by_capability.py`, `backend/libs/dataagent_db/models/inbox.py` +13 |
 | BR-133 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-134 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +3 |
@@ -473,7 +477,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | SCR-15 | Agent theo dõi chỉ số | P08 | UC-08-01, 02 | todo |  |
 | SCR-16 | Báo cáo phân tích | P08 | UC-08-03, UC-02-04, UC-02-07 | todo |  |
 | SCR-17 | Bản tin và kênh ngoài | P08 | UC-08-02, 04 | todo |  |
-| SCR-18 | Đưa khách vào gói ngành | P09 | UC-09-02 đến 04 | todo |  |
+| SCR-18 | Đưa khách vào gói ngành | P09 | UC-09-02 đến 04 | na | claude · Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành |
 | SCR-19 | Theo thời điểm và kỳ chốt | P10 | UC-10-01 đến 04 | todo |  |
 | SCR-20 | Nhật ký kiểm toán | P11 | UC-11-03 | todo |  |
 | SCR-21 | Phiên agent | P13 | UC-13-06 | todo |  |
@@ -508,8 +512,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | SCR-50 | Đánh giá lớp ngữ cảnh | P07 | UC-07-06 | todo |  |
 | SCR-51 | Quy tắc từ quyết định | P07 | UC-07-08 | todo |  |
 | SCR-52 | Giao việc cho agent nền | P08 | UC-08-05 | todo |  |
-| SCR-53 | Cài gói ngành | P09 | UC-09-01 | todo |  |
-| SCR-54 | Biên soạn và phát hành gói | P09 | UC-09-05 | todo |  |
+| SCR-53 | Cài gói ngành | P09 | UC-09-01 | na | claude · Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành |
+| SCR-54 | Biên soạn và phát hành gói | P09 | UC-09-05 | na | claude · Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành |
 | SCR-55 | Tạo Data Space và cài đặt cá nhân | P11 | UC-11-01, 08 | todo |  |
 | SCR-56 | Nguồn thu thập (danh sách, đăng ký, giám sát) | P14 | UC-14-01, 06 | todo |  |
 | SCR-57 | Suy ngược schema và chạy thử | P14 | UC-14-02 | todo |  |
@@ -1155,12 +1159,12 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-07-01 Định nghĩa chỉ số · 3/8</summary>
+<details><summary>UC-07-01 Định nghĩa chỉ số · 4/8</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-07-01-01 | Chính | Cho AC03 phụ trách Data Space Tín dụng / Khi tạo NPL_RATIO, nhận công thức agent gợi ý, chạy thử và gửi duyệt / Thì kết quả kỳ gần nhất hiện cạnh bản đang dùng và số đã nộp, màn nêu số agent, ô, báo cáo, kỹ năng bị ản… | E2E, CSDL | todo | `tests/integration/worker_agent/test_semantic_review.py` |
-| AC-07-01-02 | Thay thế | Cho chỉ số đến từ gói ngành / Khi sửa công thức chuẩn / Thì ô công thức bị khoá và chỉ tạo được hiệu chỉnh riêng | E2E, API | todo |  |
+| AC-07-01-02 | Thay thế | Cho chỉ số đến từ gói ngành / Khi sửa công thức chuẩn / Thì ô công thức bị khoá và chỉ tạo được hiệu chỉnh riêng | E2E, API | na |  |
 | AC-07-01-03 | Thay thế | Cho chênh với số đã nộp vượt ngưỡng / Khi gửi duyệt không có lý do / Thì bị từ chối cho tới khi ghi lý do | API | todo |  |
 | AC-07-01-04 | Ngoại lệ | Cho công thức tham chiếu cột ngoài quyền của AC03 / Khi :preview / Thì không biên dịch được và thông báo nêu tên cột | API | todo |  |
 | AC-07-01-05 | Ngoại lệ | Cho công thức nợ xấu / tổng dư nợ với chi nhánh có tổng dư nợ 0 / Khi chạy thử / Thì chi nhánh đó trả rỗng, không lỗi, và có cảnh báo mẫu số bằng 0 | API | todo |  |
@@ -1348,7 +1352,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | AC-07-14-05 | Ngoại lệ | Cho lỗi do nguồn dữ liệu sai / Khi nguồn chưa sửa / Thì mục có fix_kind source_data và chưa có ca hồi quy; câu hỏi chứa dữ liệu cá nhân thì ca hồi quy dùng bản đã che | CSDL | todo |  |
 | AC-07-14-06 | Quy tắc | Cho 1 báo sai confirmed / Khi thử tạo mục thứ hai cùng nguồn / Thì chỉ mục duy nhất của eval.error_book_entry chặn | CSDL | todo | `tests/integration/api/test_inbox_eval.py` |
 | AC-07-14-07 | Quy tắc | Cho mục thiếu nguyên nhân gốc hoặc cách sửa / Khi chuyển fixed, và mục có ca hồi quy chưa chạy CI sau thời điểm sửa khi chuyển regression_added / Thì CHECK hoặc trigger từ chối cả hai | CSDL | todo | `tests/integration/api/test_inbox_eval.py` |
-| AC-07-14-08 | Quy tắc | Cho cách sửa dùng chung cho mọi khách / Khi steward bấm “Đề xuất cho gói ngành” / Thì AC07 nhận đề xuất không chứa dữ liệu của khách | API | todo | `tests/integration/api/test_inbox_eval.py` |
+| AC-07-14-08 | Quy tắc | Cho cách sửa dùng chung cho mọi khách / Khi steward bấm “Đề xuất cho gói ngành” / Thì AC07 nhận đề xuất không chứa dữ liệu của khách | API | na | `tests/integration/api/test_inbox_eval.py` |
 
 </details>
 
@@ -1454,76 +1458,76 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-09-01 Cài gói ngành · 5/6</summary>
+<details><summary>UC-09-01 Cài gói ngành · 6/6</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-09-01-01 | Chính | Cho tệp gói “Ngân hàng 2026.3” ký bằng khoá nhà cung cấp đã cài / Khi AC05 nhập qua POST /v1/packs:import và xác nhận tóm tắt / Thì pack_version 2026.3 ở trạng thái available với signature_verified_at có giá trị; cano… | API, CSDL | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
-| AC-09-01-02 | Thay thế | Cho Data Space Tín dụng đang dùng gói Ngân hàng 2026.2 / Khi phiên bản 2026.3 chuyển available / Thì người phụ trách Data Space Tín dụng nhận thông báo có bản nâng cấp, mở thẳng UC-09-04 | API | todo | `tests/integration/api/test_pack.py` |
-| AC-09-01-03 | Ngoại lệ | Cho tệp gói có 1 tài nguyên bị sửa sau khi ký (mã băm không khớp manifest) / Khi nhập / Thì hệ thống từ chối, không có dòng pack_version mới và nhật ký kiểm toán có cảnh báo bảo mật | API, CSDL | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
-| AC-09-01-04 | Ngoại lệ | Cho manifest có min_core_version cao hơn phiên bản lõi đang chạy / Khi nhập / Thì hệ thống từ chối và thông báo nêu đúng phiên bản lõi cần có | API | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
-| AC-09-01-05 | Quy tắc | Cho hai tệp gói, tệp A ký bằng khoá do khối kiến trúc ngân hàng tự cài, tệp B ký bằng khoá chưa cài / Khi nhập lần lượt / Thì tệp A được nhận, tệp B bị từ chối với lý do chữ ký không hợp lệ | API | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
-| AC-09-01-06 | Quy tắc | Cho dòng pack_version có signature_verified_at rỗng / Khi cập nhật status = available / Thì CHECK pack_version_status_signature_verified_at_check từ chối | CSDL | todo |  |
+| AC-09-01-01 | Chính | Cho tệp gói “Ngân hàng 2026.3” ký bằng khoá nhà cung cấp đã cài / Khi AC05 nhập qua POST /v1/packs:import và xác nhận tóm tắt / Thì pack_version 2026.3 ở trạng thái available với signature_verified_at có giá trị; cano… | API, CSDL | na |  |
+| AC-09-01-02 | Thay thế | Cho Data Space Tín dụng đang dùng gói Ngân hàng 2026.2 / Khi phiên bản 2026.3 chuyển available / Thì người phụ trách Data Space Tín dụng nhận thông báo có bản nâng cấp, mở thẳng UC-09-04 | API | na |  |
+| AC-09-01-03 | Ngoại lệ | Cho tệp gói có 1 tài nguyên bị sửa sau khi ký (mã băm không khớp manifest) / Khi nhập / Thì hệ thống từ chối, không có dòng pack_version mới và nhật ký kiểm toán có cảnh báo bảo mật | API, CSDL | na |  |
+| AC-09-01-04 | Ngoại lệ | Cho manifest có min_core_version cao hơn phiên bản lõi đang chạy / Khi nhập / Thì hệ thống từ chối và thông báo nêu đúng phiên bản lõi cần có | API | na |  |
+| AC-09-01-05 | Quy tắc | Cho hai tệp gói, tệp A ký bằng khoá do khối kiến trúc ngân hàng tự cài, tệp B ký bằng khoá chưa cài / Khi nhập lần lượt / Thì tệp A được nhận, tệp B bị từ chối với lý do chữ ký không hợp lệ | API | na |  |
+| AC-09-01-06 | Quy tắc | Cho dòng pack_version có signature_verified_at rỗng / Khi cập nhật status = available / Thì CHECK pack_version_status_signature_verified_at_check từ chối | CSDL | na |  |
 
 </details>
 
-<details><summary>UC-09-02 Đưa khách vào ngành · 3/7</summary>
+<details><summary>UC-09-02 Đưa khách vào ngành · 7/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-09-02-01 | Chính | Cho gói Ngân hàng 2026.3 đã cài và nguồn Core Banking đã quét xong schema, hồ sơ dữ liệu / Khi AC07 chọn gói cho Data Space Tín dụng, xác nhận ánh xạ, đối chiếu đạt và AC03 duyệt đề xuất kích hoạt / Thì pack_install c… | API, CSDL, E2E | todo | `tests/integration/api/test_pack.py` |
-| AC-09-02-02 | Chính | Cho :suggest-mappings đã chạy / Khi AC07 mở màn Đưa vào ngành · Ánh xạ / Thì mỗi đề xuất có độ tin, màn hiện tiến độ dạng 112/124 thuộc tính, cho xác nhận theo lô và khai báo bảng mã nhóm nợ của khách sang nhóm 1 đến … | E2E, CSDL | todo |  |
-| AC-09-02-03 | Thay thế | Cho chỉ số không thuộc báo cáo gửi cơ quan quản lý thiếu cột vì ngân hàng không có dữ liệu / Khi Semantic compiler biên dịch / Thì chỉ số bị đánh dấu không dùng được và :activate không bị chặn vì chỉ số đó | API | todo |  |
-| AC-09-02-04 | Thay thế | Cho NPL_RATIO tính ra lệch 0,05 điểm phần trăm so với số đã nộp kỳ gần nhất / Khi đối chiếu / Thì calibration_run ở trạng thái failed, màn hiện danh sách chỉ số lệch kèm nguyên nhân gợi ý và lối sửa ánh xạ hoặc hiệu c… | API, CSDL | todo |  |
-| AC-09-02-05 | Ngoại lệ | Cho kỳ 10/2026 của Data Space Tín dụng đang ở trạng thái Đang chốt / Khi AC03 duyệt kích hoạt / Thì pack_install chưa chuyển active; khi kỳ chốt xong thì kích hoạt tiếp mà không phải duyệt lại | API, CSDL | todo |  |
-| AC-09-02-06 | Quy tắc | Cho chỉ số trong báo cáo gửi cơ quan quản lý lệch 0,008 điểm phần trăm và chỉ số khác lệch 0,02 điểm phần trăm, chưa có hiệu chỉnh được duyệt / Khi gọi :activate với ngưỡng mặc định 0,01 / Thì kích hoạt bị từ chối và … | API, CSDL | todo | `tests/integration/api/test_pack.py` |
-| AC-09-02-07 | Quy tắc | Cho entity_mapping có valid_to không lớn hơn valid_from / Khi ghi / Thì CHECK entity_mapping_valid_to_valid_from_check từ chối; ánh xạ đóng thời hiệu ngày 30/09/2026 không dùng cho câu hỏi as_of 15/10/2026 | CSDL | todo | `tests/integration/api/test_pack.py` |
+| AC-09-02-01 | Chính | Cho gói Ngân hàng 2026.3 đã cài và nguồn Core Banking đã quét xong schema, hồ sơ dữ liệu / Khi AC07 chọn gói cho Data Space Tín dụng, xác nhận ánh xạ, đối chiếu đạt và AC03 duyệt đề xuất kích hoạt / Thì pack_install c… | API, CSDL, E2E | na |  |
+| AC-09-02-02 | Chính | Cho :suggest-mappings đã chạy / Khi AC07 mở màn Đưa vào ngành · Ánh xạ / Thì mỗi đề xuất có độ tin, màn hiện tiến độ dạng 112/124 thuộc tính, cho xác nhận theo lô và khai báo bảng mã nhóm nợ của khách sang nhóm 1 đến … | E2E, CSDL | na |  |
+| AC-09-02-03 | Thay thế | Cho chỉ số không thuộc báo cáo gửi cơ quan quản lý thiếu cột vì ngân hàng không có dữ liệu / Khi Semantic compiler biên dịch / Thì chỉ số bị đánh dấu không dùng được và :activate không bị chặn vì chỉ số đó | API | na |  |
+| AC-09-02-04 | Thay thế | Cho NPL_RATIO tính ra lệch 0,05 điểm phần trăm so với số đã nộp kỳ gần nhất / Khi đối chiếu / Thì calibration_run ở trạng thái failed, màn hiện danh sách chỉ số lệch kèm nguyên nhân gợi ý và lối sửa ánh xạ hoặc hiệu c… | API, CSDL | na |  |
+| AC-09-02-05 | Ngoại lệ | Cho kỳ 10/2026 của Data Space Tín dụng đang ở trạng thái Đang chốt / Khi AC03 duyệt kích hoạt / Thì pack_install chưa chuyển active; khi kỳ chốt xong thì kích hoạt tiếp mà không phải duyệt lại | API, CSDL | na |  |
+| AC-09-02-06 | Quy tắc | Cho chỉ số trong báo cáo gửi cơ quan quản lý lệch 0,008 điểm phần trăm và chỉ số khác lệch 0,02 điểm phần trăm, chưa có hiệu chỉnh được duyệt / Khi gọi :activate với ngưỡng mặc định 0,01 / Thì kích hoạt bị từ chối và … | API, CSDL | na |  |
+| AC-09-02-07 | Quy tắc | Cho entity_mapping có valid_to không lớn hơn valid_from / Khi ghi / Thì CHECK entity_mapping_valid_to_valid_from_check từ chối; ánh xạ đóng thời hiệu ngày 30/09/2026 không dùng cho câu hỏi as_of 15/10/2026 | CSDL | na |  |
 | — | Cần làm rõ | Bước 3 nói “đề xuất có độ tin cao” được xác nhận theo lô nhưng chưa có ngưỡng độ tin. Cần số để kiểm | | | |
 | — | Cần làm rõ | Bước 5 đối chiếu với báo cáo đã nộp kỳ gần nhất, còn bảng luồng màn Đối chiếu số ghi 3 kỳ. Cần chốt số kỳ | | | |
 
 </details>
 
-<details><summary>UC-09-03 Hiệu chỉnh chỉ số theo khách · 3/7</summary>
+<details><summary>UC-09-03 Hiệu chỉnh chỉ số theo khách · 7/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-09-03-01 | Chính | Cho NPL_RATIO của gói có trong báo cáo gửi cơ quan quản lý / Khi AC07 nhập công thức loại trừ khoản vay nhân viên kèm lý do, gửi duyệt và AC03, AC06 cùng duyệt / Thì metric_override active có approved_by và compliance… | API, CSDL | todo | `tests/integration/api/test_pack.py` |
-| AC-09-03-02 | Chính | Cho hiệu chỉnh đang soạn / Khi chạy thử / Thì màn đặt số theo hiệu chỉnh cạnh số chuẩn và số đã nộp của kỳ gần nhất, cùng chi nhánh và kỳ | E2E | todo |  |
-| AC-09-03-03 | Thay thế | Cho hiệu chỉnh chỉ áp cho khối bán lẻ / Khi lưu và phát hành / Thì scope_condition ghi điều kiện khối bán lẻ; NPL_RATIO khối doanh nghiệp vẫn tính theo công thức chuẩn | API, CSDL | todo | `tests/integration/api/test_pack.py` |
-| AC-09-03-04 | Ngoại lệ | Cho hiệu chỉnh làm lệch so với số đã nộp tăng từ 0,02 lên 0,10 điểm phần trăm / Khi chạy thử / Thì có cảnh báo và không gửi duyệt được cho tới khi xác nhận lại lý do | API, E2E | todo |  |
-| AC-09-03-05 | Quy tắc | Cho NPL_RATIO có hiệu chỉnh active / Khi hiển thị trong câu trả lời, bảng điều khiển và báo cáo / Thì cả 3 chỗ ghi “theo hiệu chỉnh của ngân hàng” và liên kết tới lý do | E2E | todo |  |
-| AC-09-03-06 | Quy tắc | Cho metric_override có approved_by rỗng / Khi cập nhật status = active / Thì CHECK metric_override_status_approved_by_check từ chối | CSDL | todo |  |
-| AC-09-03-07 | Quy tắc | Cho chỉ số có trong báo cáo gửi cơ quan quản lý và AC03 đã duyệt / Khi AC06 chưa duyệt / Thì hiệu chỉnh chưa active và chưa có metric_version mới | API | todo | `tests/integration/api/test_pack.py` |
+| AC-09-03-01 | Chính | Cho NPL_RATIO của gói có trong báo cáo gửi cơ quan quản lý / Khi AC07 nhập công thức loại trừ khoản vay nhân viên kèm lý do, gửi duyệt và AC03, AC06 cùng duyệt / Thì metric_override active có approved_by và compliance… | API, CSDL | na |  |
+| AC-09-03-02 | Chính | Cho hiệu chỉnh đang soạn / Khi chạy thử / Thì màn đặt số theo hiệu chỉnh cạnh số chuẩn và số đã nộp của kỳ gần nhất, cùng chi nhánh và kỳ | E2E | na |  |
+| AC-09-03-03 | Thay thế | Cho hiệu chỉnh chỉ áp cho khối bán lẻ / Khi lưu và phát hành / Thì scope_condition ghi điều kiện khối bán lẻ; NPL_RATIO khối doanh nghiệp vẫn tính theo công thức chuẩn | API, CSDL | na |  |
+| AC-09-03-04 | Ngoại lệ | Cho hiệu chỉnh làm lệch so với số đã nộp tăng từ 0,02 lên 0,10 điểm phần trăm / Khi chạy thử / Thì có cảnh báo và không gửi duyệt được cho tới khi xác nhận lại lý do | API, E2E | na |  |
+| AC-09-03-05 | Quy tắc | Cho NPL_RATIO có hiệu chỉnh active / Khi hiển thị trong câu trả lời, bảng điều khiển và báo cáo / Thì cả 3 chỗ ghi “theo hiệu chỉnh của ngân hàng” và liên kết tới lý do | E2E | na |  |
+| AC-09-03-06 | Quy tắc | Cho metric_override có approved_by rỗng / Khi cập nhật status = active / Thì CHECK metric_override_status_approved_by_check từ chối | CSDL | na |  |
+| AC-09-03-07 | Quy tắc | Cho chỉ số có trong báo cáo gửi cơ quan quản lý và AC03 đã duyệt / Khi AC06 chưa duyệt / Thì hiệu chỉnh chưa active và chưa có metric_version mới | API | na |  |
 | — | Cần làm rõ | Bước 3 chạy hiệu chỉnh trên kỳ gần nhất, còn bảng luồng màn Hiệu chỉnh ghi chạy thử 6 kỳ. Cần chốt số kỳ | | | |
 
 </details>
 
-<details><summary>UC-09-04 Nâng cấp gói · 4/8</summary>
+<details><summary>UC-09-04 Nâng cấp gói · 8/8</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-09-04-01 | Chính | Cho Data Space Tín dụng dùng gói 2026.2 có hiệu chỉnh NPL_RATIO và gói 2026.3 đã nhập / Khi AC05 gọi :upgrade, AC03 quyết mọi xung đột, chạy thử đạt và duyệt / Thì pack_upgrade applied với conflicts_open = 0, pack_ins… | API, CSDL | todo | `tests/integration/api/test_pack.py` |
-| AC-09-04-02 | Chính | Cho chỉ số A khách không sửa mà gói đổi, chỉ số B khách đã sửa mà gói không đổi, chỉ số C cả hai cùng đổi / Khi gộp ba chiều / Thì A nhận bản mới, B giữ bản khách, C vào danh sách cần quyết với 3 phương án giữ hiệu ch… | API, E2E | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
-| AC-09-04-03 | Chính | Cho kỳ 09/2026 đã chốt / Khi nâng cấp được áp dụng / Thì số đã công bố kỳ 09/2026 giữ nguyên, chỉ kỳ sau tính theo 2026.3 | API, CSDL | todo |  |
-| AC-09-04-04 | Thay thế | Cho nâng cấp đã áp dụng 20 ngày / Khi gọi :rollback / Thì pack_install về 2026.2, metric_override giữ nguyên, pack_upgrade chuyển rolled_back; ở ngày thứ 31 thì :rollback bị từ chối | API, CSDL | todo | `tests/integration/api/test_pack.py` |
-| AC-09-04-05 | Ngoại lệ | Cho chạy thử lệch số đã nộp ở 1 trong 2 kỳ gần nhất / Khi chạy lại bộ kiểm tra / Thì pack_upgrade quay về needs_decision kèm danh sách chỉ số lệch, :apply bị từ chối | API, CSDL | todo |  |
-| AC-09-04-06 | Quy tắc | Cho kỳ 10/2026 đang ở trạng thái Đang chốt / Khi gọi :upgrade / Thì bị từ chối và nêu kỳ đang chốt | API | todo | `tests/integration/api/test_pack.py` |
-| AC-09-04-07 | Quy tắc | Cho agent Báo cáo tín dụng dùng NPL_RATIO bị đổi do nâng cấp / Khi tạo pack_upgrade / Thì chủ agent được báo ít nhất 7 ngày trước ngày áp dụng và bộ thử của agent có kết quả chạy lại trước khi :apply | API | todo |  |
-| AC-09-04-08 | Quy tắc | Cho pack_upgrade có conflicts_open = 1 hoặc approved_by rỗng / Khi cập nhật status = applied / Thì CHECK pack_upgrade_status_conflicts_open_check từ chối | CSDL | todo |  |
+| AC-09-04-01 | Chính | Cho Data Space Tín dụng dùng gói 2026.2 có hiệu chỉnh NPL_RATIO và gói 2026.3 đã nhập / Khi AC05 gọi :upgrade, AC03 quyết mọi xung đột, chạy thử đạt và duyệt / Thì pack_upgrade applied với conflicts_open = 0, pack_ins… | API, CSDL | na |  |
+| AC-09-04-02 | Chính | Cho chỉ số A khách không sửa mà gói đổi, chỉ số B khách đã sửa mà gói không đổi, chỉ số C cả hai cùng đổi / Khi gộp ba chiều / Thì A nhận bản mới, B giữ bản khách, C vào danh sách cần quyết với 3 phương án giữ hiệu ch… | API, E2E | na |  |
+| AC-09-04-03 | Chính | Cho kỳ 09/2026 đã chốt / Khi nâng cấp được áp dụng / Thì số đã công bố kỳ 09/2026 giữ nguyên, chỉ kỳ sau tính theo 2026.3 | API, CSDL | na |  |
+| AC-09-04-04 | Thay thế | Cho nâng cấp đã áp dụng 20 ngày / Khi gọi :rollback / Thì pack_install về 2026.2, metric_override giữ nguyên, pack_upgrade chuyển rolled_back; ở ngày thứ 31 thì :rollback bị từ chối | API, CSDL | na |  |
+| AC-09-04-05 | Ngoại lệ | Cho chạy thử lệch số đã nộp ở 1 trong 2 kỳ gần nhất / Khi chạy lại bộ kiểm tra / Thì pack_upgrade quay về needs_decision kèm danh sách chỉ số lệch, :apply bị từ chối | API, CSDL | na |  |
+| AC-09-04-06 | Quy tắc | Cho kỳ 10/2026 đang ở trạng thái Đang chốt / Khi gọi :upgrade / Thì bị từ chối và nêu kỳ đang chốt | API | na |  |
+| AC-09-04-07 | Quy tắc | Cho agent Báo cáo tín dụng dùng NPL_RATIO bị đổi do nâng cấp / Khi tạo pack_upgrade / Thì chủ agent được báo ít nhất 7 ngày trước ngày áp dụng và bộ thử của agent có kết quả chạy lại trước khi :apply | API | na |  |
+| AC-09-04-08 | Quy tắc | Cho pack_upgrade có conflicts_open = 1 hoặc approved_by rỗng / Khi cập nhật status = applied / Thì CHECK pack_upgrade_status_conflicts_open_check từ chối | CSDL | na |  |
 
 </details>
 
-<details><summary>UC-09-05 Biên soạn và phát hành gói · 5/7</summary>
+<details><summary>UC-09-05 Biên soạn và phát hành gói · 7/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-09-05-01 | Chính | Cho phiên bản 2026.3 tạo từ 2026.2 / Khi AC07 soạn thay đổi, :validate đạt trên 3 bộ dữ liệu mẫu và ký phát hành / Thì pack_version ở trạng thái released với chữ ký, pack_check_run passed = true, có tệp gói và ghi chú… | API, CSDL | todo | `tests/integration/api/test_pack.py` |
-| AC-09-05-02 | Ngoại lệ | Cho một chỉ số lệch số kỳ vọng 0,02% trên 1 trong 3 bộ mẫu / Khi :validate / Thì pack_check_run passed = false, nút phát hành khoá, màn chỉ ra chỉ số và bộ mẫu lỗi, :publish bị từ chối | API, E2E | todo | `tests/integration/api/test_pack.py` |
-| AC-09-05-03 | Ngoại lệ | Cho bộ câu hỏi mẫu của 2026.3 đúng ít hơn 2026.2 một câu / Khi :validate / Thì kiểm tra không đạt và không phát hành được | API | todo |  |
-| AC-09-05-04 | Thay thế | Cho 2026.3 đổi mã một chỉ số / Khi phát hành mà ghi chú thiếu hướng dẫn chuyển đổi / Thì bị từ chối; có hướng dẫn thì phát hành và breaking_changes liệt kê thay đổi | API, CSDL | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
-| AC-09-05-05 | Quy tắc | Cho pack_metric có is_internal = false và legal_basis rỗng / Khi ghi / Thì CHECK pack_metric_is_internal_legal_basis_check từ chối | CSDL | todo | `tests/integration/api/test_pack.py` |
-| AC-09-05-06 | Quy tắc | Cho mã NPL_RATIO đã phát hành ở 2026.2 / Khi 2026.3 dùng lại mã đó cho định nghĩa khác / Thì :validate báo lỗi tái sử dụng mã | API | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
-| AC-09-05-07 | Quy tắc | Cho 2026.3 có thay đổi phá vỡ, phát hành ngày 01/11/2026 / Khi khách đang dùng gói nhập bản này / Thì khách được báo ngay khi nhập và thay đổi phá vỡ không áp dụng được trước 01/12/2026 | API | todo |  |
+| AC-09-05-01 | Chính | Cho phiên bản 2026.3 tạo từ 2026.2 / Khi AC07 soạn thay đổi, :validate đạt trên 3 bộ dữ liệu mẫu và ký phát hành / Thì pack_version ở trạng thái released với chữ ký, pack_check_run passed = true, có tệp gói và ghi chú… | API, CSDL | na |  |
+| AC-09-05-02 | Ngoại lệ | Cho một chỉ số lệch số kỳ vọng 0,02% trên 1 trong 3 bộ mẫu / Khi :validate / Thì pack_check_run passed = false, nút phát hành khoá, màn chỉ ra chỉ số và bộ mẫu lỗi, :publish bị từ chối | API, E2E | na |  |
+| AC-09-05-03 | Ngoại lệ | Cho bộ câu hỏi mẫu của 2026.3 đúng ít hơn 2026.2 một câu / Khi :validate / Thì kiểm tra không đạt và không phát hành được | API | na |  |
+| AC-09-05-04 | Thay thế | Cho 2026.3 đổi mã một chỉ số / Khi phát hành mà ghi chú thiếu hướng dẫn chuyển đổi / Thì bị từ chối; có hướng dẫn thì phát hành và breaking_changes liệt kê thay đổi | API, CSDL | na |  |
+| AC-09-05-05 | Quy tắc | Cho pack_metric có is_internal = false và legal_basis rỗng / Khi ghi / Thì CHECK pack_metric_is_internal_legal_basis_check từ chối | CSDL | na |  |
+| AC-09-05-06 | Quy tắc | Cho mã NPL_RATIO đã phát hành ở 2026.2 / Khi 2026.3 dùng lại mã đó cho định nghĩa khác / Thì :validate báo lỗi tái sử dụng mã | API | na |  |
+| AC-09-05-07 | Quy tắc | Cho 2026.3 có thay đổi phá vỡ, phát hành ngày 01/11/2026 / Khi khách đang dùng gói nhập bản này / Thì khách được báo ngay khi nhập và thay đổi phá vỡ không áp dụng được trước 01/12/2026 | API | na |  |
 | — | Cần làm rõ | BR-131 chưa nói “nghĩa khác” xác định bằng gì (đổi công thức, đơn vị hay căn cứ) và 30 ngày tính từ lúc phát hành hay lúc nhập ở khách vì gói giao ngoại tuyến | | | |
 
 </details>
@@ -1769,14 +1773,14 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-13-01 Tạo agent từ mô tả · 2/7</summary>
+<details><summary>UC-13-01 Tạo agent từ mô tả · 3/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-13-01-01 | Chính | Cho AC03 được tạo agent trong Data Space Tín dụng / Khi mô tả “mỗi khi khoá sổ, so NPL với báo cáo đã nộp và đề xuất điều chỉnh nếu lệch” rồi lưu bản đề xuất / Thì bản đề xuất có đủ mục tiêu một câu, phạm vi dữ liệu, … | API, CSDL | todo | `tests/integration/api/test_agent.py` |
 | AC-13-01-02 | Chính | Cho chủ sở hữu không có quyền trên bộ sưu tập văn bản nội bộ mà bản đề xuất có / Khi xem bản đề xuất và lưu / Thì phần đó bị đánh dấu vượt quyền và POST /v1/agents bị từ chối khi phần đó còn trong cấu hình | API, E2E | todo |  |
 | AC-13-01-03 | Thay thế | Cho một phiên Notebook 4 ô lọc theo kỳ 09/2026 / Khi chọn “Biến phiên thành agent” / Thì cấu hình đề xuất có 4 bước theo thứ tự các ô và kỳ là tham số thay vì giá trị cố định | API | todo |  |
-| AC-13-01-04 | Thay thế | Cho agent mẫu Đối soát của gói Ngân hàng 2026.3 / Khi tạo từ mẫu / Thì cấu hình đã điền sẵn, người dùng chỉ phải chọn phạm vi và trigger | E2E | todo |  |
+| AC-13-01-04 | Thay thế | Cho agent mẫu Đối soát của gói Ngân hàng 2026.3 / Khi tạo từ mẫu / Thì cấu hình đã điền sẵn, người dùng chỉ phải chọn phạm vi và trigger | E2E | na |  |
 | AC-13-01-05 | Ngoại lệ | Cho mô tả “theo dõi giúp tôi” / Khi gọi :draft-from-text / Thì hệ thống hỏi lại tối đa 3 câu ngắn trước khi đề xuất, không có câu hỏi thứ 4 | Đánh giá agent | todo |  |
 | AC-13-01-06 | Quy tắc | Cho agent_def thiếu owner_user_id hoặc app_user kind = agent thiếu owner_user_id / Khi ghi / Thì ràng buộc NOT NULL hoặc CHECK app_user_kind_owner_user_id_check từ chối | CSDL | todo | `tests/integration/migrate/test_core.py` |
 | AC-13-01-07 | Quy tắc | Cho chủ sở hữu của Agent Đối soát rời tổ chức / Khi đồng bộ AD chạy / Thì agent chuyển paused và người phụ trách Data Space Tín dụng có yêu cầu quyết định trong Cần bạn | API, CSDL | todo |  |
@@ -1814,13 +1818,13 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-13-04 Chạy thử và đánh giá agent · 1/7</summary>
+<details><summary>UC-13-04 Chạy thử và đánh giá agent · 2/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-13-04-01 | Chính | Cho Agent Đối soát có công cụ ghi và gửi / Khi chạy thử trên dữ liệu kỳ 06/2026 / Thì agent_run có trigger_kind = test, mọi bước ghi và gửi có status = simulated, không bảng derived nào đổi và không có tin nào gửi ra | API, CSDL | todo | `tests/integration/api/test_agent.py`, `tests/integration/worker_agent/test_runs.py` |
 | AC-13-04-02 | Chính | Cho bộ thử có đủ bốn loại tình huống / Khi chạy eval-runs cho version 3 / Thì eval_run có kết quả theo phiên bản, màn so với version đang chạy về tỷ lệ đạt, tình huống đổi kết quả, chi phí, thời gian và mỗi tình huống… | API, CSDL | todo |  |
-| AC-13-04-03 | Thay thế | Cho agent mới chưa có lượt chạy thật / Khi chạy đánh giá / Thì bộ thử là bộ mẫu của loại agent trong gói ngành | API | todo |  |
+| AC-13-04-03 | Thay thế | Cho agent mới chưa có lượt chạy thật / Khi chạy đánh giá / Thì bộ thử là bộ mẫu của loại agent trong gói ngành | API | na |  |
 | AC-13-04-04 | Ngoại lệ | Cho chạy thử chạm một công cụ không giả lập được / Khi tới bước đó / Thì lượt dừng, chủ sở hữu nhận báo và log egress proxy không có lời gọi thật nào | API | todo |  |
 | AC-13-04-05 | Quy tắc | Cho 3 agent dùng loại việc answer_writing / Khi AC05 đổi mô hình của loại việc đó (UC-11-05) / Thì cả 3 agent có eval_run mới trước khi model_config mới active | API, CSDL | todo |  |
 | AC-13-04-06 | Quy tắc | Cho tình huống lấy từ lượt chạy thật có số CCCD và họ tên khách / Khi lưu vào bộ thử / Thì eval_item.input không còn hai giá trị đó | CSDL | todo |  |

@@ -240,7 +240,7 @@ class QualityRule(Base):
         comment="high (chặn báo cáo, BR-116), medium, low",
     )
     origin: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'manual'"), comment="manual, agent_suggested, pack"
+        Text, server_default=sql_text("'manual'"), comment="manual, agent_suggested"
     )
     status: Mapped[str] = mapped_column(
         Text, server_default=sql_text("'active'"), comment="draft, active, disabled"

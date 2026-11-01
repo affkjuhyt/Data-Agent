@@ -40,7 +40,6 @@ const metric = (code: string, certified: boolean, status = 'active') => ({
   canonical_dataset_id: null,
   consumer_group: null,
   in_filed_report: false,
-  pack_metric_id: null,
   created_at: at,
   updated_at: at,
 });

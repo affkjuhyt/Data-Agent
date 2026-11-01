@@ -151,8 +151,6 @@ async def sources() -> list[EventSource]:
             types |= set(tiles.HANDLERS) | set(session_reports.HANDLERS)
         if schema == "skill":
             types |= {proposals.PUBLISH, proposals.SHARE} | set(skill_runs.HANDLERS)
-        if schema == "pack":
-            types |= {proposals.ACTIVATE}
         if schema == "pipeline":
             types |= {proposals.WRITEBACK} | set(pipelines.HANDLERS) | set(prep.HANDLERS)
         if schema == "ingest":

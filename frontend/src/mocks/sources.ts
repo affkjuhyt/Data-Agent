@@ -385,7 +385,7 @@ function profileOf(table: SourceTable, source: SourceRow): TableProfile {
       ? {
           agent_name: 'Agent Chuẩn bị dữ liệu',
           remarks: [
-            'Bảng khớp thực thể Khoản vay của gói Ngân hàng; 22/24 cột đã ánh xạ.',
+            'Bảng khớp thực thể Khoản vay của mô hình ngữ nghĩa; 22/24 cột đã ánh xạ.',
             'restructure_flag trống 62% là bình thường; nên coi trống là “không cơ cấu”.',
             'id_number là dữ liệu cá nhân, đã che; không dùng làm khoá nối.',
           ],

@@ -134,7 +134,6 @@ export interface AgentDraft {
 export interface AgentTemplate {
   ref: string;
   title: string;
-  pack: string;
   description: string;
 }
 
@@ -203,7 +202,7 @@ export interface AgentMemory {
   user_id: Uuid | null;
   kind: 'decision' | 'preference' | 'data_insight' | 'domain_context';
   content: string;
-  source_kind: 'hitl' | 'run' | 'manual' | 'pack';
+  source_kind: 'hitl' | 'run' | 'manual';
   status: 'pending_review' | 'active' | 'disabled' | 'conflict';
   use_count: number;
   created_at: Timestamp;
@@ -449,7 +448,6 @@ export const listTemplates = async (): Promise<Page<AgentTemplate>> => {
     items: onboarding.templates.map((template) => ({
       ref: template.ref,
       title: template.title,
-      pack: 'onboarding',
       description: template.description,
     })),
     next_page_token: '',

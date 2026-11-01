@@ -51,9 +51,6 @@ class Organization(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     code: Mapped[str] = mapped_column(Text, comment="Mã tổ chức, duy nhất toàn hệ thống")
     name: Mapped[str] = mapped_column(Text)
-    industry_code: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="Ngành chính, khớp pack.industry_pack.code; chỉ để gợi ý gói"
-    )
     status: Mapped[str] = mapped_column(
         Text, server_default=sql_text("'active'"), comment="active, suspended"
     )
@@ -280,9 +277,6 @@ class DataSpace(Base):
         JSONB,
         server_default=sql_text("'{}'"),
         comment="Bốn cờ trên màn Tạo Data Space: mask_pii, agent_write_derived_only, show_filed_and_current, allow_external_channels",
-    )
-    pack_install_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, comment="logic → pack.pack_install"
     )
     work_calendar_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

@@ -52,7 +52,6 @@ import { createMetricCatalogHandlers } from './metricCatalog';
 import { createMetricHandlers } from './metrics';
 import { createMonitorHandlers } from './monitors';
 import { createNotificationHandlers } from './notifications';
-import { createPackHandlers } from './packs';
 import { createPeriodHandlers } from './periods';
 import { createReportHandlers } from './reports';
 import { createSemanticLayerHandlers } from './semanticLayer';
@@ -127,7 +126,6 @@ export function createHandlers() {
     ...createMonitorHandlers(),
     ...createAlertHandlers(),
     ...createReportHandlers(),
-    ...createPackHandlers(),
     ...createSemanticLayerHandlers(),
     ...createErrorBookHandlers(),
     ...createExecHandlers(),

@@ -30,7 +30,6 @@ FixKind = Literal[
     "synonym",
     "example",
     "knowledge_page",
-    "pack_version",
     "source_data",
     "model_config",
     "prompt",
@@ -231,11 +230,6 @@ class Dismiss(BaseModel):
         return self
 
 
-class ProposeToPack(BaseModel):
-    pack_id: uuid.UUID
-    summary: str = Field(min_length=1, max_length=4_000)
-
-
 class ErrorBookView(BaseModel):
     id: uuid.UUID
     entry_no: str
@@ -267,8 +261,6 @@ class ErrorBookView(BaseModel):
     dismiss_reason: str | None
     duplicate_of_id: uuid.UUID | None
     reopened_count: int
-    pack_contribution: str
-    pack_proposal_ref: str | None
     created_at: datetime.datetime
     updated_at: datetime.datetime
 

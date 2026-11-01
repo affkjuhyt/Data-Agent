@@ -14,7 +14,7 @@ admin takes effect on the next call, not at the next login.
 
 Three more limits keep a grant from reaching further than it was given:
   * a role held inside a Data Space adds only Data Space capabilities: admin,
-    compliance, audit_read, exec_vault and pack_author are organisation-wide
+    compliance, audit_read and exec_vault are organisation-wide
     (tab 3b D4.1: "Vai trò cấp toàn tổ chức"), so a space-level role carrying
     them, which a Data Space steward could assign, never passes an /v1/admin/*
     or audit check just because the caller names that space;
@@ -43,9 +43,7 @@ ROLE = "svc_org"
 
 # Capabilities only an organisation-wide role (user_role, or a group mapping
 # without a Data Space) can grant.
-ORG_ONLY_CAPABILITIES = frozenset(
-    {"admin", "compliance", "audit_read", "exec_vault", "pack_author"}
-)
+ORG_ONLY_CAPABILITIES = frozenset({"admin", "compliance", "audit_read", "exec_vault"})
 
 
 def still_valid(column: InstrumentedAttribute[datetime.datetime | None]) -> ColumnElement[bool]:

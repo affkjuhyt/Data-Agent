@@ -74,11 +74,6 @@ class SemanticEntity(Base):
         UUID(as_uuid=True), comment="logic → catalog.dataset"
     )
     key_columns: Mapped[list[str]] = mapped_column(ARRAY(Text))
-    canonical_entity_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=True,
-        comment="logic → pack.canonical_entity nếu sinh từ gói ngành",
-    )
     status: Mapped[str] = mapped_column(
         Text, server_default=sql_text("'active'"), comment="draft, active, retired"
     )
@@ -182,9 +177,6 @@ class Metric(Base):
     canonical_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, comment="Nguồn chuẩn; logic → catalog.dataset"
     )
-    pack_metric_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, comment="logic → pack.pack_metric nếu đến từ gói ngành"
-    )
     current_version: Mapped[int | None] = mapped_column(
         Integer, nullable=True, comment="Phiên bản đang dùng"
     )
@@ -250,11 +242,6 @@ class MetricVersion(Base):
     legal_basis: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Căn cứ, ví dụ điều khoản văn bản"
     )
-    override_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=True,
-        comment="logic → pack.metric_override nếu là bản hiệu chỉnh (BR-129)",
-    )
     change_note: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Ví dụ Loại vay nội bộ"
     )
@@ -298,7 +285,7 @@ class Relationship(Base):
     to_columns: Mapped[list[str]] = mapped_column(ARRAY(Text))
     cardinality: Mapped[str] = mapped_column(Text, comment="one_to_one, many_to_one, one_to_many")
     origin: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'declared'"), comment="declared, inferred, manual, pack"
+        Text, server_default=sql_text("'declared'"), comment="declared, inferred, manual"
     )
     overlap_ratio: Mapped[decimal.Decimal | None] = mapped_column(
         Numeric(5, 4), nullable=True, comment="Độ trùng giá trị khi suy ra"
@@ -337,7 +324,7 @@ class Synonym(Base):
         Text, nullable=True, comment="Giá trị cụ thể khi target_kind = value"
     )
     origin: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'manual'"), comment="manual, agent_suggested, pack"
+        Text, server_default=sql_text("'manual'"), comment="manual, agent_suggested"
     )
     status: Mapped[str] = mapped_column(
         Text,
@@ -395,7 +382,7 @@ class ExampleQuery(Base):
         UUID(as_uuid=True), nullable=True, comment="Điểm vector trong collection example_queries"
     )
     origin: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'manual'"), comment="manual, agent_suggested, feedback, pack"
+        Text, server_default=sql_text("'manual'"), comment="manual, agent_suggested, feedback"
     )
     last_verified_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -1044,11 +1031,6 @@ class DataProduct(Base):
         UUID(as_uuid=True),
         nullable=True,
         comment="logic → eval.eval_set (subject_type context) chứa câu hỏi mẫu và ca hồi quy Error Book",
-    )
-    pack_version_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=True,
-        comment="logic → pack.pack_version nếu dựng từ mẫu của gói ngành",
     )
     version: Mapped[int] = mapped_column(
         Integer,

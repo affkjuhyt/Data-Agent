@@ -63,13 +63,6 @@ const ContextEvalPage = React.lazy(() => import('./features/semantics/ContextEva
 const AnswerProductsPage = React.lazy(() => import('./features/answer-products/AnswerProductsPage'));
 const ErrorBookPage = React.lazy(() => import('./features/error-book/ErrorBookPage'));
 const VaultPage = React.lazy(() => import('./features/vault/VaultPage'));
-const PacksPage = React.lazy(() => import('./features/packs/PacksPage'));
-const PackInstallPage = React.lazy(() => import('./features/packs/PackInstallPage'));
-const PackOnboardPage = React.lazy(() => import('./features/packs/PackOnboardPage'));
-const PackCalibrationPage = React.lazy(() => import('./features/packs/PackCalibrationPage'));
-const MetricOverridePage = React.lazy(() => import('./features/packs/MetricOverridePage'));
-const PackUpgradePage = React.lazy(() => import('./features/packs/PackUpgradePage'));
-const PackAuthorPage = React.lazy(() => import('./features/packs/PackAuthorPage'));
 const DecisionRulePage = React.lazy(() => import('./features/rules/DecisionRulePage'));
 const ProfilePage = React.lazy(() => import('./features/admin-platform/ProfilePage'));
 const NotificationsPage = React.lazy(() => import('./features/admin-platform/NotificationsPage'));
@@ -227,14 +220,6 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     // P07 data product (context.data_product), not P06's shared DATA_PRODUCTS; /data/answer_products/<id>.
     ANSWER_PRODUCTS: { render: () => <AnswerProductsPage /> },
     ERROR_BOOK:      { render: () => <ErrorBookPage /> },
-    PACKS:           { render: () => <PacksPage /> },
-    PACK_INSTALL:    { render: () => <PackInstallPage /> },
-    PACK_ONBOARD:    { render: () => <PackOnboardPage /> },
-    PACK_CALIBRATE:  { render: () => <PackCalibrationPage /> },
-    PACK_UPGRADE:    { render: () => <PackUpgradePage /> },
-    PACK_AUTHOR:     { render: () => <PackAuthorPage /> },
-    // /data/metric_override/<id>, under "Chỉ số": a pack metric the organisation adjusted.
-    METRIC_OVERRIDE: { render: () => <MetricOverridePage /> },
     // Kỳ chốt: /data/period/<id>, /data/retro/<id>; without an id each opens its first item.
     PERIOD:          { render: () => <PeriodClosePage /> },
     RETRO:           { render: () => <RetroChangePage /> },

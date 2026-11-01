@@ -23,7 +23,6 @@ import {
   getErrorBookEntry,
   listErrorBookEntries,
   markEntryFixed,
-  proposeEntryToPack,
   SOURCE_LABEL,
   updateErrorBookEntry,
   type EntryStatus,
@@ -41,10 +40,9 @@ import { LinkButton } from '../../components/shell/AppLink';
  * of the Data Space, filtered by status, kind, source, data product and handler; beside it one
  * entry — the wrong and the right number, its receipt and replay, the error kind and root cause,
  * the fix linked to its proposal, the regression case and its CI run. An entry is fixed only with a
- * kind, a root cause and an accepted fix, and gets its regression case then; a fix that holds for
- * every customer of the data goes to the industry pack without the customer's data (BR-179).
+ * kind, a root cause and an accepted fix, and gets its regression case then.
  */
-type DialogKind = 'fix' | 'dismiss' | 'pack' | null;
+type DialogKind = 'fix' | 'dismiss' | null;
 
 const STATUS: Record<
   EntryStatus,
@@ -298,7 +296,6 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
   const [fixRef, setFixRef] = useState('');
   const [fixKind, setFixKind] = useState<FixKind | ''>('');
   const [reason, setReason] = useState('');
-  const [summary, setSummary] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string>();
   const open = entry.status === 'open';
@@ -486,27 +483,12 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
             </Button>
           </>
         )}
-        {!open && entry.status !== 'dismissed' && (
-          <>
-            {entry.receipt && (
-              <LinkButton area="analysis" page="RECEIPT" id={entry.receipt!.answer_id}>
-                Mở biên nhận
-              </LinkButton>
-            )}
-            {entry.pack_candidate && (
-              <Button kind="primary" disabled={busy !== null} onClick={() => setDialog('pack')}>
-                Đề xuất cho gói ngành
-              </Button>
-            )}
-          </>
+        {!open && entry.status !== 'dismissed' && entry.receipt && (
+          <LinkButton area="analysis" page="RECEIPT" id={entry.receipt.answer_id}>
+            Mở biên nhận
+          </LinkButton>
         )}
       </div>
-      {entry.pack_candidate && !open && (
-        <p className="text-muted-foreground da-caption">
-          Cách sửa dùng chung cho mọi khách dùng dữ liệu này: đề xuất đã bỏ dữ liệu của khách, gửi
-          người biên soạn gói ngành (UC-09-05).
-        </p>
-      )}
       <Dialog
         open={dialog === 'fix'}
         size="sm"
@@ -566,41 +548,6 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
           placeholder="Lý do, hoặc mã mục gốc nếu trùng"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
-          rows={3}
-        />
-      </Dialog>
-      <Dialog
-        open={dialog === 'pack'}
-        size="sm"
-        title="Đề xuất cho gói ngành"
-        description={
-          entry.pack_candidate
-            ? `Gửi ${entry.pack_candidate.pack_name}; chỉ gồm cách sửa và ca kiểm thử đã bỏ dữ liệu khách.`
-            : undefined
-        }
-        submitLabel="Gửi đề xuất"
-        submitting={busy === 'pack'}
-        canSubmit={summary.trim() !== ''}
-        error={dialog === 'pack' ? error : undefined}
-        onClose={() => setDialog(null)}
-        onSubmit={() =>
-          entry.pack_candidate &&
-          act(
-            'pack',
-            () =>
-              proposeEntryToPack(entry.id, {
-                pack_id: entry.pack_candidate!.pack_id,
-                summary: summary.trim(),
-              }),
-            'Đã gửi đề xuất cho người biên soạn gói',
-          )
-        }
-      >
-        <Textarea
-          aria-label="Tóm tắt cách sửa"
-          placeholder="Tóm tắt cách sửa cho người biên soạn gói"
-          value={summary}
-          onChange={(e) => setSummary(e.target.value)}
           rows={3}
         />
       </Dialog>

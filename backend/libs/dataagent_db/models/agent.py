@@ -68,7 +68,7 @@ class AgentDef(Base):
         UUID(as_uuid=True), comment="Tài khoản agent (app_user.kind = agent)"
     )
     template_ref: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, comment="logic → pack.pack_skill nếu tạo từ agent mẫu"
+        UUID(as_uuid=True), nullable=True, comment="Agent mẫu mà agent được tạo từ đó"
     )
     current_config_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(
@@ -531,7 +531,7 @@ class AgentMemory(Base):
         Text, comment="decision, preference, data_insight, domain_context"
     )
     content: Mapped[str] = mapped_column(Text)
-    source_kind: Mapped[str] = mapped_column(Text, comment="hitl, run, manual, pack")
+    source_kind: Mapped[str] = mapped_column(Text, comment="hitl, run, manual")
     source_ref: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     expires_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

@@ -114,7 +114,7 @@ describe('activating an agent version', () => {
   });
 
   it('says a Data Space without an eval set must get one, without asking for a run', async () => {
-    const api = evalWorker({ passes: true, sets: [{ ...spaceSet, data_space_id: null, subject_type: 'pack' }] });
+    const api = evalWorker({ passes: true, sets: [{ ...spaceSet, data_space_id: null, subject_type: 'agent' }] });
     await expect(activateAgent('a-1', 1, instant)).rejects.toThrow(/chưa có bộ đánh giá/);
     expect(api.deployed).toEqual([]);
   });

@@ -109,15 +109,16 @@ class TestRolePasswordsAreSetWhereRolesAreCreated:
 
     def test_the_svc_roles_get_their_passwords_from_db_role_passwords(self, db_init):
         """The migration creates the svc_ roles without a password; the Job is the
-        only place they become logins, one per svc_ key of the DB_ROLE_PASSWORDS JSON."""
+        only place they become logins, one per svc_ key of the DB_ROLE_PASSWORDS JSON
+        that names an existing role (a vault may outlive a role a migration dropped)."""
         command = _db_init_container(db_init)["command"][-1]
         assert 'passwords="$DB_ROLE_PASSWORDS"' in command
         assert re.search(
             r"format\('ALTER ROLE %I WITH LOGIN PASSWORD %L', key, value\)\s*"
             r"FROM jsonb_each_text\(:'passwords'::jsonb\)\s*"
-            r"WHERE key LIKE 'svc\\_%'\s*\\gexec",
+            r"WHERE key LIKE 'svc\\_%' AND key IN \(SELECT rolname FROM pg_roles\)\s*\\gexec",
             command,
-        ), "the Job no longer turns the svc_ roles of DB_ROLE_PASSWORDS into logins"
+        ), "the Job no longer turns the existing svc_ roles of DB_ROLE_PASSWORDS into logins"
 
     def test_pgbouncer_auth_gets_its_password(self, db_init):
         command = _db_init_container(db_init)["command"][-1]

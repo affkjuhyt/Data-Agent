@@ -81,7 +81,7 @@ export const getSpaceSetup = async (spaceId: string): Promise<SpaceSetup> => {
     pending: unapproved.map((m) => m.display_name ?? m.code),
   };
 
-  // The Data Space's own set with the most questions; an organisation-wide (pack) set is not it.
+  // The Data Space's own set with the most questions; an organisation-wide set is not it.
   const own = sets.items
     .filter((s) => s.data_space_id === spaceId)
     .sort((a, b) => b.item_count - a.item_count)[0];

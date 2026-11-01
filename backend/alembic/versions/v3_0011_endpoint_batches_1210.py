@@ -7,13 +7,15 @@
 - skill.skill_run.mode: a try from the skill editor (POST /v1/skill-versions/{id}:try) is not a run.
 - query.query_run.caller_kind ad_hoc: SQL sent to POST /v1/query-runs.
 - pipeline.data_mart.suggested_dimensions: dimensions proposed from the fact table's relations.
-- pack.industry_pack.origin: an organisation's own pack (POST /v1/packs) has no publisher key yet.
-- pack.metric_override.calibration_run_id: the trial run of an override (UC-09-03 step 3).
 - svc_audit_worker in the audit database (tab 3 D5.2): worker-agent releases an approved export
   with it; it reads export_job and moves its state, nothing on audit_log, security_event, outbox.
 
 Fresh installs get the schema from the generated dataagent.sql; this revision is idempotent so
 both paths end equal, and both load the tool rows here.
+
+It also changed schema pack (industry_pack.origin, metric_override.calibration_run_id); since
+01/11/2026 the baseline has no pack schema, so that part is gone and v3_0017 drops the schema
+from the clusters that ran it.
 
 Revision ID: v3_0011
 Revises: v3_0010
@@ -141,30 +143,6 @@ COMMENT ON COLUMN query.query_run.caller_kind IS 'question, tile, skill_run, age
     + """
 ALTER TABLE pipeline.data_mart ADD COLUMN IF NOT EXISTS suggested_dimensions jsonb;
 COMMENT ON COLUMN pipeline.data_mart.suggested_dimensions IS 'Chiều gợi ý từ quan hệ của bảng sự kiện, sinh khi tạo mart; người soạn chọn vào dimensions (UC-06-06, thêm 12/10/2026)';
-"""
-    # pack.industry_pack.origin
-    + """
-ALTER TABLE pack.industry_pack ADD COLUMN IF NOT EXISTS origin text NOT NULL DEFAULT 'vendor';
-ALTER TABLE pack.industry_pack ALTER COLUMN publisher_key_id DROP NOT NULL;
-COMMENT ON COLUMN pack.industry_pack.origin IS 'vendor, organisation: organisation là gói tổ chức tự soạn qua POST /v1/packs; industry_code lấy theo organization.industry_code (thêm 12/10/2026)';
-"""
-    + DROP_CHECK.format(table="pack.industry_pack", pattern="origin")
-    + """
-ALTER TABLE pack.industry_pack
-  ADD CONSTRAINT industry_pack_origin_check CHECK (origin IN ('vendor','organisation')),
-  ADD CONSTRAINT industry_pack_check CHECK (origin = 'organisation' OR publisher_key_id IS NOT NULL);
-"""
-    # pack.metric_override.calibration_run_id
-    + """
-ALTER TABLE pack.metric_override ADD COLUMN IF NOT EXISTS calibration_run_id uuid;
-COMMENT ON COLUMN pack.metric_override.calibration_run_id IS 'FK calibration_run; lần chạy thử công thức trên dữ liệu thật (UC-09-03 bước 3, thêm 12/10/2026)';
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'metric_override_calibration_run_id_fkey') THEN
-    ALTER TABLE pack.metric_override ADD CONSTRAINT metric_override_calibration_run_id_fkey
-      FOREIGN KEY (calibration_run_id) REFERENCES pack.calibration_run(id);
-  END IF;
-END $$;
 RESET ROLE;
 """
 )

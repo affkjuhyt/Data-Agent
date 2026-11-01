@@ -43,7 +43,6 @@ CAPABILITIES = frozenset(
         "run_agent",
         "create_agent",
         "writeback",
-        "pack_author",
         "admin",
         "compliance",
         "audit_read",

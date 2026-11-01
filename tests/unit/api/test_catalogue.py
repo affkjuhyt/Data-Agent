@@ -19,9 +19,10 @@ pytestmark = [pytest.mark.unit, pytest.mark.contract]
 def test_snapshot_holds_all_of_a2() -> None:
     data = catalogue()
     # 470 rows of tab 4, plus the upload preview/delete, the metric edit/retire and the eval
-    # item edit operations.
-    assert len(data["endpoints"]) == 478
-    assert len(data["groups"]) == 22
+    # item edit operations, less the 24 of the industry packs (group Gói ngành and the Error
+    # Book's propose-to-pack), dropped on 01/11/2026.
+    assert len(data["endpoints"]) == 454
+    assert len(data["groups"]) == 21
     assert {e["group"] for e in data["endpoints"]} == set(data["groups"])
 
 

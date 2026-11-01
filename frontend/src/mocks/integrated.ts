@@ -29,7 +29,6 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Kỹ năng',
   'Biến đổi dữ liệu',
   'Dự báo',
-  'Gói ngành',
   'Thu thập',
   'Tích hợp',
   'Lớp riêng lãnh đạo',

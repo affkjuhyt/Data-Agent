@@ -48,13 +48,13 @@ spec:
               'Kiểm thử dev · toàn quyền',
               ARRAY['ask', 'view_aggregate', 'view_detail', 'upload', 'prepare_data', 'admin_data',
                     'steward', 'approve', 'create_skill', 'run_agent', 'create_agent', 'writeback',
-                    'pack_author', 'admin', 'compliance', 'audit_read', 'exec_vault'],
+                    'admin', 'compliance', 'audit_read', 'exec_vault'],
               true
           )
           ON CONFLICT (id) DO UPDATE SET capabilities = EXCLUDED.capabilities, name = EXCLUDED.name;
 
-          -- Organisation-wide: the only way admin, compliance, audit_read, exec_vault and
-          -- pack_author are granted (ORG_ONLY_CAPABILITIES).
+          -- Organisation-wide: the only way admin, compliance, audit_read and exec_vault are
+          -- granted (ORG_ONLY_CAPABILITIES).
           INSERT INTO org.user_role (id, org_id, user_id, role_id, source)
           VALUES (
               'a0000000-0000-0000-0000-0000000000fe',

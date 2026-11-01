@@ -55,5 +55,6 @@ def test_every_schema_outbox_is_open_to_the_relay(db):
             "SELECT count(*) FROM pg_policies WHERE tablename = 'outbox' "
             "AND policyname IN ('outbox_relay_read', 'outbox_relay_publish')",
         )
-        == 23 * 2
+        # One outbox per schema of dataagent: 22 since schema pack went (01/11/2026).
+        == 22 * 2
     )

@@ -82,7 +82,6 @@ class MetricVersionView(View):
     allowed_dimensions: list[uuid.UUID]
     additivity: str
     legal_basis: str | None
-    override_id: uuid.UUID | None
     change_note: str | None
     status: str
     certified_by: uuid.UUID | None
@@ -100,7 +99,6 @@ class MetricView(View):
     owner_id: uuid.UUID
     consumer_group: str | None
     canonical_dataset_id: uuid.UUID | None
-    pack_metric_id: uuid.UUID | None
     current_version: int | None
     in_filed_report: bool
     status: str
@@ -174,7 +172,6 @@ class EntityView(View):
     primary_dataset: DatasetRef | None = None
     # The grain: one row of the primary table per value of these columns.
     key_columns: list[str]
-    canonical_entity_id: uuid.UUID | None
     status: str
     relationships: list[EntityRelationship] = Field(default_factory=list)
     created_at: datetime.datetime
@@ -721,7 +718,6 @@ CONTEXT_ONLY = (
     "scope_entities",
     "period_to",
     "out_of_scope_note",
-    "pack_version_id",
 )
 PUBLISHED_ONLY = ("dataset_id", "data_mart_id", "contract")
 
@@ -744,7 +740,6 @@ class DataProductCreate(BaseModel):
     owner_id: uuid.UUID
     steward_id: uuid.UUID | None = None
     freshness_statement: str | None = Field(default=None, min_length=1, max_length=500)
-    pack_version_id: uuid.UUID | None = None
     dataset_id: uuid.UUID | None = None
     data_mart_id: uuid.UUID | None = None
     contract: dict[str, Any] | None = None
@@ -781,7 +776,6 @@ class DataProductView(View):
     freshness_statement: str
     classification: str
     eval_set_id: uuid.UUID | None
-    pack_version_id: uuid.UUID | None
     version: int
     status: str
     suspended_reason: str | None

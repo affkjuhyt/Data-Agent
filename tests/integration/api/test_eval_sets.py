@@ -3,7 +3,7 @@ PostgreSQL, on the organisation of test_inbox_eval.py plus a member without `ask
 
 The first Data Space holds a context set with three runs (an old completed one, the newest
 completed one with a miss, and one still running) and a skill set; the second Data Space holds a
-set of its own; a pack set belongs to no Data Space.
+set of its own; an organisation-wide agent set belongs to no Data Space.
 """
 
 from __future__ import annotations
@@ -85,8 +85,8 @@ async def test_eval_sets_are_listed_by_subject(team: Team) -> None:
     context = _set(team, "Bộ chuẩn")
     agent = uuid.uuid4()
     skill = _set(team, "Bộ kỹ năng", subject_type="skill", subject_id=agent)
-    pack = _set(
-        team, "Bộ gói ngành", subject_type="pack", subject_id=uuid.uuid4(), data_space_id=None
+    shared = _set(
+        team, "Bộ agent chung", subject_type="agent", subject_id=uuid.uuid4(), data_space_id=None
     )
     _set(team, "Bộ khác", data_space_id=team.other_space)
     _item(team, context, "a")
@@ -97,8 +97,8 @@ async def test_eval_sets_are_listed_by_subject(team: Team) -> None:
         listed = await api.get("/v1/eval-sets", headers=team.headers("asker"))
         assert listed.status_code == 200, listed.text
         by_id = {s["id"]: s for s in listed.json()["items"]}
-        # The Data Space's sets and the pack set of no Data Space; not the other space's.
-        assert set(by_id) == {str(context), str(skill), str(pack)}
+        # The Data Space's sets and the set of no Data Space; not the other space's.
+        assert set(by_id) == {str(context), str(skill), str(shared)}
         assert by_id[str(context)]["item_count"] == 2
         assert by_id[str(context)]["latest_run"]["id"] == str(run)
         assert by_id[str(skill)]["latest_run"] is None
@@ -166,23 +166,23 @@ async def test_one_eval_set_shows_its_runs_and_the_misses_of_the_newest_judged_r
 
 
 async def test_runs_of_an_organisation_wide_set_are_not_shown(team: Team) -> None:
-    # eval_run has no Data Space, so a pack set's run may have run on another Data Space's data:
-    # its answers must not reach readers of this Data Space through the set.
-    pack = _set(
-        team, "Bộ của gói", data_space_id=None, subject_type="pack", subject_id=uuid.uuid4()
+    # eval_run has no Data Space, so an organisation-wide set's run may have run on another Data
+    # Space's data: its answers must not reach readers of this Data Space through the set.
+    shared = _set(
+        team, "Bộ agent chung", data_space_id=None, subject_type="agent", subject_id=uuid.uuid4()
     )
-    item = _item(team, pack, "Lãi thuần chi nhánh B?")
-    run = _run(team, pack, "2026-10-01T00:00:00Z", status="completed", passed=0, failed=1)
+    item = _item(team, shared, "Lãi thuần chi nhánh B?")
+    run = _run(team, shared, "2026-10-01T00:00:00Z", status="completed", passed=0, failed=1)
     _result(team, run, item, False)
     async with client(team) as api:
-        got = await api.get(f"/v1/eval-sets/{pack}", headers=team.headers("asker"))
+        got = await api.get(f"/v1/eval-sets/{shared}", headers=team.headers("asker"))
         assert got.status_code == 200, got.text
         body = got.json()
         assert body["item_count"] == 1 and body["latest_run"] is None
         assert body["runs"] == [] and body["failures"] == [] and body["failures_run_id"] is None
-        listed = await api.get("/v1/eval-sets?subject_type=pack", headers=team.headers("asker"))
+        listed = await api.get("/v1/eval-sets?subject_type=agent", headers=team.headers("asker"))
         assert listed.status_code == 200, listed.text
-        (row,) = (r for r in listed.json()["items"] if r["id"] == str(pack))
+        (row,) = (r for r in listed.json()["items"] if r["id"] == str(shared))
         assert row["latest_run"] is None
         direct = await api.get(f"/v1/eval-runs/{run}", headers=team.headers("asker"))
         assert direct.status_code == 404

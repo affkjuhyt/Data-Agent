@@ -95,7 +95,6 @@ describe('entity adapters', () => {
       name: 'Khách hàng',
       description: 'Một khách hàng',
       key_columns: ['customer_id'],
-      canonical_entity_id: null,
       status: 'active',
       primary_dataset: { id: 'dataset-1', name: 'crm.customers' },
       relationships: [

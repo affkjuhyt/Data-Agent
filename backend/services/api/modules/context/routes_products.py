@@ -29,7 +29,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
-from libs.dataagent_db.models import catalog, context, document, org, pack
+from libs.dataagent_db.models import catalog, context, document, org
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
@@ -466,15 +466,6 @@ async def create_data_product(
         await require_active_users(
             session, principal, {"owner_id": body.owner_id, "steward_id": body.steward_id}
         )
-        if body.pack_version_id is not None:
-            found = await session.scalar(
-                select(pack.PackVersion.id).where(
-                    pack.PackVersion.id == body.pack_version_id,
-                    pack.PackVersion.org_id == principal.org_id,
-                )
-            )
-            if found is None:
-                raise field_error("pack_version_id", "Pack version not found.")
         # UNIQUE (data_space_id, code) answers a taken code with 409 conflict.
         stamp = now()
         row = context.DataProduct(
@@ -493,7 +484,6 @@ async def create_data_product(
             owner_id=body.owner_id,
             steward_id=body.steward_id,
             freshness_statement=body.freshness_statement,
-            pack_version_id=body.pack_version_id,
             # eval.eval_set is the eval module's: the id is reserved here and the eval module
             # creates the context eval set holding the sample questions from the event.
             eval_set_id=uuid7(),
@@ -518,7 +508,6 @@ async def create_data_product(
             status=row.status,
             eval_set_id=row.eval_set_id,
             eval_set_subject="context",
-            pack_version_id=row.pack_version_id,
         )
         await session.refresh(row)
         return _view(row)

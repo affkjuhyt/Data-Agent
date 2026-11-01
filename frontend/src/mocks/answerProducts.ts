@@ -217,7 +217,6 @@ const row = (p: Product): ProductSummaryWire => ({
   owner_id: 'u-owner',
   steward_id: 'u-steward',
   eval_set_id: null,
-  pack_version_id: null,
   proposal_id: null,
   period_from: '2024-01-01',
   period_to: null,

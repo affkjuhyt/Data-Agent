@@ -15,7 +15,7 @@ type Schemas = components['schemas'];
  * it and is said from the api's row otherwise.
  */
 export type SkillStatus = 'draft' | 'testing' | 'pending_review' | 'certified' | 'deprecated';
-export type SkillScope = 'data_space' | 'organization' | 'domain_pack';
+export type SkillScope = 'data_space' | 'organization';
 
 interface PersonRef {
   id: string;
@@ -32,7 +32,7 @@ export interface Skill {
   /** PROPOSAL: the status in words with its detail: "Nháp · đang kiểm định", "Ngừng · thay bằng v3". */
   status_text: string;
   scope: SkillScope;
-  /** PROPOSAL: "Toàn tổ chức", "Rủi ro tín dụng" — the Data Space(s) or the pack it belongs to. */
+  /** PROPOSAL: "Toàn tổ chức", "Rủi ro tín dụng" — the Data Space(s) it belongs to. */
   scope_label: string;
   owner: PersonRef;
   created_by: PersonRef;
@@ -47,9 +47,9 @@ export interface Skill {
 
 type SkillWire = (Schemas['SkillView'] | Schemas['SkillDetail']) & { display?: Skill };
 
-/** skill.scope personal, data_space, org; a pack's skill is the domain pack's. */
+/** skill.scope personal, data_space, org. */
 const scopeOf = (raw: Schemas['SkillView']): SkillScope =>
-  raw.origin === 'pack' ? 'domain_pack' : raw.scope === 'org' ? 'organization' : 'data_space';
+  raw.scope === 'org' ? 'organization' : 'data_space';
 
 const SCOPE_LABEL: Record<string, string> = {
   personal: 'Cá nhân',

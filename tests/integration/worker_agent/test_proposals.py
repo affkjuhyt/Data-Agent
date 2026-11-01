@@ -1,5 +1,5 @@
 """Proposals opened from a module's event and decisions applied back to its object: skill publish
-and share (UC-03-05, UC-03-07) and pack activation (UC-09-02)."""
+and share (UC-03-05, UC-03-07) and write-backs (UC-06-04)."""
 
 from __future__ import annotations
 
@@ -220,94 +220,6 @@ async def test_uc_03_07_an_accepted_share_widens_the_scope(world: World) -> None
     _decide(w, pid, "accept")
     await _drain("inbox")
     assert w.seed.one("SELECT scope FROM skill.skill WHERE id = %s", skill_id) == "data_space"
-    assert w.seed.one("SELECT status FROM inbox.proposal WHERE id = %s", pid) == "applied"
-
-
-def _install(w: World) -> uuid.UUID:
-    pack_id = w.seed.row(
-        "pack.industry_pack",
-        org_id=w.org,
-        code=f"bank-{uuid.uuid4().hex[:6]}",
-        name="Ngân hàng",
-        industry_code="bank",
-        publisher="Tổ chức",
-        origin="organisation",
-    )
-    version = w.seed.row(
-        "pack.pack_version",
-        org_id=w.org,
-        pack_id=pack_id,
-        version="2026.3",
-        manifest="{}",
-        signature="-",
-        min_core_version="3.0",
-        object_key="packs/bank/2026.3",
-    )
-    install = w.seed.row(
-        "pack.pack_install",
-        org_id=w.org,
-        data_space_id=w.space,
-        pack_version_id=version,
-        status="pending_activation",
-    )
-    _event(
-        w,
-        "pack",
-        proposals.ACTIVATE,
-        install,
-        pack_install_id=install,
-        data_space_id=w.space,
-        pack_version_id=version,
-        calibration_run_id=uuid.uuid4(),
-        proposal_kind="pack_activate",
-        status="pending_activation",
-        requested_by=w.author,
-    )
-    return install
-
-
-async def test_uc_09_02_an_accepted_activation_activates_the_install(world: World) -> None:
-    w = world
-    install = _install(w)
-    await _drain("pack")
-    pid = _opened(w, install)[0]
-    assert str(
-        w.seed.one("SELECT proposal_id FROM pack.pack_install WHERE id = %s", install)
-    ) == str(pid)
-    _decide(w, pid, "accept")
-    await _drain("inbox")
-    assert w.seed.one(
-        "SELECT status, activated_by::text FROM pack.pack_install WHERE id = %s", install
-    ) == ("active", str(w.steward))
-    assert w.seed.one("SELECT status FROM inbox.proposal WHERE id = %s", pid) == "applied"
-
-
-async def test_ac_09_02_05_an_activation_waits_for_a_closing_period(world: World) -> None:
-    w = world
-    install = _install(w)
-    await _drain("pack")
-    pid = _opened(w, install)[0]
-    close = w.seed.row(
-        "period.period_close",
-        org_id=w.org,
-        data_space_id=w.space,
-        period_label="10/2026",
-        business_date="2026-10-31",
-        status="closing",
-    )
-    _decide(w, pid, "accept")
-    await _drain("inbox")
-    assert (
-        w.seed.one("SELECT status FROM pack.pack_install WHERE id = %s", install)
-        == "pending_activation"
-    )
-    assert w.seed.one("SELECT status FROM inbox.proposal WHERE id = %s", pid) == "accepted"
-    # The close ends: activated without another approval.
-    w.seed.one(
-        "UPDATE period.period_close SET status = 'close_failed' WHERE id = %s RETURNING 1", close
-    )
-    assert await proposals.activate_waiting(w.org, w.space, w.steward) == 1
-    assert w.seed.one("SELECT status FROM pack.pack_install WHERE id = %s", install) == "active"
     assert w.seed.one("SELECT status FROM inbox.proposal WHERE id = %s", pid) == "applied"
 
 

@@ -37,7 +37,7 @@ describe('SkillLibraryPage', () => {
     expect(screen.getByText('412 lượt')).toBeInTheDocument();
     expect(screen.getByText('Ngừng · thay bằng v3')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Toàn tổ chức 3' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Toàn tổ chức 5' }));
     expect(screen.queryByRole('button', { name: 'Dự báo thử 13 tuần' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'So sánh kỳ' })).toBeInTheDocument();
 

@@ -665,13 +665,6 @@ async def test_error_book_lifecycle(team: Team) -> None:
         assert early.status_code == 422, early.text
         assert early.json()["code"] == "business_rule_violated"
 
-        not_yet = await api.post(
-            f"/v1/error-book-entries/{entry['id']}:propose-to-pack",
-            headers=h,
-            json={"pack_id": str(uuid.uuid4()), "summary": "x"},
-        )
-        assert not_yet.status_code == 409, not_yet.text
-
         patched = await api.patch(
             f"/v1/error-book-entries/{entry['id']}",
             headers=h,
@@ -710,15 +703,6 @@ async def test_error_book_lifecycle(team: Team) -> None:
         twice = await api.post(f"/v1/error-book-entries/{entry['id']}:add-regression", headers=h)
         assert twice.status_code == 409, twice.text
 
-        proposed = await api.post(
-            f"/v1/error-book-entries/{entry['id']}:propose-to-pack",
-            headers=h,
-            json={"pack_id": str(uuid.uuid4()), "summary": "Kỳ liền trước theo lịch điều hành"},
-        )
-        assert proposed.status_code == 200, proposed.text
-        assert proposed.json()["pack_contribution"] == "proposed"
-        assert proposed.json()["pack_proposal_ref"]
-
         dismissed_late = await api.post(
             f"/v1/error-book-entries/{entry['id']}:dismiss",
             headers=h,
@@ -730,11 +714,7 @@ async def test_error_book_lifecycle(team: Team) -> None:
     assert [e for e, _ in events] == [
         "eval.error_book.opened",
         "error_book_entry.fixed",
-        "error_book_entry.proposed_to_pack",
     ]
-    pack_payload = events[2][1]
-    # UC-09-05: the customer's question, numbers and title do not leave with the proposal.
-    assert not {"title", "detail", "root_cause"} & set(pack_payload)
 
 
 async def test_add_regression_and_dismiss(team: Team) -> None:

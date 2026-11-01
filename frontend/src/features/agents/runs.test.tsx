@@ -229,14 +229,17 @@ describe('AgentTeamPage', () => {
     expect(screen.getByRole('menuitem', { name: 'Mở khoá' })).toBeInTheDocument();
   });
 
-  it('offers to create an agent or start from a pack template when there are none', async () => {
+  it('offers to create an agent when there are none', async () => {
     server.use(
       http.get('*/v1/agents', () => HttpResponse.json({ items: [], next_page_token: '' })),
     );
     wrap(<AgentTeamPage />);
     expect(await screen.findByText('Chưa có agent nào')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('link', { name: 'Dùng agent mẫu' }));
-    expect(navigate).toHaveBeenCalledWith('data', 'PACKS');
+    // The header's button and the empty state's own.
+    const create = screen.getAllByRole('link', { name: 'Tạo agent' });
+    expect(create).toHaveLength(2);
+    fireEvent.click(create[1]);
+    expect(navigate).toHaveBeenCalledWith('agents', 'BUILDER');
   });
 });
 

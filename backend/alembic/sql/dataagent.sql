@@ -21,7 +21,6 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_notify') THEN CREATE ROLE svc_notify NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_document') THEN CREATE ROLE svc_document NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_conflict') THEN CREATE ROLE svc_conflict NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_pack') THEN CREATE ROLE svc_pack NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_period') THEN CREATE ROLE svc_period NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_pipeline') THEN CREATE ROLE svc_pipeline NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_ingest') THEN CREATE ROLE svc_ingest NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
@@ -44,7 +43,6 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'notify_read') THEN CREATE ROLE notify_read NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'document_read') THEN CREATE ROLE document_read NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'conflict_read') THEN CREATE ROLE conflict_read NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pack_read') THEN CREATE ROLE pack_read NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'period_read') THEN CREATE ROLE period_read NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pipeline_read') THEN CREATE ROLE pipeline_read NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ingest_read') THEN CREATE ROLE ingest_read NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
@@ -76,7 +74,6 @@ GRANT governance_read TO svc_agent;
 GRANT org_read TO svc_agent;
 GRANT qa_read TO svc_agent;
 GRANT catalog_read TO svc_context;
-GRANT pack_read TO svc_context;
 GRANT org_read TO svc_context;
 GRANT document_read TO svc_context;
 GRANT conflict_read TO svc_context;
@@ -89,9 +86,6 @@ GRANT period_read TO svc_conflict;
 GRANT catalog_read TO svc_period;
 GRANT context_read TO svc_period;
 GRANT org_read TO svc_period;
-GRANT catalog_read TO svc_pack;
-GRANT context_read TO svc_pack;
-GRANT org_read TO svc_pack;
 GRANT context_read TO svc_monitor;
 GRANT org_read TO svc_monitor;
 GRANT workspace_read TO svc_monitor;
@@ -123,7 +117,6 @@ GRANT catalog_read TO svc_acquire;
 GRANT context_read TO svc_acquire;
 GRANT governance_read TO svc_acquire;
 GRANT org_read TO svc_acquire;
-GRANT pack_read TO svc_acquire;
 GRANT acquire_read TO svc_forecast;
 GRANT catalog_read TO svc_forecast;
 GRANT context_read TO svc_forecast;
@@ -184,7 +177,6 @@ CREATE SCHEMA monitor;
 CREATE SCHEMA notify;
 CREATE SCHEMA document;
 CREATE SCHEMA conflict;
-CREATE SCHEMA pack;
 CREATE SCHEMA period;
 CREATE SCHEMA pipeline;
 CREATE SCHEMA ingest;
@@ -223,7 +215,6 @@ CREATE TABLE org.organization (
   id uuid NOT NULL,
   code text NOT NULL,
   name text NOT NULL,
-  industry_code text,
   status text NOT NULL DEFAULT 'active',
   locale text NOT NULL DEFAULT 'vi-VN',
   time_zone text NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
@@ -239,7 +230,6 @@ CREATE TABLE org.organization (
 );
 COMMENT ON TABLE org.organization IS 'Tổ chức (khách hàng) dùng hệ thống; gốc của org_id. Use case: UC-11-08.';
 COMMENT ON COLUMN org.organization.code IS 'Mã tổ chức, duy nhất toàn hệ thống';
-COMMENT ON COLUMN org.organization.industry_code IS 'Ngành chính, khớp pack.industry_pack.code; chỉ để gợi ý gói';
 COMMENT ON COLUMN org.organization.status IS 'active, suspended';
 COMMENT ON COLUMN org.organization.locale IS 'Ngôn ngữ mặc định';
 COMMENT ON COLUMN org.organization.identity_provider IS 'Kiểu nguồn danh tính (ad, ldap, oidc) và tham chiếu cấu hình Keycloak; không chứa bí mật';
@@ -370,7 +360,6 @@ CREATE TABLE org.data_space (
   backup_steward_id uuid,
   status text NOT NULL DEFAULT 'draft',
   default_policy jsonb NOT NULL DEFAULT '{}',
-  pack_install_id uuid,
   work_calendar_id uuid,
   opened_at timestamptz,
   deleted_at timestamptz,
@@ -387,7 +376,6 @@ COMMENT ON COLUMN org.data_space.steward_id IS 'Người phụ trách dữ liệ
 COMMENT ON COLUMN org.data_space.backup_steward_id IS 'Người dự phòng (BR-143); FK app_user';
 COMMENT ON COLUMN org.data_space.status IS 'draft, onboarding, active, read_only, archived';
 COMMENT ON COLUMN org.data_space.default_policy IS 'Bốn cờ trên màn Tạo Data Space: mask_pii, agent_write_derived_only, show_filed_and_current, allow_external_channels';
-COMMENT ON COLUMN org.data_space.pack_install_id IS 'logic → pack.pack_install';
 COMMENT ON COLUMN org.data_space.work_calendar_id IS 'FK work_calendar';
 COMMENT ON COLUMN org.data_space.opened_at IS 'Lúc mở cho người dùng sau khi bộ đánh giá đạt (BR-122)';
 COMMENT ON COLUMN org.data_space.deleted_at IS 'Xoá mềm';
@@ -608,7 +596,7 @@ CREATE TABLE governance.behavior_policy (
   CONSTRAINT behavior_policy_pkey PRIMARY KEY (id),
   CHECK (scope IN ('system','org','data_space','agent','user')),
   CHECK (kind IN ('block','mask','require_approval','auto_handle','allow','budget')),
-  CHECK (origin IN ('manual','hitl','pack')),
+  CHECK (origin IN ('manual','hitl')),
   CHECK (status IN ('draft','active','disabled','expired')),
   CHECK (origin <> 'hitl' OR review_at IS NOT NULL),
   CHECK (scope <> 'data_space' OR data_space_id IS NOT NULL)
@@ -622,7 +610,7 @@ COMMENT ON COLUMN governance.behavior_policy.description IS 'Mô tả bằng l�
 COMMENT ON COLUMN governance.behavior_policy.condition IS 'Điều kiện, ví dụ lệch dưới 0,05% và là ngày chốt kỳ';
 COMMENT ON COLUMN governance.behavior_policy.action IS 'Hành động, ví dụ dùng nguồn A, không hỏi lại';
 COMMENT ON COLUMN governance.behavior_policy.exceptions IS 'Trường hợp vẫn phải hỏi người';
-COMMENT ON COLUMN governance.behavior_policy.origin IS 'manual, hitl, pack';
+COMMENT ON COLUMN governance.behavior_policy.origin IS 'manual, hitl';
 COMMENT ON COLUMN governance.behavior_policy.origin_ref IS 'logic → inbox.hitl_request khi origin = hitl';
 COMMENT ON COLUMN governance.behavior_policy.status IS 'draft, active, disabled, expired';
 COMMENT ON COLUMN governance.behavior_policy.review_at IS 'Hạn xem lại; quy tắc từ HITL là 90 ngày (BR-65)';
@@ -1416,7 +1404,6 @@ CREATE TABLE context.semantic_entity (
   description text,
   primary_dataset_id uuid NOT NULL,
   key_columns text[] NOT NULL,
-  canonical_entity_id uuid,
   status text NOT NULL DEFAULT 'active',
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
@@ -1429,7 +1416,6 @@ CREATE TABLE context.semantic_entity (
 COMMENT ON TABLE context.semantic_entity IS 'Thực thể trong mô hình ngữ nghĩa của Data Space (ví dụ khách hàng, hợp đồng, giao dịch), ánh xạ tới một bảng chính. Use case: UC-07-01, UC-07-02.';
 COMMENT ON COLUMN context.semantic_entity.data_space_id IS 'logic → org.data_space';
 COMMENT ON COLUMN context.semantic_entity.primary_dataset_id IS 'logic → catalog.dataset';
-COMMENT ON COLUMN context.semantic_entity.canonical_entity_id IS 'logic → pack.canonical_entity nếu sinh từ gói ngành';
 COMMENT ON COLUMN context.semantic_entity.status IS 'draft, active, retired';
 
 CREATE TABLE context.semantic_dimension (
@@ -1490,7 +1476,6 @@ CREATE TABLE context.metric (
   owner_id uuid NOT NULL,
   consumer_group text,
   canonical_dataset_id uuid,
-  pack_metric_id uuid,
   current_version integer,
   in_filed_report boolean NOT NULL DEFAULT false,
   status text NOT NULL DEFAULT 'draft',
@@ -1507,7 +1492,6 @@ COMMENT ON COLUMN context.metric.code IS 'Ví dụ NPL_RATIO';
 COMMENT ON COLUMN context.metric.owner_id IS 'Chủ sở hữu duyệt mọi thay đổi; logic → org.app_user';
 COMMENT ON COLUMN context.metric.consumer_group IS 'Người dùng chính, nhận thông báo khi đổi phiên bản';
 COMMENT ON COLUMN context.metric.canonical_dataset_id IS 'Nguồn chuẩn; logic → catalog.dataset';
-COMMENT ON COLUMN context.metric.pack_metric_id IS 'logic → pack.pack_metric nếu đến từ gói ngành';
 COMMENT ON COLUMN context.metric.current_version IS 'Phiên bản đang dùng';
 COMMENT ON COLUMN context.metric.in_filed_report IS 'Có trong báo cáo đã nộp; không xoá được (BR-27)';
 COMMENT ON COLUMN context.metric.status IS 'draft, active, retired';
@@ -1529,7 +1513,6 @@ CREATE TABLE context.metric_version (
   allowed_dimensions uuid[] NOT NULL DEFAULT '{}',
   additivity text NOT NULL DEFAULT 'none',
   legal_basis text,
-  override_id uuid,
   change_note text,
   status text NOT NULL DEFAULT 'draft',
   certified_by uuid,
@@ -1559,7 +1542,6 @@ COMMENT ON COLUMN context.metric_version.time_grain IS 'day, month, quarter, yea
 COMMENT ON COLUMN context.metric_version.allowed_dimensions IS 'logic → semantic_dimension';
 COMMENT ON COLUMN context.metric_version.additivity IS 'full, semi, none (BR-117)';
 COMMENT ON COLUMN context.metric_version.legal_basis IS 'Căn cứ, ví dụ điều khoản văn bản';
-COMMENT ON COLUMN context.metric_version.override_id IS 'logic → pack.metric_override nếu là bản hiệu chỉnh (BR-129)';
 COMMENT ON COLUMN context.metric_version.change_note IS 'Ví dụ Loại vay nội bộ';
 COMMENT ON COLUMN context.metric_version.status IS 'draft, testing, pending_review, certified, superseded, broken';
 COMMENT ON COLUMN context.metric_version.proposal_id IS 'logic → inbox.proposal';
@@ -1582,14 +1564,14 @@ CREATE TABLE context.relationship (
   updated_by uuid,
   CONSTRAINT relationship_pkey PRIMARY KEY (id),
   CHECK (cardinality IN ('one_to_one','many_to_one','one_to_many')),
-  CHECK (origin IN ('declared','inferred','manual','pack')),
+  CHECK (origin IN ('declared','inferred','manual')),
   CHECK (status IN ('pending_review','active','rejected')),
   CHECK (origin <> 'inferred' OR status <> 'active' OR updated_by IS NOT NULL)
 );
 COMMENT ON TABLE context.relationship IS 'Quan hệ giữa hai bảng; quan hệ suy ra chỉ dùng sau khi duyệt (BR-100). Use case: UC-04-02, UC-07-02.';
 COMMENT ON COLUMN context.relationship.from_dataset_id IS 'logic → catalog.dataset';
 COMMENT ON COLUMN context.relationship.cardinality IS 'one_to_one, many_to_one, one_to_many';
-COMMENT ON COLUMN context.relationship.origin IS 'declared, inferred, manual, pack';
+COMMENT ON COLUMN context.relationship.origin IS 'declared, inferred, manual';
 COMMENT ON COLUMN context.relationship.overlap_ratio IS 'Độ trùng giá trị khi suy ra';
 COMMENT ON COLUMN context.relationship.status IS 'pending_review, active, rejected';
 
@@ -1610,7 +1592,7 @@ CREATE TABLE context.synonym (
   updated_by uuid,
   CONSTRAINT synonym_pkey PRIMARY KEY (id),
   CHECK (target_kind IN ('metric','dimension','measure','entity','value','column')),
-  CHECK (origin IN ('manual','agent_suggested','pack')),
+  CHECK (origin IN ('manual','agent_suggested')),
   CHECK (status IN ('pending_review','active','rejected'))
 );
 COMMENT ON TABLE context.synonym IS 'Cách gọi khác của chỉ số, chiều, cột hoặc giá trị. Use case: UC-07-01, UC-07-02, UC-07-09.';
@@ -1618,7 +1600,7 @@ COMMENT ON COLUMN context.synonym.phrase IS 'Cụm từ người dùng hay nói'
 COMMENT ON COLUMN context.synonym.phrase_norm IS 'Đã bỏ dấu, chữ thường, dùng để khớp';
 COMMENT ON COLUMN context.synonym.target_kind IS 'metric, dimension, measure, entity, value, column';
 COMMENT ON COLUMN context.synonym.target_value IS 'Giá trị cụ thể khi target_kind = value';
-COMMENT ON COLUMN context.synonym.origin IS 'manual, agent_suggested, pack';
+COMMENT ON COLUMN context.synonym.origin IS 'manual, agent_suggested';
 COMMENT ON COLUMN context.synonym.status IS 'pending_review, active, rejected';
 
 CREATE TABLE context.value_index (
@@ -1653,12 +1635,12 @@ CREATE TABLE context.example_query (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT example_query_pkey PRIMARY KEY (id),
-  CHECK (origin IN ('manual','agent_suggested','feedback','pack')),
+  CHECK (origin IN ('manual','agent_suggested','feedback')),
   CHECK (status IN ('draft','pending_review','active','stale','rejected'))
 );
 COMMENT ON TABLE context.example_query IS 'Câu hỏi mẫu kèm SQL đúng; chỉ dùng làm mẫu khi đã duyệt và còn chạy đúng (BR-118). Use case: UC-07-02.';
 COMMENT ON COLUMN context.example_query.qdrant_point_id IS 'Điểm vector trong collection example_queries';
-COMMENT ON COLUMN context.example_query.origin IS 'manual, agent_suggested, feedback, pack';
+COMMENT ON COLUMN context.example_query.origin IS 'manual, agent_suggested, feedback';
 COMMENT ON COLUMN context.example_query.status IS 'draft, pending_review, active, stale, rejected';
 
 CREATE TABLE context.glossary_term (
@@ -2058,7 +2040,6 @@ CREATE TABLE context.data_product (
   freshness_statement text NOT NULL,
   classification text NOT NULL DEFAULT 'internal',
   eval_set_id uuid,
-  pack_version_id uuid,
   version integer NOT NULL DEFAULT 1,
   status text NOT NULL DEFAULT 'draft',
   suspended_reason text,
@@ -2101,7 +2082,6 @@ COMMENT ON COLUMN context.data_product.steward_id IS 'logic → org.app_user; ng
 COMMENT ON COLUMN context.data_product.freshness_statement IS 'Cam kết hiển thị cho người dùng, ví dụ “Giá xăng dầu trong nước: cập nhật trước 16:30 ngày điều hành”';
 COMMENT ON COLUMN context.data_product.classification IS 'public, internal, confidential, restricted; mức cao nhất của các thành phần, trigger tính; dùng cho định tuyến mô hình (BR-180)';
 COMMENT ON COLUMN context.data_product.eval_set_id IS 'logic → eval.eval_set (subject_type context) chứa câu hỏi mẫu và ca hồi quy Error Book';
-COMMENT ON COLUMN context.data_product.pack_version_id IS 'logic → pack.pack_version nếu dựng từ mẫu của gói ngành';
 COMMENT ON COLUMN context.data_product.version IS 'Tăng khi đổi phạm vi, thành phần primary hoặc cam kết sau khi active';
 COMMENT ON COLUMN context.data_product.status IS 'draft, pending_review, active, suspended, retired';
 COMMENT ON COLUMN context.data_product.suspended_reason IS 'Bắt buộc khi suspended, ví dụ metric_decertified, dataset_decertified, manual';
@@ -2709,7 +2689,7 @@ COMMENT ON COLUMN agent.agent_def.name IS 'Ví dụ Agent Đối soát';
 COMMENT ON COLUMN agent.agent_def.kind IS 'analysis, monitor, report, reconcile, data_prep, data_quality, document, custom';
 COMMENT ON COLUMN agent.agent_def.owner_user_id IS 'Người thật sở hữu (BR-147); logic → org.app_user';
 COMMENT ON COLUMN agent.agent_def.account_user_id IS 'Tài khoản agent (app_user.kind = agent)';
-COMMENT ON COLUMN agent.agent_def.template_ref IS 'logic → pack.pack_skill nếu tạo từ agent mẫu';
+COMMENT ON COLUMN agent.agent_def.template_ref IS 'Agent mẫu mà agent được tạo từ đó';
 COMMENT ON COLUMN agent.agent_def.status IS 'draft, testing, running, paused, retired, locked (khoá khẩn cấp qua POST /v1/agents/{id}:lock, thêm 12/10/2026)';
 COMMENT ON COLUMN agent.agent_def.paused_reason IS 'Ví dụ chủ sở hữu rời tổ chức';
 COMMENT ON COLUMN agent.agent_def.status_before_lock IS 'Trạng thái trước khi khoá, mở khoá trả về trạng thái này; chỉ có giá trị khi locked (thêm 12/10/2026)';
@@ -3013,7 +2993,7 @@ CREATE TABLE agent.agent_memory (
   CHECK (scope IN ('agent','user','data_space')),
   CHECK ((scope = 'agent' AND agent_id IS NOT NULL) OR (scope = 'user' AND user_id IS NOT NULL) OR scope = 'data_space'),
   CHECK (kind IN ('decision','preference','data_insight','domain_context')),
-  CHECK (source_kind IN ('hitl','run','manual','pack')),
+  CHECK (source_kind IN ('hitl','run','manual')),
   CHECK (status IN ('pending_review','active','disabled','conflict')),
   CHECK (scope <> 'data_space' OR status <> 'active' OR updated_by IS NOT NULL)
 );
@@ -3022,7 +3002,7 @@ COMMENT ON COLUMN agent.agent_memory.agent_id IS 'FK agent_def; null khi dùng c
 COMMENT ON COLUMN agent.agent_memory.scope IS 'agent, user, data_space';
 COMMENT ON COLUMN agent.agent_memory.user_id IS 'Khi scope = user';
 COMMENT ON COLUMN agent.agent_memory.kind IS 'decision, preference, data_insight, domain_context';
-COMMENT ON COLUMN agent.agent_memory.source_kind IS 'hitl, run, manual, pack';
+COMMENT ON COLUMN agent.agent_memory.source_kind IS 'hitl, run, manual';
 COMMENT ON COLUMN agent.agent_memory.correction_count IS 'Đến 2 thì tự vô hiệu';
 COMMENT ON COLUMN agent.agent_memory.status IS 'pending_review, active, disabled, conflict';
 
@@ -3093,14 +3073,14 @@ CREATE TABLE eval.eval_set (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT eval_set_pkey PRIMARY KEY (id),
-  CHECK (subject_type IN ('context','skill','agent','pack')),
+  CHECK (subject_type IN ('context','skill','agent')),
   CHECK ((subject_type = 'context' AND data_space_id IS NOT NULL) OR (subject_type <> 'context' AND subject_id IS NOT NULL)),
   CHECK (status IN ('active','archived'))
 );
-COMMENT ON TABLE eval.eval_set IS 'Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng, agent và gói ngành. Use case: UC-07-03, UC-07-06, UC-13-04.';
-COMMENT ON COLUMN eval.eval_set.data_space_id IS 'Null với bộ của gói ngành';
-COMMENT ON COLUMN eval.eval_set.subject_type IS 'context, skill, agent, pack';
-COMMENT ON COLUMN eval.eval_set.subject_id IS 'Kỹ năng, agent hoặc phiên bản gói; null với lớp ngữ cảnh của Data Space';
+COMMENT ON TABLE eval.eval_set IS 'Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng và agent. Use case: UC-07-03, UC-07-06, UC-13-04.';
+COMMENT ON COLUMN eval.eval_set.data_space_id IS 'Null với bộ dùng chung cho cả tổ chức';
+COMMENT ON COLUMN eval.eval_set.subject_type IS 'context, skill, agent';
+COMMENT ON COLUMN eval.eval_set.subject_id IS 'Kỹ năng hoặc agent; null với lớp ngữ cảnh của Data Space';
 COMMENT ON COLUMN eval.eval_set.pass_threshold IS 'Tỷ lệ đạt tối thiểu';
 COMMENT ON COLUMN eval.eval_set.min_items IS 'Lớp ngữ cảnh cần ít nhất 100 câu';
 COMMENT ON COLUMN eval.eval_set.status IS 'active, archived';
@@ -3123,7 +3103,7 @@ CREATE TABLE eval.eval_item (
   updated_by uuid,
   CONSTRAINT eval_item_pkey PRIMARY KEY (id),
   CHECK (category IN ('correct_result','ask_at_right_time','respect_permission','correct_format','refusal')),
-  CHECK (origin IN ('manual','feedback','real_run','hitl_rule','generated','pack','error_book')),
+  CHECK (origin IN ('manual','feedback','real_run','hitl_rule','generated','error_book')),
   CHECK (origin <> 'error_book' OR origin_ref IS NOT NULL),
   CHECK (status IN ('active','needs_update','retired'))
 );
@@ -3132,7 +3112,7 @@ COMMENT ON COLUMN eval.eval_item.eval_set_id IS 'FK eval_set';
 COMMENT ON COLUMN eval.eval_item.category IS 'correct_result, ask_at_right_time, respect_permission, correct_format, refusal';
 COMMENT ON COLUMN eval.eval_item.input IS 'Câu hỏi hoặc tham số đầu vào, đã che dữ liệu cá nhân (BR-74)';
 COMMENT ON COLUMN eval.eval_item.expected IS 'Cách hiểu, con số kèm dung sai, hành vi mong đợi';
-COMMENT ON COLUMN eval.eval_item.origin IS 'manual, feedback, real_run, hitl_rule, generated, pack, error_book (ca hồi quy từ Error Book, origin_ref = eval.error_book_entry.id, UC-07-14)';
+COMMENT ON COLUMN eval.eval_item.origin IS 'manual, feedback, real_run, hitl_rule, generated, error_book (ca hồi quy từ Error Book, origin_ref = eval.error_book_entry.id, UC-07-14)';
 COMMENT ON COLUMN eval.eval_item.origin_ref IS 'Ví dụ qa.feedback.id';
 COMMENT ON COLUMN eval.eval_item.status IS 'active, needs_update, retired';
 
@@ -3223,8 +3203,6 @@ CREATE TABLE eval.error_book_entry (
   dismiss_reason text,
   duplicate_of_id uuid,
   reopened_count integer NOT NULL DEFAULT 0,
-  pack_contribution text NOT NULL DEFAULT 'none',
-  pack_proposal_ref text,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -3240,17 +3218,15 @@ CREATE TABLE eval.error_book_entry (
   CHECK (source_kind NOT IN ('user_report','number_check','reviewer_reject') OR answer_id IS NOT NULL),
   CHECK (severity IN ('low','medium','high')),
   CHECK (error_kind IS NULL OR error_kind IN ('definition','synonym','data','freshness','model','formula','retrieval')),
-  CHECK (fix_kind IS NULL OR fix_kind IN ('metric_version','synonym','example','knowledge_page','pack_version','source_data','model_config','prompt','code','none')),
+  CHECK (fix_kind IS NULL OR fix_kind IN ('metric_version','synonym','example','knowledge_page','source_data','model_config','prompt','code','none')),
   CHECK (status IN ('open','fixed','regression_added','dismissed')),
   CHECK (status NOT IN ('fixed','regression_added') OR (error_kind IS NOT NULL AND root_cause IS NOT NULL AND assignee_id IS NOT NULL AND fix_kind IS NOT NULL AND fixed_by IS NOT NULL AND fixed_at IS NOT NULL)),
   CHECK (status NOT IN ('fixed','regression_added') OR fix_kind = 'none' OR fix_proposal_id IS NOT NULL OR fix_ref IS NOT NULL),
   CHECK (status <> 'regression_added' OR (eval_item_id IS NOT NULL AND regression_run_id IS NOT NULL)),
   CHECK (status <> 'dismissed' OR dismiss_reason IS NOT NULL OR duplicate_of_id IS NOT NULL),
-  CHECK (duplicate_of_id IS NULL OR duplicate_of_id <> id),
-  CHECK (pack_contribution IN ('none','proposed','accepted','rejected')),
-  CHECK (pack_contribution = 'none' OR status IN ('fixed','regression_added'))
+  CHECK (duplicate_of_id IS NULL OR duplicate_of_id <> id)
 );
-COMMENT ON TABLE eval.error_book_entry IS 'Mục Error Book: một lỗi đã xác nhận của câu trả lời hoặc một dự báo lệch vượt ngưỡng, kèm loại lỗi, nguyên nhân gốc, người xử lý, cách sửa và ca hồi quy tự thêm vào bộ đánh giá chạy trong CI. Trạng thái open → fixed → regression_added; dismissed khi không phải lỗi hoặc trùng (BR-179). Là kênh “tốt dần theo thời gian” cùng gói ngành: cách sửa dùng chung được đề xuất về P09. Thêm 10/10/2026. Use case: UC-07-14, UC-01-05, UC-01-07, UC-15-06.';
+COMMENT ON TABLE eval.error_book_entry IS 'Mục Error Book: một lỗi đã xác nhận của câu trả lời hoặc một dự báo lệch vượt ngưỡng, kèm loại lỗi, nguyên nhân gốc, người xử lý, cách sửa và ca hồi quy tự thêm vào bộ đánh giá chạy trong CI. Trạng thái open → fixed → regression_added; dismissed khi không phải lỗi hoặc trùng (BR-179). Thêm 10/10/2026. Use case: UC-07-14, UC-01-05, UC-01-07, UC-15-06.';
 COMMENT ON COLUMN eval.error_book_entry.entry_no IS 'Mã hiển thị, ví dụ EB-0042; trigger cấp theo tổ chức';
 COMMENT ON COLUMN eval.error_book_entry.data_space_id IS 'logic → org.data_space';
 COMMENT ON COLUMN eval.error_book_entry.data_product_id IS 'logic → context.data_product; null khi câu hỏi ngoài phạm vi';
@@ -3269,8 +3245,8 @@ COMMENT ON COLUMN eval.error_book_entry.severity IS 'low, medium, high; high khi
 COMMENT ON COLUMN eval.error_book_entry.error_kind IS 'definition, synonym, data, freshness, model, formula, retrieval; bắt buộc từ fixed';
 COMMENT ON COLUMN eval.error_book_entry.root_cause IS 'Nguyên nhân gốc bằng lời; bắt buộc từ fixed';
 COMMENT ON COLUMN eval.error_book_entry.assignee_id IS 'logic → org.app_user; mặc định steward của data product, không có thì người phụ trách Data Space';
-COMMENT ON COLUMN eval.error_book_entry.fix_kind IS 'metric_version, synonym, example, knowledge_page, pack_version, source_data, model_config, prompt, code, none';
-COMMENT ON COLUMN eval.error_book_entry.fix_proposal_id IS 'logic → inbox.proposal; đề xuất sửa chỉ số, đồng nghĩa, trang tri thức, gói ngành';
+COMMENT ON COLUMN eval.error_book_entry.fix_kind IS 'metric_version, synonym, example, knowledge_page, source_data, model_config, prompt, code, none';
+COMMENT ON COLUMN eval.error_book_entry.fix_proposal_id IS 'logic → inbox.proposal; đề xuất sửa chỉ số, đồng nghĩa, trang tri thức';
 COMMENT ON COLUMN eval.error_book_entry.fix_ref IS 'Tham chiếu khác: mã commit, phiên bản model_config, phiên bản dataset đã sửa';
 COMMENT ON COLUMN eval.error_book_entry.fixed_by IS 'logic → org.app_user';
 COMMENT ON COLUMN eval.error_book_entry.eval_item_id IS 'logic → eval.eval_item (origin error_book)';
@@ -3279,8 +3255,6 @@ COMMENT ON COLUMN eval.error_book_entry.status IS 'open, fixed, regression_added
 COMMENT ON COLUMN eval.error_book_entry.dismiss_reason IS 'Bắt buộc khi dismissed mà không trùng mục khác';
 COMMENT ON COLUMN eval.error_book_entry.duplicate_of_id IS 'FK error_book_entry';
 COMMENT ON COLUMN eval.error_book_entry.reopened_count IS 'Ca hồi quy trượt sau khi đóng thì mở lại và tăng';
-COMMENT ON COLUMN eval.error_book_entry.pack_contribution IS 'none, proposed, accepted, rejected; đề xuất đưa cách sửa về gói ngành (UC-09-05)';
-COMMENT ON COLUMN eval.error_book_entry.pack_proposal_ref IS 'Mã đề xuất phía gói ngành, đã bỏ dữ liệu của khách';
 
 CREATE TABLE eval.outbox (
   id uuid NOT NULL,
@@ -3334,12 +3308,12 @@ CREATE TABLE inbox.proposal (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT proposal_pkey PRIMARY KEY (id),
-  CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','pack_activate','pack_upgrade','metric_override','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product')),
+  CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product')),
   CHECK (impact_level IN ('low','medium','high')),
   CHECK (status IN ('open','evaluating','pending_review','accepted','applied','apply_failed','rejected','expired','withdrawn'))
 );
-COMMENT ON TABLE inbox.proposal IS 'Đề xuất thay đổi chờ duyệt: lớp ngữ cảnh, schema, kỹ năng, gói ngành, ghi ngược, hiệu lực văn bản. Use case: UC-01-05, UC-03-05, UC-04-03, UC-05-05, UC-06-04, UC-07-01, UC-07-02, UC-07-03, UC-07-05, UC-07-06, UC-09-02, UC-09-03, UC-09-04.';
-COMMENT ON COLUMN inbox.proposal.kind IS 'metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, pack_activate, pack_upgrade, metric_override, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page';
+COMMENT ON TABLE inbox.proposal IS 'Đề xuất thay đổi chờ duyệt: lớp ngữ cảnh, schema, kỹ năng, ghi ngược, hiệu lực văn bản. Use case: UC-01-05, UC-03-05, UC-04-03, UC-05-05, UC-06-04, UC-07-01, UC-07-02, UC-07-03, UC-07-05, UC-07-06.';
+COMMENT ON COLUMN inbox.proposal.kind IS 'metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page';
 COMMENT ON COLUMN inbox.proposal.target_service IS 'Dịch vụ sở hữu đối tượng, sẽ phát hành khi chấp nhận';
 COMMENT ON COLUMN inbox.proposal.target_ref IS 'Đối tượng bị thay đổi';
 COMMENT ON COLUMN inbox.proposal.evidence IS 'Ví dụ 4 câu hỏi bị sửa giống nhau';
@@ -3736,14 +3710,14 @@ CREATE TABLE skill.skill (
   CHECK (category IN ('decomposition','causal','forecast','reconciliation','quality','report','custom')),
   CHECK (scope IN ('personal','data_space','org')),
   CHECK (scope = 'org' OR data_space_id IS NOT NULL),
-  CHECK (origin IN ('manual','from_session','agent_suggested','pack')),
+  CHECK (origin IN ('manual','from_session','agent_suggested')),
   UNIQUE NULLS NOT DISTINCT (org_id, data_space_id, code)
 );
 COMMENT ON TABLE skill.skill IS 'Kỹ năng phân tích dùng lại được (ví dụ phân rã biến động); phạm vi cá nhân, Data Space hoặc toàn tổ chức. Use case: UC-03-01, UC-03-03, UC-03-05, UC-03-06, UC-03-07.';
 COMMENT ON COLUMN skill.skill.data_space_id IS 'Null khi phạm vi toàn tổ chức';
 COMMENT ON COLUMN skill.skill.category IS 'decomposition, causal, forecast, reconciliation, quality, report, custom';
 COMMENT ON COLUMN skill.skill.scope IS 'personal, data_space, org (BR-96)';
-COMMENT ON COLUMN skill.skill.origin IS 'manual, from_session, agent_suggested, pack';
+COMMENT ON COLUMN skill.skill.origin IS 'manual, from_session, agent_suggested';
 COMMENT ON COLUMN skill.skill.replaced_by_skill_id IS 'Khi ngừng dùng có kỹ năng thay thế (UC-03-06)';
 COMMENT ON COLUMN skill.skill.deleted_at IS 'Xoá mềm';
 
@@ -4842,370 +4816,6 @@ CREATE INDEX conflict_data_space_id_idx ON conflict.conflict (data_space_id) WHE
 CREATE UNIQUE INDEX source_authority_data_space_id_data_kind_key ON conflict.source_authority (data_space_id, data_kind) WHERE status = 'active';
 CREATE UNIQUE INDEX source_authority_data_space_id_data_kind_key_2 ON conflict.source_authority (data_space_id, data_kind) WHERE status = 'draft';
 
--- ═══ schema pack ═══
-CREATE TABLE pack.industry_pack (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  code text NOT NULL,
-  name text NOT NULL,
-  industry_code text NOT NULL,
-  publisher text NOT NULL,
-  publisher_key_id text,
-  origin text NOT NULL DEFAULT 'vendor',
-  description text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  updated_by uuid,
-  CONSTRAINT industry_pack_pkey PRIMARY KEY (id),
-  UNIQUE (org_id, code),
-  CHECK (origin IN ('vendor','organisation')),
-  CHECK (origin = 'organisation' OR publisher_key_id IS NOT NULL)
-);
-COMMENT ON TABLE pack.industry_pack IS 'Gói ngành do nhà cung cấp hoặc khối kiến trúc phát hành. Use case: UC-09-01.';
-COMMENT ON COLUMN pack.industry_pack.code IS 'Ví dụ banking, retail, hospitality';
-COMMENT ON COLUMN pack.industry_pack.publisher IS 'Nhà cung cấp hoặc khối kiến trúc của tổ chức';
-COMMENT ON COLUMN pack.industry_pack.publisher_key_id IS 'Khoá công khai dùng kiểm chữ ký (BR-128); bắt buộc với gói vendor, gói của tổ chức có khoá khi phát hành phiên bản đầu (sửa 12/10/2026)';
-COMMENT ON COLUMN pack.industry_pack.origin IS 'vendor, organisation: organisation là gói tổ chức tự soạn qua POST /v1/packs; industry_code lấy theo organization.industry_code (thêm 12/10/2026)';
-
-CREATE TABLE pack.pack_version (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  pack_id uuid NOT NULL,
-  version text NOT NULL,
-  manifest jsonb NOT NULL,
-  signature text NOT NULL,
-  signature_verified_at timestamptz,
-  min_core_version text NOT NULL,
-  release_notes text,
-  breaking_changes jsonb NOT NULL DEFAULT '[]',
-  object_key text NOT NULL,
-  status text NOT NULL DEFAULT 'draft',
-  released_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  updated_by uuid,
-  CONSTRAINT pack_version_pkey PRIMARY KEY (id),
-  UNIQUE (pack_id, version),
-  CHECK (status IN ('draft','released','available','withdrawn')),
-  CHECK (status <> 'available' OR signature_verified_at IS NOT NULL)
-);
-COMMENT ON TABLE pack.pack_version IS 'Phiên bản gói ngành: manifest, chữ ký, ghi chú phát hành, thay đổi phá vỡ. Use case: UC-09-01, UC-09-05.';
-COMMENT ON COLUMN pack.pack_version.pack_id IS 'FK industry_pack';
-COMMENT ON COLUMN pack.pack_version.version IS 'Ví dụ 2026.3';
-COMMENT ON COLUMN pack.pack_version.breaking_changes IS 'Có thì bắt buộc kèm hướng dẫn chuyển đổi và báo trước 30 ngày (BR-131)';
-COMMENT ON COLUMN pack.pack_version.object_key IS 'MinIO da-packs';
-COMMENT ON COLUMN pack.pack_version.status IS 'draft, released, available, withdrawn';
-
-CREATE TABLE pack.canonical_entity (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  pack_version_id uuid NOT NULL,
-  code text NOT NULL,
-  name text NOT NULL,
-  description text,
-  key_attributes text[] NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT canonical_entity_pkey PRIMARY KEY (id),
-  UNIQUE (pack_version_id, code)
-);
-COMMENT ON TABLE pack.canonical_entity IS 'Thực thể trong mô hình chuẩn của ngành (ví dụ khoản vay, khách hàng). Use case: UC-09-01, UC-09-05.';
-COMMENT ON COLUMN pack.canonical_entity.pack_version_id IS 'FK pack_version';
-
-CREATE TABLE pack.canonical_attribute (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  entity_id uuid NOT NULL,
-  code text NOT NULL,
-  name text NOT NULL,
-  data_type text NOT NULL,
-  required boolean NOT NULL DEFAULT false,
-  code_list jsonb,
-  pii boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT canonical_attribute_pkey PRIMARY KEY (id),
-  UNIQUE (entity_id, code),
-  CHECK (data_type IN ('string','integer','decimal','boolean','date','timestamp','code'))
-);
-COMMENT ON TABLE pack.canonical_attribute IS 'Thuộc tính của thực thể chuẩn, kèm kiểu, bắt buộc, bảng mã chuẩn. Use case: UC-09-01, UC-09-05.';
-COMMENT ON COLUMN pack.canonical_attribute.entity_id IS 'FK canonical_entity';
-COMMENT ON COLUMN pack.canonical_attribute.data_type IS 'string, integer, decimal, boolean, date, timestamp, code';
-COMMENT ON COLUMN pack.canonical_attribute.code_list IS 'Bảng mã chuẩn khi data_type = code';
-
-CREATE TABLE pack.pack_metric (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  pack_version_id uuid NOT NULL,
-  code text NOT NULL,
-  name text NOT NULL,
-  expression text NOT NULL,
-  unit text,
-  additivity text NOT NULL DEFAULT 'none',
-  legal_basis text,
-  is_internal boolean NOT NULL DEFAULT false,
-  in_regulatory_report boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT pack_metric_pkey PRIMARY KEY (id),
-  UNIQUE (pack_version_id, code),
-  CHECK (is_internal OR legal_basis IS NOT NULL),
-  CHECK (additivity IN ('full','semi','none'))
-);
-COMMENT ON TABLE pack.pack_metric IS 'Chỉ số chuẩn của gói, kèm căn cứ pháp lý hoặc nhãn “chỉ số nội bộ”. Use case: UC-09-01, UC-09-03, UC-09-05.';
-COMMENT ON COLUMN pack.pack_metric.pack_version_id IS 'FK pack_version';
-COMMENT ON COLUMN pack.pack_metric.code IS 'Không tái sử dụng cho nghĩa khác (BR-131)';
-COMMENT ON COLUMN pack.pack_metric.expression IS 'Công thức trên thực thể và thuộc tính chuẩn';
-COMMENT ON COLUMN pack.pack_metric.additivity IS 'full, semi, none';
-COMMENT ON COLUMN pack.pack_metric.is_internal IS 'Chỉ số nội bộ, không có căn cứ pháp lý';
-COMMENT ON COLUMN pack.pack_metric.in_regulatory_report IS 'Có trong báo cáo gửi cơ quan quản lý (BR-36)';
-
-CREATE TABLE pack.validation_rule (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  pack_version_id uuid NOT NULL,
-  code text NOT NULL,
-  description text NOT NULL,
-  expression text NOT NULL,
-  tolerance numeric,
-  severity text NOT NULL DEFAULT 'blocking',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT validation_rule_pkey PRIMARY KEY (id),
-  UNIQUE (pack_version_id, code),
-  CHECK (severity IN ('blocking','warning'))
-);
-COMMENT ON TABLE pack.validation_rule IS 'Luật kiểm tra của gói (ví dụ tổng khớp sổ cái, mỗi bản ghi có đúng một phân loại). Use case: UC-09-01, UC-09-05.';
-COMMENT ON COLUMN pack.validation_rule.pack_version_id IS 'FK pack_version';
-COMMENT ON COLUMN pack.validation_rule.severity IS 'blocking, warning';
-
-CREATE TABLE pack.pack_skill (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  pack_version_id uuid NOT NULL,
-  kind text NOT NULL,
-  code text NOT NULL,
-  name text NOT NULL,
-  definition jsonb NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT pack_skill_pkey PRIMARY KEY (id),
-  UNIQUE (pack_version_id, kind, code),
-  CHECK (kind IN ('skill','agent_template','eval_set'))
-);
-COMMENT ON TABLE pack.pack_skill IS 'Kỹ năng, agent mẫu và bộ câu hỏi mẫu đi kèm gói ngành. Use case: UC-09-01, UC-13-01.';
-COMMENT ON COLUMN pack.pack_skill.pack_version_id IS 'FK pack_version';
-COMMENT ON COLUMN pack.pack_skill.kind IS 'skill, agent_template, eval_set';
-COMMENT ON COLUMN pack.pack_skill.definition IS 'Định nghĩa kỹ năng, cấu hình agent mẫu hoặc danh sách câu hỏi';
-
-CREATE TABLE pack.pack_install (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  data_space_id uuid NOT NULL,
-  pack_version_id uuid NOT NULL,
-  previous_pack_version_id uuid,
-  status text NOT NULL DEFAULT 'mapping',
-  activated_at timestamptz,
-  activated_by uuid,
-  proposal_id uuid,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  updated_by uuid,
-  CONSTRAINT pack_install_pkey PRIMARY KEY (id),
-  CHECK (status IN ('mapping','calibrating','pending_activation','active','upgrading','rolled_back','uninstalled'))
-);
-COMMENT ON TABLE pack.pack_install IS 'Gói đã cài ở một Data Space; mỗi Data Space một bản cài đang hoạt động. Use case: UC-09-02, UC-09-04.';
-COMMENT ON COLUMN pack.pack_install.data_space_id IS 'logic → org.data_space';
-COMMENT ON COLUMN pack.pack_install.pack_version_id IS 'FK pack_version';
-COMMENT ON COLUMN pack.pack_install.previous_pack_version_id IS 'Giữ 30 ngày để quay lại sau nâng cấp';
-COMMENT ON COLUMN pack.pack_install.status IS 'mapping, calibrating, pending_activation, active, upgrading, rolled_back, uninstalled';
-COMMENT ON COLUMN pack.pack_install.proposal_id IS 'logic → inbox.proposal';
-
-CREATE TABLE pack.entity_mapping (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  pack_install_id uuid NOT NULL,
-  attribute_id uuid NOT NULL,
-  dataset_id uuid NOT NULL,
-  column_expr text NOT NULL,
-  confidence numeric(4,3),
-  origin text NOT NULL DEFAULT 'suggested',
-  valid_from timestamptz NOT NULL DEFAULT now(),
-  valid_to timestamptz,
-  confirmed_by uuid,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  updated_by uuid,
-  CONSTRAINT entity_mapping_pkey PRIMARY KEY (id),
-  CHECK (origin IN ('suggested','confirmed','manual')),
-  CHECK (valid_to IS NULL OR valid_to > valid_from)
-);
-COMMENT ON TABLE pack.entity_mapping IS 'Ánh xạ thuộc tính chuẩn sang bảng, cột của tổ chức; có thời hiệu (BR-16, BR-37). Use case: UC-04-03, UC-09-02, UC-09-04, UC-10-01.';
-COMMENT ON COLUMN pack.entity_mapping.pack_install_id IS 'FK pack_install';
-COMMENT ON COLUMN pack.entity_mapping.attribute_id IS 'FK canonical_attribute';
-COMMENT ON COLUMN pack.entity_mapping.dataset_id IS 'logic → catalog.dataset';
-COMMENT ON COLUMN pack.entity_mapping.column_expr IS 'Cột hoặc biểu thức';
-COMMENT ON COLUMN pack.entity_mapping.confidence IS 'Độ tin của đề xuất ánh xạ';
-COMMENT ON COLUMN pack.entity_mapping.origin IS 'suggested, confirmed, manual';
-
-CREATE TABLE pack.code_mapping (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  pack_install_id uuid NOT NULL,
-  attribute_id uuid NOT NULL,
-  source_code text NOT NULL,
-  canonical_code text NOT NULL,
-  valid_from timestamptz NOT NULL DEFAULT now(),
-  valid_to timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  updated_by uuid,
-  CONSTRAINT code_mapping_pkey PRIMARY KEY (id)
-);
-COMMENT ON TABLE pack.code_mapping IS 'Bảng mã của tổ chức sang mã chuẩn (ví dụ phân loại, loại tiền). Use case: UC-09-02.';
-COMMENT ON COLUMN pack.code_mapping.pack_install_id IS 'FK pack_install';
-COMMENT ON COLUMN pack.code_mapping.attribute_id IS 'FK canonical_attribute (data_type = code)';
-
-CREATE TABLE pack.metric_override (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  pack_install_id uuid NOT NULL,
-  pack_metric_code text NOT NULL,
-  expression text NOT NULL,
-  scope_condition text,
-  reason text NOT NULL,
-  status text NOT NULL DEFAULT 'draft',
-  approved_by uuid,
-  compliance_approved_by uuid,
-  calibration_run_id uuid,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  updated_by uuid,
-  CONSTRAINT metric_override_pkey PRIMARY KEY (id),
-  CHECK (status IN ('draft','pending_review','active','superseded')),
-  CHECK (status <> 'active' OR approved_by IS NOT NULL)
-);
-COMMENT ON TABLE pack.metric_override IS 'Hiệu chỉnh chỉ số ở lớp tổ chức kèm lý do; tham gia gộp ba chiều khi nâng cấp (BR-129). Use case: UC-09-02, UC-09-03, UC-09-04.';
-COMMENT ON COLUMN pack.metric_override.pack_install_id IS 'FK pack_install';
-COMMENT ON COLUMN pack.metric_override.pack_metric_code IS 'Mã chỉ số chuẩn; giữ qua các phiên bản gói';
-COMMENT ON COLUMN pack.metric_override.scope_condition IS 'Chỉ áp cho một phạm vi (UC-09-03 2a)';
-COMMENT ON COLUMN pack.metric_override.status IS 'draft, pending_review, active, superseded';
-COMMENT ON COLUMN pack.metric_override.compliance_approved_by IS 'Chỉ số báo cáo cơ quan quản lý cần thêm AC06';
-COMMENT ON COLUMN pack.metric_override.calibration_run_id IS 'FK calibration_run; lần chạy thử công thức trên dữ liệu thật (UC-09-03 bước 3, thêm 12/10/2026)';
-
-CREATE TABLE pack.calibration_run (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  pack_install_id uuid NOT NULL,
-  trigger text NOT NULL,
-  periods text[] NOT NULL,
-  tolerance_pp numeric(6,4) NOT NULL DEFAULT 0.01,
-  passed integer NOT NULL DEFAULT 0,
-  failed integer NOT NULL DEFAULT 0,
-  status text NOT NULL DEFAULT 'running',
-  finished_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT calibration_run_pkey PRIMARY KEY (id),
-  CHECK (trigger IN ('onboarding','override','upgrade')),
-  CHECK (status IN ('running','passed','failed'))
-);
-COMMENT ON TABLE pack.calibration_run IS 'Một lần đối chiếu số khi đưa vào ngành, hiệu chỉnh hoặc nâng cấp gói. Use case: UC-09-02, UC-09-03, UC-09-04.';
-COMMENT ON COLUMN pack.calibration_run.pack_install_id IS 'FK pack_install';
-COMMENT ON COLUMN pack.calibration_run.trigger IS 'onboarding, override, upgrade';
-COMMENT ON COLUMN pack.calibration_run.periods IS 'Kỳ đối chiếu, ví dụ 2 kỳ gần nhất';
-COMMENT ON COLUMN pack.calibration_run.tolerance_pp IS 'Ngưỡng lệch, mặc định 0,01 điểm phần trăm (BR-36)';
-COMMENT ON COLUMN pack.calibration_run.status IS 'running, passed, failed';
-
-CREATE TABLE pack.calibration_item (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  calibration_run_id uuid NOT NULL,
-  item_kind text NOT NULL,
-  item_code text NOT NULL,
-  period text,
-  computed_value numeric,
-  filed_value numeric,
-  delta numeric,
-  passed boolean NOT NULL,
-  suggested_cause text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT calibration_item_pkey PRIMARY KEY (id),
-  CHECK (item_kind IN ('metric','rule'))
-);
-COMMENT ON TABLE pack.calibration_item IS 'Kết quả đối chiếu một chỉ số hoặc một luật trong một lần đối chiếu. Use case: UC-09-02.';
-COMMENT ON COLUMN pack.calibration_item.calibration_run_id IS 'FK calibration_run';
-COMMENT ON COLUMN pack.calibration_item.item_kind IS 'metric, rule';
-
-CREATE TABLE pack.pack_upgrade (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  pack_install_id uuid NOT NULL,
-  from_version_id uuid NOT NULL,
-  to_version_id uuid NOT NULL,
-  merge_result jsonb NOT NULL DEFAULT '{}',
-  conflicts_open integer NOT NULL DEFAULT 0,
-  calibration_run_id uuid,
-  status text NOT NULL DEFAULT 'available',
-  apply_from_period text,
-  rollback_until timestamptz,
-  approved_by uuid,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  updated_by uuid,
-  CONSTRAINT pack_upgrade_pkey PRIMARY KEY (id),
-  CHECK (status IN ('available','merging','needs_decision','testing','pending_approval','applied','rolled_back','cancelled')),
-  CHECK (status <> 'applied' OR (conflicts_open = 0 AND approved_by IS NOT NULL))
-);
-COMMENT ON TABLE pack.pack_upgrade IS 'Một lần nâng cấp gói bằng gộp ba chiều (SD-21); không làm khi có kỳ đang chốt (BR-38). Use case: UC-09-04.';
-COMMENT ON COLUMN pack.pack_upgrade.pack_install_id IS 'FK pack_install';
-COMMENT ON COLUMN pack.pack_upgrade.from_version_id IS 'FK pack_version';
-COMMENT ON COLUMN pack.pack_upgrade.to_version_id IS 'FK pack_version';
-COMMENT ON COLUMN pack.pack_upgrade.merge_result IS 'Theo từng chỉ số và ánh xạ: lấy gói mới, giữ của tổ chức, xung đột';
-COMMENT ON COLUMN pack.pack_upgrade.calibration_run_id IS 'FK calibration_run';
-COMMENT ON COLUMN pack.pack_upgrade.status IS 'available, merging, needs_decision, testing, pending_approval, applied, rolled_back, cancelled';
-COMMENT ON COLUMN pack.pack_upgrade.apply_from_period IS 'Áp dụng từ kỳ sau; kỳ đã chốt không đổi';
-COMMENT ON COLUMN pack.pack_upgrade.rollback_until IS '30 ngày sau khi áp dụng';
-
-CREATE TABLE pack.pack_check_run (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  pack_version_id uuid NOT NULL,
-  checks jsonb NOT NULL,
-  passed boolean NOT NULL,
-  ran_by uuid NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT pack_check_run_pkey PRIMARY KEY (id)
-);
-COMMENT ON TABLE pack.pack_check_run IS 'Kết quả kiểm tra một phiên bản gói trước khi phát hành. Use case: UC-09-05.';
-COMMENT ON COLUMN pack.pack_check_run.pack_version_id IS 'FK pack_version';
-COMMENT ON COLUMN pack.pack_check_run.checks IS 'Căn cứ đầy đủ; chạy trên 3 bộ dữ liệu mẫu lệch ≤ 0,01%; câu hỏi mẫu không giảm';
-
-CREATE TABLE pack.outbox (
-  id uuid NOT NULL,
-  org_id uuid NOT NULL,
-  aggregate_type text NOT NULL,
-  aggregate_id uuid NOT NULL,
-  event_type text NOT NULL,
-  payload jsonb NOT NULL DEFAULT '{}',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  published_at timestamptz,
-  CONSTRAINT outbox_pkey PRIMARY KEY (id)
-);
-COMMENT ON TABLE pack.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka (D5.3), ghi cùng giao dịch với thay đổi nghiệp vụ.';
-CREATE INDEX outbox_unpublished_idx ON pack.outbox (created_at) WHERE published_at IS NULL;
-ALTER TABLE pack.outbox ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-GRANT USAGE ON SCHEMA pack TO svc_outbox_relay;
-GRANT SELECT, UPDATE (published_at) ON pack.outbox TO svc_outbox_relay;
-CREATE POLICY outbox_relay_read ON pack.outbox FOR SELECT TO svc_outbox_relay USING (true);
-CREATE POLICY outbox_relay_publish ON pack.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
-CREATE UNIQUE INDEX pack_install_data_space_id_key ON pack.pack_install (data_space_id) WHERE status NOT IN ('uninstalled','rolled_back');
-CREATE UNIQUE INDEX entity_mapping_pack_install_id_attribute_id_key ON pack.entity_mapping (pack_install_id, attribute_id) WHERE valid_to IS NULL;
-CREATE UNIQUE INDEX code_mapping_pack_install_id_attribute_id_source_code_key ON pack.code_mapping (pack_install_id, attribute_id, source_code) WHERE valid_to IS NULL;
-CREATE UNIQUE INDEX metric_override_pack_install_id_pack_metric_code_key ON pack.metric_override (pack_install_id, pack_metric_code) WHERE status = 'active';
-
 -- ═══ schema period ═══
 CREATE TABLE period.period_calendar (
   id uuid NOT NULL,
@@ -5232,7 +4842,7 @@ COMMENT ON COLUMN period.period_calendar.close_rule IS 'Ví dụ ngày làm vi�
 COMMENT ON COLUMN period.period_calendar.work_calendar_id IS 'logic → org.work_calendar';
 COMMENT ON COLUMN period.period_calendar.dataset_ids IS 'Bảng được chụp khi chốt; logic → catalog.dataset';
 COMMENT ON COLUMN period.period_calendar.reconciliation_items IS 'Chỉ tiêu đối soát và dung sai, ví dụ tổng dư nợ khớp sổ cái';
-COMMENT ON COLUMN period.period_calendar.report_codes IS 'Báo cáo cần đóng băng, khai báo bởi gói ngành hoặc tổ chức';
+COMMENT ON COLUMN period.period_calendar.report_codes IS 'Báo cáo cần đóng băng, khai báo bởi tổ chức';
 COMMENT ON COLUMN period.period_calendar.status IS 'active, paused';
 
 CREATE TABLE period.period_close (
@@ -5755,14 +5365,14 @@ CREATE TABLE ingest.quality_rule (
   CONSTRAINT quality_rule_pkey PRIMARY KEY (id),
   CHECK (kind IN ('not_null','range','unique','in_list','sum_matches','freshness','custom_sql')),
   CHECK (severity IN ('high','medium','low')),
-  CHECK (origin IN ('manual','agent_suggested','pack')),
+  CHECK (origin IN ('manual','agent_suggested')),
   CHECK (status IN ('draft','active','disabled'))
 );
 COMMENT ON TABLE ingest.quality_rule IS 'Quy tắc chất lượng trên bảng hoặc cột kèm mức nghiêm trọng. Use case: UC-04-08, UC-06-06, UC-06-07.';
 COMMENT ON COLUMN ingest.quality_rule.dataset_id IS 'logic → catalog.dataset';
 COMMENT ON COLUMN ingest.quality_rule.kind IS 'not_null, range, unique, in_list, sum_matches, freshness, custom_sql';
 COMMENT ON COLUMN ingest.quality_rule.severity IS 'high (chặn báo cáo, BR-116), medium, low';
-COMMENT ON COLUMN ingest.quality_rule.origin IS 'manual, agent_suggested, pack';
+COMMENT ON COLUMN ingest.quality_rule.origin IS 'manual, agent_suggested';
 COMMENT ON COLUMN ingest.quality_rule.status IS 'draft, active, disabled';
 
 CREATE TABLE ingest.quality_result (
@@ -5928,7 +5538,7 @@ COMMENT ON TABLE acquire.crawl_schema_version IS 'Phiên bản schema thu thập
 COMMENT ON COLUMN acquire.crawl_schema_version.source_id IS 'FK crawl_source';
 COMMENT ON COLUMN acquire.crawl_schema_version.status IS 'draft, testing, active, superseded, rejected';
 COMMENT ON COLUMN acquire.crawl_schema_version.record_selector IS 'Vùng bản ghi lặp: CSS/XPath, JSONPath, bảng hoặc vùng trang PDF';
-COMMENT ON COLUMN acquire.crawl_schema_version.fields IS 'Mảng {name, type, unit, required, is_key, locator, canonical_attr, value_constraints}; canonical_attr trỏ tới thuộc tính chuẩn của lớp ngữ cảnh hoặc gói ngành; value_constraints là miền hợp lệ {min, max, unit, scale, max_change_pp, label_terms}, bắt buộc min, max, unit với trường number, percent, money khi active (BR-168). Ví dụ lãi suất 12 tháng: {min: 0, max: 15, unit: “%/năm”, max_change_pp: 1,5, label_terms: [“tại quầy”]}';
+COMMENT ON COLUMN acquire.crawl_schema_version.fields IS 'Mảng {name, type, unit, required, is_key, locator, canonical_attr, value_constraints}; canonical_attr trỏ tới thuộc tính chuẩn của lớp ngữ cảnh; value_constraints là miền hợp lệ {min, max, unit, scale, max_change_pp, label_terms}, bắt buộc min, max, unit với trường number, percent, money khi active (BR-168). Ví dụ lãi suất 12 tháng: {min: 0, max: 15, unit: “%/năm”, max_change_pp: 1,5, label_terms: [“tại quầy”]}';
 COMMENT ON COLUMN acquire.crawl_schema_version.template_fingerprint IS 'Dấu vân tay mẫu: cấu trúc DOM, tập khoá JSON, tiêu đề cột; dùng phát hiện thay đổi (UC-14-03)';
 COMMENT ON COLUMN acquire.crawl_schema_version.value_rules IS 'Quan hệ nội tại giữa trường, chỉ cảnh báo, ví dụ {rule: gte, left: rate_24m, right: rate_12m, tolerance_pp: 0.3} (BR-168)';
 COMMENT ON COLUMN acquire.crawl_schema_version.sample_page_ids IS 'logic → crawl_page; mẫu giữ lại để chạy thử (tối thiểu 20 trang hoặc toàn bộ nếu ít hơn)';
@@ -6157,7 +5767,7 @@ CREATE TABLE acquire.reference_entity (
   updated_by uuid,
   CONSTRAINT reference_entity_pkey PRIMARY KEY (id),
   CHECK (entity_type IN ('bank','credit_institution','foreign_bank_branch','gov_agency','enterprise')),
-  CHECK (registry_source IN ('sbv_registry','swift_directory','tax_registry','pack','manual')),
+  CHECK (registry_source IN ('sbv_registry','swift_directory','tax_registry','manual')),
   CHECK (status IN ('active','merged','dissolved')),
   CHECK (canonical_key ~ '^(SBV|BIC|MST):[0-9A-Z-]+$'),
   CHECK (sbv_code IS NULL OR sbv_code ~ '^[0-9]{8}$'),
@@ -6169,7 +5779,7 @@ CREATE TABLE acquire.reference_entity (
   CHECK (valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from),
   UNIQUE (org_id, entity_type, canonical_key)
 );
-COMMENT ON TABLE acquire.reference_entity IS 'Danh mục thực thể chuẩn của tổ chức: ngân hàng, tổ chức tín dụng, chi nhánh ngân hàng nước ngoài, cơ quan, doanh nghiệp. Khoá là mã định danh gốc (mã ngân hàng do NHNN cấp, SWIFT/BIC, mã số thuế); tên, tên viết tắt và tên miền chính thức chỉ là thuộc tính để so khớp dự phòng (BR-169). Dùng chung cho mọi Data Space của tổ chức; nạp từ danh mục NHNN, danh bạ SWIFT, tra cứu mã số thuế hoặc gói ngành. pack.canonical_entity và context.semantic_entity mô tả loại thực thể, không giữ từng thực thể, nên không dùng lại được cho việc này. Use case: UC-14-05.';
+COMMENT ON TABLE acquire.reference_entity IS 'Danh mục thực thể chuẩn của tổ chức: ngân hàng, tổ chức tín dụng, chi nhánh ngân hàng nước ngoài, cơ quan, doanh nghiệp. Khoá là mã định danh gốc (mã ngân hàng do NHNN cấp, SWIFT/BIC, mã số thuế); tên, tên viết tắt và tên miền chính thức chỉ là thuộc tính để so khớp dự phòng (BR-169). Dùng chung cho mọi Data Space của tổ chức; nạp từ danh mục NHNN, danh bạ SWIFT, tra cứu mã số thuế. context.semantic_entity mô tả loại thực thể, không giữ từng thực thể, nên không dùng lại được cho việc này. Use case: UC-14-05.';
 COMMENT ON COLUMN acquire.reference_entity.entity_type IS 'bank, credit_institution, foreign_bank_branch, gov_agency, enterprise';
 COMMENT ON COLUMN acquire.reference_entity.canonical_key IS 'SBV:<mã NHNN>, nếu không có thì BIC:<8 ký tự đầu>, rồi MST:<mã số thuế>; đặt một lần, không đổi';
 COMMENT ON COLUMN acquire.reference_entity.legal_name IS 'Tên pháp lý, ví dụ Ngân hàng TMCP A';
@@ -6178,7 +5788,7 @@ COMMENT ON COLUMN acquire.reference_entity.sbv_code IS 'Mã ngân hàng do NHNN 
 COMMENT ON COLUMN acquire.reference_entity.swift_bic IS '8 hoặc 11 ký tự theo ISO 9362';
 COMMENT ON COLUMN acquire.reference_entity.tax_code IS 'Mã số thuế 10 số, hoặc 13 số dạng 10-3 cho đơn vị phụ thuộc';
 COMMENT ON COLUMN acquire.reference_entity.official_domains IS 'Tên miền chính thức, dùng khớp trang nguồn';
-COMMENT ON COLUMN acquire.reference_entity.registry_source IS 'sbv_registry, swift_directory, tax_registry, pack, manual';
+COMMENT ON COLUMN acquire.reference_entity.registry_source IS 'sbv_registry, swift_directory, tax_registry, manual';
 COMMENT ON COLUMN acquire.reference_entity.registry_ref IS 'Số văn bản, ngày trích danh mục gốc';
 COMMENT ON COLUMN acquire.reference_entity.registry_checked_at IS 'Lần đối chiếu danh mục gốc gần nhất';
 COMMENT ON COLUMN acquire.reference_entity.status IS 'active, merged, dissolved; đổi tên vẫn active, tên cũ vào short_names';
@@ -7303,27 +6913,6 @@ ALTER TABLE period.period_reconciliation ADD CONSTRAINT period_reconciliation_pe
 ALTER TABLE period.published_result ADD CONSTRAINT published_result_period_close_id_fkey FOREIGN KEY (period_close_id) REFERENCES period.period_close(id);
 ALTER TABLE period.retro_change ADD CONSTRAINT retro_change_period_close_id_fkey FOREIGN KEY (period_close_id) REFERENCES period.period_close(id);
 ALTER TABLE period.retro_change ADD CONSTRAINT retro_change_published_result_id_fkey FOREIGN KEY (published_result_id) REFERENCES period.published_result(id);
-ALTER TABLE pack.pack_version ADD CONSTRAINT pack_version_pack_id_fkey FOREIGN KEY (pack_id) REFERENCES pack.industry_pack(id);
-ALTER TABLE pack.canonical_entity ADD CONSTRAINT canonical_entity_pack_version_id_fkey FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id) ON DELETE CASCADE;
-ALTER TABLE pack.canonical_attribute ADD CONSTRAINT canonical_attribute_entity_id_fkey FOREIGN KEY (entity_id) REFERENCES pack.canonical_entity(id) ON DELETE CASCADE;
-ALTER TABLE pack.pack_metric ADD CONSTRAINT pack_metric_pack_version_id_fkey FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id) ON DELETE CASCADE;
-ALTER TABLE pack.validation_rule ADD CONSTRAINT validation_rule_pack_version_id_fkey FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id) ON DELETE CASCADE;
-ALTER TABLE pack.pack_skill ADD CONSTRAINT pack_skill_pack_version_id_fkey FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id) ON DELETE CASCADE;
-ALTER TABLE pack.pack_install ADD CONSTRAINT pack_install_pack_version_id_fkey FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id);
-ALTER TABLE pack.pack_install ADD CONSTRAINT pack_install_previous_pack_version_id_fkey FOREIGN KEY (previous_pack_version_id) REFERENCES pack.pack_version(id);
-ALTER TABLE pack.entity_mapping ADD CONSTRAINT entity_mapping_pack_install_id_fkey FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id);
-ALTER TABLE pack.entity_mapping ADD CONSTRAINT entity_mapping_attribute_id_fkey FOREIGN KEY (attribute_id) REFERENCES pack.canonical_attribute(id);
-ALTER TABLE pack.code_mapping ADD CONSTRAINT code_mapping_pack_install_id_fkey FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id);
-ALTER TABLE pack.code_mapping ADD CONSTRAINT code_mapping_attribute_id_fkey FOREIGN KEY (attribute_id) REFERENCES pack.canonical_attribute(id);
-ALTER TABLE pack.metric_override ADD CONSTRAINT metric_override_pack_install_id_fkey FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id);
-ALTER TABLE pack.metric_override ADD CONSTRAINT metric_override_calibration_run_id_fkey FOREIGN KEY (calibration_run_id) REFERENCES pack.calibration_run(id);
-ALTER TABLE pack.calibration_run ADD CONSTRAINT calibration_run_pack_install_id_fkey FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id);
-ALTER TABLE pack.calibration_item ADD CONSTRAINT calibration_item_calibration_run_id_fkey FOREIGN KEY (calibration_run_id) REFERENCES pack.calibration_run(id) ON DELETE CASCADE;
-ALTER TABLE pack.pack_upgrade ADD CONSTRAINT pack_upgrade_pack_install_id_fkey FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id);
-ALTER TABLE pack.pack_upgrade ADD CONSTRAINT pack_upgrade_from_version_id_fkey FOREIGN KEY (from_version_id) REFERENCES pack.pack_version(id);
-ALTER TABLE pack.pack_upgrade ADD CONSTRAINT pack_upgrade_to_version_id_fkey FOREIGN KEY (to_version_id) REFERENCES pack.pack_version(id);
-ALTER TABLE pack.pack_upgrade ADD CONSTRAINT pack_upgrade_calibration_run_id_fkey FOREIGN KEY (calibration_run_id) REFERENCES pack.calibration_run(id);
-ALTER TABLE pack.pack_check_run ADD CONSTRAINT pack_check_run_pack_version_id_fkey FOREIGN KEY (pack_version_id) REFERENCES pack.pack_version(id);
 ALTER TABLE pipeline.pipeline_run ADD CONSTRAINT pipeline_run_pipeline_id_fkey FOREIGN KEY (pipeline_id) REFERENCES pipeline.pipeline(id);
 ALTER TABLE pipeline.data_product ADD CONSTRAINT data_product_data_mart_id_fkey FOREIGN KEY (data_mart_id) REFERENCES pipeline.data_mart(id);
 ALTER TABLE ingest.job_run ADD CONSTRAINT job_run_job_id_fkey FOREIGN KEY (job_id) REFERENCES ingest.ingestion_job(id);
@@ -7648,36 +7237,6 @@ ALTER TABLE period.published_result ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON period.published_result USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE period.retro_change ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON period.retro_change USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.industry_pack ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.industry_pack USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.pack_version ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.pack_version USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.canonical_entity ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.canonical_entity USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.canonical_attribute ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.canonical_attribute USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.pack_metric ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.pack_metric USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.validation_rule ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.validation_rule USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.pack_skill ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.pack_skill USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.pack_install ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.pack_install USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.entity_mapping ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.entity_mapping USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.code_mapping ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.code_mapping USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.metric_override ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.metric_override USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.calibration_run ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.calibration_run USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.calibration_item ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.calibration_item USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.pack_upgrade ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.pack_upgrade USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
-ALTER TABLE pack.pack_check_run ENABLE ROW LEVEL SECURITY;
-CREATE POLICY org_isolation ON pack.pack_check_run USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE pipeline.pipeline ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON pipeline.pipeline USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE pipeline.pipeline_run ENABLE ROW LEVEL SECURITY;
@@ -8069,38 +7628,6 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON conflict.resolution_rule TO svc_conflict
 GRANT SELECT ON conflict.resolution_rule TO conflict_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON conflict.source_authority TO svc_conflict;
 GRANT SELECT ON conflict.source_authority TO conflict_read;
-GRANT USAGE ON SCHEMA pack TO svc_pack, pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.outbox TO svc_pack;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.industry_pack TO svc_pack;
-GRANT SELECT ON pack.industry_pack TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.pack_version TO svc_pack;
-GRANT SELECT ON pack.pack_version TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.canonical_entity TO svc_pack;
-GRANT SELECT ON pack.canonical_entity TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.canonical_attribute TO svc_pack;
-GRANT SELECT ON pack.canonical_attribute TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.pack_metric TO svc_pack;
-GRANT SELECT ON pack.pack_metric TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.validation_rule TO svc_pack;
-GRANT SELECT ON pack.validation_rule TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.pack_skill TO svc_pack;
-GRANT SELECT ON pack.pack_skill TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.pack_install TO svc_pack;
-GRANT SELECT ON pack.pack_install TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.entity_mapping TO svc_pack;
-GRANT SELECT ON pack.entity_mapping TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.code_mapping TO svc_pack;
-GRANT SELECT ON pack.code_mapping TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.metric_override TO svc_pack;
-GRANT SELECT ON pack.metric_override TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.calibration_run TO svc_pack;
-GRANT SELECT ON pack.calibration_run TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.calibration_item TO svc_pack;
-GRANT SELECT ON pack.calibration_item TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.pack_upgrade TO svc_pack;
-GRANT SELECT ON pack.pack_upgrade TO pack_read;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pack.pack_check_run TO svc_pack;
-GRANT SELECT ON pack.pack_check_run TO pack_read;
 GRANT USAGE ON SCHEMA period TO svc_period, period_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON period.outbox TO svc_period;
 GRANT SELECT, INSERT, UPDATE, DELETE ON period.period_calendar TO svc_period;

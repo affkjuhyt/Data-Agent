@@ -63,7 +63,7 @@ class PeriodCalendar(Base):
     report_codes: Mapped[list[str]] = mapped_column(
         ARRAY(Text),
         server_default=sql_text("'{}'"),
-        comment="Báo cáo cần đóng băng, khai báo bởi gói ngành hoặc tổ chức",
+        comment="Báo cáo cần đóng băng, khai báo bởi tổ chức",
     )
     status: Mapped[str] = mapped_column(
         Text, server_default=sql_text("'active'"), comment="active, paused"

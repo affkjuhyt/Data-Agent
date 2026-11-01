@@ -129,7 +129,7 @@ class BehaviorPolicy(Base):
         JSONB, server_default=sql_text("'[]'"), comment="Trường hợp vẫn phải hỏi người"
     )
     origin: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'manual'"), comment="manual, hitl, pack"
+        Text, server_default=sql_text("'manual'"), comment="manual, hitl"
     )
     origin_ref: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, comment="logic → inbox.hitl_request khi origin = hitl"

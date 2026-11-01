@@ -27,7 +27,7 @@ __all__ = ["Proposal", "ProposalReview", "HitlRequest", "HitlApprovalStep", "Out
 
 
 class Proposal(Base):
-    """Đề xuất thay đổi chờ duyệt: lớp ngữ cảnh, schema, kỹ năng, gói ngành, ghi ngược, hiệu lực văn bản. Use case: UC-01-05, UC-03-05, UC-04-03, UC-05-05, UC-06-04, UC-07-01, UC-07-02, UC-07-03, UC-07-05, UC-07-06, UC-09-02, UC-09-03, UC-09-04."""
+    """Đề xuất thay đổi chờ duyệt: lớp ngữ cảnh, schema, kỹ năng, ghi ngược, hiệu lực văn bản. Use case: UC-01-05, UC-03-05, UC-04-03, UC-05-05, UC-06-04, UC-07-01, UC-07-02, UC-07-03, UC-07-05, UC-07-06."""
 
     __tablename__ = "proposal"
     __table_args__ = ({"schema": "inbox"},)
@@ -37,7 +37,7 @@ class Proposal(Base):
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     kind: Mapped[str] = mapped_column(
         Text,
-        comment="metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, pack_activate, pack_upgrade, metric_override, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page",
+        comment="metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page",
     )
     target_service: Mapped[str] = mapped_column(
         Text, comment="Dịch vụ sở hữu đối tượng, sẽ phát hành khi chấp nhận"

@@ -49,6 +49,7 @@ Quy tắc repo (test trong container, so baseline lint, outbox, naming) ở `CLA
 | D10 | Kênh C-level | **Chốt 06/10: Zalo/Teams/email trước** |
 | D11 | Giá theo kết quả cho ingestion | **Chốt 06/10: thử ở pilot** |
 | D12 | MCP phơi Data Space cho coding agent | **Chốt 06/10: từ R2** |
+| D13 | Gói ngành (P09, UC-09-01..05)? | **Chốt 01/11: bỏ hẳn**; sản phẩm tổng quát. Repo đã xoá module `pack`, schema `pack` (v3_0017), màn P09; tài liệu thiết kế vẫn mô tả, checklist khai `na` |
 
 Câu hỏi mới ghi vào bảng này; chốt xong thì cập nhật trạng thái và file liên quan trong cùng commit.
 
@@ -60,3 +61,4 @@ Câu hỏi mới ghi vào bảng này; chốt xong thì cập nhật trạng th�
 | 06/10/2026 | Chốt D2 (dời 27/10). Linear: đóng P-NOP-2, tạo P-NOP-3 với milestone R0–R4 và story R0/R1; 04 §0 phân công theo người thật |
 | 10/10/2026 | Thêm 05 (giao diện v3.1 theo Figma): hệ thiết kế, khung trang, điều hướng sáu khu vực, Trang chủ |
 | 10/10/2026 | 05: màn chính của sáu khu vực trên API `/v1` của tài liệu thiết kế, mock MSW khi dev (`VITE_MOCK_V1`), danh sách trường đề xuất cho backend |
+| 01/11/2026 | Chốt D13: bỏ gói ngành (API, CSDL, giao diện, tài liệu 05/07) |

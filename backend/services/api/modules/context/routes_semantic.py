@@ -403,13 +403,6 @@ async def create_metric_version(
         metric = await _metric(session, metric_id, principal, data_space, lock=True)
         if metric.status == "retired":
             raise Problem(409, "invalid_state", "The metric is retired.")
-        if metric.pack_metric_id is not None:
-            # UC-07-01 2a: a pack metric's formula is locked; changes are overrides (UC-09-03).
-            raise Problem(
-                422,
-                "business_rule_violated",
-                "This metric comes from an industry pack: its formula is locked; create an override instead (UC-09-03).",
-            )
         await _check_dimensions(session, body, data_space)
         latest = await session.scalar(
             select(func.max(context.MetricVersion.version)).where(

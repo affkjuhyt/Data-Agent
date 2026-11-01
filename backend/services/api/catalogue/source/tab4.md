@@ -15,8 +15,8 @@ Tab này đặc tả giao diện lập trình của Data Agent V3: quy ước ch
 
 - Mọi lời gọi mang Authorization: Bearer \<access token> do Keycloak cấp (OIDC). Client của hệ thống khác dùng client credentials hoặc token exchange thay người dùng (UC-12-01).
 - Tổ chức lấy từ token (claim org\_id); Gateway đặt app.org\_id cho kết nối CSDL, nên không truyền org\_id trong API.
-- Tài nguyên thuộc một Data Space nhận header X-Data-Space: \<id hoặc mã>. Thiếu header với tài nguyên cần Data Space thì trả 400 data\_space\_required. Tài nguyên toàn tổ chức (quản trị, lịch, gói ngành) không cần header.
-- Cột “Quyền” ở A2 là năng lực trong org.role.capabilities: ask, view\_detail, upload, prepare\_data, admin\_data, steward, approve, create\_skill, run\_agent, create\_agent, writeback, pack\_author, admin, compliance, audit\_read. Ba giá trị đặc biệt: channel (lời gọi từ Teams, Zalo, xác thực bằng chữ ký HMAC thay cho token người dùng), client (token của api\_client cho MCP), — (mọi người dùng đã đăng nhập). Ngoài năng lực, Policy engine còn áp chính sách dòng, cột, che (UC-11-02) cho mọi dữ liệu trả về.
+- Tài nguyên thuộc một Data Space nhận header X-Data-Space: \<id hoặc mã>. Thiếu header với tài nguyên cần Data Space thì trả 400 data\_space\_required. Tài nguyên toàn tổ chức (quản trị, lịch) không cần header.
+- Cột “Quyền” ở A2 là năng lực trong org.role.capabilities: ask, view\_detail, upload, prepare\_data, admin\_data, steward, approve, create\_skill, run\_agent, create\_agent, writeback, admin, compliance, audit\_read. Ba giá trị đặc biệt: channel (lời gọi từ Teams, Zalo, xác thực bằng chữ ký HMAC thay cho token người dùng), client (token của api\_client cho MCP), — (mọi người dùng đã đăng nhập). Ngoài năng lực, Policy engine còn áp chính sách dòng, cột, che (UC-11-02) cho mọi dữ liệu trả về.
 
 ### A1.3 Cách đặt đường dẫn
 
@@ -380,7 +380,6 @@ Dịch vụ: Inbox service (inbox), Eval service (eval). 16 endpoint.
 | POST | /v1/error-book-entries/{id}:mark-fixed | Gắn cách sửa, chuyển fixed | 07-14 | steward |
 | POST | /v1/error-book-entries/{id}:add-regression | Tạo ca hồi quy origin error\_book (tự gọi khi fixed) | 07-14 | steward |
 | POST | /v1/error-book-entries/{id}:dismiss | Không phải lỗi hoặc trùng mục khác | 07-14 | steward |
-| POST | /v1/error-book-entries/{id}:propose-to-pack | Đề xuất cách sửa cho gói ngành, đã bỏ dữ liệu của khách | 07-14, 09-05 | steward |
 | GET | /v1/eval-sets | Bộ đánh giá theo loại và chủ thể (thêm 12/10/2026) | 07-06, 13-04 | ask |
 | GET | /v1/eval-sets/{id} | Một bộ đánh giá: số câu, lượt chạy, câu sai của lượt mới nhất (thêm 12/10/2026) | 07-06 | ask |
 
@@ -440,36 +439,6 @@ Dịch vụ: Monitor & report (monitor), Notification (notify). 29 endpoint.
 | POST | /v1/alerts/{id}:reopen | Mở lại cảnh báo đã đóng (thêm 12/10/2026) | 08-02 | ask |
 | GET | /v1/reports | Báo cáo định kỳ (thêm 12/10/2026) | 08-03 | ask |
 | GET | /v1/reports/{id} | Một báo cáo định kỳ: lịch, người nhận, lần chạy gần nhất (thêm 12/10/2026) | 08-03 | ask |
-
-### Gói ngành
-
-Dịch vụ: Pack service (pack). 17 endpoint.
-
-| Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
-| --- | --- | --- | --- | --- |
-| GET | /v1/packs | Gói ngành đã nhập | 09-01 | ask |
-| POST | /v1/packs:import | Nhập tệp gói, kiểm chữ ký | 09-01 | admin |
-| GET | /v1/pack-versions/{id} | Nội dung phiên bản gói | 09-01 | ask |
-| POST | /v1/packs/{id}/versions | Tạo phiên bản (môi trường biên soạn) | 09-05 | pack\_author |
-| POST | /v1/pack-versions/{id}:validate | Chạy kiểm tra trước phát hành; 202 | 09-05 | pack\_author |
-| POST | /v1/pack-versions/{id}:publish | Ký số và phát hành | 09-05 | pack\_author |
-| POST | /v1/pack-installs | Chọn gói cho Data Space | 09-02 | admin\_data |
-| POST | /v1/pack-installs/{id}:suggest-mappings | Đề xuất ánh xạ; 202 | 09-02 | admin\_data |
-| PUT | /v1/pack-installs/{id}/mappings | Xác nhận ánh xạ và bảng mã | 09-02 | admin\_data |
-| POST | /v1/pack-installs/{id}:calibrate | Đối chiếu số; 202 | 09-02 | admin\_data |
-| POST | /v1/pack-installs/{id}:activate | Gửi duyệt kích hoạt | 09-02 | admin\_data |
-| POST | /v1/metric-overrides | Hiệu chỉnh chỉ số theo tổ chức | 09-03 | steward |
-| POST | /v1/metric-overrides/{id}:approve | Duyệt hiệu chỉnh | 09-03 | approve |
-| POST | /v1/pack-installs/{id}:upgrade | Gộp ba chiều với phiên bản mới (dry\_run) | 09-04 | admin\_data |
-| PUT | /v1/pack-upgrades/{id}/decisions | Chọn phương án cho từng xung đột | 09-04 | admin\_data |
-| POST | /v1/pack-upgrades/{id}:apply | Áp dụng nâng cấp | 09-04 | approve |
-| POST | /v1/pack-upgrades/{id}:rollback | Quay lại trong 30 ngày | 09-04 | admin |
-| POST | /v1/packs | Tạo gói riêng của tổ chức (thêm 12/10/2026) | 09-05 | pack\_author |
-| GET | /v1/pack-installs/{id} | Một lần cài gói: Data Space, tiến độ ánh xạ, trạng thái kích hoạt (thêm 12/10/2026) | 09-02 | ask |
-| GET | /v1/pack-installs/{id}/mappings | Ánh xạ của một lần cài gói (thêm 12/10/2026) | 09-02 | ask |
-| GET | /v1/calibration-runs/{id} | Kết quả đối chiếu số với số đã nộp và nguyên nhân lệch (thêm 12/10/2026) | 09-02 | ask |
-| GET | /v1/metric-overrides/{id} | Một hiệu chỉnh chỉ số: công thức gốc và của tổ chức, lý do, chạy thử, trạng thái duyệt (thêm 12/10/2026) | 09-03 | ask |
-| GET | /v1/pack-upgrades/{id} | Một lần nâng cấp gói: xung đột gộp ba chiều, quyết định, chạy thử, trạng thái (thêm 12/10/2026) | 09-04 | ask |
 
 ### Kỳ chốt
 
@@ -947,7 +916,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/knowledge-findings/{id}:resolve | action\*, reason, assignee\_id | KnowledgeLintFinding sau hành động; propose\_edit trả kèm page\_version\_id bản nháp | 409 conflict (phát hiện đã xử lý); 422 validation\_failed (bỏ qua không ghi lý do, BR-166) |
 | GET /v1/data-products/index | ?metric\_codes, ?dimension\_values, ?period, ?q | Danh sách DataProductScope của data product active: code, version, chỉ số, thực thể, kỳ, ngoài phạm vi; kèm match {data\_product\_id, in\_scope, reasons} khi có metric\_codes | — |
 | GET /v1/data-products | ?status, ?owner\_id, ?steward\_id, ?q, ?cursor | Danh sách DataProduct kèm freshness\_state tổng | — |
-| POST /v1/data-products | code\*, name\*, description\*, sample\_questions, scope\_entities, period\_grain\*, period\_from\*, period\_to, out\_of\_scope\_note, owner\_id\*, steward\_id\*, freshness\_statement\*, pack\_version\_id | DataProduct ở draft; tạo eval\_set context nếu chưa có | 409 conflict (trùng code); 422 validation\_failed (owner trùng steward) |
+| POST /v1/data-products | code\*, name\*, description\*, sample\_questions, scope\_entities, period\_grain\*, period\_from\*, period\_to, out\_of\_scope\_note, owner\_id\*, steward\_id\*, freshness\_statement\* | DataProduct ở draft; tạo eval\_set context nếu chưa có | 409 conflict (trùng code); 422 validation\_failed (owner trùng steward) |
 | GET /v1/data-products/{id} | ?version | DataProduct kèm members, freshness từng dataset primary, kết quả bộ đánh giá gần nhất, số mục Error Book đang mở | 404 not\_found |
 | POST /v1/data-products/{id}:draft-version | — | Mở bản nháp version + 1 và proposal để agent/editor chỉnh sửa; bản đang phục vụ không đổi | 409 invalid\_state |
 | PATCH /v1/data-products/{id} | name, description, sample\_questions, scope\_entities, period\_from, period\_to, out\_of\_scope\_note, owner\_id, steward\_id, freshness\_statement | DataProduct; với bản active trả bản nháp version + 1, bản cũ phục vụ đến khi duyệt | 409 conflict (đổi code sau khi active); 422 validation\_failed |
@@ -996,7 +965,6 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/error-book-entries/{id}:mark-fixed | fix\_kind\*, fix\_proposal\_id, fix\_ref, note | ErrorBookEntry fixed; tự tạo ca hồi quy như :add-regression | 422 business\_rule\_violated (thiếu loại lỗi, nguyên nhân gốc hoặc cách sửa; đề xuất chưa accepted, BR-179) |
 | POST /v1/error-book-entries/{id}:add-regression | eval\_set\_id, input, expected, tolerance, as\_of | eval\_item\_id (origin error\_book, origin\_ref = id); mục sang regression\_added khi lần chạy CI kế tiếp đạt | 409 conflict (mục chưa fixed hoặc đã có ca hồi quy); 422 validation\_failed (input còn dữ liệu cá nhân, BR-74) |
 | POST /v1/error-book-entries/{id}:dismiss | reason, duplicate\_of\_id (một trong hai bắt buộc) | ErrorBookEntry dismissed | 409 conflict (mục không ở open) |
-| POST /v1/error-book-entries/{id}:propose-to-pack | pack\_id\*, summary\* | pack\_contribution proposed, pack\_proposal\_ref; nội dung gửi đi chỉ gồm cách sửa và ca kiểm thử đã bỏ dữ liệu khách | 409 conflict (mục chưa fixed) |
 | GET /v1/eval-sets | ?subject\_type, ?subject\_id, ?cursor | Danh sách EvalSet | — |
 | GET /v1/eval-sets/{id} | — | EvalSet kèm lượt chạy gần nhất | 404 not\_found |
 
@@ -1052,34 +1020,6 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/reports/{id} | — | Report | 404 not\_found |
 | POST /v1/me/notification-preferences:test | — | TestNotificationView | — |
 | GET /v1/channel-rules | — | ChannelRulesView | — |
-
-### A3 · Gói ngành
-
-| Endpoint | Gửi lên | Trả về | Lỗi riêng |
-| --- | --- | --- | --- |
-| GET /v1/packs | — | Danh sách IndustryPack | — |
-| POST /v1/packs:import | file\* | PackVersion. multipart/form-data; kiểm chữ ký trước khi nhận (BR-128) | 422 business\_rule\_violated (chữ ký không hợp lệ) |
-| GET /v1/pack-versions/{id} | — | PackVersion. Kèm thực thể chuẩn, chỉ số chuẩn, luật kiểm tra, kỹ năng mẫu | — |
-| POST /v1/packs/{id}/versions | version\*, manifest\*, min\_core\_version\*, release\_notes, breaking\_changes | PackVersion | — |
-| POST /v1/pack-versions/{id}:validate | — | 202, Location tới pack\_check\_run | — |
-| POST /v1/pack-versions/{id}:publish | — | PackVersion | 409 invalid\_state (chưa qua kiểm tra); 422 business\_rule\_violated (chỉ số thiếu căn cứ hoặc tái dùng mã, BR-131) |
-| POST /v1/pack-installs | pack\_version\_id\* | PackInstall | 409 conflict (Data Space đã có gói đang hoạt động) |
-| POST /v1/pack-installs/{id}:suggest-mappings | — | 202, Location tới entity\_mapping | — |
-| PUT /v1/pack-installs/{id}/mappings | entity\_mappings\*, code\_mappings | Danh sách EntityMapping | — |
-| POST /v1/pack-installs/{id}:calibrate | periods | 202, Location tới calibration\_run | — |
-| POST /v1/pack-installs/{id}:activate | — | PackInstall. Tạo đề xuất pack\_activate | 422 business\_rule\_violated (đối chiếu chưa đạt, BR-36) |
-| POST /v1/metric-overrides | pack\_install\_id\*, pack\_metric\_code\*, expression\*, scope\_condition, reason\* | MetricOverride | — |
-| POST /v1/metric-overrides/{id}:approve | — | MetricOverride | 403 forbidden (chỉ số báo cáo cơ quan quản lý cần thêm AC06) |
-| POST /v1/pack-installs/{id}:upgrade | to\_version\_id\*; ?dry\_run | PackUpgrade | 423 period\_locked (có kỳ đang chốt, BR-38) |
-| PUT /v1/pack-upgrades/{id}/decisions | decisions\* | PackUpgrade | — |
-| POST /v1/pack-upgrades/{id}:apply | apply\_from\_period | PackUpgrade | 409 invalid\_state (còn xung đột chưa quyết) |
-| POST /v1/pack-upgrades/{id}:rollback | reason\* | PackUpgrade | 409 invalid\_state (quá 30 ngày) |
-| POST /v1/packs | code\*, name\*, description | IndustryPack (riêng của tổ chức, chưa có phiên bản) | 409 conflict (trùng code) |
-| GET /v1/pack-installs/{id} | — | PackInstall | 404 not\_found |
-| GET /v1/pack-installs/{id}/mappings | ?entity, ?cursor | Danh sách Mapping | 404 not\_found |
-| GET /v1/calibration-runs/{id} | — | CalibrationRun (nơi Location của :calibrate trỏ tới) | 404 not\_found |
-| GET /v1/metric-overrides/{id} | — | MetricOverride | 404 not\_found |
-| GET /v1/pack-upgrades/{id} | — | PackUpgrade | 404 not\_found |
 
 ### A3 · Kỳ chốt
 

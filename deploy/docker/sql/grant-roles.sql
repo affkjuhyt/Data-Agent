@@ -2,7 +2,7 @@
 -- the migrate Job, before any service starts.
 --
 -- The application roles (da_owner, svc_<schema>, <schema>_read, svc_exec_worker) and every grant
--- on the 23 schemas come from the migration (backend/alembic/sql/dataagent.sql, design tab 3
+-- on the 22 schemas come from the migration (backend/alembic/sql/dataagent.sql, design tab 3
 -- D5.2). The db-init Job only turns the svc_ roles into logins: it sets their passwords from the
 -- DB_ROLE_PASSWORDS secret, so a role and the URL that embeds its password cannot drift.
 

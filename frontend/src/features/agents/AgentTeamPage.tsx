@@ -146,20 +146,16 @@ export default function AgentTeamPage() {
           skeletonRows={5}
           isEmpty={(page) => page.items.length === 0}
           empty={
-            // "v3.1 · Đội agent · Trống" (2165:16745): template agents come with industry packs.
+            // "v3.1 · Đội agent · Trống" (2165:16745). Its second button led to the agent templates of
+            // an industry pack; packs are gone (01/11/2026) and the builder holds the templates.
             <EmptyState
               icon="agent"
               title="Chưa có agent nào"
-              description="Giao việc đầu tiên bằng lời, hoặc bắt đầu từ agent mẫu của gói domain."
+              description="Giao việc đầu tiên bằng lời, hoặc bắt đầu từ một agent mẫu."
               action={
-                <div className="flex gap-da-sm">
-                  <LinkButton area="agents" page="BUILDER" kind="primary">
-                    Tạo agent
-                  </LinkButton>
-                  <LinkButton area="data" page="PACKS">
-                    Dùng agent mẫu
-                  </LinkButton>
-                </div>
+                <LinkButton area="agents" page="BUILDER" kind="primary">
+                  Tạo agent
+                </LinkButton>
               }
             />
           }

@@ -170,9 +170,6 @@ def test_the_endpoint_batches_of_12_10_apply_to_a_migrated_cluster(admin):
                 CHECK (caller_kind IN ('question','tile','skill_run','agent_run','pipeline',
                                        'period','eval','receipt_replay'));
             ALTER TABLE pipeline.data_mart DROP COLUMN suggested_dimensions;
-            ALTER TABLE pack.industry_pack DROP COLUMN origin;
-            ALTER TABLE pack.industry_pack ALTER COLUMN publisher_key_id SET NOT NULL;
-            ALTER TABLE pack.metric_override DROP COLUMN calibration_run_id;
             """
         )
     conn.close()
@@ -182,8 +179,6 @@ def test_the_endpoint_batches_of_12_10_apply_to_a_migrated_cluster(admin):
         ("agent", "agent_run", "retry_of"),
         ("skill", "skill_run", "mode"),
         ("pipeline", "data_mart", "suggested_dimensions"),
-        ("pack", "industry_pack", "origin"),
-        ("pack", "metric_override", "calibration_run_id"),
     ):
         assert (
             _one(
@@ -208,15 +203,6 @@ def test_the_endpoint_batches_of_12_10_apply_to_a_migrated_cluster(admin):
     assert "status_before_lock IS NOT NULL" in checks("agent.agent_def")
     assert "'ad_hoc'" in checks("query.query_run")
     assert "'try'" in checks("skill.skill_run")
-    assert "'organisation'" in checks("pack.industry_pack")
-    assert (
-        _one(
-            db,
-            "SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'pack'"
-            " AND table_name = 'industry_pack' AND column_name = 'publisher_key_id'",
-        )
-        == "YES"
-    )
     # The CHECKs are replaced, not added next to the old ones.
     assert _one(db, "SELECT count(*) FROM pg_constraint WHERE conname = 'agent_def_check'") == 1
     # The audit worker releases an approved export and reads nothing else of the audit database.
@@ -273,3 +259,93 @@ def test_the_endpoint_batches_of_12_10_apply_to_a_migrated_cluster(admin):
     finally:
         conn.rollback()
         conn.close()
+
+
+def test_the_industry_packs_are_removed_from_a_migrated_cluster(admin):
+    # v3_0017 (01/11/2026): a cluster migrated before it has schema pack, its roles, the columns
+    # pointing into it and the pack values of a few CHECKs; the baseline is generated without them.
+    _fresh(admin, "chain_packs", "chain_packs_audit")
+    db = _db(admin, "chain_packs")
+    _alembic(db, "upgrade", "v3_0016")
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE ROLE svc_pack NOLOGIN;
+            CREATE ROLE pack_read NOLOGIN;
+            GRANT pack_read TO svc_context;
+            CREATE SCHEMA pack AUTHORIZATION da_owner;
+            CREATE TABLE pack.industry_pack (id uuid PRIMARY KEY, org_id uuid NOT NULL);
+            CREATE TABLE pack.pack_install (
+              id uuid PRIMARY KEY, pack_id uuid REFERENCES pack.industry_pack(id));
+            ALTER TABLE pack.industry_pack OWNER TO da_owner;
+            ALTER TABLE pack.pack_install OWNER TO da_owner;
+            GRANT USAGE ON SCHEMA pack TO svc_pack, pack_read;
+            GRANT SELECT, INSERT ON pack.industry_pack TO svc_pack;
+            GRANT SELECT ON pack.industry_pack TO pack_read;
+            GRANT SELECT ON org.data_space TO svc_pack;
+            ALTER TABLE org.organization ADD COLUMN industry_code text;
+            ALTER TABLE org.data_space ADD COLUMN pack_install_id uuid;
+            ALTER TABLE context.metric ADD COLUMN pack_metric_id uuid;
+            ALTER TABLE eval.error_book_entry
+              ADD COLUMN pack_contribution text NOT NULL DEFAULT 'none',
+              ADD COLUMN pack_proposal_ref text,
+              ADD CHECK (pack_contribution IN ('none','proposed','accepted','rejected'));
+            ALTER TABLE skill.skill DROP CONSTRAINT skill_origin_check,
+              ADD CHECK (origin IN ('manual','from_session','agent_suggested','pack'));
+            ALTER TABLE inbox.proposal DROP CONSTRAINT proposal_kind_check,
+              ADD CHECK (kind IN ('metric_change','synonym','relationship','example','glossary',
+                'schema_change','skill_publish','pack_activate','pack_upgrade','metric_override',
+                'source_authority','writeback','document_validity','feedback_fix',
+                'knowledge_page','data_product'));
+            INSERT INTO agent.tool_def (id, code, permission_level, owner_service, endpoints,
+              model_description, execution_kinds, default_checkpoint, use_cases)
+            VALUES (gen_random_uuid(), 'pack.suggest_mappings', 'write_derived', 'Pack service',
+              '{}', 'd', '{plan}', 'always', '{UC-09-02}');
+            INSERT INTO org.role (id, org_id, code, name, capabilities)
+            VALUES ('a0000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'author', 'Author',
+              '{ask,pack_author}');
+            """
+        )
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    assert _one(db, "SELECT to_regnamespace('pack') IS NULL") is True
+    assert _one(db, "SELECT count(*) FROM pg_roles WHERE rolname IN ('svc_pack', 'pack_read')") == 0
+    for schema, table, name in (
+        ("org", "organization", "industry_code"),
+        ("org", "data_space", "pack_install_id"),
+        ("context", "metric", "pack_metric_id"),
+        ("eval", "error_book_entry", "pack_contribution"),
+        ("eval", "error_book_entry", "pack_proposal_ref"),
+    ):
+        assert (
+            _one(
+                db,
+                "SELECT count(*) FROM information_schema.columns WHERE table_schema = "
+                f"'{schema}' AND table_name = '{table}' AND column_name = '{name}'",
+            )
+            == 0
+        ), (schema, table, name)
+
+    def checks(table: str) -> str:
+        return _one(
+            db,
+            "SELECT string_agg(pg_get_constraintdef(oid), ' | ') FROM pg_constraint"
+            f" WHERE conrelid = '{table}'::regclass AND contype = 'c'",
+        )
+
+    # The narrower CHECK replaces the old one, it is not added next to it.
+    assert "'pack'" not in checks("skill.skill") and "'from_session'" in checks("skill.skill")
+    assert "'pack_activate'" not in checks("inbox.proposal")
+    assert "'data_product'" in checks("inbox.proposal")
+    assert _one(db, "SELECT count(*) FROM agent.tool_def WHERE code LIKE 'pack.%'") == 0
+    assert _one(db, "SELECT count(*) FROM agent.tool_def") > 0
+    assert (
+        _one(
+            db,
+            "SELECT capabilities::text FROM org.role"
+            " WHERE id = 'a0000000-0000-0000-0000-0000000000a1'",
+        )
+        == "{ask}"
+    )

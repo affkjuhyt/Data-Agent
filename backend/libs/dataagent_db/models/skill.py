@@ -60,9 +60,7 @@ class Skill(Base):
     )
     owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     origin: Mapped[str] = mapped_column(
-        Text,
-        server_default=sql_text("'manual'"),
-        comment="manual, from_session, agent_suggested, pack",
+        Text, server_default=sql_text("'manual'"), comment="manual, from_session, agent_suggested"
     )
     origin_ref: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     current_version: Mapped[int | None] = mapped_column(Integer, nullable=True)

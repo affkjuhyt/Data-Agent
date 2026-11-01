@@ -74,8 +74,6 @@ export interface ErrorBookEntry extends ErrorBookSummary {
   /** Mở 02/07 → Đã sửa 09/07 → Đã có hồi quy 11/07 */
   timeline: { label: string; at: string }[];
   history_text: string;
-  /** The fix applies to every customer of this data: it can go to the industry pack. */
-  pack_candidate: { pack_id: string; pack_name: string } | null;
   dismissed_reason: string | null;
 }
 
@@ -111,7 +109,6 @@ export const FIX_KINDS: { value: FixKind; label: string }[] = [
   { value: 'synonym', label: 'Từ đồng nghĩa' },
   { value: 'example', label: 'Câu hỏi mẫu' },
   { value: 'knowledge_page', label: 'Trang tri thức' },
-  { value: 'pack_version', label: 'Phiên bản gói ngành' },
   { value: 'source_data', label: 'Dữ liệu nguồn' },
   { value: 'model_config', label: 'Cấu hình model' },
   { value: 'prompt', label: 'Prompt' },
@@ -155,11 +152,6 @@ export const dismissEntry = async (
 ) =>
   okAs<ErrorBookEntry>(
     api.POST('/v1/error-book-entries/{id}:dismiss', { params: { path: { id } }, body }),
-  );
-
-export const proposeEntryToPack = async (id: string, body: { pack_id: string; summary: string }) =>
-  okAs<{ pack_proposal_ref: string }>(
-    api.POST('/v1/error-book-entries/{id}:propose-to-pack', { params: { path: { id } }, body }),
   );
 
 /** ErrorBookCreate requires the Data Space the entry belongs to: the one the user works in. */

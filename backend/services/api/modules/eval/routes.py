@@ -55,7 +55,6 @@ from services.api.modules.eval.schemas import (
     EvalSetDetail,
     EvalSetView,
     MarkFixed,
-    ProposeToPack,
 )
 
 router = APIRouter()
@@ -130,7 +129,7 @@ def _item_read_view(item: evaluation.EvalItem, principal: Principal) -> EvalItem
 
 
 def _readable_sets(principal: Principal, data_space: uuid.UUID) -> tuple[Any, ...]:
-    """The Data Space's sets and the organisation-wide ones (pack sets have no Data Space)."""
+    """The Data Space's sets and the organisation-wide ones (a set with no Data Space)."""
     return (
         evaluation.EvalSet.org_id == principal.org_id,
         or_(
@@ -144,7 +143,7 @@ async def _set_views(session: AsyncSession, rows: list[evaluation.EvalSet]) -> l
     ids = [r.id for r in rows]
     if not ids:
         return []
-    # eval_run has no Data Space: a run of an organisation-wide set (a pack's) ran on some Data
+    # eval_run has no Data Space: a run of an organisation-wide set ran on some Data
     # Space's data, maybe another's, so only runs of the caller's own Data Space's sets are shown.
     own = [r.id for r in rows if r.data_space_id is not None]
     counts = dict(
@@ -912,54 +911,6 @@ async def dismiss_error(
                 data_space_id=row.data_space_id,
                 status=row.status,
                 duplicate_of_id=row.duplicate_of_id,
-            )
-        )
-        await session.flush()
-        return ErrorBookView.model_validate(row, from_attributes=True)
-
-
-@router.post(
-    "/v1/error-book-entries/{id}:propose-to-pack",
-    response_model=ErrorBookView,
-    **endpoint(
-        "POST", "/v1/error-book-entries/{id}:propose-to-pack", operation_id="proposeErrorBookToPack"
-    ),
-)
-async def propose_to_pack(
-    body: ProposeToPack,
-    entry_id: Annotated[uuid.UUID, Path(alias="id")],
-    principal: CurrentPrincipal,
-    data_space: CurrentDataSpace,
-) -> ErrorBookView:
-    async with transaction(ROLE, principal) as session:
-        row = await _entry(session, entry_id, principal, data_space, lock=True)
-        if row.status not in ("fixed", "regression_added"):
-            raise Problem(
-                409, "conflict", f"The entry is {row.status}; propose a fix once it is fixed."
-            )
-        if row.pack_contribution in ("proposed", "accepted"):
-            raise Problem(
-                409, "conflict", f"The fix is already {row.pack_contribution} for the pack."
-            )
-        row.pack_contribution = "proposed"
-        row.pack_proposal_ref = str(uuid7())
-        row.updated_by, row.updated_at = principal.user_id, _now()
-        # UC-09-05: only the fix and the regression case's shape leave the organisation; title,
-        # detail and root cause stay here. The summary is written by the steward for the pack.
-        session.add(
-            _event(
-                principal,
-                "error_book_entry",
-                row.id,
-                "error_book_entry.proposed_to_pack",
-                entry_id=row.id,
-                pack_id=body.pack_id,
-                pack_proposal_ref=row.pack_proposal_ref,
-                pack_contribution=row.pack_contribution,
-                error_kind=row.error_kind,
-                fix_kind=row.fix_kind,
-                eval_item_id=row.eval_item_id,
-                summary=body.summary,
             )
         )
         await session.flush()

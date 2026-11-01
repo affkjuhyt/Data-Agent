@@ -28,7 +28,6 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: 'all', label: 'Tất cả' },
   { value: 'data_space', label: 'Của Data Space' },
   { value: 'organization', label: 'Toàn tổ chức' },
-  { value: 'domain_pack', label: 'Từ gói ngành' },
 ];
 
 export default function SkillLibraryPage() {

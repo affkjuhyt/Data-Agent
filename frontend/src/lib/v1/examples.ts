@@ -41,12 +41,11 @@ export interface Synonym {
 export type ExampleWire = Schemas['ExampleView'] & { display?: Partial<ExampleQuery> };
 export type SynonymWire = Schemas['SynonymView'] & { display?: Partial<Synonym> };
 
-/** example_query.origin: manual, agent_suggested, feedback, pack. */
+/** example_query.origin: manual, agent_suggested, feedback. */
 const ORIGIN: Record<string, string> = {
   manual: 'Thêm thủ công',
   agent_suggested: 'Agent gợi ý',
   feedback: 'Từ phản hồi người hỏi',
-  pack: 'Gói ngành',
 };
 
 /** synonym.target_kind: metric, dimension, measure, entity, value, column. */
