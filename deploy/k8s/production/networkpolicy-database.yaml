@@ -228,6 +228,13 @@ spec:
       podSelector:
         matchLabels:
           app: temporal-schema
+    # The V3 blocks that use it (KB-02): from the connections their code makes.
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: worker-agent
     ports:
     - protocol: TCP
       port: 8300
@@ -532,6 +539,19 @@ spec:
       podSelector:
         matchLabels:
           app: grafana
+    # The V3 blocks that use it (KB-02): from the connections their code makes.
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: api
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: worker-agent
     ports:
     - protocol: TCP
       port: 8320
@@ -684,6 +704,25 @@ spec:
       podSelector:
         matchLabels:
           app: grafana
+    # The V3 blocks that use it (KB-02): from the connections their code makes.
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: api
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: worker-agent
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: worker-document
     ports:
     - protocol: TCP
       port: 8330
@@ -992,6 +1031,31 @@ spec:
       podSelector:
         matchLabels:
           app: grafana
+    # The V3 blocks that use it (KB-02): from the connections their code makes.
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: api
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: worker-agent
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: worker-document
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: crawler
     ports:
     - protocol: TCP
       port: 8360
@@ -1300,6 +1364,31 @@ spec:
       podSelector:
         matchLabels:
           app: grafana
+    # The V3 blocks that use it (KB-02): from the connections their code makes.
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: api
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: worker-agent
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: worker-ingest
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: crawler
     ports:
     - protocol: TCP
       port: 8120
@@ -1452,6 +1541,37 @@ spec:
       podSelector:
         matchLabels:
           app: grafana
+    # The V3 blocks that use it (KB-02): from the connections their code makes.
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: api
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: worker-agent
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: worker-ingest
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: worker-document
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: crawler
     ports:
     - protocol: TCP
       port: 8390

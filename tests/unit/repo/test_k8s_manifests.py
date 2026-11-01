@@ -735,6 +735,35 @@ class TestDenyAllIsTheDefault:
         )
 
 
+class TestTheV3BlocksAreLetThrough:
+    """Deny-all is the default, so a V3 block left out of a store's allow list cannot reach it at all:
+    production had none of them in any, and every /v1 call would have failed on the database."""
+
+    V3 = ("api", "worker-agent", "worker-ingest", "worker-document", "crawler")
+
+    @staticmethod
+    def _sources(name: str, namespace: str) -> set[str]:
+        for _, d in TOP_LEVEL:
+            if (
+                d["kind"] == "NetworkPolicy"
+                and d["metadata"]["namespace"] == namespace
+                and d["metadata"]["name"] == name
+            ):
+                return {
+                    f.get("podSelector", {}).get("matchLabels", {}).get("app")
+                    for rule in d["spec"].get("ingress", [])
+                    for f in rule.get("from", [])
+                }
+        return set()
+
+    @pytest.mark.parametrize("block", V3)
+    def test_every_v3_block_reaches_pgbouncer(self, block):
+        assert block in self._sources("allow-pgbouncer", DB_NS)
+
+    def test_the_gateway_reaches_the_api(self):
+        assert "kong" in self._sources("allow-api", SVC_NS)
+
+
 class TestEveryWorkloadHasItsOwnIdentity:
     def test_each_workload_names_a_service_account_of_its_own(self):
         accounts = {

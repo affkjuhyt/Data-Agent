@@ -121,6 +121,10 @@ spec:
     - podSelector:
         matchLabels:
           app: platform-workers-audit
+    # V3 blocks (KB-02).
+    - podSelector:
+        matchLabels:
+          app: api
     ports:
     - protocol: TCP
       port: 8110
@@ -260,6 +264,16 @@ spec:
     - podSelector:
         matchLabels:
           app: platform-workers-schema-crawler
+    # V3 blocks (KB-02).
+    - podSelector:
+        matchLabels:
+          app: api
+    - podSelector:
+        matchLabels:
+          app: worker-agent
+    - podSelector:
+        matchLabels:
+          app: worker-document
     ports:
     - protocol: TCP
       port: 8500
@@ -289,6 +303,81 @@ spec:
     ports:
     - protocol: TCP
       port: 8420
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: api
+  policyTypes:
+  - Ingress
+  # /v1 is reached only through the gateway (ADR-28); the frontend calls it there too.
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kong
+    ports:
+    - protocol: TCP
+      port: 8290
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-warehouses
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values: [worker-agent, worker-ingest]
+  policyTypes:
+  - Egress
+  # Query in place (invariant 15): worker-agent runs a question's SQL on the customer's warehouse,
+  # worker-ingest loads from it, on the database ports of the source kinds catalog allows and 443
+  # for the cloud ones (Snowflake, BigQuery, Databricks). Where the customer's networks are known,
+  # narrow 0.0.0.0/0 to them; the internal ranges are left out either way.
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 100.64.0.0/10
+        - 127.0.0.0/8
+        - 169.254.0.0/16
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 3306
+    - protocol: TCP
+      port: 1433
+    - protocol: TCP
+      port: 1521
+    - protocol: TCP
+      port: 8123
+    - protocol: TCP
+      port: 8443
+    - protocol: TCP
+      port: 9000
+    - protocol: TCP
+      port: 9440
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -425,6 +514,10 @@ spec:
     - podSelector:
         matchLabels:
           app: grafana
+    # V3 blocks (KB-02).
+    - podSelector:
+        matchLabels:
+          app: api
     ports:
     - protocol: TCP
       port: 8400
