@@ -50,9 +50,12 @@ spec:
         - containerPort: 8371
           name: native
         resources:
+          # The scheduler reserves this, not what the pod uses: the dev stores reserved twice to twenty
+          # times their use (549 Mi measured 01/11/2026), and the one-node cluster could not fit the
+          # full stack. The limit is unchanged, so the store still grows into it.
           requests:
             cpu: 500m
-            memory: 1Gi
+            memory: 512Mi
           limits:
             cpu: '2'
             memory: 2Gi
