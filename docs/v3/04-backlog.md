@@ -179,6 +179,32 @@ R1-05, R1-09, R1-10 đang làm, việc nào trễ thì AN-04/AN-05 nhường.
 Thứ tự: RG-01 → RG-02 và RG-05 song song ngay trong R1, AN-13 viết case song song, AN-05 → AN-04 theo ngoại lệ; sau R1:
 AN-01 → AN-02 → AN-03 → AN-07 → AN-06 → AN-09/AN-10 → AN-11; RG-03…RG-09 theo số đo của RG-02.
 
+## 3f. Tổng quát hoá: bỏ thiên lệch về dữ liệu cũ
+
+Thêm 01/11/2026 sau khi rà agent, nạp dữ liệu, semantic, frontend và cấu hình để tìm chỗ gắn vào dữ
+liệu pilot. Logic không chứa mã chỉ số, mã Data Space hay tên bảng pilot (từ vựng đọc từ DB); thiên lệch
+nằm ở ngôn ngữ, lịch, dialect, định dạng nhập, đầu ra và cấu hình triển khai. Đợt `G0` là lỗi bảo mật
+hoặc dữ liệu sai, làm ngay; `G1`–`G4` theo thứ tự. Người làm: một người (01/11/2026).
+
+| ID | Đợt | Việc | Phụ thuộc | Cỡ | Tiêu chí | TT |
+| --- | --- | --- | --- | --- | --- | --- |
+| GEN-01 | G0 | Data Space không có thành viên không còn mở cho cả tổ chức: chỉ steward vào được (`query/scope.can_ask_data_space` bỏ nhánh "legacy open pilot"); seed demo ghi thành viên tường minh | | S | Test: space không có thành viên → người khác bị từ chối, steward vẫn vào | todo |
+| GEN-02 | G0 | Upload đọc số và ngày theo thiết lập của chính upload (`decimal_sep`, `thousands_sep`, thứ tự ngày), dùng chung một bộ đọc cho API và worker; ngày đưa vào DB đã là ISO, không dựa vào `DateStyle` của server; kiểu `percent` bỏ dấu `%` | | M | `1.234,5`, `1,234.5`, `12%`, `02/03/2024` (ngày trước) ra đúng giá trị | todo |
+| GEN-03 | G0 | Xếp hạng đọc sau khi bỏ kỳ ra khỏi câu ("tháng 9 cao nhất" không thành top 9) | | S | Test resolver | todo |
+| GEN-04 | G0 | Production không nạp dữ liệu demo: db-init chỉ áp grants; seed demo, tài liệu pilot và user demo trong realm chỉ có khi `seed_demo=true`; cờ `seed_demo` nối thật vào ConfigMap/Job | | M | Render production không chứa SQL demo, file pilot hay user demo; test repo khẳng định | todo |
+| GEN-05 | G0 | Frontend production chạy bản build tĩnh, không chạy Vite dev server; mock không thể bật ở production | GEN-04 | M | Manifest production dùng `frontend/Dockerfile`; không còn `npm run dev` | todo |
+| GEN-06 | G0 | Địa chỉ GPU, CORS và redirect OIDC lấy từ inventory, không viết cứng IP pilot/localhost; thiếu thì deploy dừng | | S | Không còn `10.10.55.101` trong manifest production | todo |
+| GEN-11 | G1 | `ingest_profile` cho upload, nguồn crawl, collection: locale, thứ tự ngày, dấu thập phân, encoding, `header_row`, ngôn ngữ OCR, gói PII, cấu hình FTS; worker đọc đúng thiết lập đã lưu | GEN-02 | L | Mọi thiết lập PATCH được đều có hiệu lực ở worker | todo |
+| GEN-12 | G1 | Adapter theo dialect cho đọc metadata, profile, đọc dữ liệu và kiểm chất lượng; SQL trên nguồn khách sinh qua sqlglot | | L | MySQL/SQL Server/ClickHouse qua được quét, profile, nạp, kiểm chất lượng | todo |
+| GEN-13 | G1 | Tên cột: tên vật lý ASCII an toàn tách khỏi nhãn gốc (giữ tiếng Việt, CJK, tên bắt đầu bằng số) | GEN-02 | S | Header "Số lượng", "2023" nạp được, nhãn giữ nguyên | todo |
+| GEN-14 | G1 | PII theo gói quốc gia/tổ chức + kiểm theo giá trị; bỏ che mọi số 9/12 chữ số | GEN-11 | M | Số hoá đơn không bị che; CCCD vẫn bị che | todo |
+| GEN-21 | G2 | Thực thể lịch theo tổ chức/Data Space (năm tài chính, đầu tuần, grain tuần); grain, luỹ kế, so sánh tính theo lịch; "hôm nay" theo `org.time_zone`; bỏ `Asia/Ho_Chi_Minh` viết cứng | | L | Năm tài chính bắt đầu tháng 4 cho YTD đúng | todo |
+| GEN-22 | G2 | Compiler: `metric_version.time_dimension_id`; chiều thời gian qua join (bảng ngày riêng); tổng hợp thời gian theo measure; bộ lọc có kiểu (khoảng, so sánh, null); `NULLIF` cho phép chia; tham chiếu dataset theo ID thay vì đúng hai phần | | L | Case star schema, tỷ lệ stock/flow, lọc "> 1 tỷ" đúng | todo |
+| GEN-23 | G2 | Chỉ mục giá trị đủ mọi giá trị (theo giới hạn cardinality), không chỉ top 10 của profile | | M | Lọc theo giá trị hiếm được nhận | todo |
+| GEN-31 | G3 | Gói ngôn ngữ theo locale cho hiểu câu hỏi (kỳ, chiều, so sánh, xếp hạng, phân tích, từ dừng); LLM trả kỳ dạng ISO; một hàm chuẩn hoá chung API/worker | GEN-21 | L | Bộ câu tiếng Anh tương đương trong Eval Set đạt như tiếng Việt | todo |
+| GEN-41 | G4 | i18n: kho thông điệp, formatter theo `org.locale`/tiền tệ ở backend và frontend; ví dụ trong prompt và UI lấy từ metric/glossary của Data Space; nhãn mô hình công thức, danh từ bản ghi lấy từ metadata | | L | Không còn ví dụ "dư nợ", "xăng dầu", "ngân hàng" trong code chạy | todo |
+| GEN-42 | G4 | Gỡ `libs/semantic` và phần V2 của `libs/indicator`/`contracts/v1`; scorer eval dùng compiler V3 | | M | Eval chấm đúng compiler production | todo |
+
 ## 4. Quy tắc theo dõi
 
 - Thứ Sáu hằng tuần rà cột TT; việc trễ > 2 ngày thì cắt hoặc đổi người ngay trong tuần.
