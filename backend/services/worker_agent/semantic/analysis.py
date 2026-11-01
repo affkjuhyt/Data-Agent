@@ -44,19 +44,31 @@ RUNNING_TOTAL = "running_total"
 TO_DATE_UNITS = ("year", "quarter", "month")
 
 
+def additive_measures(layer: Layer) -> dict[str, str]:
+    """The expressions of the measures that may add up, by code, for the checks that read a
+    measure's SQL (answer/insights.is_additive, skills/decomposition.shape_of).
+
+    A steward's `none` takes a measure out: a SUM over pre-computed rates or over rows already
+    aggregated at another grain has the shape of a total and is not one, which only the
+    declaration can tell. The declaration only narrows; a distinct count declared `full` still
+    fails the shape check."""
+    return {code: m.expression for code, m in layer.measures.items() if m.additivity != "none"}
+
+
 def is_additive(metric: MetricVersion, layer: Layer) -> bool:
     """Whether the metric's values add up across members: one measure that is a SUM or a COUNT
-    (not DISTINCT), the measure itself and not an expression over it."""
+    (not DISTINCT), the measure itself and not an expression over it, and not declared `none`."""
     try:
         tree = parse_one(metric.expression)
     except ParseError:
         return False
     while isinstance(tree, exp.Paren):
         tree = tree.this
-    if not isinstance(tree, exp.Column) or tree.name not in layer.measures:
+    measures = additive_measures(layer)
+    if not isinstance(tree, exp.Column) or tree.name not in measures:
         return False
     try:
-        measure = parse_one(layer.measures[tree.name].expression)
+        measure = parse_one(measures[tree.name])
     except ParseError:
         return False
     if isinstance(measure, exp.Sum):

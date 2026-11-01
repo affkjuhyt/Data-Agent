@@ -275,7 +275,9 @@ async def load(
         synonyms=targets,
     )
     layer = c.Layer(
-        measures={m.code: c.Measure(m.code, m.expression, m.entity_id) for m in measures},
+        measures={
+            m.code: c.Measure(m.code, m.expression, m.entity_id, m.additivity) for m in measures
+        },
         dimensions={
             d.code: c.Dimension(
                 d.id, d.code, d.name, d.expression, d.entity_id, d.is_time, value_type(d)

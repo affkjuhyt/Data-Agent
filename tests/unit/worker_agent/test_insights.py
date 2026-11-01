@@ -120,3 +120,61 @@ def test_additive_only_for_one_summed_or_counted_measure() -> None:
     assert not is_additive("so_kh", measures)
     assert not is_additive("lai", measures)
     assert not is_additive("no_xau / du_no * 100", measures)
+
+
+def test_an_even_fall_off_with_the_times_and_the_three_largest() -> None:
+    members = list(zip("ABCDE", ["100", "90", "80", "70", "60"], strict=True))
+    figs = _figs("vung", members, unit="đơn")
+    ins = _read(figs, "vung", additive=True, unit="đơn")
+    by_label = {f.label: f for f in ins.figures}
+    times = by_label["Tỷ lệ nợ xấu: A so với E"]
+    assert (times.expr, times.unit) == ("F1 / F5", "lần")
+    top = by_label["Tỷ lệ nợ xấu: tỷ trọng của ba nhóm lớn nhất trong tổng"]
+    assert top.expr == "(F1 + F2 + F3) / (F1 + F2 + F3 + F4 + F5) * 100"
+    assert top.value == D("67.5")
+    text = written(ins.sentences, figs + ins.figures)
+    assert "A gấp 1,7 lần E." in text
+    assert "Ba nhóm lớn nhất (A, B, C) chiếm 67,5%." in text
+    assert text.endswith("Các nhóm giảm dần đều, không có nhóm nào tách hẳn.")
+
+
+def test_the_first_few_breaking_from_the_rest_is_said_with_the_gap() -> None:
+    members = list(zip("ABCDEF", ["100", "95", "90", "30", "25", "20"], strict=True))
+    figs = _figs("vung", members)
+    ins = _read(figs, "vung")
+    assert ins.figures[-1].expr == "F3 - F4"
+    assert ins.sentences[-1].startswith("Ba nhóm đầu (A, B, C) tách khỏi phần còn lại: C hơn D")
+    # A ratio gets no total, so no share of the three largest either.
+    assert not any("tổng" in f.label for f in ins.figures)
+
+
+def test_no_times_over_a_zero_or_negative_value() -> None:
+    members = list(zip("ABCD", ["10", "5", "0", "3"], strict=True))
+    ins = _read(_figs("vung", members, unit=None), "vung", unit=None)
+    assert not any(f.unit == "lần" for f in ins.figures)
+
+
+def test_a_trend_over_periods_traced_as_one_expression() -> None:
+    months = [f"2026-0{i}" for i in range(1, 6)]
+    figs = _figs("thang", list(zip(months, ["100", "110", "120", "130", "150"], strict=True)), None)
+    ins = _read(figs, "thang", unit=None)
+    by_label = {f.label: f for f in ins.figures}
+    slope = by_label["Tỷ lệ nợ xấu: thay đổi bình quân mỗi kỳ"]
+    assert slope.expr == "(-4 * F1 + -2 * F2 + 0 * F3 + 2 * F4 + 4 * F5) / 20"
+    assert slope.value == D(12) and slope.signed
+    span = by_label["Tỷ lệ nợ xấu: thay đổi 2026-05 so với 2026-01"]
+    assert span.expr == "F5 - F1" and span.value == D(50)
+    text = written(ins.sentences, figs + ins.figures)
+    assert "Trong năm kỳ, cao nhất là 2026-05" in text
+    assert "Từ 2026-01 đến 2026-05: +50,00 (+50,0%)." in text
+    assert "Qua năm kỳ, bình quân mỗi kỳ tăng +12,00." in text
+    assert text.endswith("Tỷ lệ nợ xấu tăng bốn kỳ liên tiếp tới 2026-05.")
+    # No count is written in digits: the Narrator accepts only figure values as numbers.
+    assert "5 kỳ" not in text and "4 kỳ" not in text
+
+
+def test_a_broken_run_is_not_called_a_streak() -> None:
+    months = [f"2026-0{i}" for i in range(1, 5)]
+    figs = _figs("thang", list(zip(months, ["100", "120", "110", "115"], strict=True)), None)
+    ins = _read(figs, "thang", unit=None)
+    assert not any("liên tiếp" in s for s in ins.sentences)

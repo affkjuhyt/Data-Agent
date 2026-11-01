@@ -8,12 +8,14 @@ import datetime
 import sqlite3
 import uuid
 from collections.abc import Iterator
+from dataclasses import replace
 
 import pytest
 
 from services.worker_agent.semantic.analysis import (
     RUNNING_TOTAL,
     SHARE_OF_TOTAL,
+    additive_measures,
     compile_running,
     compile_share,
     is_additive,
@@ -146,6 +148,27 @@ def test_a_count_adds_up_and_a_distinct_count_or_a_ratio_does_not() -> None:
     assert is_additive(metric("so_don"), LAYER)
     assert not is_additive(metric("so_khach"), LAYER)
     assert not is_additive(metric("doanh_thu / so_don"), LAYER)
+
+
+def test_a_sum_the_steward_declared_not_additive_is_not_a_total() -> None:
+    # A SUM over branch-level rates has the shape of a total; only the declaration says otherwise.
+    layer = replace(
+        LAYER,
+        measures={
+            **LAYER.measures,
+            "ty_le_dat": Measure("ty_le_dat", "SUM(target_rate)", SALE, additivity="none"),
+            "khach_full": Measure("khach_full", "COUNT(DISTINCT customer)", SALE, "full"),
+        },
+    )
+    assert not is_additive(metric("ty_le_dat"), layer)
+    assert "ty_le_dat" not in additive_measures(layer)
+    # The declaration only narrows: a distinct count declared full still does not add up.
+    assert not is_additive(metric("khach_full"), layer)
+    assert is_additive(metric("doanh_thu"), layer)
+    with pytest.raises(CompileError):
+        compile_share(
+            Request(metric("ty_le_dat"), group_by=["nhom"], period=Q1), layer, dialect="sqlite"
+        )
 
 
 @pytest.mark.parametrize(

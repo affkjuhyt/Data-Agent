@@ -40,6 +40,7 @@ from services.worker_agent.questions import (
     secrets,
 )
 from services.worker_agent.semantic import compiler as c
+from services.worker_agent.semantic.analysis import additive_measures
 from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.skills.decomposition import (
     NO_VALUE,
@@ -396,9 +397,7 @@ def _plan(
             raise RunFailed("Phân rã theo một chiều không phải thời gian; kỳ đã là tham số riêng.")
         dimensions.append(dimension)
     try:
-        shape = shape_of(
-            version.expression, {k: m.expression for k, m in layer.layer.measures.items()}
-        )
+        shape = shape_of(version.expression, additive_measures(layer.layer))
     except NotDecomposable as exc:
         raise RunFailed(
             f"{entry.name} không phải tổng hay tỷ lệ của hai tổng nên không phân rã chính xác được."

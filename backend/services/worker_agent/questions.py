@@ -1230,7 +1230,7 @@ async def _understand_and_plan(
                 ],
                 additive=is_additive(
                     layer.versions[u.metric.metric_id].expression,
-                    {code: m.expression for code, m in layer.layer.measures.items()},
+                    analysis.additive_measures(layer.layer),
                 ),
                 base_label=period_label(compare.base_period(compile_request.period, compare_to))
                 if compare_to is not None

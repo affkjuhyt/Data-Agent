@@ -72,6 +72,8 @@ class Measure:
     code: str
     expression: str
     entity_id: uuid.UUID
+    # semantic_measure.additivity as the steward declared it: full, semi (not over time) or none.
+    additivity: str = "full"
 
 
 @dataclass(frozen=True)
