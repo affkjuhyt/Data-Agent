@@ -735,6 +735,21 @@ class TestDenyAllIsTheDefault:
         )
 
 
+class TestEveryManifestParses:
+    """The rest of this file reads production only. A dev manifest that is not YAML fails nowhere but
+    on the cluster, at apply time: dev's setup Job could not be applied for two weeks (an inline
+    script's lines left at column 0 broke its block scalar), so Kong kept the retired kb-backend
+    route."""
+
+    @pytest.mark.parametrize(
+        "path",
+        sorted(K8S_DIR.glob("*/**/*.yaml")),
+        ids=lambda p: str(p.relative_to(K8S_DIR)),
+    )
+    def test_it_is_yaml(self, path):
+        list(yaml.safe_load_all(path.read_text()))
+
+
 class TestTheV3BlocksAreLetThrough:
     """Deny-all is the default, so a V3 block left out of a store's allow list cannot reach it at all:
     production had none of them in any, and every /v1 call would have failed on the database."""
