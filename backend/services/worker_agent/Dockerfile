@@ -15,6 +15,7 @@ COPY backend/libs/cron/ ./libs/cron/
 COPY backend/libs/clock/ ./libs/clock/
 COPY backend/libs/language/ ./libs/language/
 COPY backend/libs/tabular/ ./libs/tabular/
+COPY backend/libs/pii/ ./libs/pii/
 COPY backend/libs/contracts/ ./libs/contracts/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/worker_agent/ ./services/worker_agent/

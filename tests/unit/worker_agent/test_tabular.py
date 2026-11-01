@@ -94,3 +94,13 @@ def test_physical_names_fold_accents_prefix_digits_and_stay_unique() -> None:
         ["Số lượng", "2023", "Đơn giá (VNĐ)", "CustomerID", "销售额", "so luong", "Order Date"]
     ) == ["so_luong", "c_2023", "don_gia_vnd", "customerid", "column_5", "so_luong_6", "order_date"]
     assert len(tabular.physical_name("x" * 100, "c")) == 63
+
+
+def test_the_pii_packs_follow_the_locale_unless_a_level_names_them() -> None:
+    from libs.tabular import profile
+
+    assert profile.resolve("vi-VN").pii_packs == ("GLOBAL", "VN")
+    assert profile.resolve("en-US").pii_packs == ("GLOBAL", "US")
+    assert profile.resolve("vi-VN", {"pii_packs": ["us", "VN"]}).pii_packs == ("GLOBAL", "US", "VN")
+    with pytest.raises(ValueError, match="pii_packs"):
+        profile.validate({"pii_packs": ["XX"]})

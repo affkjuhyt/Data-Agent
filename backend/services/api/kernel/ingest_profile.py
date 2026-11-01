@@ -22,6 +22,10 @@ class IngestProfile(BaseModel):
     decimal_mark: Literal[".", ","] | None = None
     date_order: Literal["dmy", "mdy"] | None = None
     ocr_languages: list[str] | None = Field(default=None, min_length=1, max_length=5)
+    # GEN-14: the country packs personal data is found with; else the locale's region.
+    pii_packs: list[Literal["GLOBAL", "VN", "US"]] | None = Field(
+        default=None, min_length=1, max_length=3
+    )
 
     @model_validator(mode="after")
     def _known(self) -> IngestProfile:

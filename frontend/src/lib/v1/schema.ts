@@ -14427,6 +14427,8 @@ export interface components {
             locale?: string | null;
             /** Ocr Languages */
             ocr_languages?: string[] | null;
+            /** Pii Packs */
+            pii_packs?: ("GLOBAL" | "VN" | "US")[] | null;
         };
         /**
          * IngestionJobDryRun

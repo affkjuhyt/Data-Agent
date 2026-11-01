@@ -28,9 +28,9 @@ from typing import Any
 import httpx
 from sqlalchemy import delete, func, select, update
 
+from libs import pii
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import audit, document
-from libs.shared import pii_detector
 from libs.tabular import profile as ingest_profile
 from services.worker_document import validity
 from services.worker_document.indexing import Point, VectorIndex
@@ -89,6 +89,8 @@ class Meta:
     pii_policy: str
     # The collection's ingest profile resolved over its Data Space and organization (GEN-11).
     ocr_languages: tuple[str, ...] = DEFAULT_OCR_LANGUAGES
+    # The country packs its personal data is found with (libs/pii, GEN-14).
+    pii_packs: tuple[str, ...] = pii.DEFAULT_PACKS
 
 
 @dataclass
@@ -115,6 +117,9 @@ async def _meta(session: Any, org_id: uuid.UUID, row: document.Document) -> Meta
     )
     if collection is None:
         return None
+    profile = await ingest_profile.load(
+        session, collection.data_space_id, collection.ingest_profile
+    )
     return Meta(
         org_id=org_id,
         document_id=row.id,
@@ -130,19 +135,20 @@ async def _meta(session: Any, org_id: uuid.UUID, row: document.Document) -> Meta
         qdrant_collection=collection.qdrant_collection,
         embed_model=collection.embed_model,
         pii_policy=collection.pii_policy,
-        ocr_languages=(
-            await ingest_profile.load(session, collection.data_space_id, collection.ingest_profile)
-        ).ocr_languages,
+        ocr_languages=profile.ocr_languages,
+        pii_packs=profile.pii_packs,
     )
 
 
-def mask_for(policy: str, text: str) -> tuple[str, bool]:
+def mask_for(
+    policy: str, text: str, packs: tuple[str, ...] = pii.DEFAULT_PACKS
+) -> tuple[str, bool]:
     """(text to store, pii_masked) under the collection's policy (BR-110). `mask` redacts;
     `keep_for_authorized` keeps the text and marks it unmasked when it holds personal data, so
     only a person with view_detail reads it and an agent never does (BR-46)."""
     if policy == "keep_for_authorized":
-        return text, pii_detector.scan(text)["total"] == 0
-    masked, _ = pii_detector.mask(text)
+        return text, pii.scan(text, packs=packs)["total"] == 0
+    masked, _ = pii.mask(text, packs=packs)
     return masked, True
 
 
@@ -167,7 +173,7 @@ def plan_chunks(
     for draft in document_chunks(page_texts):
         if (draft.page_from, draft.page_to, draft.section_path) in corrected_spans:
             continue  # the person's text for this passage stands (BR-108)
-        text, pii_masked = mask_for(meta.pii_policy, draft.text)
+        text, pii_masked = mask_for(meta.pii_policy, draft.text, meta.pii_packs)
         old = reusable.pop((draft.page_from, draft.page_to, _sha(text)), None)
         if old is not None:
             plan.kept.append(old)
@@ -390,7 +396,9 @@ async def process_document(event: Any, *, again: bool = False) -> None:
             await _fail(org_id, document_id, str(exc))
             log.exception("document processing failed id=%s", document_id)
             return
-        if meta.pii_policy == "reject" and any(pii_detector.scan(p.text)["total"] for p in pages):
+        if meta.pii_policy == "reject" and any(
+            pii.scan(p.text, packs=meta.pii_packs)["total"] for p in pages
+        ):
             await _fail(
                 org_id, document_id, "The collection rejects documents holding personal data."
             )
@@ -403,7 +411,9 @@ async def process_document(event: Any, *, again: bool = False) -> None:
             if n in existing_pages and existing_pages[n].page_hash == h
         }
         page_texts = [
-            existing_pages[n].text or "" if n in unchanged else mask_for(meta.pii_policy, p.text)[0]
+            existing_pages[n].text or ""
+            if n in unchanged
+            else mask_for(meta.pii_policy, p.text, meta.pii_packs)[0]
             for n, p in enumerate(pages, start=1)
         ]
         plan = plan_chunks(meta, page_texts, unchanged, existing_chunks)

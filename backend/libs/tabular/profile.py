@@ -7,7 +7,8 @@ decide the rest. So an English-language Data Space says `{"locale": "en-US"}` on
 collection of Japanese scans adds `{"ocr_languages": ["jpn"]}`.
 
 Only keys a reader uses are accepted: decimal_mark and date_order (uploads, crawled figures),
-ocr_languages (worker-document's OCR), locale (and the Accept-Language a crawl sends).
+ocr_languages (worker-document's OCR), locale (and the Accept-Language a crawl sends), pii_packs
+(the country packs personal data is found with, libs/pii, GEN-14; else the locale's region).
 """
 
 from __future__ import annotations
@@ -17,11 +18,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from libs import pii
 from libs.tabular import DateOrder
 
 # When neither a level nor the organization names a locale: the market the product ships to.
 FALLBACK_LOCALE = "vi-VN"
-KEYS = frozenset({"locale", "decimal_mark", "date_order", "ocr_languages"})
+KEYS = frozenset({"locale", "decimal_mark", "date_order", "ocr_languages", "pii_packs"})
 
 _LOCALE = re.compile(r"^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 _TESSERACT = re.compile(r"^[a-z]{3}(?:_[a-z]+)?$")
@@ -55,6 +57,8 @@ class Profile:
     decimal_mark: str
     date_order: DateOrder
     ocr_languages: tuple[str, ...]
+    # The libs/pii packs a reader finds personal data with, GLOBAL included.
+    pii_packs: tuple[str, ...] = pii.DEFAULT_PACKS
 
     @property
     def accept_language(self) -> str:
@@ -94,6 +98,14 @@ def validate(raw: Any) -> dict[str, Any]:
         ):
             raise ValueError("ocr_languages is 1 to 5 tesseract codes such as vie, eng, jpn")
         out["ocr_languages"] = list(dict.fromkeys(languages))
+    if (packs := raw.get("pii_packs")) is not None:
+        if (
+            not isinstance(packs, list)
+            or not 1 <= len(packs) <= len(pii.PACKS)
+            or not all(isinstance(p, str) and p.upper() in pii.PACKS for p in packs)
+        ):
+            raise ValueError(f"pii_packs is a list of {', '.join(pii.PACKS)}")
+        out["pii_packs"] = list(dict.fromkeys(p.upper() for p in packs))
     return out
 
 
@@ -114,6 +126,7 @@ def resolve(org_locale: str | None, *levels: Mapping[str, Any] | None) -> Profil
         if merged.get("date_order", "mdy" if locale in _MONTH_FIRST else "dmy") == "mdy"
         else "dmy",
         ocr_languages=tuple(merged.get("ocr_languages") or dict.fromkeys([*ocr, "eng"])),
+        pii_packs=pii.packs_for(locale, merged.get("pii_packs")),
     )
 
 

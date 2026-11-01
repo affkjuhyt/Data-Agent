@@ -65,7 +65,7 @@ jobs:
         run: |
           for target in \
             backend/libs/shared \
-            backend/libs/contracts backend/libs/sql_guard backend/libs/cron backend/libs/tabular backend/libs/clock backend/libs/language; do
+            backend/libs/contracts backend/libs/sql_guard backend/libs/cron backend/libs/tabular backend/libs/clock backend/libs/language backend/libs/pii; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent \

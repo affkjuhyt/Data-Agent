@@ -20,8 +20,10 @@ import asyncpg
 import httpx
 from sqlalchemy import select
 
+from libs import pii
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context
+from libs.tabular import profile as ingest_profile
 from services.worker_agent import source_meta
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.questions import secrets
@@ -47,18 +49,54 @@ EVENT_TYPE = "scan_run.created"
 ROLE = "svc_catalog"
 RELATIONSHIP_ROLE = "svc_context"
 
+# A column whose name says it holds personal data is never sampled (GEN-14). Narrow on purpose:
+# "name", "account" and "tax" alone are in product_name, account_type and tax_amount, which a
+# catalogue needs to show; they count only beside a word that makes them a person's. A column
+# whose name says nothing is still checked by its values (_redact_personal).
 _PII_NAME_PARTS = frozenset(
     {
         "address",
         "cccd",
+        "cmnd",
         "email",
-        "name",
         "phone",
+        "mobile",
         "passport",
-        "account",
-        "tax",
+        "ssn",
+        "dob",
+        "birthday",
+        "birthdate",
     }
 )
+_PERSON_PARTS = frozenset(
+    {
+        "customer",
+        "client",
+        "full",
+        "first",
+        "last",
+        "given",
+        "family",
+        "middle",
+        "contact",
+        "person",
+        "employee",
+        "owner",
+        "holder",
+        "patient",
+        "member",
+        "user",
+        "khach",
+    }
+)
+_QUALIFIED = {
+    "name": _PERSON_PARTS,
+    "ten": _PERSON_PARTS | {"ho"},
+    "account": {"no", "number", "num", "iban"},
+    "tax": {"id", "code", "no", "number"},
+}
+# Share of a column's sampled values that, holding personal data, makes the column personal.
+PERSONAL_SHARE = 0.5
 
 
 def _quote_identifier(schema: str, table: str) -> str:
@@ -74,8 +112,39 @@ def _profile_value(column_name: str, value: Any) -> str:
 
 
 def _is_sensitive_column(column_name: str) -> bool:
-    name = column_name.lower().replace("-", "_")
-    return any(part in name.split("_") for part in _PII_NAME_PARTS)
+    parts = re.sub(r"([a-z])([A-Z])", r"\1_\2", column_name).lower().replace("-", "_").split("_")
+    if any(part in _PII_NAME_PARTS for part in parts) or parts == ["ho", "ten"]:
+        return True
+    return any(
+        word in parts and any(q in parts for q in qualifiers)
+        for word, qualifiers in _QUALIFIED.items()
+    )
+
+
+def _redact_personal(
+    profiles: dict[tuple[str, str, str], dict[str, object]], packs: tuple[str, ...]
+) -> None:
+    """A column whose sampled values hold personal data (libs/pii, by the space's country packs)
+    keeps its counts only, whatever its name says: "ma_kh" of national ids is masked, an
+    invoice number of 12 digits is not."""
+    for column in profiles.values():
+        top = column.get("top_values")
+        category = column.get("category_values")
+        listed = [
+            *(top if isinstance(top, list) else []),
+            *(category if isinstance(category, list) else []),
+        ]
+        values = [v.get("value") if isinstance(v, dict) else v for v in listed]
+        if pii.personal_share(values, packs) >= PERSONAL_SHARE:
+            # The label is a suggestion: pii_confirmed stays false until a steward says how it
+            # is masked (UC-04-04).
+            column["pii_label"] = pii.column_label(values, packs)
+            column["top_values"] = [
+                {**v, "value": "***"} if isinstance(v, dict) else "***"
+                for v in (top if isinstance(top, list) else [])
+            ]
+            column["category_values"] = []
+            column["min_value"] = column["max_value"] = None
 
 
 async def _refresh_value_index(
@@ -548,6 +617,10 @@ async def scan_schema(event: Event) -> None:
     try:
         found = await _scan_source(source, requested if isinstance(requested, list) else None)
         profiles = await _profile_source(source, found) if run.kind == "profile" else {}
+        if profiles:
+            async with scoped_session(ROLE, event.org_id) as session:
+                packs = (await ingest_profile.load(session, source.data_space_id)).pii_packs
+            _redact_personal(profiles, packs)
         relationship_proposals: list[dict[str, object]] = []
         value_samples: list[tuple[uuid.UUID, str, object]] = []
         now = datetime.datetime.now(datetime.UTC)
@@ -684,6 +757,11 @@ async def scan_schema(event: Event) -> None:
                                 top_values=profile["top_values"],
                             )
                         )
+                        if profile.get("pii_label"):
+                            if column.pii_label is None:
+                                column.pii_label = str(profile["pii_label"])
+                            # A personal column's values are no category of the value index.
+                            continue
                         # Free text is not a category list. A dimension over it stays
                         # hand-seeded rather than matching a question to a sentence.
                         distinct_raw = profile["distinct_est"]

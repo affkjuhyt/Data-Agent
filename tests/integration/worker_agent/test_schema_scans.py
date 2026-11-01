@@ -31,7 +31,8 @@ async def test_schema_and_profile_scans_record_keys_stats_and_join_hints(
             cur.execute("DROP TABLE IF EXISTS scan_r1_03.customers")
             cur.execute(
                 "CREATE TABLE scan_r1_03.customers "
-                "(id integer PRIMARY KEY, email text, branch text)"
+                "(id integer PRIMARY KEY, email text, branch text, ma_kh text, invoice_no text,"
+                " product_name text)"
             )
             cur.execute(
                 "CREATE TABLE scan_r1_03.orders "
@@ -41,7 +42,8 @@ async def test_schema_and_profile_scans_record_keys_stats_and_join_hints(
             )
             cur.execute(
                 "INSERT INTO scan_r1_03.customers VALUES "
-                "(1, 'alice@example.com', 'HN'), (2, 'bob@example.com', NULL)"
+                "(1, 'alice@example.com', 'HN', '079203001234', '123456789012', 'Xe đạp'),"
+                " (2, 'bob@example.com', NULL, '001185000123', '123456789013', 'Mũ')"
             )
             cur.execute("INSERT INTO scan_r1_03.orders VALUES (10, 1, 120.50), (11, 1, NULL)")
             # The reader this test logs in as, made here: it was made only by test_executor.py, so
@@ -145,6 +147,25 @@ async def test_schema_and_profile_scans_record_keys_stats_and_join_hints(
         profile_run,
     )
     assert email_profile[0] == [] and email_profile[1] is None
+
+    # GEN-14: national ids under a name that says nothing are masked and labelled for review; a
+    # 12-digit invoice number and a product name are sampled.
+    def column(name: str) -> tuple[object, ...]:
+        return seed.one(  # type: ignore[return-value]
+            "SELECT p.top_values, p.min_value, c.pii_label, c.pii_confirmed"
+            " FROM catalog.column_profile p JOIN catalog.column_meta c ON c.id = p.column_id"
+            " WHERE c.name = %s AND p.scan_run_id = %s",
+            name,
+            profile_run,
+        )
+
+    ids = column("ma_kh")
+    assert {v["value"] for v in ids[0]} == {"***"} and ids[1] is None
+    assert ids[2:] == ("national_id", False)
+    invoices = column("invoice_no")
+    assert {v["value"] for v in invoices[0]} == {"123456789012", "123456789013"}
+    assert invoices[2] is None
+    assert {v["value"] for v in column("product_name")[0]} == {"Xe đạp", "Mũ"}
 
 
 async def test_a_category_column_is_profiled_whole_for_the_value_index(

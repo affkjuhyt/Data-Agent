@@ -21993,6 +21993,27 @@
        }
       ],
       "title": "Ocr Languages"
+     },
+     "pii_packs": {
+      "anyOf": [
+       {
+        "items": {
+         "enum": [
+          "GLOBAL",
+          "VN",
+          "US"
+         ],
+         "type": "string"
+        },
+        "maxItems": 3,
+        "minItems": 1,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Pii Packs"
      }
     },
     "title": "IngestProfile",
