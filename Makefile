@@ -227,6 +227,18 @@ adventureworks: dev-tools  ## load AdventureWorksDW into the cluster's PostgreSQ
 	@$(AW_LOAD) sql --cache /cache --reader "$(AW_READER)" | $(AW_PSQL) -d "$(AW_DATABASE)"
 	@$(AW_PSQL) -d "$(AW_DATABASE)" -tAc "SELECT 'fact_internet_sales rows: ' || count(*) FROM fact_internet_sales"
 
+# The document corpus of DS-AW (tests/e2e/adventureworks/documents.py): the files of
+# deploy/docker/adventureworks-docs/ read by worker-document's own extractor and chunker, written as
+# the db-init seed. Rerun after editing a file or the pipeline; a stale seed fails the unit tests.
+AW_DOCUMENTS_SEED = deploy/docker/sql/v3-adventureworks-documents.sql
+.PHONY: adventureworks-documents
+
+adventureworks-documents:  ## regenerate the DS-AW document seed from deploy/docker/adventureworks-docs/
+	@docker run --rm -v "$(PWD):/src:ro" -w /src -e PYTHONPATH=/src/backend:/src \
+	  -e PYTHONDONTWRITEBYTECODE=1 $(IMAGE_REGISTRY)/dataagent/worker-document:latest \
+	  python tests/e2e/adventureworks/documents.py sql > $(AW_DOCUMENTS_SEED).tmp \
+	  && mv $(AW_DOCUMENTS_SEED).tmp $(AW_DOCUMENTS_SEED)
+
 # R1-06: a Data Space's semantic model as YAML, read and written in the api pod with its
 # svc_context credentials. SEMANTIC_ORG is the organisation's id; an import is a dry run unless
 # SEMANTIC_APPLY=1, and approves nothing (relationships and metric versions wait for review).
@@ -248,7 +260,7 @@ semantic-import:  ## import SEMANTIC_FILE as SEMANTIC_AS (dry run unless SEMANTI
 # Document retrieval scored against gold passages, in the worker-agent pod so it uses the
 # cluster's vector index and reranker; the report says which of them ran (RG-02).
 RETRIEVAL_ORG ?=
-RETRIEVAL_SPACE ?= DS-BH
+RETRIEVAL_SPACE ?= DS-AW
 RETRIEVAL_CASES ?= model/eval/cases/retrieval.jsonl
 .PHONY: eval-retrieval
 

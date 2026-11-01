@@ -36,10 +36,15 @@ cm "$SVC" db-init-sql \
   --from-file=04-v3-adventureworks-seed.sql=$K/sql/v3-adventureworks-seed.sql \
   --from-file=05-v3-pilot-seed.sql=$K/sql/v3-pilot-seed.sql \
   --from-file=06-v3-adventureworks-context.sql=$K/sql/v3-adventureworks-context.sql \
+  --from-file=06-v3-adventureworks-documents.sql=$K/sql/v3-adventureworks-documents.sql \
   --from-file=07-v3-agent-seed.sql=$K/sql/v3-agent-seed.sql
 
 # The pilot's policy documents (05-v3-pilot-seed.sql), put in da-raw-docs by minio-init.
 cm "$SVC" pilot-documents --from-file=$K/pilot-docs/
+# The documents of DS-AW (06-v3-adventureworks-documents.sql), one ConfigMap per collection,
+# put in da-raw-docs by minio-init.
+cm "$SVC" adventureworks-business-documents --from-file=$K/adventureworks-docs/business/
+cm "$SVC" adventureworks-product-documents --from-file=$K/adventureworks-docs/product/
 
 cm "$SVC" keycloak-realm   --from-file=$K/keycloak/realm-export.json
 cm "$SVC" keycloak-scripts --from-file=$K/keycloak/setup-audience-mappers.sh

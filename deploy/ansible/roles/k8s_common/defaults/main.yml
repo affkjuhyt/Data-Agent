@@ -159,7 +159,8 @@ job_inputs:
   # file of deploy/docker/sql/ is applied by db-init (the db-init-sql ConfigMap): a seed
   # edited there (the pilot's verified queries) reaches the cluster only if it reruns.
   db-init: [deploy/docker/sql, "job:migrate"]
-  minio-init: []
+  # The DS-AW documents it copies to da-raw-docs (the ConfigMaps of create-configmaps.sh).
+  minio-init: [deploy/docker/adventureworks-docs]
   # Its manifest pins the admin-tools version; the schema is upgraded when that moves.
   temporal-schema: []
 jobs_force: false

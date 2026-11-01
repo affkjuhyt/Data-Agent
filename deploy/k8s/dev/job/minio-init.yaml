@@ -93,6 +93,12 @@ spec:
           # opening one reads this file (GET /v1/documents/{id}/file).
           set -- /seed/pilot-documents/*.html
           if [ -e "$1" ]; then mc cp "$@" local/da-raw-docs/pilot/sales-policy/; fi
+          # The documents of DS-AW: 06-v3-adventureworks-documents.sql registers them under
+          # adventureworks/<collection folder>/ in da-raw-docs.
+          for folder in business product; do
+            set -- /seed/adventureworks-$folder-documents/*.*
+            if [ -e "$1" ]; then mc cp "$@" "local/da-raw-docs/adventureworks/$folder/"; fi
+          done
         resources:
           requests:
             cpu: 100m
@@ -106,6 +112,12 @@ spec:
         - name: pilot-documents
           mountPath: /seed/pilot-documents
           readOnly: true
+        - name: adventureworks-business-documents
+          mountPath: /seed/adventureworks-business-documents
+          readOnly: true
+        - name: adventureworks-product-documents
+          mountPath: /seed/adventureworks-product-documents
+          readOnly: true
         envFrom:
         - configMapRef:
             name: minio-init-env
@@ -117,5 +129,13 @@ spec:
       - name: pilot-documents
         configMap:
           name: pilot-documents
+          optional: true
+      - name: adventureworks-business-documents
+        configMap:
+          name: adventureworks-business-documents
+          optional: true
+      - name: adventureworks-product-documents
+        configMap:
+          name: adventureworks-product-documents
           optional: true
       serviceAccountName: minio-init

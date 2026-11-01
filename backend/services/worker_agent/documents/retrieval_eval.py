@@ -8,16 +8,16 @@ answer would be given.
 A case names its gold passages by document number and a short quote, never by chunk id, so the
 gold survives a re-chunk or a re-index (worker_document.reprocess):
 
-    {"id": "ret-001", "question": "Biên lợi nhuận gộp tính thế nào?", "as_of": "2026-09-30",
-     "expect": "found", "gold": [{"doc_no": "QD-GV-2026/02", "quote": "không lấy trung bình"}],
-     "forbid": [{"doc_no": "QD-GV-2026/01"}], "tags": ["definition"]}
+    {"id": "ret-005", "question": "Tỷ suất lãi gộp được tính thế nào?", "as_of": "2013-09-30",
+     "expect": "found", "gold": [{"doc_no": "07/2012/QĐ-AWC", "quote": "không lấy trung bình"}],
+     "forbid": [{"doc_no": "01/2011/QĐ-AWC"}], "tags": ["dinh-nghia"]}
 
 `expect: not_found` says the documents the space allows do not hold the answer: any passage
 returned is a miss. `forbid` names documents that must not come back at `as_of` (expired or
 replaced): retrieval's validity filter is scored with the rest.
 
     kubectl -n dataagent-service exec -i deploy/worker-agent -- \\
-        python -m services.worker_agent.documents.retrieval_eval --org <org id> --space DS-BH - \\
+        python -m services.worker_agent.documents.retrieval_eval --org <org id> --space DS-AW - \\
         < model/eval/cases/retrieval.jsonl
 
 The report says which halves ran (dense needs QDRANT_URL and an embeddings endpoint, rerank
@@ -239,7 +239,7 @@ def main(argv: list[str] | None = None, stdin: TextIO = sys.stdin) -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--org", type=uuid.UUID, required=True)
-    parser.add_argument("--space", required=True, help="Data Space code, e.g. DS-BH")
+    parser.add_argument("--space", required=True, help="Data Space code, e.g. DS-AW")
     parser.add_argument("--limit", type=int, default=LIMIT)
     parser.add_argument("cases", help="a JSONL file, or - for stdin")
     args = parser.parse_args(argv)

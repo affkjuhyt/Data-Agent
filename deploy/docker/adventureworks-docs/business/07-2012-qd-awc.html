@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- Test document of the fictional company Adventure Works Cycles (DS-AW). -->
+<html lang="vi">
+<head><meta charset="utf-8"><title>Quy định cách tính các chỉ tiêu kinh doanh (sửa đổi)</title></head>
+<body>
+<h1>Quy định cách tính các chỉ tiêu kinh doanh (sửa đổi)</h1>
+<p>Công ty Adventure Works Cycles. Quyết định số 07/2012/QĐ-AWC ngày 20/06/2012 của Tổng giám đốc. Quyết định này thay thế Quyết định số 01/2011/QĐ-AWC ngày 05/01/2011 kể từ ngày 01/07/2012.</p>
+<h2>Điều 1. Phạm vi áp dụng</h2>
+<p>Quyết định này áp dụng cho mọi báo cáo kinh doanh của hai kênh bán: bán lẻ qua Internet và bán cho đại lý, và cho mọi câu trả lời về số liệu kinh doanh của công ty.</p>
+<h2>Điều 2. Doanh thu</h2>
+<p>1. Doanh thu là giá trị hàng bán trên dòng đơn hàng (sales_amount), không gồm thuế (tax_amt) và phí vận chuyển (freight).</p>
+<p>2. Doanh thu được ghi nhận theo ngày đặt hàng (order_date) của đơn hàng, không theo ngày giao hàng.</p>
+<p>3. Doanh thu toàn công ty bằng doanh thu Internet cộng doanh thu đại lý, mỗi kênh được cộng trên bảng bán hàng của kênh đó trước khi cộng lại.</p>
+<p>4. Không nối bảng lý do mua hàng (fact_internet_sales_reason) vào dòng đơn hàng khi tính doanh thu: một dòng đơn có thể có nhiều lý do nên doanh thu bị nhân lên.</p>
+<p>5. Đơn vị tiền tệ của báo cáo là đô la Mỹ (USD).</p>
+<h2>Điều 3. Giá vốn và lãi gộp</h2>
+<p>1. Giá vốn là tổng giá vốn sản phẩm của dòng đơn hàng (total_product_cost).</p>
+<p>2. Lãi gộp bằng doanh thu trừ giá vốn.</p>
+<p>3. Tỷ suất lãi gộp bằng tổng lãi gộp chia tổng doanh thu của cùng phạm vi, không lấy trung bình tỷ suất của từng kênh, từng vùng hay từng sản phẩm.</p>
+<h2>Điều 4. Năm tài chính</h2>
+<p>1. Năm tài chính bắt đầu ngày 01/07 và kết thúc ngày 30/06 năm sau. Năm tài chính mang tên năm bắt đầu: năm tài chính 2012 là từ 01/07/2012 đến 30/06/2013.</p>
+<p>2. Quý 1 của năm tài chính là tháng 7 đến tháng 9; quý 4 là tháng 4 đến tháng 6 của năm sau.</p>
+<p>3. Trước ngày 01/07/2012, cột năm tài chính (fiscal_year) của bảng ngày còn theo cách gọi cũ và có chỗ sai: các tháng 01 đến 06/2011 ghi năm tài chính 2010. Khi so sánh với giai đoạn này, năm tài chính được tính lại từ ngày đặt hàng theo Khoản 1.</p>
+<h2>Điều 5. Sản phẩm và tồn kho</h2>
+<p>1. Một sản phẩm đổi giá hoặc đổi giá vốn có thêm một dòng trong bảng sản phẩm. Số sản phẩm được đếm theo mã sản phẩm (product_alternate_key), không đếm theo dòng.</p>
+<p>2. Tồn kho là số dư cuối ngày. Tồn kho của một kỳ lấy số của ngày cuối kỳ, không cộng các ngày trong kỳ.</p>
+<h2>Điều 6. Hiệu lực</h2>
+<p>Quyết định có hiệu lực từ ngày 01/07/2012.</p>
+</body>
+</html>
