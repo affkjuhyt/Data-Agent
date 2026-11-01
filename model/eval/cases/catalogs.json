@@ -20,7 +20,8 @@
         "unit": "VND",
         "dimensions": [
           {"key": "region", "column": "region", "label": "Miền"},
-          {"key": "channel", "column": "sales_channel", "label": "Kênh bán"}
+          {"key": "channel", "column": "sales_channel", "label": "Kênh bán"},
+          {"key": "customer", "column": "customer_name", "label": "Khách hàng"}
         ],
         "default_filters": [{"column": "status", "op": "eq", "value": "paid"}],
         "status": "approved",

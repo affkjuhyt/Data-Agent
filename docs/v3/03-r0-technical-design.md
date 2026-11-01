@@ -28,7 +28,7 @@ cross-encoder, `reranker_top_n=5`; `responder.py:257` chỉ đọc `reranked_chu
 xem `reranked_chunks`. Kết quả SQL là JSON trong `content` (`handlers/data.py:598`), được chấm điểm
 "liên quan về chữ" rồi cắt. Canvas không có rrf/reranker thì responder không thấy kết quả SQL.
 
-**Hợp đồng.** `libs/contracts/v1/result_set.py`:
+**Hợp đồng.** `libs/contracts/v1/result_set.py` (thiết kế R0; không ai dùng, gỡ ở GEN-42):
 
 ```python
 class ResultColumn(BaseModel):
@@ -235,7 +235,7 @@ Frontend `VerifierBadge` cạnh câu trả lời; mở ra danh sách kiểm.
 (`planner/dpts/plan.py`); agent đơn xuất `tool_calls[]`. Không có kiểu cổng, không có output contract,
 không kiểm tĩnh; executor chạy rồi mới biết lỗi.
 
-**Hợp đồng.** `libs/contracts/v1/plan.py`:
+**Hợp đồng.** `libs/contracts/v1/plan.py` (thiết kế R0; V3 ghi Plan IR ở `qa.plan`, file gỡ ở GEN-42):
 
 ```python
 class Port(BaseModel):

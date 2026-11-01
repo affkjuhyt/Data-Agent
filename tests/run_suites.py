@@ -46,7 +46,7 @@ DEFAULT_UNIT = (
     "worker_document:worker-document crawler:crawler repo:dataagent/dev-tools:local"
 )
 DEFAULT_INTEGRATION = (
-    "contracts:api api:api migrate:migrate "
+    "api:api migrate:migrate "
     "worker_agent:worker-agent worker_ingest:worker-ingest worker_document:worker-document "
     "crawler:crawler"
 )

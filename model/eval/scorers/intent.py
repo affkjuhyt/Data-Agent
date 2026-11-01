@@ -7,8 +7,6 @@ import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-import httpx
-
 UNSUPPORTED = ("forecast", "anomaly")
 Classifier = Callable[[str], Awaitable[dict[str, Any]]]
 
@@ -19,6 +17,10 @@ async def planner_classifier(question: str, config: dict[str, Any] | None = None
     The worker planner HTTP contract is not exposed yet, so the release scorer talks to the
     same model gateway with a closed JSON contract; it does not import a legacy service.
     """
+    # Imported here: the offline tier (CI's eval-gate, sqlparse and sqlglot only) imports this
+    # module for run.py and never calls a model.
+    import httpx
+
     del config
     base_url = os.getenv("LITELLM_BASE_URL")
     if not base_url:

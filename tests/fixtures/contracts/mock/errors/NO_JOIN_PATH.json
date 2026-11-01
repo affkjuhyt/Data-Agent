@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": "NO_JOIN_PATH",
-    "message": "no join path between the requested tables",
-    "current_version": null,
-    "details": {}
-  }
-}

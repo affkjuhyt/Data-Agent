@@ -16,7 +16,7 @@ jobs:
     steps:
       # The tree has never been ruff-clean (CLAUDE.md §1), so the gate is "no new
       # findings": tests/ruff_ratchet.py compares against the first parent, which
-      # for a pull_request merge commit is the base branch tip (as contract-compat).
+      # for a pull_request merge commit is the base branch tip.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
@@ -93,8 +93,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # libs/contracts (NOP-150) in the api environment: it has PyYAML for the seed
-          # test and pins pydantic, which the generated/ staleness check needs.
+          # libs/contracts (the shared error codes) in the api environment, which pins pydantic.
           - suite: contracts
             python: "3.12"
             install: -r backend/services/api/requirements.txt
@@ -186,11 +185,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The Contract v1 mock (NOP-151) started as a real server, in the same
-          # environment as the contracts unit suite.
-          - suite: contracts
-            python: "3.12"
-            install: -r backend/services/api/requirements.txt
           # The api against the V3 DDL (backend/alembic/sql) as its svc_* roles.
           - suite: api
             python: "3.12"
@@ -257,44 +251,6 @@ jobs:
         with:
           name: eval-report-offline
           path: eval-report.json
-
-  contract-compat:
-    # NOP-152: a breaking change to the published contract (libs/contracts/generated)
-    # that raises no version blocks the merge. Rules: libs/contracts/COMPATIBILITY.md.
-    name: Contract · compatibility (BLOCKING)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      # A pull_request checks out the merge commit; its first parent is the base
-      # branch tip it was merged onto, so the diff is exactly what this PR brings
-      # into the base as it stands now.
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Published contract of the base branch
-        run: |
-          mkdir -p "$RUNNER_TEMP/base"
-          if git cat-file -e HEAD^1:backend/libs/contracts/generated 2>/dev/null; then
-            git archive HEAD^1 backend/libs/contracts/generated | tar -x -C "$RUNNER_TEMP/base"
-          fi
-      - name: Compare (stdlib only, no install)
-        env:
-          PYTHONPATH: backend
-        run: |
-          set +e
-          python -m libs.contracts.compat \
-            --base "$RUNNER_TEMP/base/backend/libs/contracts/generated" \
-            --head backend/libs/contracts/generated
-          code=$?
-          # 2: the base branch has no published contract yet (before NOP-150 merges).
-          if [ "$code" -eq 2 ]; then
-            echo "::notice::base branch has no libs/contracts/generated, nothing to compare"
-            exit 0
-          fi
-          exit "$code"
 
   frontend-lint:
     name: Frontend · tsc

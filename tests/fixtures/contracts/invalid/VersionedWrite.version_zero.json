@@ -1,7 +1,0 @@
-{
-  "model": "VersionedWrite",
-  "loc": "expected_version",
-  "data": {
-    "expected_version": 0
-  }
-}

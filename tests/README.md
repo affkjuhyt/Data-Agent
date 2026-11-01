@@ -16,16 +16,13 @@ tests/
 │   ├── worker_ingest/       #   There is no single image that can import every
 │   ├── worker_document/     #   service (their pins conflict), so the suites are
 │   ├── crawler/             #   never run together.
-│   ├── contracts/           # libs/contracts (NOP-150), run in the api image (PyYAML, pinned pydantic)
+│   ├── contracts/           # libs/contracts (the shared error codes), run in the api image
 │   └── repo/                # repo-wide: k8s manifests, db-init, Ansible deploy plan, migrate image,
 │                            #   cross-service auth/tenant policy, model/bench and model/eval.
 │                            #   Runs in the local dev-tools image (tests/dev-tools.Dockerfile)
-├── fixtures/contracts/      # invalid DTO cases + compat/ pairs for the contract gate (NOP-152);
-│                            #   mock/ = the Contract v1 mock's answers (NOP-151)
-├── contract_mock/           # Contract v1 mock API for FE/Data/Agent (NOP-151, `make mock-api`; README.md)
 ├── integration/             # testcontainers; same per-service split as unit/
 │   ├── _db.py               # reset_database / run_alembic / alembic_head for the shared container
-│   ├── api/, worker_agent/, worker_ingest/, worker_document/, crawler/, migrate/, contracts/
+│   ├── api/, worker_agent/, worker_ingest/, worker_document/, crawler/, migrate/
 │   └── test_*.py            # e2e only (`make e2e`): V3 question, agent screens, JWT audience,
 │                            #   the KB replacement
 └── README.md

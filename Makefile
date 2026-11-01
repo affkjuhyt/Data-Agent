@@ -11,7 +11,7 @@ DEV_TOOLS_IMAGE ?= dataagent/dev-tools:local
 DOCKER_RUN_DEV = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(DEV_TOOLS_IMAGE)
 
 .PHONY: help lint type test test-unit test-integration test-changed test-related deadcode frontend-lint frontend-test ci e2e \
-        deploy deploy-local fmt bench bench-gate mock-api contract-compat design-checklist design-audit api-types dev-tools fmt-files \
+        deploy deploy-local fmt bench bench-gate  design-checklist design-audit api-types dev-tools fmt-files \
         type-v3 lint-imports
 
 help:  ## List targets
@@ -55,7 +55,7 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 IMAGE_REGISTRY ?= localhost:5001
 UNIT_SUITES ?= contracts:api api:api worker_agent:worker-agent worker_ingest:worker-ingest \
                worker_document:worker-document crawler:crawler repo:$(DEV_TOOLS_IMAGE)
-INTEGRATION_SUITES ?= contracts:api api:api migrate:migrate worker_agent:worker-agent worker_ingest:worker-ingest \
+INTEGRATION_SUITES ?= api:api migrate:migrate worker_agent:worker-agent worker_ingest:worker-ingest \
                       worker_document:worker-document crawler:crawler
 PYTEST_ARGS ?=
 TEST_JOBS ?= 0
@@ -112,34 +112,7 @@ frontend-lint:  ## tsc --noEmit
 frontend-test:  ## vitest
 	npm --workspace frontend run test
 
-ci: lint type test frontend-lint frontend-test contract-compat design-audit  ## everything CI runs, locally
-
-# Same check as the CI contract-compat job (NOP-152). Locally HEAD is a branch, not
-# a merge commit, so the agreed contract is the one at the merge-base. Exit 2 (the
-# base has no generated/ yet) is a notice, as in CI.
-CONTRACT_BASE ?= origin/main
-CONTRACT_BASE_DIR := .contract-base
-contract-compat:  ## contract compatibility gate against CONTRACT_BASE (libs/contracts/COMPATIBILITY.md)
-	@rm -rf $(CONTRACT_BASE_DIR) && mkdir -p $(CONTRACT_BASE_DIR)
-	@base=$$(git merge-base HEAD $(CONTRACT_BASE)) && \
-	  if git cat-file -e $$base:backend/libs/contracts/generated 2>/dev/null; then \
-	    git archive $$base backend/libs/contracts/generated | tar -x -C $(CONTRACT_BASE_DIR); \
-	  fi
-	@$(DOCKER_RUN_PY) python -m libs.contracts.compat \
-	  --base $(CONTRACT_BASE_DIR)/backend/libs/contracts/generated \
-	  --head backend/libs/contracts/generated; \
-	  code=$$?; rm -rf $(CONTRACT_BASE_DIR); \
-	  if [ $$code -eq 2 ]; then echo "base has no published contract, nothing to compare"; exit 0; fi; \
-	  exit $$code
-
-# In the api image, where the contracts suite runs (pinned pydantic); it also
-# spares a frontend developer a Python environment of their own.
-MOCK_API_PORT ?= 8090
-mock-api:  ## Contract v1 mock API on :8090 for FE/Data/Agent (tests/contract_mock/README.md)
-	docker run --rm -p $(MOCK_API_PORT):$(MOCK_API_PORT) -v "$(PWD):/src" -w /src \
-	  -e PYTHONPATH=/src/backend:/src -e PYTHONDONTWRITEBYTECODE=1 \
-	  $(IMAGE_REGISTRY)/dataagent/api:latest \
-	  python -m tests.contract_mock --host 0.0.0.0 --port $(MOCK_API_PORT)
+ci: lint type test frontend-lint frontend-test design-audit  ## everything CI runs, locally
 
 # The serving benchmark talks to the GPU host over the LAN and, for
 # --target litellm, to a proxy that may be on localhost — hence --network host

@@ -1,14 +1,13 @@
 """Locale-aware numeric parsing and tolerance comparison.
 
-Shared by the release gate's scorers and by the runtime verifier, in
+Used by the release gate's scorers, in
 `backend/libs` rather than in `model/eval` for the reason that file's Dockerfile
 gives about every other rule it measures: an eval that vendors its own copy
 grades the copy. "Is this figure grounded" has to have one answer, whether it is
 asked of a live answer or of a golden case.
 
-Where `quantity.py` does arithmetic on figures whose unit and scale are already
-known, this module goes the other way — it reads figures OUT of text a model
-wrote, where the convention is ambiguous and the writer is not trusted.
+It reads figures OUT of text a model wrote, where the convention is ambiguous
+and the writer is not trusted.
 
 The scorers used to compare figures as digit strings with separators removed,
 so `128,4` and `1284` were the same token. For BI that was a tolerable
@@ -33,6 +32,7 @@ coarser of the two published precisions is what the V2 evaluation plan
 is either too loose for `3.109,2` or too tight for `2,5`. Cases that compute a
 figure rather than quote one declare an explicit Tolerance instead.
 """
+
 from __future__ import annotations
 
 import re
@@ -122,7 +122,9 @@ def _readings(cleaned: str, decimal_sep: str) -> tuple[Reading, ...]:
         value = Decimal(cleaned)
     except InvalidOperation:
         return ()
-    decimals = len(cleaned.rsplit(decimal_sep, 1)[1]) if decimal_sep and decimal_sep in cleaned else 0
+    decimals = (
+        len(cleaned.rsplit(decimal_sep, 1)[1]) if decimal_sep and decimal_sep in cleaned else 0
+    )
     return (Reading(value, decimals),)
 
 
