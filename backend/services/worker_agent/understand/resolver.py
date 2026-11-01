@@ -27,9 +27,8 @@ PROCEED_AT = 0.8
 MAX_OPTIONS = 3
 # "theo X" asks for a cut along X ("nợ xấu theo vùng").
 _BY = re.compile(r"\b(?:theo|tung|moi|chia theo)\s+")
-_RANK = re.compile(
-    r"\b(?:top\s*)?(\d{1,3})\b.*?\b(?:nhieu nhat|cao nhat|it nhat|thap nhat)\b"
-)
+_SUPERLATIVE = re.compile(r"\b(?:nhieu nhat|cao nhat|it nhat|thap nhat)\b")
+_RANK = re.compile(r"\b(?:top\s*)?(\d{1,3})\b.*?\b(?:nhieu nhat|cao nhat|it nhat|thap nhat)\b")
 # The words after "theo" that no phrase placed: up to three, before the next placed phrase.
 # "theo kỳ …" ("theo kỳ được hỏi") speaks of the period, which find_period reads, not of a cut.
 # Only "theo": without accents "moi" is both "mỗi" (each) and "mới" (new, "mới nhất") and "tung"
@@ -127,11 +126,13 @@ def _phrases(vocab: Vocabulary) -> list[tuple[str, tuple[str, ...], float]]:
 
 def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Understanding:
     text = norm(question)
-    ranking = _RANK.search(text)
-    top_n = int(ranking.group(1)) if ranking else None
     period = find_period(question, today)
     if period:
         text = text.replace(period.span, " ")
+    # Read after the period is taken out: in "tháng 9 cao nhất" the 9 is a month, not a top 9.
+    # A superlative with no count asks for the one member at the top.
+    ranking = _RANK.search(text) or _SUPERLATIVE.search(text)
+    top_n = (int(ranking.group(1)) if ranking.re is _RANK else 1) if ranking else None
     metrics = {str(m.metric_id): m for m in vocab.metrics}
     dims = {str(d.dimension_id): d for d in vocab.dimensions}
     # Value hits come from sem_value_retrieval. The phrase pass still decides where a
@@ -156,7 +157,9 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
         elif target[0] == "dimension" and target[1] in dims:
             dim = dims[target[1]]
             # A dimension named after "theo" is a cut; named alone it adds nothing to compile.
-            if (_BY.search(text[max(0, pos - 12) : pos]) or top_n is not None) and dim.code not in out.group_by:
+            if (
+                _BY.search(text[max(0, pos - 12) : pos]) or top_n is not None
+            ) and dim.code not in out.group_by:
                 out.group_by.append(dim.code)
                 out.chips.append(Chip("dimension", dim.code, dim.name, "default", score))
         elif target[0] == "value":

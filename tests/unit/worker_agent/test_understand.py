@@ -123,6 +123,24 @@ def test_a_ranked_question_adds_the_dimension_and_limit() -> None:
     assert u.group_by == ["product"] and u.top_n == 5 and u.top_desc
 
 
+def test_a_month_number_is_not_a_top_n_and_a_bare_superlative_is_the_top_one() -> None:
+    # GEN-03: "tháng 9 cao nhất" was read as top 9.
+    region = DimensionEntry(uuid.uuid4(), "vung", "Vùng")
+    vocab = Vocabulary(
+        metrics=[NPL],
+        dimensions=[region],
+        synonyms={
+            "no xau": ("metric", str(NPL.metric_id)),
+            "vung": ("dimension", str(region.dimension_id)),
+        },
+    )
+    u = understand("Vùng nào có nợ xấu tháng 9/2026 cao nhất?", vocab, today=TODAY)
+    assert u.group_by == ["vung"] and u.top_n == 1 and u.top_desc
+    assert u.period is not None and u.period.start == datetime.date(2026, 9, 1)
+    low = understand("Vùng nào có nợ xấu tháng 9/2026 thấp nhất?", vocab, today=TODAY)
+    assert low.top_n == 1 and not low.top_desc
+
+
 def test_by_the_period_asked_is_about_time_not_a_missing_cut() -> None:
     # "theo kỳ được hỏi": the period is the question's, read by find_period, not a dimension.
     u = understand("Tỷ lệ nợ xấu theo kỳ được hỏi", VOCAB, today=TODAY)
