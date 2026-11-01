@@ -33,6 +33,7 @@ cm "$DB" postgres-initdb \
 cm "$SVC" db-init-sql \
   --from-file=01-grants.sql=$K/sql/grant-roles.sql \
   --from-file=03-v3-demo-seed.sql=$K/sql/v3-demo-seed.sql \
+  --from-file=04-v3-adventureworks-seed.sql=$K/sql/v3-adventureworks-seed.sql \
   --from-file=05-v3-pilot-seed.sql=$K/sql/v3-pilot-seed.sql \
   --from-file=07-v3-agent-seed.sql=$K/sql/v3-agent-seed.sql
 

@@ -1,0 +1,379 @@
+# Semantic model of the Data Space "AdventureWorks" (DS-AW, deploy/docker/sql/v3-adventureworks-seed.sql)
+# over AdventureWorksDW as `make adventureworks` loads it (tests/e2e/adventureworks: snake_case
+# names, schema public of the database adventureworks_dw). Format:
+# services/api/modules/context/semantic_yaml.py.
+#
+# The tables have to be catalogued first (scan the source), then:
+#   make semantic-import SEMANTIC_ORG=a0000000-0000-0000-0000-000000000001 SEMANTIC_SPACE=DS-AW \
+#        SEMANTIC_AS=helios-engineer SEMANTIC_FILE=deploy/docker/semantic/ds-aw.yaml SEMANTIC_APPLY=1
+# which writes relationships pending review and metrics as drafts; approving them is the
+# product's own review step.
+#
+# Choices that the warehouse leaves open and a question can trip on:
+#   - Two sales channels, two facts. DOANH_THU adds both, each summed on its own table first;
+#     the per-channel metrics say which channel they read.
+#   - The time of a sale is order_date on the fact. dim_date plays three roles there (order, due,
+#     ship); only the order-date key is declared, so the fiscal year (starting 1 July) is the
+#     fiscal year of the order. The two other keys are left out on purpose: two equally short paths
+#     to dim_date are refused by the compiler rather than guessed.
+#   - dim_product is slowly changing (606 rows, 504 products): sales join on the surrogate
+#     product_key, so a product is never counted once per version.
+#   - Stock is a daily balance (fact_product_inventory): read on the last day of a period, never
+#     summed over days.
+#   - fact_finance mixes scenarios (Actual, Budget) and accounts: every finance metric filters one
+#     scenario, and its amounts only mean something cut by account.
+#   - fact_internet_sales_reason (many reasons per order line) is not modelled: joining it to the
+#     lines multiplies their revenue.
+version: 1
+semantic_models:
+  - name: ban_internet
+    label: Bán qua Internet
+    description: Một dòng của một đơn bán lẻ qua Internet.
+    model: public.fact_internet_sales
+    primary_key: [sales_order_number, sales_order_line_number]
+    dimensions:
+      - {name: ngay_dat_internet, label: Ngày đặt hàng (Internet), type: time, expr: order_date}
+    measures:
+      - {name: doanh_thu_internet, label: Doanh thu Internet, agg: sum, expr: sales_amount, unit: USD}
+      - {name: gia_von_internet, label: Giá vốn Internet, agg: sum, expr: total_product_cost, unit: USD}
+      - {name: lai_gop_internet, label: Lãi gộp Internet, agg: sum, expr: sales_amount - total_product_cost, unit: USD}
+      - {name: so_luong_internet, label: Số lượng bán Internet, agg: sum, expr: order_quantity, unit: sản phẩm}
+      - {name: so_don_internet, label: Số đơn Internet, agg: count_distinct, expr: sales_order_number, additivity: none}
+      - {name: thue_internet, label: Thuế Internet, agg: sum, expr: tax_amt, unit: USD}
+      - {name: van_chuyen_internet, label: Phí vận chuyển Internet, agg: sum, expr: freight, unit: USD}
+  - name: ban_dai_ly
+    label: Bán qua đại lý
+    description: Một dòng của một đơn bán cho đại lý.
+    model: public.fact_reseller_sales
+    primary_key: [sales_order_number, sales_order_line_number]
+    dimensions:
+      - {name: ngay_dat_dai_ly, label: Ngày đặt hàng (đại lý), type: time, expr: order_date}
+    measures:
+      - {name: doanh_thu_dai_ly, label: Doanh thu đại lý, agg: sum, expr: sales_amount, unit: USD}
+      - {name: gia_von_dai_ly, label: Giá vốn đại lý, agg: sum, expr: total_product_cost, unit: USD}
+      - {name: lai_gop_dai_ly, label: Lãi gộp đại lý, agg: sum, expr: sales_amount - total_product_cost, unit: USD}
+      - {name: so_luong_dai_ly, label: Số lượng bán đại lý, agg: sum, expr: order_quantity, unit: sản phẩm}
+      - {name: so_don_dai_ly, label: Số đơn đại lý, agg: count_distinct, expr: sales_order_number, additivity: none}
+  - name: san_pham
+    label: Sản phẩm
+    description: Một phiên bản của một sản phẩm (đổi giá, đổi giá vốn là một dòng mới).
+    model: public.dim_product
+    primary_key: [product_key]
+    dimensions:
+      - {name: ten_san_pham, label: Sản phẩm, type: categorical, expr: english_product_name}
+      - {name: mau_sac, label: Màu, type: categorical, expr: color}
+      - {name: dong_san_pham, label: Dòng sản phẩm, type: categorical, expr: product_line}
+  - name: tieu_nhom_san_pham
+    label: Tiểu nhóm sản phẩm
+    model: public.dim_product_subcategory
+    primary_key: [product_subcategory_key]
+    dimensions:
+      - {name: tieu_nhom, label: Tiểu nhóm sản phẩm, type: categorical, expr: english_product_subcategory_name}
+  - name: nhom_san_pham
+    label: Nhóm sản phẩm
+    model: public.dim_product_category
+    primary_key: [product_category_key]
+    dimensions:
+      - {name: nhom_hang, label: Nhóm sản phẩm, type: categorical, expr: english_product_category_name}
+  - name: vung_ban_hang
+    label: Vùng bán hàng
+    model: public.dim_sales_territory
+    primary_key: [sales_territory_key]
+    dimensions:
+      - {name: vung, label: Vùng bán hàng, type: categorical, expr: sales_territory_region}
+      - {name: quoc_gia_ban, label: Quốc gia bán, type: categorical, expr: sales_territory_country}
+      - {name: khu_vuc, label: Khu vực, type: categorical, expr: sales_territory_group}
+  - name: khach_hang
+    label: Khách hàng
+    model: public.dim_customer
+    primary_key: [customer_key]
+    dimensions:
+      - {name: gioi_tinh, label: Giới tính, type: categorical, expr: gender}
+      - {name: hoc_van, label: Học vấn, type: categorical, expr: english_education}
+      - {name: nghe_nghiep, label: Nghề nghiệp, type: categorical, expr: english_occupation}
+  - name: dia_ly
+    label: Địa lý khách hàng
+    model: public.dim_geography
+    primary_key: [geography_key]
+    dimensions:
+      - {name: thanh_pho, label: Thành phố, type: categorical, expr: city}
+      - {name: tinh_bang, label: Bang / tỉnh, type: categorical, expr: state_province_name}
+      - {name: quoc_gia_khach, label: Quốc gia khách hàng, type: categorical, expr: english_country_region_name}
+  - name: dai_ly
+    label: Đại lý
+    model: public.dim_reseller
+    primary_key: [reseller_key]
+    dimensions:
+      - {name: ten_dai_ly, label: Đại lý, type: categorical, expr: reseller_name}
+      - {name: loai_dai_ly, label: Loại đại lý, type: categorical, expr: business_type}
+  - name: khuyen_mai
+    label: Khuyến mãi
+    model: public.dim_promotion
+    primary_key: [promotion_key]
+    dimensions:
+      - {name: chuong_trinh_km, label: Chương trình khuyến mãi, type: categorical, expr: english_promotion_name}
+      - {name: loai_km, label: Loại khuyến mãi, type: categorical, expr: english_promotion_type}
+  - name: lich
+    label: Lịch
+    description: Một ngày; năm tài chính bắt đầu ngày 1/7.
+    model: public.dim_date
+    primary_key: [date_key]
+    dimensions:
+      - {name: nam_tai_chinh, label: Năm tài chính, type: categorical, expr: fiscal_year}
+      - {name: quy_tai_chinh, label: Quý tài chính, type: categorical, expr: fiscal_quarter}
+  - name: ton_kho
+    label: Tồn kho
+    description: Số tồn của một sản phẩm cuối một ngày.
+    model: public.fact_product_inventory
+    primary_key: [product_key, date_key]
+    dimensions:
+      - {name: ngay_ton, label: Ngày tồn, type: time, expr: movement_date}
+    measures:
+      - {name: so_ton, label: Số tồn, agg: sum, expr: units_balance, additivity: semi, unit: sản phẩm}
+      - {name: gia_tri_ton, label: Giá trị tồn, agg: sum, expr: units_balance * unit_cost, additivity: semi, unit: USD}
+  - name: chi_tieu
+    label: Chỉ tiêu doanh số
+    description: Chỉ tiêu doanh số của một nhân viên bán hàng trong một quý.
+    model: public.fact_sales_quota
+    primary_key: [sales_quota_key]
+    dimensions:
+      - {name: ngay_chi_tieu, label: Ngày chỉ tiêu, type: time, expr: date}
+    measures:
+      - {name: chi_tieu_doanh_so, label: Chỉ tiêu doanh số, agg: sum, expr: sales_amount_quota, unit: USD}
+  - name: tong_dai
+    label: Tổng đài
+    description: Một ca của tổng đài trong một ngày.
+    model: public.fact_call_center
+    primary_key: [fact_call_center_id]
+    dimensions:
+      - {name: ngay_tong_dai, label: Ngày, type: time, expr: date}
+      - {name: ca_lam, label: Ca, type: categorical, expr: shift}
+    measures:
+      - {name: so_cuoc_goi, label: Số cuộc gọi, agg: sum, expr: calls, unit: cuộc}
+      - {name: so_don_tong_dai, label: Số đơn qua tổng đài, agg: sum, expr: orders, unit: đơn}
+      - {name: so_su_co, label: Số sự cố, agg: sum, expr: issues_raised, unit: sự cố}
+      - {name: diem_dich_vu, label: Mức dịch vụ, agg: avg, expr: service_grade, additivity: none}
+  - name: tai_chinh
+    label: Tài chính
+    description: Số tiền của một tài khoản, một phòng ban, một kịch bản trong một tháng.
+    model: public.fact_finance
+    primary_key: [finance_key]
+    dimensions:
+      - {name: ngay_tai_chinh, label: Ngày, type: time, expr: date}
+    measures:
+      - {name: so_tien, label: Số tiền, agg: sum, expr: amount, unit: USD}
+  - name: kich_ban
+    label: Kịch bản
+    model: public.dim_scenario
+    primary_key: [scenario_key]
+    dimensions:
+      - {name: kich_ban_tai_chinh, label: Kịch bản, type: categorical, expr: scenario_name}
+  - name: tai_khoan
+    label: Tài khoản
+    model: public.dim_account
+    primary_key: [account_key]
+    dimensions:
+      - {name: tai_khoan_ke_toan, label: Tài khoản, type: categorical, expr: account_description}
+      - {name: loai_tai_khoan, label: Loại tài khoản, type: categorical, expr: account_type}
+  - name: phong_ban
+    label: Nhóm phòng ban
+    model: public.dim_department_group
+    primary_key: [department_group_key]
+    dimensions:
+      - {name: nhom_phong_ban, label: Nhóm phòng ban, type: categorical, expr: department_group_name}
+relationships:
+  - {from: public.fact_internet_sales, from_columns: [product_key], to: public.dim_product, to_columns: [product_key], cardinality: many_to_one}
+  - {from: public.fact_internet_sales, from_columns: [customer_key], to: public.dim_customer, to_columns: [customer_key], cardinality: many_to_one}
+  - {from: public.fact_internet_sales, from_columns: [sales_territory_key], to: public.dim_sales_territory, to_columns: [sales_territory_key], cardinality: many_to_one}
+  - {from: public.fact_internet_sales, from_columns: [promotion_key], to: public.dim_promotion, to_columns: [promotion_key], cardinality: many_to_one}
+  - {from: public.fact_internet_sales, from_columns: [order_date_key], to: public.dim_date, to_columns: [date_key], cardinality: many_to_one}
+  - {from: public.fact_reseller_sales, from_columns: [product_key], to: public.dim_product, to_columns: [product_key], cardinality: many_to_one}
+  - {from: public.fact_reseller_sales, from_columns: [reseller_key], to: public.dim_reseller, to_columns: [reseller_key], cardinality: many_to_one}
+  - {from: public.fact_reseller_sales, from_columns: [sales_territory_key], to: public.dim_sales_territory, to_columns: [sales_territory_key], cardinality: many_to_one}
+  - {from: public.fact_reseller_sales, from_columns: [promotion_key], to: public.dim_promotion, to_columns: [promotion_key], cardinality: many_to_one}
+  - {from: public.fact_reseller_sales, from_columns: [order_date_key], to: public.dim_date, to_columns: [date_key], cardinality: many_to_one}
+  - {from: public.dim_product, from_columns: [product_subcategory_key], to: public.dim_product_subcategory, to_columns: [product_subcategory_key], cardinality: many_to_one}
+  - {from: public.dim_product_subcategory, from_columns: [product_category_key], to: public.dim_product_category, to_columns: [product_category_key], cardinality: many_to_one}
+  - {from: public.dim_customer, from_columns: [geography_key], to: public.dim_geography, to_columns: [geography_key], cardinality: many_to_one}
+  - {from: public.fact_product_inventory, from_columns: [product_key], to: public.dim_product, to_columns: [product_key], cardinality: many_to_one}
+  - {from: public.fact_finance, from_columns: [scenario_key], to: public.dim_scenario, to_columns: [scenario_key], cardinality: many_to_one}
+  - {from: public.fact_finance, from_columns: [account_key], to: public.dim_account, to_columns: [account_key], cardinality: many_to_one}
+  - {from: public.fact_finance, from_columns: [department_group_key], to: public.dim_department_group, to_columns: [department_group_key], cardinality: many_to_one}
+metrics:
+  # Sales: flows summed over the period, by order date.
+  - name: DOANH_THU
+    label: Doanh thu
+    description: Doanh thu cả hai kênh (Internet và đại lý), không gồm thuế và phí vận chuyển.
+    expr: doanh_thu_internet + doanh_thu_dai_ly
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [ten_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, chuong_trinh_km, nam_tai_chinh]
+  - name: DOANH_THU_INTERNET
+    label: Doanh thu Internet
+    description: Doanh thu bán lẻ qua Internet, không gồm thuế và phí vận chuyển.
+    expr: doanh_thu_internet
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [ten_san_pham, mau_sac, dong_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, gioi_tinh, hoc_van, nghe_nghiep, thanh_pho, tinh_bang, quoc_gia_khach, chuong_trinh_km, loai_km, nam_tai_chinh, quy_tai_chinh]
+  - name: DOANH_THU_DAI_LY
+    label: Doanh thu đại lý
+    description: Doanh thu bán cho đại lý, không gồm thuế và phí vận chuyển.
+    expr: doanh_thu_dai_ly
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [ten_san_pham, mau_sac, dong_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, ten_dai_ly, loai_dai_ly, chuong_trinh_km, loai_km, nam_tai_chinh, quy_tai_chinh]
+  - name: LAI_GOP_INTERNET
+    label: Lãi gộp Internet
+    description: Doanh thu Internet trừ giá vốn sản phẩm.
+    expr: lai_gop_internet
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [ten_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, nam_tai_chinh]
+  - name: BIEN_GOP_INTERNET
+    label: Biên lợi nhuận gộp Internet
+    description: Lãi gộp trên doanh thu Internet, tính trên tổng (không lấy trung bình tỷ lệ từng nhóm).
+    expr: lai_gop_internet / doanh_thu_internet * 100
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: "%"
+    decimals: 1
+    direction: higher_better
+    dimensions: [ten_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, nam_tai_chinh]
+  - name: LAI_GOP_DAI_LY
+    label: Lãi gộp đại lý
+    description: Doanh thu đại lý trừ giá vốn sản phẩm.
+    expr: lai_gop_dai_ly
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [ten_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, loai_dai_ly, nam_tai_chinh]
+  - name: SO_DON_INTERNET
+    label: Số đơn Internet
+    description: Số đơn khác nhau; một đơn nhiều dòng đếm một lần.
+    expr: so_don_internet
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: đơn
+    decimals: 0
+    direction: higher_better
+    dimensions: [nhom_hang, vung, quoc_gia_ban, khu_vuc, nam_tai_chinh]
+  - name: GIA_TRI_DON_TB_INTERNET
+    label: Giá trị đơn bình quân Internet
+    expr: doanh_thu_internet / so_don_internet
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 2
+    direction: higher_better
+    dimensions: [vung, quoc_gia_ban, khu_vuc, nam_tai_chinh]
+  - name: SO_LUONG_BAN_INTERNET
+    label: Số lượng bán Internet
+    expr: so_luong_internet
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: sản phẩm
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [ten_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc]
+  - name: SO_LUONG_BAN_DAI_LY
+    label: Số lượng bán đại lý
+    expr: so_luong_dai_ly
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: sản phẩm
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [ten_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, loai_dai_ly]
+  # Stock: a daily balance, read on the last day of the period.
+  - name: TON_KHO
+    label: Tồn kho
+    description: Số tồn ngày cuối kỳ. Không cộng các ngày.
+    expr: so_ton
+    period_semantics: end_of_period
+    time_grain: month
+    unit: sản phẩm
+    decimals: 0
+    additivity: semi
+    dimensions: [ten_san_pham, tieu_nhom, nhom_hang]
+  - name: GIA_TRI_TON_KHO
+    label: Giá trị tồn kho
+    description: Số tồn ngày cuối kỳ nhân giá vốn đơn vị của ngày đó.
+    expr: gia_tri_ton
+    period_semantics: end_of_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    additivity: semi
+    dimensions: [ten_san_pham, tieu_nhom, nhom_hang]
+  - name: CHI_TIEU_DOANH_SO
+    label: Chỉ tiêu doanh số
+    description: Tổng chỉ tiêu doanh số giao cho nhân viên bán hàng (theo quý).
+    expr: chi_tieu_doanh_so
+    period_semantics: sum_over_period
+    time_grain: quarter
+    unit: USD
+    decimals: 0
+    direction: higher_better
+    additivity: full
+  # Call centre: one row per shift and day.
+  - name: SO_CUOC_GOI
+    label: Số cuộc gọi tổng đài
+    expr: so_cuoc_goi
+    period_semantics: sum_over_period
+    time_grain: day
+    unit: cuộc
+    decimals: 0
+    direction: neutral
+    additivity: full
+    dimensions: [ca_lam]
+  - name: SU_CO_TREN_CUOC_GOI
+    label: Sự cố trên 100 cuộc gọi
+    expr: so_su_co / so_cuoc_goi * 100
+    period_semantics: sum_over_period
+    time_grain: day
+    unit: "%"
+    decimals: 2
+    direction: lower_better
+    dimensions: [ca_lam]
+  # Finance: one scenario per metric, cut by account.
+  - name: TAI_CHINH_THUC_TE
+    label: Số tài chính thực tế
+    description: Số tiền kịch bản Actual. Chỉ có nghĩa khi tách theo tài khoản.
+    expr: so_tien
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    dimensions: [tai_khoan_ke_toan, loai_tai_khoan, nhom_phong_ban]
+    filters: [{dimension: kich_ban_tai_chinh, op: "=", values: [Actual]}]
+  - name: TAI_CHINH_NGAN_SACH
+    label: Số tài chính ngân sách
+    description: Số tiền kịch bản Budget. Chỉ có nghĩa khi tách theo tài khoản.
+    expr: so_tien
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    dimensions: [tai_khoan_ke_toan, loai_tai_khoan, nhom_phong_ban]
+    filters: [{dimension: kich_ban_tai_chinh, op: "=", values: [Budget]}]

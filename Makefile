@@ -207,6 +207,26 @@ e2e:  ## pytest -m e2e against the deployed V3 dev cluster (LAN NodePorts; URLs 
 	  "python -m pytest -q -p no:cacheprovider --no-showlocals -m e2e $(PYTEST_ARGS) $(E2E_TESTS); \
 	   rc=\$$?; chown -R $$(id -u):$$(id -g) tests/e2e/out 2>/dev/null; exit \$$rc"
 
+# AdventureWorksDW, the dataset the product is tested on (tests/e2e/adventureworks): fetched at the
+# commit pinned in sources.json, converted to PostgreSQL and loaded into its own database of the
+# cluster, readable by AW_READER, the login of the demo source (OpenBao demo-postgres). Rerunning
+# reloads it; the cache keeps the download.
+AW_CACHE ?= $(HOME)/.cache/dataagent/adventureworks
+AW_DATABASE ?= adventureworks_dw
+AW_READER ?= app_user
+AW_PSQL ?= kubectl -n dataagent-database exec -i postgres-0 -- psql -U admin -v ON_ERROR_STOP=1 -q
+AW_LOAD = docker run --rm -i -v "$(PWD)/tests/e2e/adventureworks:/aw:ro" -v "$(AW_CACHE):/cache" \
+	$(DEV_TOOLS_IMAGE) python -I /aw/load.py
+.PHONY: adventureworks
+
+adventureworks: dev-tools  ## load AdventureWorksDW into the cluster's PostgreSQL (AW_DATABASE, AW_READER)
+	@mkdir -p "$(AW_CACHE)" && $(AW_LOAD) fetch --cache /cache
+	@$(AW_PSQL) -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$(AW_DATABASE)'" | grep -q 1 || \
+	  $(AW_PSQL) -d postgres -c 'CREATE DATABASE "$(AW_DATABASE)"'
+	@$(AW_PSQL) -d postgres -c 'GRANT CONNECT ON DATABASE "$(AW_DATABASE)" TO "$(AW_READER)"'
+	@$(AW_LOAD) sql --cache /cache --reader "$(AW_READER)" | $(AW_PSQL) -d "$(AW_DATABASE)"
+	@$(AW_PSQL) -d "$(AW_DATABASE)" -tAc "SELECT 'fact_internet_sales rows: ' || count(*) FROM fact_internet_sales"
+
 # R1-06: a Data Space's semantic model as YAML, read and written in the api pod with its
 # svc_context credentials. SEMANTIC_ORG is the organisation's id; an import is a dry run unless
 # SEMANTIC_APPLY=1, and approves nothing (relationships and metric versions wait for review).
