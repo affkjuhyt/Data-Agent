@@ -97,3 +97,19 @@ def test_test_paths_in_pytest_args_go_to_their_own_suite() -> None:
     assert rs.own_targets(API, paths) == ["tests/integration/api/test_qa_answers.py"]
     assert rs.own_targets(WORKER, paths) == ["tests/integration/worker_agent/test_sql.py"]
     assert rs.own_targets(rs.Suite("unit", "api", "api"), paths) == []
+
+
+def test_a_module_importing_a_changed_one_counts_as_changed_transitively() -> None:
+    sources = {
+        "backend/services/worker_agent/understand/resolver.py": "import re\n",
+        "backend/services/worker_agent/questions.py": (
+            "from services.worker_agent.understand.resolver import understand\n"
+        ),
+        "backend/services/worker_agent/runs.py": "from services.worker_agent import questions\n",
+        "backend/services/worker_agent/tiles.py": "import json\n",
+    }
+    assert rs.importers_of(["backend/services/worker_agent/understand/resolver.py"], sources) == [
+        "backend/services/worker_agent/questions.py",
+        "backend/services/worker_agent/runs.py",
+    ]
+    assert rs.importers_of(["docs/x.md"], sources) == []

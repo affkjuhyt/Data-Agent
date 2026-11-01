@@ -182,6 +182,23 @@ def _refers(text: str, module: str) -> bool:
     )
 
 
+def importers_of(paths: list[str], sources: dict[str, str]) -> list[str]:
+    """The backend modules that import a changed one, directly or through others: a test of
+    questions.py runs the resolver it imports. `sources` is backend path -> its text."""
+    changed = {p for p in paths if _module_of(p)}
+    found: set[str] = set()
+    frontier = set(changed)
+    while frontier:
+        modules = [m for m in (_module_of(p) for p in frontier) if m]
+        frontier = {
+            p
+            for p, text in sources.items()
+            if p not in changed and p not in found and any(_refers(text, m) for m in modules)
+        }
+        found |= frontier
+    return sorted(found)
+
+
 def related_tests(paths: list[str], suite: Suite, files: dict[str, str]) -> tuple[list[str], bool]:
     """(the test files of `suite` the changed `paths` touch, whether a change maps to no test
     file of it and so needs the suite whole). `files` is test path -> its text."""
@@ -328,6 +345,12 @@ def main() -> int:
                 str(p.relative_to(REPO_ROOT)): p.read_text(encoding="utf-8", errors="replace")
                 for p in (REPO_ROOT / "tests").glob("*/*/**/test_*.py")
             }
+            sources = {
+                str(p.relative_to(REPO_ROOT)): p.read_text(encoding="utf-8", errors="replace")
+                for p in (REPO_ROOT / "backend").glob("**/*.py")
+            }
+            # A test of a module that imports the changed one runs too, transitively.
+            paths = paths + importers_of(paths, sources)
             narrowed = []
             for s in suites:
                 picked, whole = related_tests(paths, s, files)
