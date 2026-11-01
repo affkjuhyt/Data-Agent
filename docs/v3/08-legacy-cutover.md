@@ -22,8 +22,8 @@
 | --- | --- | --- | --- | --- |
 | `auth-api` | `service/auth-api.yaml`, `dataagent/auth_api` | `api` (`org`, token/capability) | Giữ | API thay được `/api/auth`, API-key verification và mọi client cũ; e2e auth qua `/v1` |
 | `workflow-runtime` | `service/workflow-runtime.yaml`, `dataagent/workflow_runtime` | `api` cho resource/control + `worker-agent` cho execution | Giữ | `worker-agent` chạy agent turn thật, resume/HITL, outbox và sandbox; Kong không còn route runtime cũ |
-| `kb-backend` | đã xoá mã 22/10/2026 (KB-08) | `api` (document, catalog, conflict) + `worker-document`, `worker-agent`, `crawler` | Đã xoá mã, chờ cổng §4 | ingest/search/catalog mới chạy trên V3 và các `/api/data`, `/api/knowledge`, `/api/pipeline` đã có replacement |
-| `kb-promote-*` | đã xoá mã 22/10/2026 (KB-08) | `worker-document` + `worker-agent` (`document.indexed`) | Đã xoá mã, chờ cổng §4 | Kafka consumer/group mới xử lý đủ Bronze/Silver/Gold, retry và DLQ |
+| `kb-backend` | đã xoá mã 22/10/2026 (KB-08) | `api` (document, catalog, conflict) + `worker-document`, `worker-agent`, `crawler` | Đã xoá, cổng §4 đạt 01/11/2026 | ingest/search/catalog mới chạy trên V3 và các `/api/data`, `/api/knowledge`, `/api/pipeline` đã có replacement |
+| `kb-promote-*` | đã xoá mã 22/10/2026 (KB-08) | `worker-document` + `worker-agent` (`document.indexed`) | Đã xoá, cổng §4 đạt 01/11/2026 | Kafka consumer/group mới xử lý đủ Bronze/Silver/Gold, retry và DLQ |
 | `indicator-api` | đã xoá 12/10/2026 | module của `api` (mọi route của nó chỉ trả 501) | Đã xoá | không còn Kong route, lời gọi frontend, import hay topic nào; manifest, Ansible, Makefile, CI, secret xoá cùng commit |
 | `platform-workers-*` | audit, memory, schema-crawler (web-crawler đã xoá mã 22/10/2026, thay bằng `crawler`) | `worker-ingest`, audit/memory worker V3 | Giữ | từng topic, group, ACL và state store có consumer thay thế; không còn CronJob/manifest tham chiếu |
 | `model-service` | `service/model-service.yaml`, `dataagent/model_service` | Chưa được đặc tả rõ trong V3 | Giữ | Có quyết định riêng về LLM/model proxy; không xoá theo suy đoán |
@@ -71,6 +71,27 @@ Khi một replacement đạt gate:
 - CSDL audit không ghi lỗi permission từ replacement.
 - E2E qua gateway đạt cho luồng đã thay thế.
 - Rollback đã thử bằng cách bật lại workload cũ trên một database tương thích, không phải CSDL V3.
+
+### Bằng chứng KB-08 (kb-backend, kb-promote-*, kb-structured-data, kb-conflict-resolution, web-crawler), 01/11/2026, cụm k8s-local
+
+- `kubectl`: không còn object nào của các workload này. Sáu Secret còn sót được xoá bằng task Ansible
+  "Remove the retired knowledge base and web-crawler" (mọi cụm từng chạy chúng được dọn như nhau).
+- Kong: không còn service `kb-backend` và route `/api/data`, `/api/knowledge`, `/api/pipeline`,
+  `/api/fleet`. Job `setup` không apply được từ 17/10 (manifest dev không phải YAML), nên route cũ còn
+  đó tới khi sửa.
+- Tham chiếu: chỉ còn các bước xoá đồ đã bỏ và ghi chú lịch sử; comment và docs còn gọi
+  `kb-backend` như một bên đang chạy đã được sửa.
+- Kafka: không còn topic `kb.*`, không còn consumer group.
+- CSDL: không có `permission denied` nào trong 72 giờ log Postgres (main và audit).
+- E2E qua gateway: `tests/integration/test_kb_replacement_e2e.py`, 12/12 (route cũ là "no Route
+  matched" của Kong; `/v1` documents, collections, document-sources, datasets, sources, crawl-sources,
+  conflicts và search/documents trả 200 cho người dùng demo).
+- Rollback: image `kb-backend` dựng lại từ commit trước khi xoá (5dc31db5), schema cũ (59 bảng, có
+  `KBData`) tạo từ ORM của chính commit đó trên một Postgres riêng, không phải CSDL V3; dịch vụ khởi
+  động (`KB_LITE`) và `/health` trả 200.
+
+Cụm k8s-local chạy lát V3 (`make deploy-local`); `make deploy` đầy đủ không chạy được trên node đơn
+này (đã đặt trước 82% bộ nhớ) và không cần cho các bằng chứng trên.
 
 ## 5. Các phần không được xoá trong đợt này
 
