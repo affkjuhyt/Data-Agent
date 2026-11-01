@@ -101,9 +101,10 @@ async def test_a_bar_drilled_into_filters_its_member_and_cuts_by_the_next_dimens
 
 
 @pytest.mark.req("AC-01-04-04")
-async def test_a_cut_the_metric_does_not_allow_is_refused_with_the_ones_it_does(
+async def test_a_cut_the_metric_does_not_allow_is_dropped_and_named_with_the_ones_it_does(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # The cut is left out and said so, with the cuts the metric allows; the total still answers.
     bank = build(seed, warehouse, monkeypatch)
     entity = seed.one(
         "SELECT id FROM context.semantic_entity WHERE data_space_id = %s AND code = 'khoan_vay'",
@@ -121,9 +122,10 @@ async def test_a_cut_the_metric_does_not_allow_is_refused_with_the_ones_it_does(
     q = Conversation(bank).ask("Dư nợ theo nhóm nợ tháng 9/2026")
     await drain()
     status, kind, text, _, _, _ = answer_of(seed, q)
-    assert (status, kind) == ("refused", "refusal")
-    assert text == "Dư nợ không chia được theo nhóm nợ. Có thể chia theo: sản phẩm, vùng."
-    assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", q) == 0
+    assert (status, kind) == ("answered", "data"), text
+    assert "Dư nợ không chia được theo nhóm nợ. Có thể chia theo: sản phẩm, vùng." in text
+    assert "Trả về số tổng hợp theo các chiều dữ liệu được phép." in text
+    assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", q) == 1
 
 
 @pytest.mark.req("AC-03-01-01")
