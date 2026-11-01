@@ -31,7 +31,7 @@ export function LoginPage() {
         </div>
         <h1 className="text-[22px] font-semibold text-foreground">Đăng nhập</h1>
         <p className="text-muted-foreground da-body-small">
-          Dùng tài khoản ngân hàng của bạn. Mật khẩu không lưu trong Data Agent.
+          Dùng tài khoản tổ chức của bạn. Mật khẩu không lưu trong Data Agent.
         </p>
         {ENTRA_IDP && (
           <Button className="w-full" onClick={() => keycloak.login({ idpHint: ENTRA_IDP, redirectUri })}>
@@ -46,12 +46,12 @@ export function LoginPage() {
           Đăng nhập bằng tài khoản AD (LDAP)
         </Button>
         <div className="border-b border-border p-da-lg">
-          <p className="text-foreground da-caption">Xác thực hai lớp theo chính sách của ngân hàng.</p>
+          <p className="text-foreground da-caption">Xác thực hai lớp theo chính sách của tổ chức.</p>
         </div>
         <div className="flex flex-col gap-da-sm">
           <StatusDot tone="success">Triển khai tại chỗ</StatusDot>
           <p className="text-[11px] text-muted-foreground">
-            Dữ liệu và mô hình AI chạy trong trung tâm dữ liệu của ngân hàng
+            Dữ liệu và mô hình AI chạy trong trung tâm dữ liệu của tổ chức
           </p>
         </div>
       </div>

@@ -426,7 +426,7 @@ function Composer({
           value={statement}
           onChange={(e) => setStatement(e.target.value)}
           onBlur={() => !threshold && statement && propose()}
-          placeholder="Giá xăng E5 kỳ 22/10 sẽ trên 20 nghìn"
+          placeholder="Chỉ số kỳ tới sẽ vượt ngưỡng đã đặt"
         />
       </Field>
       <div className="flex items-center gap-da-md">

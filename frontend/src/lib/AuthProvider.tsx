@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import keycloak from './keycloak';
 import { V1Error } from './v1/client';
+import { setNumberLocale } from './formatVN';
 import { getMe, type Me } from './v1/me';
 import { AuthScreen } from '../features/auth/AuthScreen';
 import { LoginPage } from '../features/auth/LoginPage';
@@ -53,7 +54,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const loadAccount = async () => {
     setAccount('checking');
     try {
-      setMe(await getMe());
+      const account = await getMe();
+      // Numbers read the organisation's way on every screen (GEN-41).
+      setNumberLocale(account.locale);
+      setMe(account);
       setAccount('active');
       setError(null);
     } catch (err) {

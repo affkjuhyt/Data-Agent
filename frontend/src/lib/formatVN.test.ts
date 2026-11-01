@@ -13,10 +13,25 @@ import {
   formatRelative,
   formatTime,
   isNumericColumn,
+  setNumberLocale,
   toDate,
   toNumber,
   WEEK_STARTS_ON,
 } from './formatVN';
+
+describe('setNumberLocale', () => {
+  it("writes numbers with the organisation's marks, vi-VN's by default", () => {
+    try {
+      setNumberLocale('en-US');
+      expect(formatNumber(1284.5)).toBe('1,284.5');
+      setNumberLocale('de-DE');
+      expect(formatNumber(1284.5)).toBe('1.284,5');
+    } finally {
+      setNumberLocale(null);
+    }
+    expect(formatNumber(1284.5)).toBe('1.284,5');
+  });
+});
 
 describe('formatNumber', () => {
   it('groups thousands with a dot', () => {

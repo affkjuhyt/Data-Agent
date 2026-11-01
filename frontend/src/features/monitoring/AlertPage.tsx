@@ -248,9 +248,9 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
               <p className="text-foreground da-body">{alert.analysis.summary}</p>
               <FactorTable factors={alert.analysis.factors} total={total} />
               <div className="flex flex-wrap gap-da-lg da-body-small">
-                <Tooltip content="Bảng chi tiết khoản vay đang được làm.">
+                <Tooltip content="Bảng chi tiết bản ghi đang được làm.">
                   <button type="button" aria-disabled="true" className="text-primary opacity-60">
-                    Xem {alert.analysis.record_count.toLocaleString('vi-VN')} khoản vay
+                    Xem {alert.analysis.record_count.toLocaleString('vi-VN')} bản ghi
                   </button>
                 </Tooltip>
                 <button

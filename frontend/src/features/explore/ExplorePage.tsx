@@ -26,6 +26,7 @@ import {
   type ExploreRows,
   type NextStep,
 } from '../../lib/v1/explore';
+import { sampleQuestion } from '../../lib/sampleQuestion';
 import { useV1 } from '../../lib/v1/useV1';
 import { cn } from '../../lib/utils';
 import { ExplainPanel } from './ExplainPanel';
@@ -326,7 +327,7 @@ function Explorer({ model: base }: { model: ExploreModel }) {
             >
               <Icon name="agent" className="text-foreground" />
               <span className="truncate">
-                hoặc hỏi: “so sánh nợ xấu bán lẻ theo vùng Q3 với Q2”
+                hoặc hỏi: “{sampleQuestion(base, 'compare_quarter')}”
               </span>
             </button>
           ) : (
@@ -342,7 +343,7 @@ function Explorer({ model: base }: { model: ExploreModel }) {
                   ref={askRef}
                   icon="agent"
                   aria-label="Hỏi bằng lời"
-                  placeholder="so sánh nợ xấu bán lẻ theo vùng Q3 với Q2"
+                  placeholder={sampleQuestion(base, 'compare_quarter')}
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                 />

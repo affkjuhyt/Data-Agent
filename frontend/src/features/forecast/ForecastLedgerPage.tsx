@@ -241,7 +241,7 @@ function LedgerBody({
     <div className="flex min-h-full flex-col">
       <PageHeader
         bordered
-        breadcrumb={['Phân tích', 'Dự báo', 'Giá xăng dầu trong nước', 'Sổ dự báo']}
+        breadcrumb={['Phân tích', 'Dự báo', 'Dự báo theo công thức', 'Sổ dự báo']}
         title={
           <span className="flex flex-wrap items-center gap-[10px]">
             Sổ dự báo · Giá trần {l.product_label}

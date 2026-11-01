@@ -50,8 +50,8 @@ trước ngày sau). Câu hỏi không nêu kỳ thì period = null.
 Nếu câu hỏi khớp nhiều chỉ số như nhau, đặt metric = null và liệt kê chúng trong alternatives.
 Chỉ đưa vào alternatives chỉ số đo đúng đại lượng câu hỏi hỏi; câu hỏi một đại lượng không có trong
 danh mục (ví dụ một tỷ lệ khi danh mục không có tỷ lệ nào) thì alternatives để trống.
-Câu hỏi hỏi một đại lượng không có trong danh mục chỉ số (ví dụ số khoản vay, số khách hàng, số
-giao dịch) thì metric = null, kể cả khi hội thoại trước có chỉ số.
+Câu hỏi hỏi một đại lượng không có trong danh mục chỉ số (ví dụ số khách hàng, số giao dịch, số
+đơn hàng khi danh mục không đếm chúng) thì metric = null, kể cả khi hội thoại trước có chỉ số.
 Câu hỏi có thể nối tiếp hội thoại trước: chỉ khi nó không nêu đại lượng nào (chỉ đổi chiều, bộ lọc
 hoặc kỳ, ví dụ "còn theo vùng thì sao?") mới dùng chỉ số của câu gần nhất."""
 

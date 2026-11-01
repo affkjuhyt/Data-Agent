@@ -105,7 +105,7 @@ async def _explore(
     if p.get("compare"):
         raise Unbuildable(
             "So sánh kỳ (compare) cần kỳ được hỏi; yêu cầu Khám phá chưa mang kỳ. Hãy hỏi trên màn"
-            " Hỏi đáp, ví dụ: Dư nợ tháng 9/2026 so với tháng trước."
+            " Hỏi đáp, ví dụ: <chỉ số> tháng 9/2026 so với tháng trước."
         )
     layer = await load(session, run.data_space_id)
     by_id = {d.id: d.code for d in layer.layer.dimensions.values()}

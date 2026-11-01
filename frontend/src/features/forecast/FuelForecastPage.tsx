@@ -127,7 +127,7 @@ function FuelForecastBody({ forecast }: { forecast: FuelPriceForecast }) {
     <div className="flex min-h-full flex-col">
       <PageHeader
         bordered
-        breadcrumb={['Phân tích', 'Dự báo', 'Giá xăng dầu trong nước']}
+        breadcrumb={['Phân tích', 'Dự báo', 'Dự báo theo công thức']}
         title={
           <span className="flex flex-wrap items-center gap-[10px]">
             Dự báo giá trần · kỳ {dayMonthYear(f.period_date)}

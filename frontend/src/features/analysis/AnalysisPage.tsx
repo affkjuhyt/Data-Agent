@@ -12,6 +12,8 @@ import { Tooltip } from '../../design-system/Tooltip';
 import { formatElapsed } from '../../lib/formatVN';
 import { listDatasets, listWorkspaces } from '../../lib/v1/api';
 import type { Workspace } from '../../lib/v1/types';
+import { sampleQuestion } from '../../lib/sampleQuestion';
+import { getExploreModel } from '../../lib/v1/explore';
 import { useV1 } from '../../lib/v1/useV1';
 import { AskBar } from '../home/AskBar';
 import { LinkButton } from '../../components/shell/AppLink';
@@ -35,6 +37,7 @@ export default function AnalysisPage() {
   const { navigate } = useAppState();
   const workspaces = useV1(['listWorkspaces'], listWorkspaces);
   const datasets = useV1(['listDatasets'], listDatasets);
+  const model = useV1(['getExploreModel'], getExploreModel);
 
   const ask = (question: string) => {
     window.history.replaceState(null, '', `/analysis/ask?q=${encodeURIComponent(question)}`);
@@ -61,7 +64,7 @@ export default function AnalysisPage() {
       <AskBar
         suggestions={[]}
         onAsk={ask}
-        placeholder="Hỏi về dữ liệu, ví dụ “dư nợ tiêu dùng theo vùng tháng này”"
+        placeholder={`Hỏi về dữ liệu, ví dụ “${sampleQuestion(model.data)}”`}
       />
 
       <div className="grid grid-cols-4 gap-da-lg max-[1023px]:grid-cols-2">

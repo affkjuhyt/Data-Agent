@@ -6,27 +6,29 @@ then `metrics`. Where our model differs, the file says it our way:
 
     version: 1
     semantic_models:
-      - name: khoan_vay                 # entity code
-        label: Khoản vay
-        model: bank.loan                # schema.table of a catalogued dataset, or its id
-        primary_key: [loan_id]
+      - name: don_hang                  # entity code
+        label: Đơn hàng
+        model: sales.orders             # schema.table of a catalogued dataset, or its id
+        primary_key: [order_id]
         dimensions:
-          - {name: ngay, label: Ngày, type: time, expr: as_of_date}
-          - {name: san_pham, label: Sản phẩm, type: categorical, expr: product_code}
+          - {name: ngay, label: Ngày, type: time, expr: order_date}
+          - {name: kenh, label: Kênh, type: categorical, expr: channel}
         measures:
-          - {name: du_no, label: Dư nợ, agg: sum, expr: balance, additivity: semi}
+          - {name: doanh_thu, label: Doanh thu, agg: sum, expr: amount}
+          - {name: gia_von, label: Giá vốn, agg: sum, expr: cost}
     relationships:
-      - {from: bank.loan, from_columns: [branch_code], to: bank.branch, to_columns: [code],
+      - {from: sales.orders, from_columns: [store_id], to: sales.stores, to_columns: [id],
          cardinality: many_to_one}
     metrics:
-      - name: NPL_RATIO
-        label: Tỷ lệ nợ xấu
-        expr: no_xau / du_no * 100      # over measure codes, as metric_version.expression
-        period_semantics: end_of_period
-        time_grain: day
+      - name: GROSS_MARGIN
+        label: Biên lợi nhuận gộp
+        expr: (doanh_thu - gia_von) / doanh_thu * 100  # over measure codes
+        period_semantics: sum_over_period
+        time_grain: month
+        time_dimension: ngay            # the time it is read along (GEN-22)
         unit: "%"
-        dimensions: [vung, san_pham]    # the cuts the owner allows (BR-81)
-        filters: [{dimension: san_pham, op: "!=", values: [NOI_BO]}]
+        dimensions: [kenh]              # the cuts the owner allows (BR-81)
+        filters: [{dimension: kenh, op: "!=", values: [NOI_BO]}]
 
 A table (`model`, a relationship's `from` and `to`) is a dataset of this Data Space by its id, or
 by `schema.table` (the table alone when it has no schema) when one dataset only has that name:

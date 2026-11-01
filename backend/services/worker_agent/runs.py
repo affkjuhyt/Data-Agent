@@ -37,7 +37,7 @@ from typing import Any, Literal
 from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError
 
-from libs import clock
+from libs import clock, language
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import agent, catalog, notify, qa
 from libs.sql_guard import SqlRejected
@@ -1146,8 +1146,8 @@ async def _audit_flow(
     await _tell_and_end(work, run, config, owner, granted, requires, limits, done, 0, answer)
 
 
-def vn_rows(n: int) -> str:
-    return f"{n:,}".replace(",", ".")
+def vn_rows(n: int, locale: str | None = None) -> str:
+    return language.number(n, 0, locale)
 
 
 async def _query_step(

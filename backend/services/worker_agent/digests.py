@@ -25,6 +25,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from libs import language
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, inbox, monitor
 from services.worker_agent import questions
@@ -68,11 +69,10 @@ def _number(value: Any) -> decimal.Decimal | None:
         return None
 
 
-def vn(value: decimal.Decimal | None, decimals: int = 2) -> str:
+def vn(value: decimal.Decimal | None, decimals: int = 2, locale: str | None = None) -> str:
     if value is None:
         return "—"
-    text = f"{value:,.{decimals}f}"
-    return text.replace(",", " ").replace(".", ",").replace(" ", ".")
+    return language.number(value, decimals, locale)
 
 
 async def metric_ids(org: uuid.UUID, schedule: monitor.ReportSchedule) -> list[uuid.UUID]:

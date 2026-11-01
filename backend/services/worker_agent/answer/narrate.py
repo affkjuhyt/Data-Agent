@@ -16,6 +16,8 @@ import decimal
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from libs import language
+
 MAX_LISTED = 12  # beyond this the text names the top values and the table holds the rest
 
 DisplayState = Literal["shown", "masked_stale", "not_available"]
@@ -56,7 +58,11 @@ class Figure:
         source: dict[str, Any] = (
             {"compute_run_id": compute_run_id, "expr": self.expr}
             if self.expr
-            else {"published_result_id": self.published_result_id, "row": self.row, "col": self.column}
+            else {
+                "published_result_id": self.published_result_id,
+                "row": self.row,
+                "col": self.column,
+            }
             if self.published_result_id
             else {"query_run_id": query_run_id, "row": self.row, "col": self.column}
         )
@@ -78,13 +84,10 @@ class Figure:
         }
 
 
-def vn_number(value: decimal.Decimal, decimals: int) -> str:
-    """1234567.891 → "1.234.567,89" (A1.1 keeps the full value; this is only how it reads)."""
-    q = value.quantize(decimal.Decimal(1).scaleb(-decimals), rounding=decimal.ROUND_HALF_UP)
-    whole, _, frac = f"{abs(q):f}".partition(".")
-    grouped = f"{int(whole):,}".replace(",", ".")
-    sign = "-" if q < 0 else ""
-    return f"{sign}{grouped},{frac}" if frac else f"{sign}{grouped}"
+def vn_number(value: decimal.Decimal, decimals: int, locale: str | None = None) -> str:
+    """1234567.891 → "1.234.567,89" in vi-VN (A1.1 keeps the full value; this is only how it
+    reads). The organisation's locale writes it its way (libs/language.number, GEN-41)."""
+    return language.number(value, decimals, locale)
 
 
 def figures_of(

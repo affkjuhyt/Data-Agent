@@ -45,7 +45,7 @@ export default function MonitoringPage() {
         <PageHeader
           breadcrumb={['Quản trị', 'Giám sát hệ thống']}
           title="Giám sát hệ thống"
-          description="Tình trạng các dịch vụ, mô hình AI và hạ tầng chạy tại trung tâm dữ liệu của ngân hàng. Cảnh báo gửi cho Quản trị hệ thống qua Teams và email."
+          description="Tình trạng các dịch vụ, mô hình AI và hạ tầng chạy tại trung tâm dữ liệu của tổ chức. Cảnh báo gửi cho Quản trị hệ thống qua Teams và email."
           actions={
             <LinkButton area="admin" page="AUDIT">
               Xem nhật ký

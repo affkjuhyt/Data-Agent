@@ -9,7 +9,7 @@ import { useV1 } from '../../lib/v1/useV1';
 
 const PERIODS: { value: NewMetric['period_semantics']; label: string }[] = [
   { value: 'sum_over_period', label: 'Cộng trong kỳ (doanh thu, số giao dịch)' },
-  { value: 'end_of_period', label: 'Số dư cuối kỳ (dư nợ, tồn kho)' },
+  { value: 'end_of_period', label: 'Số dư cuối kỳ (số dư tài khoản, tồn kho)' },
   { value: 'average_over_period', label: 'Bình quân trong kỳ' },
 ];
 const CODE = /^[A-Za-z][A-Za-z0-9_]{1,63}$/;

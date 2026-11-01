@@ -51,7 +51,7 @@ function ModelBody({ model }: { model: EntityModel }) {
           }
         />
         <Notice tone="info">
-          Thực thể là các khái niệm nghiệp vụ (khách hàng, khoản vay…) và cách chúng nối với dữ liệu
+          Thực thể là các khái niệm nghiệp vụ (khách hàng, đơn hàng…) và cách chúng nối với dữ liệu
           thật — agent dựa vào đây để hiểu câu hỏi.
         </Notice>
         <div

@@ -158,7 +158,7 @@ export default function CrawlRegisterPage() {
               value={goal}
               onChange={(e) => setGoal(e.target.value)}
               rows={3}
-              placeholder="Ví dụ: thu lãi suất huy động các kỳ hạn của các ngân hàng thương mại, hằng ngày…"
+              placeholder="Ví dụ: thu bảng giá công bố của các nhà cung cấp, hằng ngày…"
               className="rounded-sm border border-border-strong bg-card px-da-lg py-[10px] text-foreground da-body-small"
             />
             <div>
@@ -173,12 +173,12 @@ export default function CrawlRegisterPage() {
           </Card>
           {suggestion && (
             <Card
-              title={`2 · Nguồn agent đề xuất · ${suggestion.sources.length + (suggestion.more?.count ?? 0)} ngân hàng`}
+              title={`2 · Nguồn agent đề xuất · ${suggestion.sources.length + (suggestion.more?.count ?? 0)} nguồn`}
             >
               <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border">
                 <thead>
                   <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                    <th className="w-[200px] px-da-lg py-da-md font-normal">Ngân hàng</th>
+                    <th className="w-[200px] px-da-lg py-da-md font-normal">Nguồn</th>
                     <th className="px-da-lg py-da-md font-normal">URL hạt giống</th>
                     <th className="w-[120px] px-da-lg py-da-md font-normal">Định dạng</th>
                     <th className="w-[170px] px-da-lg py-da-md font-normal">
@@ -214,7 +214,7 @@ export default function CrawlRegisterPage() {
                           checked={picked.has('more')}
                           onChange={(on) => toggle('more', on)}
                         >
-                          {suggestion.more.count} ngân hàng khác
+                          {suggestion.more.count} nguồn khác
                         </Checkbox>
                       </td>
                       <td className="px-da-lg py-[10px] text-muted-foreground">…</td>
@@ -239,7 +239,7 @@ export default function CrawlRegisterPage() {
           <Card title="3 · Phạm vi, lịch, tốc độ">
             <dl className="flex flex-col gap-da-lg da-body-small">
               <Row label="Miền cho phép">
-                {suggestion ? `${domainCount} miền của ngân hàng đã chọn` : 'Theo nguồn đã chọn'}
+                {suggestion ? `${domainCount} miền của nguồn đã chọn` : 'Theo nguồn đã chọn'}
               </Row>
               <Row label="Độ sâu tối đa">
                 <Select label="Độ sâu tối đa" value={depth} onChange={setDepth} options={DEPTHS} />

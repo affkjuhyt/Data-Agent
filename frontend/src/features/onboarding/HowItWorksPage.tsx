@@ -16,7 +16,7 @@ import { LinkButton } from '../../components/shell/AppLink';
  * three ways to the same certified figure, and the two ways to start. The "1,84% · NPL_RATIO
  * v4" lines are the guide's worked example, not live data.
  */
-const SAMPLE_QUESTION = 'Nợ xấu bán lẻ quý 3 là bao nhiêu?';
+const SAMPLE_QUESTION = 'Doanh thu theo khu vực quý 3 là bao nhiêu?';
 
 export default function HowItWorksPage() {
   const { navigate } = useAppState();
@@ -128,13 +128,13 @@ export default function HowItWorksPage() {
         </Way>
         <Way icon="chart" title="Kéo thả">
           <span className="flex flex-wrap gap-da-sm">
-            <StatusDot tone="primary">Chỉ số: Nợ xấu</StatusDot>
+            <StatusDot tone="primary">Chỉ số: Doanh thu</StatusDot>
             <StatusDot tone="primary">Chiều: Quý</StatusDot>
             <StatusDot tone="primary">Lọc: Bán lẻ</StatusDot>
           </span>
         </Way>
         <Way icon="agent" title="Agent báo cáo">
-          <p className="text-foreground da-body">Bản tin tuần 41: “Nợ xấu bán lẻ 1,84%…”</p>
+          <p className="text-foreground da-body">Bản tin tuần 41: “Doanh thu tăng 4,2%…”</p>
         </Way>
       </div>
 

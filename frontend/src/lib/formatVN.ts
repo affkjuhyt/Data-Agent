@@ -16,8 +16,25 @@
  * every runtime (Node without full ICU, older WebViews) and fully unit-testable.
  */
 
-const GROUP = '.';
-const DECIMAL = ',';
+// The organisation's marks (GEN-41): vi-VN's until /v1/me says otherwise, set once by
+// AuthProvider through setNumberLocale, so the 70-odd screens that format numbers follow the
+// organisation without each one being told.
+let GROUP = '.';
+let DECIMAL = ',';
+
+// Languages that write a decimal comma (libs/language.marks says the same for the backend).
+const COMMA_DECIMAL = new Set(
+  'vi id de es it pt nl tr da nb sv fi pl cs ro ru uk el hr sl sk hu fr'.split(' '),
+);
+const SPACE_GROUP = new Set('fr nb sv fi pl cs ru uk sk'.split(' '));
+
+/** Write numbers with `locale`'s marks ("vi-VN" → 1.284,5; "en-US" → 1,284.5). */
+export function setNumberLocale(locale: string | null | undefined): void {
+  const language = (locale || 'vi-VN').split('-')[0].toLowerCase();
+  if (SPACE_GROUP.has(language)) [GROUP, DECIMAL] = ['\u00a0', ','];
+  else if (COMMA_DECIMAL.has(language)) [GROUP, DECIMAL] = ['.', ','];
+  else [GROUP, DECIMAL] = [',', '.'];
+}
 const DASH = '—';
 
 /** getDay() index for the first day of the week (Monday === 1). */

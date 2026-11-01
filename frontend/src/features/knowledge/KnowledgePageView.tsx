@@ -80,7 +80,7 @@ export default function KnowledgePageView() {
             aria-label="Tìm trang"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Tìm trang, chỉ số, ngân hàng…"
+            placeholder="Tìm trang, chỉ số, thuật ngữ…"
             className="rounded-sm border border-border-strong bg-card px-[10px] py-da-md text-foreground da-body-small"
           />
           <div role="radiogroup" aria-label="Loại trang" className="flex flex-wrap gap-[6px]">

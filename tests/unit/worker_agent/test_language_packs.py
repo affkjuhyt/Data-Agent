@@ -130,3 +130,16 @@ def test_one_normal_form() -> None:
     # The api's phrase_norm and the worker's question text meet (punctuation to spaces).
     assert norm("Doanh-thu (thuần)") == norm("doanh thu thuan") == "doanh thu thuan"
     assert norm("Tỷ lệ % 9/2026") == "ty le % 9/2026"
+
+
+def test_a_figure_reads_in_the_organisations_locale() -> None:
+    import decimal
+
+    from libs.language import number
+
+    value = decimal.Decimal("1234567.891")
+    assert number(value, 2) == "1.234.567,89"  # vi-VN, the default
+    assert number(value, 2, "en-US") == "1,234,567.89"
+    nbsp = chr(0xA0)
+    assert number(value, 0, "fr-FR") == f"1{nbsp}234{nbsp}568"
+    assert number(decimal.Decimal("-2.5"), 0, "en-US") == "-3"

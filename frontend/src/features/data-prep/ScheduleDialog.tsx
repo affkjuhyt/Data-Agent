@@ -131,7 +131,7 @@ export function ScheduleDialog({
             )}
           </div>
           <Checkbox checked={draft.skip_holidays} onChange={(v) => set({ skip_holidays: v })}>
-            Bỏ qua ngày nghỉ theo lịch của ngân hàng
+            Bỏ qua ngày nghỉ theo lịch làm việc của tổ chức
           </Checkbox>
           <Checkbox checked={draft.no_overlap} onChange={(v) => set({ no_overlap: v })}>
             Không chạy chồng lượt (lượt trước chưa xong thì bỏ lượt này)

@@ -175,7 +175,8 @@ function Simulation({ policy }: { policy: AccessPolicy }) {
   // Start with someone the policy narrows, since that is the case worth checking.
   const [userId, setUserId] = useState<string | null>(null);
   const chosen = userId ?? people.find((u) => u.row_scope_limited)?.id ?? people[0]?.id ?? null;
-  const question = policy.sample_question || 'dư nợ theo chi nhánh tháng này';
+  // A policy carries the question it is checked with; without one, a question every metric answers.
+  const question = policy.sample_question || 'số liệu tháng này';
   const result = useV1(['simulatePolicy', policy.id, chosen, question], chosen ? () => simulatePolicy(policy.id, { user_id: chosen, question }) : null);
 
   return (

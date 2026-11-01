@@ -72,11 +72,11 @@ describe('CrawlRegisterPage', () => {
       target: { value: 'Thu lãi suất huy động các kỳ hạn của ngân hàng thương mại, hằng ngày' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Tìm nguồn' }));
-    expect(await screen.findByText('2 · Nguồn agent đề xuất · 30 ngân hàng')).toBeInTheDocument();
+    expect(await screen.findByText('2 · Nguồn agent đề xuất · 30 nguồn')).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Ngân hàng D' })).toBeDisabled();
     expect(screen.getByRole('checkbox', { name: 'Ngân hàng D' })).not.toBeChecked();
     expect(screen.getByText(/Ngân hàng D cấm thu thập tự động/)).toBeInTheDocument();
-    expect(screen.getByText('29 miền của ngân hàng đã chọn')).toBeInTheDocument();
+    expect(screen.getByText('29 miền của nguồn đã chọn')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Tự động/ })).toBeDisabled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Lưu và suy ngược schema' }));
