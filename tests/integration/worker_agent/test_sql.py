@@ -252,3 +252,55 @@ async def test_tables_the_asker_may_not_read_are_never_shown_to_the_model(
     prompt = script.asked[0][0]
     assert "bank.loan" in prompt
     assert "bank.salary" not in prompt and "bank.vip_loan" not in prompt
+
+
+class Recorder(Script):
+    """The model as a script that also records every role it is asked as."""
+
+    def __init__(self, sqls: list[str]) -> None:
+        super().__init__(sqls)
+        self.roles: list[str] = []
+        self.prompts: list[str] = []
+
+    async def json_chat(
+        self, role: str, system: str, user: str, output: type[Any], **kw: Any
+    ) -> Any:
+        self.roles.append(role)
+        self.prompts.append(system + "\n" + user)
+        return await super().json_chat(role, system, user, output, **kw)
+
+
+@pytest.mark.req("AC-11-01-01")
+async def test_a_person_outside_the_data_space_never_reaches_the_model(
+    seed: Seed, credit: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # R1-10: permissions before generation. A configured Data Space the asker holds no ask grant
+    # in: neither the planner model nor the SQL model is asked, so no table, column, metric or
+    # value name of the space reaches a prompt; the answer is ACCESS_DENIED, not NO_DATA.
+    bank = build(seed, credit, monkeypatch)
+    ask_role = seed.row(
+        "org.role", org_id=bank.org, code="ASK-R110", name="Ask", capabilities=["ask"]
+    )
+    seed.row(
+        "org.data_space_member",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        principal_type="user",
+        principal_id=bank.user,
+        role_id=ask_role,
+    )
+    bank.user = seed.row(
+        "org.app_user", org_id=bank.org, external_id="kc-out", username="out", display_name="Out"
+    )
+    script = Recorder([GOOD[0], GOOD[1]] * 3)
+    for text in (QUESTION, "Tỷ lệ nợ xấu theo vùng tháng 9/2026", "Chỉ tiêu lạ chưa có tên"):
+        q = asked(bank, script, monkeypatch) if text == QUESTION else bank.ask(text)
+        await drain()
+        _, kind, said, figures, _, answer = answer_of(seed, q)
+        assert kind == "refusal" and not figures, said
+        refusal = seed.one(
+            "SELECT number_check->'refusal'->>'code' FROM qa.answer WHERE id = %s", answer
+        )
+        assert refusal == "ACCESS_DENIED", (text, refusal)
+    assert script.roles == [] and script.prompts == []
+    assert seed.one("SELECT count(*) FROM query.query_run WHERE org_id = %s", bank.org) == 0

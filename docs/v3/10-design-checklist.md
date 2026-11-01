@@ -1604,7 +1604,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-11-01-01 | Chính | Cho nhóm AD GG-RRTD-Analyst có 25 người chưa có quyền / Khi AC05 khai báo ánh xạ nhóm sang AC01 trong Data Space Rủi ro tín dụng, xem trước và xác nhận / Thì màn xem trước hiện 25 người sẽ được thêm, 0 người bị bớt; K… | API, CSDL, E2E | todo | `tests/integration/api/test_org_admin.py`, `tests/integration/worker_agent/test_answers.py` |
+| AC-11-01-01 | Chính | Cho nhóm AD GG-RRTD-Analyst có 25 người chưa có quyền / Khi AC05 khai báo ánh xạ nhóm sang AC01 trong Data Space Rủi ro tín dụng, xem trước và xác nhận / Thì màn xem trước hiện 25 người sẽ được thêm, 0 người bị bớt; K… | API, CSDL, E2E | todo | `tests/integration/api/test_org_admin.py`, `tests/integration/worker_agent/test_answers.py` +1 |
 | AC-11-01-02 | Thay thế | Cho AC05 cần cấp tài khoản khẩn cấp cho 1 người / Khi cấp hạn 24 giờ và người thứ hai duyệt / Thì user_role source = emergency có valid_until và approved_by, sau 24 giờ quyền tự thu hồi; xin hạn 25 giờ thì bị từ chối | API, CSDL | todo | `tests/integration/api/test_org_admin.py` |
 | AC-11-01-03 | Ngoại lệ | Cho một chuyên viên bị gỡ khỏi GG-RRTD-Analyst khi đang mở phiên / Khi lần đồng bộ kế tiếp chạy (chậm nhất 15 phút) / Thì user_role của người đó bị thu hồi, token đang dùng bị từ chối và phiên chuyển sang màn đăng nhập | API, E2E | todo |  |
 | AC-11-01-04 | Ngoại lệ | Cho mất kết nối AD / Khi đã mất 10 giờ và khi đã mất 25 giờ / Thì ở giờ thứ 10 quyền giữ theo lần đồng bộ cuối và AC05 đã nhận báo; ở giờ thứ 25 mọi người chỉ còn quyền đọc của vai trò thấp nhất | API | todo |  |
