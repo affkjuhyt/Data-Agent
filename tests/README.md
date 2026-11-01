@@ -28,10 +28,6 @@ tests/
 │   ├── api/, worker_agent/, worker_ingest/, worker_document/, crawler/, migrate/, contracts/
 │   └── test_*.py            # e2e only (`make e2e`): V3 question, agent screens, JWT audience,
 │                            #   the KB replacement
-├── e2e/                     # seed data for the demo agent + non-pytest harnesses
-│   ├── agent_eval.py        # behavioural eval through the deployed agent
-│   └── ui.e2e.mjs           # Playwright: real Keycloak login → ask → check the answer block
-├── loadtest/                # k6 scripts and an ingestion throughput probe
 └── README.md
 ```
 

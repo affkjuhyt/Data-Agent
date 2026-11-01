@@ -20,7 +20,6 @@ import json
 import pytest
 
 from model.bench import client as bench_client
-from model.bench import e2e as bench_e2e
 from model.bench import gate as bench_gate
 from model.bench import profiles as bench_profiles
 from model.bench import run as bench_run
@@ -328,99 +327,3 @@ def test_the_shipped_thresholds_pass_the_baseline_they_were_derived_from():
     )
     verdicts = bench_gate.check(baseline, bench_gate.load_thresholds(), 1)
     assert [v.label for v in verdicts if v.state != "ok"] == []
-
-
-# ── end to end ─────────────────────────────────────────────────────────────
-
-
-def test_e2e_refuses_to_run_without_a_target_rather_than_inventing_one():
-    """There is no offline mode that would mean anything: the whole point is
-    the deployed pipeline. Failing loudly beats reporting a shape."""
-    with pytest.raises(bench_e2e.E2EError) as caught:
-        bench_e2e._settings()
-    assert "BENCH_AGENT_URL" in str(caught.value)
-
-
-def test_e2e_names_the_credential_it_needs_when_the_endpoint_is_configured(monkeypatch):
-    monkeypatch.setenv("BENCH_AGENT_URL", "http://agent:8240")
-    monkeypatch.setenv("BENCH_AGENT_ID", "a")
-    monkeypatch.setenv("BENCH_TENANT_ID", "t")
-    monkeypatch.delenv("GATEWAY_KEY", raising=False)
-    monkeypatch.delenv("KB_GATEWAY_KEY", raising=False)
-    with pytest.raises(bench_e2e.E2EError, match="GATEWAY_KEY"):
-        bench_e2e._settings()
-
-
-def test_e2e_does_not_send_an_invented_conversation_id():
-    """The runtime discards a conversation id the caller does not already own
-    and starts a fresh one (conversation_runner.py). Sending one made the first
-    real run read traces for a conversation that never existed and report every
-    millisecond as unaccounted — so the id is found afterwards, by user_ref."""
-    source = (bench_profiles.REPO_ROOT / "model" / "bench" / "e2e.py").read_text(encoding="utf-8")
-    ask_body = source[source.index("async def ask(") : source.index("async def find_conversation(")]
-    assert '"conversation_id"' not in ask_body
-
-
-def _turn(total_ms, stages, error=None):
-    return {
-        "total_ms": total_ms,
-        "ttft_ms": 100.0,
-        "error": error,
-        "trace_fetch": "ok",
-        "stages": [{"stage": n, "latency_ms": ms} for n, ms in stages],
-    }
-
-
-def test_unaccounted_time_is_the_wall_clock_no_stage_claims():
-    """The number that decides whether to work on the stages or on what is
-    around them. Getting it from subtraction rather than from a stage means it
-    cannot be hidden by a stage that forgot to record itself."""
-    summary = bench_e2e._summarise(
-        [
-            _turn(1000.0, [("planner", 200), ("kb_search", 300)]),
-            _turn(1000.0, [("planner", 200), ("kb_search", 300)]),
-        ]
-    )
-    assert summary["unaccounted_ms_p50"] == 500.0
-    assert summary["total_ms_p50"] == 1000.0
-
-
-def test_a_stage_called_twice_a_turn_is_reported_as_twice():
-    """Sequential repeats of one stage are the cascade question: a turn making
-    three planner calls is a different latency budget from one making one."""
-    summary = bench_e2e._summarise(
-        [
-            _turn(900.0, [("text_to_sql", 100), ("text_to_sql", 150), ("planner", 50)]),
-        ]
-    )
-    assert summary["stages"]["text_to_sql"]["calls_per_turn"] == 2.0
-    assert summary["stages"]["planner"]["calls_per_turn"] == 1.0
-
-
-def test_a_failed_turn_is_counted_but_kept_out_of_the_unaccounted_median():
-    """A turn that errored halfway has a wall clock that means nothing, and
-    averaging it in would move the one number this report is read for."""
-    summary = bench_e2e._summarise(
-        [
-            _turn(1000.0, [("planner", 400)]),
-            _turn(30.0, [], error="HTTP 500"),
-        ]
-    )
-    assert summary["errors"] == 1
-    assert summary["unaccounted_ms_p50"] == 600.0
-
-
-def test_a_stage_with_no_recorded_latency_does_not_become_zero():
-    summary = bench_e2e._summarise(
-        [
-            {
-                "total_ms": 500.0,
-                "ttft_ms": None,
-                "error": None,
-                "trace_fetch": "ok",
-                "stages": [{"stage": "rerank", "latency_ms": None}],
-            },
-        ]
-    )
-    assert "rerank" not in summary["stages"]
-    assert summary["unaccounted_ms_p50"] == 500.0

@@ -136,32 +136,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-workflow-runtime
-  namespace: dataagent-service
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: workflow-runtime
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: kong
-    - podSelector:
-        matchLabels:
-          app: eval
-    ports:
-    - protocol: TCP
-      port: 8240
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: allow-litellm
   namespace: dataagent-service
   labels:
@@ -174,9 +148,6 @@ spec:
   - Ingress
   ingress:
   - from:
-    - podSelector:
-        matchLabels:
-          app: workflow-runtime
     - podSelector:
         matchLabels:
           app: eval
@@ -210,9 +181,6 @@ spec:
   - Ingress
   ingress:
   - from:
-    - podSelector:
-        matchLabels:
-          app: workflow-runtime
     - podSelector:
         matchLabels:
           app: kong
@@ -370,31 +338,6 @@ spec:
     - podSelector:
         matchLabels:
           app: temporal
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-jaeger
-  namespace: dataagent-service
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: jaeger
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: workflow-runtime
-    ports:
-    - protocol: TCP
-      port: 8430
-    - protocol: TCP
-      port: 8431
 
 ---
 apiVersion: networking.k8s.io/v1

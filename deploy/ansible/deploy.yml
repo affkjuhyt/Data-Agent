@@ -505,6 +505,16 @@
       changed_when: "'deleted' in kb_delete.stdout"
       when: apply_services | bool
 
+    # Jaeger's only trace source was workflow-runtime; no V3 service carries an OTel SDK.
+    - name: Remove the retired Jaeger
+      ansible.builtin.command: >-
+        {{ kubectl }} -n {{ ns_service }} delete --ignore-not-found=true
+        deployment/jaeger service/jaeger serviceaccount/jaeger configmap/jaeger-env
+        networkpolicy/allow-jaeger networkpolicy/allow-workflow-runtime
+      register: jaeger_delete
+      changed_when: "'deleted' in jaeger_delete.stdout"
+      when: apply_services | bool
+
     # MongoDB held the legacy canvas workflows and Neo4j the legacy KB graph; nothing in V3 reads
     # either. Their PVCs (data-mongo-0, data-neo4j-0, logs-neo4j-0) are kept: deleting data is
     # an operator's call, not a deploy's.

@@ -18,7 +18,6 @@ so a green `make ci` is a green pipeline.
 | End-to-end | `make e2e` | `pytest -m e2e` against the **deployed dev cluster** over its LAN NodePorts (override with `E2E_KONG_URL` / `E2E_KEYCLOAK_URL`); `E2E_USER` / `E2E_PASS` from the environment. It **writes data**: agent turns create conversations, the tenant-isolation test deletes, revokes and rotates API keys. Needs the `seed_demo` data. See `tests/README.md` |
 | Serving benchmark | `make bench` | TTFT / decode / throughput per LLM role against the GPU tiers (`model/bench/`). Needs `LLM_MAIN_BASE_URL` + `LLM_FAST_BASE_URL` reachable; pass args with `BENCH_ARGS="…"`. Measures cost, not quality — `model/eval` owns quality |
 | Serving gate | `make bench-gate` | judges a bench report against `model/bench/thresholds.json`. Exit 0 pass / 1 fail / **2 inconclusive** — 2 means a budget could not be judged (shared GPU, missing metrics), re-run rather than widen |
-| Agent e2e latency | `make bench-e2e` | per-stage breakdown of one real question against a deployed agent. Needs `BENCH_AGENT_URL`, `BENCH_AGENT_ID`, `BENCH_TENANT_ID`, `GATEWAY_KEY` exported — never read from `.env` |
 | Deploy | `make deploy-local` (OrbStack), `make deploy` (full stack) | Ansible is the only deploy path. The local cluster runs only the V3 slice: use `make deploy-local`. The git diff since the last deploy picks **which** images to rebuild, but each is built from the **working tree**, uncommitted edits included: to ship exactly a commit, deploy from a clean worktree. Check which branch the cluster runs first (`~/.dataagent-deploy/k8s-local/last_deployed_sha.txt`). See `deploy/ansible/README.md` |
 
 ### Gates that are currently red
@@ -68,15 +67,12 @@ commented-out code is not allowed to stay.
 | React components | `PascalCase.tsx`, one component per file | `AgentPlayground.tsx` |
 | Hooks | `useThing.ts` | `useAgentStream.ts` |
 | Other TS modules | `camelCase.ts` | `apiClient.ts`, `formatVN.ts` |
-| Kubernetes manifests, k8s objects, Kafka topics | `kebab-case` | `workflow-runtime.yaml`, `observation.published` |
+| Kubernetes manifests, k8s objects, Kafka topics | `kebab-case` | `worker-agent.yaml`, `observation.published` |
 | Docs | `SCREAMING-KEBAB.md` at `docs/`, lowercase inside feature folders | `docs/RUNBOOK.md` |
 | Env vars | `SCREAMING_SNAKE`, prefixed by subsystem | `LITELLM_BASE_URL` |
 
-Known inconsistency, do not copy it: container images are half snake_case
-(`dataagent/workflow_runtime`) and half kebab (`dataagent/worker-agent`), while every k8s
-object is kebab. New services use kebab everywhere outside Python; renaming the existing
-images is a deploy-affecting change that needs its own PR (manifests + Ansible + docs in
-one commit).
+Container images and k8s objects are kebab (`dataagent/worker-agent`); only Python packages
+are snake_case (`services/worker_agent`).
 
 Names say what the thing is, not how it is implemented; no Vietnamese identifiers, no
 abbreviations that are not already in the domain (`kb`, `llm`, `dw` are fine).
@@ -112,16 +108,13 @@ from a literal.
 ```
 backend/libs        shared libraries (shared, contracts, semantic, indicator, sql_guard, cron;
                     dataagent_db = generated V3 models + scoped_session)
-backend/services    one deployable per directory, Dockerfile inside. The KB stack and the web-crawler
-                    were removed (docs/v3/04-backlog.md §3c); llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
-                    queue consumer
-
-                    workflow_runtime is layered: api/ (routers, auth, app factory) > application/
-                    (nodes, orchestrator, runtime_services, graph) > infrastructure/ (db, mongo,
-                    redis, kafka, qdrant clients, repositories) > domain/ (state, schemas). A lower
-                    layer never imports a higher one — .importlinter enforces it. main.py and jobs/
-                    are entrypoints outside the layers; prompts/ holds the templates (PROMPTS_DIR).
-                    It also serves agent/workflow/canvas authoring (ex flow_builder)
+backend/services    one deployable per directory, Dockerfile inside. `api` is the V3 modular monolith
+                    (ADR-28, docs/v3/06-api-v1.md): every /v1 module goes there, one package per schema,
+                    and its routes take their metadata and capability check from the A2 snapshot
+                    (catalogue/). worker_agent, worker_ingest, worker_document and crawler are the
+                    other V3 blocks; every legacy service they replace has been removed (the last ones
+                    on 01/11/2026, docs/v3/08-legacy-cutover.md). A new queue consumer goes into
+                    the worker that owns its schema, not into a new service
 
                     Events go through the outbox (ADR-06, docs/RUNBOOK.md §10b): a module writes the
                     event to its <schema>.outbox in the transaction that changes the data, and
@@ -129,18 +122,18 @@ backend/services    one deployable per directory, Dockerfile inside. The KB stac
                     direct publish after a commit.
                     Concurrent writers of one aggregate lock the parent row (FOR UPDATE) and the
                     "at most one active/published" rules are partial unique indexes
-backend/alembic     Postgres migrations (the `migrate` image)
+backend/schema      the V3 database generator: design export → definitions.json → DDL and ORM, plus the
+                    hand-written routines/ (docs/v3/07-database.md)
+backend/alembic     Postgres migrations (the `migrate` image); alembic/sql holds the generated DDL
 frontend/src        React app (features/, components/, lib/)
 deploy/ansible      the deploy path (k8s-local inventory)
 deploy/k8s          manifests: dev/ and production/
 deploy/docker       build contexts for the keycloak, kong and setup images; files the
                     ConfigMaps and Jobs read (sql, kong, keycloak, litellm, monitoring)
 model/eval          release gate: cases, scorers, thresholds
-model/bench         serving benchmark + gate, agent e2e latency breakdown
+model/bench         serving benchmark + gate
 tests/unit/<service>/, tests/integration/<service>/   one suite per service image
 tests/integration/test_*.py                         e2e tests (make e2e)
-tests/e2e           demo seed data (k8s seed Job), eval and Playwright harnesses
-tests/loadtest      k6
 docs                RUNBOOK, SECURITY, v3/ (product direction, agent core, R0 design,
                     backlog — the only design; start here)
 ```

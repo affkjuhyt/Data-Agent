@@ -72,8 +72,8 @@ spec:
             $KA --bootstrap-server "$B" --remove --force --topic "$t"
           done
 
-          # The platform workers (audit, memory, schema-crawler) and workflow-runtime, the only
-          # clients of these topics, were removed: drop the topics, every ACL on them and the
+          # The platform workers and the legacy runtime, the only clients of these topics,
+          # were removed: drop the topics, every ACL on them and the
           # consumer groups; no-ops once they are gone.
           for t in audit.data.access memory.extraction.requested memory.extraction.dlq ddl.changes; do
             $KT --bootstrap-server "$B" --delete --if-exists --topic "$t"

@@ -305,7 +305,6 @@ band. Nothing in `deploy/k8s/` may use it.
 | keycloak (health) | service | 9000 | **8111** | `KC_HTTP_MANAGEMENT_PORT` |
 | openbao | database | 8200 | **8120** | `config.hcl` listener |
 | egress-proxy | service | 3128 | **8130** | `http_port` in its `squid.conf` ConfigMap |
-| workflow-runtime | service | 8001 | **8240** | manifest `command` |
 | frontend | service | 3000 | **8280** | manifest `command` (vite `--port`) |
 | postgres | database | 5432 | **8300** | `PGPORT` |
 | redis | database | 6379 | **8320** | `redis.conf` |
@@ -324,8 +323,6 @@ band. Nothing in `deploy/k8s/` may use it.
 | prometheus | service | 9090 | **8400** | `--web.listen-address` |
 | langfuse | service | 3000 | **8420** | `PORT` |
 | langfuse-worker | service | 3030 | **8421** | `PORT` (no Service — queue consumer) |
-| jaeger (ui) | service | 16686 | **8430** | `QUERY_HTTP_SERVER_HOST_PORT` |
-| jaeger (otlp) | service | 4317 | **8431** | `COLLECTOR_OTLP_GRPC_HOST_PORT` |
 | litellm | service | 4000 | **8500** | `--port` |
 
 ### Consistency
@@ -333,7 +330,7 @@ band. Nothing in `deploy/k8s/` may use it.
 Every URL in `dataagent-config` and in the inline `env` of each manifest uses the
 numbers above — `postgres:8300`, `redis://redis:8320`,
 `kafka:8350` (SASL) / `kafka:8352` (plaintext internal), `http://minio:8360`,
-`http://litellm:8500`, `http://jaeger:8431`, and so on.
+`http://litellm:8500`, and so on.
 
 Service DNS names are DNS-1123, so an underscore is not legal in a hostname:
 `worker-agent`, `worker-ingest`, `worker-document`. `env` in the manifest wins

@@ -11,7 +11,7 @@ DEV_TOOLS_IMAGE ?= dataagent/dev-tools:local
 DOCKER_RUN_DEV = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(DEV_TOOLS_IMAGE)
 
 .PHONY: help lint type test test-unit test-integration test-changed test-related deadcode frontend-lint frontend-test ci e2e \
-        deploy deploy-local fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit api-types dev-tools fmt-files \
+        deploy deploy-local fmt bench bench-gate mock-api contract-compat design-checklist design-audit api-types dev-tools fmt-files \
         type-v3 lint-imports banking-data-plan banking-data-download banking-data-verify banking-data-inventory banking-data-prepare banking-data-bulk-ingest
 
 help:  ## List targets
@@ -206,28 +206,13 @@ GATE_ARGS ?= --report bench-report.json
 bench-gate:  ## judge a benchmark report against model/bench/thresholds.json (0 pass / 1 fail / 2 inconclusive)
 	$(DOCKER_RUN_PY) python -m model.bench.gate $(GATE_ARGS)
 
-# The end-to-end harness needs a deployed agent and a credential, so nothing is
-# read from .env: the operator exports what they already have, and every value
-# is forwarded by name.
-E2E_ARGS ?= --out e2e-report.json
-E2E_VARS = BENCH_AGENT_URL BENCH_AGENT_ID BENCH_TENANT_ID BENCH_USER_ID BENCH_USER_ROLES \
-           GATEWAY_KEY KB_GATEWAY_KEY
-E2E_ENV = $(foreach v,$(E2E_VARS),$(if $($(v)),-e $(v)))
-
-export $(E2E_VARS)
-
-bench-e2e:  ## per-stage latency of one real question against a deployed agent (see model/bench/e2e.py)
-	@docker run --rm --user 0 --network host -v "$(PWD):/src" -w /src \
-	  -e PYTHONPATH=/src/backend:/src $(E2E_ENV) $(PY_IMAGE) \
-	  python -m model.bench.e2e $(E2E_ARGS)
-
 # The e2e suite (pytest -m e2e) drives the deployed V3 dev cluster through its LAN
 # NodePorts (deploy/k8s/dev: Kong 30100, Keycloak 30110). It exercises api + worker-agent,
 # so it needs the cluster up and seeded with seed_demo, not testcontainers. It
 # logs in and runs real agent turns: every run writes conversations, so point it
 # only at a cluster where that is acceptable. Override a URL to target another
 # cluster. The account credentials (E2E_USER/E2E_PASS, E2E_ADMIN_*, E2E_T2_ADMIN_*,
-# tests/README.md) are forwarded by name, like bench-e2e's secrets.
+# tests/README.md) are forwarded by name.
 # The default inventory is k8s-local on OrbStack. Override these for the shared
 # LAN cluster or another deployed environment.
 E2E_KONG_URL ?= http://localhost:30100

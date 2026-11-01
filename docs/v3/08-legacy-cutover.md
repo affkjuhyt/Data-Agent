@@ -21,7 +21,7 @@
 | Workload cũ | Manifest / image | Replacement V3 | Trạng thái | Điều kiện xoá |
 | --- | --- | --- | --- | --- |
 | `auth-api` | đã xoá 01/11/2026 | `api` (`org`, `integration`: token/capability, api client bằng client-credentials) | Đã xoá | không frontend hay dịch vụ V3 nào gọi `/api/auth`; Kong xoá service và route cũ, plugin bỏ nhánh khoá `sk-`; e2e audience chạy qua `/v1` (`tests/integration/test_jwt_audience.py`) |
-| `workflow-runtime` | `service/workflow-runtime.yaml`, `dataagent/workflow_runtime` | `api` cho resource/control + `worker-agent` cho execution | Giữ | `worker-agent` chạy agent turn thật, resume/HITL, outbox và sandbox; Kong không còn route runtime cũ |
+| `workflow-runtime` | mã xoá 13/10/2026 (2c1dac2c), dấu vết cuối (NetworkPolicy, chứng chỉ mTLS, công cụ đo/tải nhắm `/api/orchestrate`) xoá 01/11/2026 | `api` cho resource/control + `worker-agent` cho execution | Đã xoá | kong-setup.sh và deploy.yml vẫn xoá route và workload cũ trên cụm đã có |
 | `kb-backend` | đã xoá mã 22/10/2026 (KB-08) | `api` (document, catalog, conflict) + `worker-document`, `worker-agent`, `crawler` | Đã xoá, cổng §4 đạt 01/11/2026 | ingest/search/catalog mới chạy trên V3 và các `/api/data`, `/api/knowledge`, `/api/pipeline` đã có replacement |
 | `kb-promote-*` | đã xoá mã 22/10/2026 (KB-08) | `worker-document` + `worker-agent` (`document.indexed`) | Đã xoá, cổng §4 đạt 01/11/2026 | Kafka consumer/group mới xử lý đủ Bronze/Silver/Gold, retry và DLQ |
 | `indicator-api` | đã xoá 12/10/2026 | module của `api` (mọi route của nó chỉ trả 501) | Đã xoá | không còn Kong route, lời gọi frontend, import hay topic nào; manifest, Ansible, Makefile, CI, secret xoá cùng commit |
@@ -29,6 +29,7 @@
 | `model-service` | đã xoá 01/11/2026 | TEI cho embedding, rerank (ADR-35); sinh văn bản qua LiteLLM (ADR-41) | Đã xoá | client duy nhất (`libs/database_connector/model_connector.py`) không còn ai import; Grafana (chỉ có dashboard `kb-ccu` vẽ số của nó và llm-exporter) xoá cùng |
 | `sandbox-executor` | đã xoá 01/11/2026 | — (V3 không chạy code người dùng; sandbox, khi cần, nằm trong `worker-agent`, tab 1 §7.2) | Đã xoá | bên gọi duy nhất là `workflow-runtime` (đã xoá); không khối V3 nào gọi; manifest, namespace `dataagent-sandbox`, RBAC, Ansible, OpenBao, CI, suite và các ca eval của nó xoá cùng commit |
 | `llm-exporter` | đã xoá 01/11/2026 | `model/bench` (TTFT, decode, throughput theo vai trò) | Đã xoá | chỉ dashboard Grafana `kb-ccu` của KB cũ đọc số của nó |
+| `jaeger` | đã xoá 01/11/2026 | Tempo qua OpenTelemetry (ADR-40) | Đã xoá | nguồn trace duy nhất là `workflow-runtime`; chưa service V3 nào có OTel SDK |
 
 Frontend không phải legacy backend để xoá. Nó chỉ chuyển từng màn từ mock/`/api` sang `/v1` theo nhóm
 đã vào `COMPLETE_GROUPS`.
@@ -47,9 +48,8 @@ Frontend không phải legacy backend để xoá. Nó chỉ chuyển từng màn
 
 ### 3.2 Worker và pipeline
 
-Không xoá `workflow-runtime`, KB workers hoặc crawler trước khi các khối `worker-agent`,
-`worker-ingest`, `crawler` có image, manifest, secret, Kafka ACL và test integration riêng. Đây là
-phần còn thiếu lớn nhất giữa tài liệu ADR-28 và repo hiện tại.
+Điều kiện đã đạt: `worker-agent`, `worker-ingest`, `crawler` có image, manifest, secret và test
+integration riêng, nên `workflow-runtime`, KB workers và web-crawler đã xoá.
 
 ### 3.3 Xoá từng workload
 

@@ -35,7 +35,6 @@ any machine on the `10.10.55.x` network; no port-forwarding is needed.
 | Keycloak (realm `aeroflow`) | http://10.10.55.101:30110 |
 | Langfuse | http://10.10.55.101:30420 |
 | Prometheus | http://10.10.55.101:30400 |
-| Jaeger | http://10.10.55.101:30430 |
 | Temporal UI: schedules and their workflows (namespace `dataagent`; dev only, production is port-forward) | http://10.10.55.101:30381 |
 | LiteLLM | http://10.10.55.101:30500 |
 | MinIO console | http://10.10.55.101:30361 |

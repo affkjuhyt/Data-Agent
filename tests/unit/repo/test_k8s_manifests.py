@@ -576,7 +576,7 @@ class TestPortsFollowThePlan:
     def test_no_env_value_points_at_a_pre_migration_port(self):
         legacy = re.compile(
             r"\b(?:postgres|redis|qdrant|kafka|minio|clickhouse|"
-            r"openbao|keycloak|kong|kong-admin|litellm|langfuse|jaeger)"
+            r"openbao|keycloak|kong|kong-admin|litellm|langfuse)"
             r":(?!8[1-5]\d\d\b)\d{4,5}\b"
         )
         bad = []
@@ -794,9 +794,7 @@ class TestCrossNamespaceHostnamesAreQualified:
             "keycloak",
             "litellm",
             "langfuse",
-            "jaeger",
             "prometheus",
-            "workflow-runtime",
             "api",
             "frontend",
         ]
@@ -920,7 +918,6 @@ class TestImageReferencesAreIntact:
         "ghcr.io/berriai/litellm:main-stable",
         "docker.io/langfuse/langfuse:3",
         "docker.io/langfuse/langfuse-worker:3",
-        "jaegertracing/all-in-one:1.55",
         "prom/prometheus:v2.54.1",
         "python:3.12-alpine",
         # Temporal (ADR-33): server and admin-tools move together (job/temporal-schema.yaml).

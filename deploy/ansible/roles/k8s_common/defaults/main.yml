@@ -136,7 +136,6 @@ service_workloads:
   - litellm
   - langfuse
   - langfuse-worker
-  - jaeger
   - prometheus
   - frontend
 

@@ -22,7 +22,3 @@ _.autocommit
 _.fill
 _.font
 _.freeze_panes
-
-# Test hook: tests/unit/workflow_runtime/test_platform_routers.py clears the LiteLLM health cache
-# between cases (kept on purpose in the 2026-09 dead-code sweep).
-_.reset_health_cache

@@ -16,7 +16,7 @@ One top-level folder per concern — a team edits its own tree without touching 
 backend/     Python import root: services/ (FastAPI/worker services), libs/ (shared layer), alembic/ (migrations)
 frontend/    React 19 + Vite app (npm workspace): src/, index.html, vite/vitest/tsconfig, Dockerfile.dev
 deploy/      ansible/ (deploy pipeline: deploy.yml) · k8s/ (manifests: production/ and dev/) · docker/ (Dockerfiles + service config)
-tests/       unit/<service> · integration/<service> · e2e/ (demo seed data, eval + Playwright harnesses) · loadtest/ (k6)
+tests/       unit/<service> · integration/<service> · e2e tests against the dev cluster
 docs/        v3/ (product direction, agent core, R0 design, backlog) · v2/ (Observation Engine spec, reference Data Space, data/ fixtures) · RUNBOOK · SECURITY
 model/       eval/ (release gate: cases, scorers incl. RAGAS faithfulness, thresholds) · bench/ (serving latency)
 ```
@@ -30,7 +30,7 @@ model/       eval/ (release gate: cases, scorers incl. RAGAS faithfulness, thres
 | [`deploy/ansible/`](./deploy/ansible) | The deploy pipeline — `deploy.yml` builds what changed, renders Secrets from the vault, applies the manifests, reruns Jobs, restarts what changed |
 | [`deploy/k8s/`](./deploy/k8s) | Kubernetes manifests: `production/` (hardened) and `dev/` (the single-node dev server) |
 | [`deploy/docker/`](./deploy/docker) | Image build contexts (`keycloak`, `setup`) and the files the k8s ConfigMaps and Jobs read (`kong`, `sql`, `litellm`, `monitoring`…) |
-| [`tests/`](./tests) | `pytest` unit/integration, one suite per service (`pythonpath = [".", "backend"]`), e2e tests against the dev cluster, `tests/e2e/` demo seed data + eval/Playwright harnesses, `tests/loadtest` k6 — see [`tests/README.md`](./tests/README.md) |
+| [`tests/`](./tests) | `pytest` unit/integration, one suite per service (`pythonpath = [".", "backend"]`), e2e tests against the dev cluster — see [`tests/README.md`](./tests/README.md) |
 | [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) · [`docs/SECURITY.md`](./docs/SECURITY.md) | Operating the stack · security posture & release hardening |
 
 ---
@@ -99,7 +99,7 @@ npm run test          # vitest run
 - **Search and graph:** Qdrant, ClickHouse
 - **Security and gateway:** Keycloak, Kong (`aeroflow-jwks` plugin verifies JWTs at the edge), OpenBao
 - **Messaging:** Kafka
-- **Observability and AI tooling:** LiteLLM, Langfuse, Prometheus, Jaeger (no central log store: `kubectl logs`)
+- **Observability and AI tooling:** LiteLLM, Langfuse, Prometheus (no tracing backend and no central log store: `kubectl logs`)
 - **Application services:** V3 `api`, `worker-agent`, `worker-ingest`, `worker-document`, `crawler`
 - **LLM tier:** GPU services on `10.10.55.101` — vLLM main `:8001` (`agent-main`), vLLM fast `:8002` (`agent-fast`), TEI embed `:8003`, TEI rerank `:8004`
 

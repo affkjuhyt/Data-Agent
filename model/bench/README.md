@@ -115,23 +115,3 @@ prefix-cache hit rate.
 
 Recorded baselines live in [`baselines/`](baselines/), together with what the
 LiteLLM proxy costs. Ad-hoc reports are gitignored; kept ones are not.
-
-## End to end
-
-`run.py` measures single calls. It cannot say how many of them one user
-question triggers, which is the number that decides routing and cascade work.
-[`e2e.py`](e2e.py) asks the deployed agent a real question, times the SSE stream
-from outside, then reads back the `AgentTraces` rows that turn wrote — the
-product already records `tool_name` and `latency_ms` per step, so nothing here
-re-implements the graph.
-
-```bash
-export BENCH_AGENT_URL=http://<node>:30240
-export BENCH_AGENT_ID=<uuid> BENCH_TENANT_ID=<uuid> GATEWAY_KEY=<key>
-make bench-e2e
-```
-
-Read `unaccounted_ms` first: wall clock minus the sum of the recorded stages.
-Large means the time is going somewhere no stage records; small means the
-stages are the whole story and the lever is fewer or cheaper ones. Credentials
-come from the environment and never reach the report.

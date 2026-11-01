@@ -17,11 +17,6 @@
     "format:check": "npm --workspace frontend run format:check",
     "test": "npm --workspace frontend run test",
     "test:watch": "npm --workspace frontend run test:watch",
-    "test:coverage": "npm --workspace frontend run test:coverage",
-    "e2e:ui": "node tests/e2e/ui.e2e.mjs",
-    "ui-demo": "node frontend/scripts/ui-demo.mjs"
-  },
-  "devDependencies": {
-    "playwright": "^1.60.0"
+    "test:coverage": "npm --workspace frontend run test:coverage"
   }
 }

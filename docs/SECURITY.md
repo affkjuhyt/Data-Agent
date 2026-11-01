@@ -39,10 +39,9 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
 - `.env` is **git-ignored**; `.env.example` is the committed template with placeholder
   values only. Verified: no `.env` is tracked.
 - Kafka SASL, Keycloak, and provider API keys come from the environment — never hardcoded.
-- Credentials an agent uses at run time live in OpenBao, not in Postgres: a canvas
-  node's warehouse / DB connector password and a registered MCP server's bearer token
-  (`"MCP".api_key_ref` = the `secrets_vault` id of an `MCP_TOKEN` secret) are read by
-  workflow_runtime through a read-only AppRole when the agent loads.
+- Credentials used at run time live in OpenBao, not in Postgres: a source's warehouse
+  password is written by the api (write-only AppRole) and read by worker-agent, worker-ingest
+  and crawler through their own read-only AppRoles; only the path is in the database (BR-14).
 - CI runs a **secret scan** (trivy `secret` scanner) over the tree.
 - **Action for prod:** rotate any credential that ever appeared in a template default;
   the prod overlay must drop all defaults.
@@ -76,8 +75,6 @@ docker buildx imagetools inspect python:3.11-slim --format '{{.Manifest.Digest}}
 # FROM python:3.11-slim@sha256:<manifest-list-digest>
 ```
 
-`backend/services/workflow_runtime/Dockerfile` carries the reference `TODO(production)` comment
-for the pattern.
 
 ## 4. Supply-chain / CI security gates
 
@@ -112,7 +109,6 @@ with an existing baseline to burn down. Ratchet plan:
   | Surface | strict errors |
   | --- | --- |
   | `backend/libs/shared` | **0**, enforced |
-  | `backend/services/workflow_runtime` (incl. `workflow_runtime/application/orchestrator`) | **0**, enforced |
   | `backend/services/{api,worker_agent,crawler}` (`--disallow-untyped-defs --disallow-any-generics`) | CI blocking step (`make type-v3`) |
 
   Not on the strict list: `backend/libs/{semantic,indicator}`. The whole-tree run is report-only (`|| true`).
