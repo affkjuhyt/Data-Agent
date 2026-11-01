@@ -6,14 +6,14 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from services.worker_agent.llm import Gateway
 from services.worker_agent.query.executor import QueryOutcome
 from services.worker_agent.sqlgen.check import problems
-from services.worker_agent.sqlgen.generate import Candidate, candidates, repair
+from services.worker_agent.sqlgen.generate import METHODS, Candidate, candidates, repair
 from services.worker_agent.sqlgen.schema import Linked
 from services.worker_agent.sqlgen.vote import Decision, vote
 
@@ -41,8 +41,9 @@ async def explore(
     dialect: str,
     examples: list[tuple[str, str]],
     run_sql: Callable[[str], Awaitable[QueryOutcome]],
+    methods: Sequence[str] = METHODS,
 ) -> Exploration:
-    written = await candidates(gateway, question, linked, dialect, examples)
+    written = await candidates(gateway, question, linked, dialect, examples, methods)
 
     async def checked(c: Candidate) -> tuple[Candidate, list[str]]:
         if c.sql is None:

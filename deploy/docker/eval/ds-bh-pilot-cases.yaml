@@ -1,0 +1,1089 @@
+# DS-BH pilot eval cases (R1-12): what the pilot customer would ask of "Bán hàng", the answer on
+# the pilot data (deploy/docker/sql/v3-pilot-seed.sql) and the hand-written SQL it comes from. The
+# seed loads them as the eval set "Câu hỏi pilot Bán hàng"; tests keep the seed, this file and the
+# reference SQL in agreement. The expected answers are a draft: two people solve the questions blind
+# (docs/v3/eval/ds-bh-blind-sheet.md, questions only) and a case they disagree on is reviewed.
+eval_set: Câu hỏi pilot Bán hàng
+cases:
+- id: e001
+  question: Doanh thu thuần tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 708800000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE sold_on >= DATE '2026-07-01'
+    AND sold_on < DATE '2026-08-01'
+- id: e002
+  question: Doanh thu thuần tháng 8/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 708800000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE sold_on >= DATE '2026-08-01'
+    AND sold_on < DATE '2026-09-01'
+- id: e003
+  question: Doanh thu thuần tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 708800000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE sold_on >= DATE '2026-09-01'
+    AND sold_on < DATE '2026-10-01'
+- id: e004
+  question: Doanh thu thuần chi nhánh Hà Nội tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 443000000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE branch = 'Hà Nội' AND sold_on
+    >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e005
+  question: Doanh thu thuần chi nhánh TP. Hồ Chí Minh tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 221500000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE branch = 'TP. Hồ Chí Minh'
+    AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e006
+  question: Doanh thu thuần chi nhánh Đà Nẵng tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 44300000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE branch = 'Đà Nẵng' AND
+    sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e007
+  question: Doanh thu thuần nhóm hàng Thực phẩm tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 12800000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE category = 'Thực phẩm'
+    AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e008
+  question: Doanh thu thuần nhóm hàng Điện máy tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 640000000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE category = 'Điện máy' AND
+    sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e009
+  question: Doanh thu thuần nhóm hàng Thời trang tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 56000000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE category = 'Thời trang'
+    AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e010
+  question: Giá vốn tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_VON
+    values:
+    - 481984000.0
+  reference_sql: SELECT SUM(cogs) FROM workspace.pilot_sales_line WHERE sold_on >= DATE '2026-07-01' AND
+    sold_on < DATE '2026-08-01'
+- id: e011
+  question: Giá vốn tháng 8/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_VON
+    values:
+    - 481984000.0
+  reference_sql: SELECT SUM(cogs) FROM workspace.pilot_sales_line WHERE sold_on >= DATE '2026-08-01' AND
+    sold_on < DATE '2026-09-01'
+- id: e012
+  question: Giá vốn tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_VON
+    values:
+    - 488704000.0
+  reference_sql: SELECT SUM(cogs) FROM workspace.pilot_sales_line WHERE sold_on >= DATE '2026-09-01' AND
+    sold_on < DATE '2026-10-01'
+- id: e013
+  question: Giá vốn chi nhánh Hà Nội tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_VON
+    values:
+    - 306140000.0
+  reference_sql: SELECT SUM(cogs) FROM workspace.pilot_sales_line WHERE branch = 'Hà Nội' AND sold_on
+    >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e014
+  question: Giá vốn chi nhánh TP. Hồ Chí Minh tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_VON
+    values:
+    - 153070000.0
+  reference_sql: SELECT SUM(cogs) FROM workspace.pilot_sales_line WHERE branch = 'TP. Hồ Chí Minh' AND
+    sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e015
+  question: Giá vốn chi nhánh Đà Nẵng tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_VON
+    values:
+    - 29494000.0
+  reference_sql: SELECT SUM(cogs) FROM workspace.pilot_sales_line WHERE branch = 'Đà Nẵng' AND sold_on
+    >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e016
+  question: Giá vốn nhóm hàng Thực phẩm tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_VON
+    values:
+    - 8704000.0
+  reference_sql: SELECT SUM(cogs) FROM workspace.pilot_sales_line WHERE category = 'Thực phẩm' AND sold_on
+    >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e017
+  question: Giá vốn nhóm hàng Điện máy tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_VON
+    values:
+    - 435200000.0
+  reference_sql: SELECT SUM(cogs) FROM workspace.pilot_sales_line WHERE category = 'Điện máy' AND sold_on
+    >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e018
+  question: Giá vốn nhóm hàng Thời trang tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_VON
+    values:
+    - 44800000.0
+  reference_sql: SELECT SUM(cogs) FROM workspace.pilot_sales_line WHERE category = 'Thời trang' AND sold_on
+    >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e019
+  question: Lãi gộp tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP
+    values:
+    - 226816000.0
+  reference_sql: SELECT SUM(net_revenue - cogs) FROM workspace.pilot_sales_line WHERE sold_on >= DATE
+    '2026-07-01' AND sold_on < DATE '2026-08-01'
+- id: e020
+  question: Lãi gộp tháng 8/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP
+    values:
+    - 226816000.0
+  reference_sql: SELECT SUM(net_revenue - cogs) FROM workspace.pilot_sales_line WHERE sold_on >= DATE
+    '2026-08-01' AND sold_on < DATE '2026-09-01'
+- id: e021
+  question: Lãi gộp tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP
+    values:
+    - 220096000.0
+  reference_sql: SELECT SUM(net_revenue - cogs) FROM workspace.pilot_sales_line WHERE sold_on >= DATE
+    '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e022
+  question: Lãi gộp chi nhánh Hà Nội tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP
+    values:
+    - 136860000.0
+  reference_sql: SELECT SUM(net_revenue - cogs) FROM workspace.pilot_sales_line WHERE branch = 'Hà Nội'
+    AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e023
+  question: Lãi gộp chi nhánh TP. Hồ Chí Minh tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP
+    values:
+    - 68430000.0
+  reference_sql: SELECT SUM(net_revenue - cogs) FROM workspace.pilot_sales_line WHERE branch = 'TP. Hồ
+    Chí Minh' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e024
+  question: Lãi gộp chi nhánh Đà Nẵng tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP
+    values:
+    - 14806000.0
+  reference_sql: SELECT SUM(net_revenue - cogs) FROM workspace.pilot_sales_line WHERE branch = 'Đà Nẵng'
+    AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e025
+  question: Lãi gộp nhóm hàng Thực phẩm tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP
+    values:
+    - 4096000.0
+  reference_sql: SELECT SUM(net_revenue - cogs) FROM workspace.pilot_sales_line WHERE category = 'Thực
+    phẩm' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e026
+  question: Lãi gộp nhóm hàng Điện máy tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP
+    values:
+    - 204800000.0
+  reference_sql: SELECT SUM(net_revenue - cogs) FROM workspace.pilot_sales_line WHERE category = 'Điện
+    máy' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e027
+  question: Lãi gộp nhóm hàng Thời trang tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP
+    values:
+    - 11200000.0
+  reference_sql: SELECT SUM(net_revenue - cogs) FROM workspace.pilot_sales_line WHERE category = 'Thời
+    trang' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e028
+  question: Biên lợi nhuận gộp tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 32.0
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE sold_on >= DATE '2026-07-01' AND sold_on < DATE '2026-08-01'
+- id: e029
+  question: Biên lợi nhuận gộp tháng 8/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 32.0
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE sold_on >= DATE '2026-08-01' AND sold_on < DATE '2026-09-01'
+- id: e030
+  question: Biên lợi nhuận gộp tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 31.0519
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e031
+  question: Biên lợi nhuận gộp chi nhánh Hà Nội tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 30.8939
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE branch = 'Hà Nội' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e032
+  question: Biên lợi nhuận gộp chi nhánh TP. Hồ Chí Minh tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 30.8939
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE branch = 'TP. Hồ Chí Minh' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e033
+  question: Biên lợi nhuận gộp chi nhánh Đà Nẵng tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 33.4221
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE branch = 'Đà Nẵng' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e034
+  question: Biên lợi nhuận gộp nhóm hàng Thực phẩm tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 32.0
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE category = 'Thực phẩm' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e035
+  question: Biên lợi nhuận gộp nhóm hàng Điện máy tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 32.0
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE category = 'Điện máy' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e036
+  question: Biên lợi nhuận gộp nhóm hàng Thời trang tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 20.0
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE category = 'Thời trang' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+  note: 'trap 2: revenue-weighted, not the mean of the branch rates'
+- id: e037
+  question: Tỷ lệ giá vốn tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TY_LE_GIA_VON
+    values:
+    - 68.0
+  reference_sql: SELECT SUM(cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line WHERE sold_on
+    >= DATE '2026-07-01' AND sold_on < DATE '2026-08-01'
+- id: e038
+  question: Tỷ lệ giá vốn tháng 8/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TY_LE_GIA_VON
+    values:
+    - 68.0
+  reference_sql: SELECT SUM(cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line WHERE sold_on
+    >= DATE '2026-08-01' AND sold_on < DATE '2026-09-01'
+- id: e039
+  question: Tỷ lệ giá vốn tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TY_LE_GIA_VON
+    values:
+    - 68.9481
+  reference_sql: SELECT SUM(cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line WHERE sold_on
+    >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e040
+  question: Tỷ lệ giá vốn chi nhánh Hà Nội tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TY_LE_GIA_VON
+    values:
+    - 69.1061
+  reference_sql: SELECT SUM(cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line WHERE branch
+    = 'Hà Nội' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e041
+  question: Tỷ lệ giá vốn chi nhánh TP. Hồ Chí Minh tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TY_LE_GIA_VON
+    values:
+    - 69.1061
+  reference_sql: SELECT SUM(cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line WHERE branch
+    = 'TP. Hồ Chí Minh' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e042
+  question: Tỷ lệ giá vốn chi nhánh Đà Nẵng tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TY_LE_GIA_VON
+    values:
+    - 66.5779
+  reference_sql: SELECT SUM(cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line WHERE branch
+    = 'Đà Nẵng' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e043
+  question: Tỷ lệ giá vốn nhóm hàng Thực phẩm tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TY_LE_GIA_VON
+    values:
+    - 68.0
+  reference_sql: SELECT SUM(cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line WHERE category
+    = 'Thực phẩm' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e044
+  question: Tỷ lệ giá vốn nhóm hàng Điện máy tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TY_LE_GIA_VON
+    values:
+    - 68.0
+  reference_sql: SELECT SUM(cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line WHERE category
+    = 'Điện máy' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e045
+  question: Tỷ lệ giá vốn nhóm hàng Thời trang tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TY_LE_GIA_VON
+    values:
+    - 80.0
+  reference_sql: SELECT SUM(cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line WHERE category
+    = 'Thời trang' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+  note: 'trap 2: revenue-weighted, not the mean of the branch rates'
+- id: e046
+  question: Số lượng bán tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_LUONG_BAN
+    values:
+    - 480.0
+  reference_sql: SELECT SUM(qty) FROM workspace.pilot_sales_line WHERE sold_on >= DATE '2026-07-01' AND
+    sold_on < DATE '2026-08-01'
+- id: e047
+  question: Số lượng bán tháng 8/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_LUONG_BAN
+    values:
+    - 480.0
+  reference_sql: SELECT SUM(qty) FROM workspace.pilot_sales_line WHERE sold_on >= DATE '2026-08-01' AND
+    sold_on < DATE '2026-09-01'
+- id: e048
+  question: Số lượng bán tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_LUONG_BAN
+    values:
+    - 480.0
+  reference_sql: SELECT SUM(qty) FROM workspace.pilot_sales_line WHERE sold_on >= DATE '2026-09-01' AND
+    sold_on < DATE '2026-10-01'
+- id: e049
+  question: Số lượng bán chi nhánh Hà Nội tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_LUONG_BAN
+    values:
+    - 300.0
+  reference_sql: SELECT SUM(qty) FROM workspace.pilot_sales_line WHERE branch = 'Hà Nội' AND sold_on >=
+    DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e050
+  question: Số lượng bán chi nhánh TP. Hồ Chí Minh tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_LUONG_BAN
+    values:
+    - 150.0
+  reference_sql: SELECT SUM(qty) FROM workspace.pilot_sales_line WHERE branch = 'TP. Hồ Chí Minh' AND
+    sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e051
+  question: Số lượng bán chi nhánh Đà Nẵng tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_LUONG_BAN
+    values:
+    - 30.0
+  reference_sql: SELECT SUM(qty) FROM workspace.pilot_sales_line WHERE branch = 'Đà Nẵng' AND sold_on
+    >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e052
+  question: Số lượng bán nhóm hàng Thực phẩm tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_LUONG_BAN
+    values:
+    - 160.0
+  reference_sql: SELECT SUM(qty) FROM workspace.pilot_sales_line WHERE category = 'Thực phẩm' AND sold_on
+    >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e053
+  question: Số lượng bán nhóm hàng Điện máy tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_LUONG_BAN
+    values:
+    - 160.0
+  reference_sql: SELECT SUM(qty) FROM workspace.pilot_sales_line WHERE category = 'Điện máy' AND sold_on
+    >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e054
+  question: Số lượng bán nhóm hàng Thời trang tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_LUONG_BAN
+    values:
+    - 160.0
+  reference_sql: SELECT SUM(qty) FROM workspace.pilot_sales_line WHERE category = 'Thời trang' AND sold_on
+    >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e055
+  question: Số đơn hàng tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_DON
+    values:
+    - 36.0
+  reference_sql: SELECT COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE sold_on >= DATE
+    '2026-07-01' AND sold_on < DATE '2026-08-01'
+- id: e056
+  question: Số đơn hàng tháng 8/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_DON
+    values:
+    - 36.0
+  reference_sql: SELECT COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE sold_on >= DATE
+    '2026-08-01' AND sold_on < DATE '2026-09-01'
+- id: e057
+  question: Số đơn hàng tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_DON
+    values:
+    - 36.0
+  reference_sql: SELECT COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE sold_on >= DATE
+    '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e058
+  question: Số đơn hàng chi nhánh Hà Nội tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_DON
+    values:
+    - 12.0
+  reference_sql: SELECT COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE branch = 'Hà Nội'
+    AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e059
+  question: Số đơn hàng chi nhánh TP. Hồ Chí Minh tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_DON
+    values:
+    - 12.0
+  reference_sql: SELECT COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE branch = 'TP. Hồ
+    Chí Minh' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e060
+  question: Số đơn hàng chi nhánh Đà Nẵng tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_DON
+    values:
+    - 12.0
+  reference_sql: SELECT COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE branch = 'Đà Nẵng'
+    AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e061
+  question: Số đơn hàng nhóm hàng Thực phẩm tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_DON
+    values:
+    - 12.0
+  reference_sql: SELECT COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE category = 'Thực
+    phẩm' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e062
+  question: Số đơn hàng nhóm hàng Điện máy tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_DON
+    values:
+    - 12.0
+  reference_sql: SELECT COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE category = 'Điện
+    máy' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e063
+  question: Số đơn hàng nhóm hàng Thời trang tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_DON
+    values:
+    - 12.0
+  reference_sql: SELECT COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE category = 'Thời
+    trang' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e064
+  question: Giá trị đơn bình quân tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_DON_TB
+    values:
+    - 19688888.8889
+  reference_sql: SELECT SUM(net_revenue) / COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE
+    sold_on >= DATE '2026-07-01' AND sold_on < DATE '2026-08-01'
+- id: e065
+  question: Giá trị đơn bình quân tháng 8/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_DON_TB
+    values:
+    - 19688888.8889
+  reference_sql: SELECT SUM(net_revenue) / COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE
+    sold_on >= DATE '2026-08-01' AND sold_on < DATE '2026-09-01'
+- id: e066
+  question: Giá trị đơn bình quân tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_DON_TB
+    values:
+    - 19688888.8889
+  reference_sql: SELECT SUM(net_revenue) / COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE
+    sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e067
+  question: Giá trị đơn bình quân chi nhánh Hà Nội tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_DON_TB
+    values:
+    - 36916666.6667
+  reference_sql: SELECT SUM(net_revenue) / COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE
+    branch = 'Hà Nội' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e068
+  question: Giá trị đơn bình quân chi nhánh TP. Hồ Chí Minh tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_DON_TB
+    values:
+    - 18458333.3333
+  reference_sql: SELECT SUM(net_revenue) / COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE
+    branch = 'TP. Hồ Chí Minh' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e069
+  question: Giá trị đơn bình quân chi nhánh Đà Nẵng tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_DON_TB
+    values:
+    - 3691666.6667
+  reference_sql: SELECT SUM(net_revenue) / COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE
+    branch = 'Đà Nẵng' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e070
+  question: Giá trị đơn bình quân nhóm hàng Thực phẩm tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_DON_TB
+    values:
+    - 1066666.6667
+  reference_sql: SELECT SUM(net_revenue) / COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE
+    category = 'Thực phẩm' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e071
+  question: Giá trị đơn bình quân nhóm hàng Điện máy tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_DON_TB
+    values:
+    - 53333333.3333
+  reference_sql: SELECT SUM(net_revenue) / COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE
+    category = 'Điện máy' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e072
+  question: Giá trị đơn bình quân nhóm hàng Thời trang tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_DON_TB
+    values:
+    - 4666666.6667
+  reference_sql: SELECT SUM(net_revenue) / COUNT(DISTINCT order_id) FROM workspace.pilot_sales_line WHERE
+    category = 'Thời trang' AND sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01'
+  note: 'trap 2: revenue-weighted, not the mean of the branch rates'
+- id: e073
+  question: Doanh thu thuần chi nhánh Hà Nội tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 443000000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE branch = 'Hà Nội' AND sold_on
+    >= DATE '2026-07-01' AND sold_on < DATE '2026-08-01'
+- id: e074
+  question: Doanh thu thuần chi nhánh TP. Hồ Chí Minh tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 221500000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE branch = 'TP. Hồ Chí Minh'
+    AND sold_on >= DATE '2026-07-01' AND sold_on < DATE '2026-08-01'
+- id: e075
+  question: Doanh thu thuần chi nhánh Đà Nẵng tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU
+    values:
+    - 44300000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE branch = 'Đà Nẵng' AND
+    sold_on >= DATE '2026-07-01' AND sold_on < DATE '2026-08-01'
+- id: e076
+  question: Biên lợi nhuận gộp chi nhánh Hà Nội tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 32.0
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE branch = 'Hà Nội' AND sold_on >= DATE '2026-07-01' AND sold_on < DATE '2026-08-01'
+- id: e077
+  question: Biên lợi nhuận gộp chi nhánh TP. Hồ Chí Minh tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 32.0
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE branch = 'TP. Hồ Chí Minh' AND sold_on >= DATE '2026-07-01' AND sold_on < DATE '2026-08-01'
+- id: e078
+  question: Biên lợi nhuận gộp chi nhánh Đà Nẵng tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: BIEN_GOP_TY_LE
+    values:
+    - 32.0
+  reference_sql: SELECT SUM(net_revenue - cogs) / SUM(net_revenue) * 100 FROM workspace.pilot_sales_line
+    WHERE branch = 'Đà Nẵng' AND sold_on >= DATE '2026-07-01' AND sold_on < DATE '2026-08-01'
+- id: e079
+  question: Giá bán bình quân tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_BAN_TB
+    values:
+    - 1476666.6667
+  reference_sql: SELECT SUM(net_revenue) / SUM(qty) FROM workspace.pilot_sales_line WHERE sold_on >= DATE
+    '2026-09-01' AND sold_on < DATE '2026-10-01'
+- id: e080
+  question: Doanh thu bình quân ngày bán tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_BQ_NGAY
+    values:
+    - 177200000.0
+  reference_sql: SELECT AVG(d) FROM (SELECT SUM(net_revenue) AS d FROM workspace.pilot_sales_line WHERE
+    sold_on >= DATE '2026-09-01' AND sold_on < DATE '2026-10-01' GROUP BY sold_on) x
+- id: e081
+  question: Tồn kho tháng 5/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TON_KHO
+    values:
+    - 900.0
+  reference_sql: SELECT SUM(qty_on_hand) FROM workspace.pilot_inventory WHERE as_of_date = DATE '2026-05-31'
+    AND branch <> 'Kho Hà Nội'
+- id: e082
+  question: Giá trị tồn kho tháng 5/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_TON_KHO
+    values:
+    - 311400000.0
+  reference_sql: SELECT SUM(qty_on_hand * unit_cost) FROM workspace.pilot_inventory WHERE as_of_date =
+    DATE '2026-05-31' AND branch <> 'Kho Hà Nội'
+- id: e083
+  question: Tồn kho tháng 6/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TON_KHO
+    values:
+    - 900.0
+  reference_sql: SELECT SUM(qty_on_hand) FROM workspace.pilot_inventory WHERE as_of_date = DATE '2026-06-30'
+    AND branch <> 'Kho Hà Nội'
+- id: e084
+  question: Giá trị tồn kho tháng 6/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_TON_KHO
+    values:
+    - 311400000.0
+  reference_sql: SELECT SUM(qty_on_hand * unit_cost) FROM workspace.pilot_inventory WHERE as_of_date =
+    DATE '2026-06-30' AND branch <> 'Kho Hà Nội'
+- id: e085
+  question: Tồn kho tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TON_KHO
+    values:
+    - 900.0
+  reference_sql: SELECT SUM(qty_on_hand) FROM workspace.pilot_inventory WHERE as_of_date = DATE '2026-07-31'
+    AND branch <> 'Kho Hà Nội'
+- id: e086
+  question: Giá trị tồn kho tháng 7/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_TON_KHO
+    values:
+    - 311400000.0
+  reference_sql: SELECT SUM(qty_on_hand * unit_cost) FROM workspace.pilot_inventory WHERE as_of_date =
+    DATE '2026-07-31' AND branch <> 'Kho Hà Nội'
+- id: e087
+  question: Tồn kho tháng 8/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TON_KHO
+    values:
+    - 900.0
+  reference_sql: SELECT SUM(qty_on_hand) FROM workspace.pilot_inventory WHERE as_of_date = DATE '2026-08-31'
+    AND branch <> 'Kho Hà Nội'
+- id: e088
+  question: Giá trị tồn kho tháng 8/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_TON_KHO
+    values:
+    - 311400000.0
+  reference_sql: SELECT SUM(qty_on_hand * unit_cost) FROM workspace.pilot_inventory WHERE as_of_date =
+    DATE '2026-08-31' AND branch <> 'Kho Hà Nội'
+- id: e089
+  question: Tồn kho tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TON_KHO
+    values:
+    - 900.0
+  reference_sql: SELECT SUM(qty_on_hand) FROM workspace.pilot_inventory WHERE as_of_date = DATE '2026-09-30'
+    AND branch <> 'Kho Hà Nội'
+  note: 'trap 3: one month end, never summed, the retired code left out'
+- id: e090
+  question: Giá trị tồn kho tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: GIA_TRI_TON_KHO
+    values:
+    - 311400000.0
+  reference_sql: SELECT SUM(qty_on_hand * unit_cost) FROM workspace.pilot_inventory WHERE as_of_date =
+    DATE '2026-09-30' AND branch <> 'Kho Hà Nội'
+- id: e091
+  question: Công nợ phải thu tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: CONG_NO
+    values:
+    - 430000000.0
+  reference_sql: SELECT SUM(amount - paid) FROM workspace.pilot_receivable WHERE as_of_date = DATE '2026-09-30'
+- id: e092
+  question: Công nợ quá hạn tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: CONG_NO_QUA_HAN
+    values:
+    - 215000000.0
+  reference_sql: SELECT SUM(CASE WHEN due_on < as_of_date THEN amount - paid ELSE 0 END) FROM workspace.pilot_receivable
+    WHERE as_of_date = DATE '2026-09-30'
+- id: e093
+  question: Số hoá đơn còn mở tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_HOA_DON_MO
+    values:
+    - 6.0
+  reference_sql: SELECT SUM(CASE WHEN amount > paid THEN 1 ELSE 0 END) FROM workspace.pilot_receivable
+    WHERE as_of_date = DATE '2026-09-30'
+- id: e094
+  question: Tỷ lệ công nợ quá hạn tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: TY_LE_QUA_HAN
+    values:
+    - 50.0
+  reference_sql: SELECT SUM(CASE WHEN due_on < as_of_date THEN amount - paid ELSE 0 END) / SUM(amount
+    - paid) * 100 FROM workspace.pilot_receivable WHERE as_of_date = DATE '2026-09-30'
+- id: e095
+  question: Số ngày thu tiền tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DSO
+    values:
+    - 18.1998
+  reference_sql: SELECT (SELECT SUM(amount - paid) FROM workspace.pilot_receivable WHERE as_of_date =
+    DATE '2026-09-30') / (SELECT SUM(net_revenue) FROM workspace.pilot_sales_line WHERE sold_on >= DATE
+    '2026-09-01' AND sold_on < DATE '2026-10-01') * 30
+- id: e096
+  question: Vòng quay hàng tồn kho tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: VONG_QUAY_TON_KHO
+    values:
+    - 1.5694
+  reference_sql: SELECT (SELECT SUM(cogs) FROM workspace.pilot_sales_line WHERE sold_on >= DATE '2026-09-01'
+    AND sold_on < DATE '2026-10-01') / (SELECT SUM(qty_on_hand * unit_cost) FROM workspace.pilot_inventory
+    WHERE as_of_date = DATE '2026-09-30' AND branch <> 'Kho Hà Nội')
+- id: e097
+  question: Doanh thu đã chốt tháng 8/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_CHOT
+    values:
+    - 708800000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_period_edition WHERE edition = 'final' AND
+    period_month >= DATE '2026-08-01' AND period_month < DATE '2026-09-01'
+- id: e098
+  question: Doanh thu đã chốt tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_CHOT
+    values:
+    - 708800000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_period_edition WHERE edition = 'final' AND
+    period_month >= DATE '2026-09-01' AND period_month < DATE '2026-10-01'
+  note: 'trap 5: the final edition only'
+- id: e099
+  question: Doanh thu đã chốt nhóm hàng Thực phẩm tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_CHOT
+    values:
+    - 12800000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_period_edition WHERE edition = 'final' AND
+    category = 'Thực phẩm' AND period_month >= DATE '2026-09-01' AND period_month < DATE '2026-10-01'
+- id: e100
+  question: Doanh thu đã chốt nhóm hàng Điện máy tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_CHOT
+    values:
+    - 640000000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_period_edition WHERE edition = 'final' AND
+    category = 'Điện máy' AND period_month >= DATE '2026-09-01' AND period_month < DATE '2026-10-01'
+- id: e101
+  question: Doanh thu đã chốt nhóm hàng Thời trang tháng 9/2026
+  category: correct_result
+  expected:
+    kind: data
+    metric: DOANH_THU_CHOT
+    values:
+    - 56000000.0
+  reference_sql: SELECT SUM(net_revenue) FROM workspace.pilot_period_edition WHERE edition = 'final' AND
+    category = 'Thời trang' AND period_month >= DATE '2026-09-01' AND period_month < DATE '2026-10-01'
+- id: e102
+  question: Số nhân viên tháng 9/2026
+  category: refusal
+  expected:
+    behavior: refuse
+- id: e103
+  question: Chi phí quảng cáo tháng 9/2026
+  category: refusal
+  expected:
+    behavior: refuse
+- id: e104
+  question: Lương bình quân của nhân viên bán hàng
+  category: refusal
+  expected:
+    behavior: refuse
+- id: e105
+  question: Tỷ lệ khách hàng quay lại tháng 9/2026
+  category: refusal
+  expected:
+    behavior: refuse
+- id: e106
+  question: Doanh thu thuần tháng 3/2026
+  category: refusal
+  expected:
+    behavior: refuse
+- id: e107
+  question: Doanh thu thuần tháng 12/2026
+  category: refusal
+  expected:
+    behavior: refuse
+- id: e108
+  question: Giá cổ phiếu của công ty hôm nay
+  category: refusal
+  expected:
+    behavior: refuse
+- id: e109
+  question: Số lượt truy cập website tháng 9/2026
+  category: refusal
+  expected:
+    behavior: refuse
+- id: e110
+  question: Doanh thu thuần theo vùng miền tháng 9/2026
+  category: ask_at_right_time
+  expected:
+    behavior: clarify
+- id: e111
+  question: Giá vốn theo nhà cung cấp tháng 9/2026
+  category: ask_at_right_time
+  expected:
+    behavior: clarify
+- id: e112
+  question: Lãi gộp theo kênh bán tháng 9/2026
+  category: ask_at_right_time
+  expected:
+    behavior: clarify
+- id: e113
+  question: Số đơn hàng theo nhân viên tháng 9/2026
+  category: ask_at_right_time
+  expected:
+    behavior: clarify
+- id: e114
+  question: Biên lợi nhuận gộp theo khách hàng tháng 9/2026
+  category: ask_at_right_time
+  expected:
+    behavior: clarify
+

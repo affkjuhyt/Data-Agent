@@ -276,6 +276,20 @@ semantic-import:  ## import SEMANTIC_FILE as SEMANTIC_AS (dry run unless SEMANTI
 	@$(SEMANTIC_YAML) import - --org "$(SEMANTIC_ORG)" --space "$(SEMANTIC_SPACE)" \
 		--as "$(SEMANTIC_AS)" $(if $(filter 1,$(SEMANTIC_APPLY)),,--dry-run) < "$(SEMANTIC_FILE)"
 
+# R1-09: what each way of writing SQL earns on a Data Space's eval set, with the served model, in
+# the worker pod (worker_agent/sqlgen/ablation.py). Reads as ABLATION_AS; writes only query runs.
+ABLATION_ORG ?=
+ABLATION_SPACE ?=
+ABLATION_AS ?=
+ABLATION_SET ?=
+ABLATION_ARGS ?=
+.PHONY: sqlgen-ablation
+
+sqlgen-ablation:  ## SQL expert ablation on ABLATION_SET (ABLATION_ORG, ABLATION_SPACE, ABLATION_AS)
+	@kubectl -n dataagent-service exec -i deploy/worker-agent -- \
+		python -m services.worker_agent.sqlgen.ablation --org "$(ABLATION_ORG)" \
+		--space "$(ABLATION_SPACE)" --as "$(ABLATION_AS)" --set "$(ABLATION_SET)" $(ABLATION_ARGS)
+
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
 

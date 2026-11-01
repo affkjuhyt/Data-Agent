@@ -29,6 +29,9 @@ pytestmark = [pytest.mark.integration]
 
 MODEL = pathlib.Path(__file__).parents[3] / "deploy" / "docker" / "semantic" / "ds-bh.yaml"
 SEED = pathlib.Path(__file__).parents[3] / "deploy" / "docker" / "sql" / "v3-pilot-seed.sql"
+EVAL_CASES = (
+    pathlib.Path(__file__).parents[3] / "deploy" / "docker" / "eval" / "ds-bh-pilot-cases.yaml"
+)
 SCHEMA = "pilot_r106"
 _AGGS = {"sum": "SUM", "count": "COUNT", "avg": "AVG", "min": "MIN", "max": "MAX"}
 
@@ -424,3 +427,14 @@ def test_the_pilot_has_thirty_verified_queries_each_running_clear_of_the_traps(p
         return {k: float(v) for k, v in _rows(pilot, bound).items()}
 
     assert run(final) == run(lines)
+
+
+def test_every_pilot_eval_answer_is_what_its_reference_sql_gives(pilot: Any) -> None:
+    # R1-12: the expected numbers of the pilot eval set come from these SQL on this data.
+    cases = yaml.safe_load(EVAL_CASES.read_text(encoding="utf-8"))["cases"]
+    numbers = [c for c in cases if c["expected"].get("kind") == "data"]
+    assert len(numbers) >= 90
+    for case in numbers:
+        got = _rows(pilot, case["reference_sql"].replace("workspace.", f"{SCHEMA}."))
+        [(value)] = got.values()
+        assert _close(round(float(value), 4), case["expected"]["values"][0]), case["id"]
