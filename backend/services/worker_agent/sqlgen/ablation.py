@@ -37,6 +37,7 @@ from services.worker_agent.sqlgen.generate import METHODS
 from services.worker_agent.sqlgen.run import explore
 from services.worker_agent.sqlgen.schema import link
 from services.worker_agent.sqlgen.space import load_space
+from services.worker_agent.sqlgen.vote import ANSWER_AT, CANDIDATES, REVIEW_AT
 
 QA_ROLE = "svc_qa"
 EVAL_ROLE = "svc_eval"
@@ -66,6 +67,17 @@ class Summary:
     confidence_right: float | None
     confidence_wrong: float | None
     outcomes: list[Outcome] = field(default_factory=list)
+
+
+def decision_of(decision: str, confidence: float) -> str:
+    """The vote's decision by its share, so a variant of fewer candidates is judged on the bar
+    production uses (4 of 6 answer, 3 of 6 review): vote() counts candidates, and a variant of
+    one way writes two, which could never reach four."""
+    if decision == "failed":
+        return decision
+    if confidence >= ANSWER_AT / CANDIDATES:
+        return "answer"
+    return "review" if confidence >= REVIEW_AT / CANDIDATES else "ask"
 
 
 def close(value: float | None, expected: float) -> bool:
@@ -200,7 +212,8 @@ async def run(
                 run_sql,
                 methods=VARIANTS[v],
             )
-            figures = figures_of(e.columns, e.rows) if e.decision in ("answer", "review") else []
+            decided = decision_of(e.decision, e.confidence)
+            figures = figures_of(e.columns, e.rows) if decided in ("answer", "review") else []
             value = (
                 float(figures[0].value)
                 if len(figures) == 1 and figures[0].value is not None
@@ -210,11 +223,11 @@ async def run(
                 Outcome(
                     str(item.id),
                     text,
-                    e.decision,
+                    decided,
                     round(e.confidence, 4),
                     value,
                     expected,
-                    e.decision in ("answer", "review") and close(value, expected),
+                    decided in ("answer", "review") and close(value, expected),
                 )
             )
     return [summarize(v, found[v]) for v in variants]

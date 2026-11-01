@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from services.worker_agent.llm import Reply
-from services.worker_agent.sqlgen.ablation import VARIANTS, Outcome, close, summarize
+from services.worker_agent.sqlgen.ablation import VARIANTS, Outcome, close, decision_of, summarize
 from services.worker_agent.sqlgen.generate import METHODS, candidates
 from services.worker_agent.sqlgen.schema import Linked
 
@@ -58,3 +58,11 @@ async def test_a_variant_asks_only_for_its_own_way_twice() -> None:
     written = await candidates(model, "q", Linked([], [], []), "postgres", [], ("divide",))
     assert [c.method for c in written] == ["divide", "divide"]
     assert len(model.systems) == 2
+
+
+def test_a_variant_is_judged_on_its_share_of_the_vote() -> None:
+    # Two candidates that agree are as sure as six that do; the production bar is 4/6 and 3/6.
+    assert decision_of("ask", 1.0) == "answer"
+    assert decision_of("ask", 0.5) == "review"
+    assert decision_of("answer", 4 / 6) == "answer" and decision_of("ask", 2 / 6) == "ask"
+    assert decision_of("failed", 0.0) == "failed"
