@@ -30,6 +30,11 @@ then `metrics`. Where our model differs, the file says it our way:
         dimensions: [kenh]              # the cuts the owner allows (BR-81)
         filters: [{dimension: kenh, op: "!=", values: [NOI_BO]}]
 
+`synonyms` are the other ways people say a metric, a dimension or a dimension's value
+(`{phrase: revenue, metric: DOANH_THU}`, `{phrase: USA, dimension: quoc_gia, value: United States}`):
+imported pending_review, each a proposal for review, never active; the export writes the active
+ones.
+
 A table (`model`, a relationship's `from` and `to`) is a dataset of this Data Space by its id, or
 by `schema.table` (the table alone when it has no schema) when one dataset only has that name:
 two sources of one space may each have `public.orders`, and a name that fits both is refused with
@@ -70,7 +75,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context
 from libs.dataagent_db.models import org as org_models
 from services.api.kernel.auth import Principal
-from services.api.modules.context.common import ROLE, audit, emit, now
+from services.api.modules.context.common import ROLE, audit, emit, normalize, now
 
 FORMAT_VERSION = 1
 _CODE = r"^[A-Za-z_][A-Za-z0-9_]{0,63}$"
@@ -137,11 +142,22 @@ class MetricDef(_Item):
     legal_basis: str | None = None
 
 
+class SynonymDef(_Item):
+    """Another way people say a metric, a dimension or a dimension's value."""
+
+    phrase: str = Field(min_length=1, max_length=200)
+    metric: str | None = None
+    dimension: str | None = None
+    # With `dimension`: the value code the phrase names ("USA" for "United States").
+    value: str | None = None
+
+
 class SemanticFile(_Item):
     version: Literal[1] = 1
     semantic_models: list[SemanticModelDef] = Field(default_factory=list)
     relationships: list[RelationshipDef] = Field(default_factory=list)
     metrics: list[MetricDef] = Field(default_factory=list)
+    synonyms: list[SynonymDef] = Field(default_factory=list)
 
 
 class ImportProblem(ValueError):
@@ -370,12 +386,38 @@ async def export_model(session: AsyncSession, data_space: uuid.UUID) -> dict[str
         if v.legal_basis:
             item["legal_basis"] = v.legal_basis
         metrics.append(item)
-    return {
+    metric_code = {
+        m.id: m.code
+        for m in (
+            await session.scalars(
+                select(context.Metric).where(context.Metric.data_space_id == data_space)
+            )
+        ).all()
+    }
+    synonyms = []
+    for syn in (
+        await session.scalars(
+            select(context.Synonym)
+            .where(context.Synonym.data_space_id == data_space, context.Synonym.status == "active")
+            .order_by(context.Synonym.phrase)
+        )
+    ).all():
+        if syn.target_kind == "metric" and syn.target_id in metric_code:
+            synonyms.append({"phrase": syn.phrase, "metric": metric_code[syn.target_id]})
+        elif syn.target_kind in ("dimension", "value") and syn.target_id in dim_code:
+            entry = {"phrase": syn.phrase, "dimension": dim_code[syn.target_id]}
+            if syn.target_kind == "value" and syn.target_value:
+                entry["value"] = syn.target_value
+            synonyms.append(entry)
+    out: dict[str, Any] = {
         "version": FORMAT_VERSION,
         "semantic_models": models,
         "relationships": relationships,
         "metrics": metrics,
     }
+    if synonyms:
+        out["synonyms"] = synonyms
+    return out
 
 
 def dump(model: dict[str, Any]) -> str:
@@ -425,6 +467,17 @@ def _check(file: SemanticFile, datasets: Datasets, known: set[str]) -> None:
                 f"metrics.{metric.name}: time_dimension {metric.time_dimension} không phải chiều"
                 " thời gian của tệp"
             )
+    metric_names = {m.name for m in file.metrics}
+    for syn in file.synonyms:
+        where = f"synonyms.{syn.phrase}"
+        if (syn.metric is None) == (syn.dimension is None):
+            problems.append(f"{where}: nêu đúng một trong metric hoặc dimension")
+        elif syn.metric is not None and syn.metric not in metric_names:
+            problems.append(f"{where}: metric {syn.metric} không có trong tệp")
+        elif syn.dimension is not None and syn.dimension not in dims:
+            problems.append(f"{where}: chiều {syn.dimension} không có trong tệp")
+        if syn.value is not None and syn.dimension is None:
+            problems.append(f"{where}: value đi cùng dimension")
     if problems:
         raise ImportProblem(problems)
 
@@ -685,6 +738,61 @@ async def import_model(
             created_by=principal.user_id,
         )
         report.count("metric", "updated")
+
+    # A synonym changes what a question means, so it is a proposal like a relationship: written
+    # pending_review with the event the API's own create emits, never active (BR-100).
+    for syn in file.synonyms:
+        if syn.metric is not None:
+            target = await by_code(context.Metric, syn.metric)
+            kind, target_id = "metric", target.id if target is not None else None
+        else:
+            kind = "value" if syn.value is not None else "dimension"
+            target_id = dim_ids.get(str(syn.dimension))
+        if target_id is None:
+            continue
+        norm = normalize(syn.phrase)
+        found = await session.scalar(
+            select(context.Synonym.id).where(
+                context.Synonym.data_space_id == data_space,
+                context.Synonym.phrase_norm == norm,
+                context.Synonym.target_kind == kind,
+                context.Synonym.target_id == target_id,
+                context.Synonym.target_value.is_(None)
+                if syn.value is None
+                else context.Synonym.target_value == syn.value,
+                context.Synonym.status != "rejected",
+            )
+        )
+        if found is not None:
+            report.count("synonym", "unchanged")
+            continue
+        row = context.Synonym(
+            id=uuid7(),
+            org_id=principal.org_id,
+            data_space_id=data_space,
+            phrase=syn.phrase,
+            phrase_norm=norm,
+            target_kind=kind,
+            target_id=target_id,
+            target_value=syn.value,
+            origin="manual",
+            status="pending_review",
+            created_by=principal.user_id,
+            **who,
+        )
+        session.add(row)
+        emit(
+            session,
+            principal,
+            "synonym",
+            row.id,
+            "synonym.created",
+            synonym_id=row.id,
+            data_space_id=data_space,
+            status=row.status,
+            glossary_term_id=None,
+        )
+        report.count("synonym", "created")
     audit(
         session,
         principal,

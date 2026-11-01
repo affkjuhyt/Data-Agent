@@ -331,7 +331,13 @@ async def test_the_adventureworks_model_imports_whole(seed: Seed) -> None:
     assert report.created["semantic_model"] == len(model["semantic_models"])
     assert report.created["metric"] == len(model["metrics"])
     assert report.created["relationship"] == len(model["relationships"])
+    # The demo's synonyms are proposals: every one pending review, none active (BR-100).
+    assert report.created["synonym"] == len(model["synonyms"])
+    assert space.all(
+        "SELECT status, count(*) FROM context.synonym WHERE data_space_id = %s GROUP BY status"
+    ) == [("pending_review", len(model["synonyms"]))]
     exported = await space.export()
+    assert "synonyms" not in exported  # the export writes the active ones only
     assert sorted(m["name"] for m in exported["metrics"]) == sorted(
         m["name"] for m in model["metrics"]
     )

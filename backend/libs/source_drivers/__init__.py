@@ -70,6 +70,23 @@ def _rows(cursor: Any) -> Rows:
     return columns, [list(row) for row in cursor.fetchall()]
 
 
+def _mysql_tls(mode: str, ca: Any) -> dict[str, Any]:
+    """PyMySQL's ssl options for `mode`. PyMySQL checks nothing unless it is given a CA (no
+    certificate and no host name), so a verify mode without conn_options.ssl_ca uses the system's
+    CA bundle, and is refused when the host has none. `require` encrypts without checking only
+    when no CA is configured; a CA given is always checked."""
+    cafile = str(ca) if ca else ssl.get_default_verify_paths().cafile
+    if mode == "require" and not ca:
+        return {"verify_mode": ssl.CERT_NONE, "check_hostname": False}
+    if not cafile:
+        raise DriverError("mysql TLS verification needs conn_options.ssl_ca on this host")
+    return {
+        "ca": cafile,
+        "verify_mode": ssl.CERT_REQUIRED,
+        "check_hostname": mode == "verify-full",
+    }
+
+
 def mysql(source: Source, user: str, password: str, sql: str, timeout_s: int) -> Rows:
     """`sql` in a READ ONLY transaction (rolled back), in the source's schema when it names one."""
     try:
@@ -89,13 +106,7 @@ def mysql(source: Source, user: str, password: str, sql: str, timeout_s: int) ->
         }
         mode = ssl_mode(source)
         if mode != "disable":
-            # The system's CAs unless conn_options names one; `require` encrypts without checking.
-            tls: dict[str, Any] = {"check_hostname": mode == "verify-full"}
-            if options.get("ssl_ca"):
-                tls["ca"] = str(options["ssl_ca"])
-            if mode == "require":
-                tls["verify_mode"] = ssl.CERT_NONE
-            connect["ssl"] = tls
+            connect["ssl"] = _mysql_tls(mode, options.get("ssl_ca"))
         conn = pymysql.connect(**connect)
         try:
             with conn.cursor() as cursor:

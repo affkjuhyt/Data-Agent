@@ -377,3 +377,76 @@ metrics:
     decimals: 0
     dimensions: [tai_khoan_ke_toan, loai_tai_khoan, nhom_phong_ban]
     filters: [{dimension: kich_ban_tai_chinh, op: "=", values: [Budget]}]
+
+# Other ways people ask (GEN demo context): the metrics and cuts in Vietnamese and English, and the
+# Vietnamese names of AdventureWorks' English values. Imported pending_review, each a proposal a
+# steward approves; a value synonym matches once the profile scan has filled the value index.
+synonyms:
+  - {phrase: doanh số, metric: DOANH_THU}
+  - {phrase: tổng doanh thu, metric: DOANH_THU}
+  - {phrase: revenue, metric: DOANH_THU}
+  - {phrase: sales, metric: DOANH_THU}
+  - {phrase: total sales, metric: DOANH_THU}
+  - {phrase: doanh thu online, metric: DOANH_THU_INTERNET}
+  - {phrase: doanh thu trực tuyến, metric: DOANH_THU_INTERNET}
+  - {phrase: internet sales, metric: DOANH_THU_INTERNET}
+  - {phrase: online revenue, metric: DOANH_THU_INTERNET}
+  - {phrase: doanh thu bán sỉ, metric: DOANH_THU_DAI_LY}
+  - {phrase: reseller sales, metric: DOANH_THU_DAI_LY}
+  - {phrase: lợi nhuận gộp internet, metric: LAI_GOP_INTERNET}
+  - {phrase: gross profit, metric: LAI_GOP_INTERNET}
+  - {phrase: biên lợi nhuận, metric: BIEN_GOP_INTERNET}
+  - {phrase: biên gộp, metric: BIEN_GOP_INTERNET}
+  - {phrase: gross margin, metric: BIEN_GOP_INTERNET}
+  - {phrase: số đơn hàng, metric: SO_DON_INTERNET}
+  - {phrase: số đơn, metric: SO_DON_INTERNET}
+  - {phrase: orders, metric: SO_DON_INTERNET}
+  - {phrase: number of orders, metric: SO_DON_INTERNET}
+  - {phrase: giá trị đơn trung bình, metric: GIA_TRI_DON_TB_INTERNET}
+  - {phrase: average order value, metric: GIA_TRI_DON_TB_INTERNET}
+  - {phrase: aov, metric: GIA_TRI_DON_TB_INTERNET}
+  - {phrase: số lượng bán, metric: SO_LUONG_BAN_INTERNET}
+  - {phrase: units sold, metric: SO_LUONG_BAN_INTERNET}
+  - {phrase: hàng tồn, metric: TON_KHO}
+  - {phrase: inventory, metric: TON_KHO}
+  - {phrase: stock, metric: TON_KHO}
+  - {phrase: inventory value, metric: GIA_TRI_TON_KHO}
+  - {phrase: sales quota, metric: CHI_TIEU_DOANH_SO}
+  - {phrase: chỉ tiêu, metric: CHI_TIEU_DOANH_SO}
+  - {phrase: ngân sách, metric: TAI_CHINH_NGAN_SACH}
+  - {phrase: budget, metric: TAI_CHINH_NGAN_SACH}
+  - {phrase: số thực tế, metric: TAI_CHINH_THUC_TE}
+  - {phrase: actual, metric: TAI_CHINH_THUC_TE}
+  - {phrase: product, dimension: ten_san_pham}
+  - {phrase: mặt hàng, dimension: ten_san_pham}
+  - {phrase: danh mục, dimension: nhom_hang}
+  - {phrase: nhóm hàng, dimension: nhom_hang}
+  - {phrase: category, dimension: nhom_hang}
+  - {phrase: subcategory, dimension: tieu_nhom}
+  - {phrase: region, dimension: khu_vuc}
+  - {phrase: territory, dimension: vung}
+  - {phrase: quốc gia, dimension: quoc_gia_khach}
+  - {phrase: country, dimension: quoc_gia_khach}
+  - {phrase: city, dimension: thanh_pho}
+  - {phrase: thành phố, dimension: thanh_pho}
+  - {phrase: reseller, dimension: ten_dai_ly}
+  - {phrase: promotion, dimension: chuong_trinh_km}
+  - {phrase: gender, dimension: gioi_tinh}
+  - {phrase: education, dimension: hoc_van}
+  - {phrase: occupation, dimension: nghe_nghiep}
+  - {phrase: Mỹ, dimension: quoc_gia_khach, value: United States}
+  - {phrase: Hoa Kỳ, dimension: quoc_gia_khach, value: United States}
+  - {phrase: USA, dimension: quoc_gia_khach, value: United States}
+  - {phrase: Úc, dimension: quoc_gia_khach, value: Australia}
+  - {phrase: Đức, dimension: quoc_gia_khach, value: Germany}
+  - {phrase: Pháp, dimension: quoc_gia_khach, value: France}
+  - {phrase: Vương quốc Anh, dimension: quoc_gia_khach, value: United Kingdom}
+  - {phrase: UK, dimension: quoc_gia_khach, value: United Kingdom}
+  - {phrase: Ca-na-đa, dimension: quoc_gia_khach, value: Canada}
+  - {phrase: xe đạp, dimension: nhom_hang, value: Bikes}
+  - {phrase: phụ tùng, dimension: nhom_hang, value: Components}
+  - {phrase: quần áo, dimension: nhom_hang, value: Clothing}
+  - {phrase: phụ kiện, dimension: nhom_hang, value: Accessories}
+  - {phrase: Bắc Mỹ, dimension: khu_vuc, value: North America}
+  - {phrase: Châu Âu, dimension: khu_vuc, value: Europe}
+  - {phrase: Thái Bình Dương, dimension: khu_vuc, value: Pacific}
