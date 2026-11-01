@@ -14,6 +14,7 @@ COPY backend/libs/dataagent_db/ ./libs/dataagent_db/
 COPY backend/libs/sql_guard/ ./libs/sql_guard/
 COPY backend/libs/cron/ ./libs/cron/
 COPY backend/libs/tabular/ ./libs/tabular/
+COPY backend/libs/language/ ./libs/language/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/api/ ./services/api/
 USER app

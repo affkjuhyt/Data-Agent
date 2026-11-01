@@ -163,6 +163,23 @@ describe('dataAnswer', () => {
     ]);
   });
 
+  it('shows a condition on a number as its own chip', () => {
+    const { reading } = readPlan({
+      chips: [
+        { kind: 'metric', value: 'DU_NO', label: 'Dư nợ' },
+        {
+          kind: 'condition',
+          value: '{"dimension": "so_du", "op": ">", "values": [1000000000]}',
+          label: 'số dư trên 1 tỷ',
+        },
+      ],
+    });
+    expect(reading.map((c) => [c.label, c.value])).toEqual([
+      ['Chỉ số', 'Dư nợ'],
+      ['Điều kiện', 'số dư trên 1 tỷ'],
+    ]);
+  });
+
   it('AC-01-04-07 reads one chip per plan chip, inherited ones marked, and the step awaiting a yes', () => {
     const { reading, proposal } = readPlan({
       chips: [

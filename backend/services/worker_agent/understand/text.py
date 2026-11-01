@@ -1,44 +1,30 @@
-"""Vietnamese text as the Understander matches it (tab 5 G5.1): normalised form and periods.
+"""A question's text as the Understander matches it (tab 5 G5.1): normalised form and periods.
 
-`norm` is the matching form of a phrase: NFC, lower case, accents removed (đ → d), punctuation
-to spaces, whitespace collapsed. context.synonym.phrase_norm, glossary_term.term_norm and
-value_index.label_norm hold the same form, so a question matches whichever way it was typed.
+`norm` is the matching form of a phrase (libs/language, the api's too): NFC, lower case, accents
+removed (đ → d), punctuation to spaces, whitespace collapsed. context.synonym.phrase_norm,
+glossary_term.term_norm and value_index.label_norm hold the same form, so a question matches
+whichever way it was typed.
 
 `find_period` reads the period a question names, relative to `today` (the question's as_of or the
-day it was asked): a month, a quarter, a year, a day, "this/last" week, month, quarter and year,
-and a fiscal year or quarter ("năm tài chính 2026", "FY2026", "quý 1 năm tài chính 2026") on the
-Data Space's calendar (GEN-21). A plain "năm", "quý" is the calendar's: only the words "tài chính"
-or FY name the fiscal one. It returns the span it read and the half-open date range; None when
-the question names no period.
+day it was asked), in any language pack (understand/packs, GEN-31): an ISO date, month or quarter
+first, then each pack's words: a month, a quarter, a year, a day, "this/last" week, month,
+quarter and year, and a fiscal year or quarter on the Data Space's calendar (GEN-21). A plain year
+or quarter is the calendar's: only the words for "fiscal" name the fiscal one. It returns the span
+it read and the half-open date range; None when the question names no period.
 """
 
 from __future__ import annotations
 
-import calendar
 import datetime
 import re
-import unicodedata
 from dataclasses import dataclass
 
 from libs import clock
+from libs.language import fold, norm
+from services.worker_agent.understand.packs import PACKS
+from services.worker_agent.understand.packs.base import FoundPeriod, iso_period
 
-_ROMAN = {"i": 1, "ii": 2, "iii": 3, "iv": 4}
-
-
-def norm(text: str) -> str:
-    text = unicodedata.normalize("NFC", text).lower().replace("đ", "d")
-    stripped = "".join(
-        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
-    )
-    return " ".join(re.sub(r"[^\w%/]+", " ", stripped).split())
-
-
-@dataclass(frozen=True)
-class FoundPeriod:
-    start: datetime.date  # inclusive
-    end: datetime.date  # exclusive
-    label: str  # as written in the chip, e.g. "tháng 9/2026"
-    span: str  # the normalised words it was read from
+__all__ = ["FoundPeriod", "KnowledgeHint", "find_knowledge_hint", "find_period", "norm", "words_of"]
 
 
 @dataclass(frozen=True)
@@ -56,125 +42,24 @@ class KnowledgeHint:
 
 def find_knowledge_hint(question: str) -> KnowledgeHint | None:
     text = norm(question)
-    # Keep the vocabulary deliberately narrow.  Ambiguous words such as “cũ” must not silently
-    # change the point-in-time semantics of a question.
-    for phrase in (
-        "nhu da nop",
-        "so da nop",
-        "so da cong bo",
-        "ky da chot",
-        "nhu da chot",
-    ):
-        if re.search(rf"\b{re.escape(phrase)}\b", text):
-            return KnowledgeHint("period_close", phrase)
-    for phrase in ("theo du lieu hien tai", "tinh tren du lieu hien tai"):
-        if re.search(rf"\b{re.escape(phrase)}\b", text):
-            return KnowledgeHint("latest", phrase)
-    return None
-
-
-def _month(year: int, month: int) -> tuple[datetime.date, datetime.date]:
-    start = datetime.date(year, month, 1)
-    return start, start + datetime.timedelta(days=calendar.monthrange(year, month)[1])
-
-
-def _quarter(year: int, q: int) -> tuple[datetime.date, datetime.date]:
-    start = datetime.date(year, 3 * (q - 1) + 1, 1)
-    end = datetime.date(year + 1, 1, 1) if q == 4 else datetime.date(year, 3 * q + 1, 1)
-    return start, end
-
-
-def _shift_month(day: datetime.date, by: int) -> tuple[int, int]:
-    index = day.year * 12 + day.month - 1 + by
-    return index // 12, index % 12 + 1
-
-
-_FISCAL = r"(?:nam tai chinh|fy)\s?(\d{4})"
-
-
-def _fiscal_period(t: str, today: datetime.date, cal: clock.Calendar) -> FoundPeriod | None:
-    if m := re.search(rf"\b(?:quy (\d|i{{1,3}}|iv)|q([1-4])) {_FISCAL}\b", t):
-        q = int(m.group(2) or (m.group(1) if m.group(1).isdigit() else _ROMAN[m.group(1)]))
-        if 1 <= q <= 4:
-            number = int(m.group(3))
-            start, end = clock.fiscal_quarter(number, q, cal)
-            return FoundPeriod(start, end, f"quý {q} FY{number}", m.group(0))
-    if m := re.search(rf"\b{_FISCAL}\b", t):
-        number = int(m.group(1))
-        start, end = clock.fiscal_year(number, cal)
-        return FoundPeriod(start, end, f"FY{number}", m.group(0))
-    for words, by in (("nam tai chinh nay", 0), ("nam tai chinh truoc", -1)):
-        if re.search(rf"\b{words}\b", t):
-            number = clock.fiscal_year_of(today, cal) + by
-            start, end = clock.fiscal_year(number, cal)
-            return FoundPeriod(start, end, f"FY{number}", words)
+    # The period close first, in every pack: "as filed" outranks "on current data".
+    for wanted in ("period_close", "latest"):
+        for pack in PACKS:
+            for phrase, mode in pack.knowledge:
+                if mode == wanted and re.search(rf"\b{re.escape(phrase)}\b", text):
+                    return KnowledgeHint(mode, phrase)
     return None
 
 
 def find_period(
     question: str, today: datetime.date, cal: clock.Calendar = clock.DEFAULT
 ) -> FoundPeriod | None:
-    t = norm(question)
-    year_of = lambda y: int(y) if y else today.year  # noqa: E731
-
-    if found := _fiscal_period(t, today, cal):
+    if found := iso_period(fold(question)):
         return found
-
-    if m := re.search(r"\bngay (\d{1,2})/(\d{1,2})/(\d{4})\b", t) or re.search(
-        r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b", t
-    ):
-        d = datetime.date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
-        return FoundPeriod(d, d + datetime.timedelta(days=1), d.strftime("%d/%m/%Y"), m.group(0))
-    if m := re.search(r"\bthang (\d{1,2})(?:\s*/\s*|\s+nam\s+)(\d{4})\b", t) or re.search(
-        r"\bthang (\d{1,2})\b(?!\s*/)", t
-    ):
-        month, year = int(m.group(1)), year_of(m.group(2) if m.lastindex == 2 else None)
-        if 1 <= month <= 12:
-            start, end = _month(year, month)
-            return FoundPeriod(start, end, f"tháng {month}/{year}", m.group(0))
-    if m := re.search(r"\bquy (\d|i{1,3}|iv)(?:\s*/\s*|\s+nam\s+)?(\d{4})?\b", t):
-        q = int(m.group(1)) if m.group(1).isdigit() else _ROMAN[m.group(1)]
-        if 1 <= q <= 4:
-            year = year_of(m.group(2))
-            start, end = _quarter(year, q)
-            return FoundPeriod(start, end, f"quý {q}/{year}", m.group(0))
-    if m := re.search(r"\bnam (\d{4})\b", t):
-        y = int(m.group(1))
-        return FoundPeriod(
-            datetime.date(y, 1, 1), datetime.date(y + 1, 1, 1), f"năm {y}", m.group(0)
-        )
-
-    relative = (
-        ("thang nay", 0, "month"),
-        ("thang truoc", -1, "month"),
-        ("quy nay", 0, "quarter"),
-        ("quy truoc", -1, "quarter"),
-        ("nam nay", 0, "year"),
-        ("nam ngoai", -1, "year"),
-        ("nam truoc", -1, "year"),
-    )
-    for words, by, unit in relative:
-        if re.search(rf"\b{words}\b", t):
-            if unit == "month":
-                y, mo = _shift_month(today, by)
-                start, end = _month(y, mo)
-                return FoundPeriod(start, end, f"tháng {mo}/{y}", words)
-            if unit == "quarter":
-                q, y = (today.month - 1) // 3 + 1, today.year
-                q, y = (q - 1 + by) % 4 + 1, y + (q - 1 + by) // 4
-                start, end = _quarter(y, q)
-                return FoundPeriod(start, end, f"quý {q}/{y}", words)
-            y = today.year + by
-            return FoundPeriod(
-                datetime.date(y, 1, 1), datetime.date(y + 1, 1, 1), f"năm {y}", words
-            )
-    for words, by in (("tuan nay", 0), ("tuan truoc", -1)):
-        if re.search(rf"\b{words}\b", t):
-            start, end = clock.week_of(today + datetime.timedelta(weeks=by), cal)
-            last = end - datetime.timedelta(days=1)
-            return FoundPeriod(start, end, f"tuần {start:%d/%m} đến {last:%d/%m/%Y}", words)
-    if re.search(r"\bhom nay\b", t):
-        return FoundPeriod(today, today + datetime.timedelta(days=1), "hôm nay", "hom nay")
+    t = norm(question)
+    for pack in PACKS:
+        if found := pack.periods(t, fold(question), today, cal):
+            return found
     return None
 
 

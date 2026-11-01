@@ -231,6 +231,8 @@ const CHIP_LABEL: Record<string, string> = {
   compare: 'So sánh',
   // "tỷ trọng", "luỹ kế", "từ đầu năm": the analysis over the metric (worker semantic/analysis.py).
   analysis: 'Phép tính',
+  // GEN-22: "giá trị trên 1 tỷ", a condition on a number dimension; it changes the figure.
+  condition: 'Điều kiện',
 };
 
 interface PlanWire {

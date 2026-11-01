@@ -26,6 +26,7 @@ from __future__ import annotations
 import datetime
 import decimal
 import hashlib
+import json
 import logging
 import os
 import re
@@ -77,7 +78,9 @@ from services.worker_agent.sqlgen.answer import answer_by_sql, answer_verified_f
 from services.worker_agent.understand import llm_reader
 from services.worker_agent.understand.analysis import TO_DATE, find_analysis
 from services.worker_agent.understand.comparison import find_comparison
+from services.worker_agent.understand.condition import find_conditions, numeric_dimensions
 from services.worker_agent.understand.grain import GRAIN_LABELS, find_grain
+from services.worker_agent.understand.packs import PACKS
 from services.worker_agent.understand.resolver import (
     Understanding,
     follow_up,
@@ -94,7 +97,6 @@ RUNTIME_VERSION = "worker-agent-r1"
 QUERYABLE = ("active", "testing")
 INTERNAL_WORKSPACE = "internal://workspace"
 # "Vì sao NPL tăng?": the question asks what moved, which the decomposition skill answers.
-_WHY = re.compile(r"\b(?:vi sao|tai sao|nguyen nhan|ly do|do dau)\b")
 
 # Trust labels of tab 5 G5.3 / G5.16: what the answer says about where its numbers come from.
 STANDARD = "Theo chỉ số chuẩn"
@@ -480,6 +482,34 @@ def _compare_chip(compare_to: str, period: c.Period | None) -> dict[str, object]
     }
 
 
+def _condition_chip(condition: c.Filter, label: str) -> dict[str, object]:
+    """A condition on a number ("giá trị trên 1 tỷ") as a plan chip; an edited plan keeps it."""
+    return {
+        "kind": "condition",
+        "value": json.dumps(
+            {"dimension": condition.dimension, "op": condition.op, "values": list(condition.values)}
+        ),
+        "label": label,
+        "source": "default",
+        "confidence": 1.0,
+    }
+
+
+def _conditions_of(chips: list[dict[str, Any]]) -> list[tuple[c.Filter, str]]:
+    """The conditions an edited plan keeps; one the compiler cannot read is dropped from the
+    edit with the rest of what it cannot read (from_chips), never compiled."""
+    out: list[tuple[c.Filter, str]] = []
+    for chip in chips:
+        if chip.get("kind") != "condition":
+            continue
+        try:
+            raw = json.loads(str(chip.get("value")))
+            out.append((c.filter_of(raw), str(chip.get("label") or "")))
+        except (ValueError, TypeError, c.CompileError):
+            continue
+    return out
+
+
 def _grain_chip(grain: str) -> dict[str, object]:
     """The grain of a time cut as a plan chip; an edited plan keeps it (from_chips ignores it)."""
     return {
@@ -832,6 +862,21 @@ async def _understand_and_plan(
             ),
             None,
         )
+        # GEN-22/31: "giá trị trên 1 tỷ" on a number dimension, taken out like an analysis.
+        conditions_found = (
+            find_conditions(asked, numeric_dimensions(layer.layer.dimensions))
+            if edited is None
+            else None
+        )
+        if conditions_found is not None:
+            asked = conditions_found.rest
+        conditions = (
+            [(f.condition, f.label) for f in conditions_found.conditions]
+            if conditions_found is not None
+            else _conditions_of(list(edited.chips or []))
+            if edited is not None
+            else []
+        )
         analysis_kind, analysis_unit = (
             (analysis_found.kind, analysis_found.unit)
             if analysis_found is not None
@@ -973,6 +1018,7 @@ async def _understand_and_plan(
                 version,
                 group_by=u.group_by,
                 filters=u.filters,
+                conditions=[condition for condition, _ in conditions],
                 period=c.Period(u.period.start, u.period.end) if u.period else None,
                 grain=grain,
                 top_n=u.top_n,
@@ -991,7 +1037,9 @@ async def _understand_and_plan(
                 )
 
         explain_by = (
-            _explain_cut(u, layer) if problem is None and _WHY.search(norm(question.text)) else None
+            _explain_cut(u, layer)
+            if problem is None and any(p.why.search(norm(question.text)) for p in PACKS)
+            else None
         )
         period_close_id: uuid.UUID | None = None
         period_rows: list[list[Any]] | None = None
@@ -1145,6 +1193,7 @@ async def _understand_and_plan(
                         else []
                     )
                     + ([_grain_chip(grain)] if grain is not None else [])
+                    + [_condition_chip(condition, label) for condition, label in conditions]
                     + (
                         [_analysis_chip(analysis_kind, analysis_unit)]
                         if analysis_kind is not None

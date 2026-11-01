@@ -21,20 +21,37 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from libs import clock
+from services.worker_agent.understand.packs import PACKS
 from services.worker_agent.understand.text import FoundPeriod, find_period, norm
 from services.worker_agent.understand.value_retrieval import sem_value_retrieval, value_targets
 
 PROCEED_AT = 0.8
 MAX_OPTIONS = 3
-# "theo X" asks for a cut along X ("nợ xấu theo vùng").
-_BY = re.compile(r"\b(?:theo|tung|moi|chia theo)\s+")
-_SUPERLATIVE = re.compile(r"\b(?:nhieu nhat|cao nhat|it nhat|thap nhat)\b")
-_RANK = re.compile(r"\b(?:top\s*)?(\d{1,3})\b.*?\b(?:nhieu nhat|cao nhat|it nhat|thap nhat)\b")
-# The words after "theo" that no phrase placed: up to three, before the next placed phrase.
-# "theo kỳ …" ("theo kỳ được hỏi") speaks of the period, which find_period reads, not of a cut.
-# Only "theo": without accents "moi" is both "mỗi" (each) and "mới" (new, "mới nhất") and "tung"
-# is not only "từng", so they ask for a cut only when a dimension's name follows (_BY above).
-_UNPLACED_CUT = re.compile(r"\b(?:chia )?theo\s+(?!ky\b)([^#\s]+(?:\s+[^#\s]+){0,2})")
+# The language packs' words (understand/packs, GEN-31): "theo X" or "by X" asks for a cut along X
+# ("nợ xấu theo vùng"); the words after it that no phrase placed are a cut nothing names.
+
+
+def _ranking(text: str) -> tuple[int | None, bool]:
+    """The count a question ranks to and whether it asks for the bottom: "top 5 … cao nhất",
+    "bottom 3"; a superlative with no count asks for the one member at the top."""
+    for pack in PACKS:
+        if m := pack.rank.search(text):
+            return int(m.group(1)), bool(pack.ascending.search(m.group(0)))
+    for pack in PACKS:
+        if m := pack.superlative.search(text):
+            return 1, bool(pack.ascending.search(m.group(0)))
+    return None, False
+
+
+def _cut_word_before(text: str) -> bool:
+    return any(pack.by.search(text) for pack in PACKS)
+
+
+def _unplaced_cut(taken: str) -> str | None:
+    for pack in PACKS:
+        if cut := pack.unplaced_cut.search(taken):
+            return cut.group(1).strip()
+    return None
 
 
 @dataclass(frozen=True)
@@ -133,9 +150,7 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
     if period:
         text = text.replace(period.span, " ")
     # Read after the period is taken out: in "tháng 9 cao nhất" the 9 is a month, not a top 9.
-    # A superlative with no count asks for the one member at the top.
-    ranking = _RANK.search(text) or _SUPERLATIVE.search(text)
-    top_n = (int(ranking.group(1)) if ranking.re is _RANK else 1) if ranking else None
+    top_n, ascending = _ranking(text)
     metrics = {str(m.metric_id): m for m in vocab.metrics}
     dims = {str(d.dimension_id): d for d in vocab.dimensions}
     # Value hits come from sem_value_retrieval. The phrase pass still decides where a
@@ -144,6 +159,7 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
         (hit.dimension_code, hit.value_code): hit for hit in sem_value_retrieval(text, vocab.values)
     }
 
+    indexed = {(v.dimension_code, v.value_code): v.label for v in vocab.values}
     hits: list[tuple[tuple[str, ...], float, int]] = []  # target, score, position
     taken = text
     for phrase, target, score in _phrases(vocab):
@@ -161,19 +177,22 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
             dim = dims[target[1]]
             # A dimension named after "theo" is a cut; named alone it adds nothing to compile.
             if (
-                _BY.search(text[max(0, pos - 12) : pos]) or top_n is not None
+                _cut_word_before(text[max(0, pos - 12) : pos]) or top_n is not None
             ) and dim.code not in out.group_by:
                 out.group_by.append(dim.code)
                 out.chips.append(Chip("dimension", dim.code, dim.name, "default", score))
         elif target[0] == "value":
             dim_code, value = target[1], target[2]
             hit = retrieved.get((dim_code, value))
-            if hit is None:
+            # An approved synonym of a value ("Europe" for "Châu Âu") names it as its label
+            # does; a value the index does not hold is no filter.
+            label = hit.label if hit is not None else indexed.get((dim_code, value))
+            if label is None:
                 continue
             out.filters.setdefault(dim_code, [])
             if value not in out.filters[dim_code]:
                 out.filters[dim_code].append(value)
-                out.chips.append(Chip("filter", f"{dim_code}={value}", hit.label, "default", score))
+                out.chips.append(Chip("filter", f"{dim_code}={value}", label, "default", score))
 
     # A value the question says only in part (sem_value_retrieval's near pass) is a filter when
     # its words were not read as something else.
@@ -197,12 +216,11 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
             )
         taken = re.sub(span, lambda m: "#" * len(m.group(0)), taken)
 
-    cut = _UNPLACED_CUT.search(taken)
-    out.unplaced_cut = cut.group(1).strip() if cut else None
+    out.unplaced_cut = _unplaced_cut(taken)
     leftover = " ".join(w for w in re.sub(r"#+", " ", taken).split() if len(w) > 3)
     out.unmapped = [leftover] if leftover and not metric_hits else []
     out.top_n = top_n
-    out.top_desc = not bool(ranking and re.search(r"\b(?:it nhat|thap nhat)\b", ranking.group(0)))
+    out.top_desc = not ascending
     if period:
         out.chips.append(
             Chip("period", f"{period.start}/{period.end}", period.label, "default", 1.0)
@@ -224,11 +242,7 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
 
 # Words that ask, point at time or join (normalised): they name no quantity, so they neither tie a
 # question to a metric nor leave it unexplained.
-_FILLER = frozenset(
-    "la cua cho toi ban biet xem hay va voi o tai trong nay do kia the nao bao nhieu hien "
-    "hom qua tuan thang nam quy ky ngay gan nhat moi tong cong toan bo cac nhung mot hoac "
-    "duoc da dang se theo tung chia so sanh truoc sau con thi sao nhu vay roi a nhe nhi".split()
-)
+_FILLER: frozenset[str] = frozenset[str]().union(*(pack.filler for pack in PACKS))
 
 
 def grounding(
@@ -273,9 +287,9 @@ def grounding(
     return "full" if all(w in named for w in words) else "partial"
 
 
-# A quantity asked for in words ("số khoản vay", "bao nhiêu khách hàng"); "so với" and "so sánh"
-# compare, they ask for no quantity of their own.
-_QUANTITY = re.compile(r"\b(?:so luong|bao nhieu|so(?! voi\b| sanh\b))\s+\w")
+def _asks_quantity(text: str) -> bool:
+    """A quantity asked for in words ("số khoản vay", "how many customers")."""
+    return any(pack.quantity.search(text) for pack in PACKS)
 
 
 def follow_up(
@@ -298,7 +312,7 @@ def follow_up(
     stated = [c for c in current.chips if c.kind in ("dimension", "filter", "period")]
     if current.decision != "unknown" or current.metric is not None or not stated:
         return current
-    if _QUANTITY.search(norm(question)):
+    if _asks_quantity(norm(question)):
         return current
     earlier = {str(c.get("kind")): c for c in previous if c.get("kind") == "metric"}
     if "metric" not in earlier:

@@ -6,7 +6,8 @@ and the answer goes through resolver.from_chips, so a code it invents is refused
 Its chips carry confidence 0.8, the proceed threshold: a model reading is enough to answer but
 never outranks a name or an approved synonym, and an ambiguous reading becomes a clarification.
 The period keeps the rule parser's reading of the text; the model only names one when the text
-had none the parser could read.
+had none the parser could read, and names it in ISO form against the day it is told is today
+(GEN-31): the language packs read words, the model's period is a date range, in any language.
 
 A question in a conversation is read with the conversation (AC-01-04-05): the last ten questions
 word for word with what each was understood as, older ones as a summary of the metrics and cuts
@@ -22,6 +23,7 @@ from collections.abc import Sequence
 from pydantic import BaseModel
 
 from services.worker_agent.llm import Gateway, ModelUnavailable, Reply
+from services.worker_agent.understand.packs.base import iso_answer
 from services.worker_agent.understand.resolver import (
     Chip,
     Understanding,
@@ -38,10 +40,13 @@ VERBATIM_TURNS = 10
 # An earlier question of the conversation: its text and the chips of its plan.
 Turn = tuple[str, Sequence[dict[str, object]]]
 
-SYSTEM = """Bạn đọc một câu hỏi số liệu tiếng Việt và chọn đúng các mã trong danh mục được cho.
-Chỉ dùng mã có trong danh mục; không đoán mã mới. Trả về JSON đúng dạng:
+SYSTEM = """Bạn đọc một câu hỏi số liệu (tiếng Việt, tiếng Anh hoặc ngôn ngữ khác) và chọn đúng
+các mã trong danh mục được cho. Chỉ dùng mã có trong danh mục; không đoán mã mới. Trả về JSON đúng dạng:
 {"metric": "<mã chỉ số hoặc null>", "alternatives": ["<mã chỉ số khác nếu câu hỏi mơ hồ>"],
- "group_by": ["<mã chiều>"], "filters": {"<mã chiều>": ["<mã giá trị>"]}, "period": "<cụm từ chỉ kỳ hoặc null>"}
+ "group_by": ["<mã chiều>"], "filters": {"<mã chiều>": ["<mã giá trị>"]}, "period": "<kỳ ISO hoặc null>"}
+period viết theo ISO, tính từ ngày hôm nay được cho: "2026" (một năm), "2026-Q3" (một quý),
+"2026-09" (một tháng), "2026-09-30" (một ngày) hoặc "2026-07-01/2026-10-01" (từ ngày đầu, đến
+trước ngày sau). Câu hỏi không nêu kỳ thì period = null.
 Nếu câu hỏi khớp nhiều chỉ số như nhau, đặt metric = null và liệt kê chúng trong alternatives.
 Chỉ đưa vào alternatives chỉ số đo đúng đại lượng câu hỏi hỏi; câu hỏi một đại lượng không có trong
 danh mục (ví dụ một tỷ lệ khi danh mục không có tỷ lệ nào) thì alternatives để trống.
@@ -119,7 +124,8 @@ async def read(
         reply = await gateway.json_chat(
             "planner",
             SYSTEM,
-            f"Danh mục: {_catalogue(vocab)}{context}\n\nCâu hỏi: {question}",
+            f"Hôm nay: {today.isoformat()}\n\nDanh mục: {_catalogue(vocab)}{context}"
+            f"\n\nCâu hỏi: {question}",
             Reading,
             max_tokens=400,
         )
@@ -146,7 +152,7 @@ async def read(
         for member in members
     ]
     period = find_period(question, today, vocab.calendar) or (
-        find_period(answer.period, today, vocab.calendar) if answer.period else None
+        iso_answer(answer.period) if answer.period else None
     )
     if period is not None:
         chips.append(

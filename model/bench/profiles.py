@@ -27,10 +27,13 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _EVAL_CASES = REPO_ROOT / "model" / "eval" / "cases"
 
-_PLANNER_SYSTEM = """Bạn đọc một câu hỏi số liệu tiếng Việt và chọn đúng các mã trong danh mục được cho.
-Chỉ dùng mã có trong danh mục; không đoán mã mới. Trả về JSON đúng dạng:
+_PLANNER_SYSTEM = """Bạn đọc một câu hỏi số liệu (tiếng Việt, tiếng Anh hoặc ngôn ngữ khác) và chọn đúng
+các mã trong danh mục được cho. Chỉ dùng mã có trong danh mục; không đoán mã mới. Trả về JSON đúng dạng:
 {"metric": "<mã chỉ số hoặc null>", "alternatives": ["<mã chỉ số khác nếu câu hỏi mơ hồ>"],
- "group_by": ["<mã chiều>"], "filters": {"<mã chiều>": ["<mã giá trị>"]}, "period": "<cụm từ chỉ kỳ hoặc null>"}
+ "group_by": ["<mã chiều>"], "filters": {"<mã chiều>": ["<mã giá trị>"]}, "period": "<kỳ ISO hoặc null>"}
+period viết theo ISO, tính từ ngày hôm nay được cho: "2026" (một năm), "2026-Q3" (một quý),
+"2026-09" (một tháng), "2026-09-30" (một ngày) hoặc "2026-07-01/2026-10-01" (từ ngày đầu, đến
+trước ngày sau). Câu hỏi không nêu kỳ thì period = null.
 Nếu câu hỏi khớp nhiều chỉ số như nhau, đặt metric = null và liệt kê chúng trong alternatives.
 Chỉ đưa vào alternatives chỉ số đo đúng đại lượng câu hỏi hỏi; câu hỏi một đại lượng không có trong
 danh mục (ví dụ một tỷ lệ khi danh mục không có tỷ lệ nào) thì alternatives để trống.

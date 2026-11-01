@@ -12,7 +12,6 @@ from __future__ import annotations
 import datetime
 import json
 import re
-import unicodedata
 import uuid
 from collections.abc import Callable, Sequence
 from typing import Annotated, Any, TypeVar
@@ -22,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy import Select, and_, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import language
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import context, org
 from services.api.kernel.auth import Principal
@@ -154,14 +154,10 @@ async def keyset_page(
     return [view(r) for r in rows], encode_page_token(token)
 
 
-_SPACES = re.compile(r"\s+")
-
-
 def normalize(phrase: str) -> str:
-    """phrase_norm / term_norm: no accents (đ → d), lower case, single spaces (tab 3b D4.5)."""
-    text = phrase.replace("đ", "d").replace("Đ", "D")
-    text = "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
-    return _SPACES.sub(" ", text).strip().lower()
+    """phrase_norm / term_norm (tab 3b D4.5): the form the worker matches a question in
+    (libs/language, GEN-31): no accents (đ → d), lower case, punctuation to spaces."""
+    return language.norm(phrase)
 
 
 def slugify(title: str) -> str:

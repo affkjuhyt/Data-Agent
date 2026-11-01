@@ -381,3 +381,58 @@ def test_the_ingest_profile_reaches_a_migrated_cluster(admin):
             "SELECT string_agg(pg_get_constraintdef(oid), ' | ') FROM pg_constraint"
             f" WHERE conrelid = '{table}'::regclass AND contype = 'c'",
         ), table
+
+
+def test_the_calendar_the_time_dimension_and_one_normal_form_reach_a_migrated_cluster(admin):
+    # v3_0019 to v3_0021 (01/11/2026, GEN-21/22/31): a cluster migrated before them has no
+    # calendar columns, no time_dimension_id, the narrow time_grain CHECK, and phrases stored
+    # with their punctuation. The baseline is generated with the new shape, so the test takes it
+    # back before the upgrade, as the cluster would have it.
+    _fresh(admin, "chain_gen", "chain_gen_audit")
+    db = _db(admin, "chain_gen")
+    _alembic(db, "upgrade", "v3_0018")
+    org, space, target = (str(uuid.uuid4()) for _ in range(3))
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        for column in ("week_start", "fiscal_year_start_month", "fiscal_year_named_by"):
+            cur.execute(f"ALTER TABLE org.work_calendar DROP COLUMN {column}")
+        cur.execute("ALTER TABLE context.metric_version DROP COLUMN time_dimension_id")
+        cur.execute(
+            "ALTER TABLE context.metric_version DROP CONSTRAINT metric_version_time_grain_check"
+        )
+        cur.execute(
+            "ALTER TABLE context.metric_version ADD CHECK (time_grain IN ('day','month','quarter','year'))"
+        )
+        cur.execute(
+            "INSERT INTO context.synonym (id, org_id, data_space_id, phrase, phrase_norm,"
+            " target_kind, target_id) VALUES (%s, %s, %s, 'Doanh-thu (thuần)', 'doanh-thu (thuan)',"
+            " 'metric', %s)",
+            (str(uuid.uuid4()), org, space, target),
+        )
+        cur.execute(
+            "INSERT INTO context.glossary_term (id, org_id, data_space_id, term, term_norm,"
+            " definition) VALUES (%s, %s, %s, 'Tỷ lệ (%%)', 'ty le (%%)', 'x')",
+            (str(uuid.uuid4()), org, space),
+        )
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    assert (
+        _one(
+            db,
+            "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'org'"
+            " AND table_name = 'work_calendar' AND column_name IN"
+            " ('week_start', 'fiscal_year_start_month', 'fiscal_year_named_by')",
+        )
+        == 3
+    )
+    checks = _one(
+        db,
+        "SELECT string_agg(pg_get_constraintdef(oid), ' | ') FROM pg_constraint"
+        " WHERE conrelid = 'context.metric_version'::regclass AND contype = 'c'"
+        " AND pg_get_constraintdef(oid) LIKE '%time_grain%'",
+    )
+    # One CHECK, the wide one: the narrow one is not left beside it to refuse a week.
+    assert checks.count("time_grain") == 1 and "'fiscal_year'" in checks, checks
+    assert _one(db, "SELECT phrase_norm FROM context.synonym") == "doanh thu thuan"
+    assert _one(db, "SELECT term_norm FROM context.glossary_term") == "ty le %"

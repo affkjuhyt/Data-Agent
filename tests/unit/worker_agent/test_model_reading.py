@@ -85,3 +85,20 @@ async def test_a_named_reading_is_answered_as_before() -> None:
         "Doanh thu thuần theo khu vực tháng này", metric="NET_REVENUE", group_by=["khu_vuc"]
     )
     assert u is not None and u.decision == "proceed" and u.metric == REVENUE
+
+
+async def test_the_models_period_is_read_only_in_iso_form() -> None:
+    # GEN-31: the rule pass reads no period in "the quarter before the summer"; the model's
+    # ISO range is the period, its words would not be.
+    u = await reads(
+        "Tiền bán hàng the quarter before the summer", metric="NET_REVENUE", period="2026-Q1"
+    )
+    assert u is not None and u.period is not None
+    assert (u.period.start, u.period.end) == (datetime.date(2026, 1, 1), datetime.date(2026, 4, 1))
+    ranged = await reads(
+        "Tiền bán hàng mùa hè", metric="NET_REVENUE", period="2026-06-01/2026-09-01"
+    )
+    assert ranged is not None and ranged.period is not None
+    assert ranged.period.end == datetime.date(2026, 9, 1)
+    worded = await reads("Tiền bán hàng mùa hè", metric="NET_REVENUE", period="mùa hè 2026")
+    assert worded is not None and worded.period is None

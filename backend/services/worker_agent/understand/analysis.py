@@ -5,49 +5,19 @@ năm", "YTD").
 Read before the period and taken out of the question, like a comparison: "doanh thu luỹ kế từ đầu
 năm đến tháng 9" asks for January to September, and "từ đầu năm" left in would be read as a period
 of its own. A bare "luỹ kế" is from the start of the year, as Vietnamese reports use it ("doanh thu
-luỹ kế tháng 9" is the year to September).
+luỹ kế tháng 9" is the year to September). The words are each language pack's (GEN-31): "share
+of total", "year to date", "running total" in English.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
-from services.worker_agent.semantic.analysis import RUNNING_TOTAL, SHARE_OF_TOTAL
+from services.worker_agent.understand.packs import PACKS
+from services.worker_agent.understand.packs.base import TO_DATE
 from services.worker_agent.understand.text import norm, words_of
 
-TO_DATE = "to_date"
-
-_UNIT = {"nam": "year", "quy": "quarter", "thang": "month", "tuan": "week"}
-_PATTERNS: tuple[tuple[re.Pattern[str], str, str | None, bool], ...] = (
-    (
-        re.compile(r"\b(?:chiem (?:bao nhieu )?(?:phan tram|%)|chiem bao nhieu)(?!\w)"),
-        SHARE_OF_TOTAL,
-        None,
-        True,
-    ),
-    (
-        re.compile(
-            # (?!\w), not \b: "%" is no word character, so \b after it would never match.
-            r"\b(?:ty trong|co cau|phan tram (?:tren|so voi) tong|% (?:tren|so voi) tong)(?!\w)"
-        ),
-        SHARE_OF_TOTAL,
-        None,
-        False,
-    ),
-    (
-        re.compile(
-            r"\b(?:(?:luy ke|cong don) )?tu dau (nam|quy|thang|tuan)(?: tai chinh)?"
-            r"(?: (?:den|toi) (?:nay|hien tai))?\b"
-        ),
-        TO_DATE,
-        "",
-        False,
-    ),
-    (re.compile(r"\b(ytd|qtd|mtd|wtd)\b"), TO_DATE, "", False),
-    (re.compile(r"\b(?:luy ke|cong don)\b"), RUNNING_TOTAL, None, False),
-)
-_ABBREVIATION = {"ytd": "year", "qtd": "quarter", "mtd": "month", "wtd": "week"}
+__all__ = ["TO_DATE", "FoundAnalysis", "find_analysis"]
 
 
 @dataclass(frozen=True)
@@ -63,20 +33,23 @@ class FoundAnalysis:
 
 def find_analysis(question: str) -> FoundAnalysis | None:
     text = norm(question)
-    for pattern, kind, unit, weak in _PATTERNS:
-        m = pattern.search(text)
-        if m is None:
-            continue
-        if unit == "":
-            word = m.group(1)
-            unit = _ABBREVIATION.get(word) or _UNIT[word]
-        if weak:
-            # "chiếm bao nhiêu %" of a ratio is the ratio itself: the words stay in the question,
-            # so the metric is still read from them; it becomes a share only if the metric adds up.
-            return FoundAnalysis(kind, unit, question, weak)
-        written = words_of(question, m.group(0))
-        rest = (
-            question.replace(written, " ") if written in question else text.replace(m.group(0), " ")
-        )
-        return FoundAnalysis(kind, unit, " ".join(rest.split()), weak)
+    for pack in PACKS:
+        for pattern, kind, unit, weak in pack.analyses:
+            m = pattern.search(text)
+            if m is None:
+                continue
+            if unit == "":
+                unit = pack.analysis_units[m.group(1)]
+            if weak:
+                # "chiếm bao nhiêu %" of a ratio is the ratio itself: the words stay in the
+                # question, so the metric is still read from them; it becomes a share only if the
+                # metric adds up.
+                return FoundAnalysis(kind, unit, question, weak)
+            written = words_of(question, m.group(0))
+            rest = (
+                question.replace(written, " ")
+                if written in question
+                else text.replace(m.group(0), " ")
+            )
+            return FoundAnalysis(kind, unit, " ".join(rest.split()), weak)
     return None
