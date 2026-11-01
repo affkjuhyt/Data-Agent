@@ -251,7 +251,14 @@ async def cancel_question(
 ) -> JobAccepted:
     """Request cooperative cancellation without mutating the question from the API process."""
     async with transaction(ROLE, principal) as session:
-        question = await _question(session, question_id, principal, data_space)
+        # Only the asker stops a turn: a member of the same Data Space can read it, not end it.
+        question = await session.scalar(
+            scope.questions_in(principal, data_space).where(
+                qa.Question.id == question_id, qa.Conversation.user_id == principal.user_id
+            )
+        )
+        if question is None:
+            raise Problem(404, "not_found", "Question not found.")
         if question.status in QUESTION_DONE:
             raise Problem(409, "invalid_state", "The question has already finished.")
     if not await progress.request_cancel(str(question_id)):

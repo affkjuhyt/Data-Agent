@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 13 UC đủ tiêu chí bắt buộc | todo 13, partial 89, done 8, na 5 |
 | Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 333 có test nhắc mã AC | todo 739, na 39 |
-| Endpoint A2 (tab 4) | 454 (A2 ghi 455 dòng; POST /v1/data-products ở hai nhóm) | 454 được `api` phục vụ | — |
+| Endpoint A2 (tab 4) | 455 (A2 ghi 456 dòng; POST /v1/data-products ở hai nhóm) | 455 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 206 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 156 có mã nhắc tới | todo 188, na 7 |
 | Màn hình (SCR) | 75 | 15 có mã nhắc tới | todo 72, na 3 |
@@ -234,7 +234,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | Nhóm | Đã phục vụ | Còn thiếu |
 | --- | --- | --- |
-| Hỏi đáp | 18/18 |  |
+| Hỏi đáp | 19/19 |  |
 | Truy vấn | 4/4 |  |
 | Phiên làm việc | 24/24 |  |
 | Kỹ năng | 17/17 |  |
@@ -430,7 +430,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-168 | UC-14-03, UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-170 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +11 |
-| BR-171 | UC-01-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-171 | UC-01-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +15 |

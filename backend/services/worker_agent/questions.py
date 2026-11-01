@@ -1048,12 +1048,6 @@ async def _understand_and_plan(
                 u, await _previous_chips(session, question), layer.vocabulary, question=asked
             )
         access_problem: Refusal | None = space_access_problem
-        if u.metric is not None and u.metric.metric_id in layer.blocked_metric_ids:
-            access_problem = Refusal.of(
-                ErrorCode.ACCESS_DENIED,
-                message="Bạn không có quyền xem dữ liệu cần cho câu hỏi này.",
-                detail_id=str(question.id),
-            )
         models: list[dict[str, Any]] = []
         model = gateway()
         if (
@@ -1077,6 +1071,15 @@ async def _understand_and_plan(
                 )
 
         _auto_select_single_metric(u)
+        # Checked once the metric is final: the model's reading and the lone candidate picked
+        # above both place one after the rule pass, and either may be a metric the asker is
+        # denied.
+        if u.metric is not None and u.metric.metric_id in layer.blocked_metric_ids:
+            access_problem = Refusal.of(
+                ErrorCode.ACCESS_DENIED,
+                message="Bạn không có quyền xem dữ liệu cần cho câu hỏi này.",
+                detail_id=str(question.id),
+            )
 
         compiled: c.Compiled | None = None
         problem: Refusal | None = access_problem

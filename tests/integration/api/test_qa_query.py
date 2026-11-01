@@ -310,6 +310,18 @@ async def test_editing_chips_versions_the_plan_and_requeues(world: World, seed: 
         assert other.status_code == 404
 
 
+async def test_only_the_asker_cancels_their_question(world: World, seed: Seed) -> None:
+    async with api_for(world) as api:
+        created = await ask(api, world)
+        url = f"/v1/questions/{created['id']}:cancel"
+        # A member of the same Data Space reads the turn but cannot end it.
+        other = await api.post(url, headers=as_(world, "reviewer"))
+        assert other.status_code == 404, other.text
+        plan_for(seed, world, created["id"], status="answered")
+        done = await api.post(url, headers=as_(world, "asker"))
+        assert done.status_code == 409 and done.json()["code"] == "invalid_state"
+
+
 # --- conversations ------------------------------------------------------------------------------
 
 
