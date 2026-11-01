@@ -22,6 +22,7 @@ from sqlalchemy import select
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context
+from services.worker_agent import source_meta
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.questions import secrets
 from services.worker_agent.source_tests import _clickhouse_sql, _clickhouse_url, _ssl_mode
@@ -163,11 +164,26 @@ def _cardinality_for_foreign_key(child_unique: bool) -> str:
 
 
 def _normalized_type(data_type: str) -> str:
+    """The catalog's type for an engine's type name: PostgreSQL, MySQL, SQL Server and ClickHouse
+    (Float64, UInt32, Nullable(String)) spell them differently."""
     value = data_type.lower()
-    if any(token in value for token in ("int", "serial", "numeric", "decimal", "real", "double")):
-        return "integer" if "int" in value or "serial" in value else "decimal"
-    if "bool" in value:
+    if value in ("bit", "tinyint(1)") or "bool" in value:
         return "boolean"
+    if any(
+        token in value
+        for token in (
+            "int",
+            "serial",
+            "numeric",
+            "decimal",
+            "real",
+            "double",
+            "float",
+            "number",
+            "money",
+        )
+    ):
+        return "integer" if "int" in value or "serial" in value else "decimal"
     if "date" in value and "time" not in value:
         return "date"
     if "time" in value:
@@ -267,6 +283,10 @@ async def _scan_source(source: catalog.Source, tables: list[str] | None) -> list
     if source.kind == "clickhouse":
         return await _scan_clickhouse(source, tables)
     credentials = await secrets().read(source.org_id, source.secret_ref)
+    if source.kind != "postgresql":
+        # MySQL, SQL Server: INFORMATION_SCHEMA through the executor's driver (GEN-12).
+        run = source_meta.driver_run(source, credentials.user, credentials.password)
+        return await source_meta.scan(source, tables, run, _normalized_type)
     schemas = list(source.scan_schemas or ["public"])
     requested = set(tables or [])
     conn = await asyncpg.connect(
@@ -400,6 +420,22 @@ async def _profile_source(
 ) -> dict[tuple[str, str, str], dict[str, object]]:
     """Profile current source tables with bounded aggregates, never returning raw rows."""
     credentials = await secrets().read(source.org_id, source.secret_ref)
+    if source.kind == "clickhouse":
+        async with httpx.AsyncClient(
+            timeout=min(int(source.query_timeout_s or 120), 300)
+        ) as client:
+            run = source_meta.clickhouse_run(
+                client,
+                _clickhouse_url(source.host or "", source.port or 8123),
+                _clickhouse_schemas(source)[0],
+                (credentials.user, credentials.password),
+            )
+            return await source_meta.profile(
+                source, tables, run, _is_sensitive_column, _profile_value
+            )
+    if source.kind != "postgresql":
+        run = source_meta.driver_run(source, credentials.user, credentials.password)
+        return await source_meta.profile(source, tables, run, _is_sensitive_column, _profile_value)
     conn = await asyncpg.connect(
         host=source.host,
         port=source.port or 5432,
