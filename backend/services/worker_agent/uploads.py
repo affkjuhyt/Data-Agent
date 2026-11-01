@@ -28,6 +28,9 @@ COMMITTED = "file_upload.committed"
 WORKSPACE_SCHEMA = "workspace"
 # How the catalog names a workspace column type (catalog.column_meta.normalized_type).
 _NORMALIZED = {"text": "string", "numeric": "decimal", "boolean": "boolean", "date": "date"}
+# A table is as wide as its header; one this wide is not a table someone means to query, and the
+# per-column work below must not scale with whatever a single malformed row claims.
+MAX_COLUMNS = 2_000
 
 
 def _store_config() -> tuple[str, str, str]:
@@ -94,15 +97,25 @@ class _Reader:
     once over the whole column (libs/tabular), so validation and the table agree."""
 
     def __init__(
-        self, data: list[list[Any]], column_map: list[dict[str, Any]], decimal_sep: str | None
+        self,
+        width: int,
+        data: list[list[Any]],
+        column_map: list[dict[str, Any]],
+        decimal_sep: str | None,
     ) -> None:
+        """`width` is the header's (or the mapping's): cells past it are not read, a row that
+        long is an invalid row, so a malformed one cannot widen the work."""
+        if width > MAX_COLUMNS:
+            raise ValueError(f"the upload has more than {MAX_COLUMNS} columns")
         self.kinds: list[str] = []
         self.marks: list[str] = []
         self.orders: list[tabular.DateOrder] = []
-        width = max([len(column_map), *(len(row) for row in data)], default=0)
-        for index in range(width):
+        columns: list[list[Any]] = [[] for _ in range(width)]
+        for row in data:  # one pass: linear in the cells read
+            for index, value in enumerate(row[:width]):
+                columns[index].append(value)
+        for index, values in enumerate(columns):
             mapped = column_map[index] if index < len(column_map) else {}
-            values = [row[index] for row in data if index < len(row)]
             self.kinds.append(str(mapped.get("type", "string")))
             self.marks.append(
                 mapped.get("decimal_sep")
@@ -148,7 +161,7 @@ def _validate(
     expected = max(len(rows[0]), len(column_map))
     # The first uploaded event can arrive before the user saves a mapping: an unmapped column is
     # read as a string, so validation still produces a result for the review screen.
-    reader = _Reader(rows[1:], column_map, decimal_sep)
+    reader = _Reader(expected, rows[1:], column_map, decimal_sep)
     invalid = 0
     for row in rows[1:]:
         if len(row) != expected or any(
@@ -210,7 +223,7 @@ async def _materialize(
         {"name": name, "type": _postgres_type(column_map, index)}
         for index, name in enumerate(names)
     ]
-    reader = _Reader(rows[1:], column_map, decimal_sep)
+    reader = _Reader(len(names), rows[1:], column_map, decimal_sep)
     rows_json = [
         [
             reader.value(row[index] if index < len(row) else None, index)
