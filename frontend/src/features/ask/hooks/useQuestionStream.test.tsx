@@ -34,7 +34,14 @@ describe('useQuestionStream', () => {
     expect(answer.chartSpecs?.[0].data).toHaveLength(3);
     expect(answer.evidence?.runs[0].columns).toEqual(['Vùng', 'Tỷ lệ nợ xấu']);
     expect(answer.trust?.label).toBe('Theo chỉ số chuẩn');
-    await waitFor(() => expect(result.current.messages[1].evidence?.runs[0].sql).toContain('GROUP BY vung'));
+    // The steps it went through, as the stream sent them, and the answer's blocks.
+    expect(answer.steps?.map((step) => [step.action, step.status])).toEqual([
+      ['understand', 'done'],
+      ['query', 'done'],
+    ]);
+    expect(answer.steps?.[1].detail).toMatchObject({ row_count: 3 });
+    expect(answer.durationMs).toBeGreaterThanOrEqual(0);
+    expect(answer.questionText).toBe('Tỷ lệ nợ xấu tháng 9/2026 theo vùng');
   });
 
   it('AC-01-04-01 a follow-up shows the chips it inherited, and a why-question its proposal', async () => {
@@ -112,6 +119,87 @@ describe('useQuestionStream', () => {
     expect(reopened.result.current.conversationId).toBe(conversationId);
     expect(reopened.result.current.messages[0].content).toContain('nợ xấu');
     expect(reopened.result.current.messages[1].answerId).toBe(answerId);
+  });
+
+  it('reads the steps of an ended turn back when the conversation is reopened', async () => {
+    setDataSpace('ds-rr');
+    const first = renderHook(() => useQuestionStream());
+    await act(async () => {
+      await first.result.current.send('Tỷ lệ nợ xấu tháng 9/2026 theo vùng');
+    });
+    await waitFor(() => expect(first.result.current.conversationId).toBeTruthy());
+    const reopened = renderHook(() => useQuestionStream());
+    await act(async () => {
+      await reopened.result.current.hydrate(first.result.current.conversationId!);
+    });
+    await waitFor(() => expect(reopened.result.current.messages).toHaveLength(2));
+    const turn = reopened.result.current.messages[1];
+    expect(turn.stepsRecorded).toBe(true);
+    expect(turn.steps?.map((step) => step.action)).toEqual(['understand', 'query']);
+    expect(turn.durationMs).toBe(2400);
+  });
+
+  it('a turn recorded before steps were kept says so', async () => {
+    server.use(
+      http.get('*/v1/questions/:id/steps', ({ params }) =>
+        HttpResponse.json({ question_id: String(params.id), run_id: null, status: null, duration_ms: null, tokens: 0, steps: [] }),
+      ),
+    );
+    setDataSpace('ds-rr');
+    const first = renderHook(() => useQuestionStream());
+    await act(async () => {
+      await first.result.current.send('Tỷ lệ nợ xấu tháng 9/2026 theo vùng');
+    });
+    await waitFor(() => expect(first.result.current.conversationId).toBeTruthy());
+    const reopened = renderHook(() => useQuestionStream());
+    await act(async () => {
+      await reopened.result.current.hydrate(first.result.current.conversationId!);
+    });
+    await waitFor(() => expect(reopened.result.current.messages).toHaveLength(2));
+    expect(reopened.result.current.messages[1].stepsRecorded).toBe(false);
+  });
+
+  it('follows a turn still running when the conversation is reopened, from its first event', async () => {
+    const events = [
+      'id: 1-0\nevent: activity\ndata: {"kind":"step","step_id":"s1","seq":1,"action":"understand","title":"Hiểu câu hỏi","target":"","chips":[],"status":"done","started_at":"2026-11-02T10:00:00Z","duration_ms":80,"detail":{"reading":[]},"parent":null}\n\n',
+      'id: 2-0\nevent: done\ndata: {"status":"refused"}\n\n',
+    ];
+    let lastIds: (string | null)[] = [];
+    server.use(
+      http.get('*/v1/conversations/conv-run', () =>
+        HttpResponse.json({
+          id: 'conv-run', data_space_id: 'ds', user_id: 'u', channel: 'web', api_client_id: null, title: 'Q',
+          workspace_id: null, last_question_at: null, created_at: '2026-11-02T10:00:00Z', updated_at: '2026-11-02T10:00:00Z',
+          turns: [{ question_id: 'q-run', seq: 1, text: 'Doanh thu?', status: 'running', answer_id: null, received_at: '2026-11-02T10:00:00Z', answered_at: null }],
+        }),
+      ),
+      http.get('*/v1/questions/q-run/stream', ({ request }) => {
+        lastIds = [...lastIds, request.headers.get('Last-Event-ID')];
+        return new HttpResponse(events.join(''), { headers: { 'Content-Type': 'text/event-stream' } });
+      }),
+    );
+    setDataSpace('ds-rr');
+    const { result } = renderHook(() => useQuestionStream());
+    await act(async () => {
+      await result.current.hydrate('conv-run');
+    });
+    await waitFor(() => expect(result.current.messages[1].status).toBe('done'));
+    expect(lastIds[0]).toBeNull();
+    expect(result.current.messages[1].steps?.map((step) => step.action)).toEqual(['understand']);
+  });
+
+  it('asks the same question again as a new turn', async () => {
+    setDataSpace('ds-rr');
+    const { result } = renderHook(() => useQuestionStream());
+    await act(async () => {
+      await result.current.send('Tỷ lệ nợ xấu tháng 9/2026 theo vùng');
+    });
+    await waitFor(() => expect(result.current.messages[1].status).toBe('done'));
+    await act(async () => {
+      await result.current.retry(result.current.messages[1].id);
+    });
+    await waitFor(() => expect(result.current.messages).toHaveLength(4));
+    expect(result.current.messages[2].content).toBe('Tỷ lệ nợ xấu tháng 9/2026 theo vùng');
   });
 
   it('shows the question back of a clarifying turn, with a box to answer it', async () => {

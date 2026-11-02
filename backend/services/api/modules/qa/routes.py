@@ -71,7 +71,7 @@ from services.api.modules.qa.schemas import (
     ReceiptView,
     ReplayCreate,
     ReplayView,
-    StepView,
+    TurnStepView,
 )
 
 router = APIRouter()
@@ -341,7 +341,7 @@ async def get_question_steps(
     for row in turn.steps:
         view = row.output["_view"]
         steps.append(
-            StepView(
+            TurnStepView(
                 step_id=str(view.get("step_id") or f"s{row.seq}"),
                 seq=row.seq,
                 action=row.name,

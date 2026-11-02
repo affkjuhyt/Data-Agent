@@ -1,8 +1,10 @@
 /**
  * Conversation state for the Ask screen over the v1 API (UC-01-01, A1.6): a question is recorded
- * (POST /v1/questions, 202), worker-agent answers it, and the screen follows its stream —
- * understood → progress → answer / clarification / error → done. The server sends the state it
- * has recorded and closes, so the hook polls the stream with Last-Event-ID until `done`.
+ * (POST /v1/questions, 202), worker-agent answers it, and the screen follows its stream — each
+ * step as an `activity` event of kind "step" (steps.ts), then answer / clarification / error →
+ * done. The server sends the state it has recorded and closes, so the hook polls the stream with
+ * Last-Event-ID until `done`. A reopened conversation reads each ended turn's steps back
+ * (GET /v1/questions/{id}/steps) and follows a turn still running from its first event.
  *
  * Each turn keeps its server ids (question_id, answer_id): Báo sai, Lưu tri thức and Biên nhận
  * act on the real answer. Questions of one screen share a conversation, so a follow-up inherits
@@ -10,19 +12,20 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { V1Error } from '../../../lib/v1/client';
-import { getQuerySql } from '../../../lib/v1/explore';
 import {
   askQuestion,
   cancelQuestion,
   getAnswer,
   getConversation,
   getQuestion,
+  getQuestionSteps,
   questionEvents,
   type ConversationDetail,
 } from '../../../lib/v1/questions';
 import { fromAnswer } from '../answerMessage';
 import type { AnswerLayout } from '../answerLayout';
 import { readPlan } from '../dataAnswer';
+import { applyStepEvent, stepsFromView, type TurnStep } from '../steps';
 import type { AskMessage, ClarificationReply } from '../types';
 
 const POLL_MS = 400;
@@ -43,22 +46,25 @@ const sleep = (ms: number, signal: AbortSignal) =>
     });
   });
 
-function stepsFor(status: string) {
-  const stages = [
-    'Đọc câu hỏi và Data Space',
-    'Lập kế hoạch phân tích',
-    'Chạy truy vấn dữ liệu',
-    'Tạo biểu đồ và insight',
-  ];
-  const active = status === 'running' ? 2 : status === 'planning' ? 1 : 0;
-  return stages.map((title, index) => ({
-    title,
-    state: index < active ? ('done' as const) : index === active ? ('running' as const) : ('waiting' as const),
-  }));
+/** The steps of an ended turn; a turn from before steps were kept has none (C5). */
+async function readSteps(questionId: string): Promise<{ steps: TurnStep[]; recorded: boolean; durationMs?: number }> {
+  try {
+    const view = await getQuestionSteps(questionId);
+    const steps = stepsFromView(view);
+    return { steps, recorded: steps.length > 0, durationMs: view.duration_ms ?? undefined };
+  } catch {
+    return { steps: [], recorded: false };
+  }
 }
 
-async function messagesFromConversation(detail: ConversationDetail): Promise<AskMessage[]> {
+/** A turn still running when the conversation is opened: followed from its first event. */
+const STILL_RUNNING = new Set(['received', 'planning', 'running']);
+
+async function messagesFromConversation(
+  detail: ConversationDetail,
+): Promise<{ messages: AskMessage[]; running: { assistantId: string; questionId: string }[] }> {
   const out: AskMessage[] = [];
+  const running: { assistantId: string; questionId: string }[] = [];
   for (const turn of detail.turns) {
     out.push({
       id: `q-${turn.question_id}`,
@@ -85,6 +91,7 @@ async function messagesFromConversation(detail: ConversationDetail): Promise<Ask
         } catch {
           /* plan optional on reopen */
         }
+        const trace = await readSteps(turn.question_id);
         out.push({
           id: assistantId,
           role: 'assistant',
@@ -93,28 +100,16 @@ async function messagesFromConversation(detail: ConversationDetail): Promise<Ask
           status: 'done',
           questionId: turn.question_id,
           answerId: turn.answer_id,
+          questionText: turn.text,
+          startedAt: turn.received_at,
+          steps: trace.steps,
+          stepsRecorded: trace.recorded,
+          ...(trace.durationMs !== undefined && { durationMs: trace.durationMs }),
           ...drawn,
           ...(reading && { reading }),
           ...(proposal && { proposal }),
           ...(newQuestion !== undefined && { newQuestion }),
         });
-        const run = drawn.evidence?.runs[0];
-        if (run?.id) {
-          try {
-            const sql = await getQuerySql(run.id);
-            const last = out[out.length - 1];
-            if (last.evidence) {
-              last.evidence = {
-                ...last.evidence,
-                runs: last.evidence.runs.map((r) =>
-                  r.id === run.id ? { ...r, sql: sql.sql_executed } : r,
-                ),
-              };
-            }
-          } catch {
-            /* SQL is enrichment for Cách tính */
-          }
-        }
       } catch {
         out.push({
           id: assistantId,
@@ -125,21 +120,37 @@ async function messagesFromConversation(detail: ConversationDetail): Promise<Ask
           questionId: turn.question_id,
         });
       }
-    } else {
+    } else if (STILL_RUNNING.has(turn.status)) {
+      // Its steps are not kept until it ends: the stream is replayed from its first event.
       out.push({
         id: assistantId,
         role: 'assistant',
-        content:
-          turn.status === 'failed'
-            ? 'Agent không trả lời được câu hỏi này.'
-            : 'Câu hỏi chưa có câu trả lời (đang chạy hoặc chưa xong).',
+        content: '',
         timestamp: turn.received_at,
-        status: turn.status === 'failed' ? 'error' : 'done',
+        status: 'streaming',
         questionId: turn.question_id,
+        questionText: turn.text,
+        startedAt: turn.received_at,
+        steps: [],
+        stepsRecorded: true,
+      });
+      running.push({ assistantId, questionId: turn.question_id });
+    } else {
+      const trace = await readSteps(turn.question_id);
+      out.push({
+        id: assistantId,
+        role: 'assistant',
+        content: 'Agent không trả lời được câu hỏi này.',
+        timestamp: turn.received_at,
+        status: 'error',
+        questionId: turn.question_id,
+        questionText: turn.text,
+        steps: trace.steps,
+        stepsRecorded: trace.recorded,
       });
     }
   }
-  return out;
+  return { messages: out, running };
 }
 
 export function useQuestionStream() {
@@ -163,6 +174,9 @@ export function useQuestionStream() {
     [],
   );
 
+  const messagesRef = useRef<AskMessage[]>([]);
+  messagesRef.current = messages;
+
   const patch = useCallback((id: string, fn: (m: AskMessage) => AskMessage) => {
     if (mounted.current) setMessages((prev) => prev.map((m) => (m.id === id ? fn(m) : m)));
   }, []);
@@ -177,36 +191,14 @@ export function useQuestionStream() {
         for (const e of events) {
           lastId = e.id ?? lastId;
           const data = e.data ? (JSON.parse(e.data) as Record<string, unknown>) : {};
-          if (e.event === 'progress' || e.event === 'understood') {
-            const status = String(data.status ?? (e.event === 'understood' ? 'planning' : ''));
-            patch(assistantId, (m) => ({
-              ...m,
-              progress: {
-                agent: 'Agent Hỏi đáp',
-                steps: stepsFor(status),
-              },
-            }));
-          } else if (e.event === 'activity' && typeof data.kind === 'string') {
-            patch(assistantId, (m) => ({
-              ...m,
-              activities: [
-                ...(m.activities ?? []).filter((a) => a.stage !== data.stage),
-                {
-                  kind: data.kind as string,
-                  stage: typeof data.stage === 'string' ? data.stage : undefined,
-                  status: typeof data.status === 'string' ? data.status : undefined,
-                  label: typeof data.label === 'string' ? data.label : undefined,
-                  detail: typeof data.detail === 'string' ? data.detail : undefined,
-                },
-              ],
-            }));
+          if (e.event === 'activity') {
+            patch(assistantId, (m) => ({ ...m, steps: applyStepEvent(m.steps ?? [], data) }));
           } else if (e.event === 'cancelled') {
             cancelled = true;
             patch(assistantId, (m) => ({
               ...m,
               status: 'error',
               content: 'Đã dừng lượt phân tích theo yêu cầu của bạn.',
-              progress: undefined,
             }));
           } else if (e.event === 'answer' && typeof data.answer_id === 'string') {
             if (cancelled) continue;
@@ -226,22 +218,6 @@ export function useQuestionStream() {
                 }));
               })
               .catch(() => undefined);
-            const run = drawn.evidence?.runs[0];
-            // "Cách tính" shows the SQL that ran; the answer does not carry it, the query run does.
-            if (run?.id)
-              getQuerySql(run.id)
-                .then((q) =>
-                  patch(assistantId, (m) => ({
-                    ...m,
-                    evidence: m.evidence && {
-                      ...m.evidence,
-                      runs: m.evidence.runs.map((r) =>
-                        r.id === run.id ? { ...r, sql: q.sql_executed } : r,
-                      ),
-                    },
-                  })),
-                )
-                .catch(() => undefined);
           } else if (e.event === 'clarification' && typeof data.answer_id === 'string') {
             // Without this the turn closed on `done` with nothing in it: the question back is an
             // answer of kind "clarification", sent on its own event rather than `answer`.
@@ -256,9 +232,9 @@ export function useQuestionStream() {
           } else if (e.event === 'done') {
             patch(assistantId, (m) => ({
               ...m,
-              progress: undefined,
               status: m.status === 'error' ? 'error' : 'done',
               latencyMs: Date.now() - started,
+              durationMs: m.startedAt ? Date.now() - Date.parse(m.startedAt) : Date.now() - started,
             }));
             return;
           }
@@ -267,7 +243,6 @@ export function useQuestionStream() {
           patch(assistantId, (m) => ({
             ...m,
             status: 'error',
-            progress: undefined,
             content: 'Agent chưa trả lời sau 5 phút; câu hỏi vẫn được lưu trong hội thoại.',
           }));
           return;
@@ -293,6 +268,10 @@ export function useQuestionStream() {
           timestamp: nowIso(),
           status: 'streaming',
           layout,
+          questionText: q,
+          startedAt: nowIso(),
+          steps: [],
+          stepsRecorded: true,
         },
       ]);
       setSending(true);
@@ -310,7 +289,6 @@ export function useQuestionStream() {
         patch(assistantId, (m) => ({
           ...m,
           status: 'error',
-          progress: undefined,
           content:
             m.content ||
             (aborted
@@ -371,18 +349,13 @@ export function useQuestionStream() {
     [patch, send],
   );
 
-  /** The v1 stream does not pause for a reading check yet (PATCH /v1/questions/{id}/plan edits
-   *  chips after the fact); confirming only hides the check. */
-  const confirmUnderstanding = useCallback(
-    // Same signature as the screen calls it with; the choice has nowhere to go on v1 yet.
-    async (id: string, _choice?: { meaning?: string; remember: boolean }) => {
-      patch(id, (m) =>
-        m.understanding
-          ? { ...m, understanding: { ...m.understanding, check_required: false } }
-          : m,
-      );
+  /** "Hỏi lại": the same question again, as a new turn of the conversation (C6). */
+  const retry = useCallback(
+    async (id: string) => {
+      const text = messagesRef.current.find((m) => m.id === id)?.questionText;
+      if (text) await send(text);
     },
-    [patch],
+    [send],
   );
 
   const stop = useCallback(() => {
@@ -400,11 +373,16 @@ export function useQuestionStream() {
     setHydrating(true);
     try {
       const detail = await getConversation(id);
-      const next = await messagesFromConversation(detail);
+      const { messages: next, running } = await messagesFromConversation(detail);
       if (!mounted.current) return;
       conversationRef.current = detail.id;
       setConversationId(detail.id);
       setMessages(next);
+      for (const turn of running) {
+        const controller = new AbortController();
+        abortRef.current = controller;
+        void follow(turn.assistantId, turn.questionId, controller.signal).catch(() => undefined);
+      }
     } catch (err) {
       if (!mounted.current) return;
       conversationRef.current = null;
@@ -426,7 +404,7 @@ export function useQuestionStream() {
     } finally {
       if (mounted.current) setHydrating(false);
     }
-  }, []);
+  }, [follow]);
 
   const resetConversation = useCallback(() => {
     abortRef.current?.abort();
@@ -453,7 +431,7 @@ export function useQuestionStream() {
     conversationId,
     send,
     answerClarification,
-    confirmUnderstanding,
+    retry,
     stop,
     addNotice,
     hydrate,

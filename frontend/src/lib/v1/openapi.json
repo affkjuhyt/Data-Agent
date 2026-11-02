@@ -34715,7 +34715,7 @@
      },
      "steps": {
       "items": {
-       "$ref": "#/components/schemas/services__api__modules__qa__schemas__StepView"
+       "$ref": "#/components/schemas/TurnStepView"
       },
       "title": "Steps",
       "type": "array"
@@ -38107,7 +38107,7 @@
       "anyOf": [
        {
         "items": {
-         "$ref": "#/components/schemas/services__api__modules__agent__schemas__StepView"
+         "$ref": "#/components/schemas/StepView"
         },
         "type": "array"
        },
@@ -41049,6 +41049,121 @@
     "title": "StepPreview",
     "type": "object"
    },
+   "StepView": {
+    "properties": {
+     "attempt": {
+      "title": "Attempt",
+      "type": "integer"
+     },
+     "child_run_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Child Run Id"
+     },
+     "cost": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       }
+      ],
+      "title": "Cost"
+     },
+     "duration_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Duration Ms"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "input": {
+      "anyOf": [
+       {},
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Input"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "output": {
+      "anyOf": [
+       {},
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Output"
+     },
+     "seq": {
+      "title": "Seq",
+      "type": "integer"
+     },
+     "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     }
+    },
+    "required": [
+     "id",
+     "seq",
+     "kind",
+     "name",
+     "input",
+     "output",
+     "summary",
+     "status",
+     "attempt",
+     "child_run_id",
+     "cost",
+     "started_at",
+     "duration_ms"
+    ],
+    "title": "StepView",
+    "type": "object"
+   },
    "SubmitBody": {
     "properties": {
      "note": {
@@ -42815,6 +42930,112 @@
      "params"
     ],
     "title": "TryRequest",
+    "type": "object"
+   },
+   "TurnStepView": {
+    "description": "One step of an Ask turn as the timeline draws it (worker turn_trace.py step contract).",
+    "properties": {
+     "action": {
+      "title": "Action",
+      "type": "string"
+     },
+     "chips": {
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Chips",
+      "type": "array"
+     },
+     "detail": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Detail"
+     },
+     "duration_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Duration Ms"
+     },
+     "parent": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Parent"
+     },
+     "seq": {
+      "title": "Seq",
+      "type": "integer"
+     },
+     "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "running",
+       "done",
+       "failed",
+       "skipped"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "step_id": {
+      "title": "Step Id",
+      "type": "string"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     },
+     "target": {
+      "default": "",
+      "title": "Target",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "step_id",
+     "seq",
+     "action",
+     "title",
+     "status",
+     "started_at"
+    ],
+    "title": "TurnStepView",
     "type": "object"
    },
    "UndoRequest": {
@@ -44938,121 +45159,6 @@
      "edited_by_user"
     ],
     "title": "PlanView",
-    "type": "object"
-   },
-   "services__api__modules__agent__schemas__StepView": {
-    "properties": {
-     "attempt": {
-      "title": "Attempt",
-      "type": "integer"
-     },
-     "child_run_id": {
-      "anyOf": [
-       {
-        "format": "uuid",
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Child Run Id"
-     },
-     "cost": {
-      "anyOf": [
-       {
-        "type": "number"
-       },
-       {
-        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-        "type": "string"
-       }
-      ],
-      "title": "Cost"
-     },
-     "duration_ms": {
-      "anyOf": [
-       {
-        "type": "integer"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Duration Ms"
-     },
-     "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-     },
-     "input": {
-      "anyOf": [
-       {},
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Input"
-     },
-     "kind": {
-      "title": "Kind",
-      "type": "string"
-     },
-     "name": {
-      "title": "Name",
-      "type": "string"
-     },
-     "output": {
-      "anyOf": [
-       {},
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Output"
-     },
-     "seq": {
-      "title": "Seq",
-      "type": "integer"
-     },
-     "started_at": {
-      "format": "date-time",
-      "title": "Started At",
-      "type": "string"
-     },
-     "status": {
-      "title": "Status",
-      "type": "string"
-     },
-     "summary": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Summary"
-     }
-    },
-    "required": [
-     "id",
-     "seq",
-     "kind",
-     "name",
-     "input",
-     "output",
-     "summary",
-     "status",
-     "attempt",
-     "child_run_id",
-     "cost",
-     "started_at",
-     "duration_ms"
-    ],
-    "title": "StepView",
     "type": "object"
    },
    "services__api__modules__agent__schemas__ToolView": {
@@ -47441,112 +47547,6 @@
      "created_at"
     ],
     "title": "PlanView",
-    "type": "object"
-   },
-   "services__api__modules__qa__schemas__StepView": {
-    "description": "One step of an Ask turn as the timeline draws it (worker turn_trace.py step contract).",
-    "properties": {
-     "action": {
-      "title": "Action",
-      "type": "string"
-     },
-     "chips": {
-      "items": {
-       "additionalProperties": {
-        "type": "string"
-       },
-       "type": "object"
-      },
-      "title": "Chips",
-      "type": "array"
-     },
-     "detail": {
-      "anyOf": [
-       {
-        "additionalProperties": true,
-        "type": "object"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Detail"
-     },
-     "duration_ms": {
-      "anyOf": [
-       {
-        "type": "integer"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Duration Ms"
-     },
-     "parent": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Parent"
-     },
-     "seq": {
-      "title": "Seq",
-      "type": "integer"
-     },
-     "started_at": {
-      "format": "date-time",
-      "title": "Started At",
-      "type": "string"
-     },
-     "status": {
-      "enum": [
-       "running",
-       "done",
-       "failed",
-       "skipped"
-      ],
-      "title": "Status",
-      "type": "string"
-     },
-     "step_id": {
-      "title": "Step Id",
-      "type": "string"
-     },
-     "summary": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Summary"
-     },
-     "target": {
-      "default": "",
-      "title": "Target",
-      "type": "string"
-     },
-     "title": {
-      "title": "Title",
-      "type": "string"
-     }
-    },
-    "required": [
-     "step_id",
-     "seq",
-     "action",
-     "title",
-     "status",
-     "started_at"
-    ],
-    "title": "StepView",
     "type": "object"
    },
    "services__api__modules__skill__schemas__Accepted": {

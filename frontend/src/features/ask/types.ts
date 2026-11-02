@@ -1,3 +1,5 @@
+import type { components } from '../../lib/v1/schema';
+import type { TurnStep } from './steps';
 /**
  * Wire types for one answer from the orchestrator SSE stream
  * (backend/services/workflow_runtime/orchestrator/routers/stream.py) and the frames the
@@ -286,6 +288,8 @@ export interface Understanding {
   check_required: boolean;
 }
 
+export type AnswerBlockView = NonNullable<components['schemas']['AnswerView']['blocks']>[number];
+
 export interface AskMessage {
   /** client id of the bubble */
   id: string;
@@ -330,6 +334,17 @@ export interface AskMessage {
   /** the agent's reading of the question; waits for a check when `check_required` */
   understanding?: Understanding;
   latencyMs?: number;
+  /** What the agent did on this turn, live then read back (steps.ts). */
+  steps?: TurnStep[];
+  /** False for a turn recorded before steps were kept: the timeline says so instead. */
+  stepsRecorded?: boolean;
+  /** The answer as the server's blocks (GET /v1/answers/{id} blocks[]). */
+  blocks?: AnswerBlockView[];
+  /** The question this turn answers, kept so "Hỏi lại" can ask it again. */
+  questionText?: string;
+  /** When the turn started and how long it took, for "Đã làm trong …". */
+  startedAt?: string;
+  durationMs?: number;
 }
 
 export interface ChatActivity {

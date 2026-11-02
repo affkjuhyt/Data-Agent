@@ -105,6 +105,8 @@ export function fromAnswer(answer: Answer): Partial<AskMessage> {
   const drawn: Partial<AskMessage> = {
     content: answer.text,
     productScope: answer.product_scope,
+    // The answer as the server's blocks: the chat draws these (chat/blocks/AnswerBlocks).
+    ...(answer.blocks && { blocks: answer.blocks }),
     ...(citations.length > 0 && { citations }),
     ...(verification && { verification }),
   };

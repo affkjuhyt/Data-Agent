@@ -68,7 +68,7 @@ class PlanView(_Row):
     created_at: datetime.datetime
 
 
-class StepView(BaseModel):
+class TurnStepView(BaseModel):
     """One step of an Ask turn as the timeline draws it (worker turn_trace.py step contract)."""
 
     step_id: str
@@ -92,7 +92,7 @@ class QuestionStepsView(BaseModel):
     status: str | None = None
     duration_ms: int | None = None
     tokens: int = 0
-    steps: list[StepView] = Field(default_factory=list)
+    steps: list[TurnStepView] = Field(default_factory=list)
 
 
 class QuestionView(_Row):

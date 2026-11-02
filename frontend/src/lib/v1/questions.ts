@@ -56,6 +56,12 @@ export const askQuestion = (text: string, conversationId: string | null) =>
     }),
   );
 
+/** What the agent did on the question's latest turn; only the asker reads it. */
+export const getQuestionSteps = async (id: string) =>
+  ok<components['schemas']['QuestionStepsView']>(
+    api.GET('/v1/questions/{id}/steps', { params: { path: { id } } }),
+  );
+
 export const getAnswer = async (id: string) =>
   ok<Answer>(api.GET('/v1/answers/{id}', { params: { path: { id } } }));
 

@@ -19180,7 +19180,7 @@ export interface components {
             /** Status */
             status?: string | null;
             /** Steps */
-            steps?: components["schemas"]["services__api__modules__qa__schemas__StepView"][];
+            steps?: components["schemas"]["TurnStepView"][];
             /**
              * Tokens
              * @default 0
@@ -20422,7 +20422,7 @@ export interface components {
             /** Status */
             status: string;
             /** Steps */
-            steps?: components["schemas"]["services__api__modules__agent__schemas__StepView"][] | null;
+            steps?: components["schemas"]["StepView"][] | null;
             /** Stop Detail */
             stop_detail: unknown;
             /** Stop Reason */
@@ -21450,6 +21450,41 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** StepView */
+        StepView: {
+            /** Attempt */
+            attempt: number;
+            /** Child Run Id */
+            child_run_id: string | null;
+            /** Cost */
+            cost: number | string;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Input */
+            input: unknown | null;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Output */
+            output: unknown | null;
+            /** Seq */
+            seq: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Status */
+            status: string;
+            /** Summary */
+            summary: string | null;
+        };
         /** SubmitBody */
         SubmitBody: {
             /** Note */
@@ -22152,6 +22187,49 @@ export interface components {
             params: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * TurnStepView
+         * @description One step of an Ask turn as the timeline draws it (worker turn_trace.py step contract).
+         */
+        TurnStepView: {
+            /** Action */
+            action: string;
+            /** Chips */
+            chips?: {
+                [key: string]: string;
+            }[];
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            } | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Parent */
+            parent?: string | null;
+            /** Seq */
+            seq: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "done" | "failed" | "skipped";
+            /** Step Id */
+            step_id: string;
+            /** Summary */
+            summary?: string | null;
+            /**
+             * Target
+             * @default
+             */
+            target: string;
+            /** Title */
+            title: string;
         };
         /** UndoRequest */
         UndoRequest: {
@@ -22972,41 +23050,6 @@ export interface components {
             steps: unknown[];
             /** Version */
             version: number;
-        };
-        /** StepView */
-        services__api__modules__agent__schemas__StepView: {
-            /** Attempt */
-            attempt: number;
-            /** Child Run Id */
-            child_run_id: string | null;
-            /** Cost */
-            cost: number | string;
-            /** Duration Ms */
-            duration_ms: number | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Input */
-            input: unknown | null;
-            /** Kind */
-            kind: string;
-            /** Name */
-            name: string;
-            /** Output */
-            output: unknown | null;
-            /** Seq */
-            seq: number;
-            /**
-             * Started At
-             * Format: date-time
-             */
-            started_at: string;
-            /** Status */
-            status: string;
-            /** Summary */
-            summary: string | null;
         };
         /** ToolView */
         services__api__modules__agent__schemas__ToolView: {
@@ -23958,49 +24001,6 @@ export interface components {
             steps: unknown;
             /** Version */
             version: number;
-        };
-        /**
-         * StepView
-         * @description One step of an Ask turn as the timeline draws it (worker turn_trace.py step contract).
-         */
-        services__api__modules__qa__schemas__StepView: {
-            /** Action */
-            action: string;
-            /** Chips */
-            chips?: {
-                [key: string]: string;
-            }[];
-            /** Detail */
-            detail?: {
-                [key: string]: unknown;
-            } | null;
-            /** Duration Ms */
-            duration_ms?: number | null;
-            /** Parent */
-            parent?: string | null;
-            /** Seq */
-            seq: number;
-            /**
-             * Started At
-             * Format: date-time
-             */
-            started_at: string;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "running" | "done" | "failed" | "skipped";
-            /** Step Id */
-            step_id: string;
-            /** Summary */
-            summary?: string | null;
-            /**
-             * Target
-             * @default
-             */
-            target: string;
-            /** Title */
-            title: string;
         };
         /**
          * Accepted

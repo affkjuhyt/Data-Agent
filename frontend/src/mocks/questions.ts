@@ -52,6 +52,30 @@ const sse = (events: { id: string; event: string; data: unknown }[]) =>
     { headers: { 'Content-Type': 'text/event-stream' } },
   );
 
+function stepEvent(
+  stepId: string,
+  seq: number,
+  action: string,
+  title: string,
+  status: string,
+  detail: Record<string, unknown> | null = null,
+) {
+  return {
+    kind: 'step',
+    step_id: stepId,
+    seq,
+    action,
+    title,
+    target: '',
+    chips: [],
+    status,
+    started_at: '2026-11-02T10:00:00Z',
+    duration_ms: status === 'running' ? null : 120,
+    detail,
+    parent: null,
+  };
+}
+
 const QUERY_RUN_ID = '0192f0c4-7a1e-7c00-9a51-5e1f00000001';
 const REGIONS: [string, string][] = [
   ['Đồng bằng sông Hồng', '1.84'],
@@ -153,7 +177,11 @@ export function createQuestionHandlers() {
       if (!q) return undefined;
       const after = Number(request.headers.get('Last-Event-ID') ?? -1);
       q.reads += 1;
-      const events = [{ id: '11', event: 'understood', data: { plan: { version: 1, chips: [] } } }, { id: '12', event: 'progress', data: { status: 'planning' } }];
+      const events = [
+        { id: '11', event: 'understood', data: { plan: { version: 1, chips: [] } } },
+        { id: '12', event: 'progress', data: { status: 'planning' } },
+        { id: '13', event: 'activity', data: stepEvent('s1', 1, 'understand', 'Hiểu câu hỏi', 'running') },
+      ];
       if (q.reads > 1) {
         answers.set(
           q.answerId,
@@ -164,7 +192,9 @@ export function createQuestionHandlers() {
           ),
         );
         events.push(
-          { id: '15', event: 'answer', data: { answer_id: q.answerId, kind: 'data' } } as never,
+          { id: '14', event: 'activity', data: stepEvent('s1', 1, 'understand', 'Hiểu câu hỏi', 'done', { reading: [] }) } as never,
+          { id: '15', event: 'activity', data: stepEvent('s2', 2, 'query', 'Truy vấn', 'done', { row_count: 3, query_run_id: QUERY_RUN_ID }) } as never,
+          { id: '16', event: 'answer', data: { answer_id: q.answerId, kind: 'data' } } as never,
           { id: '17', event: 'done', data: { status: 'answered', answer_id: q.answerId } } as never,
         );
       }
@@ -202,6 +232,21 @@ export function createQuestionHandlers() {
     http.get('*/v1/answers/:id', ({ params }) => {
       const answer = answers.get(String(params.id));
       return answer ? HttpResponse.json(answer) : undefined;
+    }),
+    http.get('*/v1/questions/:id/steps', ({ params }) => {
+      const q = questions.get(String(params.id));
+      if (!q) return undefined;
+      return HttpResponse.json({
+        question_id: String(params.id),
+        run_id: `run-${String(params.id)}`,
+        status: 'succeeded',
+        duration_ms: 2400,
+        tokens: 296,
+        steps: [
+          { ...stepEvent('s1', 1, 'understand', 'Hiểu câu hỏi', 'done', { reading: [] }), summary: null },
+          { ...stepEvent('s2', 2, 'query', 'Truy vấn', 'done', { row_count: 3, query_run_id: QUERY_RUN_ID }), summary: null },
+        ],
+      });
     }),
     http.get('*/v1/conversations', () => {
       const byConv = new Map<string, { title: string; updated_at: string }>();
