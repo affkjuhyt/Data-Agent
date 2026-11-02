@@ -192,6 +192,11 @@ class QueryMetric(Tool):
             tool=self.name,
             unit=compiled.unit,
             truncated=bool(outcome.truncated),
+            reading={
+                "metric": args.metric,
+                "group_by": list(args.group_by),
+                "filters": {k: list(v) for k, v in args.filters.items()},
+            },
         )
         detail["dataset"] = ds.id
         if not outcome.rows:

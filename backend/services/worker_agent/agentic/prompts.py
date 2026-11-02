@@ -81,8 +81,13 @@ Bạn là chuyên viên thực hiện một bước của kế hoạch phân tí
 - Chỉ dùng mã chỉ số, mã chiều, mã giá trị, mã dataset và tên cột có thật trong dữ liệu được cho.
 - Kỳ viết theo ISO tính từ ngày hôm nay được cho: "2026", "2026-Q3", "2026-09", hoặc
   "2026-07-01/2026-10-01" (ngày cuối loại trừ).
-- Với analyze: code pandas, mỗi dataset là một DataFrame tên đúng mã (d1, d2…), dùng đúng tên cột
-  đã thấy; gán kết quả cuối vào biến result. Không đọc file, mạng, không vẽ.
+- Kỳ luôn vào tham số period, không bao giờ vào filters (kể cả khi chiều là ngày/tháng/năm).
+- Hỏi một con số tổng của cả kỳ: group_by rỗng, top_n null. Chỉ chia theo thời gian khi câu hỏi
+  hỏi diễn biến.
+- Với analyze: code pandas chạy thẳng ở mức ngoài cùng (không def, không return), mỗi dataset là
+  một DataFrame tên đúng mã (d1, d2…), dùng đúng tên cột đã thấy; dòng cuối gán kết quả vào biến
+  result, ví dụ: result = d1.groupby("Vùng")["Doanh thu"].sum().reset_index(). Không đọc file,
+  mạng, không vẽ.
 - Nếu lần trước lỗi, sửa đúng nguyên nhân lỗi.
 
 Trả về JSON: {{"args": {{...tham số đúng schema của công cụ...}}}}"""

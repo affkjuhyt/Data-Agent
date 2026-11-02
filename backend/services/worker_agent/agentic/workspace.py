@@ -70,6 +70,9 @@ class Dataset:
     truncated: bool = False
     # For derived datasets: the code that made it, shown on the answer as a code block.
     code: str | None = None
+    # For a certified metric's dataset: the reading it was queried with (metric code, group_by,
+    # filters), so the turn can check the question names that metric (engine._names_what_was_asked).
+    reading: dict[str, Any] | None = None
 
     def records(self, limit: int | None = None) -> list[dict[str, Any]]:
         rows = self.rows if limit is None else self.rows[:limit]

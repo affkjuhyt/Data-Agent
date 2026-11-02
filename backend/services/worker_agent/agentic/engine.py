@@ -46,6 +46,7 @@ from services.worker_agent.progress import is_cancel_requested, publish
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.resolver import metric_words, quantity_words
 from services.worker_agent.understand.text import find_period
 
 logger = logging.getLogger(__name__)
@@ -455,6 +456,45 @@ def after_review(s: State) -> str:
 # ---------------------------------------------------------------- compose
 
 
+# Words that say what to do with a quantity, not which one (normalised, both languages): a "why",
+# a ranking, a trend or a comparison is the agent's to plan, not a metric to be named.
+ANALYSIS_WORDS = frozenset(
+    "co vi sao tai giam tang top cao thap nhat xu huong bien dong phan tich nguyen nhan ty trong "
+    "luy ke so sanh chenh lech tong trung binh nhieu it hon bao tri dong gop anh huong "
+    "why how trend compare increase decrease highest lowest total average share top rank change "
+    "growth drop rise".split()
+)
+
+
+def _unnamed_quantity(s: State) -> list[str]:
+    """The question's quantity words no certified metric the turn read is named by (invariant 3,
+    as resolver.grounding decides for one reading); empty when they all are, when the turn wrote
+    its own SQL for the question, or when it read no certified metric."""
+    assert s.ctx is not None and s.plan is not None
+    if s.plan.mode != "analyze":
+        return []
+    datasets = list(s.ctx.ws.datasets.values())
+    if any(d.tool == "explore_sql" for d in datasets):
+        return []
+    readings = [d.reading for d in datasets if d.reading]
+    if not readings:
+        return []
+    vocab = s.ctx.layer.vocabulary
+    by_code = {m.code: m for m in vocab.metrics}
+    named: set[str] = set()
+    for r in readings:
+        if r["metric"] in by_code:
+            named |= metric_words(by_code[r["metric"]], vocab)
+    words = quantity_words(
+        s.ctx.question,
+        vocab,
+        today=s.ctx.today,
+        group_by=[g for r in readings for g in r["group_by"]],
+        filters={k: v for r in readings for k, v in r["filters"].items()},
+    )
+    return [w for w in words if w not in named and w not in ANALYSIS_WORDS]
+
+
 def _facts_text(known: dict[str, verify.Fact]) -> str:
     return "\n".join(f"{{{{{k}}}}} = {f.shown} ({f.label})" for k, f in known.items())
 
@@ -473,6 +513,17 @@ async def compose(s: State) -> None:
             "handover",
             target="Chưa lấy được số liệu; chuyển sang cách trả lời chuẩn.",
             detail={"steps": p.view(s.plan)},
+        )
+        s.handed_back = True
+        return
+    unnamed = _unnamed_quantity(s)
+    if unnamed:
+        # The metrics read do not measure what the question asks ("khách hàng" read as units
+        # sold): the governed path asks back or explores SQL, as it does for a partial reading.
+        await turn_trace.record_step(
+            "handover",
+            target=f"Chỉ số đã dùng không đo '{' '.join(unnamed)}'; chuyển sang cách trả lời chuẩn.",
+            detail={"unnamed": unnamed},
         )
         s.handed_back = True
         return

@@ -285,3 +285,47 @@ def test_an_analysis_that_fetched_nothing_hands_the_question_back() -> None:
     )
     asyncio.run(engine.compose(state))
     assert state.handed_back and state.composition == []
+
+
+def test_a_metric_that_does_not_measure_what_was_asked_hands_the_question_back() -> None:
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    units = MetricEntry(uuid.uuid4(), "SO_LUONG_BAN_INTERNET", "Số lượng bán Internet", True)
+    vocab = types.SimpleNamespace(
+        metrics=[units], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
+    )
+    ws = Workspace()
+    ws.add(
+        title="Số lượng bán Internet",
+        columns=["Số lượng bán Internet"],
+        rows=[[5520]],
+        trust="certified",
+        tool="query_metric",
+        reading={"metric": "SO_LUONG_BAN_INTERNET", "group_by": [], "filters": {}},
+    )
+
+    def state(question: str) -> engine.State:
+        return engine.State(
+            event=types.SimpleNamespace(),  # type: ignore[arg-type]
+            question_id=uuid.uuid4(),
+            model=types.SimpleNamespace(),  # type: ignore[arg-type]
+            ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+                ws=ws,
+                question=question,
+                today=datetime.date(2026, 11, 3),
+                layer=types.SimpleNamespace(vocabulary=vocab),
+            ),
+            plan=_plan({"id": "s1", "tool": "query_metric", "instruction": "x", "status": "done"}),
+        )
+
+    asked_customers = state("Có bao nhiêu khách hàng mua qua Internet năm 2013")
+    assert engine._unnamed_quantity(asked_customers) == ["khach", "hang", "mua"]
+    asyncio.run(engine.compose(asked_customers))
+    assert asked_customers.handed_back
+    assert engine._unnamed_quantity(state("Vì sao số lượng bán Internet năm 2013 giảm")) == []

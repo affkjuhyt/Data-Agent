@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime
 import re
 import uuid
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -252,6 +253,47 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
 _FILLER: frozenset[str] = frozenset[str]().union(*(pack.filler for pack in PACKS))
 
 
+def metric_words(metric: MetricEntry, vocab: Vocabulary) -> set[str]:
+    """The words that name `metric`: its name, its code, its approved synonyms."""
+    named = set(norm(metric.name).split()) | set(norm(metric.code.replace("_", " ")).split())
+    for phrase, target in vocab.synonyms.items():
+        if target[:2] == ("metric", str(metric.metric_id)):
+            named |= set(norm(phrase).split())
+    return named
+
+
+def quantity_words(
+    question: str,
+    vocab: Vocabulary,
+    *,
+    today: datetime.date,
+    group_by: Sequence[str] = (),
+    filters: Mapping[str, Sequence[str]] | None = None,
+) -> list[str]:
+    """The question's words that can only name a quantity: those of its period, of the cuts and
+    filters a reading chose, fillers and numbers set aside."""
+    text = norm(question)
+    period = find_period(question, today, vocab.calendar)
+    if period:
+        text = text.replace(period.span, " ")
+    chosen: set[str] = set()
+    by_code = {d.code: d for d in vocab.dimensions}
+    for code in group_by:
+        if code in by_code:
+            chosen |= set(norm(by_code[code].name).split())
+    for dim_code, members in (filters or {}).items():
+        if dim_code in by_code:
+            chosen |= set(norm(by_code[dim_code].name).split())
+        for v in vocab.values:
+            if v.dimension_code == dim_code and v.value_code in members:
+                chosen |= set(norm(v.label).split()) | set(norm(v.value_code).split())
+    return [
+        w
+        for w in text.split()
+        if len(w) > 1 and w not in _FILLER and not w.isdigit() and w not in chosen
+    ]
+
+
 def grounding(
     question: str, u: Understanding, vocab: Vocabulary, *, today: datetime.date
 ) -> Literal["full", "partial", "none"]:
@@ -261,30 +303,8 @@ def grounding(
     Words of the period and of the cuts and filters the reading chose are set aside first. The
     model proposes; this decides whether its reading may be answered without asking (invariant 3)."""
     assert u.metric is not None
-    text = norm(question)
-    period = find_period(question, today, vocab.calendar)
-    if period:
-        text = text.replace(period.span, " ")
-    named = set(norm(u.metric.name).split()) | set(norm(u.metric.code.replace("_", " ")).split())
-    for phrase, target in vocab.synonyms.items():
-        if target[:2] == ("metric", str(u.metric.metric_id)):
-            named |= set(norm(phrase).split())
-    chosen: set[str] = set()
-    by_code = {d.code: d for d in vocab.dimensions}
-    for code in u.group_by:
-        if code in by_code:
-            chosen |= set(norm(by_code[code].name).split())
-    for dim_code, members in u.filters.items():
-        if dim_code in by_code:
-            chosen |= set(norm(by_code[dim_code].name).split())
-        for v in vocab.values:
-            if v.dimension_code == dim_code and v.value_code in members:
-                chosen |= set(norm(v.label).split()) | set(norm(v.value_code).split())
-    words = [
-        w
-        for w in text.split()
-        if len(w) > 1 and w not in _FILLER and not w.isdigit() and w not in chosen
-    ]
+    named = metric_words(u.metric, vocab)
+    words = quantity_words(question, vocab, today=today, group_by=u.group_by, filters=u.filters)
     # Only a period, cuts or filters left: a follow-up ("còn theo vùng thì sao?") that takes the
     # metric of the conversation, which names no quantity of its own to be at odds with.
     if not words:
