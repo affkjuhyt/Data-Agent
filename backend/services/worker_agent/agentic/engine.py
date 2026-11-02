@@ -752,8 +752,9 @@ def _checked(
     s: State, d: b.BlockDraft, known: dict[str, verify.Fact], allowed: set[str]
 ) -> dict[str, Any] | None:
     assert s.ctx is not None
+    cited = {int(c["index"]) for c in s.ctx.ws.citations}
     if d.type in ("markdown", "callout") and d.content:
-        checked = verify.fill(d.content, known, allowed)
+        checked = verify.fill(verify.repair_citations(d.content, cited), known, allowed)
         s.numbers += checked.numbers
         s.dropped_sentences += checked.dropped
         if not checked.text.strip():
@@ -762,7 +763,7 @@ def _checked(
     if d.type == "insights":
         kept = []
         for item in d.insights:
-            checked = verify.fill(item.text, known, allowed)
+            checked = verify.fill(verify.repair_citations(item.text, cited), known, allowed)
             s.numbers += checked.numbers
             s.dropped_sentences += checked.dropped
             if checked.text.strip():

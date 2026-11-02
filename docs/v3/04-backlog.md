@@ -260,7 +260,7 @@ người dùng, P2 nâng chất lượng trả lời, P3 mở rộng năng lực
 
 | ID | Mức | Việc | Nguồn | Công sức | TT |
 | --- | --- | --- | --- | --- | --- |
-| RES-11 | P2 | Sổ trích dẫn ổn định trong workspace của agent: cùng đoạn cùng số, trỏ lại khi lặp, đánh số lại khi xuất, sửa định dạng `[n]` hỏng | ragflow | S | todo |
+| RES-11 | P2 | Sổ trích dẫn ổn định trong workspace của agent: cùng đoạn cùng số, trỏ lại khi lặp, đánh số lại khi xuất, sửa định dạng `[n]` hỏng | ragflow | S | done: một số cho mỗi đoạn trong cả lượt, sửa `[ID:n]`/`【n】`/`[^n]`, bỏ số trỏ đoạn không có; chưa đánh số lại theo thứ tự xuất hiện |
 | RES-12 | P2 | Chấm điểm truy hồi: độ phủ từ có trọng số (tiêu đề, từ khoá, câu hỏi) trộn với điểm rerank đã chuẩn hoá; thử lại một lần nới lỏng trước khi nói "không thấy" | ragflow | S | todo |
 | RES-13 | P2 | Chunk cha/con: đánh chỉ mục mức Khoản, trích dẫn mức Điều/mục; chunker theo cấp tiêu đề cho tài liệu không phải văn bản pháp quy | ragflow | M | todo |
 | RES-14 | P3 | Công cụ `read_document` (đoạn lân cận) và `grep_documents`, lọc giữ top-3 trước khi đưa model | ragflow | M | todo |

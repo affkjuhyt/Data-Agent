@@ -42,8 +42,23 @@ class SearchDocuments(Tool):
         if not passages:
             return ToolResult(False, "không thấy đoạn nào trong tài liệu", detail={"found": 0})
         found = []
+        # One handle per passage for the whole turn (ragflow's evidence registry): a passage two
+        # searches find is cited by the number it got the first time.
+        known = {c.get("chunk_id"): c["index"] for c in ctx.ws.citations}
         for p in passages[:6]:
+            if str(p.chunk_id) in known:
+                index = known[str(p.chunk_id)]
+                found.append(
+                    {
+                        "cite": f"[{index}]",
+                        "title": p.title,
+                        "page": p.page_from,
+                        "text": p.text[:PASSAGE_CHARS],
+                    }
+                )
+                continue
             index = len(ctx.ws.citations) + 1
+            known[str(p.chunk_id)] = index
             ctx.ws.citations.append(
                 {
                     "index": index,

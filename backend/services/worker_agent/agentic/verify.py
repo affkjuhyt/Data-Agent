@@ -89,6 +89,16 @@ class Checked:
     dropped: int
 
 
+# Citation markers a model writes off the format ([ID:2], 【2】, [^2], (ref 2)): repaired to [2].
+_LOOSE_CITE = re.compile(r"\[(?:ID|id|ref|\^)\s*:?\s*(\d{1,2})\]|【(\d{1,2})】")
+
+
+def repair_citations(text: str, known_indexes: set[int]) -> str:
+    """Off-format markers rewritten as [n]; a marker for a passage the turn never found removed."""
+    text = _LOOSE_CITE.sub(lambda m: f"[{m.group(1) or m.group(2)}]", text)
+    return _CITE.sub(lambda m: m.group(0) if int(m.group(0)[1:-1]) in known_indexes else "", text)
+
+
 def fill(text: str, known: dict[str, Fact], allowed: set[str]) -> Checked:
     numbers = 0
     kept: list[str] = []

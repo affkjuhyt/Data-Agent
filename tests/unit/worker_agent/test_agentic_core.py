@@ -565,3 +565,11 @@ def test_a_lookup_and_one_governed_query_is_a_simple_question() -> None:
             {"id": "s2", "tool": "query_metric", "instruction": "b"},
         )
     )
+
+
+def test_citation_markers_off_format_are_repaired_and_unknown_ones_dropped() -> None:
+    text = "Theo quy định [ID:1] và báo cáo 【2】, xem thêm [^3] và [7]."
+    assert (
+        verify.repair_citations(text, {1, 2, 3})
+        == "Theo quy định [1] và báo cáo [2], xem thêm [3] và ."
+    )
