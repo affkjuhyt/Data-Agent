@@ -36,12 +36,6 @@ Không thêm số liệu, ngày hay tên không có trong đoạn được tríc
 Nếu các đoạn không trả lời được câu hỏi, trả {"claims": []}.
 Trả về JSON: {"claims": [{"text": "<ý>", "citations": [{"passage": <số đoạn>, "quote": "<câu trích>"}]}]}"""
 
-GENERAL_SYSTEM = """Bạn trả lời câu hỏi bằng tiếng Việt như một trợ lý tổng quát.
-Không được nói hoặc ngụ ý rằng bạn đã đọc dữ liệu, tài liệu hay số liệu riêng của Data Space.
-Nếu câu hỏi cần số liệu nội bộ mà bạn không có, hãy nói rõ giới hạn đó và trả lời phần khái niệm,
-phương pháp hoặc hướng dẫn có thể trả lời được. Không bịa số liệu, tên tài liệu, chính sách hay
-chi tiết riêng của doanh nghiệp. Trả lời ngắn gọn, trực tiếp.
-Trả về JSON: {"text": "<câu trả lời>"}"""
 
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
@@ -58,10 +52,6 @@ class Claim(BaseModel):
 
 class Claims(BaseModel):
     claims: list[Claim]
-
-
-class GeneralAnswer(BaseModel):
-    text: str
 
 
 @dataclass
@@ -97,7 +87,6 @@ class DocumentAnswer:
     model: str | None = None
     tokens: int = 0
     dropped: list[str] = field(default_factory=list)
-    general: bool = False
 
     @property
     def found(self) -> bool:
@@ -165,41 +154,6 @@ def not_found() -> DocumentAnswer:
             "sentences_dropped": 0,
             "untraceable_final": 0,
         },
-    )
-
-
-async def compose_general(gateway: Gateway | None, question: str) -> DocumentAnswer | None:
-    """Answer without evidence when SQL and document grounding cannot answer the question.
-
-    This path is deliberately separate from ``compose``: it cannot create citations or figures,
-    so the UI labels the result as insufficient evidence instead of presenting it as a governed
-    Data Space answer.
-    """
-    if gateway is None:
-        return None
-    try:
-        reply = await gateway.json_chat(
-            "responder", GENERAL_SYSTEM, question, GeneralAnswer, max_tokens=700
-        )
-    except ModelUnavailable:
-        return None
-    text = reply.content.text.strip()
-    if not text:
-        return None
-    return DocumentAnswer(
-        text,
-        [],
-        {
-            "numbers_total": 0,
-            "traced": 0,
-            "untraceable_draft": 0,
-            "regenerated": 0,
-            "sentences_dropped": 0,
-            "untraceable_final": 0,
-        },
-        model=reply.model,
-        tokens=reply.tokens,
-        general=True,
     )
 
 

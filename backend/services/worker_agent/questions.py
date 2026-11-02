@@ -17,8 +17,8 @@ never holds a lock on the question:
 The semantic path now records an analyst DAG: understand intent, resolve scope, query, validate,
 select a visualization and narrate. The legacy execution step remains during the transition so
 existing verified-query and evaluation consumers keep working. A question that names no metric is tried in exploratory SQL, then looked up
-in the Data Space's documents (UC-05-04, documents/), then answered generally when neither source
-can support it. The general answer has no figures or citations and is labeled insufficient evidence.
+in the Data Space's documents (UC-05-04, documents/), then refused with its code when neither source
+can support it: nothing is answered without evidence.
 The handler is idempotent: a question past `received` is left alone.
 """
 
@@ -109,7 +109,6 @@ NOT_STANDARD = "chưa có định nghĩa chuẩn"
 OUT_OF_SCOPE = "Ngoài phạm vi data product, không có biên nhận"
 
 DOCUMENT_AGENT_NAME = "Agent Tài liệu"
-GENERAL_AGENT_NAME = "Agent Hỏi đáp"
 
 _secrets: SecretReader | None = None
 _gateway: Gateway | None = None
@@ -145,14 +144,14 @@ async def source_for_provider(request: ProviderRequest) -> catalog.Source | None
 
 
 def provider_registry() -> ProviderRegistry:
-    global _provider_registry
-    if _provider_registry is None:
-        from services.worker_agent.providers.registry import ProviderRegistry
+    """The registry the worker set at start (main.py); without one, a registry over the secret
+    reader in force now. It is not kept: one built on the first call would keep that call's
+    secret reader for every later turn."""
+    if _provider_registry is not None:
+        return _provider_registry
+    from services.worker_agent.providers.registry import ProviderRegistry
 
-        _provider_registry = ProviderRegistry.build_default(
-            secrets=secrets(), source_loader=source_for_provider
-        )
-    return _provider_registry
+    return ProviderRegistry.build_default(secrets=secrets(), source_loader=source_for_provider)
 
 
 def set_provider_registry(registry: ProviderRegistry) -> None:
@@ -1980,23 +1979,6 @@ def _document_plan(question: qa.Question, as_of: datetime.date) -> dict[str, Any
     }
 
 
-def _general_plan(question: qa.Question, as_of: datetime.date) -> dict[str, Any]:
-    """Plan IR for a general answer that carries no Data Space evidence."""
-    return {
-        "version": 2,
-        "goal": "answer",
-        "path": "general_answer",
-        "as_of": as_of.isoformat(),
-        "knowledge_mode": question.knowledge_mode,
-        "chips": [],
-        "steps": [],
-        "outputs": [{"as": "text"}],
-        "budget": {"max_steps": 1, "max_tokens": 700, "max_duration": 30},
-        "phase": 1,
-        "max_phases": 1,
-    }
-
-
 async def _answer_from_documents(
     event: Event,
     question_id: uuid.UUID,
@@ -2004,7 +1986,8 @@ async def _answer_from_documents(
     plan_id: uuid.UUID,
     models: list[dict[str, Any]],
 ) -> bool:
-    """Answer a no-metric question from documents, or fall back to a general answer."""
+    """UC-05-04 for a question that names no metric. False when the Data Space has no document
+    the question could be answered from, so the caller refuses as before."""
     started = datetime.datetime.now(datetime.UTC)
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         question = await session.get(qa.Question, question_id)
@@ -2048,25 +2031,15 @@ async def _answer_from_documents(
             )
             is not None
         )
+        if not has_documents:
+            # No document in the space: the question was never a document question, and it is
+            # refused with its code rather than answered without evidence.
+            return False
         text, plan = question.text, _document_plan(question, as_of)
         async with turn_trace.stepping("write_answer") as written:
-            if not has_documents:
-                told = await document_answer.compose_general(gateway(), text)
-                if told is None:
-                    written.status = "skipped"
-                    return False
-                plan = _general_plan(question, as_of)
-            else:
-                told = await document_answer.compose(gateway(), text, passages, as_of)
-                if not told.found:
-                    general = await document_answer.compose_general(gateway(), text)
-                    if general is None:
-                        written.status = "skipped"
-                        return False
-                    told = general
-                    plan = _general_plan(question, as_of)
+            told = await document_answer.compose(gateway(), text, passages, as_of)
             written.detail = {
-                "by": "general" if told.general else "documents",
+                "by": "documents",
                 "citations": len(told.citations),
                 "claims_dropped": len(told.dropped),
             }
@@ -2076,7 +2049,7 @@ async def _answer_from_documents(
     if told.model:
         models.append(
             {
-                "task": "general_answer" if told.general else "document_answer",
+                "task": "document_answer",
                 "model_name": told.model,
                 "tokens": told.tokens,
             }
@@ -2087,7 +2060,7 @@ async def _answer_from_documents(
             question_id,
             len(told.dropped),
         )
-    if not told.found and not told.general:
+    if not told.found:
         # E1: "not found in the documents you may read" is an answer, not a failure: it is
         # written as one (no citations, so the trust label says there is no evidence) and drawn
         # as plain text, not as a refusal card. The hint covers a question meant for a metric.
@@ -2116,7 +2089,7 @@ async def _answer_from_documents(
                     told.number_check,
                     citations=[c.as_json() for c in told.citations],
                 ),
-                agent_name=GENERAL_AGENT_NAME if told.general else DOCUMENT_AGENT_NAME,
+                agent_name=DOCUMENT_AGENT_NAME,
                 latency_ms=int(
                     (datetime.datetime.now(datetime.UTC) - started).total_seconds() * 1000
                 ),

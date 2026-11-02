@@ -168,12 +168,11 @@ async def test_a_turn_is_a_run_of_the_data_spaces_ask_agent(seed: Seed) -> None:
         run_id,
     )
     # Nothing could be placed: choosing a metric failed and says why, then the documents were
-    # looked in (the space has none to answer from, so nothing was written).
+    # looked in (the space has none, so it is refused with its code: nothing without evidence).
     assert [(name, state) for _, _, name, state in steps] == [
         ("understand", "ok"),
         ("choose_metric", "error"),
         ("search_documents", "ok"),
-        ("write_answer", "skipped"),
     ]
 
 
