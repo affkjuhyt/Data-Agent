@@ -704,6 +704,28 @@ async def test_one_person_owner_and_steward_when_the_org_allows_it(
     assert self_approvals(ds.org) == ["data_product.steward"]
 
 
+async def test_a_proposed_self_approved_change_is_recorded_as_proposed(
+    ds: Space, self_approvals: Any
+) -> None:
+    async with client(ds) as api:
+        product = (await _create(api, ds))["id"]
+        await _members(api, ds, product)
+        _activate(ds, product)
+        ds.seed.allow_self_approval(ds.org)
+        me = str(ds.users["steward"])
+        draft = await api.patch(
+            f"/v1/data-products/{product}",
+            json={"owner_id": me, "steward_id": me},
+            headers=ds.headers("steward"),
+        )
+    assert draft.status_code == 200, draft.text
+    assert draft.json()["status"] == "pending_review"
+    assert self_approvals(ds.org) == [
+        "data_product.steward.proposed",
+        "data_product.owner.proposed",
+    ]
+
+
 async def test_personal_data_raises_the_product_classification(ds: Space) -> None:
     ds.seed.row(
         "catalog.column_meta",

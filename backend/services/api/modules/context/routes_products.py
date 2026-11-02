@@ -697,7 +697,9 @@ async def update_data_product(
         )
         await session.flush()
         await session.refresh(row)
-        # Only proposed here: whoever decides the proposal later is the one who approves.
+        # Only proposed here, but the waiver is granted here: the rows say so (".proposed"), so
+        # history does not claim the change took effect before its reviewer accepted it.
+        await _record_self_approvals(principal, row.id, [f"{x}.proposed" for x in self_steps])
         draft = _view(row)
     for name, value in proposed.items():
         setattr(draft, name, value)
