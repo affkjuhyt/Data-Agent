@@ -7,6 +7,7 @@ before 19/10/2026, next to the figure filed for September."""
 from __future__ import annotations
 
 import datetime
+import decimal
 import json
 import uuid
 from typing import Any
@@ -14,6 +15,7 @@ from typing import Any
 import pytest
 
 from services.worker_agent import metric_changes, proposals
+from services.worker_agent.answer.narrate import vn_number
 from services.worker_agent.events import Event
 
 from . import test_answers
@@ -185,6 +187,16 @@ async def test_a_change_without_breaks_is_proposed_with_its_reach_and_certified_
     assert float(months["2026-08"]["new"]) == float(months["2026-08"]["current"]) == 500
     assert months["2026-04"]["new"] is None
     assert impact["counts"]["filed_mismatches"] == 1
+    # The review page's "Ảnh hưởng" table (frontend lib/v1/api.ts readImpact) is drawn from these.
+    places = seed.one("SELECT decimals FROM context.metric_version WHERE id = %s", v2)
+    assert impact["columns"] == ["v1", "v2"] and impact["window_label"] == "chạy thử trên 6 tháng"
+    assert impact["rows"][-1] == {
+        "period": "2026-09",
+        "before": vn_number(decimal.Decimal(3000), places),
+        "after": vn_number(decimal.Decimal(8000), places),
+        "delta": "+" + vn_number(decimal.Decimal(5000), places),
+    }
+    assert impact["rows"][0] == {"period": "2026-04", "before": "—", "after": "—", "delta": "—"}
     assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v2) == (
         "pending_review"
     )
@@ -202,6 +214,29 @@ async def test_a_change_without_breaks_is_proposed_with_its_reach_and_certified_
         )
         == 1
     )
+
+
+async def test_months_without_figures_move_the_comparison_to_the_last_months_with_data(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A warehouse that stops in the past (AdventureWorks ends in 2014): the six months before today
+    # hold nothing, so the reviewer is shown the last months that do, and told so.
+    monkeypatch.setattr(metric_changes, "_today", lambda: datetime.date(2027, 6, 15))
+    bank = build(seed, warehouse, monkeypatch)
+    metric, _ = du_no(bank)
+    v2 = new_version(bank, metric, dims=["vung", "san_pham"])
+    proposal = await preview(bank, v2)
+
+    diff, impact = seed.one("SELECT diff, impact FROM inbox.proposal WHERE id = %s", proposal)
+    months = [row["period"] for row in diff["preview"]]
+    assert months[-1] == "2026-09" and 0 < len(months) <= 6, months
+    assert all(row["new"] is not None for row in diff["preview"])
+    assert diff["preview_note"] == (
+        "Không có số trong 6 tháng trước 06/2027; so trên các tháng cuối có dữ liệu,"
+        f" {months[0][5:]}/{months[0][:4]} đến 09/2026."
+    )
+    assert impact["window_label"] == diff["preview_note"]
+    assert [row["period"] for row in impact["rows"]] == months
 
 
 async def test_a_change_that_breaks_a_monitor_is_flagged_and_not_applied(

@@ -5,7 +5,10 @@ reaches: the impact analysis the Holistics review asked for before a definition 
 metric are counted, read each with its own schema's role, and the ones the new version would break
 are named. The figures A3 asks of :preview are computed: the new version and the certified one, by
 month over the last six complete months (the event's `periods`), on the metric's own source, next
-to the figure filed for each month. A new version that does not compile or run is a break
+to the figure filed for each month; a source whose data stops before those months (a sample
+warehouse) is compared on its last six months with data instead, and the proposal says so
+(`diff.preview_note`). `impact` also carries the table the review page draws ("Ảnh hưởng":
+window_label, columns, rows). A new version that does not compile or run is a break
 (AC-07-01-04). A metric_change proposal opens with all of it: `diff.preview`, `impact` and
 `impact_level`, and the version waits in pending_review.
 
@@ -35,6 +38,7 @@ from __future__ import annotations
 import datetime
 import decimal
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -55,6 +59,7 @@ from libs.dataagent_db.models import (
 )
 from libs.dataagent_db.models import org as org_models
 from services.worker_agent import proposals, questions, self_approval, semantic_review
+from services.worker_agent.answer.narrate import vn_number
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
 from services.worker_agent.query.scope import can_ask_data_space
@@ -142,8 +147,12 @@ class Impact:
             return "high"
         return "medium" if any(self.counts.values()) else "low"
 
+    # The review page's "Ảnh hưởng" table (frontend lib/v1/api.ts readImpact): set by
+    # preview_figures from the months it compared.
+    table: dict[str, Any] = field(default_factory=dict)
+
     def as_json(self) -> dict[str, Any]:
-        return {"counts": self.counts, "breaks": self.breaks}
+        return {"counts": self.counts, "breaks": self.breaks, **self.table}
 
 
 @dataclass(frozen=True)
@@ -346,7 +355,7 @@ async def _by_month(
     event: Event,
     actor: uuid.UUID,
     version: c.MetricVersion,
-    window: c.Period,
+    window: c.Period | None,
     space_id: uuid.UUID,
 ) -> tuple[dict[str, decimal.Decimal | None], str | None, str | None]:
     """The version's value for each month of the window, run in place on its source; or the break
@@ -450,17 +459,50 @@ async def _filed(
         return dict(rows.all())
 
 
+def _last_months_with_data(
+    values: dict[str, decimal.Decimal | None], before: datetime.date, count: int
+) -> c.Period | None:
+    """The `count` last complete months before `before` that hold a figure, as one window."""
+    held = sorted(k for k, n in values.items() if n is not None and k < f"{before:%Y-%m}")
+    labels = [k for k in held if re.fullmatch(r"\d{4}-\d{2}", k)][-count:]
+    if not labels:
+        return None
+    first = datetime.date(int(labels[0][:4]), int(labels[0][5:]), 1)
+    last = datetime.date(int(labels[-1][:4]), int(labels[-1][5:]), 1)
+    return c.Period(first, (last.replace(day=28) + datetime.timedelta(days=4)).replace(day=1))
+
+
+def _shown(value: decimal.Decimal | None, decimals: int, *, signed: bool = False) -> str:
+    if value is None:
+        return "—"
+    text = vn_number(value, decimals)
+    return f"+{text}" if signed and value > 0 else text
+
+
 async def preview_figures(
     event: Event, actor: uuid.UUID, v: _Versions, periods: int, impact: Impact
-) -> tuple[list[dict[str, str | None]], str | None]:
-    """The new version next to the certified one and to the filed figure, month by month, and why
-    figures are withheld if they are; what keeps the new one from running goes into `impact` as a
-    break."""
+) -> tuple[list[dict[str, str | None]], str | None, str | None]:
+    """The new version next to the certified one and to the filed figure, month by month, why
+    figures are withheld if they are, and a note when the months are not the last ones before
+    today; what keeps the new one from running goes into `impact` as a break, and the table the
+    review page draws into `impact.table`."""
     window = _months_before(_today(), periods)
     space_id = v.metric.data_space_id
-    new, problem, withheld = await _by_month(
-        event, actor, _compiled_version(v.new, v.metric.code), window, space_id
-    )
+    compiled_new = _compiled_version(v.new, v.metric.code)
+    new, problem, withheld = await _by_month(event, actor, compiled_new, window, space_id)
+    note: str | None = None
+    if problem is None and withheld is None and all(n is None for n in new.values()):
+        # A source whose data stops in the past (a sample warehouse, a closed system) has no
+        # figure in the months before today; the reviewer is shown its last months instead.
+        everything, problem, withheld = await _by_month(event, actor, compiled_new, None, space_id)
+        moved = _last_months_with_data(everything, window.end, periods)
+        if moved is not None:
+            last = moved.end - datetime.timedelta(days=1)
+            note = (
+                f"Không có số trong {periods} tháng trước {window.end:%m/%Y}; so trên các tháng"
+                f" cuối có dữ liệu, {moved.start:%m/%Y} đến {last:%m/%Y}."
+            )
+            window, new = moved, everything
     if problem is not None:
         impact.breaks.append({"kind": "definition", "id": str(v.new.id), "text": problem})
     current: dict[str, decimal.Decimal | None] = {}
@@ -490,7 +532,25 @@ async def preview_figures(
             }
         )
     impact.counts["filed_mismatches"] = mismatches
-    return rows, withheld
+    places = v.new.decimals
+    impact.table = {
+        "window_label": note or f"chạy thử trên {len(rows)} tháng",
+        "columns": [
+            f"v{v.certified.version}" if v.certified else "Chưa có bản chuẩn",
+            f"v{v.new.version}",
+        ],
+        "rows": [
+            {
+                "period": str(row["period"]),
+                "before": _shown(current.get(str(row["period"])), places),
+                "after": _shown(new.get(str(row["period"])), places),
+                "delta": _shown(_number(row["change_vs_current"]), places, signed=True),
+            }
+            for row in rows
+        ],
+        "summary": withheld or "",
+    }
+    return rows, withheld, note
 
 
 async def _author(org: uuid.UUID, actor: uuid.UUID, version_id: uuid.UUID) -> uuid.UUID | None:
@@ -517,7 +577,7 @@ async def preview_requested(event: Event) -> None:
     if v is None or v.new.status != "testing":
         return
     impact = await impact_of(event.org_id, actor, v)
-    figures, withheld = await preview_figures(
+    figures, withheld, note = await preview_figures(
         event, actor, v, int(p.get("periods") or PREVIEW_PERIODS), impact
     )
     # The Data Space's standard set asked with the new version in place: the eval run the api's
@@ -544,6 +604,7 @@ async def preview_requested(event: Event) -> None:
         "changes": changes(v),
         "preview": figures,
         "preview_withheld": withheld,
+        "preview_note": note,
         "eval": evaluated,
     }
     pid = await proposals._open(
