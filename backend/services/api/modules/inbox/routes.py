@@ -25,6 +25,7 @@ from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import eval as evaluation
 from libs.dataagent_db.models import inbox, org
 from services.api.catalogue import endpoint
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -37,6 +38,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.inbox.schemas import (
     ApprovalStepView,
     ChangedResult,
@@ -435,9 +437,12 @@ async def resolve_hitl(
             # Named by the module that asked (the filer, the closer of the period). Not even a
             # reassign: they would pick who approves their own request.
             raise Problem(403, "forbidden", "You may not decide this request.")
-        if body.decision == "approve" and row.created_by == principal.user_id:
-            # BR-62: whoever raised the change does not approve it.
-            raise Problem(403, "forbidden", "The requester cannot approve their own request.")
+        self_approved = body.decision == "approve" and two_people(
+            principal,
+            row.created_by,
+            # BR-62: whoever raised the change does not approve it, unless the org allows it.
+            message="The requester cannot approve their own request.",
+        )
         _check_option(row, body.option)
         now = _now()
         row.updated_by = principal.user_id
@@ -470,6 +475,10 @@ async def resolve_hitl(
             return _detail(row, steps)
         if chained and not await _decide_step(session, row, steps, body, principal, org_caps):
             await session.flush()
+            if self_approved:
+                await record_self_approval(
+                    principal, step="hitl.approve", object_kind="hitl_request", object_id=row.id
+                )
             return _detail(row, steps)
         row.status = HITL_STATUS[body.decision]
         row.response = {"decision": body.decision, "option": body.option, "note": note}
@@ -496,6 +505,10 @@ async def resolve_hitl(
             )
         )
         await session.flush()
+        if self_approved:
+            await record_self_approval(
+                principal, step="hitl.approve", object_kind="hitl_request", object_id=row.id
+            )
         return _detail(row, steps)
 
 
@@ -586,8 +599,14 @@ async def decide_proposal(
             raise Problem(
                 409, "invalid_state", f"The proposal is {row.status} and cannot be decided."
             )
-        if row.proposed_by == principal.user_id:
-            raise Problem(403, "forbidden", "The proposer cannot review their own proposal.")
+        # One audit row per decision, named for the last step the caller took on their own work.
+        self_steps: list[str] = []
+        if two_people(
+            principal,
+            row.proposed_by,
+            message="The proposer cannot review their own proposal.",
+        ):
+            self_steps.append("proposal.review")
         if accepting and row.eval_run_id is not None and not body.reviewed_regressions:
             run = await session.scalar(
                 select(evaluation.EvalRun).where(evaluation.EvalRun.id == row.eval_run_id)
@@ -621,10 +640,12 @@ async def decide_proposal(
                     editors.add(review.reviewer_id)
                 elif review.decision == "request_changes":
                     editors = set()
-        if principal.user_id in editors:
-            raise Problem(
-                403, "forbidden", "Whoever edited the proposal cannot also accept the edit."
-            )
+        if two_people(
+            principal,
+            *editors,
+            message="Whoever edited the proposal cannot also accept the edit.",
+        ):
+            self_steps.append("proposal.accept_edit")
         chain_step = len(accepted_before) + 1
         if chain_step > 1:
             # BR-119 second step: the controller (AC06), another person than the first reviewer.
@@ -632,12 +653,14 @@ async def decide_proposal(
                 raise Problem(
                     403, "forbidden", "The second approval step needs the compliance capability."
                 )
-            if any(r.reviewer_id == principal.user_id for r in accepted_before):
-                raise Problem(
-                    422,
-                    "business_rule_violated",
-                    "The second approval step must be another person than the first (BR-119).",
-                )
+            if two_people(
+                principal,
+                *(r.reviewer_id for r in accepted_before),
+                message="The second approval step must be another person than the first (BR-119).",
+                status=422,
+                code="business_rule_violated",
+            ):
+                self_steps.append("proposal.second_step")
         session.add(
             inbox.ProposalReview(
                 id=uuid7(),
@@ -716,4 +739,8 @@ async def decide_proposal(
             )
         )
         await session.flush()
+        if self_steps:
+            await record_self_approval(
+                principal, step=self_steps[-1], object_kind="proposal", object_id=row.id
+            )
         return await _proposal_detail(session, row)

@@ -35,6 +35,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.org import capabilities_of
 from services.api.modules.workspace import rules
 from services.api.modules.workspace.report_storage import REPORT_BUCKET, ReportStore, report_store
@@ -1299,9 +1300,7 @@ async def get_tile_snapshot(
                 ),
             )
         )
-        return _snapshot_view(
-            snap, version=int(older or 0) + 1, latest_id=tile.latest_snapshot_id
-        )
+        return _snapshot_view(snap, version=int(older or 0) + 1, latest_id=tile.latest_snapshot_id)
 
 
 @router.get(
@@ -1563,10 +1562,10 @@ async def publish_report(
                 f"Checks not passed: {', '.join(failed)}; every number needs grounding (UC-02-07).",
             )
         now = _now()
-        self_approval = report.created_by == principal.user_id
-        if self_approval and report.status == "pending_approval":
+        is_author = report.created_by == principal.user_id
+        if is_author and not principal.self_approval and report.status == "pending_approval":
             raise Problem(409, "invalid_state", "The report waits for another approver.")
-        if self_approval:
+        if is_author and not principal.self_approval:
             # BR-53 and UC-02-07 step 4: the author does not approve its own report; the
             # review request goes to Cần bạn (the inbox block opens it from this event).
             report.status = "pending_approval"
@@ -1583,6 +1582,13 @@ async def publish_report(
         report.updated_at = now
         report.updated_by = principal.user_id
         await session.flush()
+        if is_author and principal.self_approval:
+            await record_self_approval(
+                principal,
+                step="session_report.approve",
+                object_kind="session_report",
+                object_id=report.id,
+            )
         return ReportView.model_validate(report)
 
 

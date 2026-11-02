@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg2
@@ -77,6 +78,14 @@ class Seed:
             "org.organization", id=org_id, code=f"org-{org_id.hex[:8]}", name="Tổ chức thử"
         )
 
+    def allow_self_approval(self, org_id: uuid.UUID) -> None:
+        """Turns the organisation's self-approval switch on (it defaults to off)."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE org.organization SET allow_self_approval = true WHERE id = %s",
+                (str(org_id),),
+            )
+
     def close(self) -> None:
         self.conn.close()
 
@@ -86,3 +95,26 @@ def seed(api_database: str) -> Iterator[Seed]:
     s = Seed(api_database)
     yield s
     s.close()
+
+
+@pytest.fixture
+def self_approvals(
+    ddl_server: dict[str, str],  # noqa: F811
+    api_database: str,
+) -> Iterator[Any]:
+    """steps(org) -> the `after->>'step'` of each self_approval row in the audit log, oldest
+    first. The audit log lives in its own database."""
+    conn = psycopg2.connect(ddl_server["dataagent_audit"])
+    conn.autocommit = True
+
+    def steps(org_id: uuid.UUID) -> list[str]:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT after->>'step' FROM audit.audit_log"
+                " WHERE org_id = %s AND action = 'self_approval' ORDER BY seq",
+                (str(org_id),),
+            )
+            return [r[0] for r in cur.fetchall()]
+
+    yield steps
+    conn.close()

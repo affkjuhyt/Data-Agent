@@ -675,6 +675,21 @@ async def test_the_creator_cannot_be_the_owner(ds: Space) -> None:
         assert swap.status_code == 422
 
 
+async def test_data_product_owner_self_approved_when_the_org_allows_it(
+    ds: Space, self_approvals: Any
+) -> None:
+    ds.seed.allow_self_approval(ds.org)
+    async with client(ds) as api:
+        mine = await api.post(
+            "/v1/data-products",
+            json=_body(ds, owner_id=str(ds.users["steward"]), steward_id=str(ds.users["owner"])),
+            headers=ds.headers("steward"),
+        )
+    assert mine.status_code == 201, mine.text
+    assert mine.json()["owner_id"] == str(ds.users["steward"])
+    assert self_approvals(ds.org) == ["data_product.owner"]
+
+
 async def test_personal_data_raises_the_product_classification(ds: Space) -> None:
     ds.seed.row(
         "catalog.column_meta",

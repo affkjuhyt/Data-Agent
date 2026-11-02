@@ -35,6 +35,7 @@ from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Princip
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import Page
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.context.common import (
     ROLE,
     ContextPage,
@@ -163,14 +164,29 @@ def _rule(detail: str) -> Problem:
 
 
 def _distinct_people(
-    owner_id: uuid.UUID | None, steward_id: uuid.UUID | None, creator: uuid.UUID | None
-) -> None:
+    principal: Principal,
+    owner_id: uuid.UUID | None,
+    steward_id: uuid.UUID | None,
+    creator: uuid.UUID | None,
+) -> bool:
+    """True when the owner is the creator and the org allows self-approval; the caller then
+    records it once the product is written."""
     if owner_id is not None and owner_id == steward_id:
         raise field_error("steward_id", "Owner and steward are two different people (BR-175).")
     # The owner approves activation and the approver is not the creator (BR-175): a creator
-    # naming themselves owner would leave the product with no one able to activate it.
+    # naming themselves owner would leave the product with no one able to activate it. Not
+    # two_people(): that raises a bare Problem, and this refusal names the field.
     if owner_id is not None and owner_id == creator:
-        raise field_error("owner_id", "The owner approves activation, so is not the creator.")
+        if not principal.self_approval:
+            raise field_error("owner_id", "The owner approves activation, so is not the creator.")
+        return True
+    return False
+
+
+async def _record_owner_self_approval(principal: Principal, product_id: uuid.UUID) -> None:
+    await record_self_approval(
+        principal, step="data_product.owner", object_kind="data_product", object_id=product_id
+    )
 
 
 def _jsonable(value: Any) -> Any:
@@ -459,7 +475,7 @@ async def create_data_product(
     for name in CONTEXT_REQUIRED:
         if getattr(body, name) is None:
             raise field_error(name, f"{name} is required for layer context.", "required")
-    _distinct_people(body.owner_id, body.steward_id, principal.user_id)
+    self_approved = _distinct_people(principal, body.owner_id, body.steward_id, principal.user_id)
     if body.period_to is not None and body.period_from and body.period_to < body.period_from:
         raise field_error("period_to", "period_to is before period_from.")
     async with transaction(ROLE, principal) as session:
@@ -510,6 +526,8 @@ async def create_data_product(
             eval_set_subject="context",
         )
         await session.refresh(row)
+        if self_approved:
+            await _record_owner_self_approval(principal, row.id)
         return _view(row)
 
 
@@ -612,7 +630,10 @@ async def update_data_product(
         row = await _product(session, product_id, principal, data_space, lock=True)
         owner = changes.get("owner_id", row.owner_id)
         steward = changes.get("steward_id", row.steward_id)
-        _distinct_people(owner, steward, row.created_by)
+        # Only naming the owner is the step; an edit of something else is not.
+        self_approved = (
+            _distinct_people(principal, owner, steward, row.created_by) and "owner_id" in changes
+        )
         start = changes.get("period_from", row.period_from)
         end = changes.get("period_to", row.period_to)
         if end is not None and end < start:
@@ -631,6 +652,8 @@ async def update_data_product(
             row.updated_at = now()
             await session.flush()
             await session.refresh(row)
+            if self_approved:
+                await _record_owner_self_approval(principal, row.id)
             return _view(row)
         if row.status not in _VERSIONED:
             raise Problem(409, "invalid_state", f"A {row.status} data product is not edited.")
@@ -667,6 +690,8 @@ async def update_data_product(
         )
         await session.flush()
         await session.refresh(row)
+        if self_approved:
+            await _record_owner_self_approval(principal, row.id)
         draft = _view(row)
     for name, value in proposed.items():
         setattr(draft, name, value)

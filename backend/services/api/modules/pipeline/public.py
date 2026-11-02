@@ -20,6 +20,7 @@ from libs.dataagent_db.models import pipeline as pl
 from services.api.kernel.auth import Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.problems import Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.pipeline import rules
 from services.api.modules.pipeline.schemas import DataProductView
 from services.api.modules.pipeline.store import ROLE, emit, invalid, now, require_datasets
@@ -77,8 +78,10 @@ async def create_published_product(
     errors = rules.contract_errors(contract)
     if errors:
         raise invalid("contract", "; ".join(errors))
-    if owner_id == principal.user_id:
-        # UC-06-06 step 4: the owner approves what the drafter wrote, so they are two people.
+    # UC-06-06 step 4: the owner approves what the drafter wrote, so they are two people. Not
+    # two_people(): this refusal names the field.
+    self_approved = owner_id == principal.user_id
+    if self_approved and not principal.self_approval:
         raise invalid("owner_id", "The owner approves publishing, so is not the drafter.")
     if not code.strip() or not name.strip():
         raise invalid("code" if not code.strip() else "name", "code and name are required.")
@@ -161,6 +164,13 @@ async def create_published_product(
             consumers=product.consumers,
         )
         await session.flush()
+        if self_approved:
+            await record_self_approval(
+                principal,
+                step="data_product.publish",
+                object_kind="data_product",
+                object_id=product.id,
+            )
         view = DataProductView.model_validate(product)
     out: dict[str, Any] = jsonable_encoder(view)
     return out

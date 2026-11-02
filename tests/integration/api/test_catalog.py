@@ -1078,6 +1078,22 @@ async def test_certification_refusals(o: Org) -> None:
     assert o.events(elsewhere) == []
 
 
+@pytest.mark.req("AC-14-05-07")
+async def test_dataset_version_certify_self_approved_when_the_org_allows_it(
+    o: Org, self_approvals: Any
+) -> None:
+    o.seed.allow_self_approval(o.org)
+    version = _consolidated_version(o)
+    async with client(o) as api:
+        # The spec's last editor is the backup steward: with the switch on, they certify too.
+        certified = await api.post(
+            f"/v1/dataset-versions/{version}:certify", headers=o.headers("editor")
+        )
+    assert certified.status_code == 200, certified.text
+    assert certified.json()["certified_by"] == str(o.users["editor"])
+    assert self_approvals(o.org) == ["dataset_version.certify"]
+
+
 async def test_one_source_is_read_and_names_its_writeback_tables(o: Org) -> None:
     # 12/10/2026: GET /v1/sources/{id} is where :test's Location points; writeback_tables lists
     # the tables a writeback may write (UC-06-04).

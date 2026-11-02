@@ -28,6 +28,7 @@ from libs.dataagent_db.models import catalog, org
 from libs.dataagent_db.models import pipeline as pl
 from libs.sql_guard import read_only_problem
 from services.api.catalogue import endpoint
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -40,6 +41,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.catalog.public import upcoming_runs
 from services.api.modules.ingest.public import job_name, jobs_feeding
 from services.api.modules.pipeline import rules
@@ -1355,11 +1357,13 @@ async def publish_data_product(
             raise Problem(404, "not_found", "Data product not found.")
         if product.status != "draft":
             raise Problem(409, "invalid_state", f"The data product is {product.status}.")
-        if product.created_by == principal.user_id:
-            # UC-06-06 step 4: the owner approves what the engineer drafted, not the drafter.
-            raise Problem(
-                403, "policy_denied", "Whoever drafted the data product cannot publish it."
-            )
+        # UC-06-06 step 4: the owner approves what the engineer drafted, not the drafter.
+        self_approved = two_people(
+            principal,
+            product.created_by,
+            message="Whoever drafted the data product cannot publish it.",
+            code="policy_denied",
+        )
         if product.owner_id != principal.user_id:
             # The approver of a published version is its owner (CHECK approved_by = owner_id).
             raise Problem(403, "policy_denied", "Only the data product's owner publishes it.")
@@ -1435,6 +1439,13 @@ async def publish_data_product(
             replaces=previous.id if previous else None,
         )
         await session.flush()
+        if self_approved:
+            await record_self_approval(
+                principal,
+                step="data_product.publish",
+                object_kind="data_product",
+                object_id=product.id,
+            )
         return DataProductView.model_validate(product)
 
 

@@ -31,10 +31,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import context, org, qa
 from services.api.catalogue import endpoint
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import Page
 from services.api.kernel.problems import Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.context.common import (
     CLEARANCE,
     DEFAULT_CLEARANCE,
@@ -713,13 +715,14 @@ async def certify_knowledge_page_version(
                 "invalid_state",
                 f"Only a reviewed version is certified; this one is {version.status}.",
             )
-        if principal.user_id in (version.created_by, version.reviewed_by):
-            # BR-164: the certifier is a third person, neither the author nor the reviewer.
-            raise Problem(
-                403,
-                "policy_denied",
-                "The certifier must be someone other than the author and the reviewer (BR-164).",
-            )
+        # BR-164: the certifier is a third person, neither the author nor the reviewer.
+        self_approved = two_people(
+            principal,
+            version.created_by,
+            version.reviewed_by,
+            message="The certifier must be someone other than the author and the reviewer (BR-164).",
+            code="policy_denied",
+        )
         version.status = "certified"
         version.certified_by, version.certified_at = principal.user_id, now()
         # The guard trigger refuses an uncertified external source here (BR-165).
@@ -739,6 +742,13 @@ async def certify_knowledge_page_version(
             )
         await session.flush()
         await session.refresh(version)
+        if self_approved:
+            await record_self_approval(
+                principal,
+                step="knowledge_page.certify",
+                object_kind="knowledge_page_version",
+                object_id=version.id,
+            )
         return KnowledgeVersionView.model_validate(version)
 
 

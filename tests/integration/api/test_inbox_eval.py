@@ -972,3 +972,102 @@ async def test_a_proposals_request_follows_its_chain_and_is_closed_by_the_decisi
             (str(request),),
         )
         assert cur.fetchone() == ("open", "compliance")
+
+
+# --- self-approval: the org switch lets the creator take the second half of a step ---------------
+
+
+async def test_the_requester_cannot_approve_their_own_request(team: Team) -> None:
+    request = _hitl(team, assignee_id=team.users["reviewer"], created_by=team.users["reviewer"])
+    async with client(team) as api:
+        r = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("reviewer"),
+            json={"decision": "approve"},
+        )
+    assert r.status_code == 403, r.text
+    assert r.json()["detail"] == "The requester cannot approve their own request."
+
+
+async def test_hitl_approve_self_approved_when_the_org_allows_it(
+    team: Team, self_approvals: Any
+) -> None:
+    team.seed.allow_self_approval(team.org)
+    request = _hitl(team, assignee_id=team.users["reviewer"], created_by=team.users["reviewer"])
+    async with client(team) as api:
+        r = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("reviewer"),
+            json={"decision": "approve"},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "approved"
+    assert self_approvals(team.org) == ["hitl.approve"]
+
+
+async def test_proposal_review_self_approved_when_the_org_allows_it(
+    team: Team, self_approvals: Any
+) -> None:
+    team.seed.allow_self_approval(team.org)
+    proposal = _proposal(team)
+    async with client(team) as api:
+        r = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            headers=team.headers("proposer"),
+            json={"decision": "accept"},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "accepted"
+    assert self_approvals(team.org) == ["proposal.review"]
+
+
+async def test_proposal_accept_edit_self_approved_when_the_org_allows_it(
+    team: Team, self_approvals: Any
+) -> None:
+    team.seed.allow_self_approval(team.org)
+    proposal = _proposal(team)
+    async with client(team) as api:
+        edit = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            headers=team.headers("reviewer"),
+            json={"decision": "accept_with_edit", "edited_diff": {"add": ["xăng"]}},
+        )
+        assert edit.status_code == 200, edit.text
+        assert self_approvals(team.org) == []
+        own_edit = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            headers=team.headers("reviewer"),
+            json={"decision": "accept"},
+        )
+    assert own_edit.status_code == 200, own_edit.text
+    assert own_edit.json()["status"] == "accepted"
+    assert self_approvals(team.org) == ["proposal.accept_edit"]
+
+
+async def test_proposal_second_step_self_approved_when_the_org_allows_it(
+    team: Team, self_approvals: Any
+) -> None:
+    # One compliance holder proposed it and does both steps of BR-119: one row per decision.
+    team.seed.allow_self_approval(team.org)
+    proposal = _proposal(
+        team,
+        kind="metric_change",
+        requires_compliance=True,
+        proposed_by=team.users["controller"],
+    )
+    async with client(team) as api:
+        first = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            headers=team.headers("controller"),
+            json={"decision": "accept"},
+        )
+        assert first.status_code == 200, first.text
+        assert first.json()["status"] == "pending_review"
+        second = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            headers=team.headers("controller"),
+            json={"decision": "accept"},
+        )
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "accepted"
+    assert self_approvals(team.org) == ["proposal.review", "proposal.second_step"]
