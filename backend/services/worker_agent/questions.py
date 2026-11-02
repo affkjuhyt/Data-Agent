@@ -619,7 +619,8 @@ def _drop_unsupported_cuts(u: Understanding, codes: set[str]) -> None:
     u.filters = {code: values for code, values in u.filters.items() if code not in codes}
 
 
-# The cuts a "vì sao" with no cut named tries, ranked by how concentrated the change is in each.
+# The cuts a "vì sao" with no cut named tries, ranked by how concentrated the change is in each;
+# skill_runs.MAX_DIMENSIONS refuses more.
 MAX_EXPLAIN_CUTS = 5
 
 

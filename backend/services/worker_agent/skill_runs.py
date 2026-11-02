@@ -402,6 +402,9 @@ async def _query(
     ]
 
 
+MAX_DIMENSIONS = 5
+
+
 def _plan(
     layer: SpaceLayer, params: dict[str, Any]
 ) -> tuple[c.MetricVersion, str, Shape, list[c.Dimension]]:
@@ -417,6 +420,11 @@ def _plan(
         if isinstance(asked, list)
         else [a.strip() for a in str(asked or "").split(",") if a.strip()]
     )
+    # Each cut costs two to four queries on the customer's source: the list is capped here, where
+    # every caller's parameters arrive, not only in questions.py's plan.
+    codes = list(dict.fromkeys(codes))
+    if len(codes) > MAX_DIMENSIONS:
+        raise RunFailed(f"Phân rã thử tối đa {MAX_DIMENSIONS} chiều, nhận được {len(codes)}.")
     dimensions: list[c.Dimension] = []
     for name in codes or [""]:
         dimension = layer.layer.dimensions.get(name)

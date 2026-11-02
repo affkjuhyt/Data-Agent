@@ -232,6 +232,11 @@ async def test_a_dimension_without_data_is_skipped_and_said(
         ({"metric": "NPL_RATIO", "dimension": "vung", "period": "9/2026"}, None, "YYYY-MM"),
         ({"metric": "KHONG_CO", "dimension": "vung", "period": "2026-09"}, None, "không có chỉ số"),
         (
+            {"metric": "NPL_RATIO", "dimension": "a,b,c,d,e,f", "period": "2026-09", "rank": True},
+            None,
+            "tối đa 5 chiều",
+        ),
+        (
             {"metric": "NPL_RATIO", "dimension": "vung", "period": "2026-09"},
             [{"kind": "python"}],
             "chưa chạy được",
