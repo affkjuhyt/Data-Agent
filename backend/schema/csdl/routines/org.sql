@@ -16,7 +16,10 @@ REVOKE EXECUTE ON FUNCTION org.self_approval_allowed(uuid) FROM PUBLIC;
 -- UPDATE only a pair that changed is judged, so turning the switch off leaves existing rows
 -- editable: their other columns can still change. A pair naming a column the row does not have is
 -- a mistake in the CREATE TRIGGER, and raises instead of silently guarding nothing.
--- SECURITY DEFINER so that it runs as the owner, which may call self_approval_allowed.
+-- SECURITY DEFINER so that it runs as the owner, which may call self_approval_allowed. Because it
+-- then reads any organisation's flag for whatever table it is attached to, PUBLIC may not attach
+-- it (Postgres checks EXECUTE at CREATE TRIGGER, not when the trigger fires), and it refuses any
+-- table outside the list below as well.
 CREATE FUNCTION org.two_people() RETURNS trigger LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
@@ -26,6 +29,12 @@ DECLARE
   n jsonb := to_jsonb(NEW);
   o jsonb := CASE WHEN TG_OP = 'UPDATE' THEN to_jsonb(OLD) END;
 BEGIN
+  IF TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME NOT IN (
+       'catalog.dataset_version', 'context.knowledge_page_version', 'context.data_product',
+       'pipeline.writeback_request', 'acquire.crawl_source', 'forecast.model_version',
+       'forecast.formula_component', 'governance.model_provider') THEN
+    RAISE EXCEPTION 'org.two_people không gắn được vào bảng %.%', TG_TABLE_SCHEMA, TG_TABLE_NAME;
+  END IF;
   IF TG_NARGS % 2 <> 0 THEN
     RAISE EXCEPTION 'org.two_people nhận cặp tên cột, nhận % đối số', TG_NARGS;
   END IF;
@@ -47,6 +56,7 @@ BEGIN
   RETURN NEW;
 END
 $$;
+REVOKE EXECUTE ON FUNCTION org.two_people() FROM PUBLIC;
 
 CREATE TRIGGER dataset_version_two_people BEFORE INSERT OR UPDATE ON catalog.dataset_version
   FOR EACH ROW EXECUTE FUNCTION org.two_people('certified_by', 'created_by');

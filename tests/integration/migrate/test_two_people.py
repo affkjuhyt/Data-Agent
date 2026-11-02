@@ -4,6 +4,7 @@ when on. audit.export_job cannot read the flag, so its CHECK reads its own self_
 
 from __future__ import annotations
 
+import psycopg2
 import pytest
 
 from tests.integration.migrate._ddl import as_admin, as_role, fails, new_id, new_org, one
@@ -101,17 +102,13 @@ def test_turning_it_off_keeps_existing_rows(db):
 
 
 def test_a_null_side_is_never_refused(db):
-    org, someone = new_org(db), str(new_id())
-    with db.cursor() as cur:
-        cur.execute("CREATE TEMP TABLE pair (org_id uuid, a uuid, b uuid, note text)")
+    org = new_org(db)
+    with db.cursor() as cur:  # a second guard on the same table, owner-made, rolled back
         cur.execute(
-            "CREATE TRIGGER pair_two_people BEFORE INSERT OR UPDATE ON pair "
-            "FOR EACH ROW EXECUTE FUNCTION org.two_people('a', 'b')"
+            "CREATE TRIGGER extra_two_people BEFORE INSERT OR UPDATE ON catalog.dataset_version "
+            "FOR EACH ROW EXECUTE FUNCTION org.two_people('created_by', 'certified_by')"
         )
-        cur.execute("INSERT INTO pair VALUES (%s, NULL, %s)", (str(org), someone))
-        cur.execute("INSERT INTO pair VALUES (%s, %s, NULL)", (str(org), someone))
-        cur.execute("INSERT INTO pair VALUES (%s, NULL, NULL)", (str(org),))
-    fails(db, "INSERT INTO pair VALUES (%s, %s, %s)", (str(org), someone, someone), code=CHECK)
+    _no_creator_version(db, org)  # created_by and certified_by both NULL
 
 
 def test_an_unknown_organisation_does_not_allow_it(db):
@@ -178,17 +175,36 @@ def test_a_service_role_cannot_read_the_flag_but_its_writes_are_guarded(db):
     _certify(db, org, version, creator)
 
 
-def test_a_misspelled_column_raises_instead_of_guarding_nothing(db):
+@pytest.mark.parametrize("args", ["'certified_by', 'typo'", "'certified_by'"])
+def test_a_misspelled_column_raises_instead_of_guarding_nothing(db, args):
     org = new_org(db)
     with db.cursor() as cur:
-        cur.execute("CREATE TEMP TABLE bad (org_id uuid, a uuid, b uuid)")
         cur.execute(
-            "CREATE TRIGGER t BEFORE INSERT ON bad FOR EACH ROW "
-            "EXECUTE FUNCTION org.two_people('a', 'typo')"
+            "CREATE TRIGGER bad_two_people BEFORE INSERT ON catalog.dataset_version "
+            f"FOR EACH ROW EXECUTE FUNCTION org.two_people({args})"
         )
-        cur.execute("CREATE TEMP TABLE odd (org_id uuid, a uuid, b uuid)")
+    with pytest.raises(psycopg2.Error):
+        _no_creator_version(db, org)
+
+
+def test_a_role_cannot_attach_the_trigger_function(db):
+    as_role(db, "svc_catalog", new_org(db))
+    with db.cursor() as cur:
+        cur.execute("CREATE TEMP TABLE mine (org_id uuid, a uuid, b uuid)")
+    message = fails(
+        db,
+        "CREATE TRIGGER t BEFORE INSERT ON mine FOR EACH ROW EXECUTE FUNCTION org.two_people('a', 'b')",
+        code="42501",
+    )
+    assert "two_people" in message
+
+
+def test_the_trigger_refuses_a_table_outside_its_list(db):
+    org = new_org(db)
+    with db.cursor() as cur:  # the owner may attach it; the function still refuses
+        cur.execute("CREATE TEMP TABLE pair (org_id uuid, a uuid, b uuid)")
         cur.execute(
-            "CREATE TRIGGER t BEFORE INSERT ON odd FOR EACH ROW EXECUTE FUNCTION org.two_people('a')"
+            "CREATE TRIGGER t BEFORE INSERT ON pair FOR EACH ROW EXECUTE FUNCTION org.two_people('a', 'b')"
         )
-    fails(db, "INSERT INTO bad VALUES (%s, NULL, NULL)", (str(org),))
-    fails(db, "INSERT INTO odd VALUES (%s, NULL, NULL)", (str(org),))
+    message = fails(db, "INSERT INTO pair VALUES (%s, NULL, NULL)", (str(org),))
+    assert "không gắn được" in message
