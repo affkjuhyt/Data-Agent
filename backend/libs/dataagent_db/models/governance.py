@@ -473,7 +473,7 @@ class ModelProvider(Base):
     approved_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
-        comment="logic → org.app_user (AC06); bắt buộc khi frontier enabled, khác enabled_by",
+        comment="logic → org.app_user (AC06); bắt buộc khi frontier enabled, khác enabled_by trừ khi tổ chức bật tự duyệt (org.two_people)",
     )
     approved_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

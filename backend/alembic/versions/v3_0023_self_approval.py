@@ -64,6 +64,14 @@ BEGIN
       OR (zero_retention AND enabled_by IS NOT NULL AND approved_by IS NOT NULL AND approved_at IS NOT NULL));
   END LOOP;
 
+  -- Only the equality depends on the switch: a certified version still needs a creator.
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conrelid = 'catalog.dataset_version'::regclass AND contype = 'c'
+                    AND pg_get_constraintdef(oid) ~ 'certified_by IS NULL\\) OR \\(created_by IS NOT NULL') THEN
+    ALTER TABLE catalog.dataset_version ADD CONSTRAINT dataset_version_certifier_created_check
+      CHECK (certified_by IS NULL OR created_by IS NOT NULL);
+  END IF;
+
   -- The certifier is recorded with both columns and a certified version has one; that it is a
   -- third person moved to the trigger.
   IF EXISTS (SELECT 1 FROM pg_constraint
@@ -81,29 +89,37 @@ CREATE OR REPLACE FUNCTION org.self_approval_allowed(p_org uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
   SELECT COALESCE((SELECT allow_self_approval FROM org.organization WHERE id = p_org), false)
 $$;
+REVOKE EXECUTE ON FUNCTION org.self_approval_allowed(uuid) FROM PUBLIC;
 
 -- TG_ARGV is column-name pairs a, b, a, b, ... Each pair must hold two different people while the
 -- organisation has not allowed self-approval. A NULL side is never refused (no person yet). On an
 -- UPDATE only a pair that changed is judged, so turning the switch off leaves existing rows
--- editable: their other columns can still change.
-CREATE OR REPLACE FUNCTION org.two_people() RETURNS trigger LANGUAGE plpgsql AS $$
+-- editable: their other columns can still change. A pair naming a column the row does not have is
+-- a mistake in the CREATE TRIGGER, and raises instead of silently guarding nothing.
+-- SECURITY DEFINER so that it runs as the owner, which may call self_approval_allowed.
+CREATE OR REPLACE FUNCTION org.two_people() RETURNS trigger LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
   i int := 0;
   a text;
   b text;
+  n jsonb := to_jsonb(NEW);
+  o jsonb := CASE WHEN TG_OP = 'UPDATE' THEN to_jsonb(OLD) END;
 BEGIN
-  WHILE i + 1 < TG_NARGS LOOP
+  IF TG_NARGS % 2 <> 0 THEN
+    RAISE EXCEPTION 'org.two_people nhận cặp tên cột, nhận % đối số', TG_NARGS;
+  END IF;
+  WHILE i < TG_NARGS LOOP
     a := TG_ARGV[i];
     b := TG_ARGV[i + 1];
     i := i + 2;
-    IF TG_OP = 'UPDATE'
-       AND to_jsonb(NEW) ->> a IS NOT DISTINCT FROM to_jsonb(OLD) ->> a
-       AND to_jsonb(NEW) ->> b IS NOT DISTINCT FROM to_jsonb(OLD) ->> b THEN
+    IF NOT (n ? a AND n ? b) THEN
+      RAISE EXCEPTION 'org.two_people: bảng % không có cột % hoặc %', TG_TABLE_NAME, a, b;
+    END IF;
+    IF o IS NOT NULL AND n ->> a IS NOT DISTINCT FROM o ->> a AND n ->> b IS NOT DISTINCT FROM o ->> b THEN
       CONTINUE;
     END IF;
-    IF to_jsonb(NEW) ->> a IS NOT NULL
-       AND to_jsonb(NEW) ->> a = to_jsonb(NEW) ->> b
-       AND NOT org.self_approval_allowed(NEW.org_id) THEN
+    IF n ->> a IS NOT NULL AND n ->> a = n ->> b AND NOT org.self_approval_allowed(NEW.org_id) THEN
       RAISE EXCEPTION 'Cần hai người khác nhau (% và %): tổ chức chưa bật tự duyệt', a, b
         USING ERRCODE = 'check_violation';
     END IF;

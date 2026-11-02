@@ -7,6 +7,7 @@ from __future__ import annotations
 import pytest
 
 from tests.integration.migrate._ddl import as_admin, as_role, fails, new_id, new_org, one
+from tests.integration.migrate.test_core import _consolidated_version
 
 pytestmark = pytest.mark.integration
 
@@ -141,3 +142,53 @@ def test_the_exports_check_reads_its_own_flag(audit_db):
     fails(audit_db, insert, (str(new_id()), str(org), str(user), str(user), False), code=CHECK)
     with audit_db.cursor() as cur:
         cur.execute(insert, (str(new_id()), str(org), str(user), str(user), True))
+
+
+def test_a_version_without_a_creator_is_never_certified(db):
+    # Only the equality depends on the switch: a certified version still needs a creator. The
+    # dataset_version guard refuses first on every real path, so it is switched off here to reach
+    # the CHECK itself, which is what holds if that guard ever changes.
+    org = new_org(db)
+    with db.cursor() as cur:
+        cur.execute("ALTER TABLE catalog.dataset_version DISABLE TRIGGER dataset_version_guard")
+    for on in (False, True):
+        _flag(db, org, on)
+        message = fails(
+            db,
+            "UPDATE catalog.dataset_version SET certified_at = now(), certified_by = %s "
+            "WHERE id = %s",
+            (str(new_id()), _no_creator_version(db, org)),
+            code=CHECK,
+        )
+        assert "dataset_version_certifier_created_check" in message
+
+
+def _no_creator_version(db, org) -> str:
+    return _consolidated_version(db, org, None, origin="source")[0]
+
+
+def test_a_service_role_cannot_read_the_flag_but_its_writes_are_guarded(db):
+    org, creator = new_org(db), new_id()
+    version = _version(db, org, creator)
+    as_role(db, "svc_catalog", org)
+    fails(db, "SELECT org.self_approval_allowed(%s)", (str(org),), code="42501")
+    fails(db, *_certify_sql(org, version, creator), code=CHECK)
+    as_admin(db)
+    _flag(db, org, True)
+    _certify(db, org, version, creator)
+
+
+def test_a_misspelled_column_raises_instead_of_guarding_nothing(db):
+    org = new_org(db)
+    with db.cursor() as cur:
+        cur.execute("CREATE TEMP TABLE bad (org_id uuid, a uuid, b uuid)")
+        cur.execute(
+            "CREATE TRIGGER t BEFORE INSERT ON bad FOR EACH ROW "
+            "EXECUTE FUNCTION org.two_people('a', 'typo')"
+        )
+        cur.execute("CREATE TEMP TABLE odd (org_id uuid, a uuid, b uuid)")
+        cur.execute(
+            "CREATE TRIGGER t BEFORE INSERT ON odd FOR EACH ROW EXECUTE FUNCTION org.two_people('a')"
+        )
+    fails(db, "INSERT INTO bad VALUES (%s, NULL, NULL)", (str(org),))
+    fails(db, "INSERT INTO odd VALUES (%s, NULL, NULL)", (str(org),))

@@ -843,7 +843,7 @@ CREATE TABLE governance.model_provider (
   CHECK (max_classification IN ('public','internal','confidential','restricted')),
   CHECK (status IN ('active','suspended','retired')),
   CHECK (kind <> 'frontier' OR (endpoint LIKE 'https://%' AND secret_ref IS NOT NULL AND data_region IS NOT NULL AND max_classification = 'public')),
-  CHECK (NOT (kind = 'frontier' AND enabled) OR (zero_retention AND enabled_by IS NOT NULL AND approved_by IS NOT NULL AND approved_at IS NOT NULL)),
+  CONSTRAINT model_provider_frontier_check CHECK (NOT (kind = 'frontier' AND enabled) OR (zero_retention AND enabled_by IS NOT NULL AND approved_by IS NOT NULL AND approved_at IS NOT NULL)),
   CHECK (monthly_budget_vnd IS NULL OR monthly_budget_vnd >= 0)
 );
 COMMENT ON TABLE governance.model_provider IS 'Provider mô hình khai báo theo tổ chức: tại chỗ (vLLM) hoặc frontier (API bên ngoài). Tên nhà cung cấp là dữ liệu cấu hình, mã nguồn không rẽ nhánh theo tên; khoá API chỉ nằm ở OpenBao (BR-180, BR-181, ADR-41). Thêm 10/10/2026. Use case: UC-11-05, UC-01-07.';
@@ -859,7 +859,7 @@ COMMENT ON COLUMN governance.model_provider.contract_ref IS 'Số hợp đồng,
 COMMENT ON COLUMN governance.model_provider.max_classification IS 'Mức phân loại cao nhất được gửi; on_prem mặc định restricted; frontier bắt buộc public';
 COMMENT ON COLUMN governance.model_provider.enabled IS 'Cờ bật theo tổ chức';
 COMMENT ON COLUMN governance.model_provider.enabled_by IS 'logic → org.app_user (AC05)';
-COMMENT ON COLUMN governance.model_provider.approved_by IS 'logic → org.app_user (AC06); bắt buộc khi frontier enabled, khác enabled_by';
+COMMENT ON COLUMN governance.model_provider.approved_by IS 'logic → org.app_user (AC06); bắt buộc khi frontier enabled, khác enabled_by trừ khi tổ chức bật tự duyệt (org.two_people)';
 COMMENT ON COLUMN governance.model_provider.price IS 'Giá theo triệu token vào, ra cho từng mô hình, để tính chi phí (UC-11-04)';
 COMMENT ON COLUMN governance.model_provider.monthly_budget_vnd IS 'Ngân sách tháng; vượt thì Model gateway ngừng đường frontier tới đầu tháng sau';
 COMMENT ON COLUMN governance.model_provider.status IS 'active, suspended, retired';
@@ -1286,7 +1286,8 @@ CREATE TABLE catalog.dataset_version (
   CHECK (change_kind IN ('initial','additive','breaking')),
   CHECK (change_kind <> 'breaking' OR proposal_id IS NOT NULL),
   CHECK (valid_to IS NULL OR valid_to > valid_from),
-  CHECK ((certified_at IS NULL) = (certified_by IS NULL))
+  CHECK ((certified_at IS NULL) = (certified_by IS NULL)),
+  CONSTRAINT dataset_version_certifier_created_check CHECK (certified_by IS NULL OR created_by IS NOT NULL)
 );
 COMMENT ON TABLE catalog.dataset_version IS 'Phiên bản cấu trúc của một bảng; ánh xạ cũ đóng valid_to thay vì xoá (BR-16). Use case: UC-04-02, UC-04-03, UC-04-06, UC-04-07, UC-10-01.';
 COMMENT ON COLUMN catalog.dataset_version.dataset_id IS 'FK dataset';
@@ -1296,7 +1297,7 @@ COMMENT ON COLUMN catalog.dataset_version.change_kind IS 'initial, additive, bre
 COMMENT ON COLUMN catalog.dataset_version.proposal_id IS 'logic → inbox.proposal; null khi chỉ thêm cột (UC-04-03 1a)';
 COMMENT ON COLUMN catalog.dataset_version.scan_run_id IS 'FK scan_run';
 COMMENT ON COLUMN catalog.dataset_version.certified_at IS 'Lúc người phụ trách dữ liệu chứng nhận phiên bản dataset hợp nhất; null là chưa chứng nhận hoặc đã thu hồi, khi đó không dùng làm số báo cáo cơ quan quản lý (BR-156). Trạng thái hiện hành, lịch sử ở dataset_version_certification';
-COMMENT ON COLUMN catalog.dataset_version.certified_by IS 'logic → org.app_user; người phụ trách dữ liệu (steward_id hoặc backup_steward_id của Data Space chứa dataset), khác created_by (BR-156)';
+COMMENT ON COLUMN catalog.dataset_version.certified_by IS 'logic → org.app_user; người phụ trách dữ liệu (steward_id hoặc backup_steward_id của Data Space chứa dataset), khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-156)';
 
 CREATE TABLE catalog.dataset_version_certification (
   id uuid NOT NULL,
@@ -1831,7 +1832,7 @@ COMMENT ON COLUMN context.knowledge_page_version.agent_run_id IS 'logic → agen
 COMMENT ON COLUMN context.knowledge_page_version.source_answer_id IS 'logic → qa.answer; bắt buộc khi origin = saveback';
 COMMENT ON COLUMN context.knowledge_page_version.proposal_id IS 'logic → inbox.proposal (kind knowledge_page)';
 COMMENT ON COLUMN context.knowledge_page_version.reviewed_by IS 'logic → org.app_user; khác created_by (BR-164)';
-COMMENT ON COLUMN context.knowledge_page_version.certified_by IS 'logic → org.app_user; khác created_by và reviewed_by (BR-164)';
+COMMENT ON COLUMN context.knowledge_page_version.certified_by IS 'logic → org.app_user; khác created_by và reviewed_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-164)';
 
 CREATE TABLE context.knowledge_source_link (
   id uuid NOT NULL,
@@ -5206,7 +5207,7 @@ COMMENT ON COLUMN pipeline.writeback_request.from_dataset_id IS 'Bảng dẫn xu
 COMMENT ON COLUMN pipeline.writeback_request.diff_summary IS 'Số dòng thêm, sửa, xoá; mẫu trước và sau, không có cột nhạy cảm';
 COMMENT ON COLUMN pipeline.writeback_request.deletes IS 'Phải bằng 0 (BR-113)';
 COMMENT ON COLUMN pipeline.writeback_request.snapshot_ref IS 'Ảnh chụp bảng đích để hoàn tác 30 ngày';
-COMMENT ON COLUMN pipeline.writeback_request.approved_by IS 'Phải khác người yêu cầu (BR-24)';
+COMMENT ON COLUMN pipeline.writeback_request.approved_by IS 'Phải khác người yêu cầu trừ khi tổ chức bật tự duyệt (org.two_people) (BR-24)';
 COMMENT ON COLUMN pipeline.writeback_request.proposal_id IS 'logic → inbox.proposal';
 COMMENT ON COLUMN pipeline.writeback_request.status IS 'draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undo_requested, undone';
 
@@ -7763,34 +7764,43 @@ GRANT SELECT ON exec.publication TO exec_read;
 -- a CHECK on every table (created_by <> certified_by, ...); a CHECK cannot read another table.
 
 -- SECURITY DEFINER: a service role sees only its own organisation's row, and the answer for an
--- unknown organisation is false, so the rule stays on when in doubt.
+-- unknown organisation is false, so the rule stays on when in doubt. Only the trigger function
+-- below (same owner) calls it: PUBLIC may not, or any role could read any organisation's flag.
 CREATE FUNCTION org.self_approval_allowed(p_org uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
   SELECT COALESCE((SELECT allow_self_approval FROM org.organization WHERE id = p_org), false)
 $$;
+REVOKE EXECUTE ON FUNCTION org.self_approval_allowed(uuid) FROM PUBLIC;
 
 -- TG_ARGV is column-name pairs a, b, a, b, ... Each pair must hold two different people while the
 -- organisation has not allowed self-approval. A NULL side is never refused (no person yet). On an
 -- UPDATE only a pair that changed is judged, so turning the switch off leaves existing rows
--- editable: their other columns can still change.
-CREATE FUNCTION org.two_people() RETURNS trigger LANGUAGE plpgsql AS $$
+-- editable: their other columns can still change. A pair naming a column the row does not have is
+-- a mistake in the CREATE TRIGGER, and raises instead of silently guarding nothing.
+-- SECURITY DEFINER so that it runs as the owner, which may call self_approval_allowed.
+CREATE FUNCTION org.two_people() RETURNS trigger LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
   i int := 0;
   a text;
   b text;
+  n jsonb := to_jsonb(NEW);
+  o jsonb := CASE WHEN TG_OP = 'UPDATE' THEN to_jsonb(OLD) END;
 BEGIN
-  WHILE i + 1 < TG_NARGS LOOP
+  IF TG_NARGS % 2 <> 0 THEN
+    RAISE EXCEPTION 'org.two_people nhận cặp tên cột, nhận % đối số', TG_NARGS;
+  END IF;
+  WHILE i < TG_NARGS LOOP
     a := TG_ARGV[i];
     b := TG_ARGV[i + 1];
     i := i + 2;
-    IF TG_OP = 'UPDATE'
-       AND to_jsonb(NEW) ->> a IS NOT DISTINCT FROM to_jsonb(OLD) ->> a
-       AND to_jsonb(NEW) ->> b IS NOT DISTINCT FROM to_jsonb(OLD) ->> b THEN
+    IF NOT (n ? a AND n ? b) THEN
+      RAISE EXCEPTION 'org.two_people: bảng % không có cột % hoặc %', TG_TABLE_NAME, a, b;
+    END IF;
+    IF o IS NOT NULL AND n ->> a IS NOT DISTINCT FROM o ->> a AND n ->> b IS NOT DISTINCT FROM o ->> b THEN
       CONTINUE;
     END IF;
-    IF to_jsonb(NEW) ->> a IS NOT NULL
-       AND to_jsonb(NEW) ->> a = to_jsonb(NEW) ->> b
-       AND NOT org.self_approval_allowed(NEW.org_id) THEN
+    IF n ->> a IS NOT NULL AND n ->> a = n ->> b AND NOT org.self_approval_allowed(NEW.org_id) THEN
       RAISE EXCEPTION 'Cần hai người khác nhau (% và %): tổ chức chưa bật tự duyệt', a, b
         USING ERRCODE = 'check_violation';
     END IF;

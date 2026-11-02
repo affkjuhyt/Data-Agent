@@ -659,7 +659,7 @@ class KnowledgePageVersion(Base):
     certified_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
-        comment="logic → org.app_user; khác created_by và reviewed_by (BR-164)",
+        comment="logic → org.app_user; khác created_by và reviewed_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-164)",
     )
     certified_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

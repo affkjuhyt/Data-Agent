@@ -121,7 +121,7 @@ class ExportJob(Base):
     approved_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
-        comment="logic → org.app_user; người thứ hai duyệt khi row_count quá 100.000, khác requested_by (BR-138)",
+        comment="logic → org.app_user; người thứ hai duyệt khi row_count quá 100.000, khác requested_by trừ khi tổ chức bật tự duyệt (API đặt self_approved, BR-138)",
     )
     self_approved: Mapped[bool] = mapped_column(
         Boolean,

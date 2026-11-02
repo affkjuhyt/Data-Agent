@@ -3379,7 +3379,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user (AC06); bắt buộc khi frontier enabled, khác enabled_by",
+     "comment": "logic → org.app_user (AC06); bắt buộc khi frontier enabled, khác enabled_by trừ khi tổ chức bật tự duyệt (org.two_people)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
@@ -3468,7 +3468,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (NOT (kind = 'frontier' AND enabled) OR (zero_retention AND enabled_by IS NOT NULL AND approved_by IS NOT NULL AND approved_at IS NOT NULL))"
+     "sql": "CONSTRAINT model_provider_frontier_check CHECK (NOT (kind = 'frontier' AND enabled) OR (zero_retention AND enabled_by IS NOT NULL AND approved_by IS NOT NULL AND approved_at IS NOT NULL))"
     },
     {
      "kind": "check",
@@ -5508,7 +5508,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user; người phụ trách dữ liệu (steward_id hoặc backup_steward_id của Data Space chứa dataset), khác created_by (BR-156)",
+     "comment": "logic → org.app_user; người phụ trách dữ liệu (steward_id hoặc backup_steward_id của Data Space chứa dataset), khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-156)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
@@ -5548,6 +5548,10 @@
     {
      "kind": "check",
      "sql": "CHECK ((certified_at IS NULL) = (certified_by IS NULL))"
+    },
+    {
+     "kind": "check",
+     "sql": "CONSTRAINT dataset_version_certifier_created_check CHECK (certified_by IS NULL OR created_by IS NOT NULL)"
     }
    ],
    "indexes": [],
@@ -5556,7 +5560,7 @@
    "notes": [
     "Trigger: phiên bản mới ở trạng thái chưa chứng nhận; dataset origin = 'consolidated' bắt buộc có created_by; created_by không sửa được; certified_at, certified_by chỉ đổi qua trigger của catalog.dataset_version_certification (ghi thẳng bị chặn) và chỉ cho dataset origin = 'consolidated' (BR-156). Semantic compiler chặn dùng phiên bản hợp nhất chưa chứng nhận cho số báo cáo cơ quan quản lý (tab 5 G5.2)."
    ],
-   "common_note": "thêm 10/10/2026: người tạo phiên bản; với dataset hợp nhất là người sửa nội dung đặc tả hợp nhất gần nhất, lấy từ acquire.consolidation_run.spec_editor_id khi phát hành, bắt buộc và không đổi được; null với phiên bản do lượt quét tạo. Vì người chứng nhận phải khác created_by, phiên bản hợp nhất luôn cần người thứ hai chứng nhận"
+   "common_note": "thêm 10/10/2026: người tạo phiên bản; với dataset hợp nhất là người sửa nội dung đặc tả hợp nhất gần nhất, lấy từ acquire.consolidation_run.spec_editor_id khi phát hành, bắt buộc và không đổi được; null với phiên bản do lượt quét tạo. Vì người chứng nhận phải khác created_by (trừ khi tổ chức bật tự duyệt), phiên bản hợp nhất cần người thứ hai chứng nhận khi tổ chức chưa bật"
   },
   {
    "schema": "catalog",
@@ -8184,7 +8188,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user; khác created_by và reviewed_by (BR-164)",
+     "comment": "logic → org.app_user; khác created_by và reviewed_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-164)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
@@ -8283,7 +8287,7 @@
    "partition": null,
    "immutable": false,
    "notes": [
-    "CHECK người chứng nhận có đủ hai cột và khác created_by, reviewed_by",
+    "CHECK người chứng nhận có đủ hai cột và khác created_by, reviewed_by trừ khi tổ chức bật tự duyệt (org.two_people)",
     "Trigger trước INSERT, UPDATE: phiên bản mới ở draft, version = latest_version_no + 1 (tự điền), parent mặc định là phiên bản đang phục vụ, body_sha256 tự tính, thân và tóm tắt không có số viết tay (BR-162); trang retired không nhận phiên bản; nội dung không sửa được; chỉ chuyển draft → pending_review, rejected; pending_review → reviewed, rejected, draft; reviewed → certified, superseded; certified → superseded. Gửi duyệt cần ít nhất một khẳng định, {{claim:…}} khớp knowledge_claim, chỗ giữ số trong thân và khẳng định khớp knowledge_figure, [[slug]] trỏ trang còn dùng có dòng knowledge_link, bản lưu ngược có nguồn là câu trả lời (BR-161, BR-162, BR-167). Chứng nhận cần mọi nguồn ngoài có catalog.dataset_version.certified_at (BR-165).",
     "Trigger sau UPDATE: reviewed thì phiên bản phục vụ cũ chuyển superseded, trang trỏ current_version_id về phiên bản mới, status = 'active', bỏ cờ tạm mất chứng nhận, tính lại chính sách, phát context.knowledge_page.published; certified phát context.knowledge_page.certified.",
     "Trigger sau INSERT có knowledge_run_id: tăng knowledge_run.pages_changed, chặn khi vượt page_limit hoặc lượt không ở analyzing, writing, checking (BR-166).",
@@ -24647,7 +24651,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "Phải khác người yêu cầu (BR-24)",
+     "comment": "Phải khác người yêu cầu trừ khi tổ chức bật tự duyệt (org.two_people) (BR-24)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -26255,7 +26259,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user; người thứ hai duyệt khi row_count quá 100.000, khác requested_by (BR-138)",
+     "comment": "logic → org.app_user; người thứ hai duyệt khi row_count quá 100.000, khác requested_by trừ khi tổ chức bật tự duyệt (API đặt self_approved, BR-138)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
@@ -26364,7 +26368,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (approved_by IS NULL OR approved_by <> requested_by OR self_approved)"
+     "sql": "CONSTRAINT export_job_self_approved_check CHECK (approved_by IS NULL OR approved_by <> requested_by OR self_approved)"
     },
     {
      "kind": "check",

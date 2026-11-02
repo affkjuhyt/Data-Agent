@@ -291,7 +291,7 @@ class DatasetVersion(Base):
     certified_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
-        comment="logic → org.app_user; người phụ trách dữ liệu (steward_id hoặc backup_steward_id của Data Space chứa dataset), khác created_by (BR-156)",
+        comment="logic → org.app_user; người phụ trách dữ liệu (steward_id hoặc backup_steward_id của Data Space chứa dataset), khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-156)",
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
