@@ -635,13 +635,24 @@ async def update_data_product(
         row = await _product(session, product_id, principal, data_space, lock=True)
         owner = changes.get("owner_id", row.owner_id)
         steward = changes.get("steward_id", row.steward_id)
-        # Only naming the owner or steward is a step, and only the creator doing it for
-        # themselves self-approves: another person setting them is not.
-        self_steps = _distinct_people(principal, owner, steward, row.created_by)
-        if principal.user_id != row.created_by or not {"owner_id", "steward_id"} & changes.keys():
-            self_steps = []
-        elif "owner_id" not in changes:
-            self_steps = [x for x in self_steps if x != "data_product.owner"]
+        owner_changed = "owner_id" in changes and owner != row.owner_id
+        pair_changed = owner_changed or ("steward_id" in changes and steward != row.steward_id)
+        # A historical self-approved assignment stays valid after the org turns the switch
+        # off. Recheck only relationships this patch changes, matching the database trigger.
+        self_steps: list[str] = []
+        if pair_changed and owner == steward:
+            if not principal.self_approval:
+                raise field_error(
+                    "steward_id", "Owner and steward are two different people (BR-175)."
+                )
+            self_steps.append("data_product.steward")
+        if owner_changed and owner == row.created_by:
+            if not principal.self_approval:
+                raise field_error(
+                    "owner_id", "The owner approves activation, so is not the creator."
+                )
+            if principal.user_id == row.created_by:
+                self_steps.append("data_product.owner")
         start = changes.get("period_from", row.period_from)
         end = changes.get("period_to", row.period_to)
         if end is not None and end < start:

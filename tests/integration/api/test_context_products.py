@@ -690,6 +690,31 @@ async def test_data_product_owner_self_approved_when_the_org_allows_it(
     assert self_approvals(ds.org) == ["data_product.owner"]
 
 
+async def test_existing_self_approved_owner_does_not_block_unrelated_edit_when_disabled(
+    ds: Space,
+) -> None:
+    ds.seed.allow_self_approval(ds.org)
+    async with client(ds) as api:
+        product = await _create(
+            api,
+            ds,
+            owner_id=str(ds.users["steward"]),
+            steward_id=str(ds.users["owner"]),
+        )
+        with ds.seed.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE org.organization SET allow_self_approval = false WHERE id = %s",
+                (str(ds.org),),
+            )
+        renamed = await api.patch(
+            f"/v1/data-products/{product['id']}",
+            json={"name": "Tên mới"},
+            headers=ds.headers("steward"),
+        )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "Tên mới"
+
+
 async def test_one_person_owner_and_steward_when_the_org_allows_it(
     ds: Space, self_approvals: Any
 ) -> None:
