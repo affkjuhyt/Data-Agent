@@ -353,7 +353,10 @@ async def test_behaviour_policy_and_backtest(gov: Org) -> None:
         assert outside.json() == []
 
 
-_NO_SELF_APPROVAL = "Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt."
+_NO_SELF_APPROVAL = (
+    "The creator of the policy does not activate it unless the organisation allows"
+    " self-approval."
+)
 
 
 async def _behaviour_policy(api: httpx.AsyncClient, gov: Org) -> str:

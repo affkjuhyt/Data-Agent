@@ -795,7 +795,8 @@ async def activate_policy(policy_id: PolicyId, principal: CurrentPrincipal) -> P
         self_approved = two_people(
             principal,
             row.created_by,
-            message="Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt.",
+            message="The creator of the policy does not activate it unless the organisation"
+            " allows self-approval.",
         )
         if isinstance(row, governance.AccessPolicy):
             if row.simulated_at is None:

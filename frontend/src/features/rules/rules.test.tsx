@@ -54,7 +54,8 @@ describe('DecisionRulePage', () => {
   });
 
   it('tells the owner why they cannot switch on a rule they wrote while self-approval is off', async () => {
-    const detail = 'Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt.';
+    const detail =
+      'The creator of the policy does not activate it unless the organisation allows self-approval.';
     server.use(
       http.post('*/v1/policies/:action', () =>
         HttpResponse.json(
