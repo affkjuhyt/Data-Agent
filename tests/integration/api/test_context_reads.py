@@ -614,6 +614,43 @@ async def test_a_checked_suggestion_is_confirmed_and_a_draft_is_not(ctx: Ctx) ->
         assert unknown.status_code == 422
 
 
+async def test_example_confirmation_needs_another_person(ctx: Ctx, self_approvals: Any) -> None:
+    own = _example(ctx, "Số hợp đồng?", "pending_review", created_by=ctx.users["steward"])
+    async with client(ctx) as api:
+        refused = await api.patch(
+            f"/v1/examples/{own}", json={"status": "active"}, headers=ctx.headers("steward")
+        )
+        assert refused.status_code == 403 and refused.json()["code"] == "forbidden", refused.text
+        assert refused.json()["detail"] == (
+            "Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt."
+        )
+        # Editing its text is not a confirmation.
+        edited = await api.patch(
+            f"/v1/examples/{own}",
+            json={"question": "Bao nhiêu hợp đồng?"},
+            headers=ctx.headers("steward"),
+        )
+        assert edited.status_code == 200, edited.text
+    assert ctx.one("SELECT status FROM context.example_query WHERE id = %s", own) == (
+        "pending_review"
+    )
+    assert self_approvals(ctx.org) == []
+
+
+async def test_example_self_confirmation_when_the_org_allows_it(
+    ctx: Ctx, self_approvals: Any
+) -> None:
+    ctx.seed.allow_self_approval(ctx.org)
+    own = _example(ctx, "Số hợp đồng?", "pending_review", created_by=ctx.users["steward"])
+    async with client(ctx) as api:
+        confirmed = await api.patch(
+            f"/v1/examples/{own}", json={"status": "active"}, headers=ctx.headers("steward")
+        )
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["status"] == "active"
+    assert self_approvals(ctx.org) == ["example.confirm"]
+
+
 async def test_editing_an_example_needs_steward_in_its_data_space(ctx: Ctx) -> None:
     example = _example(ctx, "Có bao nhiêu khách hàng?", "pending_review")
     elsewhere = _example(ctx, "Khách B?", "pending_review", space=ctx.other)
