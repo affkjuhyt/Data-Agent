@@ -78,18 +78,14 @@ CASES: list[Any] = [
         f"SELECT (SELECT SUM(sales_amount) FROM fact_internet_sales WHERE {IN_2013})"
         f" + (SELECT SUM(sales_amount) FROM fact_reseller_sales WHERE {IN_2013})",
     ),
-    pytest.param(
+    (
+        # Components is sold to resellers only: the Internet side has no row for it, which is
+        # that side's zero, not a NULL that empties the sum.
         "DOANH_THU",
         ["nhom_hang"],
         Y2013,
         None,
         f"SELECT k, SUM(v) FROM ({INTERNET_BY_CATEGORY} UNION ALL {RESELLER_BY_CATEGORY}) t GROUP BY k",
-        # A metric over two tables adds MAX() of each side, so a group one side has no row for
-        # (Components: sold to resellers only) comes out NULL instead of the other side's sum.
-        marks=pytest.mark.xfail(
-            strict=True, reason="compiler: a group missing on one side of a cross-table sum is NULL"
-        ),
-        id="DOANH_THU-nhom_hang",
     ),
     ("DOANH_THU_INTERNET", ["nhom_hang"], Y2013, None, INTERNET_BY_CATEGORY),
     (

@@ -153,7 +153,11 @@ def test_measures_of_two_tables_are_aggregated_apart_then_combined() -> None:
     assert "UNION ALL" in out.sql and 'JOIN "dw"."customer"' not in out.sql
     # The metric's expression over each side's aggregate: one row per region on each side.
     value = sqlglot.parse_one(out.sql, read="postgres").selects[-1].sql(dialect="postgres")
-    assert 'MAX("m_du_no")' in value and '/ NULLIF((MAX("m_so_khach_hang")), 0)' in value
+    # A sum a side has no row for is that side's zero (a region with customers and no loans has
+    # a ratio of 0); the denominator's zero is still no ratio; no figure on either side, NULL.
+    assert 'COALESCE(MAX("m_du_no"), 0)' in value
+    assert '/ NULLIF((COALESCE(MAX("m_so_khach_hang"), 0)), 0)' in value
+    assert value.startswith('CASE WHEN MAX("m_du_no") IS NULL AND MAX("m_so_khach_hang") IS NULL')
     # Each side cut to the period on its own time column.
     assert "t0.as_of_date >= CAST('2026-09-01' AS DATE)" in out.sql
     assert "t0.snapshot_date >= CAST('2026-09-01' AS DATE)" in out.sql

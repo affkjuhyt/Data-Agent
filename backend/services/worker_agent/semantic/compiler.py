@@ -17,7 +17,8 @@ never an LLM. What it does:
     joining the tables before aggregating would repeat one side's rows for each of the other's
     (the fan and chasm traps). The sides are combined with UNION ALL + GROUP BY, which every
     dialect has (MySQL has no FULL JOIN), so a member present on one side only keeps NULL on the
-    other;
+    other; a sum or count read there as that side's zero (compiler 5), the value NULL only when no
+    side has a figure;
   * the metric's default filters and the question's dimension filters become WHERE clauses with
     values as literals sqlglot quotes (no text is spliced into SQL). A filter is typed (GEN-22):
     membership (in, not_in), a comparison (=, !=, <, >, <=, >=), a range (between, both ends
@@ -58,7 +59,7 @@ from sqlglot.errors import ParseError
 
 from libs import clock
 
-COMPILER_VERSION = "v3-compiler-4"
+COMPILER_VERSION = "v3-compiler-5"
 MAX_HOPS = 3
 GRAINS = ("day", "week", "month", "quarter", "year", "fiscal_quarter", "fiscal_year")
 # The day a value was read on, carried from a side to the average over the period.
@@ -865,9 +866,30 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
         for part in parts[1:]:
             union = exp.union(union, part, distinct=False)
         keys = [*codes, _DAY] if by_day else codes
-        combined = _swap(
-            tree, {code: exp.Max(this=exp.column(names[code], quoted=True)) for code in measures}
-        )
+        maxed = {code: exp.Max(this=exp.column(names[code], quoted=True)) for code in measures}
+        # A side with no row for a member holds NULL there. For a sum or a count that is the
+        # side's zero: MAX(a) + MAX(b) was NULL for Components (sold to resellers only) and the
+        # cross-channel revenue lost the resellers' 5.4M. With no side holding any figure the
+        # value stays NULL: there is no data, not a zero.
+        zeroed = {
+            code: exp.Coalesce(this=maxed[code].copy(), expressions=[exp.Literal.number(0)])
+            if isinstance(measures[code], exp.Sum | exp.Count)
+            else maxed[code]
+            for code in measures
+        }
+        combined = _swap(tree, zeroed)
+        if zeroed != maxed:
+            combined = exp.Case(
+                ifs=[
+                    exp.If(
+                        this=exp.and_(
+                            *(exp.Is(this=m.copy(), expression=exp.Null()) for m in maxed.values())
+                        ),
+                        true=exp.Null(),
+                    )
+                ],
+                default=combined,
+            )
         select = exp.select(
             *(exp.column(k, quoted=True) for k in keys),
             exp.alias_(combined, "value", quoted=True),
