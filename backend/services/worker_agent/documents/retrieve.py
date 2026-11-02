@@ -37,6 +37,12 @@ POOL = 40
 MIN_RERANK = float(os.getenv("DOCUMENT_MIN_RERANK", "0.2"))
 MIN_DENSE = float(os.getenv("DOCUMENT_MIN_DENSE", "0.55"))
 MIN_OVERLAP = float(os.getenv("DOCUMENT_MIN_OVERLAP", "0.6"))
+# RES-12, after ragflow's retrieval: the reranked pool is ordered by its relevance blended with how
+# much of the question the passage covers, title and section header counting double. ragflow also
+# lowers the bar once before "not found"; measured on DS-AW (make eval-retrieval, 03/11/2026) that
+# took not-found accuracy from 0.74 to 0.52, so it is off unless this factor is set below 1.
+RERANK_WEIGHT = float(os.getenv("DOCUMENT_RERANK_WEIGHT", "0.7"))
+RELAXED = float(os.getenv("DOCUMENT_RELAXED_FACTOR", "1.0"))
 
 # Words that carry no subject: a question shares them with any passage.
 _STOP = frozenset(
@@ -73,6 +79,17 @@ def overlap(question: str, text: str) -> float:
     if not asked:
         return 0.0
     return len(asked & set(_words(text))) / len(asked)
+
+
+def coverage(question: str, text: str, title: str = "", header: str = "") -> float:
+    """Share of the question's subject words a passage covers, a word in its title or section
+    header weighing twice one in its text alone (ragflow's weighted token coverage)."""
+    asked = set(_words(question))
+    if not asked:
+        return 0.0
+    in_text, in_heads = set(_words(text)), set(_words(f"{title} {header}"))
+    weight = sum(2.0 if w in in_heads else 1.0 if w in in_text else 0.0 for w in asked)
+    return min(weight / len(asked), 2.0) / 2.0
 
 
 def _tsquery(question: str) -> str | None:
@@ -165,18 +182,39 @@ async def retrieve(
         chunk = rows[i][0]
         return f"{chunk.context_header}\n\n{chunk.text}" if chunk.context_header else chunk.text
 
+    def covered(i: uuid.UUID) -> float:
+        return coverage(
+            question, rows[i][0].text, str(rows[i][1] or ""), rows[i][0].context_header or ""
+        )
+
     reranked = await services.rerank(question, [body(i) for i in pool])
-    if reranked is not None:
-        scored = sorted(
-            ((i, s) for i, s in zip(pool, reranked, strict=True) if s >= MIN_RERANK),
+
+    def relevant(factor: float) -> list[tuple[uuid.UUID, float]]:
+        if reranked is not None:
+            # The bar stays on the reranker's own score; the order blends in coverage.
+            top = max(reranked) or 1.0
+            return sorted(
+                (
+                    (i, RERANK_WEIGHT * (s / top) + (1 - RERANK_WEIGHT) * covered(i))
+                    for i, s in zip(pool, reranked, strict=True)
+                    if s >= MIN_RERANK * factor
+                ),
+                key=lambda x: -x[1],
+            )
+        return sorted(
+            (
+                (i, fused[i] + covered(i) / RRF_K)
+                for i in pool
+                if overlap(question, body(i)) >= MIN_OVERLAP * factor
+                or dense_score.get(i, 0.0) >= MIN_DENSE * factor
+            ),
             key=lambda x: -x[1],
         )
-    else:
-        scored = [
-            (i, fused[i])
-            for i in pool
-            if overlap(question, body(i)) >= MIN_OVERLAP or dense_score.get(i, 0.0) >= MIN_DENSE
-        ]
+
+    scored = relevant(1.0)
+    if not scored and RELAXED < 1.0:
+        # One retry with the bars lowered before "not found" (ragflow retries once, looser).
+        scored = relevant(RELAXED)
     chosen = scored[:limit]
     if not chosen:
         return []

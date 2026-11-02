@@ -261,7 +261,7 @@ người dùng, P2 nâng chất lượng trả lời, P3 mở rộng năng lực
 | ID | Mức | Việc | Nguồn | Công sức | TT |
 | --- | --- | --- | --- | --- | --- |
 | RES-11 | P2 | Sổ trích dẫn ổn định trong workspace của agent: cùng đoạn cùng số, trỏ lại khi lặp, đánh số lại khi xuất, sửa định dạng `[n]` hỏng | ragflow | S | done: một số cho mỗi đoạn trong cả lượt, sửa `[ID:n]`/`【n】`/`[^n]`, bỏ số trỏ đoạn không có; chưa đánh số lại theo thứ tự xuất hiện |
-| RES-12 | P2 | Chấm điểm truy hồi: độ phủ từ có trọng số (tiêu đề, từ khoá, câu hỏi) trộn với điểm rerank đã chuẩn hoá; thử lại một lần nới lỏng trước khi nói "không thấy" | ragflow | S | todo |
+| RES-12 | P2 | Chấm điểm truy hồi: độ phủ từ có trọng số (tiêu đề, từ khoá, câu hỏi) trộn với điểm rerank đã chuẩn hoá; thử lại một lần nới lỏng trước khi nói "không thấy" | ragflow | S | done: xếp hạng trộn độ phủ có trọng số (DS-AW: recall@1 0,70→0,75, MRR 0,74→0,77, không-thấy giữ 0,74); thử lại nới lỏng tắt mặc định vì kéo không-thấy xuống 0,52 |
 | RES-13 | P2 | Chunk cha/con: đánh chỉ mục mức Khoản, trích dẫn mức Điều/mục; chunker theo cấp tiêu đề cho tài liệu không phải văn bản pháp quy | ragflow | M | todo |
 | RES-14 | P3 | Công cụ `read_document` (đoạn lân cận) và `grep_documents`, lọc giữ top-3 trước khi đưa model | ragflow | M | todo |
 | RES-15 | P3 | Làm giàu chunk: từ khoá và câu hỏi do LLM sinh (đánh chỉ mục thêm), cache theo hash nội dung; gỡ header/footer, mục lục trước khi chia | ragflow | M | todo |
