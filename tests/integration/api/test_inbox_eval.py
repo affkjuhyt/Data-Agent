@@ -1005,6 +1005,59 @@ async def test_hitl_approve_self_approved_when_the_org_allows_it(
     assert self_approvals(team.org) == ["hitl.approve"]
 
 
+async def test_hitl_chain_step_self_approved_when_the_org_allows_it(
+    team: Team, self_approvals: Any
+) -> None:
+    team.seed.allow_self_approval(team.org)
+    request = _hitl(team, kind="period_exception", risk="high", assignee_id=team.users["reviewer"])
+    for step in (1, 2):
+        team.seed.row(
+            "inbox.hitl_approval_step",
+            org_id=team.org,
+            hitl_request_id=request,
+            step=step,
+            approver_role="steward",
+        )
+    async with client(team) as api:
+        first = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("reviewer"),
+            json={"decision": "approve"},
+        )
+        assert first.status_code == 200, first.text
+        assert self_approvals(team.org) == []
+        second = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("reviewer"),
+            json={"decision": "approve"},
+        )
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "approved"
+    assert self_approvals(team.org) == ["hitl.chain_step"]
+
+
+async def test_hitl_excluded_approver_self_approved_when_the_org_allows_it(
+    team: Team, self_approvals: Any
+) -> None:
+    team.seed.allow_self_approval(team.org)
+    request = _hitl(
+        team,
+        kind="export",
+        data_space_id=None,
+        assignee_capability="compliance",
+        context=Json({"excluded_approver_ids": [str(team.users["controller"])]}),
+    )
+    async with client(team) as api:
+        r = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("controller"),
+            json={"decision": "approve"},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "approved"
+    assert self_approvals(team.org) == ["hitl.excluded_approver"]
+
+
 async def test_proposal_review_self_approved_when_the_org_allows_it(
     team: Team, self_approvals: Any
 ) -> None:

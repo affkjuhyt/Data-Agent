@@ -346,8 +346,11 @@ async def _decide_step(
     body: HitlResolve,
     principal: Principal,
     org_caps: frozenset[str],
+    self_steps: list[str],
 ) -> bool:
-    """Records the caller's decision on the current step of a chain; True when the chain is done."""
+    """Records the caller's decision on the current step of a chain; True when the chain is done.
+    A step the caller decides after deciding an earlier one, allowed by the org's switch, is
+    added to `self_steps` for the caller to log."""
     if body.decision not in ("approve", "reject"):
         raise Problem(
             422, "validation_failed", "A step of an approval chain is approved or rejected."
@@ -356,12 +359,15 @@ async def _decide_step(
     if current.approver_id is not None and current.approver_id != principal.user_id:
         raise Problem(403, "forbidden", "This approval step is assigned to someone else.")
     if any(s.approver_id == principal.user_id for s in steps if s.decision is not None):
-        # BR-132 / BR-62: each step of a chain is a different person.
-        raise Problem(
-            422,
-            "business_rule_violated",
-            "Each approval step must be decided by a different person (BR-132).",
-        )
+        # BR-132 / BR-62: each step of a chain is a different person, unless the org allows it.
+        if not principal.self_approval:
+            raise Problem(
+                422,
+                "business_rule_violated",
+                "Each approval step must be decided by a different person (BR-132).",
+            )
+        if body.decision == "approve":
+            self_steps.append("hitl.chain_step")
     if current.approver_id is None and current.approver_role not in _capabilities_for(
         row, principal, org_caps
     ):
@@ -396,6 +402,13 @@ async def _decide_step(
         )
         return False
     return True
+
+
+async def _record_self_steps(principal: Principal, request_id: uuid.UUID, steps: list[str]) -> None:
+    for step in steps:
+        await record_self_approval(
+            principal, step=step, object_kind="hitl_request", object_id=request_id
+        )
 
 
 @router.post(
@@ -433,16 +446,21 @@ async def resolve_hitl(
         if not step_approver and not await _is_assignee(session, row, principal, org_caps):
             raise Problem(403, "forbidden", "Only the assignee can resolve this request.")
         excluded = (row.context or {}).get("excluded_approver_ids") or []
+        self_steps: list[str] = []
         if str(principal.user_id) in excluded:
             # Named by the module that asked (the filer, the closer of the period). Not even a
-            # reassign: they would pick who approves their own request.
-            raise Problem(403, "forbidden", "You may not decide this request.")
-        self_approved = body.decision == "approve" and two_people(
+            # reassign: they would pick who approves their own request. The org's switch lifts it.
+            if not principal.self_approval:
+                raise Problem(403, "forbidden", "You may not decide this request.")
+            if body.decision == "approve":
+                self_steps.append("hitl.excluded_approver")
+        if body.decision == "approve" and two_people(
             principal,
             row.created_by,
             # BR-62: whoever raised the change does not approve it, unless the org allows it.
             message="The requester cannot approve their own request.",
-        )
+        ):
+            self_steps.append("hitl.approve")
         _check_option(row, body.option)
         now = _now()
         row.updated_by = principal.user_id
@@ -473,12 +491,11 @@ async def resolve_hitl(
             )
             await session.flush()
             return _detail(row, steps)
-        if chained and not await _decide_step(session, row, steps, body, principal, org_caps):
+        if chained and not await _decide_step(
+            session, row, steps, body, principal, org_caps, self_steps
+        ):
             await session.flush()
-            if self_approved:
-                await record_self_approval(
-                    principal, step="hitl.approve", object_kind="hitl_request", object_id=row.id
-                )
+            await _record_self_steps(principal, row.id, self_steps)
             return _detail(row, steps)
         row.status = HITL_STATUS[body.decision]
         row.response = {"decision": body.decision, "option": body.option, "note": note}
@@ -505,10 +522,7 @@ async def resolve_hitl(
             )
         )
         await session.flush()
-        if self_approved:
-            await record_self_approval(
-                principal, step="hitl.approve", object_kind="hitl_request", object_id=row.id
-            )
+        await _record_self_steps(principal, row.id, self_steps)
         return _detail(row, steps)
 
 

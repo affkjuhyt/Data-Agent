@@ -670,6 +670,19 @@ async def test_legal_review_approves_with_six_months_and_the_terms_hash(w: World
     )
 
 
+async def test_crawl_source_legal_review_self_approved_when_the_org_allows_it(
+    w: World, self_approvals: Any
+) -> None:
+    w.seed.allow_self_approval(w.org)
+    own, _ = w.source(owner="owner_legal", legal=False, active=False)
+    async with w.client("owner_legal") as c:
+        r = await c.post(f"/v1/crawl-sources/{own}:legal-review", json=_legal_body())
+    assert r.status_code == 200, r.text
+    assert r.json()["legal_status"] == "approved"
+    assert r.json()["legal_reviewed_by"] == str(w.users["owner_legal"])
+    assert self_approvals(w.org) == ["crawl_source.legal_review"]
+
+
 @pytest.mark.req("AC-14-01-08")
 @pytest.mark.security
 async def test_legal_review_refusals(w: World) -> None:

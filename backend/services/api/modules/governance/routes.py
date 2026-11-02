@@ -28,6 +28,7 @@ from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import governance
 from services.api.catalogue import endpoint
 from services.api.kernel import openbao
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -40,6 +41,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.governance.schemas import (
     ModelProviderApprove,
     ModelProviderCreate,
@@ -477,12 +479,12 @@ async def patch_model_provider(
                 "business_rule_violated",
                 "A frontier provider needs compliance approval and zero retention before enabling.",
             )
-        if body.enabled is True and row.approved_by == principal.user_id:
-            raise Problem(
-                403,
-                "policy_denied",
-                "The person who approved a frontier provider cannot enable it.",
-            )
+        enabling_own_approval = body.enabled is True and two_people(
+            principal,
+            row.approved_by,
+            message="The person who approved a frontier provider cannot enable it.",
+            code="policy_denied",
+        )
 
         if changed_contract:
             row.enabled = False
@@ -495,6 +497,13 @@ async def patch_model_provider(
         row.updated_by = principal.user_id
         row.updated_at = datetime.datetime.now(datetime.UTC)
         await session.flush()
+        if enabling_own_approval and not changed_contract:
+            await record_self_approval(
+                principal,
+                step="model_provider.enable",
+                object_kind="model_provider",
+                object_id=row.id,
+            )
         await session.refresh(row)
     return ModelProviderView.model_validate(row)
 
@@ -530,12 +539,12 @@ async def approve_model_provider(
             raise Problem(422, "business_rule_violated", "Only frontier providers need approval.")
         if row.status == "retired":
             raise Problem(409, "invalid_state", "A retired provider cannot be approved.")
-        if row.enabled and row.enabled_by == principal.user_id:
-            raise Problem(
-                403,
-                "policy_denied",
-                "The person who enabled a frontier provider cannot approve it.",
-            )
+        approving_own_enable = row.enabled and two_people(
+            principal,
+            row.enabled_by,
+            message="The person who enabled a frontier provider cannot approve it.",
+            code="policy_denied",
+        )
         if (
             not row.endpoint.startswith("https://")
             or row.secret_ref is None
@@ -552,6 +561,13 @@ async def approve_model_provider(
         row.updated_by = principal.user_id
         row.updated_at = datetime.datetime.now(datetime.UTC)
         await session.flush()
+        if approving_own_enable:
+            await record_self_approval(
+                principal,
+                step="model_provider.approve",
+                object_kind="model_provider",
+                object_id=row.id,
+            )
         await session.refresh(row)
     return ModelProviderView.model_validate(row)
 

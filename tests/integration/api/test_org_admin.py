@@ -1037,6 +1037,26 @@ async def test_an_approved_request_adds_a_member_for_the_requested_time(world: W
         assert again.status_code == 409 and again.json()["code"] == "invalid_state"
 
 
+async def test_a_request_is_not_decided_by_its_requester(world: World) -> None:
+    async with client(world) as api:
+        sent = (await _request(api, world, "ask", who="steward")).json()
+        own = await _decide(api, world, sent["id"], decision="approve")
+    assert own.status_code == 403, own.text
+    assert own.json()["detail"] == "A request is decided by someone other than its requester."
+
+
+async def test_access_request_decide_self_approved_when_the_org_allows_it(
+    world: World, self_approvals: Any
+) -> None:
+    world.seed.allow_self_approval(world.org)
+    async with client(world) as api:
+        sent = (await _request(api, world, "ask", who="steward")).json()
+        own = await _decide(api, world, sent["id"], decision="approve")
+    assert own.status_code == 200, own.text
+    assert own.json()["status"] == "approved"
+    assert self_approvals(world.org) == ["access_request.decide"]
+
+
 # AC-11-07-02
 @pytest.mark.req("AC-11-07-02")
 async def test_narrowing_grants_less_never_more(world: World) -> None:

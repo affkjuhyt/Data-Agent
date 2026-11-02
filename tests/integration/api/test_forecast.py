@@ -890,6 +890,25 @@ async def test_only_the_owner_who_did_not_build_the_version_decides(fx: Fx) -> N
         assert hidden.status_code == 404
 
 
+async def test_forecast_model_decide_self_approved_when_the_org_allows_it(
+    fx: Fx, self_approvals: Any
+) -> None:
+    fx.seed.allow_self_approval(fx.org)
+    by_owner = fx.version(fx.model, 3, created_by="owner")
+    async with client(fx) as api:
+        sent = await api.post(
+            f"/v1/forecast-model-versions/{by_owner}:submit", headers=fx.headers("owner")
+        )
+        assert sent.status_code == 200, sent.text
+        approved = await api.post(
+            f"/v1/forecast-model-versions/{by_owner}:approve", headers=fx.headers("owner")
+        )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "published"
+    assert approved.json()["approved_by"] == str(fx.users["owner"])
+    assert self_approvals(fx.org) == ["forecast_model.decide"]
+
+
 # AC-15-03-07
 @pytest.mark.req("AC-15-03-07")
 async def test_an_overfitted_version_is_refused_by_the_database(fx: Fx) -> None:
@@ -1370,6 +1389,22 @@ async def _propose(
     assert made.status_code == 201, made.text
     out: dict[str, Any] = made.json()
     return out
+
+
+async def test_formula_value_certify_self_approved_when_the_org_allows_it(
+    fx: Fx, self_approvals: Any
+) -> None:
+    fx.seed.allow_self_approval(fx.org)
+    async with client(fx) as api:
+        formula = (await _new_formula(api, fx))["id"]
+        own = await _propose(api, fx, formula, _component("env_tax"))
+        certified = await api.post(
+            f"/v1/formula-components/{own['id']}:certify", headers=fx.headers("builder")
+        )
+    assert certified.status_code == 200, certified.text
+    assert certified.json()["status"] == "certified"
+    assert certified.json()["certified_by"] == str(fx.users["builder"])
+    assert self_approvals(fx.org) == ["formula_value.certify"]
 
 
 # AC-15-07-04
