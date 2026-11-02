@@ -66,6 +66,9 @@ class Principal:
     capabilities: frozenset[str] = field(default_factory=frozenset)
     # The Data Space named by X-Data-Space, resolved to its id; None without the header.
     data_space_id: uuid.UUID | None = None
+    # org.organization.allow_self_approval: whether one person may do both halves of a
+    # two-person step. Read it through kernel/approval.two_people, never directly.
+    self_approval: bool = False
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,7 @@ class Identity:
     user_id: uuid.UUID
     capabilities: frozenset[str]
     data_space_id: uuid.UUID | None = None
+    self_approval: bool = False
 
 
 class DataSpaceNotFound(Exception):
@@ -167,6 +171,7 @@ async def current_principal(
         client_id=client_id,
         capabilities=identity.capabilities & CAPABILITIES,
         data_space_id=identity.data_space_id,
+        self_approval=identity.self_approval,
     )
     # Read back by the access log (kernel/access_log.py) once the response is known.
     request.state.principal = principal
