@@ -12,6 +12,8 @@ describe('answer layouts', () => {
   it('changes the order of the primary result sections', () => {
     expect(responseOrder('chart_first', 'chart')).toBeLessThan(responseOrder('chart_first', 'content'));
     expect(responseOrder('sql_first', 'table')).toBeLessThan(responseOrder('sql_first', 'content'));
+    // /sql: the SQL that ran comes first, then its result.
+    expect(responseOrder('sql_first', 'evidence')).toBeLessThan(responseOrder('sql_first', 'table'));
     expect(responseOrder('report', 'content')).toBeLessThan(responseOrder('report', 'chart'));
   });
 });

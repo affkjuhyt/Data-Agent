@@ -36,7 +36,7 @@ export function responseOrder(layout: AnswerLayout, section: ResponseSection): n
   const orders: Record<AnswerLayout, ResponseSection[]> = {
     auto: ['progress', 'reading', 'content', 'partial', 'clarification', 'chart', 'drill', 'table', 'proposal', 'evidence', 'verification', 'citations', 'meta', 'suggestions'],
     chart_first: ['progress', 'chart', 'content', 'reading', 'table', 'drill', 'evidence', 'proposal', 'verification', 'citations', 'meta', 'suggestions', 'partial', 'clarification'],
-    sql_first: ['progress', 'table', 'evidence', 'content', 'reading', 'chart', 'drill', 'proposal', 'verification', 'citations', 'meta', 'suggestions', 'partial', 'clarification'],
+    sql_first: ['progress', 'evidence', 'table', 'content', 'reading', 'chart', 'drill', 'proposal', 'verification', 'citations', 'meta', 'suggestions', 'partial', 'clarification'],
     data_first: ['progress', 'table', 'content', 'reading', 'chart', 'drill', 'evidence', 'proposal', 'verification', 'citations', 'meta', 'suggestions', 'partial', 'clarification'],
     report: ['progress', 'content', 'reading', 'chart', 'table', 'evidence', 'proposal', 'verification', 'citations', 'meta', 'suggestions', 'partial', 'clarification', 'drill'],
   };
