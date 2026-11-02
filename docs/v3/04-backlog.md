@@ -233,6 +233,77 @@ Audit theo 15 bất biến của [00](00-product-strategy.md) §5 (cộng 16–1
 
 Đã đạt khi audit: cách ly tenant (`scoped_session`, mọi vai trò NOBYPASSRLS), truy vấn chạy bằng danh tính người hỏi, đề xuất ngữ nghĩa do LLM đi qua bản nháp và duyệt, SQL do model viết qua guard và mang nhãn khám phá, structured data không vào embedding, raw crawl bất biến. Monitor chưa có bộ đánh giá nên bất biến 11 chưa bị thử.
 
+### 3h. Học từ nghiên cứu mã nguồn mở và agent động (03/11/2026)
+
+Từ bộ nghiên cứu [`docs/research/`](../research/README.md) (DataAgent, ragflow, Airbyte, OpenMetadata,
+gpt-researcher, RD-Agent, Memori, WrenAI, Data-Analysis-Agent) và lượt đo đầu tiên của agent động
+([eval/ds-aw-agent-eval.md](eval/ds-aw-agent-eval.md)). Chỉ lấy ý tưởng từ nguồn AGPL, ELv2, Collate
+hay phi thương mại, tự viết lại ([licences.md](../research/licences.md)). Mức: P1 sai số hoặc chặn
+người dùng, P2 nâng chất lượng trả lời, P3 mở rộng năng lực. Công sức S/M/L.
+
+**Agent động (`worker_agent/agentic/`)**
+
+| ID | Mức | Việc | Nguồn | Công sức | TT |
+| --- | --- | --- | --- | --- | --- |
+| RES-01 | — | Graph planner → act ⟲ → replan/review → compose; plan DAG kiểm tĩnh; block do agent soạn, server điền số; sandbox Python trong pod riêng; bộ nhớ dài hạn; `explain_change`; chạy song song; rà soát câu trả lời; bảng loại biểu đồ; `make agent-eval` | DataAgent, gpt-researcher, RD-Agent, Memori, WrenAI (ý tưởng) | L | done bd827dd7…be951602 |
+| RES-02 | P1 | SQL thăm dò chọn nhầm bảng ("Doanh thu năm 2013" ra chỉ tiêu doanh số, "Biên gộp" ra lãi gộp): kiểm SQL hai bước như DataAgent (kiểm tĩnh rồi LLM soát logic theo yêu cầu của bước), chặn viết lại đúng câu SQL cũ | DataAgent | M | todo |
+| RES-03 | P1 | Bộ lọc trong câu hỏi bị bỏ ("nhóm hàng Bikes" ra tổng): kiểm mọi giá trị câu hỏi nêu có nằm trong cách đọc hay SQL không, như `grounding` cho đại lượng | — | S | todo |
+| RES-04 | P1 | Không có dữ liệu mà vẫn trả lời ("Doanh thu 2009 là 0", tự tính tỷ lệ rời bỏ, dự báo 2015): kỳ ngoài phạm vi dữ liệu và đại lượng không có trong kho thì nói rõ, không ra 0 | DataAgent (feasibility) | S | todo |
+| RES-05 | P2 | Chi phí: agent tốn ~2× bước, ~3× token và thời gian so với đường chuẩn; câu hỏi một con số đi đường tắt (một query_metric, không review), bỏ rà soát khi chỉ có KPI | — | M | todo |
+| RES-06 | P2 | Duyệt kế hoạch trước khi chạy: dừng sau `plan`, người dùng sửa/đồng ý, chạy tiếp từ checkpoint; câu hỏi lớn mới hỏi | DataAgent (human feedback), ragflow canvas | M | todo |
+| RES-07 | P2 | Gói ngữ cảnh kèm mỗi dataset/chỉ số: dữ liệu cũ, kiểm chất lượng đang lỗi, độ tươi theo cam kết; thành lưu ý và hạ nhãn tin cậy theo quy tắc, không do LLM | OpenMetadata AIContext | M | todo |
+| RES-08 | P2 | Chế độ nghiên cứu sâu: tách câu hỏi con, chạy song song theo độ sâu, kiểm "đủ thông tin chưa", viết báo cáo nhiều phần có trích dẫn | gpt-researcher, ragflow DeepResearcher | L | todo |
+| RES-09 | P3 | Vệ sinh vòng lặp: vòng cuối cấm công cụ khi hết ngân sách, bước dự phòng khai báo, tóm tắt 30 chữ các lượt gọi công cụ cho lịch sử | ragflow agent | S | todo |
+| RES-10 | P3 | Bộ nhớ: gộp định kỳ, đánh dấu mâu thuẫn và đã thay thế, định nghĩa người dùng nêu thành đề xuất cho lớp ngữ nghĩa (chờ duyệt); màn xem và xoá trí nhớ của mình | Memori, OpenMetadata ContextMemory | M | todo |
+
+**RAG tài liệu (`documents/`, `worker_document/`)**
+
+| ID | Mức | Việc | Nguồn | Công sức | TT |
+| --- | --- | --- | --- | --- | --- |
+| RES-11 | P2 | Sổ trích dẫn ổn định trong workspace của agent: cùng đoạn cùng số, trỏ lại khi lặp, đánh số lại khi xuất, sửa định dạng `[n]` hỏng | ragflow | S | todo |
+| RES-12 | P2 | Chấm điểm truy hồi: độ phủ từ có trọng số (tiêu đề, từ khoá, câu hỏi) trộn với điểm rerank đã chuẩn hoá; thử lại một lần nới lỏng trước khi nói "không thấy" | ragflow | S | todo |
+| RES-13 | P2 | Chunk cha/con: đánh chỉ mục mức Khoản, trích dẫn mức Điều/mục; chunker theo cấp tiêu đề cho tài liệu không phải văn bản pháp quy | ragflow | M | todo |
+| RES-14 | P3 | Công cụ `read_document` (đoạn lân cận) và `grep_documents`, lọc giữ top-3 trước khi đưa model | ragflow | M | todo |
+| RES-15 | P3 | Làm giàu chunk: từ khoá và câu hỏi do LLM sinh (đánh chỉ mục thêm), cache theo hash nội dung; gỡ header/footer, mục lục trước khi chia | ragflow | M | todo |
+
+**Nạp dữ liệu (`worker_ingest`, `libs/source_drivers`, `providers/`)**
+
+| ID | Mức | Việc | Nguồn | Công sức | TT |
+| --- | --- | --- | --- | --- | --- |
+| RES-16 | P1 | Đọc theo luồng thay vì nạp cả bảng vào bộ nhớ: con trỏ phía server / keyset, ghi từng trang vào bảng tạm rồi đổi hoặc merge | Airbyte | M | todo |
+| RES-17 | P2 | Nạp tăng dần theo cột cursor: chốt cận trên lúc bắt đầu, ghi dữ liệu và trạng thái cursor trong cùng giao dịch, merge khi có khoá chính; tuỳ chọn bỏ ngày hôm nay | Airbyte (protocol, CDK) | M | todo |
+| RES-18 | P2 | Khám phá nguồn: bảng, cột, khoá chính, cột có thể làm cursor, quyền SELECT từng bảng; chỉ thêm cột khi schema đổi, lệch kiểu thì báo lỗi cấu hình | Airbyte | S | todo |
+| RES-19 | P2 | Phân loại lỗi lượt chạy: cấu hình / tạm thời / hệ thống; chỉ lỗi tạm thời mới thử lại | Airbyte | S | todo |
+| RES-20 | P3 | Nguồn REST bằng manifest do mình viết trên Airbyte CDK (MIT), không dùng connector ELv2; xem trước 50 dòng khi khai báo nguồn; agent soạn nháp manifest từ tài liệu API, người duyệt | Airbyte (CDK MIT; Builder ý tưởng) | L | todo |
+| RES-21 | P3 | Provider đọc trực tiếp có quản trị: kiểm quyền trước khi gọi, giới hạn tốc độ và kích thước, nhãn "nguồn sống, chưa chuẩn" | Airbyte (bài học context layer) | M | todo |
+
+**Danh mục, chất lượng, quản trị (`schema_scans.py`, `quality.py`, `context`, `inbox`)**
+
+| ID | Mức | Việc | Nguồn | Công sức | TT |
+| --- | --- | --- | --- | --- | --- |
+| RES-22 | P1 | `schema_hash` chuẩn hoá (đang băm `repr` cả danh sách cột nên báo đổi schema giả); đếm lỗi theo bảng, một bảng lỗi không làm hỏng cả lượt quét | OpenMetadata ingestion (ý tưởng) | S | todo |
+| RES-23 | P2 | Viết lại profiler: một truy vấn gộp mỗi bảng, ước lượng số dòng từ catalog, lấy mẫu với bảng lớn, thử lại khi tràn số; thêm/sửa/xoá từ thống kê Postgres cho độ tươi | OpenMetadata ingestion (ý tưởng) | M | todo |
+| RES-24 | P2 | Quyết định PII: loại có checksum chỉ cần một lần khớp hợp lệ, loại yếu cần tỷ lệ và số giá trị khác nhau; bỏ qua cột ít giá trị khác nhau; lưu bằng chứng; phản hồi của người dùng thành ngoại lệ theo cột | OpenMetadata ingestion (ý tưởng) | S | todo |
+| RES-25 | P2 | Gắn thuật ngữ nghiệp vụ vào cột, chỉ số, chiều, giá trị (có nguồn gốc gắn và trạng thái đề xuất/xác nhận) để agent hiểu đúng bộ lọc | OpenMetadata | M | todo |
+| RES-26 | P2 | Sự cố chất lượng dữ liệu: một sự cố mở mỗi quy tắc, mới → nhận → giao → xong, tự đóng khi đạt lại, hết hạn; chiều chất lượng, tỷ lệ lỗi, SQL xem dòng lỗi | OpenMetadata | M | todo |
+| RES-27 | P2 | Lineage từ SQL bằng sqlglot (`libs/sql_guard/lineage.py`): bảng đọc/ghi, lineage cột, join, che literal, giới hạn thời gian thật; đọc log truy vấn Postgres theo chênh lệch ảnh chụp; join hay dùng thành đề xuất quan hệ chờ duyệt | OpenMetadata ingestion (ý tưởng) | L | todo |
+| RES-28 | P3 | Hợp đồng dữ liệu: schema, cam kết độ tươi, quy tắc chất lượng, điều khoản cho agent; chuỗi kết quả kiểm; chặn nhãn "chuẩn" khi hợp đồng lỗi | OpenMetadata | M | todo |
+| RES-29 | P3 | Chính sách duyệt khai báo theo loại đề xuất và mức rủi ro: ngưỡng N-trên-M, không có người duyệt hợp lệ thì giao admin (trừ người đề xuất) hoặc chờ, đề xuất do máy tạo luôn cần người | OpenMetadata (workflow, tự duyệt) | M | todo |
+| RES-30 | P3 | Màn duyệt: hiện nội dung từng câu eval đổi kết quả (đang chỉ có mã), đổi từng trường kèm giá trị gốc để duyệt từng thay đổi | OpenMetadata (change request) | M | todo |
+| RES-31 | P3 | Tìm kiếm metadata: trọng số theo trường, ưu tiên theo mức dùng, phân quyền trong câu truy vấn, vector mỗi đoạn kèm dấu vân tay; trên Postgres FTS + `pg_trgm` + Qdrant | OpenMetadata (search) | M | todo |
+| RES-32 | P3 | Import dbt (test thành quy tắc chất lượng, metric qua `semantic_yaml`) và semantic view Snowflake/Databricks | OpenMetadata ingestion (ý tưởng) | L | todo |
+
+**Giấy phép**
+
+| ID | Mức | Việc | Nguồn | Công sức | TT |
+| --- | --- | --- | --- | --- | --- |
+| RES-33 | — | Gỡ nội dung AGPL, ELv2, phi thương mại khỏi repo; ghi nguồn và giấy phép đầu mỗi tài liệu nghiên cứu | licences.md | S | done c10c3f57 |
+| RES-34 | P2 | `THIRD-PARTY-NOTICES.md` sinh từ lock file cộng danh sách đoạn lấy từ nguồn Apache/MIT; bắt buộc trước bản on-prem đầu tiên | licences.md F10 | S | todo |
+| RES-35 | P3 | Quyết định về lịch sử git còn đoạn chép cũ (viết lại lịch sử hay giữ); hỏi pháp chế nếu giao mã ra ngoài | licences.md | S | todo |
+
+Thứ tự đề xuất: RES-02, 03, 04 (sai số của agent) → RES-22, 16 (lỗi sẵn có trong quét và nạp) → RES-05,
+07, 11, 12 → RES-17, 18, 19, 23, 24 → còn lại theo mức.
+
 ## 4. Quy tắc theo dõi
 
 - Thứ Sáu hằng tuần rà cột TT; việc trễ > 2 ngày thì cắt hoặc đổi người ngay trong tuần.
