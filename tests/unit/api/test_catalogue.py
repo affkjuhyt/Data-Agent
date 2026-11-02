@@ -20,8 +20,9 @@ def test_snapshot_holds_all_of_a2() -> None:
     data = catalogue()
     # 470 rows of tab 4, plus the upload preview/delete, the metric edit/retire and the eval
     # item edit operations, less the 24 of the industry packs (group Gói ngành and the Error
-    # Book's propose-to-pack), dropped on 01/11/2026, plus the question cancel and its steps.
-    assert len(data["endpoints"]) == 457
+    # Book's propose-to-pack), dropped on 01/11/2026, plus the question cancel and the
+    # question steps and the organisation's self-approval switch (02/11/2026).
+    assert len(data["endpoints"]) == 459
     assert len(data["groups"]) == 21
     assert {e["group"] for e in data["endpoints"]} == set(data["groups"])
 

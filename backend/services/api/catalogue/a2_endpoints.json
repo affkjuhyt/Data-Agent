@@ -3971,6 +3971,30 @@
   },
   {
    "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/admin/organization",
+   "summary": "Tổ chức của tôi và công tắc tự duyệt (thêm 02/11/2026)",
+   "use_cases": [
+    "11-08"
+   ],
+   "capability": [
+    "—"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "PATCH",
+   "path": "/v1/admin/organization",
+   "summary": "Bật, tắt tự duyệt cho cả tổ chức (thêm 02/11/2026)",
+   "use_cases": [
+    "11-08"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
    "method": "POST",
    "path": "/v1/admin/invitations",
    "summary": "Mời người dùng vào Data Space",

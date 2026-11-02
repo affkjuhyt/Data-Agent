@@ -5566,6 +5566,30 @@
    "errors": [],
    "request_text": "—"
   },
+  "GET /v1/admin/organization": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Organization: id, code, name, allow_self_approval",
+   "errors": [],
+   "request_text": "—"
+  },
+  "PATCH /v1/admin/organization": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "allow_self_approval": true
+   },
+   "query": [],
+   "returns": "Organization. Bật: người tạo được tự duyệt việc của mình ở mọi bước cần hai người, mỗi lần tự duyệt ghi một dòng audit self_approval; đổi giá trị được ghi audit kèm trước và sau",
+   "errors": [],
+   "request_text": "allow_self_approval*"
+  },
   "POST /v1/admin/invitations": {
    "group": "Quản trị",
    "groups": [

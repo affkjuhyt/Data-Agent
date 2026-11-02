@@ -499,6 +499,8 @@ Dịch vụ: Admin service (org, governance). 27 endpoint.
 | GET | /v1/admin/roles | Vai trò và năng lực của từng vai trò (thêm 12/10/2026) | 11-01, 11-08 | admin |
 | GET | /v1/admin/groups | Nhóm danh tính và số thành viên | 11-01 | admin |
 | POST | /v1/admin/directory:sync | 202, xếp hàng đồng bộ thư mục danh tính | 11-01 | admin |
+| GET | /v1/admin/organization | Tổ chức của tôi và công tắc tự duyệt (thêm 02/11/2026) | 11-08 | — |
+| PATCH | /v1/admin/organization | Bật, tắt tự duyệt cho cả tổ chức (thêm 02/11/2026) | 11-08 | admin |
 | POST | /v1/admin/invitations | 202, lời mời đang chờ gửi | 11-01 | admin |
 | GET | /v1/data-spaces/{id}/members | Thành viên Data Space: vai trò, phạm vi dòng, hạn dùng (thêm 12/10/2026) | 11-08 | steward |
 | GET | /v1/data-spaces/{id}/permissions | Ma trận vai trò và năng lực trong Data Space | 11-08 | steward |
@@ -1089,6 +1091,8 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/access-requests/{id} | — | AccessRequestView | — |
 | GET /v1/admin/groups | — | Page<UserGroupView> | — |
 | POST /v1/admin/directory:sync | — | 202, DirectorySyncAccepted | — |
+| GET /v1/admin/organization | — | Organization: id, code, name, allow\_self\_approval | — |
+| PATCH /v1/admin/organization | allow\_self\_approval\* | Organization. Bật: người tạo được tự duyệt việc của mình ở mọi bước cần hai người, mỗi lần tự duyệt ghi một dòng audit self\_approval; đổi giá trị được ghi audit kèm trước và sau | — |
 | POST /v1/admin/invitations | email\*, role\_id\*, data\_space\_id\*, row\_scope, valid\_until | 202, InvitationAccepted | — |
 | GET /v1/data-spaces/{id}/permissions | — | PermissionMatrix | — |
 

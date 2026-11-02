@@ -95,6 +95,9 @@ second approver of what an admin enables. A role an administrator changed is not
 deploy. Organisation users need `tenant_id` set to `org_id` in Keycloak; the realm keeps that
 attribute, editable by admins only.
 
+The organisation self-approval switch is at **Quản trị › Người dùng và vai trò**. Only an
+organisation admin can change it; each change and every self-approval is written to the audit log.
+
 ## 3. Deploy a change
 
 1. Commit on your branch. **Uncommitted edits are not deployed** (the pipeline

@@ -91,6 +91,7 @@ của tài liệu thiết kế hệ thống; cổng A2 trong CI giữ mã khớp
 | API-04 | Cần bạn và đánh giá | API-01 | BE, FE | M | Như trên cho màn Cần bạn | done b35f6655 |
 | API-05 | Agent: lượt chạy, sự kiện SSE, tạm dừng/tiếp tục | API-02 | BE, FE | L | Như trên cho màn Agent | done b867d890 |
 | API-06 | Triển khai khối `api`: manifest, Ansible, route `/v1` ở gateway, secret từ OpenBao | API-02 | Ops | S | `make deploy` đưa `api` lên cụm dev; e2e gọi `/v1` qua gateway | done 61563359 |
+| API-07 | Công tắc tự duyệt theo tổ chức: API có kiểm quyền admin và audit before/after; mọi điểm duyệt dùng chung quyết định, ghi riêng từng bước tự duyệt; UI ở Người dùng và vai trò; DS-AW bật sẵn để thử | API-01 | BE, FE, DB | M | Org mặc định tắt; chỉ admin bật/tắt; lần duyệt tiếp theo dùng giá trị mới; test API và UI | done 09fa20ba |
 
 ## 3c. Chuyển KB cũ sang V3 (G3, phần thu thập của G4)
 

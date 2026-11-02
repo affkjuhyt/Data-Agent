@@ -329,3 +329,21 @@ class CalendarView(_Row):
     days: list[CalendarDay]
     created_at: datetime.datetime
     updated_at: datetime.datetime
+
+
+# ── the organisation ──
+
+
+class OrganizationView(_Row):
+    """GET /v1/admin/organization: the caller's organisation and its self-approval switch."""
+
+    id: uuid.UUID
+    code: str
+    name: str
+    allow_self_approval: bool
+
+
+class OrganizationPatch(BaseModel):
+    # On: one person may both make and approve (org.two_people lets the pair through), and every
+    # such approval writes a self_approval row to the audit log.
+    allow_self_approval: bool
