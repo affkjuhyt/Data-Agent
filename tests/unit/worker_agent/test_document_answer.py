@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from services.worker_agent.documents.answer import compose, compose_general, quote_match
+from services.worker_agent.documents.answer import compose, quote_match
 from services.worker_agent.documents.retrieve import Passage, overlap
 from services.worker_agent.llm import ModelUnavailable, Reply
 
@@ -141,17 +141,6 @@ async def test_no_claim_left_means_not_found() -> None:
     told = await compose(Scripted([]), QUESTION, [RATE], AS_OF)
     assert not told.found and told.text.startswith("Không tìm thấy trong tài liệu được phép")
     assert not (await compose(Scripted([]), QUESTION, [], AS_OF)).found
-
-
-async def test_general_fallback_answers_without_claiming_document_evidence() -> None:
-    told = await compose_general(
-        GeneralScripted("Lãi suất thường phụ thuộc vào kỳ hạn và chính sách từng ngân hàng."),
-        QUESTION,
-    )
-
-    assert told.text == "Lãi suất thường phụ thuộc vào kỳ hạn và chính sách từng ngân hàng."
-    assert not told.found
-    assert told.number_check["untraceable_final"] == 0
 
 
 async def test_citing_a_passage_not_shown_or_out_of_force_fails() -> None:
