@@ -102,13 +102,24 @@ def test_turning_it_off_keeps_existing_rows(db):
 
 
 def test_a_null_side_is_never_refused(db):
-    org = new_org(db)
+    org, someone = new_org(db), new_id()
     with db.cursor() as cur:  # a second guard on the same table, owner-made, rolled back
+        # Both orders of the pair, so each column is once the NULL side `a` and once `b`.
         cur.execute(
             "CREATE TRIGGER extra_two_people BEFORE INSERT OR UPDATE ON catalog.dataset_version "
-            "FOR EACH ROW EXECUTE FUNCTION org.two_people('created_by', 'certified_by')"
+            "FOR EACH ROW EXECUTE FUNCTION "
+            "org.two_people('created_by', 'certified_by', 'certified_by', 'created_by')"
         )
     _no_creator_version(db, org)  # created_by and certified_by both NULL
+    one_sided = _version(db, org, someone)  # created_by set, certified_by NULL
+    # The same person on both sides is still refused while the switch is off.
+    fails(
+        db,
+        "UPDATE catalog.dataset_version SET certified_by = created_by, certified_at = now()"
+        " WHERE id = %s",
+        (one_sided,),
+        code=CHECK,
+    )
 
 
 def test_an_unknown_organisation_does_not_allow_it(db):
