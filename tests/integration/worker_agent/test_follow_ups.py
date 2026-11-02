@@ -125,6 +125,11 @@ async def test_a_cut_the_metric_does_not_allow_is_dropped_and_named_with_the_one
     assert (status, kind) == ("answered", "data"), text
     assert "Dư nợ không chia được theo nhóm nợ. Có thể chia theo: sản phẩm, vùng." in text
     assert "Trả về số tổng hợp theo các chiều dữ liệu được phép." in text
+    # The answer's caveats say it too (answer_blocks.py reads number_check.notes).
+    notes = seed.one("SELECT number_check->'notes' FROM qa.answer a WHERE a.question_id = %s", q)
+    assert notes == [
+        "Dư nợ không chia được theo nhóm nợ. Có thể chia theo: sản phẩm, vùng. Trả về số tổng hợp theo các chiều dữ liệu được phép."
+    ]
     assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", q) == 1
 
 

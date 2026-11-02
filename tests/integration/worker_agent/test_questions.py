@@ -167,13 +167,13 @@ async def test_a_turn_is_a_run_of_the_data_spaces_ask_agent(seed: Seed) -> None:
         "SELECT seq, kind, name, status FROM agent.agent_step WHERE run_id = %s ORDER BY seq",
         run_id,
     )
-    # Nothing could be placed: the documents were looked in (the space has none to answer
-    # from, so nothing was written), then choosing a metric failed and says why.
+    # Nothing could be placed: choosing a metric failed and says why, then the documents were
+    # looked in (the space has none to answer from, so nothing was written).
     assert [(name, state) for _, _, name, state in steps] == [
         ("understand", "ok"),
+        ("choose_metric", "error"),
         ("search_documents", "ok"),
         ("write_answer", "skipped"),
-        ("choose_metric", "error"),
     ]
 
 
@@ -202,3 +202,27 @@ async def test_an_agent_a_person_named_qa_is_not_taken_for_the_built_in_one(seed
     await drain()
     assert seed.one("SELECT status FROM qa.question WHERE id = %s", asked.question) == "refused"
     assert seed.one("SELECT count(*) FROM agent.agent_run WHERE org_id = %s", asked.org) == 0
+
+
+async def test_an_error_while_understanding_ends_that_step_failed(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The live timeline must not keep "Hiểu câu hỏi" spinning when understanding breaks.
+    from services.worker_agent import questions, turn_trace
+
+    published: list[dict] = []
+
+    async def publish(question_id: str, event: str, data: dict) -> None:
+        published.append({"event": event, **data})
+
+    async def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("catalogue unreadable")
+
+    monkeypatch.setattr(turn_trace, "publish", publish)
+    monkeypatch.setattr(questions, "_understand_and_plan", broken)
+    asked = ask(seed)
+    with pytest.raises(RuntimeError):
+        await run_once(source(), HANDLERS, batch=50)
+    understand = [e for e in published if e.get("action") == "understand"]
+    assert [e["status"] for e in understand] == ["running", "failed"]
+    assert seed.one("SELECT count(*) FROM agent.agent_run WHERE org_id = %s", asked.org) == 1

@@ -134,3 +134,45 @@ def test_the_sql_block_names_the_run_not_its_sql() -> None:
     # The SQL is read through /v1/query-runs/{id}/sql, which checks view_detail and audits.
     [sql] = [b for b in blocks_of(_data_answer()) if b["type"] == "sql"]
     assert sql == {"type": "sql", "id": "answer-2-sql-0", "query_run_id": "run-2"}
+
+
+def test_caveats_say_which_figures_were_withheld_and_what_was_left_out() -> None:
+    answer = _data_answer(
+        figures=[
+            {
+                "key": "F1",
+                "value": None,
+                "dimensions": {},
+                "query_run_id": "r",
+                "trust": "Theo chỉ số chuẩn",
+                "display_state": "masked_stale",
+            },
+            {
+                "key": "F2",
+                "value": None,
+                "dimensions": {},
+                "query_run_id": "r",
+                "trust": "Theo chỉ số chuẩn",
+                "display_state": "not_available",
+            },
+            {
+                "key": "F3",
+                "value": "4",
+                "dimensions": {},
+                "query_run_id": "r",
+                "trust": "Theo chỉ số chuẩn",
+                "display_state": "shown",
+            },
+        ],
+        number_check={
+            "notes": [
+                "Dư nợ không chia được theo nhóm nợ. Trả về số tổng hợp theo các chiều dữ liệu được phép."
+            ]
+        },
+    )
+    caveats = blocks_of(answer)[-1]
+    assert caveats["items"] == [
+        "Dư nợ không chia được theo nhóm nợ. Trả về số tổng hợp theo các chiều dữ liệu được phép.",
+        "1 số bị ẩn vì dữ liệu của sản phẩm dữ liệu đã quá hạn.",
+        "1 số chưa có dữ liệu trong kỳ.",
+    ]

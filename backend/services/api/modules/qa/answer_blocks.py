@@ -37,6 +37,8 @@ def _caveats(answer: Any, figures: list[dict[str, Any]]) -> list[str]:
     metric, a figure that differs from what was filed, an answer outside every data product."""
     items: list[str] = []
     check = answer.number_check if isinstance(getattr(answer, "number_check", None), dict) else {}
+    # What the worker left out of the answer and said so (a cut the metric does not allow).
+    items += [str(note) for note in check.get("notes") or [] if note]
     verification = check.get("verification") if isinstance(check.get("verification"), dict) else {}
     for item in verification.get("checks") or []:
         if isinstance(item, dict) and item.get("passed") is False and item.get("detail"):
@@ -44,6 +46,12 @@ def _caveats(answer: Any, figures: list[dict[str, Any]]) -> list[str]:
     for trust in dict.fromkeys(str(f["trust"]) for f in figures if f.get("trust")):
         if trust != STANDARD_TRUST:
             items.append(f"Số liệu {trust}.")
+    stale = sum(1 for f in figures if f.get("display_state") == "masked_stale")
+    if stale:
+        items.append(f"{stale} số bị ẩn vì dữ liệu của sản phẩm dữ liệu đã quá hạn.")
+    missing = sum(1 for f in figures if f.get("display_state") == "not_available")
+    if missing:
+        items.append(f"{missing} số chưa có dữ liệu trong kỳ.")
     if getattr(answer, "reconcile_badge", None) == "differs_from_filed":
         items.append("Số hiện tại khác số đã nộp của kỳ.")
     if getattr(answer, "product_scope", None) == "out_of_scope":

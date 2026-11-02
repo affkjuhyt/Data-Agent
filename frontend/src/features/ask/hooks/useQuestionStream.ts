@@ -163,6 +163,12 @@ export function useQuestionStream() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [hydrating, setHydrating] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // The running turns of a reopened conversation, each followed on its own: all stop together.
+  const followersRef = useRef<Set<AbortController>>(new Set());
+  const stopFollowers = useCallback(() => {
+    for (const controller of followersRef.current) controller.abort();
+    followersRef.current.clear();
+  }, []);
   const runningRef = useRef(false);
   const queueRef = useRef<PendingTurn[]>([]);
   const conversationRef = useRef<string | null>(null);
@@ -173,6 +179,7 @@ export function useQuestionStream() {
     () => () => {
       mounted.current = false;
       abortRef.current?.abort();
+      for (const controller of followersRef.current) controller.abort();
     },
     [],
   );
@@ -389,12 +396,14 @@ export function useQuestionStream() {
     const questionId = currentQuestionRef.current;
     if (questionId) void cancelQuestion(questionId).catch(() => undefined);
     abortRef.current?.abort();
+    stopFollowers();
   }, []);
 
   /** Load a server conversation into the screen (R1-13 URL reopen). */
   const hydrate = useCallback(async (id: string) => {
     if (!id || conversationRef.current === id) return;
     abortRef.current?.abort();
+    stopFollowers();
     setHydrating(true);
     try {
       const detail = await getConversation(id);
@@ -405,8 +414,10 @@ export function useQuestionStream() {
       setMessages(next);
       for (const turn of running) {
         const controller = new AbortController();
-        abortRef.current = controller;
-        void follow(turn.assistantId, turn.questionId, controller.signal).catch(() => undefined);
+        followersRef.current.add(controller);
+        void follow(turn.assistantId, turn.questionId, controller.signal)
+          .catch(() => undefined)
+          .finally(() => followersRef.current.delete(controller));
       }
     } catch (err) {
       if (!mounted.current) return;
@@ -429,10 +440,11 @@ export function useQuestionStream() {
     } finally {
       if (mounted.current) setHydrating(false);
     }
-  }, [follow]);
+  }, [follow, stopFollowers]);
 
   const resetConversation = useCallback(() => {
     abortRef.current?.abort();
+    stopFollowers();
     queueRef.current = [];
     runningRef.current = false;
     setQueued([]);

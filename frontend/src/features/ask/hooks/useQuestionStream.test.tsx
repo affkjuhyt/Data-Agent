@@ -214,6 +214,34 @@ describe('useQuestionStream', () => {
     expect(result.current.messages[1].steps?.map((step) => step.action)).toEqual(['understand']);
   });
 
+  it('stops following every running turn of a reopened conversation when a new one starts', async () => {
+    const polls: Record<string, number> = { 'q-a': 0, 'q-b': 0 };
+    const turn = (id: string, seq: number) => ({ question_id: id, seq, text: id, status: 'running', answer_id: null, received_at: '2026-11-02T10:00:00Z', answered_at: null });
+    server.use(
+      http.get('*/v1/conversations/conv-two', () =>
+        HttpResponse.json({
+          id: 'conv-two', data_space_id: 'ds', user_id: 'u', channel: 'web', api_client_id: null, title: 'Q',
+          workspace_id: null, last_question_at: null, created_at: '2026-11-02T10:00:00Z', updated_at: '2026-11-02T10:00:00Z',
+          turns: [turn('q-a', 1), turn('q-b', 2)],
+        }),
+      ),
+      http.get('*/v1/questions/:id/stream', ({ params }) => {
+        polls[String(params.id)] = (polls[String(params.id)] ?? 0) + 1;
+        return new HttpResponse('', { headers: { 'Content-Type': 'text/event-stream' } });
+      }),
+    );
+    setDataSpace('ds-rr');
+    const { result } = renderHook(() => useQuestionStream());
+    await act(async () => {
+      await result.current.hydrate('conv-two');
+    });
+    await waitFor(() => expect(polls['q-a'] > 0 && polls['q-b'] > 0).toBe(true));
+    act(() => result.current.resetConversation());
+    const after = { ...polls };
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(polls).toEqual(after);
+  });
+
   it('asks the same question again as a new turn', async () => {
     setDataSpace('ds-rr');
     const { result } = renderHook(() => useQuestionStream());

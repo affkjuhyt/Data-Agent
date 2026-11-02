@@ -187,3 +187,31 @@ async def test_sql_never_reaches_a_step(trace: turn_trace.Trace, published: list
         assert "SELECT" not in str(event)
     assert all("SELECT" not in str(step.output) for step in trace.steps)
     assert trace.steps[0].output["detail"]["row_count"] == 1
+
+
+async def test_a_step_inside_a_begun_step_of_the_same_action_keeps_both(
+    trace: turn_trace.Trace, published: list[dict]
+) -> None:
+    await turn_trace.begin("analyze", target="ngoài")
+    async with turn_trace.stepping("analyze", target="trong"):
+        pass
+    await turn_trace.end_open("analyze", detail={"outer": True})
+    outer, inner = trace.steps
+    assert outer.status == "ok" and outer.output["detail"] == {"outer": True}
+    assert inner.output["_view"]["target"] == "trong"
+    assert [e["status"] for e in published] == ["running", "running", "done", "done"]
+
+
+async def test_step_ids_differ_between_turns_of_one_question() -> None:
+    # A plan edit re-answers the same question on the same stream: its steps must not merge
+    # with the earlier turn's.
+    ids = []
+    for _ in range(2):
+        t = turn_trace.Trace(org_id=uuid.uuid4(), question_id=uuid.uuid4(), user_id=None)
+        token = turn_trace._current.set(t)
+        try:
+            await turn_trace.record_step("validate")
+        finally:
+            turn_trace._current.reset(token)
+        ids.append(t.steps[0].output["_view"]["step_id"])
+    assert ids[0] != ids[1]

@@ -115,6 +115,9 @@ class Trace:
     # The step under way, which a model call made now belongs to.
     open_step: str | None = None
     seq: int = 0
+    # Prefixes the turn's step ids: a re-answer of the same question replays on the same stream,
+    # and its steps must not merge with the earlier turn's.
+    turn: str = field(default_factory=lambda: uuid.uuid4().hex[:6])
     # Steps begun and not yet ended, by action (begin/end_open).
     opened: dict[str, tuple[Step, StepHandle]] = field(default_factory=dict)
     tokens: int = 0
@@ -182,7 +185,7 @@ def _open(
 ) -> Step:
     kind, default_title = ACTIONS.get(action, ("plan", action))
     trace.seq += 1
-    step_id = f"s{trace.seq}"
+    step_id = f"{trace.turn}-s{trace.seq}"
     opened = Step(kind=kind, name=action, started=_now())
     opened.seq = trace.seq
     # A step is never another's child; only a model call nests, under the step it served.
@@ -279,9 +282,12 @@ async def stepping(
     if trace is None:
         yield StepHandle(step_id="")
         return
+    # Its own step, not through begin: a step begun elsewhere with the same action stays open.
     previous = trace.open_step
-    handle = await begin(action, title=title, target=target, chips=chips)
-    step, _ = trace.opened.pop(action)
+    step = _open(trace, action, title, target, chips)
+    handle = StepHandle(step_id=step.output["_view"]["step_id"])  # type: ignore[index]
+    trace.open_step = handle.step_id
+    await publish(str(trace.question_id), "activity", _event(trace, step, action, "running", None))
     try:
         yield handle
     except BaseException:
@@ -347,13 +353,21 @@ def model_call(
                     "output_tokens": output_tokens,
                     "latency_ms": latency_ms,
                 },
-                "_view": _view(f"s{trace.seq}", f"Gọi mô hình {role}", "", (), trace.open_step),
+                "_view": _view(
+                    f"{trace.turn}-s{trace.seq}", f"Gọi mô hình {role}", "", (), trace.open_step
+                ),
             },
             summary=error,
             cost=cost,
             seq=trace.seq,
         )
     )
+
+
+def recorded(action: str) -> bool:
+    """Whether the turn already has a step of `action`."""
+    trace = _current.get()
+    return trace is not None and any(step.name == action for step in trace.steps)
 
 
 def cancelled() -> None:

@@ -798,7 +798,12 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
     await publish(str(question_id), "planning", {"question_id": str(question_id)})
     # Ended inside _understand_and_plan once the reading is final, before any path it takes.
     await turn_trace.begin("understand")
-    prepared = await _understand_and_plan(event, question_id, edited_plan_id)
+    try:
+        prepared = await _understand_and_plan(event, question_id, edited_plan_id)
+    except BaseException:
+        # The live timeline would keep the step spinning until the client gives up.
+        await turn_trace.end_open("understand", status="failed", summary="Không đọc được câu hỏi.")
+        raise
     await turn_trace.end_open("understand")
     if prepared is None:
         return
@@ -1165,6 +1170,14 @@ async def _understand_and_plan(
             if u.metric is not None or u.decision == "clarify"
             else "Chưa nhận ra chỉ số nào trong danh mục.",
         )
+        if u.metric is None and u.decision != "clarify":
+            # Said now, in the order it happened: the exploratory SQL and the documents come next
+            # because no metric was found.
+            await turn_trace.record_step(
+                "choose_metric",
+                status="failed",
+                summary="Chưa nhận ra chỉ số nào trong danh mục; thử truy vấn thăm dò và tài liệu.",
+            )
 
         compiled: c.Compiled | None = None
         problem: Refusal | None = access_problem
@@ -1619,7 +1632,8 @@ async def _understand_and_plan(
             next_action=NextAction.REPHRASE,
             detail_id=str(question_id),
         )
-    await turn_trace.record_step("choose_metric", status="failed", summary=problem.message)
+    if not turn_trace.recorded("choose_metric"):
+        await turn_trace.record_step("choose_metric", status="failed", summary=problem.message)
     await _refuse(event, question_id, user_id, plan_id, problem)
     return None
 
@@ -2020,6 +2034,9 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             "sentences_dropped": 0,
             "untraceable_final": 0,
         }
+        if p.best_effort_note:
+            # What the answer left out and says so; drawn again among its caveats.
+            check["notes"] = [p.best_effort_note]
         model = gateway()
         async with turn_trace.stepping("write_answer") as written_step:
             written_step.detail = {"by": "template"}
