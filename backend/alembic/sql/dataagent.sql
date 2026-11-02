@@ -1584,7 +1584,7 @@ CREATE TABLE context.relationship (
   CHECK (status IN ('pending_review','active','rejected')),
   CHECK (origin <> 'inferred' OR status <> 'active' OR updated_by IS NOT NULL)
 );
-COMMENT ON TABLE context.relationship IS 'Quan hệ giữa hai bảng; quan hệ suy ra chỉ dùng sau khi duyệt (BR-100). Use case: UC-04-02, UC-07-02.';
+COMMENT ON TABLE context.relationship IS 'Quan hệ giữa hai bảng; quan hệ suy ra chỉ dùng sau khi duyệt, người duyệt khác người đề xuất trừ khi tổ chức bật tự duyệt (BR-100). Use case: UC-04-02, UC-07-02.';
 COMMENT ON COLUMN context.relationship.from_dataset_id IS 'logic → catalog.dataset';
 COMMENT ON COLUMN context.relationship.cardinality IS 'one_to_one, many_to_one, one_to_many';
 COMMENT ON COLUMN context.relationship.origin IS 'declared, inferred, manual';
@@ -1833,7 +1833,7 @@ COMMENT ON COLUMN context.knowledge_page_version.knowledge_run_id IS 'FK knowled
 COMMENT ON COLUMN context.knowledge_page_version.agent_run_id IS 'logic → agent.agent_run';
 COMMENT ON COLUMN context.knowledge_page_version.source_answer_id IS 'logic → qa.answer; bắt buộc khi origin = saveback';
 COMMENT ON COLUMN context.knowledge_page_version.proposal_id IS 'logic → inbox.proposal (kind knowledge_page)';
-COMMENT ON COLUMN context.knowledge_page_version.reviewed_by IS 'logic → org.app_user; khác created_by (BR-164)';
+COMMENT ON COLUMN context.knowledge_page_version.reviewed_by IS 'logic → org.app_user; khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-164)';
 COMMENT ON COLUMN context.knowledge_page_version.certified_by IS 'logic → org.app_user; khác created_by và reviewed_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-164)';
 
 CREATE TABLE context.knowledge_source_link (
@@ -2092,8 +2092,8 @@ COMMENT ON COLUMN context.data_product.period_grain IS 'day, week, month, quarte
 COMMENT ON COLUMN context.data_product.period_from IS 'Kỳ sớm nhất trả lời được, ví dụ 2024-01-01';
 COMMENT ON COLUMN context.data_product.period_to IS 'Null là đến hiện tại';
 COMMENT ON COLUMN context.data_product.out_of_scope_note IS 'Câu hỏi gần phạm vi nhưng không trả lời, ví dụ giá bán tại một cửa hàng cụ thể';
-COMMENT ON COLUMN context.data_product.owner_id IS 'logic → org.app_user; người chịu trách nhiệm cam kết (data owner)';
-COMMENT ON COLUMN context.data_product.steward_id IS 'logic → org.app_user; người giữ định nghĩa, xử lý Error Book; khác owner_id';
+COMMENT ON COLUMN context.data_product.owner_id IS 'logic → org.app_user; người chịu trách nhiệm cam kết (data owner), duyệt kích hoạt nên khác created_by trừ khi tổ chức bật tự duyệt (BR-175)';
+COMMENT ON COLUMN context.data_product.steward_id IS 'logic → org.app_user; người giữ định nghĩa, xử lý Error Book; khác owner_id trừ khi tổ chức bật tự duyệt (org.two_people) (BR-175)';
 COMMENT ON COLUMN context.data_product.freshness_statement IS 'Cam kết hiển thị cho người dùng, ví dụ “Giá xăng dầu trong nước: cập nhật trước 16:30 ngày điều hành”';
 COMMENT ON COLUMN context.data_product.classification IS 'public, internal, confidential, restricted; mức cao nhất của các thành phần, trigger tính; dùng cho định tuyến mô hình (BR-180)';
 COMMENT ON COLUMN context.data_product.eval_set_id IS 'logic → eval.eval_set (subject_type context) chứa câu hỏi mẫu và ca hồi quy Error Book';
@@ -2101,7 +2101,7 @@ COMMENT ON COLUMN context.data_product.version IS 'Tăng khi đổi phạm vi, t
 COMMENT ON COLUMN context.data_product.status IS 'draft, pending_review, active, suspended, retired';
 COMMENT ON COLUMN context.data_product.suspended_reason IS 'Bắt buộc khi suspended, ví dụ metric_decertified, dataset_decertified, manual';
 COMMENT ON COLUMN context.data_product.proposal_id IS 'logic → inbox.proposal (kind data_product) đang chờ duyệt';
-COMMENT ON COLUMN context.data_product.activated_by IS 'logic → org.app_user; người duyệt kích hoạt, khác created_by';
+COMMENT ON COLUMN context.data_product.activated_by IS 'logic → org.app_user; người duyệt kích hoạt, khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-175)';
 
 CREATE TABLE context.data_product_member (
   id uuid NOT NULL,
@@ -3374,7 +3374,7 @@ COMMENT ON COLUMN inbox.proposal.impact IS 'Số agent, ô, báo cáo, kỹ năn
 COMMENT ON COLUMN inbox.proposal.impact_level IS 'low, medium, high';
 COMMENT ON COLUMN inbox.proposal.proposed_by IS 'Người hoặc tài khoản agent';
 COMMENT ON COLUMN inbox.proposal.eval_run_id IS 'logic → eval.eval_run';
-COMMENT ON COLUMN inbox.proposal.requires_compliance IS 'Đổi chỉ số dùng trong báo cáo đã nộp cần thêm AC06 (BR-119)';
+COMMENT ON COLUMN inbox.proposal.requires_compliance IS 'Đổi chỉ số dùng trong báo cáo đã nộp cần thêm AC06, người khác người duyệt bước đầu trừ khi tổ chức bật tự duyệt (BR-119)';
 COMMENT ON COLUMN inbox.proposal.status IS 'open, evaluating, pending_review, accepted, applied, apply_failed, rejected, expired, withdrawn';
 COMMENT ON COLUMN inbox.proposal.expires_at IS 'Quá hạn chuyển expired (BR-29)';
 
@@ -3393,7 +3393,7 @@ CREATE TABLE inbox.proposal_review (
   CHECK (decision <> 'reject' OR note IS NOT NULL),
   UNIQUE (proposal_id, step, reviewer_id)
 );
-COMMENT ON TABLE inbox.proposal_review IS 'Một quyết định duyệt; người duyệt phải khác người đề xuất (kiểm ở tầng ứng dụng). Use case: UC-07-03.';
+COMMENT ON TABLE inbox.proposal_review IS 'Một quyết định duyệt; người duyệt phải khác người đề xuất trừ khi tổ chức bật tự duyệt (kiểm ở tầng ứng dụng). Use case: UC-07-03.';
 COMMENT ON COLUMN inbox.proposal_review.proposal_id IS 'FK proposal';
 COMMENT ON COLUMN inbox.proposal_review.step IS 'Bước trong chuỗi duyệt nhiều người';
 COMMENT ON COLUMN inbox.proposal_review.decision IS 'accept, accept_with_edit, reject, request_changes';
@@ -3463,9 +3463,9 @@ CREATE TABLE inbox.hitl_approval_step (
   CHECK (decision IS NULL OR decision IN ('approve','reject')),
   CHECK (decision IS NULL OR (approver_id IS NOT NULL AND decided_at IS NOT NULL))
 );
-COMMENT ON TABLE inbox.hitl_approval_step IS 'Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ chốt cần hai người (BR-132). Use case: UC-07-07, UC-10-02.';
+COMMENT ON TABLE inbox.hitl_approval_step IS 'Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ chốt cần hai người trừ khi tổ chức bật tự duyệt (BR-132). Use case: UC-07-07, UC-10-02.';
 COMMENT ON COLUMN inbox.hitl_approval_step.hitl_request_id IS 'FK hitl_request';
-COMMENT ON COLUMN inbox.hitl_approval_step.approver_role IS 'Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác (BR-132)';
+COMMENT ON COLUMN inbox.hitl_approval_step.approver_role IS 'Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác trừ khi tổ chức bật tự duyệt (BR-132)';
 COMMENT ON COLUMN inbox.hitl_approval_step.decision IS 'approve, reject';
 
 CREATE TABLE inbox.outbox (
@@ -4972,7 +4972,7 @@ CREATE TABLE period.period_reconciliation (
   CHECK (status <> 'matched' OR abs(delta) <= tolerance),
   CHECK (status NOT IN ('exception_pending','exception_approved') OR hitl_request_id IS NOT NULL)
 );
-COMMENT ON TABLE period.period_reconciliation IS 'Kết quả đối soát một chỉ tiêu khi chốt kỳ; ngoại lệ cần hai người duyệt (BR-132). Use case: UC-10-02.';
+COMMENT ON TABLE period.period_reconciliation IS 'Kết quả đối soát một chỉ tiêu khi chốt kỳ; ngoại lệ cần hai người duyệt trừ khi tổ chức bật tự duyệt (BR-132). Use case: UC-10-02.';
 COMMENT ON COLUMN period.period_reconciliation.period_close_id IS 'FK period_close';
 COMMENT ON COLUMN period.period_reconciliation.item_code IS 'Ví dụ tổng dư nợ, số khoản vay';
 COMMENT ON COLUMN period.period_reconciliation.ledger_value IS 'Giá trị ở sổ cái hoặc nguồn đối chiếu';
@@ -5004,7 +5004,7 @@ COMMENT ON COLUMN period.published_result.metric_version_id IS 'logic → contex
 COMMENT ON COLUMN period.published_result.dimension_key IS 'Lát cắt nếu báo cáo có chiều';
 COMMENT ON COLUMN period.published_result.value IS 'Giá trị hệ thống tính trên bản chụp';
 COMMENT ON COLUMN period.published_result.reported_value IS 'Giá trị trên báo cáo thực tế đã nộp';
-COMMENT ON COLUMN period.published_result.manual_override IS 'Số nhập tay khác số hệ thống; cần AC06 duyệt (BR-133)';
+COMMENT ON COLUMN period.published_result.manual_override IS 'Số nhập tay khác số hệ thống; cần AC06 duyệt, người khác người nhập trừ khi tổ chức bật tự duyệt (BR-133)';
 COMMENT ON COLUMN period.published_result.report_ref IS 'Mã báo cáo';
 COMMENT ON COLUMN period.published_result.sha256 IS 'Băm giá trị, phiên bản định nghĩa và bản chụp';
 
@@ -5207,7 +5207,7 @@ COMMENT ON COLUMN pipeline.data_product.data_space_id IS 'Data Space cung cấp'
 COMMENT ON COLUMN pipeline.data_product.data_mart_id IS 'FK data_mart';
 COMMENT ON COLUMN pipeline.data_product.contract IS 'Cột, kiểu, ý nghĩa, SLA';
 COMMENT ON COLUMN pipeline.data_product.consumers IS 'Data Space đăng ký dùng';
-COMMENT ON COLUMN pipeline.data_product.owner_id IS 'logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn (thêm 12/10/2026)';
+COMMENT ON COLUMN pipeline.data_product.owner_id IS 'logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn trừ khi tổ chức bật tự duyệt (thêm 12/10/2026)';
 COMMENT ON COLUMN pipeline.data_product.status IS 'draft, published, deprecated, retired';
 
 CREATE TABLE pipeline.writeback_request (
@@ -5553,7 +5553,7 @@ COMMENT ON COLUMN acquire.crawl_source.terms_checked_at IS 'Lần kiểm trang �
 COMMENT ON COLUMN acquire.crawl_source.legal_status IS 'pending, approved, rejected, expired; nguồn chỉ active khi approved và chưa quá hạn xem lại (BR-174)';
 COMMENT ON COLUMN acquire.crawl_source.legal_checklist IS 'Kết quả bốn mục duyệt {terms, robots, copyright, personal_data}, mỗi mục {result, note}';
 COMMENT ON COLUMN acquire.crawl_source.legal_evidence IS 'Bằng chứng: ảnh chụp trang điều khoản, robots.txt, ghi chú bản quyền {kind, object_key, sha256, captured_at} ở MinIO da-raw-crawl/legal; tối thiểu 1 khi approved';
-COMMENT ON COLUMN acquire.crawl_source.legal_reviewed_by IS 'logic → org.app_user; người duyệt pháp lý (AC06), khác owner_id';
+COMMENT ON COLUMN acquire.crawl_source.legal_reviewed_by IS 'logic → org.app_user; người duyệt pháp lý (AC06), khác owner_id trừ khi tổ chức bật tự duyệt (org.two_people) (BR-174)';
 COMMENT ON COLUMN acquire.crawl_source.legal_reviewed_at IS 'Lúc duyệt pháp lý';
 COMMENT ON COLUMN acquire.crawl_source.legal_review_due_at IS 'Hạn xem lại, mặc định 6 tháng, tối đa 184 ngày sau legal_reviewed_at (BR-174)';
 COMMENT ON COLUMN acquire.crawl_source.review_gate IS 'all, exceptions, auto; auto chỉ bật khi độ chính xác mẫu ≥ 98% trong 4 lượt liên tiếp (UC-14-04)';
@@ -6082,7 +6082,7 @@ CREATE TABLE forecast.model_version (
   CHECK (algorithm <> 'lightgbm' OR coalesce(n_points, 0) >= 60 OR (coalesce(n_points, 0) >= 36 AND pooled_series >= 5)),
   CHECK (n_exog >= 0 AND n_exog <= least(8, coalesce(n_points, 0) / 12))
 );
-COMMENT ON TABLE forecast.model_version IS 'Phiên bản mô hình: thuật toán, biến và giả định, dữ liệu huấn luyện, thẻ mô hình; chỉ phát hành khi MASE < 1 trên backtest và người phụ trách chỉ số duyệt, người tạo không tự duyệt (BR-158). Use case: UC-15-02, UC-15-03, UC-15-04, UC-15-06.';
+COMMENT ON TABLE forecast.model_version IS 'Phiên bản mô hình: thuật toán, biến và giả định, dữ liệu huấn luyện, thẻ mô hình; chỉ phát hành khi MASE < 1 trên backtest và người phụ trách chỉ số duyệt, người tạo không tự duyệt trừ khi tổ chức bật tự duyệt (org.two_people) (BR-158). Use case: UC-15-02, UC-15-03, UC-15-04, UC-15-06.';
 COMMENT ON COLUMN forecast.model_version.model_id IS 'FK forecast_model';
 COMMENT ON COLUMN forecast.model_version.algorithm IS 'naive, seasonal_naive, ets, theta, arima, sarimax, lightgbm, ensemble, formula_mc (dự báo theo công thức và Monte Carlo, G8.9)';
 COMMENT ON COLUMN forecast.model_version.ensemble_of IS 'Mô hình thành phần khi ensemble trung bình 3 mô hình đầu';
@@ -6095,7 +6095,7 @@ COMMENT ON COLUMN forecast.model_version.backtest_id IS 'FK backtest_run';
 COMMENT ON COLUMN forecast.model_version.status IS 'draft, pending_approval, published, degraded, retired, rejected';
 COMMENT ON COLUMN forecast.model_version.model_card IS 'Mục tiêu, phạm vi, dữ liệu, biến và giả định, thuật toán, kết quả backtest, giới hạn đã biết (UC-15-04)';
 COMMENT ON COLUMN forecast.model_version.artifact_key IS 'MinIO da-forecast-models';
-COMMENT ON COLUMN forecast.model_version.approved_by IS 'logic → org.app_user';
+COMMENT ON COLUMN forecast.model_version.approved_by IS 'logic → org.app_user; người phụ trách chỉ số, khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-158)';
 
 CREATE TABLE forecast.backtest_run (
   id uuid NOT NULL,
@@ -6277,7 +6277,7 @@ CREATE TABLE forecast.formula_component (
   CHECK (length(btrim(legal_doc_number)) > 0),
   CHECK (unit <> 'percent' OR (value >= 0 AND value <= 100))
 );
-COMMENT ON TABLE forecast.formula_component IS 'Tham số của công thức giá cơ sở theo ngày hiệu lực: thuế nhập khẩu bình quân gia quyền, thuế tiêu thụ đặc biệt, thuế bảo vệ môi trường, thuế giá trị gia tăng, chi phí định mức, lợi nhuận định mức và các hệ số quy đổi. Mỗi giá trị lấy từ văn bản gốc, có số hiệu và link, do người khác người nhập chứng nhận; mô hình ngôn ngữ không đặt giá trị (BR-182). Use case: UC-15-07.';
+COMMENT ON TABLE forecast.formula_component IS 'Tham số của công thức giá cơ sở theo ngày hiệu lực: thuế nhập khẩu bình quân gia quyền, thuế tiêu thụ đặc biệt, thuế bảo vệ môi trường, thuế giá trị gia tăng, chi phí định mức, lợi nhuận định mức và các hệ số quy đổi. Mỗi giá trị lấy từ văn bản gốc, có số hiệu và link, do người khác người nhập chứng nhận trừ khi tổ chức bật tự duyệt (org.two_people); mô hình ngôn ngữ không đặt giá trị (BR-182). Use case: UC-15-07.';
 COMMENT ON COLUMN forecast.formula_component.code IS 'Mã tham số, ví dụ import_tax_rate, excise_tax_rate, env_tax, vat_rate, cost_norm, profit_norm, litre_per_bbl, blend_ratio';
 COMMENT ON COLUMN forecast.formula_component.product_code IS 'Mặt hàng như formula_model.product_code; ''*'' khi áp cho mọi mặt hàng (ví dụ vat_rate)';
 COMMENT ON COLUMN forecast.formula_component.value IS 'Giá trị theo unit, đúng như văn bản';
@@ -6289,7 +6289,7 @@ COMMENT ON COLUMN forecast.formula_component.legal_doc_url IS 'Link văn bản g
 COMMENT ON COLUMN forecast.formula_component.document_id IS 'logic → document.document; bản lưu trong kho tài liệu, dùng kiểm độ tươi và trích dẫn';
 COMMENT ON COLUMN forecast.formula_component.extracted_record_id IS 'logic → acquire.extracted_record khi giá trị được trích từ trang nguồn';
 COMMENT ON COLUMN forecast.formula_component.status IS 'draft, pending_review, certified, superseded, rejected';
-COMMENT ON COLUMN forecast.formula_component.certified_by IS 'logic → org.app_user';
+COMMENT ON COLUMN forecast.formula_component.certified_by IS 'logic → org.app_user; khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-182)';
 COMMENT ON COLUMN forecast.formula_component.hitl_request_id IS 'logic → inbox.hitl_request kind formula_component';
 COMMENT ON COLUMN forecast.formula_component.note IS 'Ví dụ “mức gia hạn theo Nghị quyết 34/2026/NQ-CP”';
 

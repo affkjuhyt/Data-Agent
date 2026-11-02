@@ -147,7 +147,7 @@ class PeriodSnapshotFile(Base):
 
 
 class PeriodReconciliation(Base):
-    """Kết quả đối soát một chỉ tiêu khi chốt kỳ; ngoại lệ cần hai người duyệt (BR-132). Use case: UC-10-02."""
+    """Kết quả đối soát một chỉ tiêu khi chốt kỳ; ngoại lệ cần hai người duyệt trừ khi tổ chức bật tự duyệt (BR-132). Use case: UC-10-02."""
 
     __tablename__ = "period_reconciliation"
     __table_args__ = ({"schema": "period"},)
@@ -204,7 +204,7 @@ class PublishedResult(Base):
     manual_override: Mapped[bool] = mapped_column(
         Boolean,
         server_default=sql_text("false"),
-        comment="Số nhập tay khác số hệ thống; cần AC06 duyệt (BR-133)",
+        comment="Số nhập tay khác số hệ thống; cần AC06 duyệt, người khác người nhập trừ khi tổ chức bật tự duyệt (BR-133)",
     )
     override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

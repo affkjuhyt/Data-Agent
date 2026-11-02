@@ -790,7 +790,7 @@ Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (metric\_id, version
 
 #### context.relationship
 
-Quan hệ giữa hai bảng; quan hệ suy ra chỉ dùng sau khi duyệt (BR-100). Use case: UC-04-02, UC-07-02.
+Quan hệ giữa hai bảng; quan hệ suy ra chỉ dùng sau khi duyệt, người duyệt khác người đề xuất trừ khi tổ chức bật tự duyệt (BR-100). Use case: UC-04-02, UC-07-02.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
@@ -957,7 +957,7 @@ Một phiên bản trang: mẫu thân trang, trạng thái duyệt, người duy
 | agent\_run\_id | uuid | logic → agent.agent\_run |
 | source\_answer\_id | uuid | logic → qa.answer; bắt buộc khi origin = saveback |
 | proposal\_id | uuid | logic → inbox.proposal (kind knowledge\_page) |
-| reviewed\_by | uuid | logic → org.app\_user; khác created\_by (BR-164) |
+| reviewed\_by | uuid | logic → org.app\_user; khác created\_by trừ khi tổ chức bật tự duyệt (org.two\_people) (BR-164) |
 | reviewed\_at | timestamptz |  |
 | certified\_by | uuid | logic → org.app\_user; khác created\_by và reviewed\_by trừ khi tổ chức bật tự duyệt (org.two\_people) (BR-164) |
 | certified\_at | timestamptz |  |
@@ -1108,8 +1108,8 @@ Data product: phạm vi trả lời có cam kết của một Data Space, gồm 
 | period\_from | date, bắt buộc | Kỳ sớm nhất trả lời được, ví dụ 2024-01-01 |
 | period\_to | date | Null là đến hiện tại |
 | out\_of\_scope\_note | text | Câu hỏi gần phạm vi nhưng không trả lời, ví dụ giá bán tại một cửa hàng cụ thể |
-| owner\_id | uuid, bắt buộc | logic → org.app\_user; người chịu trách nhiệm cam kết (data owner) |
-| steward\_id | uuid, bắt buộc | logic → org.app\_user; người giữ định nghĩa, xử lý Error Book; khác owner\_id |
+| owner\_id | uuid, bắt buộc | logic → org.app\_user; người chịu trách nhiệm cam kết (data owner), duyệt kích hoạt nên khác created\_by trừ khi tổ chức bật tự duyệt (BR-175) |
+| steward\_id | uuid, bắt buộc | logic → org.app\_user; người giữ định nghĩa, xử lý Error Book; khác owner\_id trừ khi tổ chức bật tự duyệt (org.two\_people) (BR-175) |
 | freshness\_statement | text, bắt buộc | Cam kết hiển thị cho người dùng, ví dụ “Giá xăng dầu trong nước: cập nhật trước 16:30 ngày điều hành” |
 | classification | text, bắt buộc, mặc định 'internal' | public, internal, confidential, restricted; mức cao nhất của các thành phần, trigger tính; dùng cho định tuyến mô hình (BR-180) |
 | eval\_set\_id | uuid | logic → eval.eval\_set (subject\_type context) chứa câu hỏi mẫu và ca hồi quy Error Book |
@@ -1117,7 +1117,7 @@ Data product: phạm vi trả lời có cam kết của một Data Space, gồm 
 | status | text, bắt buộc, mặc định 'draft' | draft, pending\_review, active, suspended, retired |
 | suspended\_reason | text | Bắt buộc khi suspended, ví dụ metric\_decertified, dataset\_decertified, manual |
 | proposal\_id | uuid | logic → inbox.proposal (kind data\_product) đang chờ duyệt |
-| activated\_by | uuid | logic → org.app\_user; người duyệt kích hoạt, khác created\_by |
+| activated\_by | uuid | logic → org.app\_user; người duyệt kích hoạt, khác created\_by trừ khi tổ chức bật tự duyệt (org.two\_people) (BR-175) |
 | activated\_at | timestamptz |  |
 
 Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (data\_space\_id, code); CHECK (code \~ '^\[a-z\]\[a-z0-9\_\]{2,63}$'); CHECK (char\_length(description) <= 2000); CHECK (jsonb\_typeof(sample\_questions) = 'array'); CHECK (jsonb\_typeof(scope\_entities) = 'array'); CHECK (period\_grain IN ('day','week','month','quarter','year','event')); CHECK (period\_to IS NULL OR period\_to >= period\_from); CHECK (classification IN ('public','internal','confidential','restricted')); CHECK (status IN ('draft','pending\_review','active','suspended','retired')); CHECK (status <> 'suspended' OR suspended\_reason IS NOT NULL); CHECK (status <> 'pending\_review' OR proposal\_id IS NOT NULL); CHECK (status NOT IN ('active','suspended') OR (activated\_by IS NOT NULL AND activated\_at IS NOT NULL AND eval\_set\_id IS NOT NULL AND jsonb\_array\_length(sample\_questions) >= 10)). Chỉ mục: (data\_space\_id, status); GIN to\_tsvector('simple', name || ' ' || description) cho danh mục phạm vi. RLS: org\_isolation; đọc theo quyền Data Space như các bảng context khác.
@@ -1228,6 +1228,7 @@ Câu trả lời: văn bản, số, biểu đồ, trích dẫn và trạng thái
 | citations | jsonb, bắt buộc, mặc định '\[\]' | chunk\_id, document\_id, trang, đoạn; đã kiểm tra tồn tại (UC-05-04 bước 4) |
 | filed\_vs\_current | jsonb | Hai số đã nộp và hiện tại khi hỏi về kỳ đã nộp (BR-39) |
 | follow\_ups | jsonb, bắt buộc, mặc định '\[\]' | Câu hỏi tiếp theo câu trả lời gợi ý, mỗi câu đã đọc lại qua bộ hiểu và compile được (`worker_agent/suggestions.py`) |
+| blocks | jsonb, bắt buộc, mặc định '\[\]' | Khối câu trả lời do agent tự soạn theo thứ tự (markdown, kpi, chart, table, insights, callout, code, follow\_ups, caveats); dữ liệu của chart/table/kpi do server điền từ dataset (`worker_agent/agentic/blocks.py`). Rỗng: câu trả lời theo khuôn cũ |
 | reconcile\_badge | text | matched\_filed, differs\_from\_filed, not\_filed (nhãn “Khớp số đã nộp” trên màn Hỏi đáp) |
 | agent\_name | text | Ví dụ Agent Phân tích |
 | latency\_ms | integer |  |
@@ -1791,7 +1792,7 @@ Trigger: trước INSERT: cấp entry\_no; assignee\_id null thì Eval service �
 | proposed\_by | uuid, bắt buộc | Người hoặc tài khoản agent |
 | assignee\_id | uuid |  |
 | eval\_run\_id | uuid | logic → eval.eval\_run |
-| requires\_compliance | boolean, bắt buộc, mặc định false | Đổi chỉ số dùng trong báo cáo đã nộp cần thêm AC06 (BR-119) |
+| requires\_compliance | boolean, bắt buộc, mặc định false | Đổi chỉ số dùng trong báo cáo đã nộp cần thêm AC06, người khác người duyệt bước đầu trừ khi tổ chức bật tự duyệt (BR-119) |
 | status | text, bắt buộc, mặc định 'open' | open, evaluating, pending\_review, accepted, applied, apply\_failed, rejected, expired, withdrawn |
 | expires\_at | timestamptz, bắt buộc, mặc định now() + interval '30 days' | Quá hạn chuyển expired (BR-29) |
 | applied\_at | timestamptz |  |
@@ -1800,7 +1801,7 @@ Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. R�
 
 #### inbox.proposal\_review
 
-Một quyết định duyệt; người duyệt phải khác người đề xuất (kiểm ở tầng ứng dụng). Use case: UC-07-03.
+Một quyết định duyệt; người duyệt phải khác người đề xuất trừ khi tổ chức bật tự duyệt (kiểm ở tầng ứng dụng). Use case: UC-07-03.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
@@ -1844,13 +1845,13 @@ Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. R�
 
 #### inbox.hitl\_approval\_step
 
-Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ chốt cần hai người (BR-132). Use case: UC-07-07, UC-10-02.
+Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ chốt cần hai người trừ khi tổ chức bật tự duyệt (BR-132). Use case: UC-07-07, UC-10-02.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
 | hitl\_request\_id | uuid, bắt buộc | FK hitl\_request |
 | step | smallint, bắt buộc |  |
-| approver\_role | text, bắt buộc | Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác (BR-132) |
+| approver\_role | text, bắt buộc | Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác trừ khi tổ chức bật tự duyệt (BR-132) |
 | approver\_id | uuid |  |
 | decision | text | approve, reject |
 | note | text |  |
@@ -2732,7 +2733,7 @@ Cột chung: id, org\_id. Ràng buộc: UNIQUE (period\_close\_id, dataset\_id);
 
 #### period.period\_reconciliation
 
-Kết quả đối soát một chỉ tiêu khi chốt kỳ; ngoại lệ cần hai người duyệt (BR-132). Use case: UC-10-02.
+Kết quả đối soát một chỉ tiêu khi chốt kỳ; ngoại lệ cần hai người duyệt trừ khi tổ chức bật tự duyệt (BR-132). Use case: UC-10-02.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
@@ -2759,7 +2760,7 @@ Con số đã công bố, đóng băng; chỉ thêm, không sửa, không xoá (
 | dimension\_key | jsonb, bắt buộc, mặc định '{}' | Lát cắt nếu báo cáo có chiều |
 | value | numeric, bắt buộc | Giá trị hệ thống tính trên bản chụp |
 | reported\_value | numeric | Giá trị trên báo cáo thực tế đã nộp |
-| manual\_override | boolean, bắt buộc, mặc định false | Số nhập tay khác số hệ thống; cần AC06 duyệt (BR-133) |
+| manual\_override | boolean, bắt buộc, mặc định false | Số nhập tay khác số hệ thống; cần AC06 duyệt, người khác người nhập trừ khi tổ chức bật tự duyệt (BR-133) |
 | override\_reason | text |  |
 | approved\_by | uuid |  |
 | report\_ref | text, bắt buộc | Mã báo cáo |
@@ -2885,7 +2886,7 @@ Sản phẩm dữ liệu có hợp đồng, phiên bản và danh sách bên dù
 | data\_mart\_id | uuid | FK data\_mart |
 | contract | jsonb, bắt buộc | Cột, kiểu, ý nghĩa, SLA |
 | consumers | uuid\[\], bắt buộc, mặc định '{}' | Data Space đăng ký dùng |
-| owner\_id | uuid, bắt buộc | logic → org.app\_user; người phụ trách duyệt phát hành, khác người soạn (thêm 12/10/2026) |
+| owner\_id | uuid, bắt buộc | logic → org.app\_user; người phụ trách duyệt phát hành, khác người soạn trừ khi tổ chức bật tự duyệt (thêm 12/10/2026) |
 | status | text, bắt buộc, mặc định 'draft' | draft, published, deprecated, retired |
 | breaking\_notice\_at | timestamptz |  |
 | retire\_after | timestamptz |  |
@@ -3092,7 +3093,7 @@ Cột chung: id, org\_id. Ràng buộc: CHECK (kind IN ('prompt\_injection','pii
 
 #### audit.export\_job
 
-Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng, tệp trong MinIO (BR-138); nằm trong CSDL dataagent\_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03.
+Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng (người yêu cầu tự duyệt được khi tổ chức bật tự duyệt), tệp trong MinIO (BR-138); nằm trong CSDL dataagent\_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
@@ -3142,7 +3143,7 @@ Nguồn thu thập bên ngoài cùng phạm vi, lịch và cổng duyệt, ví d
 | legal\_status | text, bắt buộc, mặc định 'pending' | pending, approved, rejected, expired; nguồn chỉ active khi approved và chưa quá hạn xem lại (BR-174) |
 | legal\_checklist | jsonb, bắt buộc, mặc định '{}' | Kết quả bốn mục duyệt {terms, robots, copyright, personal\_data}, mỗi mục {result, note} |
 | legal\_evidence | jsonb, bắt buộc, mặc định '\[\]' | Bằng chứng: ảnh chụp trang điều khoản, robots.txt, ghi chú bản quyền {kind, object\_key, sha256, captured\_at} ở MinIO da-raw-crawl/legal; tối thiểu 1 khi approved |
-| legal\_reviewed\_by | uuid | logic → org.app\_user; người duyệt pháp lý (AC06), khác owner\_id |
+| legal\_reviewed\_by | uuid | logic → org.app\_user; người duyệt pháp lý (AC06), khác owner\_id trừ khi tổ chức bật tự duyệt (org.two\_people) (BR-174) |
 | legal\_reviewed\_at | timestamptz | Lúc duyệt pháp lý |
 | legal\_review\_due\_at | timestamptz | Hạn xem lại, mặc định 6 tháng, tối đa 184 ngày sau legal\_reviewed\_at (BR-174) |
 | review\_gate | text, bắt buộc, mặc định 'all' | all, exceptions, auto; auto chỉ bật khi độ chính xác mẫu ≥ 98% trong 4 lượt liên tiếp (UC-14-04) |
@@ -3413,7 +3414,7 @@ Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. R�
 
 #### forecast.model\_version
 
-Phiên bản mô hình: thuật toán, biến và giả định, dữ liệu huấn luyện, thẻ mô hình; chỉ phát hành khi MASE < 1 trên backtest và người phụ trách chỉ số duyệt, người tạo không tự duyệt (BR-158). Use case: UC-15-02, UC-15-03, UC-15-04, UC-15-06.
+Phiên bản mô hình: thuật toán, biến và giả định, dữ liệu huấn luyện, thẻ mô hình; chỉ phát hành khi MASE < 1 trên backtest và người phụ trách chỉ số duyệt, người tạo không tự duyệt trừ khi tổ chức bật tự duyệt (org.two\_people) (BR-158). Use case: UC-15-02, UC-15-03, UC-15-04, UC-15-06.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
@@ -3433,7 +3434,7 @@ Phiên bản mô hình: thuật toán, biến và giả định, dữ liệu hu�
 | status | text, bắt buộc, mặc định 'draft' | draft, pending\_approval, published, degraded, retired, rejected |
 | model\_card | jsonb, bắt buộc, mặc định '{}' | Mục tiêu, phạm vi, dữ liệu, biến và giả định, thuật toán, kết quả backtest, giới hạn đã biết (UC-15-04) |
 | artifact\_key | text | MinIO da-forecast-models |
-| approved\_by | uuid | logic → org.app\_user |
+| approved\_by | uuid | logic → org.app\_user; người phụ trách chỉ số, khác created\_by trừ khi tổ chức bật tự duyệt (org.two\_people) (BR-158) |
 | approved\_at | timestamptz |  |
 
 Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (model\_id, version); CHECK (algorithm IN ('naive','seasonal\_naive','ets','theta','arima','sarimax','lightgbm','ensemble','formula\_mc')); CHECK (status IN ('draft','pending\_approval','published','degraded','retired','rejected')); CHECK (training\_to > training\_from); CHECK (algorithm <> 'ensemble' OR ensemble\_of IS NOT NULL); CHECK (status NOT IN ('published','degraded') OR (approved\_by IS NOT NULL AND approved\_at IS NOT NULL AND backtest\_id IS NOT NULL)); FOREIGN KEY (model\_id) REFERENCES forecast.forecast\_model(id); FOREIGN KEY (backtest\_id) REFERENCES forecast.backtest\_run(id) DEFERRABLE INITIALLY DEFERRED. Chỉ mục: duy nhất (model\_id) WHERE status IN ('published','degraded'). Trigger: phiên bản mới ở draft hoặc pending\_approval; chỉ chuyển draft → pending\_approval, rejected; pending\_approval → published, rejected, draft; published → degraded, retired; degraded → retired (BR-160). Chuyển published cần backtest\_run đã xong của chính phiên bản với mase < 1 (BR-158).
@@ -3542,7 +3543,7 @@ Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. R�
 
 #### forecast.formula\_component
 
-Tham số của công thức giá cơ sở theo ngày hiệu lực: thuế nhập khẩu bình quân gia quyền, thuế tiêu thụ đặc biệt, thuế bảo vệ môi trường, thuế giá trị gia tăng, chi phí định mức, lợi nhuận định mức và các hệ số quy đổi. Mỗi giá trị lấy từ văn bản gốc, có số hiệu và link, do người khác người nhập chứng nhận; mô hình ngôn ngữ không đặt giá trị (BR-182). Use case: UC-15-07.
+Tham số của công thức giá cơ sở theo ngày hiệu lực: thuế nhập khẩu bình quân gia quyền, thuế tiêu thụ đặc biệt, thuế bảo vệ môi trường, thuế giá trị gia tăng, chi phí định mức, lợi nhuận định mức và các hệ số quy đổi. Mỗi giá trị lấy từ văn bản gốc, có số hiệu và link, do người khác người nhập chứng nhận trừ khi tổ chức bật tự duyệt (org.two\_people); mô hình ngôn ngữ không đặt giá trị (BR-182). Use case: UC-15-07.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
@@ -3557,7 +3558,7 @@ Tham số của công thức giá cơ sở theo ngày hiệu lực: thuế nhậ
 | document\_id | uuid | logic → document.document; bản lưu trong kho tài liệu, dùng kiểm độ tươi và trích dẫn |
 | extracted\_record\_id | uuid | logic → acquire.extracted\_record khi giá trị được trích từ trang nguồn |
 | status | text, bắt buộc, mặc định 'draft' | draft, pending\_review, certified, superseded, rejected |
-| certified\_by | uuid | logic → org.app\_user |
+| certified\_by | uuid | logic → org.app\_user; khác created\_by trừ khi tổ chức bật tự duyệt (org.two\_people) (BR-182) |
 | certified\_at | timestamptz |  |
 | hitl\_request\_id | uuid | logic → inbox.hitl\_request kind formula\_component |
 | note | text | Ví dụ “mức gia hạn theo Nghị quyết 34/2026/NQ-CP” |

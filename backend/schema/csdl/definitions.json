@@ -6826,7 +6826,7 @@
    "schema": "context",
    "name": "relationship",
    "qualified": "context.relationship",
-   "description": "Quan hệ giữa hai bảng; quan hệ suy ra chỉ dùng sau khi duyệt (BR-100). Use case: UC-04-02, UC-07-02.",
+   "description": "Quan hệ giữa hai bảng; quan hệ suy ra chỉ dùng sau khi duyệt, người duyệt khác người đề xuất trừ khi tổ chức bật tự duyệt (BR-100). Use case: UC-04-02, UC-07-02.",
    "use_cases": [
     "UC-04-02",
     "UC-07-02"
@@ -8177,7 +8177,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user; khác created_by (BR-164)",
+     "comment": "logic → org.app_user; khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-164)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
@@ -9614,7 +9614,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user; người chịu trách nhiệm cam kết (data owner)",
+     "comment": "logic → org.app_user; người chịu trách nhiệm cam kết (data owner), duyệt kích hoạt nên khác created_by trừ khi tổ chức bật tự duyệt (BR-175)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
@@ -9625,7 +9625,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user; người giữ định nghĩa, xử lý Error Book; khác owner_id",
+     "comment": "logic → org.app_user; người giữ định nghĩa, xử lý Error Book; khác owner_id trừ khi tổ chức bật tự duyệt (org.two_people) (BR-175)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
@@ -9713,7 +9713,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user; người duyệt kích hoạt, khác created_by",
+     "comment": "logic → org.app_user; người duyệt kích hoạt, khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-175)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
@@ -15839,7 +15839,7 @@
      "not_null": true,
      "default": "false",
      "unique": false,
-     "comment": "Đổi chỉ số dùng trong báo cáo đã nộp cần thêm AC06 (BR-119)",
+     "comment": "Đổi chỉ số dùng trong báo cáo đã nộp cần thêm AC06, người khác người duyệt bước đầu trừ khi tổ chức bật tự duyệt (BR-119)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -15924,7 +15924,7 @@
    "schema": "inbox",
    "name": "proposal_review",
    "qualified": "inbox.proposal_review",
-   "description": "Một quyết định duyệt; người duyệt phải khác người đề xuất (kiểm ở tầng ứng dụng). Use case: UC-07-03.",
+   "description": "Một quyết định duyệt; người duyệt phải khác người đề xuất trừ khi tổ chức bật tự duyệt (kiểm ở tầng ứng dụng). Use case: UC-07-03.",
    "use_cases": [
     "UC-07-03"
    ],
@@ -16324,7 +16324,7 @@
    "schema": "inbox",
    "name": "hitl_approval_step",
    "qualified": "inbox.hitl_approval_step",
-   "description": "Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ chốt cần hai người (BR-132). Use case: UC-07-07, UC-10-02.",
+   "description": "Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ chốt cần hai người trừ khi tổ chức bật tự duyệt (BR-132). Use case: UC-07-07, UC-10-02.",
    "use_cases": [
     "UC-07-07",
     "UC-10-02"
@@ -16358,7 +16358,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác (BR-132)",
+     "comment": "Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác trừ khi tổ chức bật tự duyệt (BR-132)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -23371,7 +23371,7 @@
    "schema": "period",
    "name": "period_reconciliation",
    "qualified": "period.period_reconciliation",
-   "description": "Kết quả đối soát một chỉ tiêu khi chốt kỳ; ngoại lệ cần hai người duyệt (BR-132). Use case: UC-10-02.",
+   "description": "Kết quả đối soát một chỉ tiêu khi chốt kỳ; ngoại lệ cần hai người duyệt trừ khi tổ chức bật tự duyệt (BR-132). Use case: UC-10-02.",
    "use_cases": [
     "UC-10-02"
    ],
@@ -23582,7 +23582,7 @@
      "not_null": true,
      "default": "false",
      "unique": false,
-     "comment": "Số nhập tay khác số hệ thống; cần AC06 duyệt (BR-133)",
+     "comment": "Số nhập tay khác số hệ thống; cần AC06 duyệt, người khác người nhập trừ khi tổ chức bật tự duyệt (BR-133)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -24593,7 +24593,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn (thêm 12/10/2026)",
+     "comment": "logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn trừ khi tổ chức bật tự duyệt (thêm 12/10/2026)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
@@ -26353,7 +26353,7 @@
    "schema": "audit",
    "name": "export_job",
    "qualified": "audit.export_job",
-   "description": "Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng, tệp trong MinIO (BR-138); nằm trong CSDL dataagent_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03.",
+   "description": "Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng (người yêu cầu tự duyệt được khi tổ chức bật tự duyệt), tệp trong MinIO (BR-138); nằm trong CSDL dataagent_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03.",
    "use_cases": [
     "UC-11-03"
    ],
@@ -26802,7 +26802,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user; người duyệt pháp lý (AC06), khác owner_id",
+     "comment": "logic → org.app_user; người duyệt pháp lý (AC06), khác owner_id trừ khi tổ chức bật tự duyệt (org.two_people) (BR-174)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
@@ -29388,7 +29388,7 @@
    "schema": "forecast",
    "name": "model_version",
    "qualified": "forecast.model_version",
-   "description": "Phiên bản mô hình: thuật toán, biến và giả định, dữ liệu huấn luyện, thẻ mô hình; chỉ phát hành khi MASE < 1 trên backtest và người phụ trách chỉ số duyệt, người tạo không tự duyệt (BR-158). Use case: UC-15-02, UC-15-03, UC-15-04, UC-15-06.",
+   "description": "Phiên bản mô hình: thuật toán, biến và giả định, dữ liệu huấn luyện, thẻ mô hình; chỉ phát hành khi MASE < 1 trên backtest và người phụ trách chỉ số duyệt, người tạo không tự duyệt trừ khi tổ chức bật tự duyệt (org.two_people) (BR-158). Use case: UC-15-02, UC-15-03, UC-15-04, UC-15-06.",
    "use_cases": [
     "UC-15-02",
     "UC-15-03",
@@ -29578,7 +29578,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user",
+     "comment": "logic → org.app_user; người phụ trách chỉ số, khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-158)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
@@ -30492,7 +30492,7 @@
    "schema": "forecast",
    "name": "formula_component",
    "qualified": "forecast.formula_component",
-   "description": "Tham số của công thức giá cơ sở theo ngày hiệu lực: thuế nhập khẩu bình quân gia quyền, thuế tiêu thụ đặc biệt, thuế bảo vệ môi trường, thuế giá trị gia tăng, chi phí định mức, lợi nhuận định mức và các hệ số quy đổi. Mỗi giá trị lấy từ văn bản gốc, có số hiệu và link, do người khác người nhập chứng nhận; mô hình ngôn ngữ không đặt giá trị (BR-182). Use case: UC-15-07.",
+   "description": "Tham số của công thức giá cơ sở theo ngày hiệu lực: thuế nhập khẩu bình quân gia quyền, thuế tiêu thụ đặc biệt, thuế bảo vệ môi trường, thuế giá trị gia tăng, chi phí định mức, lợi nhuận định mức và các hệ số quy đổi. Mỗi giá trị lấy từ văn bản gốc, có số hiệu và link, do người khác người nhập chứng nhận trừ khi tổ chức bật tự duyệt (org.two_people); mô hình ngôn ngữ không đặt giá trị (BR-182). Use case: UC-15-07.",
    "use_cases": [
     "UC-15-07"
    ],
@@ -30624,7 +30624,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → org.app_user",
+     "comment": "logic → org.app_user; khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-182)",
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false

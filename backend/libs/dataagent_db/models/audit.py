@@ -94,7 +94,7 @@ class SecurityEvent(Base):
 
 
 class ExportJob(Base):
-    """Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng, tệp trong MinIO (BR-138); nằm trong CSDL dataagent_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03."""
+    """Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng (người yêu cầu tự duyệt được khi tổ chức bật tự duyệt), tệp trong MinIO (BR-138); nằm trong CSDL dataagent_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03."""
 
     __tablename__ = "export_job"
     __table_args__ = ({"schema": "audit"},)

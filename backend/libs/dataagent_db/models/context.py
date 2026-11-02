@@ -276,7 +276,7 @@ class MetricVersion(Base):
 
 
 class Relationship(Base):
-    """Quan hệ giữa hai bảng; quan hệ suy ra chỉ dùng sau khi duyệt (BR-100). Use case: UC-04-02, UC-07-02."""
+    """Quan hệ giữa hai bảng; quan hệ suy ra chỉ dùng sau khi duyệt, người duyệt khác người đề xuất trừ khi tổ chức bật tự duyệt (BR-100). Use case: UC-04-02, UC-07-02."""
 
     __tablename__ = "relationship"
     __table_args__ = ({"schema": "context"},)
@@ -656,7 +656,9 @@ class KnowledgePageVersion(Base):
         UUID(as_uuid=True), nullable=True, comment="logic → inbox.proposal (kind knowledge_page)"
     )
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, comment="logic → org.app_user; khác created_by (BR-164)"
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="logic → org.app_user; khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-164)",
     )
     reviewed_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -1024,11 +1026,11 @@ class DataProduct(Base):
     )
     owner_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        comment="logic → org.app_user; người chịu trách nhiệm cam kết (data owner)",
+        comment="logic → org.app_user; người chịu trách nhiệm cam kết (data owner), duyệt kích hoạt nên khác created_by trừ khi tổ chức bật tự duyệt (BR-175)",
     )
     steward_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        comment="logic → org.app_user; người giữ định nghĩa, xử lý Error Book; khác owner_id",
+        comment="logic → org.app_user; người giữ định nghĩa, xử lý Error Book; khác owner_id trừ khi tổ chức bật tự duyệt (org.two_people) (BR-175)",
     )
     freshness_statement: Mapped[str] = mapped_column(
         Text,
@@ -1067,7 +1069,7 @@ class DataProduct(Base):
     activated_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
-        comment="logic → org.app_user; người duyệt kích hoạt, khác created_by",
+        comment="logic → org.app_user; người duyệt kích hoạt, khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-175)",
     )
     activated_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

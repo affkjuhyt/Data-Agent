@@ -152,7 +152,7 @@ class ForecastModel(Base):
 
 
 class ModelVersion(Base):
-    """Phiên bản mô hình: thuật toán, biến và giả định, dữ liệu huấn luyện, thẻ mô hình; chỉ phát hành khi MASE < 1 trên backtest và người phụ trách chỉ số duyệt, người tạo không tự duyệt (BR-158). Use case: UC-15-02, UC-15-03, UC-15-04, UC-15-06."""
+    """Phiên bản mô hình: thuật toán, biến và giả định, dữ liệu huấn luyện, thẻ mô hình; chỉ phát hành khi MASE < 1 trên backtest và người phụ trách chỉ số duyệt, người tạo không tự duyệt trừ khi tổ chức bật tự duyệt (org.two_people) (BR-158). Use case: UC-15-02, UC-15-03, UC-15-04, UC-15-06."""
 
     __tablename__ = "model_version"
     __table_args__ = ({"schema": "forecast"},)
@@ -218,7 +218,9 @@ class ModelVersion(Base):
         Text, nullable=True, comment="MinIO da-forecast-models"
     )
     approved_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, comment="logic → org.app_user"
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="logic → org.app_user; người phụ trách chỉ số, khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-158)",
     )
     approved_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -461,7 +463,7 @@ class FormulaModel(Base):
 
 
 class FormulaComponent(Base):
-    """Tham số của công thức giá cơ sở theo ngày hiệu lực: thuế nhập khẩu bình quân gia quyền, thuế tiêu thụ đặc biệt, thuế bảo vệ môi trường, thuế giá trị gia tăng, chi phí định mức, lợi nhuận định mức và các hệ số quy đổi. Mỗi giá trị lấy từ văn bản gốc, có số hiệu và link, do người khác người nhập chứng nhận; mô hình ngôn ngữ không đặt giá trị (BR-182). Use case: UC-15-07."""
+    """Tham số của công thức giá cơ sở theo ngày hiệu lực: thuế nhập khẩu bình quân gia quyền, thuế tiêu thụ đặc biệt, thuế bảo vệ môi trường, thuế giá trị gia tăng, chi phí định mức, lợi nhuận định mức và các hệ số quy đổi. Mỗi giá trị lấy từ văn bản gốc, có số hiệu và link, do người khác người nhập chứng nhận trừ khi tổ chức bật tự duyệt (org.two_people); mô hình ngôn ngữ không đặt giá trị (BR-182). Use case: UC-15-07."""
 
     __tablename__ = "formula_component"
     __table_args__ = ({"schema": "forecast"},)
@@ -511,7 +513,9 @@ class FormulaComponent(Base):
         comment="draft, pending_review, certified, superseded, rejected",
     )
     certified_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, comment="logic → org.app_user"
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="logic → org.app_user; khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-182)",
     )
     certified_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

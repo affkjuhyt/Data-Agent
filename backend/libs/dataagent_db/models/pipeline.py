@@ -230,7 +230,7 @@ class DataProduct(Base):
     )
     owner_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        comment="logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn (thêm 12/10/2026)",
+        comment="logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn trừ khi tổ chức bật tự duyệt (thêm 12/10/2026)",
     )
     status: Mapped[str] = mapped_column(
         Text, server_default=sql_text("'draft'"), comment="draft, published, deprecated, retired"

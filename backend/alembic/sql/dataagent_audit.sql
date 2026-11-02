@@ -136,7 +136,7 @@ CREATE TABLE audit.export_job (
   CHECK (status NOT IN ('running','ready') OR (row_count IS NOT NULL AND (row_count <= 100000 OR approved_by IS NOT NULL))),
   CHECK (status <> 'ready' OR (object_key IS NOT NULL AND signature IS NOT NULL))
 );
-COMMENT ON TABLE audit.export_job IS 'Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng, tệp trong MinIO (BR-138); nằm trong CSDL dataagent_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03.';
+COMMENT ON TABLE audit.export_job IS 'Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng (người yêu cầu tự duyệt được khi tổ chức bật tự duyệt), tệp trong MinIO (BR-138); nằm trong CSDL dataagent_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03.';
 COMMENT ON COLUMN audit.export_job.filters IS 'Bộ lọc của GET /v1/audit lúc yêu cầu';
 COMMENT ON COLUMN audit.export_job.format IS 'csv, jsonl';
 COMMENT ON COLUMN audit.export_job.row_count IS 'Số dòng sẽ xuất, đếm lúc tạo';

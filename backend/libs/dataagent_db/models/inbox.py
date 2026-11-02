@@ -67,7 +67,7 @@ class Proposal(Base):
     requires_compliance: Mapped[bool] = mapped_column(
         Boolean,
         server_default=sql_text("false"),
-        comment="Đổi chỉ số dùng trong báo cáo đã nộp cần thêm AC06 (BR-119)",
+        comment="Đổi chỉ số dùng trong báo cáo đã nộp cần thêm AC06, người khác người duyệt bước đầu trừ khi tổ chức bật tự duyệt (BR-119)",
     )
     status: Mapped[str] = mapped_column(
         Text,
@@ -93,7 +93,7 @@ class Proposal(Base):
 
 
 class ProposalReview(Base):
-    """Một quyết định duyệt; người duyệt phải khác người đề xuất (kiểm ở tầng ứng dụng). Use case: UC-07-03."""
+    """Một quyết định duyệt; người duyệt phải khác người đề xuất trừ khi tổ chức bật tự duyệt (kiểm ở tầng ứng dụng). Use case: UC-07-03."""
 
     __tablename__ = "proposal_review"
     __table_args__ = ({"schema": "inbox"},)
@@ -196,7 +196,7 @@ class HitlRequest(Base):
 
 
 class HitlApprovalStep(Base):
-    """Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ chốt cần hai người (BR-132). Use case: UC-07-07, UC-10-02."""
+    """Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ chốt cần hai người trừ khi tổ chức bật tự duyệt (BR-132). Use case: UC-07-07, UC-10-02."""
 
     __tablename__ = "hitl_approval_step"
     __table_args__ = ({"schema": "inbox"},)
@@ -211,7 +211,7 @@ class HitlApprovalStep(Base):
     step: Mapped[int] = mapped_column(SmallInteger)
     approver_role: Mapped[str] = mapped_column(
         Text,
-        comment="Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác (BR-132)",
+        comment="Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác trừ khi tổ chức bật tự duyệt (BR-132)",
     )
     approver_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     decision: Mapped[str | None] = mapped_column(Text, nullable=True, comment="approve, reject")

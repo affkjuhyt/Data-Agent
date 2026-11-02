@@ -96,7 +96,42 @@ deploy. Organisation users need `tenant_id` set to `org_id` in Keycloak; the rea
 attribute, editable by admins only.
 
 The organisation self-approval switch is at **Quản trị › Người dùng và vai trò**. Only an
-organisation admin can change it; each change and every self-approval is written to the audit log.
+organisation admin, in their own session (not an agent acting for them), can change it; turning it
+on asks for confirmation. Each change is an `audit.audit_log` row with action
+`organization.updated`, object `organization`, and `before`/`after` `{"allow_self_approval": …}`.
+
+Every approval someone gives their own work while the switch is on is one row with action
+`self_approval`; `after->>'step'` says which step it was:
+
+```sql
+-- in the audit database (dataagent_audit)
+SELECT occurred_at, actor_id, after->>'step' AS step, object_kind, object_id
+FROM audit.audit_log
+WHERE org_id = :org AND action = 'self_approval'
+ORDER BY seq;
+```
+
+| Step | What the person approved of their own |
+| --- | --- |
+| `proposal.review`, `proposal.accept_edit`, `proposal.second_step` | a proposal they made, an edit they wrote, or the second step after their own first |
+| `hitl.approve`, `hitl.chain_step`, `hitl.excluded_approver` | a request in Cần bạn they raised, a second step of a chain they already decided, a request whose module named them as not to decide it |
+| `dataset_version.certify` | a dataset version they created |
+| `knowledge_page.certify` | a knowledge page version they wrote or reviewed |
+| `data_product.owner`, `data_product.steward`, `data_product.publish` | naming themselves owner of a product they create, holding owner and steward at once, publishing a P06 product they drafted |
+| `data_product.owner.proposed`, `data_product.steward.proposed` | the same, in a change of an active product that waits for review |
+| `data_product.activate` | accepting the activation of a product they created, whoever submitted it |
+| `example.confirm` | confirming an example they created or whose SQL they last changed |
+| `policy.activate` | switching on a policy they wrote |
+| `forecast_model.decide`, `formula_value.certify` | a forecast model version or a formula value they made |
+| `period_number.approve.proposed` | a manual period number they filed |
+| `access_request.decide` | their own access request |
+| `model_provider.enable`, `model_provider.approve` | both halves of switching a model provider on |
+| `crawl_source.legal_review` | the legal review of a crawl source they own |
+| `session_report.approve` | a session report they wrote |
+
+A row means the waiver was used. It is written to the audit database before the approval itself
+commits, so in rare cases (the approval failed after the audit write) a row stands for an approval
+that did not happen: check the object before acting on it.
 
 ## 3. Deploy a change
 

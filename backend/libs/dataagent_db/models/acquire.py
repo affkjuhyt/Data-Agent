@@ -129,7 +129,7 @@ class CrawlSource(Base):
     legal_reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
-        comment="logic → org.app_user; người duyệt pháp lý (AC06), khác owner_id",
+        comment="logic → org.app_user; người duyệt pháp lý (AC06), khác owner_id trừ khi tổ chức bật tự duyệt (org.two_people) (BR-174)",
     )
     legal_reviewed_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="Lúc duyệt pháp lý"
