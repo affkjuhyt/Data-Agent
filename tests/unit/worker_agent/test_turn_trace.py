@@ -142,3 +142,27 @@ def test_an_unpriced_model_costs_nothing(monkeypatch: pytest.MonkeyPatch) -> Non
     turn_trace._prices.cache_clear()
     assert turn_trace.price("qwen", "responder", 10_000, 10_000) == 0
     turn_trace._prices.cache_clear()
+
+
+async def test_a_step_begun_in_one_place_ends_in_another(
+    trace: turn_trace.Trace, published: list[dict]
+) -> None:
+    await turn_trace.begin("understand", target="Doanh thu 2013")
+    await turn_trace.end_open("understand", detail={"reading": []})
+    # Ending it again, or a step that is not open, changes nothing.
+    await turn_trace.end_open("understand", status="failed")
+    await turn_trace.end_open("query")
+    assert [e["status"] for e in published] == ["running", "done"]
+    assert trace.steps[0].output["detail"] == {"reading": []} and trace.steps[0].status == "ok"
+
+
+async def test_a_step_opened_inside_another_is_not_its_child(
+    trace: turn_trace.Trace, published: list[dict]
+) -> None:
+    await turn_trace.begin("understand")
+    async with turn_trace.stepping("write_sql"):
+        turn_trace.model_call(role="sql", model="m", input_tokens=1, output_tokens=1, latency_ms=1)
+    await turn_trace.end_open("understand")
+    understand, write_sql, call = trace.steps
+    assert write_sql.output["_view"]["parent"] is None
+    assert call.output["_view"]["parent"] == write_sql.output["_view"]["step_id"]

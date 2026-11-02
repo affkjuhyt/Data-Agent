@@ -96,6 +96,17 @@ class Step:
 
 
 @dataclass
+class StepHandle:
+    """What a step reports when it ends: its detail and how it ended."""
+
+    step_id: str
+    detail: dict[str, Any] = field(default_factory=dict)
+    status: str = "done"
+    # Shown under a failed or skipped step: the user-facing reason, never an exception's text.
+    summary: str | None = None
+
+
+@dataclass
 class Trace:
     org_id: uuid.UUID
     question_id: uuid.UUID
@@ -104,6 +115,8 @@ class Trace:
     # The step under way, which a model call made now belongs to.
     open_step: str | None = None
     seq: int = 0
+    # Steps begun and not yet ended, by action (begin/end_open).
+    opened: dict[str, tuple[Step, StepHandle]] = field(default_factory=dict)
     tokens: int = 0
     cost: decimal.Decimal = decimal.Decimal(0)
     started: datetime.datetime = field(default_factory=_now)
@@ -130,17 +143,6 @@ def price(model: str, role: str, input_tokens: int, output_tokens: int) -> decim
         + decimal.Decimal(str(rate.get("output_per_1k", 0))) * output_tokens
     ) / 1000
     return cost.quantize(decimal.Decimal("0.0001"))
-
-
-@dataclass
-class StepHandle:
-    """What a step reports when it ends: its detail and how it ended."""
-
-    step_id: str
-    detail: dict[str, Any] = field(default_factory=dict)
-    status: str = "done"
-    # Shown under a failed or skipped step: the user-facing reason, never an exception's text.
-    summary: str | None = None
 
 
 def _view(
@@ -181,9 +183,10 @@ def _open(
     step_id = f"s{trace.seq}"
     opened = Step(kind=kind, name=action, started=_now())
     opened.seq = trace.seq
+    # A step is never another's child; only a model call nests, under the step it served.
     opened.output = {
         "detail": None,
-        "_view": _view(step_id, title or default_title, target, chips, trace.open_step),
+        "_view": _view(step_id, title or default_title, target, chips, None),
     }
     trace.steps.append(opened)
     return opened
@@ -195,6 +198,56 @@ def _close(step: Step, status: str, detail: Mapping[str, Any] | None, summary: s
     step.summary = summary
     assert step.output is not None
     step.output["detail"] = dict(detail) if detail else None
+
+
+async def begin(
+    action: str,
+    *,
+    title: str | None = None,
+    target: str = "",
+    chips: Sequence[Mapping[str, str]] = (),
+) -> StepHandle:
+    """Open a step that another place ends (end_open); published as running now."""
+    trace = _current.get()
+    if trace is None:
+        return StepHandle(step_id="")
+    opened = _open(trace, action, title, target, chips)
+    handle = StepHandle(step_id=opened.output["_view"]["step_id"])  # type: ignore[index]
+    trace.opened[action] = (opened, handle)
+    trace.open_step = handle.step_id
+    await publish(
+        str(trace.question_id), "activity", _event(trace, opened, action, "running", None)
+    )
+    return handle
+
+
+async def end_open(
+    action: str,
+    *,
+    detail: Mapping[str, Any] | None = None,
+    status: str = "done",
+    summary: str | None = None,
+) -> None:
+    """End the open step of `action`, if there is one; a second end changes nothing."""
+    trace = _current.get()
+    if trace is None or action not in trace.opened:
+        return
+    step, handle = trace.opened.pop(action)
+    if detail is not None:
+        handle.detail = dict(detail)
+    handle.status, handle.summary = status, summary if summary is not None else handle.summary
+    await _end(trace, step, action, handle)
+
+
+async def _end(trace: Trace, step: Step, action: str, handle: StepHandle) -> None:
+    if trace.open_step == handle.step_id:
+        trace.open_step = None
+    _close(step, handle.status, handle.detail, handle.summary)
+    await publish(
+        str(trace.question_id),
+        "activity",
+        _event(trace, step, action, handle.status, step.output["detail"]),  # type: ignore[index]
+    )
 
 
 @asynccontextmanager
@@ -211,25 +264,17 @@ async def stepping(
     if trace is None:
         yield StepHandle(step_id="")
         return
-    opened = _open(trace, action, title, target, chips)
-    handle = StepHandle(step_id=opened.output["_view"]["step_id"])  # type: ignore[index]
-    previous, trace.open_step = trace.open_step, handle.step_id
-    await publish(
-        str(trace.question_id), "activity", _event(trace, opened, action, "running", None)
-    )
+    previous = trace.open_step
+    handle = await begin(action, title=title, target=target, chips=chips)
+    step, _ = trace.opened.pop(action)
     try:
         yield handle
     except BaseException:
         handle.status = "failed"
         raise
     finally:
+        await _end(trace, step, action, handle)
         trace.open_step = previous
-        _close(opened, handle.status, handle.detail, handle.summary)
-        await publish(
-            str(trace.question_id),
-            "activity",
-            _event(trace, opened, action, handle.status, opened.output["detail"]),  # type: ignore[index]
-        )
 
 
 async def record_step(

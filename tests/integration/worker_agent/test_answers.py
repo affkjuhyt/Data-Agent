@@ -402,22 +402,52 @@ async def test_ac_01_01_01_a_ratio_by_region_in_scope_with_a_sealed_receipt(
         seed.one("SELECT number_check->>'untraceable_final' FROM qa.answer WHERE id = %s", answer)
         == "0"
     )
-    # The turn's run: each analyst step, in order, ending in the written answer.
-    status, stop, steps = seed.one(
-        "SELECT r.status, r.stop_reason, array_agg(s.kind || ':' || s.name || ':' || s.status"
-        " ORDER BY s.seq) FROM agent.agent_run r JOIN agent.agent_step s ON s.run_id = r.id"
-        " WHERE r.trigger_ref = %s GROUP BY r.id",
-        f"question:{q}",
+    # The turn's run: each step in the order it happened, each with what it did.
+    status, stop = seed.one(
+        "SELECT status, stop_reason FROM agent.agent_run WHERE trigger_ref = %s", f"question:{q}"
     )
     assert (status, stop) == ("succeeded", "completed")
-    assert [s for s in steps if not s.startswith("llm_call")] == [
-        "plan:understand:ok",
-        "plan:resolve_scope:ok",
-        "query:query:ok",
-        "plan:validate:ok",
-        "plan:visualize:ok",
-        "message:narrate:ok",
+    steps = seed.all(
+        "SELECT s.name, s.status, s.output FROM agent.agent_step s JOIN agent.agent_run r"
+        " ON r.id = s.run_id WHERE r.trigger_ref = %s AND s.name <> 'model_call' ORDER BY s.seq",
+        f"question:{q}",
+    )
+    assert [(name, state) for name, state, _ in steps] == [
+        ("understand", "ok"),
+        ("choose_metric", "ok"),
+        ("query", "ok"),
+        ("write_answer", "ok"),
+        ("validate", "ok"),
+        ("visualize", "ok"),
     ]
+    detail = {name: output["detail"] for name, _, output in steps}
+    assert {chip["kind"] for chip in detail["understand"]["reading"]} >= {"metric", "period"}
+    assert detail["choose_metric"]["metric"]["code"] == "NPL_RATIO"
+    assert "GROUP BY" in detail["query"]["sql"] and detail["query"]["row_count"] == 2
+    assert [check["name"] for check in detail["validate"]["checks"]]
+    assert detail["visualize"]["chart_type"]
+    assert steps[2][2]["_view"]["title"] == "Truy vấn"
+
+
+async def test_a_source_that_cannot_be_reached_fails_the_query_step(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    source_id = seed.one("SELECT source_id FROM catalog.dataset WHERE id = %s", bank.loans)
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE catalog.source SET port = 1 WHERE id = %s", (str(source_id),))
+    q = bank.ask("Tỷ lệ nợ xấu theo vùng tháng 9/2026")
+    await drain()
+    steps = seed.all(
+        "SELECT s.name, s.status, s.summary FROM agent.agent_step s JOIN agent.agent_run r"
+        " ON r.id = s.run_id WHERE r.trigger_ref = %s AND s.name <> 'model_call' ORDER BY s.seq",
+        f"question:{q}",
+    )
+    # The step that failed says why; nothing after it claims to have run.
+    assert [(name, state) for name, state, _ in steps][-1] == ("query", "error")
+    assert "Kho tín dụng" in steps[-1][2]
+    assert "validate" not in [name for name, _, _ in steps]
 
 
 async def test_ac_10_01_01_as_submitted_uses_period_snapshot_not_live_data(

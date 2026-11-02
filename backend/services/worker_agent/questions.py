@@ -732,28 +732,40 @@ def _code(code: str) -> ErrorCode:
         return ErrorCode.TOOL_UNAVAILABLE
 
 
-async def _analyst_step(
-    question_id: uuid.UUID, step_id: str, status: str, *, detail: str | None = None
-) -> None:
-    """Expose the validated analyst DAG as replayable chat milestones."""
-    labels = {
-        "understand": "Hiểu mục tiêu câu hỏi",
-        "resolve_scope": "Xác định phạm vi dữ liệu",
-        "query": "Truy vấn dữ liệu",
-        "validate": "Kiểm tra kết quả",
-        "visualize": "Chọn cách trực quan hóa",
-        "narrate": "Soạn câu trả lời",
+def _reading_of(u: Understanding) -> dict[str, Any]:
+    """The understand step's detail: how each part of the question was read, and from where."""
+    return {
+        "reading": [
+            {"kind": c.kind, "label": c.label, "value": c.value, "source": c.source}
+            for c in u.chips
+        ],
+        "confidence": u.confidence,
+        "unmapped": list(u.unmapped),
     }
-    await publish(
-        str(question_id),
-        "activity",
-        {
-            "kind": "plan_step",
-            "stage": step_id,
-            "step_id": step_id,
-            "status": status,
-            "label": labels.get(step_id, step_id),
-            "detail": detail,
+
+
+async def _metric_chosen(p: Prepared) -> None:
+    datasets = [
+        f"{d.schema_name}.{d.table_name}"
+        for dataset_id, d in p.datasets.items()
+        if dataset_id in p.compiled.dataset_ids
+    ]
+    await turn_trace.record_step(
+        "choose_metric",
+        target=p.metric_name,
+        chips=[
+            {"kind": "metric", "label": p.metric_name},
+            {"kind": "source", "label": p.source.name},
+        ],
+        detail={
+            "metric": {
+                "code": p.version.metric_code,
+                "name": p.metric_name,
+                "version": p.version_row.version,
+                "certified": p.compiled.certified,
+            },
+            "datasets": datasets,
+            "source": p.source.name,
         },
     )
 
@@ -784,68 +796,72 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
     ):
         return
     await publish(str(question_id), "planning", {"question_id": str(question_id)})
-    await publish(
-        str(question_id),
-        "activity",
-        {"kind": "stage", "stage": "planning", "status": "running"},
-    )
-    await _analyst_step(question_id, "understand", "running")
+    # Ended inside _understand_and_plan once the reading is final, before any path it takes.
+    await turn_trace.begin("understand")
     prepared = await _understand_and_plan(event, question_id, edited_plan_id)
+    await turn_trace.end_open("understand")
     if prepared is None:
         return
     if await is_cancel_requested(str(question_id)):
         await _cancel(event, question_id, prepared)
         return
-    await publish(
-        str(question_id),
-        "activity",
-        {"kind": "stage", "stage": "planning", "status": "done"},
-    )
-    await _analyst_step(question_id, "understand", "done")
-    await _analyst_step(question_id, "resolve_scope", "done")
-    await _analyst_step(question_id, "query", "running")
+    await _metric_chosen(prepared)
     await publish(
         str(question_id), "progress", {"question_id": str(question_id), "status": "running"}
     )
-    outcome = (
-        await run_query(
-            org_id=prepared.org_id,
-            data_space_id=prepared.space_id,
-            principal_id=prepared.user_id,
-            caller_kind="question",
-            caller_id=question_id,
-            source=prepared.source,
-            sql=prepared.compiled.sql,
-            secrets=secrets(),
-            metric_version_ids=[prepared.compiled.metric_version_id],
-            as_of=prepared.as_of,
+    source_name = prepared.source.name
+    async with turn_trace.stepping(
+        "query",
+        target=f"{source_name} cho: {prepared.metric_name}",
+        chips=[{"kind": "source", "label": source_name}],
+    ) as step:
+        outcome = (
+            await run_query(
+                org_id=prepared.org_id,
+                data_space_id=prepared.space_id,
+                principal_id=prepared.user_id,
+                caller_kind="question",
+                caller_id=question_id,
+                source=prepared.source,
+                sql=prepared.compiled.sql,
+                secrets=secrets(),
+                metric_version_ids=[prepared.compiled.metric_version_id],
+                as_of=prepared.as_of,
+            )
+            if prepared.period_close_id is None
+            else await record_period_snapshot(
+                org_id=prepared.org_id,
+                data_space_id=prepared.space_id,
+                principal_id=prepared.user_id,
+                caller_id=question_id,
+                period_close_id=prepared.period_close_id,
+                metric_version_ids=[prepared.compiled.metric_version_id],
+                columns=[
+                    {"name": name, "type": "numeric" if name == "value" else "text"}
+                    for name in prepared.compiled.columns
+                ],
+                rows=prepared.period_rows or [],
+            )
         )
-        if prepared.period_close_id is None
-        else await record_period_snapshot(
-            org_id=prepared.org_id,
-            data_space_id=prepared.space_id,
-            principal_id=prepared.user_id,
-            caller_id=question_id,
-            period_close_id=prepared.period_close_id,
-            metric_version_ids=[prepared.compiled.metric_version_id],
-            columns=[
-                {"name": name, "type": "numeric" if name == "value" else "text"}
-                for name in prepared.compiled.columns
-            ],
-            rows=prepared.period_rows or [],
-        )
-    )
+        step.detail = {
+            "sql": outcome.sql or prepared.compiled.sql,
+            "row_count": len(outcome.rows or []),
+            "truncated": bool(outcome.truncated),
+            "query_run_id": str(outcome.query_run_id) if outcome.query_run_id else None,
+            "columns": list(prepared.compiled.columns),
+        }
+        message = None
+        if not outcome.ok:
+            message = (
+                f"Nguồn {source_name} không trả kết quả trong thời gian cho phép; câu hỏi vẫn mở, bạn có thể thử lại."
+                if outcome.status == "timeout"
+                else f"Chưa truy vấn được nguồn {source_name}. Người phụ trách dữ liệu có thể xem lượt chạy trong lịch sử truy vấn."
+            )
+            step.status, step.summary = "failed", message
     if await is_cancel_requested(str(question_id)):
         await _cancel(event, question_id, prepared)
         return
-    if not outcome.ok:
-        await _analyst_step(question_id, "query", "failed")
-        name = prepared.source.name
-        message = (
-            f"Nguồn {name} không trả kết quả trong thời gian cho phép; câu hỏi vẫn mở, bạn có thể thử lại."
-            if outcome.status == "timeout"
-            else f"Chưa truy vấn được nguồn {name}. Người phụ trách dữ liệu có thể xem lượt chạy trong lịch sử truy vấn."
-        )
+    if message is not None:
         await _refuse(
             event,
             question_id,
@@ -860,9 +876,17 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
             status="failed",
         )
         return
-    await _analyst_step(question_id, "query", "done")
     if not outcome.rows or _no_value(prepared.compiled.columns, outcome.rows):
-        await _analyst_step(question_id, "validate", "failed", detail="Không có dữ liệu hợp lệ")
+        await turn_trace.record_step(
+            "validate",
+            status="failed",
+            summary="Không có dữ liệu hợp lệ cho kỳ được hỏi.",
+            detail={
+                "checks": [
+                    {"name": "Có dữ liệu cho kỳ", "passed": False, "detail": "0 dòng có giá trị"}
+                ]
+            },
+        )
         await _refuse(
             event,
             question_id,
@@ -871,11 +895,7 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
             Refusal.of(ErrorCode.NO_DATA_FOR_PERIOD, detail_id=str(outcome.query_run_id)),
         )
         return
-    await _analyst_step(question_id, "validate", "done")
-    await _analyst_step(question_id, "visualize", "done")
-    await _analyst_step(question_id, "narrate", "running")
     await _answer(event, question_id, prepared, outcome)
-    await _analyst_step(question_id, "narrate", "done")
 
 
 async def _cancel(event: Event, question_id: uuid.UUID, prepared: Prepared) -> None:
@@ -1137,6 +1157,15 @@ async def _understand_and_plan(
                 message="Bạn không có quyền xem dữ liệu cần cho câu hỏi này.",
                 detail_id=str(question.id),
             )
+        # The reading is final: the understand step _run opened ends here, before the path the
+        # question takes (governed metric, clarification, exploratory SQL, documents, refusal).
+        await turn_trace.end_open(
+            "understand",
+            detail=_reading_of(u),
+            summary=None
+            if u.metric is not None or u.decision == "clarify"
+            else "Chưa nhận ra chỉ số nào trong danh mục.",
+        )
 
         compiled: c.Compiled | None = None
         problem: Refusal | None = access_problem
@@ -1586,6 +1615,7 @@ async def _understand_and_plan(
             next_action=NextAction.REPHRASE,
             detail_id=str(question_id),
         )
+    await turn_trace.record_step("choose_metric", status="failed", summary=problem.message)
     await _refuse(event, question_id, user_id, plan_id, problem)
     return None
 
@@ -1973,32 +2003,39 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             "untraceable_final": 0,
         }
         model = gateway()
-        if model is not None:
-            # G5.15: the main model writes the sentences, numbers only as figure tags, post-checked.
-            told = await narrator.narrate(
-                model,
-                every,
-                question=question.text,
-                metric_name=metric_name,
-                exempt_text=[c.label for c in u.chips]
-                + [v for f in figures for v in f.dimensions.values()],
-                hints=ins.sentences,
-            )
-            if told is not None:
-                notes = [n for n in (latest_note,) if n]
-                if outcome.truncated:
-                    notes.append("Kết quả có hơn 10.000 dòng; bảng chỉ có 10.000 dòng đầu.")
-                text = " ".join([told.text, *notes])
-                check.update(
-                    numbers_total=told.numbers_total,
-                    traced=told.numbers_total,
-                    untraceable_draft=told.untraceable_draft,
-                    regenerated=told.regenerated,
-                    sentences_dropped=told.sentences_dropped,
+        async with turn_trace.stepping("write_answer") as written_step:
+            written_step.detail = {"by": "template"}
+            if model is not None:
+                # G5.15: the main model writes the sentences, numbers only as figure tags.
+                told = await narrator.narrate(
+                    model,
+                    every,
+                    question=question.text,
+                    metric_name=metric_name,
+                    exempt_text=[c.label for c in u.chips]
+                    + [v for f in figures for v in f.dimensions.values()],
+                    hints=ins.sentences,
                 )
-                p.models.append(
-                    {"task": "narrate", "model_name": told.model, "tokens": told.tokens}
-                )
+                if told is not None:
+                    notes = [n for n in (latest_note,) if n]
+                    if outcome.truncated:
+                        notes.append("Kết quả có hơn 10.000 dòng; bảng chỉ có 10.000 dòng đầu.")
+                    text = " ".join([told.text, *notes])
+                    check.update(
+                        numbers_total=told.numbers_total,
+                        traced=told.numbers_total,
+                        untraceable_draft=told.untraceable_draft,
+                        regenerated=told.regenerated,
+                        sentences_dropped=told.sentences_dropped,
+                    )
+                    p.models.append(
+                        {"task": "narrate", "model_name": told.model, "tokens": told.tokens}
+                    )
+                    written_step.detail = {
+                        "by": "model",
+                        "sentences_dropped": told.sentences_dropped,
+                        "regenerated": told.regenerated,
+                    }
         lineage = hashlib.sha256(
             f"{p.compiled.sql_sha256}:{outcome.result_hash}".encode()
         ).hexdigest()
@@ -2033,6 +2070,37 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             if filed_items
             else None
         )
+        number_check = verify("data", check, figures=stored_figures, reconcile_badge=badge)
+        checks = number_check.get("verification", {}).get("checks", [])
+        await turn_trace.record_step(
+            "validate",
+            detail={"checks": checks},
+            status="done" if all(c.get("passed") for c in checks) else "failed",
+            summary=None
+            if all(c.get("passed") for c in checks)
+            else "; ".join(str(c.get("detail")) for c in checks if not c.get("passed")),
+        )
+        chart_spec = chart_spec_of(
+            figures,
+            group_by=shown_by,
+            dimension_names=names,
+            time_dimensions=p.time_dimensions,
+            metric_name=metric_name,
+            unit=unit,
+            drill=[cut for cut in p.cuts if cut[0] not in u.group_by],
+            value_column=value_column,
+        )
+        if chart_spec is not None:
+            await turn_trace.record_step(
+                "visualize",
+                target=str(chart_spec.get("type") or ""),
+                detail={
+                    "chart_type": chart_spec.get("type"),
+                    "reason": "theo thời gian"
+                    if any(d in p.time_dimensions for d in shown_by)
+                    else "so sánh giữa các nhóm",
+                },
+            )
         session.add(
             qa.Answer(
                 id=answer_id,
@@ -2046,17 +2114,8 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                     {"period": p.filed_period_label, "items": filed_items} if filed_items else None
                 ),
                 reconcile_badge=badge,
-                number_check=verify("data", check, figures=stored_figures, reconcile_badge=badge),
-                chart_spec=chart_spec_of(
-                    figures,
-                    group_by=shown_by,
-                    dimension_names=names,
-                    time_dimensions=p.time_dimensions,
-                    metric_name=metric_name,
-                    unit=unit,
-                    drill=[cut for cut in p.cuts if cut[0] not in u.group_by],
-                    value_column=value_column,
-                ),
+                number_check=number_check,
+                chart_spec=chart_spec,
                 agent_name=AGENT_NAME,
                 latency_ms=int(
                     (datetime.datetime.now(datetime.UTC) - p.started).total_seconds() * 1000
