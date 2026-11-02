@@ -154,11 +154,16 @@ async def test_an_approved_audit_export_is_released_once(
     audit.close()
 
 
-async def test_an_audit_export_approved_by_its_requester_is_released(
-    seed: Seed, ddl_server: dict[str, str]
-) -> None:
-    # The API let the requester decide because the org's switch was on; the job says so itself.
-    org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Tổ chức thử")
+def _requester_decides_export(
+    seed: Seed, ddl_server: dict[str, str], *, allow_self_approval: bool
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """An export waiting for approval, approved by its own requester: (job, requester)."""
+    org = seed.row(
+        "org.organization",
+        code=f"org-{uuid.uuid4().hex[:8]}",
+        name="Tổ chức thử",
+        allow_self_approval=allow_self_approval,
+    )
     requester = uuid.uuid4()
     job, hitl_id = uuid.uuid4(), uuid.uuid4()
     audit = psycopg2.connect(ddl_server["dataagent_audit"])
@@ -169,6 +174,7 @@ async def test_an_audit_export_approved_by_its_requester_is_released(
             "hitl_request_id) VALUES (%s, %s, '{}', 200000, 'waiting_approval', %s, %s)",
             (str(job), str(org), str(requester), str(hitl_id)),
         )
+    audit.close()
     seed.row(
         "inbox.outbox",
         org_id=org,
@@ -187,11 +193,38 @@ async def test_an_audit_export_approved_by_its_requester_is_released(
             }
         ),
     )
+    return job, requester
+
+
+def _export_job(ddl_server: dict[str, str], job: uuid.UUID) -> tuple[object, ...] | None:
+    audit = psycopg2.connect(ddl_server["dataagent_audit"])
+    try:
+        with audit.cursor() as cur:
+            cur.execute(
+                "SELECT status, approved_by::text, self_approved FROM audit.export_job"
+                " WHERE id = %s",
+                (str(job),),
+            )
+            return cur.fetchone()
+    finally:
+        audit.close()
+
+
+async def test_an_audit_export_approved_by_its_requester_is_released(
+    seed: Seed, ddl_server: dict[str, str]
+) -> None:
+    # The API let the requester decide because the org's switch is on; the job says so itself.
+    job, requester = _requester_decides_export(seed, ddl_server, allow_self_approval=True)
     await _drain()
-    with audit.cursor() as cur:
-        cur.execute(
-            "SELECT status, approved_by::text, self_approved FROM audit.export_job WHERE id = %s",
-            (str(job),),
-        )
-        assert cur.fetchone() == ("queued", str(requester), True)
-    audit.close()
+    assert _export_job(ddl_server, job) == ("queued", str(requester), True)
+
+
+async def test_an_audit_export_its_requester_approved_without_the_switch_fails(
+    seed: Seed, ddl_server: dict[str, str]
+) -> None:
+    # The switch is off (turned off after the decision, or the event did not come from the
+    # API): the requester's own approval does not release the export, and the job is ended
+    # rather than left waiting for a request that is already resolved.
+    job, _ = _requester_decides_export(seed, ddl_server, allow_self_approval=False)
+    await _drain()
+    assert _export_job(ddl_server, job) == ("failed", None, False)
