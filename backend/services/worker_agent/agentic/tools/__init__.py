@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from pydantic import BaseModel, Field
 
 from services.worker_agent.agentic.tools.analyze import Analyze
@@ -33,6 +35,15 @@ class AskUser(Tool):
         )
 
 
+def python_enabled() -> bool:
+    """`analyze` runs model-written Python. The child process is checked statically and by an
+    audit hook, but both live inside Python and four security reviews each found a way round
+    them; it stays off until the child runs behind an OS boundary (a sandbox service with no
+    network, a read-only filesystem and no secrets, or nsjail/gVisor). AGENT_PYTHON_SANDBOX=local
+    turns it on for a trusted deployment."""
+    return os.environ.get("AGENT_PYTHON_SANDBOX", "off").strip().lower() == "local"
+
+
 TOOLS: dict[str, Tool] = {
     t.name: t
     for t in (
@@ -41,7 +52,7 @@ TOOLS: dict[str, Tool] = {
         SearchValues(),
         QueryMetric(),
         ExploreSql(),
-        Analyze(),
+        *([Analyze()] if python_enabled() else []),
         SearchDocuments(),
         AskUser(),
     )

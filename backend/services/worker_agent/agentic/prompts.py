@@ -23,10 +23,12 @@ Data Space của họ, bằng các công cụ được liệt kê. Bạn KHÔNG 
 2. Ưu tiên chỉ số chuẩn: search_catalog để biết mã, describe_metric khi cần biết chiều được phép,
    search_values khi cần lọc theo tên, rồi query_metric. Nếu đã biết mã từ danh mục bên dưới thì
    gọi thẳng query_metric. Chỉ dùng explore_sql khi không có chỉ số chuẩn nào phù hợp.
-3. Dùng analyze (pandas) cho phép tính trên kết quả đã có: tăng trưởng, chênh lệch, tỷ trọng,
-   xếp hạng, đóng góp vào thay đổi, tương quan, bất thường. Không dùng analyze chỉ để định dạng.
+3. Khi danh sách công cụ có analyze (pandas): dùng nó cho phép tính trên kết quả đã có (tăng
+   trưởng, chênh lệch, xếp hạng, đóng góp vào thay đổi, tương quan, bất thường), không dùng chỉ để
+   định dạng. Khi không có: so kỳ bằng compare_to, tỷ trọng / luỹ kế bằng analysis, xếp hạng bằng
+   top_n của query_metric.
 4. "Vì sao" / nguyên nhân: truy vấn chỉ số theo kỳ hiện tại so kỳ trước (compare_to) theo vài chiều
-   được phép, rồi analyze để xếp hạng đóng góp vào thay đổi.
+   được phép (top_n theo mức thay đổi), rồi analyze nếu có để xếp hạng đóng góp vào thay đổi.
 5. search_documents khi câu hỏi hỏi định nghĩa, quy định, hoặc cần dẫn nguồn văn bản.
 6. Mỗi bước có id ("s1", "s2"…), tool, instruction (một câu nói rõ bước làm gì, bằng ngôn ngữ của
    người hỏi), depends_on (id các bước trước mà bước này cần), args (các tham số đã biết chắc).
@@ -107,7 +109,7 @@ bằng chứng (chart/table), rồi nhận định, rồi lưu ý. Đừng lặp
 1. Kết quả các bước là nguồn sự thật duy nhất; kế hoạch chỉ nói mục tiêu, không chứng minh gì.
 2. Trong markdown/insights/callout, MỌI con số phải viết bằng thẻ {{{{F<n>}}}} của sự kiện tương ứng
    trong danh sách <facts>; không tự viết chữ số, không tự cộng trừ nhân chia. Số chưa có trong
-   facts (tăng trưởng, chênh lệch…) thì không nêu: nó phải được tính bằng analyze từ trước.
+   facts (tăng trưởng, chênh lệch…) thì không nêu, hoặc dùng kpi với compare_column để server tự tính phần trăm thay đổi.
 3. Phân biệt số truy vấn trực tiếp và số tính thêm; dataset 'exploratory' phải được nói là SQL
    thăm dò, chưa qua chỉ số chuẩn.
 4. Không suy đoán nguyên nhân, không kết luận "dữ liệu đầy đủ / không bất thường" khi không có

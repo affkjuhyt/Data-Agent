@@ -308,7 +308,7 @@ Skill chưa duyệt không bao giờ được planner chọn cho câu hỏi củ
 Ask không còn đi theo một kế hoạch sáu bước cố định. `worker_agent/agentic/` là một graph
 (`prepare → plan → act ⟲ → replan / review → compose → persist`) mà planner tự chọn bước và
 công cụ cho từng câu hỏi (`search_catalog`, `describe_metric`, `search_values`, `query_metric`,
-`explore_sql`, `analyze` = pandas trong sandbox, `search_documents`, `ask_user`). Bước hỏng quay
+`explore_sql`, `analyze` = pandas, tắt mặc định cho tới khi có sandbox cô lập ở tầng hệ điều hành, bật bằng `AGENT_PYTHON_SANDBOX=local`; `search_documents`, `ask_user`). Bước hỏng quay
 lại planner kèm điều quan sát được (≤ 2 lần). Câu trả lời là các block do agent tự chọn và xếp
 (`qa.answer.blocks`, v3_0023), phát trực tiếp qua sự kiện `block`. Model không viết số: chart,
 bảng và KPI lấy dữ liệu từ dataset, số trong văn bản phải là thẻ `{{F<n>}}` của một sự kiện có
