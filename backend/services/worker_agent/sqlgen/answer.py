@@ -25,7 +25,9 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, qa
 from libs.sql_guard import dialect_of
 from services.worker_agent import turn_trace
+from services.worker_agent.answer import narrator
 from services.worker_agent.answer.narrate import Figure, shown_value
+from services.worker_agent.answer.narrator import Narration
 from services.worker_agent.answer.verification import verify
 from services.worker_agent.events import Event
 from services.worker_agent.llm import Gateway
@@ -90,6 +92,12 @@ def text_of(e: Exploration, figures: list[Figure]) -> str:
         head = f"Kết quả {len(e.rows)} dòng: {shown}{more}."
     else:
         head = f"Kết quả {len(e.rows)} dòng, không có cột số."
+    return head + label_of(e)
+
+
+def label_of(e: Exploration) -> str:
+    """What every exploratory answer says after its figures: how it was read, and how far the
+    ways of writing agreed; written sentences or not, it is kept."""
     trust = (
         f" Khám phá: truy vấn do mô hình viết, không qua định nghĩa chỉ số; {e.agreeing}/6 cách "
         "viết cho cùng kết quả."
@@ -99,7 +107,7 @@ def text_of(e: Exploration, figures: list[Figure]) -> str:
         if e.decision == "review"
         else ""
     )
-    return head + trust + check
+    return trust + check
 
 
 def _keep_one_source(
@@ -260,6 +268,27 @@ async def answer_by_sql(
         )
     else:
         kind, status, body = "data", "answered", text_of(e, figures)
+    told: Narration | None = None
+    if kind == "data" and any(f.value is not None for f in figures):
+        # The sentences, as on the governed path (answer/narrator.py): numbers only as figure
+        # tags, post-checked; the exploratory label stays after them.
+        async with turn_trace.stepping("write_answer") as written:
+            written.detail = {"by": "template"}
+            told = await narrator.narrate(
+                gateway,
+                figures,
+                question=text,
+                metric_name="",
+                exempt_text=[v for f in figures for v in f.dimensions.values()],
+            )
+            if told is not None:
+                body = f"{told.text}{label_of(e)}"
+                models.append({"task": "narrate", "model_name": told.model, "tokens": told.tokens})
+                written.detail = {
+                    "by": "model",
+                    "sentences_dropped": told.sentences_dropped,
+                    "regenerated": told.regenerated,
+                }
     chart = _bar(figures, e.columns)
     await _store_answer(
         event,
@@ -276,6 +305,7 @@ async def answer_by_sql(
         query_run_id=e.query_run_id,
         trust=TRUST,
         consensus=(e.agreeing, len(e.tried)),
+        told=told,
     )
     return True
 
@@ -505,6 +535,7 @@ async def _store_answer(
     query_run_id: uuid.UUID | None,
     trust: str,
     consensus: tuple[int, int] | None,
+    told: Narration | None = None,
 ) -> None:
     """The answer, its plan and the question's status, then the events the stream waits for."""
     answer_id = uuid7()
@@ -530,10 +561,11 @@ async def _store_answer(
                 number_check=verify(
                     kind,
                     {
-                        "numbers_total": len(shown),
-                        "traced": len(shown),
-                        "untraceable_draft": 0,
-                        "regenerated": 0,
+                        "numbers_total": told.numbers_total if told else len(shown),
+                        "traced": told.numbers_total if told else len(shown),
+                        "untraceable_draft": told.untraceable_draft if told else 0,
+                        "regenerated": told.regenerated if told else 0,
+                        "sentences_dropped": told.sentences_dropped if told else 0,
                         "untraceable_final": 0,
                     },
                     figures=stored_figures,

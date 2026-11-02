@@ -410,3 +410,38 @@ async def test_a_table_without_a_display_name_is_named_by_its_semantic_entity(
     bank.ask(QUESTION)
     await drain()
     assert script.asked and "TABLE bank.loan -- Khoản vay" in script.asked[0][0]
+
+
+class Writer(Script):
+    """The SQL model as the script, and the main model writing the sentences with tags."""
+
+    def __init__(self, sqls: list[str], text: str) -> None:
+        super().__init__(sqls)
+        self.text = text
+        self.wrote: list[str] = []
+
+    async def json_chat(
+        self, role: str, system: str, user: str, output: type[Any], **kw: Any
+    ) -> Reply[Any]:
+        if role == "responder":
+            self.wrote.append(user)
+            return Reply(output.model_validate({"text": self.text}), "agent-main", 50, 5)
+        return await super().json_chat(role, system, user, output, **kw)
+
+
+async def test_an_exploratory_answer_is_written_in_sentences_and_keeps_its_label(
+    seed: Seed, credit: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The model writes the sentences from the figures, numbers only as tags (answer/narrator.py,
+    # as on the governed path); the exploratory label and the agreement stay after them.
+    bank = build(seed, credit, monkeypatch)
+    writer = Writer([GOOD[0], GOOD[1]] * 3, "Chi nhánh HN1 có {{F1}} khoản vay.")
+    q = asked(bank, writer, monkeypatch)
+    await drain()
+    status, kind, text, figures, *_ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    assert writer.wrote, "the main model was not asked to write"
+    assert text.startswith("Chi nhánh HN1 có "), text
+    assert "{{" not in text
+    assert text.endswith("6/6 cách viết cho cùng kết quả."), text
+    assert all(f["trust"] == "Khám phá (truy vấn do mô hình viết)" for f in figures)
