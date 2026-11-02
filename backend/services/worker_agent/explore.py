@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import re
+import unicodedata
 from collections.abc import Sequence
 from typing import Any
 
@@ -110,11 +111,28 @@ def note(asked: Period, chosen: Period, found: Sequence[D], grain: str) -> str:
     )
 
 
-def retold(question: str, asked: str, shown: str) -> str:
-    """The question as the model is shown it when another period is answered: the asked period's
-    words replaced by the period shown, so the answer does not say "năm nay" beside 2014's
-    figures; written differently from its chip, the period shown follows the question."""
-    pattern = re.compile(re.escape(asked), re.IGNORECASE)
-    if asked and pattern.search(question):
-        return pattern.sub(shown, question, count=1)
-    return f"{question} (số của {shown})"
+def _folded(text: str) -> tuple[str, list[int]]:
+    """`text` folded as libs.language.fold folds it, character by character, with the index in
+    `text` of each folded character, so a span found in the folded text maps back to the words."""
+    out: list[str] = []
+    where: list[int] = []
+    for at, ch in enumerate(unicodedata.normalize("NFC", text)):
+        base = unicodedata.normalize("NFD", ch.lower().replace("đ", "d"))
+        for c in base:
+            if unicodedata.category(c) != "Mn":
+                out.append(c)
+                where.append(at)
+    return "".join(out), where
+
+
+def retold(question: str, span: str, shown: str) -> str:
+    """The question as the model is shown it when another period is answered: the words the asked
+    period was read from (its folded `span`) replaced by the period shown, so the answer does not
+    say "năm nay" beside 2014's figures; not found, the period shown follows the question."""
+    text = unicodedata.normalize("NFC", question)
+    folded, where = _folded(text)
+    at = folded.find(span) if span else -1
+    if at < 0:
+        return f"{question} (số của {shown})"
+    start, end = where[at], where[at + len(span) - 1] + 1
+    return text[:start] + shown + text[end:]

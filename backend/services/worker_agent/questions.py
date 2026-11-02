@@ -2186,9 +2186,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                     every,
                     question=(
                         explore.retold(
-                            question.text,
-                            next((c.label for c in u.chips if c.kind == "period"), ""),
-                            shown_period,
+                            question.text, u.period.span if u.period else "", shown_period
                         )
                         if shown_period
                         else question.text
