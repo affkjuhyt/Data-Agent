@@ -10,6 +10,16 @@ metadata:
   labels: {app: python-sandbox, app.kubernetes.io/part-of: dataagent}
 automountServiceAccountToken: false
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: python-sandbox-env
+  namespace: dataagent-service
+  labels: {app: python-sandbox, app.kubernetes.io/part-of: dataagent}
+data:
+  # One run at a time: two askers' runs never share the pod at once; scale with replicas.
+  PYTHON_SANDBOX_CONCURRENCY: "1"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,10 +41,11 @@ spec:
       - name: python-sandbox
         image: dataagent/python-sandbox:latest
         imagePullPolicy: IfNotPresent
+        command: ["python", "-m", "services.python_sandbox.main"]
         ports:
         - {name: http, containerPort: 8140}
-        env:
-        - {name: PYTHON_SANDBOX_CONCURRENCY, value: "1"}
+        envFrom:
+        - configMapRef: {name: python-sandbox-env}
         readinessProbe:
           httpGet: {path: /healthz, port: http}
           periodSeconds: 10
@@ -69,4 +80,4 @@ metadata:
 spec:
   selector: {app: python-sandbox}
   ports:
-  - {name: http, port: 8140, targetPort: http}
+  - {name: http, port: 8140, targetPort: 8140}

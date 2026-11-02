@@ -12,5 +12,3 @@ COPY backend/libs/code_sandbox/ ./libs/code_sandbox/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/python_sandbox/ ./services/python_sandbox/
 USER app
-EXPOSE 8140
-CMD ["python", "-m", "services.python_sandbox.main"]
