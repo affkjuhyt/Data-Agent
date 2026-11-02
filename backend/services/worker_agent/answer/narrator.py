@@ -69,15 +69,27 @@ async def narrate(
     metric_name: str,
     exempt_text: list[str],
     hints: list[str] | None = None,
+    labels_per_sentence: bool = False,
 ) -> Narration | None:
+    """`labels_per_sentence`: a label is a row's cells (the exploratory path), so its numbers
+    are allowed only in a sentence citing that figure, not anywhere in the text."""
     shown = {f.key: f for f in figures if f.display_state == "shown" and f.value is not None}
     if not shown:
         return None
     allowed = {n for f in shown.values() for n in _NUMBER.findall(shown_value(f))}
     # A hint's own words ("trong 3 kỳ") may be repeated; its numbers are tags, removed here.
     plain_hints = [_TAG.sub("", h) for h in hints or []]
-    for text in [question, *exempt_text, *plain_hints, *(f.label for f in shown.values())]:
+    labels = [] if labels_per_sentence else [f.label for f in shown.values()]
+    for text in [question, *exempt_text, *plain_hints, *labels]:
         allowed.update(_NUMBER.findall(text))
+
+    def cited(sentence: str) -> set[str]:
+        if not labels_per_sentence:
+            return allowed
+        return allowed | {
+            n for k in _TAG.findall(sentence) if k in shown for n in _NUMBER.findall(shown[k].label)
+        }
+
     prompt = json.dumps(
         {
             "question": question,
@@ -101,13 +113,16 @@ async def narrate(
         tokens += reply.tokens
         model = reply.model
         tags = len(_TAG.findall(reply.content.text))
-        filled = _fill(reply.content.text, shown)
-        if filled is None or not filled.strip():
+        raw = [s for s in _SENTENCE.split(reply.content.text.strip()) if s]
+        parts = [(_fill(s, shown), cited(s)) for s in raw]
+        if not parts or any(f is None for f, _ in parts):
             continue
-        sentences = [s for s in _SENTENCE.split(filled.strip()) if s]
-        strays = [s for s in sentences if _stray(s, allowed)]
+        checked = [(f, ok) for f, ok in parts if f is not None]
+        filled = _fill(reply.content.text, shown) or ""
+        sentences = [f for f, _ in checked]
+        strays = [f for f, ok in checked if _stray(f, ok)]
         if attempt == 0:
-            draft_strays = sum(len(_stray(s, allowed)) for s in strays)
+            draft_strays = sum(len(_stray(f, ok)) for f, ok in checked)
         if not strays:
             return Narration(
                 filled.strip(),

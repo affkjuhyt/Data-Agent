@@ -279,7 +279,8 @@ async def answer_by_sql(
                 figures,
                 question=text,
                 metric_name="",
-                exempt_text=[v for f in figures for v in f.dimensions.values()],
+                exempt_text=[],
+                labels_per_sentence=True,
             )
             if told is not None:
                 body = f"{told.text}{label_of(e)}"

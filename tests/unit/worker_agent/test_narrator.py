@@ -87,3 +87,35 @@ async def test_a_sentence_still_untraceable_is_dropped_and_said() -> None:
 
 async def test_a_tag_it_was_not_given_is_never_filled() -> None:
     assert await run("Toàn hệ thống {{F9}}.", "Toàn hệ thống {{F9}}.") is None
+
+
+# Exploratory rows (sqlgen/answer.py): a label is a row's cells, data and not the question; its
+# numbers stay with that row's figure, so another column's cell cannot be written as a figure.
+ROWS = [
+    Figure("F1", "2012, 4401", decimal.Decimal("120"), None, 0, 0, "orders", {"y": "2012"}),
+    Figure("F2", "2013, 9305", decimal.Decimal("310"), None, 0, 1, "orders", {"y": "2013"}),
+]
+
+
+async def told(*texts: str) -> Any:
+    return await narrate(
+        Scripted(*texts),
+        ROWS,
+        question="Số đơn theo năm",
+        metric_name="",
+        exempt_text=[],
+        labels_per_sentence=True,
+    )
+
+
+async def test_a_rows_label_may_be_written_beside_its_own_figure() -> None:
+    out = await told("Năm 2013 có {{F2}} đơn, năm 2012 có {{F1}}.")
+    assert out.text == "Năm 2013 có 310 đơn, năm 2012 có 120." and out.regenerated == 0
+
+
+async def test_a_rows_label_is_not_a_number_anywhere_else() -> None:
+    out = await told(
+        "Tổng là 9305 đơn. Năm 2013 có {{F2}}.", "Tổng là 9305 đơn. Năm 2013 có {{F2}}."
+    )
+    assert out.text == "Năm 2013 có 310. Đã bỏ 1 câu có số không truy được nguồn."
+    assert out.untraceable_draft == 1
