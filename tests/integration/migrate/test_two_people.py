@@ -183,7 +183,7 @@ def test_a_misspelled_column_raises_instead_of_guarding_nothing(db, args):
             "CREATE TRIGGER bad_two_people BEFORE INSERT ON catalog.dataset_version "
             f"FOR EACH ROW EXECUTE FUNCTION org.two_people({args})"
         )
-    with pytest.raises(psycopg2.Error):
+    with pytest.raises(psycopg2.Error, match="org.two_people"):
         _no_creator_version(db, org)
 
 
