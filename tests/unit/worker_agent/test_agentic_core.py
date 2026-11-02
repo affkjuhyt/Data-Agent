@@ -248,3 +248,40 @@ def test_the_worker_reads_the_sandbox_answer_as_untrusted() -> None:
     ):
         assert not client._shaped(bad).ok
     assert client._shaped({"ok": "yes", "columns": [], "rows": []}).ok is False
+
+
+def test_a_year_is_a_period_not_a_member_to_look_up() -> None:
+    import datetime
+    import types
+
+    from libs import clock
+    from services.worker_agent.agentic.tools.catalog import SearchValues, SearchValuesArgs
+
+    ctx = types.SimpleNamespace(
+        today=datetime.date(2026, 11, 2),
+        layer=types.SimpleNamespace(vocabulary=types.SimpleNamespace(calendar=clock.DEFAULT)),
+    )
+    found = asyncio.run(
+        SearchValues().run(ctx, SearchValuesArgs(text="2013", dimension="calendar_year"))  # type: ignore[arg-type]
+    )
+    assert found.ok
+    assert '"2013-01-01/2014-01-01"' in found.observation
+
+
+def test_an_analysis_that_fetched_nothing_hands_the_question_back() -> None:
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+
+    ws = Workspace()
+    ws.add(title="rỗng", columns=["value"], rows=[], trust="certified")
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(ws=ws),  # type: ignore[arg-type]
+        plan=_plan({"id": "s1", "tool": "query_metric", "instruction": "x", "status": "failed"}),
+    )
+    asyncio.run(engine.compose(state))
+    assert state.handed_back and state.composition == []

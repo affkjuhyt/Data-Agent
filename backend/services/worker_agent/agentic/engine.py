@@ -46,6 +46,7 @@ from services.worker_agent.progress import is_cancel_requested, publish
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.text import find_period
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,7 @@ async def prepare(s: State) -> None:
             layer=layer,
             model=s.model,
             ws=Workspace(),
+            period=find_period(question.text, today, layer.vocabulary.calendar),
         )
 
 
@@ -201,6 +203,13 @@ def _situation(s: State) -> str:
     if s.history:
         parts.append(f"<conversation>\n{s.history}\n</conversation>")
     parts.append(f"<question>\n{s.ctx.question}\n</question>")
+    if s.ctx.period is not None:
+        p_ = s.ctx.period
+        parts.append(
+            f"Kỳ câu hỏi nêu (đọc theo quy tắc, đúng): {p_.label} = period "
+            f'"{p_.start.isoformat()}/{p_.end.isoformat()}" của query_metric. '
+            "Đây là kỳ, không phải giá trị để search_values."
+        )
     return "\n\n".join(parts)
 
 
@@ -453,6 +462,20 @@ def _facts_text(known: dict[str, verify.Fact]) -> str:
 async def compose(s: State) -> None:
     assert s.ctx is not None and s.plan is not None
     ws = s.ctx.ws
+    if (
+        s.plan.mode == "analyze"
+        and not ws.citations
+        and not any(d.rows for d in ws.datasets.values())
+    ):
+        # Nothing was fetched: rather than write that it cannot answer, hand the question to the
+        # governed path (rules, exploratory SQL, documents), which may still find the figure.
+        await turn_trace.record_step(
+            "handover",
+            target="Chưa lấy được số liệu; chuyển sang cách trả lời chuẩn.",
+            detail={"steps": p.view(s.plan)},
+        )
+        s.handed_back = True
+        return
     known = verify.facts(ws)
     citations = "\n".join(
         f"[{c['index']}] {c['source']}: {c['snippet'][:300]}" for c in ws.citations
@@ -750,7 +773,7 @@ def _graph() -> StateGraph[State]:
         "replan", lambda s: "persist" if s.clarify is not None else "act"
     )
     g.node("review", review).route("review", after_review)
-    g.node("compose", compose).edge("compose", "persist")
+    g.node("compose", compose).route("compose", lambda s: END if s.handed_back else "persist")
     g.node("persist", persist).edge("persist", END)
     return g
 

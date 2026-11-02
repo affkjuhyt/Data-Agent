@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from services.worker_agent.agentic.workspace import Workspace
 from services.worker_agent.llm import Gateway
 from services.worker_agent.semantic.loader import SpaceLayer
+from services.worker_agent.understand.text import FoundPeriod
 
 # What an observation may be at most when it goes back to the model.
 MAX_OBSERVATION = 3000
@@ -42,6 +43,9 @@ class ToolContext:
     layer: SpaceLayer
     model: Gateway
     ws: Workspace
+    # The period the question names, read by rule (find_period): a year or a month in the
+    # question is a period, never a member to look up.
+    period: FoundPeriod | None = None
     # Model calls made inside tools (sqlgen), for the receipt.
     models: list[dict[str, Any]] = field(default_factory=list)
     step_id: str = ""

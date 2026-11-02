@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 
 from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResult, cut
 from services.worker_agent.understand import analyst
-from services.worker_agent.understand.text import norm
+from services.worker_agent.understand.packs.base import iso_answer
+from services.worker_agent.understand.text import find_period, norm
 
 
 class SearchCatalogArgs(BaseModel):
@@ -80,6 +81,19 @@ class SearchValues(Tool):
     Args = SearchValuesArgs
 
     async def run(self, ctx: ToolContext, args: SearchValuesArgs) -> ToolResult:  # type: ignore[override]
+        # A bare "2013" or "2013-Q3" too: the rule reader wants "năm 2013" around it.
+        period = find_period(args.text, ctx.today, ctx.layer.vocabulary.calendar) or iso_answer(
+            args.text
+        )
+        if period is not None:
+            # "2013" on a year dimension: a period, which query_metric takes as its period.
+            iso = f"{period.start.isoformat()}/{period.end.isoformat()}"
+            return ToolResult(
+                True,
+                f"'{args.text}' là một kỳ ({period.label}), không phải giá trị của chiều: "
+                f'dùng period="{iso}" trong query_metric',
+                detail={"period": period.label},
+            )
         found = analyst.search_values(ctx.layer, args.text, args.dimension)
         return ToolResult(
             bool(found),

@@ -71,6 +71,7 @@ ACTIONS: dict[str, tuple[str, str]] = {
     "plan": ("plan", "Lập kế hoạch"),
     "replan": ("plan", "Điều chỉnh kế hoạch"),
     "review": ("plan", "Rà soát"),
+    "handover": ("plan", "Chuyển sang cách trả lời chuẩn"),
     "search_catalog": ("tool_call", "Tìm trong danh mục"),
     "describe_metric": ("tool_call", "Xem định nghĩa chỉ số"),
     "search_values": ("tool_call", "Tìm giá trị"),
