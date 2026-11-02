@@ -7,14 +7,14 @@ which the check ignores.
 
 Fresh installs get the column from the generated dataagent.sql; this revision is idempotent.
 
-Revision ID: v3_0025
-Revises: v3_0024
+Revision ID: v3_0026
+Revises: v3_0025
 """
 
 from alembic import op
 
-revision = "v3_0025"
-down_revision = "v3_0024"
+revision = "v3_0026"
+down_revision = "v3_0025"
 branch_labels = None
 depends_on = None
 
@@ -31,4 +31,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise NotImplementedError("v3_0025 is not reversed")
+    raise NotImplementedError("v3_0026 is not reversed")

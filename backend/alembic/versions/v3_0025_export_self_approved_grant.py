@@ -7,15 +7,15 @@ write that column, so such an export never left waiting_approval.
 
 Fresh installs get the grant from the generated dataagent_audit.sql; this revision is idempotent.
 
-Revision ID: v3_0024
-Revises: v3_0023
+Revision ID: v3_0025
+Revises: v3_0024
 """
 
 import psycopg
 from alembic import op
 
-revision = "v3_0024"
-down_revision = "v3_0023"
+revision = "v3_0025"
+down_revision = "v3_0024"
 branch_labels = None
 depends_on = None
 
@@ -35,4 +35,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise NotImplementedError("v3_0024 is not reversed")
+    raise NotImplementedError("v3_0025 is not reversed")

@@ -12,16 +12,16 @@ reads that.
 Fresh installs get all of it from the generated dataagent.sql / dataagent_audit.sql; this revision
 is idempotent so both paths end equal. Unnamed CHECKs of the baseline are found by definition.
 
-Revision ID: v3_0023
-Revises: v3_0022
+Revision ID: v3_0024
+Revises: v3_0023
 """
 
 import psycopg
 import sqlalchemy as sa
 from alembic import op
 
-revision = "v3_0023"
-down_revision = "v3_0022"
+revision = "v3_0024"
+down_revision = "v3_0023"
 branch_labels = None
 depends_on = None
 
@@ -196,4 +196,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise NotImplementedError("v3_0023 is not reversed")
+    raise NotImplementedError("v3_0024 is not reversed")
