@@ -75,6 +75,9 @@ async def test_created_job_materializes_rows_and_registers_a_local_dataset(
         return _credentials()
 
     monkeypatch.setattr(worker.Reader, "read", _read)
+    # One row a batch (RES-16): the asyncpg cursor is read in batches, the first replacing the
+    # table and the others appending to it.
+    monkeypatch.setattr(worker, "BATCH_ROWS", 1)
 
     await worker.handle(
         Event(

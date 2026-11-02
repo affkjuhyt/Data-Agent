@@ -22,12 +22,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import queue
 import re
 import ssl
-from collections.abc import Mapping
+import threading
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from typing import Any, Protocol
 
 Rows = tuple[list[dict[str, str]], list[list[Any]]]
+# A batch of a streamed read: the columns (the same in every batch) and up to `batch` rows.
+Batch = tuple[list[dict[str, str]], list[list[Any]]]
 
 
 class DriverError(RuntimeError):
@@ -64,6 +68,28 @@ def ssl_mode(source: Source) -> str:
     return mode
 
 
+def _columns(cursor: Any) -> list[dict[str, str]]:
+    return [
+        {"name": str(item[0]), "type": str(item[1] or "unknown")}
+        for item in (cursor.description or ())
+    ]
+
+
+def _batches(cursor: Any, batch: int) -> Iterator[Batch]:
+    """The cursor's rows `batch` at a time; one empty batch for an empty result, so the caller
+    still learns the columns."""
+    columns = _columns(cursor)
+    sent = False
+    while True:
+        rows = cursor.fetchmany(batch)
+        if not rows:
+            break
+        sent = True
+        yield columns, [list(row) for row in rows]
+    if not sent:
+        yield columns, []
+
+
 def _rows(cursor: Any) -> Rows:
     description = cursor.description or ()
     columns = [{"name": str(item[0]), "type": str(item[1] or "unknown")} for item in description]
@@ -87,27 +113,62 @@ def _mysql_tls(mode: str, ca: Any) -> dict[str, Any]:
     }
 
 
+def _mysql_connect(source: Source, user: str, password: str, timeout_s: int, **extra: Any) -> Any:
+    import pymysql
+
+    options = _options(source)
+    connect: dict[str, Any] = {
+        "host": source.host,
+        "port": source.port or 3306,
+        "user": user,
+        "password": password,
+        "database": source.database_name,
+        "connect_timeout": min(timeout_s, 30),
+        "read_timeout": timeout_s,
+        "write_timeout": timeout_s,
+        "charset": str(options.get("charset") or "utf8mb4"),
+        **extra,
+    }
+    mode = ssl_mode(source)
+    if mode != "disable":
+        connect["ssl"] = _mysql_tls(mode, options.get("ssl_ca"))
+    return pymysql.connect(**connect)
+
+
+def mysql_batches(
+    source: Source, user: str, password: str, sql: str, timeout_s: int, batch: int
+) -> Iterator[Batch]:
+    """`sql` read `batch` rows at a time through a server-side cursor (the client holds one batch,
+    not the result), in a READ ONLY transaction rolled back at the end."""
+    try:
+        import pymysql.cursors
+
+        conn = _mysql_connect(
+            source, user, password, timeout_s, cursorclass=pymysql.cursors.SSCursor
+        )
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SET SESSION TRANSACTION READ ONLY")
+                cursor.execute("START TRANSACTION READ ONLY")
+                options = _options(source)
+                if options.get("schema"):
+                    cursor.execute(f"USE `{str(options['schema']).replace('`', '``')}`")
+                cursor.execute(sql)
+                yield from _batches(cursor, batch)
+            conn.rollback()
+        finally:
+            conn.close()
+    except DriverError:
+        raise
+    except Exception as exc:
+        raise DriverError(f"mysql query failed ({type(exc).__name__})") from exc
+
+
 def mysql(source: Source, user: str, password: str, sql: str, timeout_s: int) -> Rows:
     """`sql` in a READ ONLY transaction (rolled back), in the source's schema when it names one."""
     try:
-        import pymysql
-
         options = _options(source)
-        connect: dict[str, Any] = {
-            "host": source.host,
-            "port": source.port or 3306,
-            "user": user,
-            "password": password,
-            "database": source.database_name,
-            "connect_timeout": min(timeout_s, 30),
-            "read_timeout": timeout_s,
-            "write_timeout": timeout_s,
-            "charset": str(options.get("charset") or "utf8mb4"),
-        }
-        mode = ssl_mode(source)
-        if mode != "disable":
-            connect["ssl"] = _mysql_tls(mode, options.get("ssl_ca"))
-        conn = pymysql.connect(**connect)
+        conn = _mysql_connect(source, user, password, timeout_s)
         try:
             with conn.cursor() as cursor:
                 cursor.execute("SET SESSION TRANSACTION READ ONLY")
@@ -164,6 +225,47 @@ def sqlserver(
                 result = _rows(cursor)
             conn.rollback()
             return result
+        finally:
+            conn.close()
+    except DriverError:
+        raise
+    except Exception as exc:
+        raise DriverError(f"sqlserver query failed ({type(exc).__name__})") from exc
+
+
+def sqlserver_batches(
+    source: Source, user: str, password: str, sql: str, timeout_s: int, batch: int
+) -> Iterator[Batch]:
+    """`sql` read `batch` rows at a time (FreeTDS streams the result set), in a transaction rolled
+    back at the end."""
+    mode = ssl_mode(source)
+    if mode in ("verify-ca", "verify-full"):
+        raise DriverError(
+            "sqlserver cannot verify the server certificate; set conn_options.sslmode to"
+            " require or disable"
+        )
+    try:
+        import pymssql
+
+        options = _options(source)
+        conn = pymssql.connect(
+            server=str(source.host),
+            port=str(int(source.port or 1433)),
+            user=user,
+            password=password,
+            database=source.database_name or "master",
+            login_timeout=min(timeout_s, 30),
+            timeout=timeout_s,
+            appname="dataagent-ingest",
+            tds_version=str(options.get("tds_version") or "7.4"),
+            encryption="off" if mode == "disable" else "require",
+        )
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("BEGIN TRANSACTION")
+                cursor.execute(sql)
+                yield from _batches(cursor, batch)
+            conn.rollback()
         finally:
             conn.close()
     except DriverError:
@@ -233,3 +335,109 @@ async def read(source: Source, user: str, password: str, sql: str, timeout_s: in
     if source.kind == "clickhouse":
         return await clickhouse(source, user, password, sql, timeout_s)
     raise DriverError(f"no driver for a {source.kind} source")
+
+
+async def _clickhouse_batches(
+    source: Source, user: str, password: str, sql: str, timeout_s: int, batch: int
+) -> AsyncIterator[Batch]:
+    """`sql` over ClickHouse's HTTP interface, one JSON row per line, `batch` rows at a time."""
+    import httpx
+
+    async with httpx.AsyncClient(timeout=timeout_s) as http:
+        try:
+            async with http.stream(
+                "POST",
+                clickhouse_url(source),
+                params={
+                    "database": source.database_name or "default",
+                    "default_format": "JSONCompactEachRowWithNamesAndTypes",
+                    "readonly": "1",
+                },
+                content=sql.encode(),
+                auth=(user, password),
+            ) as response:
+                if response.status_code != 200:
+                    raise DriverError(f"clickhouse query failed ({response.status_code})")
+                lines = response.aiter_lines()
+                names = json.loads(await anext(lines))
+                types = json.loads(await anext(lines))
+                columns = [
+                    {"name": str(n), "type": str(t)} for n, t in zip(names, types, strict=True)
+                ]
+                rows: list[list[Any]] = []
+                sent = False
+                async for line in lines:
+                    if not line.strip():
+                        continue
+                    rows.append(json.loads(line))
+                    if len(rows) >= batch:
+                        sent = True
+                        yield columns, rows
+                        rows = []
+                if rows or not sent:
+                    yield columns, rows
+        except httpx.HTTPError as exc:
+            raise DriverError(f"clickhouse query failed ({type(exc).__name__})") from exc
+        except StopAsyncIteration as exc:
+            raise DriverError("clickhouse query failed (no header)") from exc
+
+
+async def _threaded(produce: Callable[[], Iterator[Batch]]) -> AsyncIterator[Batch]:
+    """A blocking driver's batches, read in a thread and handed over through a queue of two:
+    the driver waits while the caller writes, so at most a few batches are held at once."""
+    handoff: queue.Queue[Any] = queue.Queue(maxsize=2)
+    done = object()
+    stop = threading.Event()
+
+    def run() -> None:
+        try:
+            for item in produce():
+                while not stop.is_set():
+                    try:
+                        handoff.put(item, timeout=1)
+                        break
+                    except queue.Full:
+                        continue
+                if stop.is_set():
+                    return
+            handoff.put(done)
+        except DriverError as exc:
+            handoff.put(exc)
+        except Exception as exc:  # noqa: BLE001 - any failure must reach the waiting caller
+            handoff.put(DriverError(f"source read failed ({type(exc).__name__})"))
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    try:
+        while True:
+            item = await asyncio.to_thread(handoff.get)
+            if item is done:
+                return
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+    finally:
+        stop.set()
+
+
+async def stream(
+    source: Source, user: str, password: str, sql: str, timeout_s: int, batch: int
+) -> AsyncIterator[Batch]:
+    """`sql` on a MySQL, SQL Server or ClickHouse source, `batch` rows at a time: a table larger
+    than memory is read without holding it (RES-16). The columns come with every batch; an empty
+    result is one empty batch."""
+    if source.kind == "mysql":
+        async for item in _threaded(
+            lambda: mysql_batches(source, user, password, sql, timeout_s, batch)
+        ):
+            yield item
+    elif source.kind == "sqlserver":
+        async for item in _threaded(
+            lambda: sqlserver_batches(source, user, password, sql, timeout_s, batch)
+        ):
+            yield item
+    elif source.kind == "clickhouse":
+        async for item in _clickhouse_batches(source, user, password, sql, timeout_s, batch):
+            yield item
+    else:
+        raise DriverError(f"no driver for a {source.kind} source")

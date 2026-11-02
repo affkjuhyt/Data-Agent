@@ -88,6 +88,9 @@ async def test_a_mysql_table_is_loaded_and_catalogued(
         return Credentials("reader", "pw")
 
     monkeypatch.setattr(worker.Reader, "read", _read)
+    # One row a batch (RES-16): the table is created by the first batch and appended to by the
+    # second, and the second is checked against the types the first set.
+    monkeypatch.setattr(worker, "BATCH_ROWS", 1)
     await worker.handle(
         Event(
             uuid.uuid4(),
@@ -129,4 +132,60 @@ async def test_a_mysql_table_is_loaded_and_catalogued(
 async def test_an_engine_without_a_driver_is_refused() -> None:
     source = worker.catalog.Source(kind="oracle", conn_options={})
     with pytest.raises(ValueError, match="not wired"):
-        await worker._read_source(source, "t", uuid.uuid4())
+        async for _ in worker._source_batches(source, "t", uuid.uuid4()):
+            pass
+
+
+async def test_a_table_over_the_ceiling_fails_and_writes_nothing(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch, mysql: dict[str, Any]
+) -> None:
+    org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Ceiling")
+    user = seed.row(
+        "org.app_user", org_id=org, external_id="kc-cap", username="cap", display_name="Cap"
+    )
+    space = seed.row("org.data_space", org_id=org, code="DS-CAP", name="Cap", steward_id=user)
+    source = seed.row(
+        "catalog.source",
+        org_id=org,
+        data_space_id=space,
+        name="Shop MySQL",
+        kind="mysql",
+        host=mysql["host"],
+        port=mysql["port"],
+        database_name="shop",
+        conn_options=json.dumps({"sslmode": "disable"}),
+        secret_ref=f"secret/tenants/{org}/sources/shop",
+        mode="ingest",
+        status="active",
+    )
+    job = seed.row(
+        "ingest.ingestion_job",
+        org_id=org,
+        data_space_id=space,
+        source_id=source,
+        name="Capped",
+        mode="full",
+        source_object="sales",
+        created_by=user,
+        updated_by=user,
+    )
+
+    async def _read(_self: worker.Reader, _org: uuid.UUID, _ref: str) -> Credentials:
+        return Credentials("reader", "pw")
+
+    monkeypatch.setattr(worker.Reader, "read", _read)
+    monkeypatch.setattr(worker, "BATCH_ROWS", 1)
+    monkeypatch.setattr(worker, "MAX_ROWS", 1)
+    await worker.handle(
+        Event(
+            uuid.uuid4(),
+            org,
+            "ingestion_job.created",
+            "ingestion_job",
+            job,
+            {"job_id": str(job), "principal_id": str(user)},
+        )
+    )
+    status, error = seed.one("SELECT status, error FROM ingest.job_run WHERE job_id = %s", job)
+    assert status == "failed" and "more than 1 rows" in error
+    assert seed.one("SELECT count(*) FROM catalog.dataset WHERE org_id = %s", org) == 0

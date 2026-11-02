@@ -10,8 +10,10 @@ from __future__ import annotations
 import datetime
 import decimal
 import json
+import os
 import re
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 import asyncpg
@@ -84,30 +86,66 @@ def _workspace_type(values: list[Any]) -> str:
     return "text"
 
 
-async def _read_driver(
+# Rows read and written per batch, and at most per run (RES-16): a table larger than memory is
+# copied a batch at a time, and one larger than the ceiling fails rather than fill the workspace.
+BATCH_ROWS = int(os.environ.get("INGEST_BATCH_ROWS", "5000"))
+MAX_ROWS = int(os.environ.get("INGEST_MAX_ROWS", "2000000"))
+
+Columns = list[dict[str, str]]
+
+
+def _fits(kind: str, value: Any) -> bool:
+    """Whether a value read later can go in a column typed from the first batch."""
+    if value is None or kind == "text":
+        return True
+    if kind == "boolean":
+        return isinstance(value, bool)
+    if kind == "numeric":
+        return isinstance(value, int | float | decimal.Decimal) and not isinstance(value, bool)
+    return isinstance(value, datetime.date) and not isinstance(value, datetime.datetime)
+
+
+async def _driver_batches(
     source: catalog.Source, schema: str, table: str, org_id: uuid.UUID
-) -> tuple[list[dict[str, str]], list[list[Any]]]:
+) -> AsyncIterator[tuple[Columns, list[list[Any]]]]:
     if source.kind not in _QUOTED:
         raise ValueError(f"source connector {source.kind} is not wired for ingestion")
     credentials = await Reader().read(org_id, source.secret_ref)
-    names, rows = await source_drivers.read(
+    columns: Columns | None = None
+    async for names, rows in source_drivers.stream(
         source,
         credentials.user,
         credentials.password,
         "SELECT * FROM " + _QUOTED[source.kind].format(schema=schema, table=table),
         min(int(source.query_timeout_s or 120), 300),
-    )
-    labels = [c["name"] for c in names]
-    columns = [
-        {"name": name, "label": label, "type": _workspace_type([row[i] for row in rows])}
-        for i, (name, label) in enumerate(zip(tabular.physical_names(labels), labels, strict=True))
-    ]
-    return columns, [[_plain(value) for value in row] for row in rows]
+        BATCH_ROWS,
+    ):
+        if columns is None:
+            # The drivers name types by their own codes; the first batch's values say the same
+            # in Python's terms, and every later batch must agree.
+            labels = [c["name"] for c in names]
+            columns = [
+                {"name": name, "label": label, "type": _workspace_type([row[i] for row in rows])}
+                for i, (name, label) in enumerate(
+                    zip(tabular.physical_names(labels), labels, strict=True)
+                )
+            ]
+        else:
+            for row in rows:
+                for column, value in zip(columns, row, strict=True):
+                    if not _fits(column["type"], value):
+                        raise ValueError(
+                            f"column {column['label']} changed type after the first"
+                            f" {BATCH_ROWS} rows ({column['type']} expected)"
+                        )
+        yield columns, [[_plain(value) for value in row] for row in rows]
 
 
-async def _read_source(
+async def _source_batches(
     source: catalog.Source, object_name: str, org_id: uuid.UUID
-) -> tuple[list[dict[str, str]], list[list[Any]]]:
+) -> AsyncIterator[tuple[Columns, list[list[Any]]]]:
+    """The source table a batch at a time, with its columns (the same in every batch); an empty
+    table is one empty batch."""
     parts = object_name.split(".")
     options = source.conn_options or {}
     if len(parts) == 1:
@@ -124,7 +162,9 @@ async def _read_source(
         raise ValueError("source_object must be table or schema.table")
     schema, table = _identifier(schema), _identifier(table)
     if source.kind != "postgresql":
-        return await _read_driver(source, schema, table, org_id)
+        async for item in _driver_batches(source, schema, table, org_id):
+            yield item
+        return
     credentials = await Reader().read(org_id, source.secret_ref)
     conn = await asyncpg.connect(
         host=source.host,
@@ -137,18 +177,32 @@ async def _read_source(
         statement_cache_size=0,
     )
     try:
-        statement = await conn.prepare(f'SELECT * FROM "{schema}"."{table}"')
-        records = await statement.fetch()
-        attributes = statement.get_attributes()
-        # The source's own names ("CustomerID", "Ngày hạch toán") are labels; the table takes
-        # physical ones (GEN-13).
-        columns = [
-            {"name": name, "label": attr.name, "type": _WORKSPACE_TYPES.get(attr.type.name, "text")}
-            for name, attr in zip(
-                tabular.physical_names([a.name for a in attributes]), attributes, strict=True
-            )
-        ]
-        return columns, [[_plain(value) for value in record] for record in records]
+        # A server-side cursor in a read-only transaction: the worker holds one batch at a time.
+        async with conn.transaction(readonly=True):
+            statement = await conn.prepare(f'SELECT * FROM "{schema}"."{table}"')
+            attributes = statement.get_attributes()
+            # The source's own names ("CustomerID", "Ngày hạch toán") are labels; the table takes
+            # physical ones (GEN-13).
+            columns = [
+                {
+                    "name": name,
+                    "label": attr.name,
+                    "type": _WORKSPACE_TYPES.get(attr.type.name, "text"),
+                }
+                for name, attr in zip(
+                    tabular.physical_names([a.name for a in attributes]), attributes, strict=True
+                )
+            ]
+            cursor = await statement.cursor()
+            sent = False
+            while True:
+                records = await cursor.fetch(BATCH_ROWS)
+                if not records:
+                    break
+                sent = True
+                yield columns, [[_plain(value) for value in record] for record in records]
+            if not sent:
+                yield columns, []
     finally:
         await conn.close()
 
@@ -159,14 +213,25 @@ def _table_name(job: ingest.IngestionJob) -> str:
 
 
 async def _materialize(
-    session: Any, table_name: str, columns: list[dict[str, str]], rows: list[list[Any]]
+    session: Any,
+    table_name: str,
+    columns: list[dict[str, str]],
+    rows: list[list[Any]],
+    *,
+    replace: bool,
 ) -> None:
     typed = [{"name": column["name"], "type": column["type"]} for column in columns]
     await session.execute(
         text(
-            "SELECT public.da_materialize_upload(:table_name, CAST(:columns AS jsonb), CAST(:rows AS jsonb), true)"
+            "SELECT public.da_materialize_upload(:table_name, CAST(:columns AS jsonb),"
+            " CAST(:rows AS jsonb), :replace)"
         ),
-        {"table_name": table_name, "columns": json.dumps(typed), "rows": json.dumps(rows)},
+        {
+            "table_name": table_name,
+            "columns": json.dumps(typed),
+            "rows": json.dumps(rows),
+            "replace": replace,
+        },
     )
 
 
@@ -215,17 +280,26 @@ async def handle(event: Event) -> None:
                 raise ValueError(
                     "only full ingestion is wired; incremental and CDC need cursor adapters"
                 )
-            columns, rows = await _read_source(source, job.source_object, event.org_id)
             dataset_id = job.target_dataset_id or uuid.uuid4()
             table_name = _table_name(job)
-            await _materialize(session, table_name, columns, rows)
+            # The first batch replaces the table, the others append to it, all in this session's
+            # transaction: a run that fails half way leaves the previous copy as it was.
+            columns: Columns = []
+            read = 0
+            async for columns, batch in _source_batches(source, job.source_object, event.org_id):
+                read += len(batch)
+                if read > MAX_ROWS:
+                    raise ValueError(
+                        f"the source table has more than {MAX_ROWS} rows; ingest it incrementally"
+                    )
+                await _materialize(session, table_name, columns, batch, replace=read == len(batch))
             await session.execute(
                 update(ingest.JobRun)
                 .where(ingest.JobRun.id == run_id)
                 .values(
                     status="succeeded",
-                    rows_read=len(rows),
-                    rows_written=len(rows),
+                    rows_read=read,
+                    rows_written=read,
                     finished_at=datetime.datetime.now(datetime.UTC),
                 )
             )
@@ -246,7 +320,7 @@ async def handle(event: Event) -> None:
                         schema_name="workspace",
                         table_name=table_name,
                         display_name=job.name,
-                        row_estimate=len(rows),
+                        row_estimate=read,
                         enabled=True,
                         scope="data_space",
                         quality_state="unknown",

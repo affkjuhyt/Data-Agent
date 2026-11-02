@@ -536,6 +536,18 @@ Check it (the server image has no CLI; admin-tools does):
 --image=temporalio/admin-tools:1.32.1 -- temporal operator cluster health --address temporal:8380`
 answers `SERVING`.
 
+## 10e2. Source-table ingestion (worker-ingest)
+
+A full ingestion job copies a source table into the workspace a batch at a time (RES-16): PostgreSQL
+through an asyncpg server-side cursor in a read-only transaction, MySQL through a server-side cursor,
+SQL Server through `fetchmany`, ClickHouse as one JSON row per line (`libs/source_drivers.stream`).
+The first batch replaces the workspace table and the others append to it, all in one transaction, so
+a run that fails half way leaves the previous copy as it was. `INGEST_BATCH_ROWS` (default 5000)
+sets the batch, `INGEST_MAX_ROWS` (default 2 000 000) the ceiling: a larger table fails with "more
+than N rows; ingest it incrementally" and writes nothing. A driver's column types are read from the
+first batch's values; a later value that does not fit (a number column turning to text) fails the run
+naming the column.
+
 ## 10f. python-sandbox (the agent's analysis code)
 
 The dynamic agent's `analyze` tool (`worker_agent/agentic/tools/analyze.py`) has the model write
