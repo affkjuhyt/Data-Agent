@@ -786,6 +786,36 @@ async def test_period_number_approve_self_named_when_the_org_allows_it(
         )
     assert filed.status_code == 200, filed.text
     assert self_approvals(ps.org) == ["period_number.approve.proposed"]
+    # The inbox opens the request from hitl.requested (as the worker does): the filer, who is
+    # also its assignee and excluded by name, decides it.
+    approval = dict(ps.events(sept))["period.override_approval_requested"]
+    assert approval["excluded_approver_ids"] == [str(ps.users["controller"])]
+    request = ps.seed.row(
+        "inbox.hitl_request",
+        id=uuid.UUID(approval["hitl_request_id"]),
+        org_id=ps.org,
+        data_space_id=ps.space,
+        kind="period_exception",
+        title="Duyệt số nộp khác số tính",
+        source_service="period",
+        source_ref=sept,
+        assignee_id=ps.users["controller"],
+        created_by=ps.users["controller"],
+        context=Json({"excluded_approver_ids": [str(ps.users["controller"])]}),
+    )
+    async with client(ps) as api:
+        decided = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            json={"decision": "approve"},
+            headers=ps.headers("controller"),
+        )
+    assert decided.status_code == 200, decided.text
+    assert decided.json()["status"] == "approved"
+    assert self_approvals(ps.org) == [
+        "period_number.approve.proposed",
+        "hitl.excluded_approver",
+        "hitl.approve",
+    ]
 
 
 # AC-10-03-05

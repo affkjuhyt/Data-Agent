@@ -1057,6 +1057,18 @@ async def test_access_request_decide_self_approved_when_the_org_allows_it(
     assert self_approvals(world.org) == ["access_request.decide"]
 
 
+async def test_access_request_reject_own_logged_when_the_org_allows_it(
+    world: World, self_approvals: Any
+) -> None:
+    world.seed.allow_self_approval(world.org)
+    async with client(world) as api:
+        sent = (await _request(api, world, "ask", who="steward")).json()
+        own = await _decide(api, world, sent["id"], decision="reject", note="Không cần")
+    assert own.status_code == 200, own.text
+    assert own.json()["status"] == "rejected"
+    assert self_approvals(world.org) == ["access_request.decide"]
+
+
 # AC-11-07-02
 @pytest.mark.req("AC-11-07-02")
 async def test_narrowing_grants_less_never_more(world: World) -> None:

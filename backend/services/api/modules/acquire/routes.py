@@ -829,7 +829,7 @@ async def legal_review(
             legal_review_due_at=row.legal_review_due_at,
         )
         _status_changed(session, principal, row, previous)
-        if own_source and body.legal_status == "approved":
+        if own_source:
             await record_self_approval(
                 principal,
                 step="crawl_source.legal_review",

@@ -350,7 +350,7 @@ async def _decide_step(
 ) -> bool:
     """Records the caller's decision on the current step of a chain; True when the chain is done.
     A step the caller decides after deciding an earlier one, allowed by the org's switch, is
-    added to `self_steps` for the caller to log."""
+    added to `self_steps` for the caller to log (whatever the decision)."""
     if body.decision not in ("approve", "reject"):
         raise Problem(
             422, "validation_failed", "A step of an approval chain is approved or rejected."
@@ -358,22 +358,23 @@ async def _decide_step(
     current = next(s for s in steps if s.decision is None)
     if current.approver_id is not None and current.approver_id != principal.user_id:
         raise Problem(403, "forbidden", "This approval step is assigned to someone else.")
-    if any(s.approver_id == principal.user_id for s in steps if s.decision is not None):
+    again = any(s.approver_id == principal.user_id for s in steps if s.decision is not None)
+    if again and not principal.self_approval:
         # BR-132 / BR-62: each step of a chain is a different person, unless the org allows it.
-        if not principal.self_approval:
-            raise Problem(
-                422,
-                "business_rule_violated",
-                "Each approval step must be decided by a different person (BR-132).",
-            )
-        if body.decision == "approve":
-            self_steps.append("hitl.chain_step")
+        raise Problem(
+            422,
+            "business_rule_violated",
+            "Each approval step must be decided by a different person (BR-132).",
+        )
     if current.approver_id is None and current.approver_role not in _capabilities_for(
         row, principal, org_caps
     ):
         raise Problem(
             403, "forbidden", f"This step is decided by someone holding {current.approver_role}."
         )
+    if again:
+        # Logged once every check has passed, so a refused step leaves no row.
+        self_steps.append("hitl.chain_step")
     current.approver_id = principal.user_id
     current.decision = body.decision
     current.note = body.note
@@ -452,8 +453,7 @@ async def resolve_hitl(
             # reassign: they would pick who approves their own request. The org's switch lifts it.
             if not principal.self_approval:
                 raise Problem(403, "forbidden", "You may not decide this request.")
-            if body.decision == "approve":
-                self_steps.append("hitl.excluded_approver")
+            self_steps.append("hitl.excluded_approver")
         if body.decision == "approve" and two_people(
             principal,
             row.created_by,
@@ -490,6 +490,7 @@ async def resolve_hitl(
                 )
             )
             await session.flush()
+            await _record_self_steps(principal, row.id, self_steps)
             return _detail(row, steps)
         if chained and not await _decide_step(
             session, row, steps, body, principal, org_caps, self_steps

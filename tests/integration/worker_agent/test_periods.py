@@ -406,6 +406,36 @@ async def test_a_manual_number_waits_for_its_controller(
     assert approver == seed.one("SELECT assignee_id FROM inbox.hitl_request WHERE id = %s", request)
 
 
+@pytest.mark.parametrize(("switch", "status"), [(False, "closed"), (True, "filed")])
+async def test_a_manual_number_the_filer_approves_is_frozen_only_when_the_org_allows_it(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    switch: bool,
+    status: str,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid = closed(bank, monkeypatch)
+    await drain()
+    request = override(bank, pid)
+    seed.conn.cursor().execute(
+        "UPDATE inbox.hitl_request SET assignee_id = %s WHERE id = %s",
+        (str(bank.user), str(request)),
+    )
+    seed.conn.cursor().execute(
+        "UPDATE org.organization SET allow_self_approval = %s WHERE id = %s",
+        (switch, str(bank.org)),
+    )
+    file(bank, pid, request)
+    await drain()
+    await decide(bank, request, "approved", pid)
+    assert seed.one("SELECT status FROM period.period_close WHERE id = %s", pid) == status
+    assert seed.one(
+        "SELECT count(*) FROM period.published_result WHERE period_close_id = %s AND manual_override",
+        pid,
+    ) == (1 if switch else 0)
+
+
 async def test_a_refused_manual_number_leaves_the_period_to_file_again(
     seed: Seed,
     warehouse: dict[str, Any],  # noqa: F811

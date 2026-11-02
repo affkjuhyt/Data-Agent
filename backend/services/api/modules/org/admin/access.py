@@ -339,7 +339,7 @@ async def decide_access_request(
             },
         )
         await session.flush()
-        if own_request and granting:
+        if own_request:
             await record_self_approval(
                 principal,
                 step="access_request.decide",

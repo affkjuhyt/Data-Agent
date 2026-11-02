@@ -34,7 +34,7 @@ from typing import Any
 from sqlalchemy import delete, literal, select, update
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import catalog, inbox
+from libs.dataagent_db.models import catalog, inbox, org
 from libs.dataagent_db.models import period as pd
 from services.worker_agent import storage
 from services.worker_agent.events import Event, Handler
@@ -489,12 +489,21 @@ async def publish(org_id: uuid.UUID, close_id: uuid.UUID) -> str | None:
     ):
         return None
     overrides: dict[uuid.UUID, tuple[dict[str, Any], inbox.HitlRequest]] = {}
+    async with scoped_session(ROLE, org_id) as session:
+        # The api let the filer decide their own number only under the org's switch (BR-133 is
+        # kept for every other org); the worker applies the same switch.
+        self_approval = bool(
+            await session.scalar(
+                select(org.Organization.allow_self_approval).where(org.Organization.id == org_id)
+            )
+        )
     for o in expected:
         r = requests[uuid.UUID(str(o["approval_id"]))]
         ctx = r.context or {}
         if (
             r.status != "approved"
-            or r.resolved_by in (None, filer)
+            or r.resolved_by is None
+            or (r.resolved_by == filer and not self_approval)
             # What was approved is what is frozen: the request shows the same metric and number.
             or str(ctx.get("metric_version_id")) != str(o["metric_version_id"])
             or str(ctx.get("reported_value")) != str(o["reported_value"])

@@ -40,6 +40,9 @@ async def _audit_export(event: Event) -> None:
             "status": "queued",
             "approved_by": resolver,
             "approved_at": datetime.datetime.now(datetime.UTC),
+            # The API let the requester decide only because the org's switch was on; the CHECK
+            # wants that said on the row (the audit database cannot read the switch itself).
+            "self_approved": audit.ExportJob.requested_by == resolver,
         }
         if approved
         else {"status": "failed"}

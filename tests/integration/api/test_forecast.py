@@ -909,6 +909,26 @@ async def test_forecast_model_decide_self_approved_when_the_org_allows_it(
     assert self_approvals(fx.org) == ["forecast_model.decide"]
 
 
+async def test_forecast_model_reject_own_version_logged_when_the_org_allows_it(
+    fx: Fx, self_approvals: Any
+) -> None:
+    fx.seed.allow_self_approval(fx.org)
+    by_owner = fx.version(fx.model, 3, created_by="owner")
+    async with client(fx) as api:
+        sent = await api.post(
+            f"/v1/forecast-model-versions/{by_owner}:submit", headers=fx.headers("owner")
+        )
+        assert sent.status_code == 200, sent.text
+        rejected = await api.post(
+            f"/v1/forecast-model-versions/{by_owner}:reject",
+            json={"reason": "Không đạt"},
+            headers=fx.headers("owner"),
+        )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["status"] == "rejected"
+    assert self_approvals(fx.org) == ["forecast_model.decide"]
+
+
 # AC-15-03-07
 @pytest.mark.req("AC-15-03-07")
 async def test_an_overfitted_version_is_refused_by_the_database(fx: Fx) -> None:

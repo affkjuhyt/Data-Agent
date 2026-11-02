@@ -397,7 +397,7 @@ async def reject_version(
                 409, "invalid_state", f"The version is {row.status}, not pending_approval."
             )
         # Approve and reject are one decision (UC-15-04 step 3) under one set of rules.
-        _check_decider(row, owner, principal)
+        self_decided = _check_decider(row, owner, principal)
         row.status = "rejected"
         row.updated_by, row.updated_at = principal.user_id, store.now()
         # AC-15-04-02: the reason stays with the decision.
@@ -415,6 +415,13 @@ async def reject_version(
             rejected_by=principal.user_id,
         )
         await session.flush()
+        if self_decided:
+            await record_self_approval(
+                principal,
+                step="forecast_model.decide",
+                object_kind="model_version",
+                object_id=row.id,
+            )
         return ModelVersionView.model_validate(row)
 
 
