@@ -189,3 +189,64 @@ async def test_a_table_over_the_ceiling_fails_and_writes_nothing(
     status, error = seed.one("SELECT status, error FROM ingest.job_run WHERE job_id = %s", job)
     assert status == "failed" and "more than 1 rows" in error
     assert seed.one("SELECT count(*) FROM catalog.dataset WHERE org_id = %s", org) == 0
+
+
+async def test_a_mysql_incremental_job_keeps_its_cursor(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch, mysql: dict[str, Any]
+) -> None:
+    """RES-17 through a driver: the bounds are literals, the cursor the source's own maximum."""
+    org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="MySQL inc")
+    user = seed.row(
+        "org.app_user", org_id=org, external_id="kc-myi", username="myi", display_name="MyI"
+    )
+    space = seed.row("org.data_space", org_id=org, code="DS-MYI", name="MyI", steward_id=user)
+    source = seed.row(
+        "catalog.source",
+        org_id=org,
+        data_space_id=space,
+        name="Shop MySQL",
+        kind="mysql",
+        host=mysql["host"],
+        port=mysql["port"],
+        database_name="shop",
+        conn_options=json.dumps({"sslmode": "disable"}),
+        secret_ref=f"secret/tenants/{org}/sources/shop",
+        mode="ingest",
+        status="active",
+    )
+    job = seed.row(
+        "ingest.ingestion_job",
+        org_id=org,
+        data_space_id=space,
+        source_id=source,
+        name="Sales by day",
+        mode="incremental",
+        cursor_column="sold_on",
+        source_object="sales",
+        created_by=user,
+        updated_by=user,
+    )
+
+    async def _read(_self: worker.Reader, _org: uuid.UUID, _ref: str) -> Credentials:
+        return Credentials("reader", "pw")
+
+    monkeypatch.setattr(worker.Reader, "read", _read)
+    for _ in range(2):
+        await worker.handle(
+            Event(
+                uuid.uuid4(),
+                org,
+                "ingestion_job.created",
+                "ingestion_job",
+                job,
+                {"job_id": str(job), "principal_id": str(user)},
+            )
+        )
+    assert (
+        seed.one("SELECT cursor_value FROM ingest.ingestion_job WHERE id = %s", job) == "2026-09-30"
+    )
+    table = seed.one("SELECT table_name FROM catalog.dataset WHERE org_id = %s", org)
+    assert seed.one(f'SELECT count(*) FROM workspace."{table}"') == 2
+    assert seed.all(
+        "SELECT rows_read FROM ingest.job_run WHERE job_id = %s ORDER BY started_at", job
+    ) == [(2,), (0,)]

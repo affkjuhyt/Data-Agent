@@ -14,6 +14,7 @@ import os
 import re
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any
 
 import asyncpg
@@ -105,8 +106,42 @@ def _fits(kind: str, value: Any) -> bool:
     return isinstance(value, datetime.date) and not isinstance(value, datetime.datetime)
 
 
+@dataclass(frozen=True)
+class Window:
+    """An incremental run's slice of the source (RES-17): the cursor column, above the value the
+    last run reached (none on the first run), up to the maximum sampled when this run started."""
+
+    column: str
+    after: str | None
+    upto: str
+
+
+def _literal(value: str) -> str:
+    """A cursor value as a SQL literal for the DB-API engines: a number as it is, anything else
+    quoted with its quotes doubled (the value is the source's own maximum, read back as text)."""
+    if re.fullmatch(r"-?\d+(\.\d+)?", value):
+        return value
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _driver_where(kind: str, window: Window | None) -> str:
+    if window is None:
+        return ""
+    column = _QUOTED[kind].split(".")[0].format(schema=_identifier(window.column))
+    upto = f"{column} <= {_literal(window.upto)}"
+    return (
+        f" WHERE {column} > {_literal(window.after)} AND {upto}"
+        if window.after
+        else f" WHERE {upto}"
+    )
+
+
 async def _driver_batches(
-    source: catalog.Source, schema: str, table: str, org_id: uuid.UUID
+    source: catalog.Source,
+    schema: str,
+    table: str,
+    org_id: uuid.UUID,
+    window: Window | None = None,
 ) -> AsyncIterator[tuple[Columns, list[list[Any]]]]:
     if source.kind not in _QUOTED:
         raise ValueError(f"source connector {source.kind} is not wired for ingestion")
@@ -116,7 +151,9 @@ async def _driver_batches(
         source,
         credentials.user,
         credentials.password,
-        "SELECT * FROM " + _QUOTED[source.kind].format(schema=schema, table=table),
+        "SELECT * FROM "
+        + _QUOTED[source.kind].format(schema=schema, table=table)
+        + _driver_where(source.kind, window),
         min(int(source.query_timeout_s or 120), 300),
         BATCH_ROWS,
     ):
@@ -141,11 +178,7 @@ async def _driver_batches(
         yield columns, [[_plain(value) for value in row] for row in rows]
 
 
-async def _source_batches(
-    source: catalog.Source, object_name: str, org_id: uuid.UUID
-) -> AsyncIterator[tuple[Columns, list[list[Any]]]]:
-    """The source table a batch at a time, with its columns (the same in every batch); an empty
-    table is one empty batch."""
+def _table_of(source: catalog.Source, object_name: str) -> tuple[str, str]:
     parts = object_name.split(".")
     options = source.conn_options or {}
     if len(parts) == 1:
@@ -160,13 +193,13 @@ async def _source_batches(
         schema, table = parts
     else:
         raise ValueError("source_object must be table or schema.table")
-    schema, table = _identifier(schema), _identifier(table)
-    if source.kind != "postgresql":
-        async for item in _driver_batches(source, schema, table, org_id):
-            yield item
-        return
+    return _identifier(schema), _identifier(table)
+
+
+async def _pg_connect(source: catalog.Source, org_id: uuid.UUID) -> asyncpg.Connection:
+    options = source.conn_options or {}
     credentials = await Reader().read(org_id, source.secret_ref)
-    conn = await asyncpg.connect(
+    return await asyncpg.connect(
         host=source.host,
         port=source.port or 5432,
         database=source.database_name,
@@ -176,10 +209,74 @@ async def _source_batches(
         timeout=min(source.query_timeout_s, 30),
         statement_cache_size=0,
     )
+
+
+async def _max_cursor(
+    source: catalog.Source, object_name: str, column: str, org_id: uuid.UUID
+) -> tuple[str | None, str]:
+    """The cursor column's maximum now, as text, and its type: the upper bound of this run, fixed
+    before reading so rows written meanwhile wait for the next run instead of being half read."""
+    schema, table = _table_of(source, object_name)
+    column = _identifier(column)
+    if source.kind == "postgresql":
+        conn = await _pg_connect(source, org_id)
+        try:
+            row = await conn.fetchrow(
+                f'SELECT max("{column}")::text AS upto, pg_typeof(max("{column}"))::text AS kind'
+                f' FROM "{schema}"."{table}"'
+            )
+        finally:
+            await conn.close()
+        return (row["upto"], row["kind"]) if row else (None, "text")
+    if source.kind not in _QUOTED:
+        raise ValueError(f"source connector {source.kind} is not wired for ingestion")
+    credentials = await Reader().read(org_id, source.secret_ref)
+    quoted = _QUOTED[source.kind].split(".")[0].format(schema=column)
+    _, rows = await source_drivers.read(
+        source,
+        credentials.user,
+        credentials.password,
+        f"SELECT MAX({quoted}) FROM " + _QUOTED[source.kind].format(schema=schema, table=table),
+        min(int(source.query_timeout_s or 120), 300),
+    )
+    value = rows[0][0] if rows and rows[0] else None
+    return (None if value is None else str(_plain(value)), "text")
+
+
+async def _source_batches(
+    source: catalog.Source,
+    object_name: str,
+    org_id: uuid.UUID,
+    window: Window | None = None,
+    cursor_type: str = "text",
+) -> AsyncIterator[tuple[Columns, list[list[Any]]]]:
+    """The source table a batch at a time, with its columns (the same in every batch); an empty
+    table is one empty batch. With a window, only the rows of that slice of the cursor."""
+    schema, table = _table_of(source, object_name)
+    if source.kind != "postgresql":
+        async for item in _driver_batches(source, schema, table, org_id, window):
+            yield item
+        return
+    conn = await _pg_connect(source, org_id)
+    where, params = "", []
+    if window is not None:
+        # The bounds go as text parameters cast to the column's own type (read with the maximum):
+        # asyncpg wants a Python value of a typed parameter, and the cursor is kept as text.
+        if not re.fullmatch(r"[a-z0-9 _\[\]]+", cursor_type):
+            raise ValueError(f"cursor column type {cursor_type} is not supported")
+        column = _identifier(window.column)
+        if window.after is None:
+            where, params = f' WHERE "{column}" <= $1::text::{cursor_type}', [window.upto]
+        else:
+            where = (
+                f' WHERE "{column}" > $1::text::{cursor_type}'
+                f' AND "{column}" <= $2::text::{cursor_type}'
+            )
+            params = [window.after, window.upto]
     try:
         # A server-side cursor in a read-only transaction: the worker holds one batch at a time.
         async with conn.transaction(readonly=True):
-            statement = await conn.prepare(f'SELECT * FROM "{schema}"."{table}"')
+            statement = await conn.prepare(f'SELECT * FROM "{schema}"."{table}"{where}')
             attributes = statement.get_attributes()
             # The source's own names ("CustomerID", "Ngày hạch toán") are labels; the table takes
             # physical ones (GEN-13).
@@ -193,7 +290,7 @@ async def _source_batches(
                     tabular.physical_names([a.name for a in attributes]), attributes, strict=True
                 )
             ]
-            cursor = await statement.cursor()
+            cursor = await statement.cursor(*params)
             sent = False
             while True:
                 records = await cursor.fetch(BATCH_ROWS)
@@ -205,6 +302,12 @@ async def _source_batches(
                 yield columns, []
     finally:
         await conn.close()
+
+
+async def _no_batches() -> AsyncIterator[tuple[Columns, list[list[Any]]]]:
+    """An incremental run with nothing above the cursor reads nothing."""
+    return
+    yield
 
 
 def _table_name(job: ingest.IngestionJob) -> str:
@@ -276,23 +379,57 @@ async def handle(event: Event) -> None:
             )
             if job is None or source is None:
                 raise ValueError("ingestion job or source not found")
-            if job.mode != "full":
-                raise ValueError(
-                    "only full ingestion is wired; incremental and CDC need cursor adapters"
-                )
+            if job.mode not in ("full", "incremental"):
+                raise ValueError("CDC ingestion is not wired yet")
             dataset_id = job.target_dataset_id or uuid.uuid4()
             table_name = _table_name(job)
-            # The first batch replaces the table, the others append to it, all in this session's
-            # transaction: a run that fails half way leaves the previous copy as it was.
+            window: Window | None = None
+            cursor_type = "text"
+            if job.mode == "incremental":
+                if not job.cursor_column:
+                    raise ValueError("an incremental job needs cursor_column")
+                upto, cursor_type = await _max_cursor(
+                    source, job.source_object, job.cursor_column, event.org_id
+                )
+                if upto is not None and upto != job.cursor_value:
+                    window = Window(job.cursor_column, job.cursor_value, upto)
+            # Full: the first batch replaces the table, the others append to it. Incremental: every
+            # batch appends (the table is made on the first run). All in this session's
+            # transaction, the cursor reached too: a run that fails half way leaves the previous
+            # copy and the previous cursor as they were (state never ahead of the data).
             columns: Columns = []
             read = 0
-            async for columns, batch in _source_batches(source, job.source_object, event.org_id):
+            nothing_new = job.mode == "incremental" and window is None
+            batches = (
+                _source_batches(source, job.source_object, event.org_id, window, cursor_type)
+                if not nothing_new
+                else _no_batches()
+            )
+            async for columns, batch in batches:
                 read += len(batch)
                 if read > MAX_ROWS:
                     raise ValueError(
                         f"the source table has more than {MAX_ROWS} rows; ingest it incrementally"
                     )
-                await _materialize(session, table_name, columns, batch, replace=read == len(batch))
+                if batch or job.mode == "full":
+                    await _materialize(
+                        session,
+                        table_name,
+                        columns,
+                        batch,
+                        replace=job.mode == "full" and read == len(batch),
+                    )
+            if window is not None:
+                await session.execute(
+                    update(ingest.IngestionJob)
+                    .where(ingest.IngestionJob.id == job.id)
+                    .values(cursor_value=window.upto)
+                )
+                await session.execute(
+                    update(ingest.JobRun)
+                    .where(ingest.JobRun.id == run_id)
+                    .values(cursor_from=window.after, cursor_to=window.upto)
+                )
             await session.execute(
                 update(ingest.JobRun)
                 .where(ingest.JobRun.id == run_id)
@@ -306,8 +443,14 @@ async def handle(event: Event) -> None:
             await session.execute(
                 update(ingest.IngestionJob)
                 .where(ingest.IngestionJob.id == job.id)
-                .values(target_dataset_id=dataset_id, consecutive_failures=0)
+                .values(
+                    target_dataset_id=dataset_id if columns else job.target_dataset_id,
+                    consecutive_failures=0,
+                )
             )
+        if not columns:
+            # An incremental run with nothing new before any table was made: nothing to catalogue.
+            return
         async with scoped_session(CATALOG_ROLE, event.org_id, principal_id) as session:
             if await session.get(catalog.Dataset, dataset_id) is None:
                 session.add(

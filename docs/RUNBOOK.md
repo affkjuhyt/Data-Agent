@@ -548,6 +548,14 @@ than N rows; ingest it incrementally" and writes nothing. A driver's column type
 first batch's values; a later value that does not fit (a number column turning to text) fails the run
 naming the column.
 
+An incremental job (`mode = incremental`, `cursor_column`) reads only the rows above the cursor it
+reached last (RES-17): each run samples `MAX(cursor)` when it starts and reads `cursor > last AND
+cursor <= that maximum`, so rows written meanwhile wait for the next run; every batch appends, and
+`ingestion_job.cursor_value` (with `job_run.cursor_from/to`) is written in the same transaction as
+the rows, never ahead of them. The cursor must only grow: rows updated in place under a "last
+modified" cursor are appended again (there is no merge on a key yet), and rows deleted at the source
+stay. CDC is not wired.
+
 ## 10f. python-sandbox (the agent's analysis code)
 
 The dynamic agent's `analyze` tool (`worker_agent/agentic/tools/analyze.py`) has the model write

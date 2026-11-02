@@ -271,7 +271,7 @@ người dùng, P2 nâng chất lượng trả lời, P3 mở rộng năng lực
 | ID | Mức | Việc | Nguồn | Công sức | TT |
 | --- | --- | --- | --- | --- | --- |
 | RES-16 | P1 | Đọc theo luồng thay vì nạp cả bảng vào bộ nhớ: con trỏ phía server / keyset, ghi từng trang vào bảng tạm rồi đổi hoặc merge | Airbyte | M | done: đọc theo lô (asyncpg cursor, MySQL SSCursor, SQL Server fetchmany, ClickHouse theo dòng), lô đầu thay bảng và các lô sau ghi nối trong một giao dịch, trần INGEST_MAX_ROWS |
-| RES-17 | P2 | Nạp tăng dần theo cột cursor: chốt cận trên lúc bắt đầu, ghi dữ liệu và trạng thái cursor trong cùng giao dịch, merge khi có khoá chính; tuỳ chọn bỏ ngày hôm nay | Airbyte (protocol, CDK) | M | todo |
+| RES-17 | P2 | Nạp tăng dần theo cột cursor: chốt cận trên lúc bắt đầu, ghi dữ liệu và trạng thái cursor trong cùng giao dịch, merge khi có khoá chính; tuỳ chọn bỏ ngày hôm nay | Airbyte (protocol, CDK) | M | doing: cursor tăng dần (Postgres tham số ép kiểu, MySQL/SQL Server/ClickHouse literal), cận trên chốt đầu lượt, cursor ghi cùng giao dịch với dữ liệu; còn: merge theo khoá chính, bỏ ngày hôm nay |
 | RES-18 | P2 | Khám phá nguồn: bảng, cột, khoá chính, cột có thể làm cursor, quyền SELECT từng bảng; chỉ thêm cột khi schema đổi, lệch kiểu thì báo lỗi cấu hình | Airbyte | S | todo |
 | RES-19 | P2 | Phân loại lỗi lượt chạy: cấu hình / tạm thời / hệ thống; chỉ lỗi tạm thời mới thử lại | Airbyte | S | todo |
 | RES-20 | P3 | Nguồn REST bằng manifest do mình viết trên Airbyte CDK (MIT), không dùng connector ELv2; xem trước 50 dòng khi khai báo nguồn; agent soạn nháp manifest từ tài liệu API, người duyệt | Airbyte (CDK MIT; Builder ý tưởng) | L | todo |
