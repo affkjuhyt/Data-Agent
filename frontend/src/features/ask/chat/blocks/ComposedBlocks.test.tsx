@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { AnswerBlockView } from '../../types';
 import { ComposedBlocks, isComposed } from './ComposedBlocks';
@@ -28,5 +28,22 @@ describe('ComposedBlocks', () => {
 
   it('leaves an answer of the older shape to the fixed layout', () => {
     expect(isComposed([{ type: 'markdown', id: 'a-markdown', content: 'x' }] as unknown as AnswerBlockView[])).toBe(false);
+  });
+
+  it('offers the chart types the rows fit and redraws on a click', () => {
+    const chart = [
+      {
+        type: 'chart',
+        id: 'c1',
+        composed: true,
+        alternatives: ['line', 'bar'],
+        spec: { chart_type: 'line', title: 'Doanh thu', x_key: 'Tháng', y_keys: ['v'], data: [{ Tháng: '2013-01', v: 1 }, { Tháng: '2013-02', v: 2 }] },
+      },
+    ] as unknown as AnswerBlockView[];
+    render(<ComposedBlocks blocks={chart} />);
+    const group = screen.getByRole('group', { name: 'Kiểu biểu đồ' });
+    expect(group).toHaveTextContent('Đường');
+    fireEvent.click(screen.getByRole('button', { name: 'Cột' }));
+    expect(screen.getByRole('button', { name: 'Cột' })).toHaveAttribute('aria-pressed', 'true');
   });
 });

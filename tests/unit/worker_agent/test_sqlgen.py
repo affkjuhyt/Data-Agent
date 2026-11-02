@@ -216,3 +216,33 @@ def test_common_words_of_a_label_link_nothing() -> None:
     assert (
         link("Có bao nhiêu khách hàng mua qua Internet năm 2013", Schema((other,), ())).tables == []
     )
+
+
+def test_a_statement_the_source_refused_is_diagnosed_then_rewritten() -> None:
+    import asyncio
+
+    from services.worker_agent.llm import Reply
+    from services.worker_agent.sqlgen.generate import Candidate, Diagnosis, diagnose_and_repair
+
+    asked: list[str] = []
+
+    class Model:
+        async def json_chat(self, role, system, user, output, **_):  # type: ignore[no-untyped-def]
+            asked.append(user)
+            if output is Diagnosis:
+                return Reply(Diagnosis(reasoning="the city is on the branch table"), "m", 5, 1)
+            return Reply(output(sql="SELECT 1 FROM a.b;"), "m", 7, 1)
+
+    fixed = asyncio.run(
+        diagnose_and_repair(
+            Model(),  # type: ignore[arg-type]
+            "dư nợ theo thành phố",
+            CHECKED,
+            "postgres",
+            Candidate("skeleton", "SELECT city FROM a.loans", tokens=3),
+            'column "city" does not exist',
+        )
+    )
+    assert fixed.sql == "SELECT 1 FROM a.b"
+    assert fixed.tokens == 3 + 5 + 7
+    assert "does not exist" in asked[0] and "the city is on the branch table" in asked[1]

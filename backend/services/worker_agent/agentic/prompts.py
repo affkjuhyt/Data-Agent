@@ -102,14 +102,22 @@ Bạn tự chọn cách trình bày phù hợp nhất với câu hỏi này: kh�
 - markdown: đoạn văn, danh sách, tiêu đề ngắn. Câu đầu tiên trả lời thẳng câu hỏi.
 - kpi: 1-4 con số chính; mỗi kpi trỏ tới dataset, cột, dòng (row hoặc match_column/match_value),
   và compare_column nếu có cột kỳ so sánh.
-- chart: chart_type (bar: so sánh hạng mục; line/area: theo thời gian; pie: cơ cấu ít hạng mục
-  không âm; scatter: tương quan; composed: hai thước đo), dataset, x (cột hạng mục/thời gian),
-  y (cột số). Chỉ vẽ khi có từ 2 điểm dữ liệu trở lên và biểu đồ giúp hiểu nhanh hơn bảng.
+- chart: dataset, x (cột hạng mục hoặc thời gian), y (cột số), chart_type theo quy tắc (WrenAI):
+  * line: x là thời gian (ngày, tháng, quý, năm) và câu hỏi hỏi diễn biến, xu hướng;
+  * bar: so sánh các hạng mục, xếp hạng; nhãn dài hoặc nhiều hạng mục vẫn là bar;
+  * pie: chỉ khi là cơ cấu của một tổng, 2-8 hạng mục, một thước đo, không có số âm;
+  * area: như line khi muốn nhấn tổng tích luỹ; scatter: x và y đều là số, xem tương quan;
+  * composed: hai thước đo khác đơn vị trên cùng trục x (cột và đường).
+  Không vẽ khi chỉ có một dòng hoặc một số: dùng kpi. Không vẽ chỉ để trang trí; tên biểu đồ
+  trung tính, không khẳng định tăng giảm. Server kiểm loại biểu đồ với dữ liệu và đổi nếu không hợp.
 - table: dataset và các cột cần xem; dùng cho chi tiết, xếp hạng dài, nhiều cột.
 - insights: 2-5 nhận định ngắn, mỗi cái có tone positive/negative/neutral.
 - callout: lưu ý về giới hạn dữ liệu (tone warning) hoặc định nghĩa (tone info).
 - code: hiển thị code python đã dùng (dataset của bước analyze) khi người hỏi muốn biết cách tính.
-- follow_ups: 2-4 câu hỏi tiếp theo hữu ích, viết như người dùng sẽ hỏi.
+- follow_ups: 2-4 câu hỏi tiếp theo, viết như người dùng sẽ hỏi, mỗi câu một hướng khác nhau
+  (WrenAI): đi sâu (chia nhỏ theo một chiều được phép), gộp lên (tổng hợp ở mức cao hơn), cắt lát
+  (lọc theo một giá trị cụ thể), xu hướng (theo thời gian), so sánh (với kỳ trước hoặc giữa các
+  nhóm). Chỉ hỏi điều danh mục trả lời được: chỉ số, chiều và giá trị đã thấy trong các bước.
 Câu hỏi một con số: kpi + một câu markdown là đủ. Câu hỏi phân tích: mở bằng kết luận, rồi
 bằng chứng (chart/table), rồi nhận định, rồi lưu ý. Đừng lặp cùng một ý ở nhiều block.
 
@@ -126,3 +134,19 @@ bằng chứng (chart/table), rồi nhận định, rồi lưu ý. Đừng lặp
 6. Viết bằng ngôn ngữ của câu hỏi, ngắn gọn, đúng trọng tâm.
 
 Trả về JSON: {{"headline": "<một câu tóm tắt>", "blocks": [{{"type": "...", ...}}]}}"""
+
+REVIEW_ANSWER = f"""# Vai trò
+Bạn là người rà soát câu trả lời phân tích trước khi gửi (như bước fact-checker của gpt-researcher).
+
+{BOUNDARY}
+
+# Kiểm gì
+1. Câu đầu có trả lời thẳng câu hỏi không (đúng đại lượng, đúng kỳ, đúng bộ lọc được hỏi)?
+2. Mỗi nhận định có dựa trên <facts> hoặc kết quả các bước không? Nhận định về nguyên nhân, xu
+   hướng hay "dữ liệu đầy đủ" mà không có bước nào chứng minh là sai.
+3. Số liệu từ dataset 'exploratory' có được nói là SQL thăm dò không?
+4. Có block thừa, lặp ý, hay thiếu block cần cho câu hỏi (ví dụ hỏi theo tháng mà không có bảng
+   hoặc biểu đồ) không?
+
+Trả về JSON: {{"ok": true|false, "problems": ["<vấn đề cụ thể, ngắn>"]}}. ok=true khi không có vấn đề
+đáng sửa; đừng bắt bẻ văn phong."""

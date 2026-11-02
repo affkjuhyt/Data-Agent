@@ -8,6 +8,8 @@ chooses what to show and how; it never writes a figure into a chart, a table or 
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -28,6 +30,81 @@ ChartType = Literal["bar", "line", "area", "pie", "scatter", "composed"]
 # Chart types the client draws; anything else falls back to bar.
 CHART_TYPES = {"bar", "line", "area", "pie", "scatter", "composed", "radar", "radialBar"}
 MAX_CHART_POINTS = 120
+
+
+@dataclass(frozen=True)
+class ChartRole:
+    """What a chart type needs of its columns (Data-Analysis-Agent's chart registry, WrenAI's chart
+    rules): the kind of x, how many measures, how many rows, and whether measures must be >= 0."""
+
+    x: Literal["time", "category", "number", "any"]
+    measures: tuple[int, int]
+    rows: tuple[int, int]
+    non_negative: bool = False
+
+
+CHART_ROLES: dict[str, ChartRole] = {
+    "line": ChartRole("time", (1, 4), (2, MAX_CHART_POINTS)),
+    "area": ChartRole("time", (1, 3), (2, MAX_CHART_POINTS)),
+    "bar": ChartRole("any", (1, 4), (2, 50)),
+    "composed": ChartRole("any", (2, 3), (2, 60)),
+    # A share of a whole: few members, one measure, nothing negative.
+    "pie": ChartRole("category", (1, 1), (2, 8), non_negative=True),
+    "scatter": ChartRole("number", (1, 1), (3, MAX_CHART_POINTS)),
+}
+_TIME_WORDS = (
+    "ngày",
+    "tháng",
+    "quý",
+    "năm",
+    "tuần",
+    "kỳ",
+    "date",
+    "day",
+    "month",
+    "quarter",
+    "year",
+    "week",
+    "period",
+    "time",
+)
+_TIME_VALUE = re.compile(
+    r"^\d{4}(-\d{2}(-\d{2})?|-q[1-4]|q[1-4])?$|^(q[1-4]|t?\d{1,2})[/-]\d{4}$", re.I
+)
+
+
+def _x_kind(column: str, values: list[Any]) -> str:
+    if any(w in column.lower() for w in _TIME_WORDS) or (
+        values and all(_TIME_VALUE.match(str(v).strip()) for v in values if v is not None)
+    ):
+        return "time"
+    if values and all(number(v) is not None for v in values if v is not None):
+        return "number"
+    return "category"
+
+
+def chart_fits(chart_type: str, x_kind: str, measures: list[list[float | None]], rows: int) -> bool:
+    role = CHART_ROLES.get(chart_type)
+    if role is None:
+        return False
+    if role.x != "any" and role.x != x_kind:
+        return False
+    if not role.measures[0] <= len(measures) <= role.measures[1]:
+        return False
+    if not role.rows[0] <= rows <= role.rows[1]:
+        return False
+    return not (role.non_negative and any(v is not None and v < 0 for m in measures for v in m))
+
+
+def fitting_charts(x_kind: str, measures: list[list[float | None]], rows: int) -> list[str]:
+    """The chart types this data fits, the most fitting first: a line along time, a bar across
+    categories, a scatter of two numbers."""
+    order = {
+        "time": ["line", "bar", "area", "composed"],
+        "category": ["bar", "pie", "composed"],
+        "number": ["scatter", "bar", "line"],
+    }[x_kind]
+    return [t for t in order if chart_fits(t, x_kind, measures, rows)]
 
 
 class KpiDraft(BaseModel):
@@ -184,7 +261,16 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
         ][:3]
         if not y:
             raise BlockError(f"dataset {ds.id} không có cột số để vẽ")
-        chart_type = draft.chart_type if draft.chart_type in CHART_TYPES else "bar"
+        shown_rows = ds.rows[:MAX_CHART_POINTS]
+        x_values = [plain(r[ds.columns.index(x)]) for r in shown_rows]
+        measures = [[number(r[ds.columns.index(c)]) for r in shown_rows] for c in y]
+        fits = fitting_charts(_x_kind(x, x_values), measures, len(shown_rows))
+        if not fits:
+            # No chart fits these rows (one row, too many members): they are shown as a table.
+            return materialize(
+                draft.model_copy(update={"type": "table", "columns": [x, *y]}), ws, block_id
+            )
+        chart_type = draft.chart_type if draft.chart_type in fits else fits[0]
         data = []
         for r in ds.rows[:MAX_CHART_POINTS]:
             point: dict[str, Any] = {x: plain(r[ds.columns.index(x)])}
@@ -202,5 +288,6 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
             spec["series"] = [
                 {"key": c, "type": "bar" if i == 0 else "line"} for i, c in enumerate(y)
             ]
-        return {**base, "spec": spec, "unit": ds.unit, **_source(ds)}
+        # The other types the same rows fit: the chart's switcher offers them (chart adjustment).
+        return {**base, "spec": spec, "alternatives": fits, "unit": ds.unit, **_source(ds)}
     raise BlockError(f"không biết block {t}")

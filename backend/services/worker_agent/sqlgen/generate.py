@@ -45,6 +45,18 @@ class Draft(BaseModel):
     sql: str
 
 
+class Diagnosis(BaseModel):
+    reasoning: str
+
+
+# After WrenAI's SQL correction (sql_diagnosis, then sql_correction): the model first says why the
+# statement failed, in a sentence or two, and only then rewrites it with that reason in front of it.
+DIAGNOSE = """You review a read-only {dialect} SELECT statement that failed when the source ran it.
+From the tables below, the question and the error, say in one or two sentences what in the
+statement is wrong (a column on the wrong table, a missing join, a type mismatch, a function the
+dialect does not have, …). Do not write SQL. Answer only JSON: {{"reasoning": "<why it failed>"}}."""
+
+
 @dataclass
 class Candidate:
     method: str
@@ -139,4 +151,32 @@ async def repair(
     )
     fixed = await _ask(gateway, candidate.method, RULES.format(dialect=dialect), user, 0.0)
     fixed.tokens += candidate.tokens
+    return fixed
+
+
+async def diagnose_and_repair(
+    gateway: Gateway,
+    question: str,
+    linked: Linked,
+    dialect: str,
+    candidate: Candidate,
+    error: str,
+) -> Candidate:
+    """A candidate the source refused: diagnosed, then rewritten with the diagnosis (WrenAI)."""
+    context = (
+        f"{schema_text(linked)}\n\nQuestion: {question}\n\nSQL:\n{candidate.sql}\n\n"
+        f"Error from the source: {error[:300]}"
+    )
+    try:
+        diagnosis = await gateway.json_chat(
+            ROLE, DIAGNOSE.format(dialect=dialect), context, Diagnosis, max_tokens=200
+        )
+    except ModelUnavailable as exc:
+        return Candidate(candidate.method, None, candidate.tokens, candidate.model, str(exc))
+    user = (
+        f"{context}\n\nWhy it failed: {diagnosis.content.reasoning}\n\n"
+        "Rewrite the statement to fix exactly that, keeping what answers the question."
+    )
+    fixed = await _ask(gateway, candidate.method, RULES.format(dialect=dialect), user, 0.0)
+    fixed.tokens += candidate.tokens + diagnosis.tokens
     return fixed

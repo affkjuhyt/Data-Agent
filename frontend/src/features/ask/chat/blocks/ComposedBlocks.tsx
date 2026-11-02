@@ -77,14 +77,53 @@ function Kpis({ block }: { block: Block }) {
   );
 }
 
+const CHART_LABEL: Record<string, string> = {
+  line: 'Đường',
+  bar: 'Cột',
+  area: 'Vùng',
+  pie: 'Tròn',
+  scatter: 'Phân tán',
+  composed: 'Kết hợp',
+};
+
 function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
   const spec = block.spec as ChartSpec | undefined;
+  // The types the same rows fit, checked by the server (blocks.fitting_charts): changing one
+  // redraws the chart from its own data, nothing is asked again (WrenAI's chart adjustment).
+  const alternatives = arr<string>(block.alternatives).filter((t) => t in CHART_LABEL);
+  const [chosen, setChosen] = useState<string | null>(null);
   if (!spec || !Array.isArray(spec.data)) return null;
+  const type = (chosen ?? spec.chart_type) as ChartSpec['chart_type'];
+  const shown: ChartSpec = {
+    ...spec,
+    chart_type: type,
+    ...(type === 'composed' && {
+      series: spec.y_keys.map((key, i) => ({ key, type: i === 0 ? ('bar' as const) : ('line' as const) })),
+    }),
+  };
   return (
     <div className="flex flex-col gap-da-xs">
+      {alternatives.length > 1 && (
+        <div role="group" aria-label="Kiểu biểu đồ" className="flex flex-wrap gap-da-xs">
+          {alternatives.map((t) => (
+            <button
+              key={t}
+              type="button"
+              aria-pressed={t === type}
+              onClick={() => setChosen(t)}
+              className={`rounded-md border px-da-sm py-[2px] da-caption ${
+                t === type ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-subtle'
+              }`}
+            >
+              {CHART_LABEL[t]}
+            </button>
+          ))}
+        </div>
+      )}
       <ResultCard
+        key={type}
         title={spec.title || str(block.title) || 'Biểu đồ'}
-        chart={spec}
+        chart={shown}
         columns={[spec.x_key, ...spec.y_keys]}
         rows={spec.data}
         rowCount={spec.data.length}

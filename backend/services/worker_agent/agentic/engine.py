@@ -18,6 +18,8 @@ instead: no model gateway, an edited plan, or a model that fails before the plan
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 import datetime
 import json
 import logging
@@ -327,6 +329,10 @@ async def _arguments(s: State, step: p.PlanStep, error: str) -> Any:
     raise ValueError("tham số không đúng schema")
 
 
+# Steps that need nothing of each other run together, this many at most.
+MAX_PARALLEL = 3
+
+
 async def act(s: State) -> None:
     assert s.ctx is not None and s.plan is not None
     # A failure the planner was not asked about (replans spent) is on the step's record already.
@@ -334,19 +340,34 @@ async def act(s: State) -> None:
     if await is_cancel_requested(str(s.question_id)):
         s.cancelled = True
         return
-    step = p.next_ready(s.plan)
-    if step is None:
+    steps = p.ready(s.plan, MAX_PARALLEL)
+    if not steps:
         return
-    s.step_runs += 1
+    s.step_runs += len(steps)
+    for step in steps:
+        step.status = "running"
+    results = await asyncio.gather(*(_run_step(s, step) for step in steps))
+    for step, result in zip(steps, results, strict=True):
+        step.observation = result.observation
+        step.datasets = result.datasets
+        step.status = "done" if result.ok else "failed"
+        if result.clarify is not None:
+            s.clarify = result.clarify
+        if not result.ok and s.failed is None:
+            s.failed = step
+
+
+async def _run_step(s: State, step: p.PlanStep) -> ToolResult:
+    """One step: its arguments, its tool, one local retry with the error (DataAgent retries SQL
+    and Python in place); its own context, so steps run together keep their own step id."""
+    assert s.ctx is not None
     tool = TOOLS[step.tool]
-    s.ctx.step_id = step.id
-    step.status = "running"
+    ctx = dataclasses.replace(s.ctx, step_id=step.id)
     result: ToolResult | None = None
     async with turn_trace.stepping(
         ACTION_OF.get(tool.name, tool.name), title=tool.title, target=step.instruction[:160]
     ) as handle:
         error = ""
-        # One local retry with the error (DataAgent retries SQL and Python in place).
         for _ in range(2):
             try:
                 args = await _arguments(s, step, error)
@@ -354,7 +375,7 @@ async def act(s: State) -> None:
                 result = ToolResult(False, f"không viết được tham số: {exc}")
                 break
             try:
-                result = await tool.run(s.ctx, args)
+                result = await tool.run(ctx, args)
             except Exception as exc:  # a tool's failure is feedback for the planner
                 logger.exception("question %s: tool %s failed", s.question_id, tool.name)
                 result = ToolResult(False, f"công cụ lỗi: {type(exc).__name__}")
@@ -366,13 +387,7 @@ async def act(s: State) -> None:
         handle.detail = {**result.detail, "args": _shown_args(step)}
         if not result.ok:
             handle.status, handle.summary = "failed", result.observation[:200]
-    step.observation = result.observation
-    step.datasets = result.datasets
-    step.status = "done" if result.ok else "failed"
-    if result.clarify is not None:
-        s.clarify = result.clarify
-    if not result.ok:
-        s.failed = step
+    return result
 
 
 def _shown_args(step: p.PlanStep) -> dict[str, Any]:
@@ -563,6 +578,8 @@ async def compose(s: State) -> None:
                     errors.append(f"{d.type}: {exc}")
             if not errors:
                 break
+        if drafts and not errors:
+            drafts = await _reviewed(s, user, drafts)
         made = 0
         for d in drafts:
             block = _checked(s, d, known, allowed)
@@ -589,6 +606,54 @@ async def compose(s: State) -> None:
             "dropped_sentences": s.dropped_sentences,
         }
     _append_caveats(s)
+
+
+class AnswerReview(BaseModel):
+    ok: bool = True
+    problems: list[str] = Field(default_factory=list)
+
+
+async def _reviewed(s: State, user: str, drafts: list[b.BlockDraft]) -> list[b.BlockDraft]:
+    """The draft read once by a reviewer before it is sent, and rewritten once when the reviewer
+    names problems (gpt-researcher's reviewer and revisor, with its ceiling: after one revision
+    the draft goes out, so a picky reviewer cannot loop)."""
+    assert s.ctx is not None
+    draft = json.dumps([d.model_dump(exclude_defaults=True) for d in drafts], ensure_ascii=False)
+    try:
+        review = await s.model.json_chat(
+            "planner",
+            prompts.REVIEW_ANSWER,
+            f"{user}\n\n<draft>\n{draft[:6000]}\n</draft>",
+            AnswerReview,
+            max_tokens=400,
+        )
+    except ModelUnavailable:
+        return drafts
+    problems = [p_ for p_ in review.content.problems if p_.strip()][:5]
+    if review.content.ok or not problems:
+        return drafts
+    await turn_trace.record_step(
+        "review_answer", target=problems[0][:160], detail={"problems": problems}
+    )
+    try:
+        reply = await s.model.json_chat(
+            "responder",
+            prompts.REPORTER,
+            f"{user}\n\nBản nháp trước:\n{draft[:6000]}\n\nNgười rà soát chỉ ra, hãy sửa đúng "
+            "những điểm này:\n- " + "\n- ".join(problems),
+            b.Composition,
+            max_tokens=2500,
+        )
+    except ModelUnavailable:
+        return drafts
+    revised = reply.content.blocks
+    try:
+        for d in revised:
+            b.materialize(d, s.ctx.ws, "probe")
+    except b.BlockError:
+        return drafts
+    s.headline = reply.content.headline or s.headline
+    return revised or drafts
 
 
 def _checked(

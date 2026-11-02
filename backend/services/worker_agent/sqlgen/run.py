@@ -13,7 +13,13 @@ from typing import Any
 from services.worker_agent.llm import Gateway
 from services.worker_agent.query.executor import QueryOutcome
 from services.worker_agent.sqlgen.check import problems
-from services.worker_agent.sqlgen.generate import METHODS, Candidate, candidates, repair
+from services.worker_agent.sqlgen.generate import (
+    METHODS,
+    Candidate,
+    candidates,
+    diagnose_and_repair,
+    repair,
+)
 from services.worker_agent.sqlgen.schema import Linked
 from services.worker_agent.sqlgen.vote import Decision, vote
 
@@ -69,6 +75,13 @@ async def explore(
             )
             continue
         out = await run_sql(c.sql)
+        if not out.ok and out.status == "failed" and out.error:
+            # The source refused it: diagnosed and rewritten once, checked again, run again.
+            fixed = await diagnose_and_repair(gateway, question, linked, dialect, c, out.error)
+            if fixed.sql and not problems(fixed.sql, linked, dialect):
+                retried = await run_sql(fixed.sql)
+                if retried.ok:
+                    c, out = fixed, retried
         results.append(out.rows if out.ok else None)
         outcomes.append(out if out.ok else None)
         tried.append(

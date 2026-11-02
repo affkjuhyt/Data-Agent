@@ -85,6 +85,23 @@ def next_ready(plan: Plan) -> PlanStep | None:
     return None
 
 
+def ready(plan: Plan, limit: int) -> list[PlanStep]:
+    """Every pending step whose dependencies are done, up to `limit`: steps that need nothing of
+    each other run together (gpt-researcher's parallel sub-research). A step whose dependency
+    failed or was skipped is skipped, as in next_ready."""
+    found: list[PlanStep] = []
+    while len(found) < limit:
+        step = next_ready(plan)
+        if step is None:
+            break
+        found.append(step)
+        # Held out of the next look so next_ready finds the one after it; set back below.
+        step.status = "running"
+    for step in found:
+        step.status = "pending"
+    return found
+
+
 def view(plan: Plan) -> list[dict[str, Any]]:
     """The plan as the timeline and the plan block show it."""
     return [

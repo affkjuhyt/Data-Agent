@@ -393,3 +393,40 @@ def test_caveats_carry_the_sql_vote_and_leave_out_a_failed_computation() -> None
         "Số khách hàng 2013: SQL thăm dò, chưa qua chỉ số chuẩn; 6/6 cách viết cho cùng kết quả."
     ]
     assert engine._consensus(state) == (6, 6)
+
+
+def test_steps_that_need_nothing_of_each_other_run_together() -> None:
+    plan = _plan(
+        {"id": "s1", "tool": "query_metric", "instruction": "a"},
+        {"id": "s2", "tool": "query_metric", "instruction": "b"},
+        {"id": "s3", "tool": "analyze", "instruction": "c", "depends_on": ["s1", "s2"]},
+    )
+    assert [s.id for s in p.ready(plan, 3)] == ["s1", "s2"]
+    assert all(s.status == "pending" for s in plan.steps)
+    plan.steps[0].status = plan.steps[1].status = "done"
+    assert [s.id for s in p.ready(plan, 3)] == ["s3"]
+
+
+def test_a_chart_type_the_rows_do_not_fit_is_changed_and_one_row_is_a_table() -> None:
+    ws = Workspace()
+    ws.add(
+        title="Doanh thu theo tháng",
+        columns=["Tháng", "Doanh thu"],
+        rows=[["2013-01", "10"], ["2013-02", "-3"], ["2013-03", "12"]],
+        trust="certified",
+    )
+    ws.add(title="Tổng", columns=["Vùng", "Doanh thu"], rows=[["Europe", "5"]], trust="certified")
+    # A pie of a month series with a negative month: a line along time instead.
+    chart = b.materialize(
+        b.BlockDraft(type="chart", dataset="d1", chart_type="pie", x="Tháng", y=["Doanh thu"]),
+        ws,
+        "b1",
+    )
+    assert chart["spec"]["chart_type"] == "line"
+    assert chart["alternatives"][0] == "line" and "pie" not in chart["alternatives"]
+    single = b.materialize(
+        b.BlockDraft(type="chart", dataset="d2", chart_type="bar", x="Vùng", y=["Doanh thu"]),
+        ws,
+        "b2",
+    )
+    assert single["type"] == "table"
