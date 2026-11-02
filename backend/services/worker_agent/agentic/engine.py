@@ -51,7 +51,7 @@ from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import analyst
 from services.worker_agent.understand.resolver import metric_words, quantity_words
-from services.worker_agent.understand.text import find_period
+from services.worker_agent.understand.text import find_period, norm
 
 logger = logging.getLogger(__name__)
 
@@ -514,6 +514,60 @@ def _unnamed_quantity(s: State) -> list[str]:
     return unnamed(words, named)
 
 
+def _named_members(s: State) -> list[tuple[str, str, str]]:
+    """The dimension members the question names, by label or approved synonym, as (dimension,
+    code, label): whole words, at least three letters, numbers left to the period reader."""
+    assert s.ctx is not None
+    text = f" {norm(s.ctx.question)} "
+    vocab = s.ctx.layer.vocabulary
+    found: dict[tuple[str, str], str] = {}
+    for v in vocab.values:
+        label = norm(v.label)
+        if len(label) >= 3 and not label.replace(" ", "").isdigit() and f" {label} " in text:
+            found[(v.dimension_code, v.value_code)] = v.label
+    for phrase, target in vocab.synonyms.items():
+        if target[0] == "value" and len(phrase) >= 3 and f" {phrase} " in text:
+            found.setdefault((target[1], target[2]), phrase)
+    return [(dim, code, label) for (dim, code), label in found.items()]
+
+
+def _dropped_members(s: State) -> list[str]:
+    """Members the question names that no dataset took into account: not in a certified reading's
+    filters, not a row of any dataset, not in the SQL the model wrote."""
+    assert s.ctx is not None and s.plan is not None
+    if s.plan.mode != "analyze":
+        return []
+    datasets = list(s.ctx.ws.datasets.values())
+    dropped = []
+    for dim, code, label in _named_members(s):
+        wanted = {norm(code), norm(label)}
+        if any(
+            code in (d.reading or {}).get("filters", {}).get(dim, [])
+            or any(norm(str(v)) in wanted for row in d.rows for v in row if v is not None)
+            or (d.sql is not None and any(w in norm(d.sql) for w in wanted))
+            for d in datasets
+        ):
+            continue
+        dropped.append(label)
+    return dropped
+
+
+def _no_figure(ws: Workspace) -> bool:
+    """True when datasets came back but none holds a measure other than zero or empty. The
+    measure is each dataset's last numeric column, as _figures reads it (a year column is a
+    number too, and is no figure)."""
+    measures: list[float | None] = []
+    for d in ws.datasets.values():
+        numeric = [
+            i
+            for i in range(len(d.columns))
+            if d.rows and all(number(r[i]) is not None for r in d.rows if r[i] is not None)
+        ]
+        if numeric:
+            measures += [number(r[numeric[-1]]) for r in d.rows]
+    return bool(ws.datasets) and all(m in (None, 0) for m in measures)
+
+
 def _facts_text(known: dict[str, verify.Fact]) -> str:
     return "\n".join(f"{{{{{k}}}}} = {f.shown} ({f.label})" for k, f in known.items())
 
@@ -532,6 +586,27 @@ async def compose(s: State) -> None:
             "handover",
             target="Chưa lấy được số liệu; chuyển sang cách trả lời chuẩn.",
             detail={"steps": p.view(s.plan)},
+        )
+        s.handed_back = True
+        return
+    dropped = _dropped_members(s)
+    if dropped:
+        # The question names a member ("nhóm hàng Bikes") that no dataset was filtered or cut on:
+        # an answer from those rows would be for everything, not for what was asked.
+        await turn_trace.record_step(
+            "handover",
+            target=f"Chưa lọc theo {', '.join(dropped)}; chuyển sang cách trả lời chuẩn.",
+            detail={"dropped": dropped},
+        )
+        s.handed_back = True
+        return
+    if s.plan.mode == "analyze" and _no_figure(ws):
+        # Every figure fetched is empty or zero: "Doanh thu 2009 là 0" would state a figure the
+        # data does not have. The governed path looks for the periods and members that have data.
+        await turn_trace.record_step(
+            "handover",
+            target="Không có số liệu cho kỳ hoặc bộ lọc được hỏi; chuyển sang cách trả lời chuẩn.",
+            detail={"datasets": list(ws.datasets)},
         )
         s.handed_back = True
         return

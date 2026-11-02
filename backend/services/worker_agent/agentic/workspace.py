@@ -76,6 +76,9 @@ class Dataset:
     # For SQL the model wrote (explore_sql): how many of its ways of writing gave this result, out
     # of how many, and whether that agreement is clear enough to use without checking (sqlgen vote).
     consensus: tuple[int, int] | None = None
+    # The SQL the model wrote (explore_sql): never shown, read only to check that a member the
+    # question names was filtered on (engine._dropped_members).
+    sql: str | None = None
     agreement_clear: bool = True
 
     def records(self, limit: int | None = None) -> list[dict[str, Any]]:

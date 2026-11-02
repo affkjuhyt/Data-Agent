@@ -430,3 +430,75 @@ def test_a_chart_type_the_rows_do_not_fit_is_changed_and_one_row_is_a_table() ->
         "b2",
     )
     assert single["type"] == "table"
+
+
+def _gate_state(question: str, ws: Workspace, values: list[Any]) -> Any:
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic import engine
+
+    vocab = types.SimpleNamespace(
+        metrics=[], synonyms={}, dimensions=[], values=values, calendar=clock.DEFAULT
+    )
+    return engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+            ws=ws,
+            question=question,
+            today=datetime.date(2026, 11, 3),
+            layer=types.SimpleNamespace(vocabulary=vocab),
+        ),
+        plan=_plan({"id": "s1", "tool": "explore_sql", "instruction": "x", "status": "done"}),
+    )
+
+
+def test_a_member_the_question_names_but_no_dataset_used_hands_the_question_back() -> None:
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import ValueEntry
+
+    bikes = ValueEntry("nhom_hang", "Bikes", "Bikes")
+    total = Workspace()
+    total.add(
+        title="t",
+        columns=["doanh_thu"],
+        rows=[[16351550.34]],
+        trust="exploratory",
+        tool="explore_sql",
+        sql="SELECT SUM(x) FROM f",
+    )
+    state = _gate_state("Doanh thu Internet nhóm hàng Bikes năm 2013", total, [bikes])
+    assert engine._dropped_members(state) == ["Bikes"]
+    asyncio.run(engine.compose(state))
+    assert state.handed_back
+
+    filtered = Workspace()
+    filtered.add(
+        title="t",
+        columns=["doanh_thu"],
+        rows=[[15359502.36]],
+        trust="exploratory",
+        tool="explore_sql",
+        sql="SELECT SUM(x) FROM f WHERE category = 'Bikes'",
+    )
+    assert (
+        engine._dropped_members(
+            _gate_state("Doanh thu Internet nhóm hàng Bikes năm 2013", filtered, [bikes])
+        )
+        == []
+    )
+
+
+def test_figures_that_are_all_zero_are_no_answer() -> None:
+    from services.worker_agent.agentic import engine
+
+    zero = Workspace()
+    zero.add(title="t", columns=["Năm", "Doanh thu"], rows=[[2009, 0]], trust="certified")
+    assert engine._no_figure(zero)
+    some = Workspace()
+    some.add(title="t", columns=["Năm", "Doanh thu"], rows=[[2013, 5]], trust="certified")
+    assert not engine._no_figure(some)
