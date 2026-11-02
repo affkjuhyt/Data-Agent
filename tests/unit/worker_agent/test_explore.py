@@ -125,3 +125,11 @@ def test_a_name_found_nowhere_is_taken_out_of_the_question_the_model_reads() -> 
 def test_a_name_is_shown_as_the_person_wrote_it() -> None:
     assert explore.as_written("Số lượng bán Internet ở Atlantis năm 2013", "atlantis") == "Atlantis"
     assert explore.as_written("Doanh thu ở đâu", "atlantis") == "atlantis"
+
+
+def test_a_name_that_is_part_of_the_metrics_own_name_is_not_looked_up() -> None:
+    # "Internet" left unread when the metric was matched by the synonym "khách hàng mua": the
+    # metric is "Số khách hàng mua qua Internet", so the channel is already in what it counts.
+    question = "Có bao nhiêu khách hàng mua qua Internet năm 2013"
+    assert explore.unread_names(question, "internet") == ["internet"]
+    assert explore.unread_names(question, "internet", known="Số khách hàng mua qua Internet") == []

@@ -54,6 +54,16 @@ def _fill(text: str, figures: dict[str, Figure]) -> str | None:
     unknown = [k for k in _TAG.findall(text) if k not in figures]
     if unknown:
         return None
+    # A tag is filled with its unit ("17.429 khách hàng"): the same unit written after it by the
+    # model would be read twice.
+    for key, f in figures.items():
+        if f.unit and f.unit != "%":
+            text = re.sub(
+                rf"(\{{\{{\s*{key}\s*\}}\}})\s+{re.escape(f.unit)}(?!\w)",
+                r"\1",
+                text,
+                flags=re.IGNORECASE,
+            )
     return _TAG.sub(lambda m: shown_value(figures[m.group(1)]), text)
 
 

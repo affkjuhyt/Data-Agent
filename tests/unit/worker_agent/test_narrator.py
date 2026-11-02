@@ -119,3 +119,16 @@ async def test_a_rows_label_is_not_a_number_anywhere_else() -> None:
     )
     assert out.text == "Năm 2013 có 310. Đã bỏ 1 câu có số không truy được nguồn."
     assert out.untraceable_draft == 1
+
+
+async def test_a_unit_the_model_writes_after_its_tag_is_not_written_twice() -> None:
+    # "{{F1}} khách hàng mua…": the tag is filled with "17.429 khách hàng" already.
+    customers = [Figure("F1", "Số khách hàng", decimal.Decimal(17429), "khách hàng", 0, 0, "v")]
+    out = await narrate(
+        Scripted("Năm 2013 có {{F1}} khách hàng mua qua Internet."),
+        customers,
+        question="Có bao nhiêu khách hàng mua qua Internet năm 2013",
+        metric_name="Số khách hàng mua qua Internet",
+        exempt_text=[],
+    )
+    assert out.text == "Năm 2013 có 17.429 khách hàng mua qua Internet."

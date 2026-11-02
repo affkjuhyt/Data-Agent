@@ -1047,7 +1047,9 @@ async def _find_values(question_id: uuid.UUID, p: Prepared, question_text: str) 
     the compiler, and filtered by when one matches. One that is found nowhere is said, not
     silently left out of the answer."""
     request, u = p.request, p.understanding
-    names = explore.unread_names(question_text, u.rest)
+    names = explore.unread_names(
+        question_text, u.rest, known=request.metric.display_name if request else ""
+    )
     if not names:
         return p
     written = [explore.as_written(question_text, name) for name in names]

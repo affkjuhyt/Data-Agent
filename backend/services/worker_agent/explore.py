@@ -189,11 +189,12 @@ def _capitalised_runs(text: str) -> list[str]:
     return [" ".join(run) for run in runs]
 
 
-def unread_names(question: str, rest: str) -> list[str]:
+def unread_names(question: str, rest: str, *, known: str = "") -> list[str]:
     """Names in the question the reader did not place, folded: quoted phrases and runs of
     capitalised words (the first word excepted) whose words are all still in `rest`, the folded
-    words left unread. These are the words worth looking up among the members in the data."""
-    left = set(rest.split())
+    words left unread. These are the words worth looking up among the members in the data; words
+    of `known` (the metric's own name: "Internet" of "Số khách hàng mua qua Internet") are not."""
+    left = set(rest.split()) - set(norm(known).split())
     text = unicodedata.normalize("NFC", question)
     quoted = [m.group(1) or m.group(2) for m in _QUOTED.finditer(text)]
     names: list[str] = []
