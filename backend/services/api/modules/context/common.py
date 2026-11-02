@@ -13,7 +13,7 @@ import datetime
 import json
 import re
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Annotated, Any, TypeVar
 
 from fastapi import Depends, Query, Response
@@ -224,6 +224,16 @@ async def readable_data_spaces(session: AsyncSession, principal: Principal) -> l
         .distinct()
     )
     return sorted(set((await session.scalars(query)).all()), key=str)
+
+
+def page_readable(
+    required_data_space_ids: Sequence[uuid.UUID], classification: str, spaces: Iterable[uuid.UUID]
+) -> bool:
+    """BR-163 for one page, in Python, where the transaction is not a reader one: the reader holds
+    every Data Space its sources come from, at a clearance not below its classification."""
+    return set(required_data_space_ids) <= set(spaces) and (
+        CLEARANCE.get(classification, 99) <= DEFAULT_CLEARANCE
+    )
 
 
 def uuid_array(ids: Sequence[uuid.UUID]) -> str:

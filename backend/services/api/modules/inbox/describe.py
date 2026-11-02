@@ -19,7 +19,8 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Iterable, Mapping
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.dataagent_db.models import eval as evaluation
 from libs.dataagent_db.models import inbox, org
 from services.api.kernel.auth import Principal
-from services.api.modules.context.public import Name, NameKind, names_in_data_space
+from services.api.modules.catalog.public import dataset_names, sources_in_data_space
+from services.api.modules.context.public import NameKind, names_in_data_space
 from services.api.modules.inbox.schemas import ProposalSummary, SummaryField
 from services.api.modules.skill.public import skill_names
 
@@ -92,7 +94,20 @@ FILTER_OPS = {
     "is_not_null": "không trống",
 }
 
-Names = dict[tuple[NameKind, str], Name]
+# What a describer may ask a name for: the context module's kinds, and the catalog's two.
+Kind = NameKind | Literal["dataset", "source"]
+
+
+@dataclass(frozen=True)
+class Name:
+    name: str
+    # The object's code (a metric's TON_KHO); for a dataset, schema.table.
+    code: str | None = None
+    # A dataset's table name alone, as a join is written (fact_sales.customer_key).
+    table: str | None = None
+
+
+Names = dict[tuple[Kind, str], Name]
 
 
 class _Shape(Exception):
@@ -137,7 +152,7 @@ def _field(label: str, after: Any = None, before: Any = None) -> SummaryField:
     return SummaryField(label=label, before=_text(before), after=_text(after))
 
 
-def _named(names: Names, kind: NameKind, key: Any) -> Name | None:
+def _named(names: Names, kind: Kind, key: Any) -> Name | None:
     return names.get((kind, str(key))) if key else None
 
 
@@ -241,15 +256,46 @@ def _preview_note(diff: dict[str, Any]) -> str | None:
 class _Ask:
     """The lookups a describer makes, each answered under the caller (context/skill public)."""
 
-    def __init__(self, session: AsyncSession, principal: Principal, data_space: uuid.UUID):
+    def __init__(
+        self,
+        session: AsyncSession,
+        principal: Principal,
+        data_space: uuid.UUID,
+        target_ref: uuid.UUID | None,
+    ):
         self.session, self.principal, self.data_space = session, principal, data_space
+        self.target_ref = target_ref
 
-    async def names(self, wanted: Mapping[NameKind, Iterable[Any]]) -> Names:
-        return await names_in_data_space(
-            self.principal,
-            self.data_space,
-            {kind: [str(v) for v in values if v] for kind, values in wanted.items()},
-        )
+    async def names(self, wanted: Mapping[Kind, Iterable[Any]]) -> Names:
+        asked = {kind: [str(v) for v in values if v] for kind, values in wanted.items()}
+        out: Names = {}
+        # Each module names its own objects through its own read rule: a personal table is its
+        # owner's (catalog BR-111), a knowledge page its readers' (context BR-163).
+        datasets, sources = asked.pop("dataset", []), asked.pop("source", [])
+        if datasets:
+            found = await dataset_names(self.principal, self.data_space, _uuids(datasets))
+            for value in datasets:
+                d = found.get(uuid.UUID(_canon(value))) if _is_uuid(value) else None
+                if d is not None:
+                    qualified = f"{d.schema_name}.{d.table_name}"
+                    out[("dataset", value)] = Name(
+                        name=d.display_name or qualified, code=qualified, table=d.table_name
+                    )
+        if sources:
+            summaries = await sources_in_data_space(
+                self.principal, self.data_space, _uuids(sources)
+            )
+            for value in sources:
+                src = summaries.get(uuid.UUID(_canon(value))) if _is_uuid(value) else None
+                if src is not None:
+                    out[("source", value)] = Name(name=src.name)
+        # What is left is the context module's to name.
+        context_kinds = cast(dict[NameKind, list[str]], asked)
+        for (kind, value), name in (
+            await names_in_data_space(self.principal, self.data_space, context_kinds)
+        ).items():
+            out[(kind, value)] = Name(name=name.name, code=name.code)
+        return out
 
     async def users(self, ids: Iterable[Any]) -> dict[str, str]:
         wanted = {str(u) for u in _uuids(ids)}
@@ -264,7 +310,9 @@ class _Ask:
         return {str(r.id): r.display_name for r in rows.all()}
 
     async def skills(self, ids: Iterable[Any]) -> dict[str, str]:
-        found = await skill_names(self.principal, self.data_space, _uuids(ids))
+        found = await skill_names(
+            self.principal, self.data_space, _uuids(ids), under_review=self.target_ref
+        )
         return {str(k): v for k, v in found.items()}
 
 
@@ -276,6 +324,14 @@ def _uuids(values: Iterable[Any]) -> set[uuid.UUID]:
         except ValueError:
             continue
     return out
+
+
+def _is_uuid(value: Any) -> bool:
+    try:
+        uuid.UUID(str(value))
+    except ValueError:
+        return False
+    return True
 
 
 def _canon(value: Any) -> str:
@@ -642,7 +698,7 @@ async def describe(
     try:
         if not isinstance(row.diff, dict):
             raise _Shape
-        ask = _Ask(session, principal, row.data_space_id)
+        ask = _Ask(session, principal, row.data_space_id, row.target_ref)
         if row.kind == "document_validity":
             headline, fields = await _document_validity(row.diff, ask, row.target_ref)
         elif row.kind in DESCRIBERS:

@@ -1285,6 +1285,17 @@ def _metric(team: Team, code: str, name: str) -> tuple[uuid.UUID, uuid.UUID]:
     return metric, version
 
 
+def _skill_version(team: Team, skill: uuid.UUID) -> uuid.UUID:
+    return team.seed.row(
+        "skill.skill_version",
+        org_id=team.org,
+        skill_id=skill,
+        version=1,
+        params_schema=Json({}),
+        steps=Json([]),
+    )
+
+
 async def _summary(team: Team, proposal: uuid.UUID) -> dict[str, Any]:
     async with client(team) as api:
         detail = await api.get(f"/v1/proposals/{proposal}", headers=team.headers("reviewer"))
@@ -1595,16 +1606,21 @@ async def test_summary_of_a_skill_publish_and_share(team: Team) -> None:
         scope="personal",
         owner_id=team.users["proposer"],
     )
+    # The proposal targets the version it publishes (worker_agent/proposals.py): its personal
+    # skill is named for the reviewer because reviewing it is the request.
+    version = _skill_version(team, skill)
     publish = _proposal(
         team,
         kind="skill_publish",
         target_service="skill",
+        target_ref=version,
         diff=Json({"action": "publish", "skill_id": str(skill), "version": 3, "scope": "personal"}),
     )
     share = _proposal(
         team,
         kind="skill_publish",
         target_service="skill",
+        target_ref=version,
         diff=Json(
             {
                 "action": "share",
@@ -1849,3 +1865,85 @@ async def test_summary_of_an_unknown_kind_falls_back_to_the_title(team: Team) ->
     summary = await _summary(team, broken)
     assert summary["headline"] == "Từ đồng nghĩa lạ"
     assert summary["fields"] == []
+
+
+async def test_summary_hides_a_table_personal_to_someone_else_or_deleted(team: Team) -> None:
+    # The catalog's own rule (BR-111): a personal table is its owner's only.
+    mine = _dataset(team, "fact_sales")
+    personal = _dataset(team, "nhap_cua_toi", scope="personal", created_by=team.users["proposer"])
+    gone = _dataset(team, "da_xoa", deleted_at="2026-10-01")
+    proposals = [
+        _proposal(
+            team,
+            kind="relationship",
+            diff=Json(
+                {
+                    "from_dataset_id": str(mine),
+                    "from_columns": ["k"],
+                    "to_dataset_id": str(hidden),
+                    "to_columns": ["k"],
+                    "cardinality": "many_to_one",
+                }
+            ),
+        )
+        for hidden in (personal, gone)
+    ]
+    for proposal, name in zip(proposals, ("nhap_cua_toi", "da_xoa"), strict=True):
+        summary = await _summary(team, proposal)
+        assert summary["fields"][1] == _field("Đến", "(không xem được) (k)")
+        assert name not in str(summary)
+
+
+async def test_summary_hides_a_knowledge_page_above_the_readers_clearance(team: Team) -> None:
+    # The reader policy (BR-163): a confidential page is hidden from an `internal` reader.
+    page = team.seed.row(
+        "context.knowledge_page",
+        org_id=team.org,
+        data_space_id=team.space,
+        kind="topic",
+        subject_kind="topic",
+        slug=f"trang-{uuid.uuid4().hex[:8]}",
+        title="Lương ban điều hành",
+        owner_id=team.users["steward"],
+        classification="confidential",
+    )
+    proposal = _proposal(
+        team, kind="knowledge_page", diff=Json({"page_id": str(page), "version": 1})
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == "Phục vụ trang tri thức (không xem được), phiên bản 1."
+    assert "Lương ban điều hành" not in str(summary)
+
+
+async def test_summary_hides_a_personal_skill_the_proposal_does_not_review(team: Team) -> None:
+    personal = team.seed.row(
+        "skill.skill",
+        org_id=team.org,
+        data_space_id=team.space,
+        code="rieng",
+        name="Kỹ năng riêng",
+        category="custom",
+        scope="personal",
+        owner_id=team.users["proposer"],
+    )
+    reviewed = team.seed.row(
+        "skill.skill",
+        org_id=team.org,
+        data_space_id=team.space,
+        code="dang_duyet",
+        name="Kỹ năng đang duyệt",
+        category="custom",
+        scope="personal",
+        owner_id=team.users["proposer"],
+    )
+    # Its target is another skill's version: naming that one does not name this one.
+    proposal = _proposal(
+        team,
+        kind="skill_publish",
+        target_service="skill",
+        target_ref=_skill_version(team, reviewed),
+        diff=Json({"action": "publish", "skill_id": str(personal), "version": 1}),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == "Phát hành kỹ năng (không xem được), phiên bản 1."
+    assert "Kỹ năng riêng" not in str(summary)

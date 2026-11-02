@@ -38,6 +38,7 @@ from services.api.kernel.pagination import (
 from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.eval import eval_runs
 from services.api.modules.skill import rules
+from services.api.modules.skill.public import visible_skills
 from services.api.modules.skill.schemas import (
     Accepted,
     Category,
@@ -112,13 +113,7 @@ def _emit(
 def _visible(principal: Principal, data_space: uuid.UUID) -> ColumnElement[bool]:
     """Skills the caller sees from this Data Space: org-wide ones, the Data Space's, and their
     own personal ones (UC-03-01 precondition: the scope includes the current Data Space)."""
-    s = skill.Skill
-    return and_(
-        s.org_id == principal.org_id,
-        s.deleted_at.is_(None),
-        or_(s.scope == "org", s.data_space_id == data_space),
-        or_(s.scope != "personal", s.owner_id == principal.user_id),
-    )
+    return visible_skills(principal, data_space)
 
 
 async def _skill(

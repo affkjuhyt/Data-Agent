@@ -41,7 +41,7 @@ from services.api.kernel.pagination import (
 from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.audit import record_self_approval
 from services.api.modules.catalog import rules
-from services.api.modules.catalog.public import working_days
+from services.api.modules.catalog.public import dataset_visible, working_days
 from services.api.modules.catalog.schemas import (
     Accepted,
     ActivateRequest,
@@ -944,14 +944,7 @@ async def get_scan_run(
 
 
 def _visible_datasets(principal: Principal, space: uuid.UUID) -> Select[tuple[catalog.Dataset]]:
-    ds = catalog.Dataset
-    return select(ds).where(
-        ds.org_id == principal.org_id,
-        ds.data_space_id == space,
-        ds.deleted_at.is_(None),
-        # BR-111: a personal table is its owner's only.
-        or_(ds.scope == "data_space", ds.created_by == principal.user_id),
-    )
+    return select(catalog.Dataset).where(dataset_visible(principal, space))
 
 
 async def _dataset(

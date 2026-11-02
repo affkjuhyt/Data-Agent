@@ -13,7 +13,7 @@ import zoneinfo
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs import cron
@@ -32,6 +32,49 @@ class SourceSummary:
     kind: str
     authority_level: str
     status: str
+
+
+def dataset_visible(principal: Principal, space: uuid.UUID) -> ColumnElement[bool]:
+    """The datasets the caller sees in the Data Space: not deleted, and a personal table only by
+    its owner (BR-111). The catalog's own reads and the names other modules show use this one."""
+    ds = catalog.Dataset
+    return and_(
+        ds.org_id == principal.org_id,
+        ds.data_space_id == space,
+        ds.deleted_at.is_(None),
+        or_(ds.scope == "data_space", ds.created_by == principal.user_id),
+    )
+
+
+@dataclass(frozen=True)
+class DatasetName:
+    schema_name: str
+    table_name: str
+    display_name: str | None
+
+
+async def dataset_names(
+    principal: Principal, data_space: uuid.UUID, ids: Iterable[uuid.UUID]
+) -> dict[uuid.UUID, DatasetName]:
+    """The names of the datasets among `ids` the caller sees (dataset_visible), by id."""
+    wanted = set(ids)
+    if not wanted:
+        return {}
+    ds = catalog.Dataset
+    async with transaction("svc_catalog", principal) as session:
+        rows = (
+            await session.execute(
+                select(ds.id, ds.schema_name, ds.table_name, ds.display_name).where(
+                    ds.id.in_(wanted), dataset_visible(principal, data_space)
+                )
+            )
+        ).all()
+    return {
+        r.id: DatasetName(
+            schema_name=r.schema_name, table_name=r.table_name, display_name=r.display_name
+        )
+        for r in rows
+    }
 
 
 async def sources_in_data_space(

@@ -6,9 +6,10 @@ because the creator accepting it is a self-approval (BR-175) even when an editor
 
 The inbox also says what a proposal changes
 in words (inbox/describe.py, P07 "Thay đổi"), and a proposal's diff carries ids of the semantic
-layer, the catalog and the document store. It asks here for their names instead of reading those
-schemas itself: svc_context reads them all, as the caller (RLS keeps their organisation), and
-only within the Data Space the caller named, so an id from elsewhere stays unnamed.
+layer and the document store. It asks here for their names instead of reading those schemas
+itself: svc_context reads them as the caller (RLS keeps their organisation), a knowledge page
+only to its readers (BR-163), and only within the Data Space the caller named, so an id from
+elsewhere stays unnamed. Datasets and sources are the catalog's to name (catalog/public.py).
 """
 
 from __future__ import annotations
@@ -21,10 +22,10 @@ from typing import Any, Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs.dataagent_db.models import catalog, context, document
+from libs.dataagent_db.models import context, document
 from services.api.kernel.auth import Principal
 from services.api.kernel.db import transaction
-from services.api.modules.context.common import ROLE
+from services.api.modules.context.common import ROLE, page_readable, readable_data_spaces
 
 NameKind = Literal[
     "metric",
@@ -33,8 +34,6 @@ NameKind = Literal[
     "dimension_code",
     "measure",
     "entity",
-    "dataset",
-    "source",
     "document",
     "data_product",
     "knowledge_page",
@@ -44,10 +43,8 @@ NameKind = Literal[
 @dataclass(frozen=True)
 class Name:
     name: str
-    # The object's code (a metric's TON_KHO); for a dataset, schema.table.
+    # The object's code (a metric's TON_KHO).
     code: str | None = None
-    # A dataset's table name alone, as a join is written (fact_sales.customer_key).
-    table: str | None = None
 
 
 def _ids(values: Iterable[str]) -> set[uuid.UUID]:
@@ -111,30 +108,6 @@ async def _dimension_codes(
     return {r.code: Name(name=r.name, code=r.code) for r in rows.all()}
 
 
-async def _datasets(
-    session: AsyncSession, space: uuid.UUID, ids: set[uuid.UUID]
-) -> dict[str, Name]:
-    ds = catalog.Dataset
-    rows = await session.execute(
-        select(ds.id, ds.schema_name, ds.table_name, ds.display_name).where(
-            ds.id.in_(ids), ds.data_space_id == space
-        )
-    )
-    out = {}
-    for r in rows.all():
-        qualified = f"{r.schema_name}.{r.table_name}"
-        out[str(r.id)] = Name(name=r.display_name or qualified, code=qualified, table=r.table_name)
-    return out
-
-
-async def _sources(session: AsyncSession, space: uuid.UUID, ids: set[uuid.UUID]) -> dict[str, Name]:
-    src = catalog.Source
-    rows = await session.execute(
-        select(src.id, src.name).where(src.id.in_(ids), src.data_space_id == space)
-    )
-    return {str(r.id): Name(name=r.name) for r in rows.all()}
-
-
 async def _documents(
     session: AsyncSession, space: uuid.UUID, ids: set[uuid.UUID]
 ) -> dict[str, Name]:
@@ -147,12 +120,24 @@ async def _documents(
     return {str(r.id): Name(name=r.title or r.file_name) for r in rows.all()}
 
 
-async def _pages(session: AsyncSession, space: uuid.UUID, ids: set[uuid.UUID]) -> dict[str, Name]:
+async def _pages(
+    session: AsyncSession, principal: Principal, space: uuid.UUID, ids: set[uuid.UUID]
+) -> dict[str, Name]:
+    """Only the pages the caller may read (BR-163, page_readable). Not through the reader policy:
+    that one also hides a page not served yet, which is what a knowledge_page proposal is about."""
     page = context.KnowledgePage
     rows = await session.execute(
-        select(page.id, page.title, page.slug).where(page.id.in_(ids), page.data_space_id == space)
+        select(
+            page.id, page.title, page.slug, page.required_data_space_ids, page.classification
+        ).where(page.id.in_(ids), page.data_space_id == space)
     )
-    return {str(r.id): Name(name=r.title, code=r.slug) for r in rows.all()}
+    found = rows.all()
+    spaces = await readable_data_spaces(session, principal) if found else []
+    return {
+        str(r.id): Name(name=r.title, code=r.slug)
+        for r in found
+        if page_readable(r.required_data_space_ids, r.classification, spaces)
+    }
 
 
 async def names_in_data_space(
@@ -174,14 +159,10 @@ async def names_in_data_space(
                 continue
             elif kind == "metric":
                 found = await _metrics(session, data_space, ids)
-            elif kind == "dataset":
-                found = await _datasets(session, data_space, ids)
-            elif kind == "source":
-                found = await _sources(session, data_space, ids)
             elif kind == "document":
                 found = await _documents(session, data_space, ids)
             elif kind == "knowledge_page":
-                found = await _pages(session, data_space, ids)
+                found = await _pages(session, principal, data_space, ids)
             else:
                 model = {
                     "dimension": context.SemanticDimension,

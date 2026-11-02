@@ -38,8 +38,6 @@ from services.api.kernel.pagination import Page
 from services.api.kernel.problems import Problem
 from services.api.modules.audit import record_self_approval
 from services.api.modules.context.common import (
-    CLEARANCE,
-    DEFAULT_CLEARANCE,
     ROLE,
     ContextPage,
     accepted,
@@ -48,6 +46,7 @@ from services.api.modules.context.common import (
     field_error,
     keyset_page,
     now,
+    page_readable,
     readable_data_spaces,
     reader_settings,
     require_active_users,
@@ -814,11 +813,8 @@ async def _reader_can_see(
 ) -> bool:
     """The BR-163 test of one page for the caller, done in Python because this transaction
     writes (it is not a reader transaction)."""
-    spaces = set(await readable_data_spaces(session, principal))
-    return (
-        set(page.required_data_space_ids) <= spaces
-        and CLEARANCE.get(page.classification, 99) <= DEFAULT_CLEARANCE
-    )
+    spaces = await readable_data_spaces(session, principal)
+    return page_readable(page.required_data_space_ids, page.classification, spaces)
 
 
 @router.post(
