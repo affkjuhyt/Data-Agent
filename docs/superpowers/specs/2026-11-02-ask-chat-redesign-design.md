@@ -149,6 +149,16 @@ latest turn, for the asker only (the same ownership rule as the question).
   areas.
 - Vietnamese UI copy, the existing design-system tokens and components.
 
+## Amendment during the build (02/11/2026)
+
+- No SQL text in step details nor in the answer's `sql` block. Reading SQL needs `view_detail` and is
+  audited at `GET /v1/query-runs/{id}/sql`; copying it into ask-only routes (the stream, `/steps`, the
+  answer) would bypass both. Steps and the block carry `query_run_id`; the UI reads the SQL through that
+  route and says so when it may not.
+- Runs whose `trigger_ref` is `question:<id>` are visible through `/v1/runs` only to their initiator.
+- Steps are listed in the order the work happened (the answer is written before it is validated and
+  its chart chosen).
+
 ## Calls made by the designer (not asked of the user)
 
 - C1. Persistence stays one write at the turn's end. A turn reopened while it runs replays the

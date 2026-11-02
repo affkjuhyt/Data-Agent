@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { AnswerBlock } from './AnswerBlock';
+import { TurnForTest as AnswerBlock } from '../chat/turnForTest';
 import { AnswerTheme } from './AnswerTheme';
 import { RefusalCard } from './RefusalCard';
 import type { AskMessage, Refusal } from '../types';

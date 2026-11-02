@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { AnswerBlock } from './AnswerBlock';
+import { TurnForTest as AnswerBlock } from '../chat/turnForTest';
 import { AnswerTheme } from './AnswerTheme';
 import { ExportDialog } from './ExportDialog';
 import { ReportDialog } from './ReportDialog';
@@ -26,12 +26,9 @@ const wrap = (ui: React.ReactElement) => render(<AnswerTheme mode="light">{ui}</
 beforeEach(() => reportAnswer.mockReset());
 
 describe('answer meta row', () => {
-  it('shows how the question was read and a trust label on the answer', () => {
+  it('labels the answer with the trust its runs carry', () => {
+    // How the question was read is the understand step's detail now (StepTimeline).
     wrap(<AnswerBlock msg={msg} />);
-    const reading = screen.getByRole('list', { name: 'Hệ thống hiểu là' });
-    expect(within(reading).getByText('npl_ratio v4')).toBeInTheDocument();
-    expect(within(reading).getByText('ban_le')).toBeInTheDocument();
-    expect(within(reading).getByText('vung')).toBeInTheDocument();
     expect(screen.getByTestId('trust-label')).toHaveTextContent('Có quản trị');
   });
 
@@ -40,29 +37,27 @@ describe('answer meta row', () => {
     expect(screen.getByTestId('trust-label')).toHaveTextContent('Chưa đủ bằng chứng');
   });
 
-  it('offers Cách tính and Báo sai only where the screen handles them', () => {
-    const onOpen = vi.fn();
+  it('offers Báo sai only on an answer the server keeps', () => {
+    // "Cách tính" is the step timeline now: each step opens to what it did.
     const onReport = vi.fn();
     const { unmount } = wrap(<AnswerBlock msg={msg} />);
-    expect(screen.queryByRole('button', { name: 'Cách tính' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Báo sai' })).toBeNull();
     unmount();
 
-    wrap(<AnswerBlock msg={msg} onOpenEvidence={onOpen} onReport={onReport} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Cách tính' }));
+    wrap(<AnswerBlock msg={msg} onReport={onReport} />);
     fireEvent.click(screen.getByRole('button', { name: 'Báo sai' }));
-    expect(onOpen).toHaveBeenCalledOnce();
     expect(onReport).toHaveBeenCalledOnce();
   });
 
   it('offers Lưu thành tri thức only where the screen handles it', () => {
     const onSaveKnowledge = vi.fn();
     const { unmount } = wrap(<AnswerBlock msg={msg} />);
-    expect(screen.queryByRole('button', { name: 'Lưu thành tri thức' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Thêm thao tác với câu trả lời' })).toBeNull();
     unmount();
 
     wrap(<AnswerBlock msg={msg} onSaveKnowledge={onSaveKnowledge} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Lưu thành tri thức' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm thao tác với câu trả lời' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Lưu vào tri thức/ }));
     expect(onSaveKnowledge).toHaveBeenCalledOnce();
   });
 
@@ -80,14 +75,17 @@ describe('answer meta row', () => {
   it('marks a reported answer as under review', () => {
     wrap(<AnswerBlock msg={msg} onReport={vi.fn()} reported />);
     expect(screen.getByText('Đang kiểm tra')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Báo sai' })).toBeDisabled();
+    // Reported once is enough: the action is gone until the report is reviewed.
+    expect(screen.queryByRole('button', { name: 'Báo sai' })).toBeNull();
   });
 
   it('opens the export dialog from Xuất', () => {
-    wrap(<AnswerBlock msg={msg} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Xuất' }));
+    wrap(<AnswerBlock msg={{ ...msg, answerId: 'answer-1' }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm thao tác với câu trả lời' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Xuất/ }));
     expect(screen.getByRole('dialog', { name: 'Xuất kết quả' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /CSV · bảng xem trước/ })).toBeChecked();
+    // A kept answer can also be exported by the server (xlsx), offered first; CSV stays.
+    expect(screen.getByRole('radio', { name: /CSV · bảng xem trước/ })).toBeInTheDocument();
   });
 });
 

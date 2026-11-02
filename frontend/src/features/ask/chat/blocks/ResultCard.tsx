@@ -28,6 +28,7 @@ export function ResultCard({
   queryRunId,
   onExportCsv,
   onSaveToSession,
+  onPick,
 }: {
   title: string;
   chart: ChartSpec | null;
@@ -38,6 +39,8 @@ export function ResultCard({
   queryRunId: string | null;
   onExportCsv?: () => void;
   onSaveToSession?: () => void;
+  /** A bar or point picked on the chart: the member to drill into (DrillPicker). */
+  onPick?: (category: string) => void;
 }) {
   const [view, setView] = useState<View>(chart ? 'chart' : 'table');
   const [full, setFull] = useState(false);
@@ -52,7 +55,7 @@ export function ResultCard({
   const body = (big: boolean) =>
     view === 'chart' && chart ? (
       <div className={big ? 'h-[480px]' : 'h-[280px]'}>
-        <ChartRenderer spec={chart} />
+        <ChartRenderer spec={chart} onPick={onPick} />
       </div>
     ) : (
       <DataGrid columns={columns} rows={rows} rowCount={rowCount} title={title} pageSize={big ? 20 : 8} />

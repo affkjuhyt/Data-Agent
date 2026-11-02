@@ -38,6 +38,8 @@ export function TurnFooter({
   onReceipt,
   onSaveKnowledge,
   onSaveSession,
+  onExport,
+  reported = false,
 }: {
   timestamp: string;
   text: string;
@@ -47,8 +49,11 @@ export function TurnFooter({
   onReceipt: () => void;
   onSaveKnowledge?: () => void;
   onSaveSession?: () => void;
+  onExport?: () => void;
+  reported?: boolean;
 }) {
   const more = [
+    ...(onExport ? [{ label: 'Xuất…', icon: 'download' as const, onSelect: onExport }] : []),
     ...(onSaveKnowledge ? [{ label: 'Lưu vào tri thức', icon: 'bookmark' as const, onSelect: onSaveKnowledge }] : []),
     ...(onSaveSession ? [{ label: 'Lưu vào phiên', icon: 'folder' as const, onSelect: onSaveSession }] : []),
   ];
@@ -56,7 +61,7 @@ export function TurnFooter({
     <div className="flex items-center gap-da-xs">
       <span className="mr-auto text-muted-foreground da-caption">{when(timestamp)}</span>
       <Action icon="refresh" label="Hỏi lại" onClick={onRetry} />
-      <Action icon="alert" label="Báo sai" onClick={onReport} />
+      {!reported && <Action icon="alert" label="Báo sai" onClick={onReport} />}
       <Action icon="copy" label="Sao chép" onClick={() => void navigator.clipboard?.writeText(text)} />
       {receipt && <Action icon="file" label="Biên nhận" onClick={onReceipt} />}
       {more.length > 0 && <Menu label="Thêm thao tác với câu trả lời" items={more} />}

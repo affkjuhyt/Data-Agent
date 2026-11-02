@@ -6,7 +6,7 @@
  */
 import type { components } from '../../lib/v1/schema';
 
-export type QuestionStepsView = components['schemas']['QuestionStepsView'];
+type QuestionStepsView = components['schemas']['QuestionStepsView'];
 type StepView = components['schemas']['TurnStepView'];
 
 export type StepStatus = 'running' | 'done' | 'failed' | 'skipped';

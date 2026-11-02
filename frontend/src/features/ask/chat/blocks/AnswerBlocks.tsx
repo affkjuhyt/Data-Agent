@@ -36,11 +36,13 @@ export function AnswerBlocks({
   onOpenCitation,
   onExportCsv,
   onSaveToSession,
+  onPick,
 }: {
   message: AskMessage;
   onOpenCitation?: (citation: Citation) => void;
   onExportCsv?: () => void;
   onSaveToSession?: () => void;
+  onPick?: (category: string) => void;
 }) {
   const blocks: AnswerBlockView[] = message.blocks ?? [];
   const layout = message.layout ?? 'auto';
@@ -80,6 +82,7 @@ export function AnswerBlocks({
               queryRunId={queryRunId}
               onExportCsv={onExportCsv}
               onSaveToSession={onSaveToSession}
+              onPick={onPick}
             />
           ),
         });

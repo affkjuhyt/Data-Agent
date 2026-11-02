@@ -87,12 +87,4 @@ export function runChips(run: EvidenceRun): Chip[] {
   return chips;
 }
 
-/** The first run that has rows to show — the table under the answer. */
-export function primaryRun(evidence?: Evidence | null): EvidenceRun | null {
-  if (!evidence?.runs?.length) return null;
-  return evidence.runs.find(r => r.rows?.length) ?? evidence.runs[0];
-}
 
-export function hasEvidence(evidence?: Evidence | null): boolean {
-  return !!evidence && (evidence.runs.length > 0 || evidence.warnings.length > 0);
-}

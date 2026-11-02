@@ -18,7 +18,7 @@ const MARK: Record<StepStatus, { icon: IconName; className: string; label: strin
   skipped: { icon: 'clock', className: 'text-muted-foreground', label: 'Bỏ qua' },
 };
 
-export const seconds = (ms: number) =>
+const seconds = (ms: number) =>
   (ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: ms < 10_000 ? 1 : 0 });
 
 export function StepTimeline({

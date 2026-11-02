@@ -7,7 +7,7 @@ import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { Answer } from '../../lib/v1/questions';
 import { fromAnswer, hasReceipt } from './answerMessage';
-import { AnswerBlock } from './components/AnswerBlock';
+import { TurnForTest as AnswerBlock } from './chat/turnForTest';
 import { AnswerTheme } from './components/AnswerTheme';
 import type { AskMessage } from './types';
 

@@ -4,8 +4,9 @@ import { ToastProvider } from '../../design-system/Toast';
 import AskDataPage from './AskDataPage';
 import type { AskMessage } from './types';
 
-const { send, navigate, saveAnswerToSession } = vi.hoisted(() => ({
+const { send, retry, navigate, saveAnswerToSession } = vi.hoisted(() => ({
   send: vi.fn(),
+  retry: vi.fn(),
   navigate: vi.fn(),
   saveAnswerToSession: vi.fn(
     async (_workspaceId: string, _answer: { answerId: string; title: string }) => ({ id: 'tile-1' }),
@@ -20,7 +21,13 @@ vi.mock('../../lib/v1/questions', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/v1/questions')>();
   return {
     ...actual,
-    listConversations: vi.fn(async () => ({ items: [], next_page_token: '' })),
+    listConversations: vi.fn(async () => ({
+      items: [
+        { id: 'c-1', title: 'Doanh thu Internet 2013', last_question_at: null, updated_at: '2026-11-02T10:00:00Z' },
+        { id: 'c-2', title: 'Tồn kho cuối kỳ', last_question_at: null, updated_at: '2026-11-01T10:00:00Z' },
+      ],
+      next_page_token: '',
+    })),
     saveAnswerToSession,
   };
 });
@@ -30,6 +37,9 @@ vi.mock('../../lib/v1/api', () => ({
     next_page_token: '',
   })),
 }));
+vi.mock('../../lib/v1/useV1', () => ({
+  useV1: () => ({ data: { metrics: [{ id: 'm1', label: 'Doanh thu Internet', code: 'DTI', certified: true, version: 1, allowed_dimension_ids: [] }], dimensions: [] } }),
+}));
 vi.mock('./hooks/useQuestionStream', () => ({
   useQuestionStream: () => ({
     messages,
@@ -38,7 +48,8 @@ vi.mock('./hooks/useQuestionStream', () => ({
     conversationId: null,
     send,
     answerClarification: vi.fn(),
-    confirmUnderstanding: vi.fn(),
+    retry,
+    addNotice: vi.fn(),
     stop: vi.fn(),
     hydrate: vi.fn(),
     resetConversation: vi.fn(),
@@ -48,107 +59,68 @@ vi.mock('./hooks/useQuestionStream', () => ({
 const wrap = (ui: React.ReactNode) => render(<ToastProvider>{ui}</ToastProvider>);
 
 const conversation: AskMessage[] = [
-  { id: 'q1', role: 'user', content: 'Nợ xấu bán lẻ tháng này tăng ở đâu?', timestamp: '2026-10-08T10:50:00', status: 'done' },
+  { id: 'q1', role: 'user', content: 'Doanh thu Internet năm 2013 là bao nhiêu?', timestamp: '2026-11-02T10:00:00Z', status: 'done' },
   {
-    id: 'a1', role: 'assistant', content: 'Nợ xấu bán lẻ T9 là 1,84%.', timestamp: '2026-10-08T10:50:02', status: 'done',
-    questionId: 'question-1', answerId: 'answer-1',
-    suggestions: ['So với cùng kỳ năm trước'],
-    evidence: {
-      runs: [{
-        kind: 'sql', sql: 'SELECT 1', generated_by: 'semantic_layer', trust: 'GOVERNED',
-        metric: { metric: 'npl_ratio@4', owner: 'Phạm Đức Long' },
-        columns: ['vung'], rows: [{ vung: 'DH Bắc Bộ' }], row_count: 1,
-      }],
-      clarifications: [], warnings: [],
-    },
+    id: 'a1', role: 'assistant', content: 'Doanh thu Internet năm 2013 là 16.351.550,34 USD.', timestamp: '2026-11-02T10:00:03Z',
+    status: 'done', questionId: 'question-1', answerId: 'answer-1', productScope: 'in_scope',
+    questionText: 'Doanh thu Internet năm 2013 là bao nhiêu?', durationMs: 2400, stepsRecorded: true,
+    steps: [{ stepId: 's1', seq: 1, action: 'understand', title: 'Hiểu câu hỏi', target: '', chips: [], status: 'done', startedAt: '', durationMs: 80, detail: null, summary: null, parent: null, children: [] }],
+    blocks: [{ type: 'markdown', id: 'm', content: 'Doanh thu Internet năm 2013 là 16.351.550,34 USD.' }],
+    suggestions: ['Doanh thu Internet năm 2013 theo quý'],
   },
 ];
 
-beforeEach(() => {
-  send.mockReset();
-  navigate.mockReset();
-  saveAnswerToSession.mockClear();
-  messages = [];
-  localStorage.clear();
-});
-
 describe('AskDataPage', () => {
-  it('starts empty with examples and asks what is typed', async () => {
-    wrap(<AskDataPage />);
-    // The desktop title; under 768px the page also carries the mobile title "Hỏi" (CSS picks one).
-    expect(screen.getByRole('heading', { level: 1, name: 'Hỏi đáp' })).toBeInTheDocument();
-    expect(screen.getByText('Bắt đầu bằng một câu hỏi rõ ràng')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText(/hệ thống tự chọn agent trả lời/)).toBeInTheDocument());
+  beforeEach(() => {
+    send.mockReset();
+    retry.mockReset();
+    navigate.mockReset();
+    messages = [];
+  });
 
-    const box = screen.getByLabelText('Câu hỏi');
-    fireEvent.change(box, { target: { value: 'Doanh thu tháng này' } });
+  it('starts from a greeting, the starters and the recent chats, and asks what is typed', async () => {
+    wrap(<AskDataPage />);
+    expect(screen.getByRole('heading', { name: /Xin chào Đỗ Hải Yến/ })).toBeInTheDocument();
+    expect(await screen.findAllByText('Doanh thu Internet 2013')).not.toHaveLength(0);
+    const box = screen.getByRole('textbox', { name: 'Câu hỏi' });
+    fireEvent.change(box, { target: { value: 'Tồn kho cuối năm 2013' } });
     fireEvent.keyDown(box, { key: 'Enter' });
-    expect(send).toHaveBeenCalledWith('Doanh thu tháng này');
-    // Thread durability is server-side (conversation URL); no localStorage history.
-    expect(localStorage.getItem('dataagent.ask.history')).toBeNull();
+    expect(send).toHaveBeenCalledWith('Tồn kho cuối năm 2013');
   });
 
-  it('titles the page with the first question and labels the answer', () => {
-    messages = conversation;
+  it('the conversation panel opens a recent chat and filters by title', async () => {
     wrap(<AskDataPage />);
-    expect(
-      screen.getByRole('heading', { level: 1, name: 'Nợ xấu bán lẻ tháng này tăng ở đâu?' }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Phiên của Đỗ Hải Yến · 1 câu hỏi/)).toBeInTheDocument();
-    expect(screen.getByTestId('trust-label')).toHaveTextContent('Có quản trị');
-    expect(screen.getByLabelText('Câu hỏi')).toHaveAttribute('placeholder', 'Hỏi tiếp…');
+    const panel = screen.getByRole('navigation', { name: 'Cuộc trò chuyện' });
+    await within(panel).findByText('Tồn kho cuối kỳ');
+    fireEvent.change(within(panel).getByRole('searchbox', { name: 'Tìm cuộc trò chuyện' }), { target: { value: 'tồn' } });
+    expect(within(panel).queryByText('Doanh thu Internet 2013')).not.toBeInTheDocument();
+    fireEvent.click(within(panel).getByText('Tồn kho cuối kỳ'));
+    expect(navigate).toHaveBeenCalledWith('analysis', 'ASK', 'c-2');
   });
 
-  it('opens the receipt of an answer over the conversation, which stays', () => {
+  it('draws the thread: the question, the steps, the answer and its next question', () => {
     messages = conversation;
     wrap(<AskDataPage />);
-    fireEvent.click(screen.getByRole('button', { name: 'Biên nhận' }));
-    expect(screen.getByRole('dialog', { name: 'Biên nhận câu trả lời' })).toBeInTheDocument();
-    expect(screen.getByTestId('trust-label')).toBeInTheDocument();
-    expect(navigate).not.toHaveBeenCalled();
+    expect(screen.getByText('Doanh thu Internet năm 2013 là bao nhiêu?', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Đã làm trong 2,4 giây/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Doanh thu Internet năm 2013 theo quý' }));
+    expect(send).toHaveBeenCalledWith('Doanh thu Internet năm 2013 theo quý');
   });
 
-  it('opens Cách tính beside the conversation and closes it', () => {
+  it('asks again, and opens Báo sai with the answer quoted', () => {
     messages = conversation;
     wrap(<AskDataPage />);
-    fireEvent.click(screen.getByRole('button', { name: 'Cách tính' }));
-    const panel = screen.getByRole('complementary', { name: 'Cách tính' });
-    expect(within(panel).getByText(/npl_ratio v4 · đã duyệt, người phụ trách Phạm Đức Long/)).toBeInTheDocument();
-    fireEvent.click(within(panel).getByRole('button', { name: 'Đóng' }));
-    expect(screen.queryByRole('complementary', { name: 'Cách tính' })).toBeNull();
-  });
-
-  it('asks a follow-up chip and saves a question', () => {
-    messages = conversation;
-    wrap(<AskDataPage />);
-    fireEvent.click(screen.getByRole('button', { name: 'So với cùng kỳ năm trước' }));
-    expect(send).toHaveBeenCalledWith('So với cùng kỳ năm trước');
-    fireEvent.click(screen.getByRole('button', { name: 'Lưu câu hỏi' }));
-    expect(JSON.parse(localStorage.getItem('dataagent.ask.saved') ?? '[]')[0].q).toBe('Nợ xấu bán lẻ tháng này tăng ở đâu?');
-  });
-
-  it('opens Báo sai with the answer quoted', () => {
-    messages = conversation;
-    wrap(<AskDataPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Hỏi lại' }));
+    expect(retry).toHaveBeenCalledWith('a1');
     fireEvent.click(screen.getByRole('button', { name: 'Báo sai' }));
-    const dialog = screen.getByRole('dialog', { name: 'Báo câu trả lời sai' });
-    expect(within(dialog).getByText('“Nợ xấu bán lẻ T9 là 1,84%.”')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveTextContent('16.351.550,34 USD');
   });
 
-  it('saves an answer as a session tile via Thêm vào phiên', async () => {
+  it('starts a new conversation from the panel', () => {
     messages = conversation;
     wrap(<AskDataPage />);
-    fireEvent.click(screen.getByRole('button', { name: 'Thêm vào phiên' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Phiên đích' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Điều tra nợ xấu bán lẻ T9' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
-    await waitFor(() =>
-      expect(saveAnswerToSession).toHaveBeenCalledWith('ws-npl-sept', {
-        answerId: 'answer-1',
-        title: 'Nợ xấu bán lẻ tháng này tăng ở đâu?',
-      }),
-    );
-    expect(await screen.findByText(/Đã thêm vào Điều tra nợ xấu bán lẻ T9/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Đã thêm vào phiên' })).toBeDisabled();
+    const panel = screen.getByRole('navigation', { name: 'Cuộc trò chuyện' });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Cuộc trò chuyện mới' }));
+    expect(navigate).toHaveBeenCalledWith('analysis', 'ASK');
   });
 });
