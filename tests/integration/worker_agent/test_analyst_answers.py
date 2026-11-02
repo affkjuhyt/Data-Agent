@@ -24,6 +24,13 @@ pytestmark = [pytest.mark.integration]
 warehouse = test_answers.warehouse
 
 
+@pytest.fixture(autouse=True)
+def governed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # These are the governed path's readings (understand/analyst.py); the dynamic agent
+    # (agentic/engine.py), which answers first by default, has its own tests.
+    monkeypatch.setenv("ASK_ENGINE", "governed")
+
+
 class Planner:
     """Only the agent's turns are answered; the one-shot reading and the narrator are down."""
 

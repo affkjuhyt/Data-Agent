@@ -1495,6 +1495,8 @@ async def test_g5_1_the_model_reads_what_the_rules_could_not(
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
     activate(bank)
+    # The governed path's one-shot reading; the dynamic agent answers first by default.
+    monkeypatch.setenv("ASK_ENGINE", "governed")
     fake = FakeGateway({"metric": "NPL_RATIO", "group_by": ["vung"], "filters": {}, "period": None})
     monkeypatch.setattr(questions, "_gateway", fake)
     monkeypatch.setattr(questions, "_gateway_read", True)
