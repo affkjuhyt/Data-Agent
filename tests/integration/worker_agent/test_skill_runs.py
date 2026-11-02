@@ -140,6 +140,32 @@ async def test_an_additive_metric_decomposes_by_its_own_change(
     assert result["shape"] == "additive" and "Trong đó" not in result["summary"]
 
 
+async def test_with_no_cut_named_the_most_concentrated_change_is_decomposed(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Product has one member (TD): it is the total, and explains nothing. Region splits the
+    # change 1500 / 1000, so region is decomposed and both cuts are ranked in the result.
+    bank = build(seed, warehouse, monkeypatch)
+    run = run_decomposition(
+        bank,
+        {
+            "metric": "DU_NO",
+            "dimension": "san_pham,vung",
+            "period": "2026-09",
+            "base_period": "2026-08",
+            "rank": True,
+        },
+    )
+    await drain()
+    status, result, _ = outcome(seed, run)
+    assert status == "succeeded", result
+    assert result["dimension"] == "vung"
+    assert [d["dimension"] for d in result["drivers"]] == ["vung", "san_pham"]
+    assert result["drivers"][0]["top_member"] == "Miền Bắc"
+    assert result["drivers"][1]["concentration"] == 0.0
+    assert "tập trung nhất theo vùng: Miền Bắc chiếm 60%" in result["summary"]
+
+
 @pytest.mark.req("AC-03-01-02")
 async def test_a_long_run_tells_its_owner_when_it_ends_and_a_short_one_does_not(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch

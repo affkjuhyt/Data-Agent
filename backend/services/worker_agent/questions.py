@@ -284,9 +284,16 @@ def _plan_ir(
             steps[0]["args"]["grain"] = grain
         if analysis_args is not None:
             steps[0]["args"]["analysis"] = analysis_args
-        if explain_by is not None and u.period is not None:
-            month = u.period.start
-            before = (month - datetime.timedelta(days=1)).replace(day=1)
+        months = _explained_months(u)
+        if explain_by is not None and u.period is not None and months is not None:
+            first = u.period.start
+            before = (first - datetime.timedelta(days=1)).replace(day=1)
+            if months == 3:
+                before = before.replace(month=before.month - 2)
+                period, base = (f"{d.year}-Q{(d.month - 1) // 3 + 1}" for d in (first, before))
+            else:
+                period, base = f"{first:%Y-%m}", f"{before:%Y-%m}"
+            ranked = "," in explain_by
             steps.append(
                 {
                     "id": "s2",
@@ -297,15 +304,17 @@ def _plan_ir(
                         "params": {
                             "metric": u.metric.code,
                             "dimension": explain_by,
-                            "period": f"{month:%Y-%m}",
-                            "base_period": f"{before:%Y-%m}",
+                            "period": period,
+                            "base_period": base,
+                            **({"rank": True} if ranked else {}),
                         },
                     },
                     "depends_on": ["s1"],
                     "checkpoint": "confirm",
                     "on_error": "fail",
-                    "explain": f"Phân rã biến động {u.metric.name} theo {explain_name or explain_by}"
-                    " so với tháng trước",
+                    "explain": f"Phân rã biến động {u.metric.name} theo "
+                    + ("chiều giải thích rõ nhất" if ranked else explain_name or explain_by)
+                    + (" so với quý trước" if months == 3 else " so với tháng trước"),
                 }
             )
     analyst_plan = None
@@ -610,13 +619,30 @@ def _drop_unsupported_cuts(u: Understanding, codes: set[str]) -> None:
     u.filters = {code: values for code, values in u.filters.items() if code not in codes}
 
 
-def _explain_cut(u: Understanding, layer: SpaceLayer) -> str | None:
-    """The cut a "vì sao" decomposes by: the one asked for, else the metric's first allowed one.
-    None when there is no single month to compare with the month before."""
-    if u.decision != "proceed" or u.metric is None or u.period is None:
+# The cuts a "vì sao" with no cut named tries, ranked by how concentrated the change is in each.
+MAX_EXPLAIN_CUTS = 5
+
+
+def _explained_months(u: Understanding) -> int | None:
+    """1 for a calendar month, 3 for a calendar quarter: the periods a decomposition compares
+    with the one before; None otherwise."""
+    if u.period is None or u.period.start.day != 1:
         return None
     start, end = u.period.start, u.period.end
-    if start.day != 1 or end != (start + datetime.timedelta(days=32)).replace(day=1):
+    for months in (1, 3):
+        index = start.year * 12 + start.month - 1 + months
+        if (months == 1 or start.month % 3 == 1) and end == datetime.date(
+            index // 12, index % 12 + 1, 1
+        ):
+            return months
+    return None
+
+
+def _explain_cut(u: Understanding, layer: SpaceLayer) -> str | None:
+    """The cut a "vì sao" decomposes by: the one asked for; else every cut the metric allows (up
+    to MAX_EXPLAIN_CUTS, comma-separated), which the run ranks by how concentrated the change is
+    (skills/decomposition.drivers_of). None when the period is not one month or one quarter."""
+    if u.decision != "proceed" or u.metric is None or _explained_months(u) is None:
         return None
     dims = layer.layer.dimensions
     asked = [g for g in u.group_by if g in dims and not dims[g].is_time]
@@ -626,7 +652,7 @@ def _explain_cut(u: Understanding, layer: SpaceLayer) -> str | None:
     cuts = sorted(
         (d for d in dims.values() if d.id in allowed and not d.is_time), key=lambda d: d.name
     )
-    return cuts[0].code if cuts else None
+    return ",".join(d.code for d in cuts[:MAX_EXPLAIN_CUTS]) or None
 
 
 def _cut_not_allowed(u: Understanding, layer: SpaceLayer) -> str | None:

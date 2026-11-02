@@ -44,10 +44,13 @@ from services.worker_agent.semantic.analysis import additive_measures
 from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.skills.decomposition import (
     NO_VALUE,
+    RECONCILE_TOLERANCE,
+    Decomposed,
     NotDecomposable,
     Shape,
     Values,
     decompose,
+    drivers_of,
     result_of,
     shape_of,
 )
@@ -248,11 +251,14 @@ async def _decompose(
     seq = 0
     skipped: list[str] = []
     # AC-03-01-04: the first dimension that has data in either period is decomposed; one with
-    # none (no rows, or only empty members) is skipped and the result says so.
+    # none (no rows, or only empty members) is skipped and the result says so. With `rank` (the
+    # question named no cut), every dimension is decomposed and the most concentrated change wins.
+    rank = bool(params.get("rank")) and len(dimensions) > 1
+    found: list[tuple[c.Dimension, Decomposed, dict[str, Values]]] = []
     for dimension in dimensions:
         values: dict[str, Values] = {}
         for period in (base, current):
-            found: dict[str, list[decimal.Decimal | None]] = {}
+            rows_by: dict[str, list[decimal.Decimal | None]] = {}
             for i, measure in enumerate(measures):
                 seq += 1
                 rows = await _query(
@@ -269,9 +275,9 @@ async def _decompose(
                     name=f"Truy vấn {measure} theo {dimension.name} kỳ {period.label}",
                 )
                 for member, value in rows:
-                    found.setdefault(member, [None, None])[i] = value
+                    rows_by.setdefault(member, [None, None])[i] = value
             values[period.label] = {
-                m: (num or decimal.Decimal(0), den) for m, (num, den) in found.items()
+                m: (num or decimal.Decimal(0), den) for m, (num, den) in rows_by.items()
             }
         members = set(values[base.label]) | set(values[current.label])
         if members <= {NO_VALUE}:
@@ -279,12 +285,36 @@ async def _decompose(
             continue
         seq += 1
         started = time.monotonic()
-        skipped += [f"kỳ {p.label}" for p in (base, current) if not values[p.label]]
         try:
             decomposed = decompose(shape, values[base.label], values[current.label])
         except NotDecomposable as exc:
             await _step(org_id, run_id, seq, "Phân rã", status="error", started=started)
             raise RunFailed(f"Không phân rã được: {exc}.") from exc
+        await _step(
+            org_id,
+            run_id,
+            seq,
+            f"Phân rã theo {dimension.name}",
+            status="ok",
+            started=started,
+            output={
+                "reconciled": abs(decomposed.residual) <= RECONCILE_TOLERANCE,
+                "members": len(decomposed.contributions),
+            },
+        )
+        found.append((dimension, decomposed, values))
+        if not rank:
+            break
+    if found:
+        drivers = drivers_of(
+            [(dim.code, dim.name, d) for dim, d, _ in found],
+            decimals=version.decimals,
+            unit=version.unit,
+        )
+        dimension, decomposed, values = next(
+            entry for entry in found if entry[0].code == drivers[0]["dimension"]
+        )
+        skipped += [f"kỳ {p.label}" for p in (base, current) if not values[p.label]]
         result = result_of(
             decomposed,
             shape,
@@ -297,15 +327,14 @@ async def _decompose(
             skipped=skipped,
         )
         result["dimension"] = dimension.code
-        await _step(
-            org_id,
-            run_id,
-            seq,
-            f"Phân rã theo {dimension.name}",
-            status="ok",
-            started=started,
-            output={"reconciled": result["reconciled"], "members": len(decomposed.contributions)},
-        )
+        if rank:
+            top = drivers[0]
+            result["drivers"] = drivers
+            result["summary"] += (
+                f" Trong {len(drivers)} chiều đã thử, thay đổi tập trung nhất theo "
+                f"{dimension.name.lower()}: {top['top_member']} chiếm {top['top_share_text']}"
+                " mức thay đổi."
+            )
         return result
     raise RunFailed(
         f"Không có dữ liệu {metric_name} theo {', '.join(d.name for d in dimensions)} trong hai kỳ."

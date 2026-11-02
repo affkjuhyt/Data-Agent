@@ -129,3 +129,26 @@ def test_periods_are_months_or_quarters_read_strictly() -> None:
     for bad in ("2026-13", "2026-Q5", "tháng 9", None):
         with pytest.raises(RunFailed):
             period_of(bad, "period")
+
+
+def test_cuts_rank_by_how_concentrated_their_change_is() -> None:
+    from services.worker_agent.skills.decomposition import (
+        Contribution,
+        Decomposed,
+        concentration,
+        drivers_of,
+    )
+
+    D = decimal.Decimal
+    one_mover = Decomposed(D(100), D(160), [Contribution("A", D(55)), Contribution("B", D(5))])
+    spread = Decomposed(D(100), D(160), [Contribution(m, D(20)) for m in ("X", "Y", "Z")])
+    total = Decomposed(D(100), D(160), [Contribution("Tất cả", D(60))])
+    assert concentration(one_mover) == D(55) / D(60)
+    assert concentration(total) == 0  # one member is the total: it explains nothing
+    ranked = drivers_of(
+        [("kenh", "Kênh", spread), ("vung", "Vùng", one_mover), ("tong", "Tổng", total)],
+        decimals=0,
+        unit=None,
+    )
+    assert [d["dimension"] for d in ranked] == ["vung", "kenh", "tong"]
+    assert ranked[0]["top_member"] == "A" and ranked[0]["top_share_text"] == "92%"

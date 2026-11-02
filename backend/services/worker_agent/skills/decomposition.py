@@ -10,7 +10,12 @@ Two shapes of metric decompose exactly:
   moved: w1_i * (r1_i - r0_i)) and a mix part (its weight in B moved: the rest).
 
 Either way the contributions add up to the change; the result carries that reconciliation, and
-says what the numbers are: a contribution by member, not a cause (AC-03-01-07). Anything else (an
+says what the numbers are: a contribution by member, not a cause (AC-03-01-07).
+
+When the question names no cut, every cut the metric allows is decomposed and ranked by how
+concentrated its change is (`concentration`: the largest member's share of all the members'
+movement), the idea of Datus' attribution_analyze: the cut where one member carries the change is
+the one that explains it; a cut where every member moved a little explains little. Anything else (an
 average, a difference of measures) is refused rather than approximated.
 """
 
@@ -155,6 +160,40 @@ def _signed(value: decimal.Decimal, decimals: int, unit: str | None) -> str:
 def _plain(value: decimal.Decimal, decimals: int, unit: str | None) -> str:
     suffix = unit if unit == "%" else f" {unit}" if unit else ""
     return f"{vn_number(value, decimals)}{suffix}"
+
+
+def concentration(d: Decomposed) -> decimal.Decimal:
+    """The largest member's share of all the members' movement, 0 to 1; 0 when nothing moved or
+    when the cut has one member, which is the total itself and explains nothing."""
+    moved = sum((abs(c.value) for c in d.contributions), D(0))
+    if moved == 0 or len(d.contributions) < 2:
+        return D(0)
+    return max(abs(c.value) for c in d.contributions) / moved
+
+
+def drivers_of(
+    found: list[tuple[str, str, Decomposed]], *, decimals: int, unit: str | None
+) -> list[dict[str, Any]]:
+    """The cuts tried, (code, name, decomposition) each, from the most concentrated change to the
+    least; a tie goes to the cut with fewer members (an easier one to act on)."""
+    change_unit = "điểm %" if unit == "%" else unit
+    ranked = sorted(found, key=lambda f: (-concentration(f[2]), len(f[2].contributions), f[1]))
+    out: list[dict[str, Any]] = []
+    for code, name, d in ranked:
+        top = max(d.contributions, key=lambda c: abs(c.value), default=None)
+        out.append(
+            {
+                "dimension": code,
+                "name": name,
+                "concentration": float(concentration(d)),
+                "top_member": top.member if top else None,
+                "top_value_text": _signed(top.value, decimals, change_unit) if top else None,
+                "top_share_text": f"{vn_number(top.value / d.change * 100, 0)}%"
+                if top and d.change != 0
+                else "—",
+            }
+        )
+    return out
 
 
 def result_of(

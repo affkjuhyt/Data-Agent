@@ -141,13 +141,14 @@ async def test_a_why_question_is_answered_and_proposes_the_decomposition(
     _, steps = plan_of(seed, q)
     proposal = steps[1]
     assert (proposal["kind"], proposal["checkpoint"]) == ("skill", "confirm")
-    # No cut asked: the metric's first allowed one, alphabetically ("sản phẩm" < "vùng").
+    # No cut asked: every allowed one, which the run ranks by how concentrated the change is.
     assert proposal["args"] == {
         "category": "decomposition",
         "params": {
             "metric": "NPL_RATIO",
-            "dimension": "san_pham",
+            "dimension": "san_pham,vung",
             "period": "2026-09",
             "base_period": "2026-08",
+            "rank": True,
         },
     }
