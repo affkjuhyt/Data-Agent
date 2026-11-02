@@ -172,6 +172,19 @@ async def _require_owner(
         )
 
 
+# An Ask turn's run (trigger_ref "question:<id>", worker turn_trace.py) carries the question's
+# reading and SQL in its steps: only the person who asked reads it, as only they read /steps.
+ASK_TURN = "question:"
+
+
+def _visible_run(principal: Principal) -> Any:
+    return or_(
+        agent.AgentRun.trigger_ref.is_(None),
+        ~agent.AgentRun.trigger_ref.startswith(ASK_TURN),
+        agent.AgentRun.initiated_by == principal.user_id,
+    )
+
+
 async def _run(
     session: AsyncSession,
     run_id: uuid.UUID,
@@ -184,6 +197,7 @@ async def _run(
         agent.AgentRun.id == run_id,
         agent.AgentRun.org_id == principal.org_id,
         agent.AgentRun.data_space_id == data_space,
+        _visible_run(principal),
     )
     row = await session.scalar(query.with_for_update() if lock else query)
     if row is None:
@@ -1209,7 +1223,9 @@ async def list_runs(
     parent_run_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> Page[RunSummary]:
     query = select(agent.AgentRun).where(
-        agent.AgentRun.org_id == principal.org_id, agent.AgentRun.data_space_id == data_space
+        agent.AgentRun.org_id == principal.org_id,
+        agent.AgentRun.data_space_id == data_space,
+        _visible_run(principal),
     )
     if agent_id:
         query = query.where(agent.AgentRun.agent_id == agent_id)
@@ -1328,6 +1344,7 @@ async def list_children(
             agent.AgentRun.parent_run_id == run_id,
             agent.AgentRun.org_id == principal.org_id,
             agent.AgentRun.data_space_id == data_space,
+            _visible_run(principal),
         ),
         order,
         page,

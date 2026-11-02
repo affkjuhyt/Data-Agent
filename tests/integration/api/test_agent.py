@@ -1136,3 +1136,28 @@ async def test_list_says_the_goal_the_trigger_and_the_run_title(world: AgentWorl
         again = await api.get("/v1/agents", headers=owner_headers(world))
         item = next(row for row in again.json()["items"] if row["id"] == created["id"])
         assert item["runs_7d"] is None
+
+
+async def test_an_ask_turn_run_is_read_only_by_its_asker(world: AgentWorld, seed: Seed) -> None:
+    # A question's run carries its reading and SQL: another member reads neither, by any route.
+    async with client(world) as api:
+        item = await new_agent(api, world, config={"goal": "g"})
+        run = await started_run(api, world, item["id"])
+        execute(
+            seed,
+            "UPDATE agent.agent_run SET trigger_ref = %s, initiated_by = %s WHERE id = %s",
+            f"question:{uuid.uuid4()}",
+            world.owner,
+            run,
+        )
+        mine = await api.get(f"/v1/runs/{run}?view=technical", headers=owner_headers(world))
+        assert mine.status_code == 200
+        other = other_headers(world)
+        assert (await api.get(f"/v1/runs/{run}", headers=other)).status_code == 404
+        assert (await api.get(f"/v1/runs/{run}/events", headers=other)).status_code == 404
+        listed = await api.get("/v1/runs", headers=other)
+        assert run not in {r["id"] for r in listed.json()["items"]}
+        assert run in {
+            r["id"]
+            for r in (await api.get("/v1/runs", headers=owner_headers(world))).json()["items"]
+        }
