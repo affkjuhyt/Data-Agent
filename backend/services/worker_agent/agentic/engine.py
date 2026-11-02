@@ -37,7 +37,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
 from services.worker_agent import turn_trace
 from services.worker_agent.agentic import blocks as b
-from services.worker_agent.agentic import memory, prompts, verify
+from services.worker_agent.agentic import memory, prompts, signals, verify
 from services.worker_agent.agentic import plan as p
 from services.worker_agent.agentic.graph import END, StateGraph
 from services.worker_agent.agentic.grounded import unnamed
@@ -102,6 +102,8 @@ class State:
     started: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
     # What the person said in earlier conversations that bears on this question (memory.py).
     memories: list[memory.Memory] = field(default_factory=list)
+    # The catalogue's signals about the tables read (signals.py): caveats, tables out of time.
+    signals: signals.Signals = field(default_factory=lambda: signals.Signals())
     answered: bool = False
     cancelled: bool = False
 
@@ -627,6 +629,20 @@ async def compose(s: State) -> None:
         )
         s.handed_back = True
         return
+    try:
+        s.signals = await signals.read(s.ctx)
+    except Exception:
+        logger.exception("question %s: data signals not read", s.question_id)
+    if s.signals.out_of_time:
+        # BR-178: no figure of a table out of time is stated; the governed path masks them.
+        await turn_trace.record_step(
+            "handover",
+            target=f"Dữ liệu {', '.join(s.signals.out_of_time)} quá hạn cập nhật; chuyển sang cách"
+            " trả lời chuẩn.",
+            detail={"out_of_time": s.signals.out_of_time},
+        )
+        s.handed_back = True
+        return
     unnamed = _unnamed_quantity(s)
     if unnamed:
         # The metrics read do not measure what the question asks ("khách hàng" read as units
@@ -809,6 +825,7 @@ def _append_caveats(s: State) -> None:
             items.append(f"{ds.title}: {TRUST_LABEL[ds.trust]}.")
         if ds.id in used and ds.truncated:
             items.append(f"{ds.title}: kết quả bị cắt bớt, chỉ hiển thị một phần.")
+    items += s.signals.caveats
     if s.dropped_sentences:
         items.append(f"Đã bỏ {s.dropped_sentences} câu có số không truy được nguồn.")
     # A failed step is said only when it was to fetch data and nothing fetched with that tool

@@ -217,8 +217,10 @@ class QueryMetric(Tool):
             tool=self.name,
             unit=compiled.unit,
             truncated=bool(outcome.truncated),
+            sources=[str(i) for i in compiled.dataset_ids],
             reading={
                 "metric": args.metric,
+                "metric_id": str(entry.metric_id),
                 "group_by": list(args.group_by),
                 "filters": {k: list(v) for k, v in args.filters.items()},
             },

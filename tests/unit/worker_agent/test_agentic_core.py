@@ -573,3 +573,59 @@ def test_citation_markers_off_format_are_repaired_and_unknown_ones_dropped() -> 
         verify.repair_citations(text, {1, 2, 3})
         == "Theo quy định [1] và báo cáo [2], xem thêm [3] và ."
     )
+
+
+def test_signals_turn_quality_freshness_and_moved_structure_into_caveats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import contextlib
+    import datetime
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import signals
+
+    table, metric = uuid.uuid4(), uuid.uuid4()
+    ws = Workspace()
+    ws.add(
+        title="Doanh thu",
+        columns=["v"],
+        rows=[[1]],
+        trust="certified",
+        sources=[str(table)],
+        reading={"metric": "DT", "metric_id": str(metric), "group_by": [], "filters": {}},
+    )
+    certified = datetime.datetime(2026, 10, 1, tzinfo=datetime.UTC)
+    layer = types.SimpleNamespace(
+        datasets={
+            table: types.SimpleNamespace(
+                display_name="Bán hàng", table_name="f", quality_state="blocked"
+            )
+        },
+        version_rows={metric: types.SimpleNamespace(certified_at=certified)},
+    )
+    results = iter(
+        [
+            [types.SimpleNamespace(member_ref=table, freshness_state="fresh")],
+            [
+                types.SimpleNamespace(
+                    dataset_id=table, version=2, valid_from=certified + datetime.timedelta(days=3)
+                )
+            ],
+        ]
+    )
+
+    class Session:
+        async def scalars(self, _query: object) -> Any:
+            return types.SimpleNamespace(all=lambda: next(results))
+
+    @contextlib.asynccontextmanager
+    async def scoped(*_a: object) -> Any:
+        yield Session()
+
+    monkeypatch.setattr(signals, "scoped_session", scoped)
+    ctx = types.SimpleNamespace(ws=ws, layer=layer, org_id=uuid.uuid4(), user_id=uuid.uuid4())
+    found = asyncio.run(signals.read(ctx))  # type: ignore[arg-type]
+    assert not found.out_of_time
+    assert any("chất lượng mức cao" in c for c in found.caveats)
+    assert any("đổi cấu trúc" in c for c in found.caveats)

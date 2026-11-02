@@ -79,6 +79,9 @@ class Dataset:
     # The SQL the model wrote (explore_sql): never shown, read only to check that a member the
     # question names was filtered on (engine._dropped_members).
     sql: str | None = None
+    # The catalogue tables a governed figure was read from (the compiled metric's datasets), for
+    # the quality, freshness and structure signals (signals.py).
+    sources: list[str] = field(default_factory=list)
     agreement_clear: bool = True
 
     def records(self, limit: int | None = None) -> list[dict[str, Any]]:
