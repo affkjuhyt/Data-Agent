@@ -175,3 +175,15 @@ async def test_a_step_opened_inside_another_is_not_its_child(
     understand, write_sql, call = trace.steps
     assert write_sql.output["_view"]["parent"] is None
     assert call.output["_view"]["parent"] == write_sql.output["_view"]["step_id"]
+
+
+async def test_sql_never_reaches_a_step(trace: turn_trace.Trace, published: list[dict]) -> None:
+    # Reading SQL needs view_detail and is audited (/v1/query-runs/{id}/sql): whatever a step's
+    # writer puts in its detail, the SQL is neither published nor kept.
+    async with turn_trace.stepping("query") as s:
+        s.detail = {"sql": "SELECT secret FROM t", "row_count": 1, "args": {"sql": "SELECT 2"}}
+    await turn_trace.record_step("use_tool", detail={"tool": "x", "args": {"sql": "SELECT 3"}})
+    for event in published:
+        assert "SELECT" not in str(event)
+    assert all("SELECT" not in str(step.output) for step in trace.steps)
+    assert trace.steps[0].output["detail"]["row_count"] == 1

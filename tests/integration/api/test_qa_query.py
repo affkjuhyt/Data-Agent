@@ -401,7 +401,8 @@ async def test_the_asker_reads_the_steps_of_their_question(world: World, seed: S
             ("query", "failed", "Truy vấn"),
         ]
         query = body["steps"][1]
-        assert query["detail"] == {"sql": "SELECT 1"} and query["summary"] == "Nguồn không trả lời"
+        # SQL is read through /v1/query-runs/{id}/sql (view_detail, audited), never here.
+        assert query["detail"] == {} and query["summary"] == "Nguồn không trả lời"
         assert (query["step_id"], query["seq"], query["duration_ms"]) == ("s2", 2, 120)
 
 

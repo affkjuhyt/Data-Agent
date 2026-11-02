@@ -194,12 +194,25 @@ def _open(
     return opened
 
 
+# Keys never kept nor published in a step: reading SQL needs view_detail and is audited at
+# /v1/query-runs/{id}/sql, which the stream and /steps (ask only) would otherwise bypass.
+WITHHELD_KEYS = frozenset({"sql", "sql_executed", "sql_generated", "compiled_sql"})
+
+
+def _withheld(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {k: _withheld(v) for k, v in value.items() if k not in WITHHELD_KEYS}
+    if isinstance(value, list):
+        return [_withheld(v) for v in value]
+    return value
+
+
 def _close(step: Step, status: str, detail: Mapping[str, Any] | None, summary: str | None) -> None:
     step.duration_ms = int((time.monotonic() - step._clock) * 1000)
     step.status = STORED_STATUS.get(status, "ok")
     step.summary = summary
     assert step.output is not None
-    step.output["detail"] = dict(detail) if detail else None
+    step.output["detail"] = _withheld(dict(detail)) if detail else None
 
 
 async def begin(

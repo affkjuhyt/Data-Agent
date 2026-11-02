@@ -307,6 +307,19 @@ def _stream_events(view: QuestionView, answer_kind: str | None) -> list[Event]:
     return events
 
 
+# Never served in a step, whatever wrote it: SQL is read at /v1/query-runs/{id}/sql, which checks
+# view_detail and audits the read (worker turn_trace.WITHHELD_KEYS keeps it out at the source).
+STEP_WITHHELD = frozenset({"sql", "sql_executed", "sql_generated", "compiled_sql"})
+
+
+def _without_sql(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _without_sql(v) for k, v in value.items() if k not in STEP_WITHHELD}
+    if isinstance(value, list):
+        return [_without_sql(v) for v in value]
+    return value
+
+
 # agent_step.status → the timeline's status (turn_trace.STORED_STATUS, reversed).
 STEP_STATUS = {"ok": "done", "error": "failed", "skipped": "skipped", "retried": "done"}
 
@@ -351,7 +364,7 @@ async def get_question_steps(
                 status=STEP_STATUS.get(row.status, "done"),  # type: ignore[arg-type]
                 started_at=row.started_at,
                 duration_ms=row.duration_ms,
-                detail=row.output.get("detail"),
+                detail=_without_sql(row.output.get("detail")),
                 summary=row.summary,
                 parent=view.get("parent"),
             )
