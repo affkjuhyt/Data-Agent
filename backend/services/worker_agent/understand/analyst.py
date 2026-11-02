@@ -36,6 +36,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from services.worker_agent import turn_trace
 from services.worker_agent.llm import Gateway, ModelUnavailable
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer
@@ -283,7 +284,9 @@ async def resolve(
                 for o in args.get("options") or []
                 if str(o) in _visible(layer)
             ]
-            steps.append(Step(turn.tool, args, turn.reason, "asked"))
+            await _taken(
+                steps, Step(turn.tool, args, turn.reason, "asked"), "done" if options else "failed"
+            )
             if not options:
                 return None
             return Resolved(
@@ -295,7 +298,7 @@ async def resolve(
                 assert u.metric is not None
                 # The question's own words decide (invariant 5), as for the one-shot reading.
                 if grounding(question, u, layer.vocabulary, today=today) == "partial":
-                    steps.append(Step(turn.tool, args, turn.reason, "asked back: partial"))
+                    await _taken(steps, Step(turn.tool, args, turn.reason, "asked back: partial"))
                     return Resolved(
                         Understanding(decision="clarify", options=[u.metric]),
                         steps,
@@ -310,15 +313,43 @@ async def resolve(
                     Chip(chip.kind, chip.value, chip.label, "default", MODEL_CONFIDENCE)
                     for chip in u.chips
                 ]
-                steps.append(Step(turn.tool, args, turn.reason, "ok"))
+                await _taken(steps, Step(turn.tool, args, turn.reason, "ok"))
                 return Resolved(u, steps, model_name, tokens)
             result = why
-        steps.append(Step(turn.tool, args, turn.reason, result))
+        # A proposal that does not compile goes back to the model; on the timeline it failed.
+        await _taken(
+            steps,
+            Step(turn.tool, args, turn.reason, result),
+            "failed" if turn.tool == "propose" else "done",
+        )
         transcript += (
             f"\n\nLượt {len(steps)}: {json.dumps({'tool': turn.tool, 'args': args}, ensure_ascii=False)}"
             f"\nKết quả: {_summary(result)}"
         )
     return None
+
+
+# What the Ask timeline calls each tool turn.
+TITLES = {
+    "search_metrics": "Tìm chỉ số",
+    "describe_metric": "Xem định nghĩa chỉ số",
+    "search_values": "Tìm giá trị",
+    "propose": "Đề xuất",
+    "ask_user": "Hỏi lại bạn",
+}
+
+
+async def _taken(steps: list[Step], step: Step, status: str = "done") -> None:
+    """Keep the turn and show it on the timeline: the tool, its arguments and the cut result,
+    never the prompt."""
+    steps.append(step)
+    await turn_trace.record_step(
+        "use_tool",
+        title=TITLES[step.tool],
+        target=step.reason,
+        detail={"tool": step.tool, "args": step.args, "result": _summary(step.result)},
+        status=status,
+    )
 
 
 def trace_of(resolved: Resolved) -> list[dict[str, Any]]:

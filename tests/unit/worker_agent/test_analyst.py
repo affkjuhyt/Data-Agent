@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from services.worker_agent import turn_trace
 from services.worker_agent.llm import ModelUnavailable, Reply
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer
@@ -155,6 +156,39 @@ async def test_a_reading_that_does_not_compile_goes_back_to_the_model() -> None:
     found = await resolve("revenue theo quốc gia năm 2013", model)
     assert found is not None and found.understanding.group_by == ["quoc_gia"]
     assert "không chạy được" in str(found.steps[0].result)
+
+
+async def test_each_tool_turn_is_a_row_of_the_timeline_without_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[dict[str, Any]] = []
+
+    async def publish(question_id: str, event: str, data: dict[str, Any]) -> None:
+        events.append(data)
+
+    monkeypatch.setattr(turn_trace, "publish", publish)
+    token = turn_trace._current.set(
+        turn_trace.Trace(org_id=uuid.uuid4(), question_id=uuid.uuid4(), user_id=None)
+    )
+    try:
+        model = Scripted(
+            {"tool": "search_metrics", "args": {"text": "revenue"}, "reason": "tìm chỉ số"},
+            {"tool": "propose", "args": {"metric": "DOANH_THU", "group_by": ["mau"]}},
+            {"tool": "propose", "args": {"metric": "DOANH_THU", "period": "2013"}},
+        )
+        assert await resolve("revenue năm 2013", model) is not None
+    finally:
+        turn_trace._current.reset(token)
+    rows = [(e["action"], e["title"], e["status"]) for e in events]
+    assert rows == [
+        ("use_tool", "Tìm chỉ số", "done"),
+        ("use_tool", "Đề xuất", "failed"),
+        ("use_tool", "Đề xuất", "done"),
+    ]
+    assert events[0]["target"] == "tìm chỉ số"
+    assert set(events[0]["detail"]) == {"tool", "args", "result"}
+    assert "DOANH_THU" in str(events[0]["detail"]["result"])
+    assert all("Câu hỏi:" not in str(e) for e in events)
 
 
 async def test_an_invented_code_is_refused_and_said() -> None:
