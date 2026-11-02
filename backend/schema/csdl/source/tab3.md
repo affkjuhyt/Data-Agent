@@ -34,7 +34,7 @@ Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case
 | integration | Gateway, MCP server | Client API và MCP, webhook, hạn mức, chống gửi trùng | P12 | 5 |
 | catalog | Connector service | Nguồn, bảng, cột, hồ sơ dữ liệu, lịch sử schema, lượt quét, lịch sử chứng nhận dataset hợp nhất | P04 | 7 |
 | context | Context service | Mô hình ngữ nghĩa, chỉ số và phiên bản, từ đồng nghĩa, ví dụ, thuật ngữ, trang tri thức và phiên bản, khẳng định, ràng buộc số, liên kết, lượt và phát hiện rà soát | P07 | 22 |
-| qa | Agent runtime (hỏi đáp) | Hội thoại, câu hỏi, kế hoạch, câu trả lời, phản hồi, xuất tệp | P01 | 9 |
+| qa | Agent runtime (hỏi đáp) | Hội thoại, câu hỏi, kế hoạch, câu trả lời, phản hồi, xuất tệp, trí nhớ dài hạn | P01 | 10 |
 | query | Query engine | Lượt chạy SQL và kết quả rút gọn | P01, P02 | 2 |
 | agent | Agent runtime (quản lý agent) | Định nghĩa, cấu hình, công cụ, trigger, triển khai, lượt chạy, bước, bộ nhớ | P08, P13 | 11 |
 | eval | Eval service | Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng, agent | P03, P07, P13 | 5 |

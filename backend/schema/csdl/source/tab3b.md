@@ -1259,6 +1259,24 @@ Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (kind IN ('data','doc
 
 Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (rating IN ('up','down','wrong')); CHECK (rating <> 'wrong' OR error\_kind IN ('wrong\_metric','wrong\_scope','wrong\_period','wrong\_number','wrong\_document','other')); CHECK (status IN ('open','in\_review','confirmed','rejected')); CHECK (status NOT IN ('confirmed','rejected') OR (reviewer\_id IS NOT NULL AND decided\_at IS NOT NULL)); FOREIGN KEY (answer\_id) REFERENCES qa.answer(id). Chỉ mục: (status) WHERE status IN ('open','in\_review').
 
+#### qa.memory\_fact
+
+Trí nhớ dài hạn của agent về một người dùng trong một Data Space (sau Memori): sở thích trình bày, định nghĩa người dùng tự nêu, sự kiện bền về công việc của họ. Trích từ hội thoại sau mỗi lượt, không bao giờ chứa số liệu truy vấn hay bí mật; gộp trùng theo content\_hash, đếm lần nhắc lại (`worker_agent/agentic/memory.py`).
+
+| Cột | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| data\_space\_id | uuid, bắt buộc | Data Space nơi trí nhớ được nói ra |
+| user\_id | uuid, bắt buộc | Người dùng mà trí nhớ thuộc về; chỉ người đó được truy hồi |
+| kind | text, bắt buộc | preference, definition, fact, feedback |
+| content | text, bắt buộc | Một câu, ngôn ngữ người dùng |
+| content\_hash | text, bắt buộc | SHA-256 của nội dung đã chuẩn hoá: cùng ý nói lại thì tăng times, không thêm dòng |
+| times | integer, bắt buộc, mặc định 1 | Số lượt hội thoại đã nói ý này |
+| last\_seen\_at | timestamptz, bắt buộc, mặc định now() | Lần gần nhất ý này được nói |
+| source\_question\_id | uuid | logic → qa.question: câu hỏi đầu tiên nói ra ý này |
+| status | text, bắt buộc, mặc định 'active' | active, archived |
+
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('preference','definition','fact','feedback')); CHECK (status IN ('active','archived')); CHECK (times >= 1). Chỉ mục: duy nhất (data\_space\_id, user\_id, content\_hash); (user\_id, data\_space\_id, last\_seen\_at DESC) WHERE status = 'active'.
+
 #### qa.export\_job
 
 Việc xuất kết quả ra tệp; liên kết tải hết hạn sau 24 giờ (BR-86). Use case: UC-01-06.

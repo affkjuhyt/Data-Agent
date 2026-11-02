@@ -49,9 +49,9 @@
   {
    "name": "qa",
    "owner_service": "Agent runtime (hỏi đáp)",
-   "content": "Hội thoại, câu hỏi, kế hoạch, câu trả lời, phản hồi, xuất tệp",
+   "content": "Hội thoại, câu hỏi, kế hoạch, câu trả lời, phản hồi, xuất tệp, trí nhớ dài hạn",
    "modules": "P01",
-   "table_count": 9,
+   "table_count": 10,
    "database": "dataagent",
    "intro": ""
   },
