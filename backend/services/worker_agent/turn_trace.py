@@ -61,6 +61,7 @@ ACTIONS: dict[str, tuple[str, str]] = {
     "use_tool": ("tool_call", "Dùng công cụ"),
     "validate": ("plan", "Kiểm tra kết quả"),
     "explore": ("plan", "Tìm kỳ có dữ liệu"),
+    "widen_filter": ("query", "Nới bộ lọc"),
     "visualize": ("plan", "Chọn cách hiển thị"),
     "analyze": ("skill", "Phân tích"),
     "write_answer": ("message", "Viết câu trả lời"),

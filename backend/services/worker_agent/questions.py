@@ -899,8 +899,11 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
                 ]
             },
         )
-        # Look where the data is before refusing: the nearest period that has a figure.
-        explored = await _explore_period(question_id, prepared)
+        # Look where the data is before refusing: the nearest period that has a figure, else the
+        # members of a filter that do.
+        explored = await _explore_period(question_id, prepared) or await _widen_filter(
+            question_id, prepared
+        )
         if explored is not None:
             prepared, outcome = explored
             await _answer(event, question_id, prepared, outcome)
@@ -1022,6 +1025,75 @@ async def _explore_period(question_id: uuid.UUID, p: Prepared) -> tuple[Prepared
             step.status, step.summary = "failed", "Kỳ thay thế cũng không cho số."
             return None
     return redone, outcome
+
+
+async def _widen_filter(question_id: uuid.UUID, p: Prepared) -> tuple[Prepared, Any] | None:
+    """A filtered member with no figure in any period: drop that one filter, cut by its dimension
+    for the period asked, and say which members have figures. The query is the answer's own,
+    through the compiler. None when nothing is filtered or no member has a figure either."""
+    request = p.request
+    if request is None or not request.filters or p.recompile is None or p.period_close_id:
+        return None
+    u = p.understanding
+    for code, values in request.filters.items():
+        name = p.dimension_names.get(code, code)
+        widened = replace(
+            request,
+            filters={k: v for k, v in request.filters.items() if k != code},
+            group_by=list(dict.fromkeys([code, *request.group_by])),
+            top_n=None,
+        )
+        async with turn_trace.stepping(
+            "widen_filter", target=f"{name} “{', '.join(values)}”"
+        ) as step:
+            try:
+                compiled = p.recompile(widened)
+            except (c.CompileError, SqlRejected):
+                step.status, step.summary = "skipped", f"Không cắt được theo {name}."
+                continue
+            outcome = await run_query(
+                org_id=p.org_id,
+                data_space_id=p.space_id,
+                principal_id=p.user_id,
+                caller_kind="question",
+                caller_id=question_id,
+                source=p.source,
+                sql=compiled.sql,
+                secrets=secrets(),
+                metric_version_ids=[compiled.metric_version_id],
+                as_of=p.as_of,
+            )
+            at = list(compiled.columns).index(code) if code in compiled.columns else 0
+            members = (
+                list(
+                    dict.fromkeys(
+                        str(row[at])
+                        for row in outcome.rows or []
+                        if row[-1] is not None and row[at] is not None
+                    )
+                )
+                if outcome.ok
+                else []
+            )
+            step.detail = {
+                "dimension": name,
+                "asked": list(values),
+                "available": members[:20],
+                "query_run_id": str(outcome.query_run_id),
+                "row_count": len(outcome.rows or []),
+            }
+            if not members:
+                step.status, step.summary = "failed", f"Không {name} nào có số trong kỳ này."
+                continue
+        when = f" trong {period_label(request.period)}" if request.period else ""
+        note = (
+            f"Không có số cho {name} “{', '.join(values)}”{when}; {name} có số: "
+            f"{', '.join(members[:10])}. Dưới đây là số theo {name}."
+        )
+        u.filters = {k: v for k, v in u.filters.items() if k != code}
+        u.group_by = list(dict.fromkeys([code, *u.group_by]))
+        return replace(p, compiled=compiled, request=widened, lead_note=note), outcome
+    return None
 
 
 async def _cancel(event: Event, question_id: uuid.UUID, prepared: Prepared) -> None:

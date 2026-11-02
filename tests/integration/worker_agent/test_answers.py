@@ -47,7 +47,9 @@ def warehouse(ddl_server: dict[str, str]) -> dict[str, Any]:
             "product_code text, as_of_date date)"
         )
         cur.execute(
-            "INSERT INTO bank.branch VALUES ('HN1','Miền Bắc'),('HN2','Miền Bắc'),('SG1','Miền Nam')"
+            "INSERT INTO bank.branch VALUES ('HN1','Miền Bắc'),('HN2','Miền Bắc'),('SG1','Miền Nam'),"
+            # A branch with no loan yet: its region has no figure in any period.
+            "('DN1','Miền Trung')"
         )
         cur.execute(
             "INSERT INTO bank.loan VALUES "
@@ -236,6 +238,24 @@ def build(seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
         value_code="Miền Bắc",
         value_label="Miền Bắc",
         label_norm="mien bac",
+    )
+    seed.row(
+        "context.value_index",
+        org_id=org,
+        data_space_id=space,
+        dimension_id=region,
+        value_code="Miền Nam",
+        value_label="Miền Nam",
+        label_norm="mien nam",
+    )
+    seed.row(
+        "context.value_index",
+        org_id=org,
+        data_space_id=space,
+        dimension_id=region,
+        value_code="Miền Trung",
+        value_label="Miền Trung",
+        label_norm="mien trung",
     )
 
     def metric(code: str, name: str, expression: str) -> uuid.UUID:
@@ -460,6 +480,42 @@ async def test_a_period_with_no_data_is_answered_for_the_nearest_one_that_has_it
     assert explored["available"] == ["tháng 8/2026", "tháng 9/2026"]
     caveats = seed.one("SELECT number_check->'notes' FROM qa.answer WHERE id = %s", answer)
     assert caveats and caveats[0].startswith("Không có dữ liệu cho tháng 7/2026")
+
+
+async def test_a_filter_with_no_data_is_widened_to_the_members_that_have_it(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Miền Trung has a branch and no loan: no period has a figure for it, so another period does
+    # not help (explore fails). The agent drops that one filter, cuts by region for the period
+    # asked, and says which regions have figures.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    q = bank.ask("Tỷ lệ nợ xấu Miền Trung tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    assert text.startswith(
+        "Không có số cho vùng “Miền Trung” trong tháng 9/2026; vùng có số: Miền Bắc, Miền Nam. "
+        "Dưới đây là số theo vùng."
+    ), text
+    assert [f["dimensions"]["vung"] for f in figures] == ["Miền Bắc", "Miền Nam"]
+    steps = seed.all(
+        "SELECT s.name, s.status, s.output FROM agent.agent_step s JOIN agent.agent_run r"
+        " ON r.id = s.run_id WHERE r.trigger_ref = %s AND s.name <> 'model_call' ORDER BY s.seq",
+        f"question:{q}",
+    )
+    # Widening runs the answer's own query: there is no second run of the same SQL.
+    assert [(n, st) for n, st, _ in steps][3:6] == [
+        ("validate", "error"),
+        ("explore", "error"),
+        ("widen_filter", "ok"),
+    ]
+    widened = steps[5][2]["detail"]
+    assert {k: widened[k] for k in ("dimension", "asked", "available")} == {
+        "dimension": "vùng",
+        "asked": ["Miền Trung"],
+        "available": ["Miền Bắc", "Miền Nam"],
+    }
 
 
 async def test_a_source_that_cannot_be_reached_fails_the_query_step(

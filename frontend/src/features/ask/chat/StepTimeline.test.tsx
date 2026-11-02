@@ -100,6 +100,19 @@ describe('StepTimeline', () => {
     expect(screen.getByText('năm 2014', { selector: 'dd' })).toBeInTheDocument();
   });
 
+  it('widening a filter says what was asked and which members have figures', async () => {
+    const widened = [step({
+      stepId: 's6', action: 'widen_filter', title: 'Nới bộ lọc', target: 'vùng “Miền Trung”',
+      detail: { dimension: 'vùng', asked: ['Miền Trung'], available: ['Miền Bắc', 'Miền Nam'], query_run_id: 'run-1', row_count: 2 },
+    })];
+    render(<StepTimeline steps={widened} running={false} durationMs={100} recorded />);
+    fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xem chi tiết: Nới bộ lọc' }));
+    expect(screen.getByText('Miền Bắc · Miền Nam')).toBeInTheDocument();
+    expect(screen.getByText('Miền Trung', { selector: 'dd' })).toBeInTheDocument();
+    expect(await screen.findByText(/GROUP BY vung/)).toBeInTheDocument();
+  });
+
   it('a turn recorded before steps were kept says so', () => {
     render(<StepTimeline steps={[]} running={false} recorded={false} />);
     expect(screen.getByText('Lượt này chưa ghi chi tiết các bước.')).toBeInTheDocument();

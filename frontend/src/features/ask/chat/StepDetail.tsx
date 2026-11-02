@@ -124,6 +124,21 @@ function Body({ step }: { step: TurnStep }) {
           ))}
         </ul>
       );
+    case 'widen_filter': {
+      const runId = str(d.query_run_id);
+      return (
+        <div className="flex flex-col gap-da-sm">
+          <Pairs
+            rows={[
+              ['Chiều', str(d.dimension)],
+              ['Đã hỏi', list(d.asked).map(str).join(' · ')],
+              ['Có số', list(d.available).map(str).join(' · ') || 'không có'],
+            ]}
+          />
+          {runId && <RunSql queryRunId={runId} />}
+        </div>
+      );
+    }
     case 'explore':
       return (
         <Pairs
