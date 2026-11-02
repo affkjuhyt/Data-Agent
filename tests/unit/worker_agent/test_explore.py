@@ -112,3 +112,16 @@ def test_a_member_matches_a_name_by_its_folded_words() -> None:
     assert explore.matching_member(["Miền Bắc", "Miền Nam"], "mien nam") == "Miền Nam"
     assert explore.matching_member(["North America", "Europe"], "america") is None
     assert explore.matching_member([None, "Miền Nam"], "mien nam") == "Miền Nam"
+
+
+def test_a_name_found_nowhere_is_taken_out_of_the_question_the_model_reads() -> None:
+    assert (
+        explore.without("Số lượng bán Internet ở Atlantis năm 2013", "atlantis")
+        == "Số lượng bán Internet năm 2013"
+    )
+    assert explore.without("Doanh thu “Hà Nội” năm 2013", "ha noi") == "Doanh thu năm 2013"
+
+
+def test_a_name_is_shown_as_the_person_wrote_it() -> None:
+    assert explore.as_written("Số lượng bán Internet ở Atlantis năm 2013", "atlantis") == "Atlantis"
+    assert explore.as_written("Doanh thu ở đâu", "atlantis") == "atlantis"

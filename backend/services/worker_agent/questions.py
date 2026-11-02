@@ -244,6 +244,8 @@ class Prepared:
     time_code: str | None = None
     # Said first in the answer: the period asked had no data and which one is shown (explore.py).
     lead_note: str | None = None
+    # Names in the question found nowhere in the data: taken out of what the model reads.
+    unfound_names: list[str] = field(default_factory=list)
 
 
 def _plan_ir(
@@ -1039,11 +1041,25 @@ async def _find_values(question_id: uuid.UUID, p: Prepared, question_text: str) 
     silently left out of the answer."""
     request, u = p.request, p.understanding
     names = explore.unread_names(question_text, u.rest)
-    if request is None or not names or p.probe_compile is None or p.recompile is None:
+    if not names:
+        return p
+    written = [explore.as_written(question_text, name) for name in names]
+    if p.period_close_id is not None:
+        # The filed snapshot's rows are fixed: a filter found in the data cannot apply to them.
+        listed = ", ".join(f"“{w}”" for w in written)
+        return replace(
+            p,
+            lead_note=f"Số đã nộp của kỳ không chia theo {listed}; dưới đây là số đã nộp.",
+            unfound_names=names,
+        )
+    if request is None or p.probe_compile is None or p.recompile is None:
         return p
     notes: list[str] = []
+    unfound: list[str] = []
     for name in names:
-        async with turn_trace.stepping("find_value", target=f"“{name}”") as step:
+        async with turn_trace.stepping(
+            "find_value", target=f"“{explore.as_written(question_text, name)}”"
+        ) as step:
             found: tuple[str, str, str] | None = None
             for code, dimension in p.cuts[:FIND_VALUE_DIMENSIONS]:
                 if code in request.filters:
@@ -1077,9 +1093,10 @@ async def _find_values(question_id: uuid.UUID, p: Prepared, question_text: str) 
                 step.summary = f"Không tìm thấy “{name}” trong các chiều của chỉ số."
                 step.detail = {"phrase": name}
                 notes.append(
-                    f"Không tìm thấy “{name}” trong dữ liệu của chỉ số; số dưới đây chưa lọc "
-                    "theo cụm từ này."
+                    f"Không tìm thấy “{explore.as_written(question_text, name)}” trong dữ liệu "
+                    "của chỉ số; số dưới đây chưa lọc theo cụm từ này."
                 )
+                unfound.append(name)
                 continue
             code, dimension, member = found
             step.detail = {"phrase": name, "dimension": dimension, "value": member}
@@ -1087,12 +1104,24 @@ async def _find_values(question_id: uuid.UUID, p: Prepared, question_text: str) 
         u.filters = {**u.filters, code: [member]}
         notes.append(f"Đã tìm thấy “{member}” là {dimension} trong dữ liệu.")
     if request is p.request:
-        return replace(p, lead_note=" ".join(notes)) if notes else p
+        return replace(p, lead_note=" ".join(notes), unfound_names=unfound) if notes else p
     try:
         compiled = p.recompile(request)
     except (c.CompileError, SqlRejected):
         return p
-    return replace(p, compiled=compiled, request=request, lead_note=" ".join(notes))
+    return replace(
+        p, compiled=compiled, request=request, lead_note=" ".join(notes), unfound_names=unfound
+    )
+
+
+def _narrated(text: str, u: Understanding, p: Prepared, shown_period: str | None) -> str:
+    """The question as the model reads it: names found nowhere in the data taken out, and the
+    period answered in place of the one asked when they differ (explore.py)."""
+    for name in p.unfound_names:
+        text = explore.without(text, name)
+    if shown_period:
+        text = explore.retold(text, u.period.span if u.period else "", shown_period)
+    return text
 
 
 async def _question_text(event: Event, question_id: uuid.UUID) -> str:
@@ -2332,13 +2361,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                 told = await narrator.narrate(
                     model,
                     every,
-                    question=(
-                        explore.retold(
-                            question.text, u.period.span if u.period else "", shown_period
-                        )
-                        if shown_period
-                        else question.text
-                    ),
+                    question=_narrated(question.text, u, p, shown_period),
                     metric_name=metric_name,
                     exempt_text=[c.label for c in u.chips]
                     + [v for f in figures for v in f.dimensions.values()]

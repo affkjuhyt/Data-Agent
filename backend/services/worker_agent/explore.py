@@ -126,17 +126,48 @@ def _folded(text: str) -> tuple[str, list[int]]:
     return "".join(out), where
 
 
+def _span_in(text: str, folded_words: str) -> tuple[int, int] | None:
+    """Where in `text` (NFC) the folded words are, as a slice; None when they are not."""
+    folded, where = _folded(text)
+    at = folded.find(folded_words) if folded_words else -1
+    if at < 0:
+        return None
+    return where[at], where[at + len(folded_words) - 1] + 1
+
+
+def as_written(question: str, name: str) -> str:
+    """The folded name as the person wrote it in the question ("Atlantis"), else as it is."""
+    text = unicodedata.normalize("NFC", question)
+    found = _span_in(text, name)
+    return text[found[0] : found[1]] if found else name
+
+
+# Words that only place a name ("ở Atlantis", "tại Hà Nội"): taken out with it.
+_PLACING = re.compile(r"(?:\b(?:ở|tại|của|trong|thuộc)\s+)?[“\"]?$", re.IGNORECASE)
+
+
+def without(question: str, name: str) -> str:
+    """The question without a name found nowhere in the data, and the word placing it, so the
+    model does not write "ở Atlantis" beside a figure that is not filtered by it."""
+    text = unicodedata.normalize("NFC", question)
+    found = _span_in(text, name)
+    if found is None:
+        return question
+    head, tail = text[: found[0]], text[found[1] :]
+    head = _PLACING.sub("", head)
+    tail = re.sub(r"^[”\"]", "", tail)
+    return " ".join(f"{head} {tail}".split())
+
+
 def retold(question: str, span: str, shown: str) -> str:
     """The question as the model is shown it when another period is answered: the words the asked
     period was read from (its folded `span`) replaced by the period shown, so the answer does not
     say "năm nay" beside 2014's figures; not found, the period shown follows the question."""
     text = unicodedata.normalize("NFC", question)
-    folded, where = _folded(text)
-    at = folded.find(span) if span else -1
-    if at < 0:
+    found = _span_in(text, span)
+    if found is None:
         return f"{question} (số của {shown})"
-    start, end = where[at], where[at + len(span) - 1] + 1
-    return text[:start] + shown + text[end:]
+    return text[: found[0]] + shown + text[found[1] :]
 
 
 _QUOTED = re.compile(r"“([^”]+)”|\"([^\"]+)\"")

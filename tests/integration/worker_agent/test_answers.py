@@ -638,6 +638,54 @@ async def test_ac_10_01_01_as_submitted_uses_period_snapshot_not_live_data(
     )
 
 
+async def test_a_name_is_not_looked_up_against_figures_already_filed(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The filed snapshot's rows are fixed: a filter found in the data cannot apply to them, so
+    # the answer must not say it filtered; it says the filed figure is not by that name.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM context.value_index WHERE data_space_id = %s AND value_code = 'Miền Nam'",
+            (str(bank.space),),
+        )
+    period_close = seed.row(
+        "period.period_close",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        period_label="2026-09",
+        business_date="2026-09-30",
+        version=1,
+        status="filed",
+        snapshot_hash="snapshot-september",
+        closed_by=bank.user,
+        closed_at="2026-10-01T08:00:00Z",
+        filed_report_code="BC-NHNN-02",
+        filed_at="2026-10-10",
+    )
+    seed.row(
+        "period.published_result",
+        org_id=bank.org,
+        period_close_id=period_close,
+        metric_version_id=seed.one(
+            "SELECT id FROM context.metric_version WHERE metric_id = %s", bank.npl
+        ),
+        dimension_key=json.dumps({}),
+        value="9.25",
+        reported_value="9.25",
+        report_ref="BC-NHNN-02",
+        sha256="cd" * 32,
+    )
+    q = bank.ask("Tỷ lệ nợ xấu Miền Nam tháng 9/2026 như đã nộp")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    assert "Đã tìm thấy" not in text
+    assert text.startswith("Số đã nộp của kỳ không chia theo “Miền Nam”"), text
+    assert float(figures[0]["value"]) == 9.25
+
+
 async def test_ac_10_01_02_dated_question_reconciles_current_and_filed(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
