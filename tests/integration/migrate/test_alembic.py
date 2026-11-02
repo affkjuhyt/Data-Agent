@@ -610,3 +610,47 @@ def test_self_approval_reaches_a_migrated_cluster_as_a_fresh_install_has_it(admi
     _alembic(db, "stamp", "v3_0023")
     _alembic(db, "upgrade", "head")
     _same_shape(_self_approval_shape(db, audit), fresh)
+
+
+def test_the_conversations_of_a_migrated_cluster_are_titled_by_their_first_question(admin):
+    # v3_0028 (03/11/2026): conversations were created untitled, so the Ask history listed every
+    # one as "Hội thoại không tiêu đề". It titles them as services/api/modules/qa title_of does.
+    _fresh(admin, "chain_title", "chain_title_audit")
+    db = _db(admin, "chain_title")
+    _alembic(db, "upgrade", "v3_0027")
+    org, space, user = (str(uuid.uuid4()) for _ in range(3))
+    short, long, named, empty = (str(uuid.uuid4()) for _ in range(4))
+    words = "Tỷ lệ nợ xấu " + "của các chi nhánh miền Bắc " * 6
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        for conversation, title in ((short, None), (long, None), (named, "Đã đặt"), (empty, None)):
+            cur.execute(
+                "INSERT INTO qa.conversation (id, org_id, data_space_id, user_id, title)"
+                " VALUES (%s, %s, %s, %s, %s)",
+                (conversation, org, space, user, title),
+            )
+        for conversation, seq, text in (
+            (short, 2, "còn tháng 8 thì sao?"),
+            (short, 1, "  Doanh thu\n tháng 9   theo vùng?  "),
+            (long, 1, words),
+            (named, 1, "Câu khác"),
+        ):
+            cur.execute(
+                "INSERT INTO qa.question (id, org_id, conversation_id, seq, text)"
+                " VALUES (%s, %s, %s, %s, %s)",
+                (str(uuid.uuid4()), org, conversation, seq, text),
+            )
+    conn.close()
+    _alembic(db, "upgrade", "head")
+
+    def title(conversation: str):
+        return _one(db, f"SELECT title FROM qa.conversation WHERE id = '{conversation}'")
+
+    assert title(short) == "Doanh thu tháng 9 theo vùng?"
+    # What title_of gives for the same words: cut at the last space within 80 characters.
+    assert (
+        title(long)
+        == "Tỷ lệ nợ xấu của các chi nhánh miền Bắc của các chi nhánh miền Bắc của các chi…"
+    )
+    assert title(named) == "Đã đặt" and title(empty) is None

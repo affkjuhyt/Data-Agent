@@ -15,6 +15,20 @@ from libs.dataagent_db.models import qa
 from services.api.kernel.auth import Principal
 from services.api.modules.qa import scope
 
+TITLE_LENGTH = 80
+
+
+def title_of(text: str) -> str | None:
+    """A new conversation's title: its first question, whitespace folded, cut at a word with an
+    ellipsis past TITLE_LENGTH characters. Without it the history lists every conversation as
+    untitled; v3_0028 titles the older ones the same way in SQL."""
+    folded = " ".join(text.split())
+    if len(folded) <= TITLE_LENGTH:
+        return folded or None
+    head = folded[:TITLE_LENGTH]
+    cut = head.rsplit(" ", 1)[0] if " " in head else head[: TITLE_LENGTH - 1]
+    return f"{cut[: TITLE_LENGTH - 1].rstrip()}…"
+
 
 async def insert_question(
     session: AsyncSession,
@@ -41,6 +55,7 @@ async def insert_question(
             user_id=principal.user_id,
             channel=channel,
             api_client_id=api_client_id,
+            title=title_of(text),
             created_by=principal.user_id,
             updated_by=principal.user_id,
         )

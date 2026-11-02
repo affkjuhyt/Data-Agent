@@ -467,6 +467,27 @@ async def test_conversations_are_mine_filtered_and_paged(world: World, seed: See
         assert other_space.json()["items"] == []
 
 
+async def test_a_conversation_is_titled_by_its_first_question(world: World) -> None:
+    async with api_for(world) as api:
+        first = await ask(api, world, text="  Doanh thu\n tháng 9   theo vùng?  ")
+        await ask(api, world, text="còn tháng 8 thì sao?", parent_question_id=first["id"])
+        long = await ask(api, world, text="Tỷ lệ nợ xấu " + "của các chi nhánh miền Bắc " * 6)
+
+        def title(question: dict[str, Any]) -> str:
+            return next(
+                c["title"] for c in listed.json()["items"] if c["id"] == question["conversation_id"]
+            )
+
+        listed = await api.get("/v1/conversations", headers=as_(world, "asker"))
+        # Whitespace folded; a follow-up does not rename it.
+        assert title(first) == "Doanh thu tháng 9 theo vùng?"
+        # Cut at a word, at most 80 characters with the ellipsis.
+        cut = title(long)
+        assert cut.endswith("…") and len(cut) <= 80, cut
+        assert ("Tỷ lệ nợ xấu " + "của các chi nhánh miền Bắc " * 6).startswith(cut[:-1]), cut
+        assert not cut[:-1].endswith(" ")
+
+
 async def test_conversation_detail_lists_turns_in_seq(world: World, seed: Seed) -> None:
     async with api_for(world) as api:
         first = await ask(api, world, text="Câu đầu")
