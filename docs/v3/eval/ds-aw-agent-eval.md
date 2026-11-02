@@ -29,3 +29,20 @@ No item passes on one engine and fails on the other.
 3. Nothing to answer, answered anyway: "Doanh thu năm 2009 là 0", a churn rate computed from raw
    tables, a 2015 forecast; these should say there is no data, or that it cannot be answered.
 4. Cost: twice the steps, three times the tokens and seconds of the governed path.
+
+## Second run, first 20 items, agentic only (03/11/2026)
+
+Worker-agent code at 3751df40 plus RES-11/12 (from a /tmp overlay), after the DS-AW metrics were
+approved (f79cb2b6 unblocked the review page). Same 20 items as the first 20 of the baseline:
+
+| | passed (eval scorer) | values right, any order | by the agent / handed over | mean steps | mean tokens | mean seconds |
+|---|---|---|---|---|---|---|
+| baseline (first 20) | 2 | 7 | 12 / 8 | 8.8 | 17 250 | 10.6 |
+| this run | 17 | 17 | 14 / 6 | 7.2 | 10 945 | 7.2 |
+
+Both moved at once, so the gain is not the code's alone: most of "passed" comes from the metrics
+being certified (the scorer checks the metric an item was read as), the cost from RES-05 (simple
+questions skip the two reviews; memories are read only when the turn says something lasting).
+Still wrong: "Doanh thu năm 2013" (4 057 065, one cut of the total); "Doanh thu nhóm hàng
+Components" handed over and the governed path found no figure. "Lãi gộp Internet" has the right
+total but also the breakdown it showed as figures, so the scorer counts it a miss.
