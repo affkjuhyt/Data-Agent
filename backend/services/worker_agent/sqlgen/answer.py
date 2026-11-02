@@ -155,7 +155,10 @@ async def answer_by_sql(
     secrets: SecretReader,
     workspace_source: Callable[[uuid.UUID, uuid.UUID], catalog.Source],
     providers: ProviderRegistry,
+    ask_back: bool = True,
 ) -> bool:
+    """`ask_back=False`: when the ways of writing disagree, nothing is stored and False comes
+    back, so the caller can ask its own question back (a metric it suggests)."""
     if gateway is None or user_id is None:
         return False
     started = datetime.datetime.now(datetime.UTC)
@@ -223,9 +226,11 @@ async def answer_by_sql(
         }
         if e.decision == "failed":
             written.status, written.summary = "failed", "Không cách viết SQL nào chạy được."
+        elif e.decision == "ask":
+            written.summary = f"Chỉ {e.agreeing}/{len(e.tried)} cách viết cho cùng kết quả."
     for name in e.models:
         models.append({"task": "text_to_sql", "model_name": name, "tokens": e.tokens})
-    if e.decision == "failed":
+    if e.decision == "failed" or (e.decision == "ask" and not ask_back):
         return False
     await turn_trace.record_step(
         "query",

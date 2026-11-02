@@ -304,3 +304,65 @@ async def test_a_person_outside_the_data_space_never_reaches_the_model(
         assert refusal == "ACCESS_DENIED", (text, refusal)
     assert script.roles == [] and script.prompts == []
     assert seed.one("SELECT count(*) FROM query.query_run WHERE org_id = %s", bank.org) == 0
+
+
+async def test_a_metric_named_only_in_part_tries_the_tables_before_asking_back(
+    seed: Seed, credit: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The model reads the question as a metric it names only in part (to_confirm): rather than
+    # asking "Bạn muốn hỏi: Tỷ lệ nợ xấu?" straight away, the agent first writes SQL over the
+    # tables; six ways agreeing answer it, labelled exploratory.
+    from services.worker_agent.understand import llm_reader
+    from services.worker_agent.understand.resolver import Understanding
+
+    async def partial(question: str, vocab: Any, gateway: Any, **kwargs: Any) -> Any:
+        guess = next(m for m in vocab.metrics if m.name == "Tỷ lệ nợ xấu")
+        reply = Reply(content=None, model="planner", tokens=1, latency_ms=1)
+        return Understanding(decision="clarify", options=[guess], to_confirm=True), reply
+
+    monkeypatch.setattr(llm_reader, "read", partial)
+    bank = build(seed, credit, monkeypatch)
+    q = asked(bank, Script([GOOD[0], GOOD[1]] * 3), monkeypatch)
+    await drain()
+    status, kind, text, figures, *_ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    assert all(f["trust"] == "Khám phá (truy vấn do mô hình viết)" for f in figures)
+    steps = [
+        name
+        for (name,) in seed.all(
+            "SELECT s.name FROM agent.agent_step s JOIN agent.agent_run r ON r.id = s.run_id"
+            " WHERE r.trigger_ref = %s AND s.name <> 'model_call' ORDER BY s.seq",
+            f"question:{q}",
+        )
+    ]
+    assert "write_sql" in steps and "ask_user" not in steps
+
+
+async def test_a_partial_metric_the_tables_cannot_answer_still_asks_back(
+    seed: Seed, credit: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from services.worker_agent.understand import llm_reader
+    from services.worker_agent.understand.resolver import Understanding
+
+    async def partial(question: str, vocab: Any, gateway: Any, **kwargs: Any) -> Any:
+        guess = next(m for m in vocab.metrics if m.name == "Tỷ lệ nợ xấu")
+        reply = Reply(content=None, model="planner", tokens=1, latency_ms=1)
+        return Understanding(decision="clarify", options=[guess], to_confirm=True), reply
+
+    monkeypatch.setattr(llm_reader, "read", partial)
+    bank = build(seed, credit, monkeypatch)
+    differing = [
+        GOOD[0],
+        GOOD[1],
+        "SELECT branch_code, SUM(balance) FROM bank.loan GROUP BY branch_code",
+        "SELECT product_code, COUNT(*) FROM bank.loan GROUP BY product_code",
+        "SELECT COUNT(*) FROM bank.loan",
+        "SELECT MAX(balance) FROM bank.loan",
+    ]
+    q = asked(bank, Script(differing), monkeypatch)
+    await drain()
+    status, kind, text, *_ = answer_of(seed, q)
+    # The ways of writing disagree: no number, and the question back is the metric suggested,
+    # not the SQL's own doubt.
+    assert (status, kind) == ("clarifying", "clarification"), text
+    assert "Tỷ lệ nợ xấu" in text and "cách viết" not in text, text

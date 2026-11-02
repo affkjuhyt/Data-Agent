@@ -1863,6 +1863,27 @@ async def _understand_and_plan(
                 time_code=_probe_time_code(layer, layer.versions[u.metric.metric_id]),
             )
 
+    if (
+        u.decision == "clarify"
+        and u.to_confirm
+        and problem is None
+        and edited is None
+        and await answer_by_sql(
+            event,
+            question_id,
+            user_id,
+            plan_id,
+            models,
+            gateway=gateway(),
+            secrets=secrets(),
+            workspace_source=_internal_workspace_source,
+            providers=provider_registry(),
+            ask_back=False,
+        )
+    ):
+        # A metric the question names only in part: the tables are tried before asking back,
+        # and the answer, if the ways of writing agree, is labelled exploratory (sqlgen).
+        return None
     if u.decision == "clarify":
         if u.unplaced_cut is not None and u.metric is not None:
             text, choices = _cut_clarification(question.text, u, layer)
