@@ -80,7 +80,7 @@ from services.worker_agent.semantic import analysis, compare
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.sqlgen.answer import answer_by_sql, answer_verified_first
-from services.worker_agent.understand import llm_reader
+from services.worker_agent.understand import analyst, llm_reader
 from services.worker_agent.understand.analysis import TO_DATE, find_analysis
 from services.worker_agent.understand.comparison import find_comparison
 from services.worker_agent.understand.condition import find_conditions, numeric_dimensions
@@ -1107,6 +1107,27 @@ async def _understand_and_plan(
                 models.append(
                     {"task": "understand", "model_name": reply.model, "tokens": reply.tokens}
                 )
+            else:
+                # The one-shot reading found nothing: the planner works the question out with
+                # tools over this space's semantic layer (understand/analyst.py) before the SQL
+                # and document paths are tried.
+                resolved = await analyst.resolve(
+                    asked,
+                    layer,
+                    model,
+                    today=today,
+                    history=await _conversation(session, question),
+                )
+                if resolved is not None:
+                    u = resolved.understanding
+                    models.append(
+                        {
+                            "task": "analyst",
+                            "model_name": resolved.model,
+                            "tokens": resolved.tokens,
+                            "steps": analyst.trace_of(resolved),
+                        }
+                    )
 
         _auto_select_single_metric(u)
         # Checked once the metric is final: the model's reading and the lone candidate picked
