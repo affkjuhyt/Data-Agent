@@ -63,6 +63,11 @@ def blocks_of(answer: Any) -> list[dict[str, Any]]:
     """Project one stored answer into non-empty, independently renderable blocks. The sql block
     names the query run only: its SQL is read through /v1/query-runs/{id}/sql, which checks
     view_detail and audits the read."""
+    # An answer the dynamic agent composed carries its own blocks, in the order it chose, with
+    # their data filled and their caveats added by the worker (worker_agent/agentic/).
+    composed = getattr(answer, "blocks", None)
+    if isinstance(composed, list) and composed:
+        return [block for block in composed if isinstance(block, dict) and block.get("type")]
     answer_id = str(answer.id)
     blocks: list[dict[str, Any]] = []
     text = str(answer.text or "")

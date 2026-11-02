@@ -176,3 +176,23 @@ def test_caveats_say_which_figures_were_withheld_and_what_was_left_out() -> None
         "1 số bị ẩn vì dữ liệu của sản phẩm dữ liệu đã quá hạn.",
         "1 số chưa có dữ liệu trong kỳ.",
     ]
+
+
+def test_an_answer_the_agent_composed_is_served_in_the_order_it_chose() -> None:
+    composed = [
+        {"type": "insights", "id": "b1", "composed": True, "items": [{"text": "x"}]},
+        {"type": "chart", "id": "b2", "composed": True, "spec": {"data": []}},
+        {"type": "markdown", "id": "b3", "composed": True, "content": "Kết luận."},
+        "not a block",
+    ]
+    answer = types.SimpleNamespace(
+        id="answer-2",
+        kind="data",
+        text="Kết luận.",
+        figures=[],
+        chart_spec=None,
+        citations=[],
+        blocks=composed,
+    )
+
+    assert [block["type"] for block in blocks_of(answer)] == ["insights", "chart", "markdown"]

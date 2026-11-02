@@ -224,6 +224,13 @@ export function useQuestionStream() {
           const data = e.data ? (JSON.parse(e.data) as Record<string, unknown>) : {};
           if (e.event === 'activity') {
             patch(assistantId, (m) => ({ ...m, steps: applyStepEvent(m.steps ?? [], data) }));
+          } else if (e.event === 'block' && data.block && typeof data.block === 'object') {
+            // The dynamic agent's answer, block by block as it composes it; the stored answer
+            // replaces them when it arrives.
+            const block = data.block as NonNullable<AskMessage['blocks']>[number];
+            patch(assistantId, (m) =>
+              m.answerId ? m : { ...m, blocks: [...(m.blocks ?? []).filter((b) => b.id !== block.id), block] },
+            );
           } else if (e.event === 'cancelled') {
             cancelled = true;
             patch(assistantId, (m) => ({

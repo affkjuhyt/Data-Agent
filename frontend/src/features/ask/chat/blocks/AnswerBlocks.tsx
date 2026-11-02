@@ -4,6 +4,7 @@ import { CitationPanel } from '../../components/CitationPanel';
 import { MarkdownContent } from '../../components/MarkdownContent';
 import type { AnswerBlockView, AskMessage, Citation } from '../../types';
 import { CaveatsBlock } from './CaveatsBlock';
+import { ComposedBlocks, isComposed } from './ComposedBlocks';
 import { MetricCards, type MetricBlock } from './MetricCards';
 import { ResultCard } from './ResultCard';
 import { SqlBlock } from './SqlBlock';
@@ -45,6 +46,18 @@ export function AnswerBlocks({
   onPick?: (category: string) => void;
 }) {
   const blocks: AnswerBlockView[] = message.blocks ?? [];
+  // An answer the dynamic agent composed is drawn in the order it chose, block by block.
+  if (isComposed(blocks)) {
+    return (
+      <ComposedBlocks
+        blocks={blocks}
+        citations={message.citations}
+        onOpenCitation={onOpenCitation}
+        onExportCsv={onExportCsv}
+        onSaveToSession={onSaveToSession}
+      />
+    );
+  }
   const layout = message.layout ?? 'auto';
   const ordered = [...blocks].sort(
     (a, b) => responseOrder(layout, SECTION[str(a.type)] ?? 'meta') - responseOrder(layout, SECTION[str(b.type)] ?? 'meta'),

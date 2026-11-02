@@ -97,8 +97,14 @@ export function fromAnswer(answer: Answer): Partial<AskMessage> {
   }
   // The worker's question back carries its choices in its text; the card gives a box to answer
   // it, and the answer is the next question of the conversation (UC-01-04).
+  // The dynamic agent offers its choices as follow-ups: each one is asked as it is clicked.
+  const suggestions = (answer.follow_ups ?? []).filter((q): q is string => typeof q === 'string');
   if (answer.kind === 'clarification') {
-    return { content: answer.text, clarification: { kind: 'followup', questions: [{ text: '' }] } };
+    return {
+      content: answer.text,
+      clarification: { kind: 'followup', questions: [{ text: '' }] },
+      ...(suggestions.length > 0 && { suggestions }),
+    };
   }
   const citations = citationsOf(answer);
   const verification = readVerification(answer.number_check);
@@ -109,6 +115,7 @@ export function fromAnswer(answer: Answer): Partial<AskMessage> {
     ...(answer.blocks && { blocks: answer.blocks }),
     ...(citations.length > 0 && { citations }),
     ...(verification && { verification }),
+    ...(suggestions.length > 0 && { suggestions }),
   };
   if (answer.kind !== 'data') return drawn;
   const figures = readFigures(answer.figures);
@@ -117,11 +124,8 @@ export function fromAnswer(answer: Answer): Partial<AskMessage> {
   const chart = figureChart(figures, spec);
   const trust = figureTrust(figures);
   const drill = figureDrill(spec);
-  // The worker's next questions, each one read back and compiled before it was offered.
-  const suggestions = (answer.follow_ups ?? []).filter((q): q is string => typeof q === 'string');
   return {
     ...drawn,
-    ...(suggestions.length > 0 && { suggestions }),
     ...(drill && { drill }),
     ...(run && { evidence: { runs: [run], clarifications: [], warnings: [] } }),
     ...(chart && { chartSpecs: [chart] }),

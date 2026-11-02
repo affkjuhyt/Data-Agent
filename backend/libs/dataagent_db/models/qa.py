@@ -210,6 +210,11 @@ class Answer(Base):
         server_default=sql_text("'[]'"),
         comment="Câu hỏi tiếp theo câu trả lời gợi ý, mỗi câu đã đọc lại qua bộ hiểu và compile được (`worker_agent/suggestions.py`)",
     )
+    blocks: Mapped[Any] = mapped_column(
+        JSONB,
+        server_default=sql_text("'[]'"),
+        comment="Khối câu trả lời do agent tự soạn theo thứ tự (markdown, kpi, chart, table, insights, callout, code, follow_ups, caveats); dữ liệu của chart/table/kpi do server điền từ dataset (`worker_agent/agentic/blocks.py`). Rỗng: câu trả lời theo khuôn cũ",
+    )
     reconcile_badge: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,

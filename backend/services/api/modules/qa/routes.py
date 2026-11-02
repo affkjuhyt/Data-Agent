@@ -421,8 +421,8 @@ async def stream_question(
         events = [e for e in _stream_events(view, kind) if int(e.id) > after]
     if asker != principal.user_id:
         # The steps carry the question's reading and the tables it read: only the asker sees
-        # them, here as at GET /v1/questions/{id}/steps.
-        events = [e for e in events if e.event != "activity"]
+        # them, here as at GET /v1/questions/{id}/steps; the agent's plan is a step too.
+        events = [e for e in events if e.event not in ("activity", "plan")]
 
     async def produce() -> AsyncIterator[Event]:
         for item in events:

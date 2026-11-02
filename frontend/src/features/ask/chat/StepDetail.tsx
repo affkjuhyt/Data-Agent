@@ -93,6 +93,38 @@ function Body({ step }: { step: TurnStep }) {
         />
       );
     }
+    case 'plan':
+    case 'replan': {
+      // The dynamic agent's plan (agentic/plan.py): its goal, why, and each step as walked.
+      const steps = list(d.steps).map(rec);
+      return (
+        <div className="flex flex-col gap-da-sm">
+          <Pairs rows={[['Mục tiêu', str(d.goal)], ['Lý do', str(d.thought)]]} />
+          {steps.length > 0 && (
+            <ol className="m-0 flex flex-col gap-[2px] pl-da-lg da-caption">
+              {steps.map((s) => (
+                <li key={str(s.id)} className={s.status === 'failed' ? 'text-error' : 'text-foreground'}>
+                  {str(s.title)} <span className="text-muted-foreground">· {str(s.tool)}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      );
+    }
+    case 'run_python': {
+      const args = rec(d.args);
+      return (
+        <div className="flex flex-col gap-da-xs da-caption">
+          <Pairs rows={[['Dữ liệu vào', list(d.inputs).map(str).join(', ')], ['Kết quả', d.rows !== undefined ? `${str(d.rows)} dòng` : str(d.error)]]} />
+          {str(args.code) && (
+            <pre className="m-0 max-h-[200px] overflow-auto whitespace-pre-wrap rounded-sm bg-card p-da-sm da-mono">{str(args.code)}</pre>
+          )}
+        </div>
+      );
+    }
+    case 'query_metric':
+    case 'explore_sql':
     case 'query':
     case 'use_verified':
     case 'write_sql': {
@@ -106,6 +138,8 @@ function Body({ step }: { step: TurnStep }) {
               ['Cách viết', d.candidates !== undefined ? `${str(d.agreeing)}/${str(d.candidates)} cách viết trùng kết quả` : ''],
               ['Bị loại', d.rejected ? `${str(d.rejected)} cách viết` : ''],
               ['Truy vấn đã duyệt', str(d.name)],
+              ['Chỉ số', str(d.metric)],
+              ['Nguồn', str(d.source)],
             ]}
           />
           {runId && <RunSql queryRunId={runId} />}

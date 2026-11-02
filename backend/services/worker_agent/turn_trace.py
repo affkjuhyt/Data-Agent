@@ -67,6 +67,16 @@ ACTIONS: dict[str, tuple[str, str]] = {
     "analyze": ("skill", "Phân tích"),
     "write_answer": ("message", "Viết câu trả lời"),
     "model_call": ("llm_call", "Gọi mô hình"),
+    # The dynamic agent (agentic/): its plan, and each tool it calls by the tool's name.
+    "plan": ("plan", "Lập kế hoạch"),
+    "replan": ("plan", "Điều chỉnh kế hoạch"),
+    "review": ("plan", "Rà soát"),
+    "search_catalog": ("tool_call", "Tìm trong danh mục"),
+    "describe_metric": ("tool_call", "Xem định nghĩa chỉ số"),
+    "search_values": ("tool_call", "Tìm giá trị"),
+    "query_metric": ("query", "Truy vấn chỉ số"),
+    "explore_sql": ("tool_call", "Viết SQL thăm dò"),
+    "run_python": ("tool_call", "Phân tích bằng Python"),
 }
 # agent_step.status of each step status the timeline shows.
 STORED_STATUS = {"done": "ok", "failed": "error", "skipped": "skipped"}

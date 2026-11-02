@@ -804,6 +804,14 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
         event, question_id, secrets=secrets(), workspace_source=_internal_workspace_source
     ):
         return
+    # The dynamic agent (agentic/engine.py) answers first; it hands the question back untouched
+    # when there is no model, the model fails before planning, or for an edited plan and an eval
+    # run's narrowed data scope, which are this path's contracts.
+    if edited_plan_id is None and not event.payload.get("data_scope"):
+        from services.worker_agent.agentic import engine
+
+        if await engine.run(event, question_id, gateway()):
+            return
     await publish(str(question_id), "planning", {"question_id": str(question_id)})
     # Ended inside _understand_and_plan once the reading is final, before any path it takes.
     await turn_trace.begin("understand")

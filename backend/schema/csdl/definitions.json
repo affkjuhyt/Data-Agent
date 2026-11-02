@@ -10678,6 +10678,17 @@
      "pii": false
     },
     {
+     "name": "blocks",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'[]'",
+     "unique": false,
+     "comment": "Khối câu trả lời do agent tự soạn theo thứ tự (markdown, kpi, chart, table, insights, callout, code, follow_ups, caveats); dữ liệu của chart/table/kpi do server điền từ dataset (`worker_agent/agentic/blocks.py`). Rỗng: câu trả lời theo khuôn cũ",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "reconcile_badge",
      "type": "text",
      "not_null": false,

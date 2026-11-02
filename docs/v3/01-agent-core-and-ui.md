@@ -303,6 +303,19 @@ Skill chưa duyệt không bao giờ được planner chọn cho câu hỏi củ
 | Capability Registry | `TOOL_REGISTRY` tĩnh; `indicator_api /capabilities` 501 | Một bảng, mục 7.2 của 00 |
 | Monitor | chưa có | `detector` V2 + vùng an toàn mục 2.3 |
 
+### 3.10 Agent động (02/11/2026)
+
+Ask không còn đi theo một kế hoạch sáu bước cố định. `worker_agent/agentic/` là một graph
+(`prepare → plan → act ⟲ → replan / review → compose → persist`) mà planner tự chọn bước và
+công cụ cho từng câu hỏi (`search_catalog`, `describe_metric`, `search_values`, `query_metric`,
+`explore_sql`, `analyze` = pandas trong sandbox, `search_documents`, `ask_user`). Bước hỏng quay
+lại planner kèm điều quan sát được (≤ 2 lần). Câu trả lời là các block do agent tự chọn và xếp
+(`qa.answer.blocks`, v3_0023), phát trực tiếp qua sự kiện `block`. Model không viết số: chart,
+bảng và KPI lấy dữ liệu từ dataset, số trong văn bản phải là thẻ `{{F<n>}}` của một sự kiện có
+thật. `ASK_ENGINE=governed` quay về đường cũ; không có gateway, câu hỏi sửa chip và lượt eval có
+data scope vẫn đi đường cũ. Thiết kế: `docs/superpowers/specs/2026-11-02-dynamic-agent-design.md`;
+bộ nghiên cứu: `docs/research/`.
+
 ## 4. Quyết định tính năng
 
 Ký hiệu mức: L theo mục 1. "Dừng" = điểm hệ thống phải dừng chờ người.

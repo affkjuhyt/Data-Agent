@@ -2303,6 +2303,7 @@ CREATE TABLE qa.answer (
   citations jsonb NOT NULL DEFAULT '[]',
   filed_vs_current jsonb,
   follow_ups jsonb NOT NULL DEFAULT '[]',
+  blocks jsonb NOT NULL DEFAULT '[]',
   reconcile_badge text,
   agent_name text,
   latency_ms integer,
@@ -2327,6 +2328,7 @@ COMMENT ON COLUMN qa.answer.figures IS 'Các số trong câu trả lời kèm qu
 COMMENT ON COLUMN qa.answer.citations IS 'chunk_id, document_id, trang, đoạn; đã kiểm tra tồn tại (UC-05-04 bước 4)';
 COMMENT ON COLUMN qa.answer.filed_vs_current IS 'Hai số đã nộp và hiện tại khi hỏi về kỳ đã nộp (BR-39)';
 COMMENT ON COLUMN qa.answer.follow_ups IS 'Câu hỏi tiếp theo câu trả lời gợi ý, mỗi câu đã đọc lại qua bộ hiểu và compile được (`worker_agent/suggestions.py`)';
+COMMENT ON COLUMN qa.answer.blocks IS 'Khối câu trả lời do agent tự soạn theo thứ tự (markdown, kpi, chart, table, insights, callout, code, follow_ups, caveats); dữ liệu của chart/table/kpi do server điền từ dataset (`worker_agent/agentic/blocks.py`). Rỗng: câu trả lời theo khuôn cũ';
 COMMENT ON COLUMN qa.answer.reconcile_badge IS 'matched_filed, differs_from_filed, not_filed (nhãn “Khớp số đã nộp” trên màn Hỏi đáp)';
 COMMENT ON COLUMN qa.answer.agent_name IS 'Ví dụ Agent Phân tích';
 COMMENT ON COLUMN qa.answer.lineage_hash IS 'SHA-256 khi dùng kỳ đã chốt (UC-01-02)';
