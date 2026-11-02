@@ -7648,6 +7648,8 @@ export interface components {
             figures: unknown;
             /** Filed Vs Current */
             filed_vs_current: unknown | null;
+            /** Follow Ups */
+            follow_ups?: string[];
             /** Forecast Job Id */
             forecast_job_id: string | null;
             /**

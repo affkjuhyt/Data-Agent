@@ -2206,6 +2206,13 @@
       ],
       "title": "Filed Vs Current"
      },
+     "follow_ups": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Follow Ups",
+      "type": "array"
+     },
      "forecast_job_id": {
       "anyOf": [
        {

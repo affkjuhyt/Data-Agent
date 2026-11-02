@@ -12,7 +12,7 @@ import { Tooltip } from '../../design-system/Tooltip';
 import { formatElapsed } from '../../lib/formatVN';
 import { listDatasets, listWorkspaces } from '../../lib/v1/api';
 import type { Workspace } from '../../lib/v1/types';
-import { sampleQuestion } from '../../lib/sampleQuestion';
+import { sampleQuestion, starterQuestions } from '../../lib/sampleQuestion';
 import { getExploreModel } from '../../lib/v1/explore';
 import { useV1 } from '../../lib/v1/useV1';
 import { AskBar } from '../home/AskBar';
@@ -62,7 +62,7 @@ export default function AnalysisPage() {
       />
 
       <AskBar
-        suggestions={[]}
+        suggestions={starterQuestions(model.data)}
         onAsk={ask}
         placeholder={`Hỏi về dữ liệu, ví dụ “${sampleQuestion(model.data)}”`}
       />

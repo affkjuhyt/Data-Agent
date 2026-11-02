@@ -39,6 +39,9 @@ import { requestPage } from '../documents/focusPage';
 import type { AskMessage, Citation } from './types';
 import { CHAT_COMMANDS, commandHelp, commandPrompt, parseChatInput } from './chatCommands';
 import { layoutForCommand } from './answerLayout';
+import { starterQuestions } from '../../lib/sampleQuestion';
+import { getExploreModel } from '../../lib/v1/explore';
+import { useV1 } from '../../lib/v1/useV1';
 
 /* ─── per-viewer bookmarks (not the conversation thread) ─────────── */
 
@@ -69,11 +72,6 @@ function speechRecognition(): (new () => Recognition) | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-const EXAMPLES = [
-  'Doanh thu thuần tháng này theo vùng',
-  'So sánh số đơn hàng quý này với quý trước',
-  'Top 10 khách hàng theo doanh thu năm nay',
-];
 
 
 /* ─── page ────────────────────────────────────────────────────────── */
@@ -81,6 +79,9 @@ const EXAMPLES = [
 export default function AskDataPage() {
   const { user, navigate, routeId } = useAppState();
   const toast = useToast();
+  // Starters from the Data Space's own certified metrics, not examples of another business.
+  const model = useV1(['getExploreModel'], getExploreModel);
+  const starters = starterQuestions(model.data);
   const openCitation = (c: Citation) => {
     if (!c.doc_id) return;
     requestPage(c.doc_id, c.page);
@@ -293,7 +294,7 @@ export default function AskDataPage() {
                   description="Thiếu kỳ, chỉ số hoặc phạm vi dữ liệu thì hệ thống hỏi lại trước khi chạy truy vấn."
                   action={
                     <div className="flex flex-wrap justify-center gap-da-md">
-                      {EXAMPLES.map(e => (
+                      {starters.map(e => (
                         <SuggestionChip key={e} label={e} onSelect={() => { setInput(e); textareaRef.current?.focus(); }} />
                       ))}
                     </div>

@@ -162,6 +162,8 @@ class AnswerView(_Row):
     data_product_id: uuid.UUID | None
     product_scope: str
     created_at: datetime.datetime
+    # The next questions the answer offers, each read back and compiled by the worker.
+    follow_ups: list[str] = Field(default_factory=list)
     blocks: list[dict[str, Any]] = Field(default_factory=list)
 
 

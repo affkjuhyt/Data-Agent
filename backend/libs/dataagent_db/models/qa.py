@@ -205,6 +205,11 @@ class Answer(Base):
     filed_vs_current: Mapped[Any | None] = mapped_column(
         JSONB, nullable=True, comment="Hai số đã nộp và hiện tại khi hỏi về kỳ đã nộp (BR-39)"
     )
+    follow_ups: Mapped[Any] = mapped_column(
+        JSONB,
+        server_default=sql_text("'[]'"),
+        comment="Câu hỏi tiếp theo câu trả lời gợi ý, mỗi câu đã đọc lại qua bộ hiểu và compile được (`worker_agent/suggestions.py`)",
+    )
     reconcile_badge: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,

@@ -45,7 +45,7 @@ from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
-from services.worker_agent import turn_trace
+from services.worker_agent import suggestions, turn_trace
 from services.worker_agent.analyst_plan import build_analysis_plan
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.comparison import (
@@ -234,6 +234,8 @@ class Prepared:
     analysis: str | None = None
     # A requested cut was unavailable; the answer is still useful as an aggregate.
     best_effort_note: str | None = None
+    # The next questions the answer offers, each read back and compiled (suggestions.py).
+    follow_ups: list[str] = field(default_factory=list)
 
 
 def _plan_ir(
@@ -1458,6 +1460,9 @@ async def _understand_and_plan(
                 filed_period_label=filed_period_label,
                 filed_rows=filed_rows,
                 analysis=shown[0] if shown is not None else None,
+                follow_ups=suggestions.follow_ups(
+                    u, layer, today=today, grain=grain, compared=compare_to is not None
+                ),
                 best_effort_note=best_effort_note,
             )
 
@@ -2013,6 +2018,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                 lineage_hash=lineage,
                 data_product_id=product.id if product else None,
                 product_scope="in_scope" if product else "out_of_scope",
+                follow_ups=p.follow_ups,
             )
         )
         await session.flush()

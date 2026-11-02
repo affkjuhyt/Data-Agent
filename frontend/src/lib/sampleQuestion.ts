@@ -23,3 +23,28 @@ export function sampleQuestion(
     ? `so sánh ${name}${by} quý này với quý trước`
     : `${name}${by} tháng này`;
 }
+
+/**
+ * Questions to start from on an empty chat, one per certified metric (up to `count`), in the shapes
+ * the Understander reads by rule: the metric this year, cut by a dimension it allows, against last
+ * quarter, and its top five. Built from the Data Space's own model, so every one names a metric that
+ * exists; a space with no certified metric offers none rather than an example that would be refused.
+ */
+export function starterQuestions(model: ExploreModel | null | undefined, count = 4): string[] {
+  const metrics = (model?.metrics ?? []).filter((m) => m.certified);
+  const out: string[] = [];
+  metrics.slice(0, count).forEach((metric, index) => {
+    const dimension = model?.dimensions.find((d) => metric.allowed_dimension_ids.includes(d.id));
+    const name = metric.label;
+    const lowered = name.charAt(0).toLowerCase() + name.slice(1);
+    const by = dimension ? dimension.label.toLowerCase() : null;
+    const shapes = [
+      `${name} năm nay`,
+      by ? `${name} theo ${by} năm nay` : `${name} theo tháng năm nay`,
+      `${name} quý này so với quý trước`,
+      by ? `Top 5 ${by} có ${lowered} cao nhất năm nay` : `${name} năm nay`,
+    ];
+    out.push(shapes[index % shapes.length]);
+  });
+  return out;
+}

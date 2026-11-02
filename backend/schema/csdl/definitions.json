@@ -10667,6 +10667,17 @@
      "pii": false
     },
     {
+     "name": "follow_ups",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'[]'",
+     "unique": false,
+     "comment": "Câu hỏi tiếp theo câu trả lời gợi ý, mỗi câu đã đọc lại qua bộ hiểu và compile được (`worker_agent/suggestions.py`)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "reconcile_badge",
      "type": "text",
      "not_null": false,

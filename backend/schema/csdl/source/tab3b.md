@@ -1225,6 +1225,7 @@ Câu trả lời: văn bản, số, biểu đồ, trích dẫn và trạng thái
 | chart\_spec | jsonb |  |
 | citations | jsonb, bắt buộc, mặc định '\[\]' | chunk\_id, document\_id, trang, đoạn; đã kiểm tra tồn tại (UC-05-04 bước 4) |
 | filed\_vs\_current | jsonb | Hai số đã nộp và hiện tại khi hỏi về kỳ đã nộp (BR-39) |
+| follow\_ups | jsonb, bắt buộc, mặc định '\[\]' | Câu hỏi tiếp theo câu trả lời gợi ý, mỗi câu đã đọc lại qua bộ hiểu và compile được (`worker_agent/suggestions.py`) |
 | reconcile\_badge | text | matched\_filed, differs\_from\_filed, not\_filed (nhãn “Khớp số đã nộp” trên màn Hỏi đáp) |
 | agent\_name | text | Ví dụ Agent Phân tích |
 | latency\_ms | integer |  |

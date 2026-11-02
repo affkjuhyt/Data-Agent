@@ -115,8 +115,11 @@ export function fromAnswer(answer: Answer): Partial<AskMessage> {
   const chart = figureChart(figures, spec);
   const trust = figureTrust(figures);
   const drill = figureDrill(spec);
+  // The worker's next questions, each one read back and compiled before it was offered.
+  const suggestions = (answer.follow_ups ?? []).filter((q): q is string => typeof q === 'string');
   return {
     ...drawn,
+    ...(suggestions.length > 0 && { suggestions }),
     ...(drill && { drill }),
     ...(run && { evidence: { runs: [run], clarifications: [], warnings: [] } }),
     ...(chart && { chartSpecs: [chart] }),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { sampleQuestion } from './sampleQuestion';
+import { sampleQuestion, starterQuestions } from './sampleQuestion';
 import type { ExploreModel } from './v1/explore';
 
 const model = {
@@ -20,5 +20,23 @@ describe('sampleQuestion', () => {
 
   it('names no metric before the model is loaded', () => {
     expect(sampleQuestion(undefined)).toBe('một chỉ số theo tháng năm nay');
+  });
+});
+
+describe('starterQuestions', () => {
+  it('starts from the certified metrics only, in shapes the rule pass reads', () => {
+    const two = {
+      ...model,
+      metrics: [
+        ...model.metrics,
+        { id: 'm2', label: 'Số đơn', code: 'SO_DON', certified: true, allowed_dimension_ids: ['d1'] },
+        { id: 'm3', label: 'Nháp', code: 'DRAFT', certified: false, allowed_dimension_ids: [] },
+      ],
+    } as unknown as ExploreModel;
+    expect(starterQuestions(two)).toEqual([
+      'Doanh thu Internet năm nay',
+      'Số đơn theo khu vực năm nay',
+    ]);
+    expect(starterQuestions(undefined)).toEqual([]);
   });
 });
