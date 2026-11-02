@@ -161,6 +161,10 @@ async def answer_by_sql(
     back, so the caller can ask its own question back (a metric it suggests)."""
     if gateway is None or user_id is None:
         return False
+    if event.payload.get("data_scope"):
+        # An agent version's eval run is held to its data_scope, which the tables shown to the
+        # model are not limited to: not tried, as answer_verified_first is not.
+        return False
     started = datetime.datetime.now(datetime.UTC)
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         question = await session.get(qa.Question, question_id)

@@ -366,3 +366,27 @@ async def test_a_partial_metric_the_tables_cannot_answer_still_asks_back(
     # not the SQL's own doubt.
     assert (status, kind) == ("clarifying", "clarification"), text
     assert "Tỷ lệ nợ xấu" in text and "cách viết" not in text, text
+
+
+async def test_an_agent_versions_eval_run_never_writes_sql_outside_its_data_scope(
+    seed: Seed, credit: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An eval run of an agent version carries its data_scope; the exploratory SQL is not
+    # limited to it, so it is not tried (as the approved-query path is not, sqlgen/answer.py).
+    script = Script([GOOD[0], GOOD[1]] * 3)
+    bank = build(seed, credit, monkeypatch)
+    q = asked(bank, script, monkeypatch)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE qa.outbox SET payload = payload || %s::jsonb WHERE aggregate_id = %s",
+            ('{"data_scope": {"tables": []}}', str(q)),
+        )
+    await drain()
+    assert all("TABLE bank" not in prompt for prompt, _ in script.asked)
+    assert (
+        seed.one(
+            "SELECT count(*) FROM query.query_run WHERE caller_kind = 'question' AND caller_id = %s",
+            q,
+        )
+        == 0
+    )
