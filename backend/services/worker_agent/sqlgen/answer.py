@@ -220,7 +220,6 @@ async def answer_by_sql(
             "candidates": len(e.tried),
             "agreeing": e.agreeing,
             "rejected": sum(1 for t in e.tried if t.get("status") == "rejected"),
-            "sql": e.sql,
         }
         if e.decision == "failed":
             written.status, written.summary = "failed", "Không cách viết SQL nào chạy được."
@@ -233,7 +232,6 @@ async def answer_by_sql(
         target=f"{source.name} cho: {text[:80]}",
         chips=[{"kind": "source", "label": source.name}],
         detail={
-            "sql": e.sql,
             "row_count": len(e.rows),
             "truncated": e.truncated,
             "query_run_id": str(e.query_run_id) if e.query_run_id else None,
@@ -403,7 +401,6 @@ async def _answer_verified(
             secrets=secrets,
         )
         step.detail = {
-            "sql": found.sql,
             "row_count": len(outcome.rows or []),
             "truncated": bool(outcome.truncated),
             "query_run_id": str(outcome.query_run_id) if outcome.query_run_id else None,

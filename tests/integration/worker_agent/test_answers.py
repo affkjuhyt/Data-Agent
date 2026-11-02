@@ -423,7 +423,9 @@ async def test_ac_01_01_01_a_ratio_by_region_in_scope_with_a_sealed_receipt(
     detail = {name: output["detail"] for name, _, output in steps}
     assert {chip["kind"] for chip in detail["understand"]["reading"]} >= {"metric", "period"}
     assert detail["choose_metric"]["metric"]["code"] == "NPL_RATIO"
-    assert "GROUP BY" in detail["query"]["sql"] and detail["query"]["row_count"] == 2
+    # The SQL is not copied into the step: it is read through the query run, with its checks.
+    assert "sql" not in detail["query"] and detail["query"]["row_count"] == 2
+    assert detail["query"]["query_run_id"]
     assert [check["name"] for check in detail["validate"]["checks"]]
     assert detail["visualize"]["chart_type"]
     assert steps[2][2]["_view"]["title"] == "Truy vấn"

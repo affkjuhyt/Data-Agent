@@ -75,7 +75,7 @@ async def test_an_approved_query_answers_its_question_verified_without_the_model
         f"question:{q}",
     )
     assert [name for name, _, _ in turn] == ["use_verified", "query"]
-    assert "2026-09-01" in turn[1][2]["detail"]["sql"] and turn[1][1] == "ok"
+    assert turn[1][2]["detail"]["query_run_id"] and turn[1][1] == "ok"
 
 
 async def test_an_example_not_yet_approved_is_not_used(

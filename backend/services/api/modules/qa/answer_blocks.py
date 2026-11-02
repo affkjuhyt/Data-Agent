@@ -9,9 +9,15 @@ from __future__ import annotations
 
 from typing import Any
 
+STANDARD_TRUST = "Theo chỉ số chuẩn"
+
 
 def _json(value: Any) -> Any:
-    return str(value) if value is not None and not isinstance(value, (str, int, float, bool, list, dict)) else value
+    return (
+        str(value)
+        if value is not None and not isinstance(value, (str, int, float, bool, list, dict))
+        else value
+    )
 
 
 def _figure_rows(figures: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -26,8 +32,29 @@ def _figure_rows(figures: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def _caveats(answer: Any, figures: list[dict[str, Any]]) -> list[str]:
+    """What the reader should keep in mind: failed checks, figures not read through a certified
+    metric, a figure that differs from what was filed, an answer outside every data product."""
+    items: list[str] = []
+    check = answer.number_check if isinstance(getattr(answer, "number_check", None), dict) else {}
+    verification = check.get("verification") if isinstance(check.get("verification"), dict) else {}
+    for item in verification.get("checks") or []:
+        if isinstance(item, dict) and item.get("passed") is False and item.get("detail"):
+            items.append(str(item["detail"]))
+    for trust in dict.fromkeys(str(f["trust"]) for f in figures if f.get("trust")):
+        if trust != STANDARD_TRUST:
+            items.append(f"Số liệu {trust}.")
+    if getattr(answer, "reconcile_badge", None) == "differs_from_filed":
+        items.append("Số hiện tại khác số đã nộp của kỳ.")
+    if getattr(answer, "product_scope", None) == "out_of_scope":
+        items.append("Câu trả lời nằm ngoài mọi sản phẩm dữ liệu, không có biên nhận.")
+    return list(dict.fromkeys(items))
+
+
 def blocks_of(answer: Any) -> list[dict[str, Any]]:
-    """Project one stored answer into non-empty, independently renderable blocks."""
+    """Project one stored answer into non-empty, independently renderable blocks. The sql block
+    names the query run only: its SQL is read through /v1/query-runs/{id}/sql, which checks
+    view_detail and audits the read."""
     answer_id = str(answer.id)
     blocks: list[dict[str, Any]] = []
     text = str(answer.text or "")
@@ -83,4 +110,7 @@ def blocks_of(answer: Any) -> list[dict[str, Any]]:
     citations = [citation for citation in (answer.citations or []) if isinstance(citation, dict)]
     if citations:
         blocks.append({"type": "citations", "id": f"{answer_id}-citations", "items": citations})
+    caveats = _caveats(answer, figures)
+    if caveats:
+        blocks.append({"type": "caveats", "id": f"{answer_id}-caveats", "items": caveats})
     return blocks

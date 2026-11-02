@@ -844,7 +844,6 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
             )
         )
         step.detail = {
-            "sql": outcome.sql or prepared.compiled.sql,
             "row_count": len(outcome.rows or []),
             "truncated": bool(outcome.truncated),
             "query_run_id": str(outcome.query_run_id) if outcome.query_run_id else None,
