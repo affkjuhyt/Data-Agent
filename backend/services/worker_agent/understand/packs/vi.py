@@ -142,7 +142,11 @@ PACK = Pack(
     # Only "theo": without accents "moi" is both "mỗi" (each) and "mới" (new, "mới nhất") and
     # "tung" is not only "từng", so they ask for a cut only when a dimension's name follows.
     # "theo kỳ …" ("theo kỳ được hỏi") speaks of the period, which find_period reads.
-    unplaced_cut=re.compile(r"\b(?:chia )?theo\s+(?!ky\b)([^#\s]+(?:\s+[^#\s]+){0,2})"),
+    # "theo từng vùng": "từng" is part of "by", not the cut; with the cut placed, "theo từng" is
+    # left alone, and an unknown one is named without it.
+    unplaced_cut=re.compile(
+        r"\b(?:chia )?theo\s+(?:tung\s+)?(?!ky\b)(?!tung\b)([^#\s]+(?:\s+[^#\s]+){0,2})"
+    ),
     filler=frozenset(
         "la cua cho toi ban biet xem hay va voi o tai trong nay do kia the nao bao nhieu hien "
         "hom qua tuan thang nam quy ky ngay gan nhat moi tong cong toan bo cac nhung mot hoac "

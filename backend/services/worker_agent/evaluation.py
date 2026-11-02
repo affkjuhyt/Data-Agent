@@ -39,6 +39,10 @@ from libs.sql_guard import SqlRejected
 from services.worker_agent.query.executor import run_query
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import Overlay, load
+from services.worker_agent.understand.analysis import find_analysis
+from services.worker_agent.understand.comparison import find_comparison
+from services.worker_agent.understand.condition import find_conditions, numeric_dimensions
+from services.worker_agent.understand.grain import find_grain
 from services.worker_agent.understand.resolver import understand
 
 logger = logging.getLogger(__name__)
@@ -114,15 +118,40 @@ async def ask(
 
     async with scoped_session("svc_qa", org_id, user_id) as session:
         layer = await load(session, space_id, overlay)
-        u = understand(question, layer.vocabulary, today=as_of or datetime.date.today())
+        # Read as questions.py reads a new question: a comparison, a grain ("theo quý"), an
+        # analysis ("luỹ kế") and conditions are taken out, in this order, before the resolver.
+        # Given the raw text, the resolver left "theo quý" as a cut it could not place.
+        compared = find_comparison(question)
+        asked = compared.rest if compared is not None else question
+        grain = find_grain(asked)
+        asked = grain.rest if grain is not None else asked
+        analysis = find_analysis(asked)
+        asked = analysis.rest if analysis is not None else asked
+        conditions = find_conditions(asked, numeric_dimensions(layer.layer.dimensions))
+        asked = conditions.rest if conditions is not None else asked
+        u = understand(asked, layer.vocabulary, today=as_of or datetime.date.today())
         if u.decision != "proceed" or u.metric is None:
             return Asked(u.decision)
         version = layer.versions[u.metric.metric_id]
+        group_by = list(u.group_by)
+        if grain is not None:
+            try:
+                time_cut = c.time_dimension_of(version, layer.layer)
+            except c.CompileError:
+                time_cut = None
+            if time_cut is None:
+                return Asked("refused", u.metric.code, error="the metric has no time to cut by")
+            if time_cut.code not in group_by:
+                group_by.append(time_cut.code)
         request = c.Request(
             version,
-            group_by=u.group_by,
+            group_by=group_by,
             filters=u.filters,
+            conditions=[f.condition for f in conditions.conditions] if conditions else (),
             period=c.Period(u.period.start, u.period.end) if u.period else None,
+            grain=grain.grain if grain is not None else None,
+            top_n=u.top_n,
+            top_desc=u.top_desc,
         )
         try:
             compiled = c.compile_metric(request, layer.layer, dialect="postgres")

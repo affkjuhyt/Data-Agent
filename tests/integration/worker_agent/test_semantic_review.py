@@ -242,6 +242,26 @@ async def test_a_period_without_data_is_not_scored_as_an_answer(
     assert asked.decision == "proceed" and float(asked.value or 0) == 3000
 
 
+async def test_the_eval_reads_a_question_as_the_question_path_does(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The context eval called the resolver on the raw text: "theo tháng" (a grain the question
+    # path takes out first) was left as a cut it could not place, and the item asked back.
+    bank = build(seed, warehouse, monkeypatch)
+    asked = await evaluation.ask(
+        org_id=bank.org,
+        space_id=bank.space,
+        user_id=bank.user,
+        question="Dư nợ theo tháng năm 2026",
+        as_of=None,
+        caller_id=uuid.uuid4(),
+    )
+    assert (asked.decision, asked.metric_code) == ("proceed", "DU_NO")
+    assert asked.rows > 1
+
+
 def proposed_synonym(bank: Bank, du_no: Any, phrase: str, norm: str) -> uuid.UUID:
     synonym = bank.seed.row(
         "context.synonym",

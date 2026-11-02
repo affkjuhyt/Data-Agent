@@ -159,6 +159,16 @@ def test_a_known_cut_leaves_nothing_unplaced() -> None:
     assert u.decision == "proceed" and u.group_by == ["vung"] and u.unplaced_cut is None
 
 
+def test_each_before_a_known_cut_leaves_nothing_unplaced() -> None:
+    # "theo từng vùng": with the region placed, "theo từng" was left and read as a cut named
+    # "từng"; DS-AW asked back on "Doanh thu đại lý năm 2013 theo từng nhóm hàng".
+    u = understand("Tỷ lệ nợ xấu tháng 9/2026 theo từng vùng", VOCAB, today=TODAY)
+    assert u.decision == "proceed" and u.group_by == ["vung"] and u.unplaced_cut is None
+    # A cut that is not known is still asked, without the "từng".
+    u = understand("Tỷ lệ nợ xấu tháng 9/2026 theo từng khu vực", VOCAB, today=TODAY)
+    assert u.decision == "clarify" and u.unplaced_cut == "khu vuc"
+
+
 def test_a_ranked_question_adds_the_dimension_and_limit() -> None:
     product = DimensionEntry(uuid.uuid4(), "product", "Sản phẩm")
     vocab = Vocabulary(
