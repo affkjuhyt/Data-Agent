@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import datetime
 import decimal
-import hashlib
 import json
 import re
 import uuid
-from typing import Any
+from typing import Any, cast
 
 import asyncpg
 import httpx
@@ -24,7 +23,7 @@ from libs import pii
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context
 from libs.tabular import profile as ingest_profile
-from services.worker_agent import source_meta
+from services.worker_agent import schema_changes, source_meta
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.questions import secrets
 from services.worker_agent.source_tests import _clickhouse_sql, _clickhouse_url, _ssl_mode
@@ -662,6 +661,7 @@ async def scan_schema(event: Event) -> None:
                 packs = (await ingest_profile.load(session, source.data_space_id)).pii_packs
             _redact_personal(profiles, packs)
         relationship_proposals: list[dict[str, object]] = []
+        breaking: list[schema_changes.Pending] = []
         value_samples: list[tuple[uuid.UUID, str, object]] = []
         now = datetime.datetime.now(datetime.UTC)
         async with scoped_session(ROLE, event.org_id, event.payload.get("requested_by")) as session:
@@ -697,9 +697,38 @@ async def scan_schema(event: Event) -> None:
                 await session.flush()
                 datasets_by_name[(str(item["schema_name"]), str(item["table_name"]))] = dataset
                 version = int(dataset.current_version or 1)
+                if existing is not None and run.kind == "schema":
+                    # UC-04-03: the table was read again; its structure may have moved.
+                    found_columns = cast(list[dict[str, Any]], item["columns"])
+                    d = schema_changes.diff(
+                        await schema_changes.current_columns(session, existing), found_columns
+                    )
+                    if d.change == "additive":
+                        await schema_changes.write_version(
+                            session,
+                            existing,
+                            found_columns,
+                            d,
+                            org_id=event.org_id,
+                            by=event.payload.get("requested_by"),
+                            scan_run_id=run_id,
+                            proposal_id=None,
+                            now=now,
+                        )
+                    elif d.change == "breaking":
+                        breaking.append(
+                            schema_changes.Pending(
+                                dataset_id=existing.id,
+                                data_space_id=existing.data_space_id,
+                                table=f"{item['schema_name']}.{item['table_name']}",
+                                from_version=version,
+                                columns=found_columns,
+                                diff=d,
+                            )
+                        )
                 if existing is None:
                     columns = item["columns"]
-                    schema_hash = hashlib.sha256(repr(columns).encode()).hexdigest()
+                    schema_hash = schema_changes.schema_hash(cast(list[dict[str, Any]], columns))
                     session.add(
                         catalog.DatasetVersion(
                             id=uuid7(),
@@ -768,12 +797,12 @@ async def scan_schema(event: Event) -> None:
                     )
                     if dataset is None:
                         continue
+                    # Every column the current version has, whichever version recorded it
+                    # (ColumnMeta.dataset_version is the first version with the column).
                     columns = (
                         await session.scalars(
-                            select(catalog.ColumnMeta).where(
-                                catalog.ColumnMeta.dataset_id == dataset.id,
-                                catalog.ColumnMeta.dataset_version == dataset.current_version,
-                                catalog.ColumnMeta.removed_in_version.is_(None),
+                            schema_changes.live_columns(
+                                dataset.id, int(dataset.current_version or 1)
                             )
                         )
                     ).all()
@@ -833,6 +862,12 @@ async def scan_schema(event: Event) -> None:
                     },
                 )
             )
+        if breaking:
+            # UC-04-03 AC-07: a removed or retyped column waits for a person; the scan writes
+            # nothing of it, and asks once per table and new structure.
+            proposer = event.payload.get("requested_by") or source.created_by
+            if proposer is not None:
+                await schema_changes.propose(event, breaking, uuid.UUID(str(proposer)))
         if relationship_proposals:
             async with scoped_session(
                 RELATIONSHIP_ROLE, event.org_id, event.payload.get("requested_by")

@@ -281,7 +281,7 @@ người dùng, P2 nâng chất lượng trả lời, P3 mở rộng năng lực
 
 | ID | Mức | Việc | Nguồn | Công sức | TT |
 | --- | --- | --- | --- | --- | --- |
-| RES-22 | P1 | `schema_hash` chuẩn hoá (đang băm `repr` cả danh sách cột nên báo đổi schema giả); đếm lỗi theo bảng, một bảng lỗi không làm hỏng cả lượt quét | OpenMetadata ingestion (ý tưởng) | S | todo |
+| RES-22 | P1 | `schema_hash` chuẩn hoá (đang băm `repr` cả danh sách cột nên báo đổi schema giả); đếm lỗi theo bảng, một bảng lỗi không làm hỏng cả lượt quét | OpenMetadata ingestion (ý tưởng) | S | doing: hash chuẩn hoá và UC-04-03 lõi (thêm cột → phiên bản mới; xoá/đổi kiểu → đề xuất schema_change; duyệt → áp) trong `schema_changes.py`; còn: lỗi theo bảng, thông báo khi thêm cột, đoán ánh xạ đổi tên và danh sách ảnh hưởng (AC-01), chỉ số không chạy được khi cột bị xoá (AC-05) |
 | RES-23 | P2 | Viết lại profiler: một truy vấn gộp mỗi bảng, ước lượng số dòng từ catalog, lấy mẫu với bảng lớn, thử lại khi tràn số; thêm/sửa/xoá từ thống kê Postgres cho độ tươi | OpenMetadata ingestion (ý tưởng) | M | todo |
 | RES-24 | P2 | Quyết định PII: loại có checksum chỉ cần một lần khớp hợp lệ, loại yếu cần tỷ lệ và số giá trị khác nhau; bỏ qua cột ít giá trị khác nhau; lưu bằng chứng; phản hồi của người dùng thành ngoại lệ theo cột | OpenMetadata ingestion (ý tưởng) | S | todo |
 | RES-25 | P2 | Gắn thuật ngữ nghiệp vụ vào cột, chỉ số, chiều, giá trị (có nguồn gốc gắn và trạng thái đề xuất/xác nhận) để agent hiểu đúng bộ lọc | OpenMetadata | M | todo |

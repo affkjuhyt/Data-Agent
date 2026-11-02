@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 13 UC đủ tiêu chí bắt buộc | todo 13, partial 89, done 8, na 5 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 333 có test nhắc mã AC | todo 739, na 39 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 336 có test nhắc mã AC | todo 739, na 39 |
 | Endpoint A2 (tab 4) | 458 (A2 ghi 459 dòng; POST /v1/data-products ở hai nhóm) | 458 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 207 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 156 có mã nhắc tới | todo 188, na 7 |
@@ -77,7 +77,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | --- | --- | --- | --- | --- | --- | --- |
 | UC-04-01 | Đăng ký kết nối nguồn | partial | 2/2 | 1/1 | 3/5 | claude · 3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
 | UC-04-02 | Quét schema và lập hồ sơ dữ liệu | partial | 1/1 | 3/3 | 2/6 | claude · 2/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
-| UC-04-03 | Phát hiện thay đổi schema | todo | 1/1 | 2/2 | 0/5 |  |
+| UC-04-03 | Phát hiện thay đổi schema | todo | 1/1 | 2/2 | 2/5 |  |
 | UC-04-04 | Gán nguồn vào Data Space | partial | 2/2 | 2/2 | 1/3 | claude · 1/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
 | UC-04-05 | Cấu hình lịch quét | partial | 1/1 | 3/3 | 2/3 | claude · 2/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
 | UC-04-06 | Thiết lập job nạp dữ liệu | todo | 2/2 | 2/2 | 0/6 |  |
@@ -275,7 +275,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-13 | UC-03-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-14 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +12 |
 | BR-15 | UC-04-02 | todo |  |
-| BR-16 | UC-04-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-16 | UC-04-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-17 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-18 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-19 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +8 |
@@ -909,17 +909,17 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-04-03 Phát hiện thay đổi schema · 0/7</summary>
+<details><summary>UC-04-03 Phát hiện thay đổi schema · 3/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-04-03-01 | Chính | Cho cột du_no đổi tên thành du_no_goc và NPL_RATIO dùng cột này / Khi quét / Thì Cần bạn có proposal loại schema kèm diff, ánh xạ đoán có độ tin, danh sách ảnh hưởng và số câu hỏi chuẩn bị ảnh hưởng; sự kiện schema.ch… | CSDL, E2E | todo |  |
-| AC-04-03-02 | Chính | Cho đề xuất trên / Khi AC03 chấp nhận / Thì có dataset_version mới với valid_from và ánh xạ cũ được đóng valid_to | CSDL | todo |  |
-| AC-04-03-03 | Thay thế | Cho chỉ thêm 1 cột không chỉ số nào dùng / Khi quét / Thì có dataset_version mới, không có proposal, chỉ có thông báo | CSDL | todo |  |
+| AC-04-03-02 | Chính | Cho đề xuất trên / Khi AC03 chấp nhận / Thì có dataset_version mới với valid_from và ánh xạ cũ được đóng valid_to | CSDL | todo | `tests/integration/worker_agent/test_schema_scans.py` |
+| AC-04-03-03 | Thay thế | Cho chỉ thêm 1 cột không chỉ số nào dùng / Khi quét / Thì có dataset_version mới, không có proposal, chỉ có thông báo | CSDL | todo | `tests/integration/worker_agent/test_schema_scans.py` |
 | AC-04-03-04 | Thay thế | Cho nguồn ở chế độ nạp về / Khi phát hiện thay đổi / Thì job dừng và bản ghi vào DLQ theo UC-04-07 | API, CSDL | todo |  |
 | AC-04-03-05 | Ngoại lệ | Cho cột bị xoá đang dùng trong chỉ số đã chứng nhận và không đoán được cột thay / Khi hỏi về chỉ số đó / Thì chỉ số ở trạng thái “không chạy được” và câu trả lời nêu lý do | E2E, CSDL | todo |  |
 | AC-04-03-06 | Quy tắc | Cho câu hỏi về tháng 8/2026 trước ngày đổi tên / Khi biên dịch / Thì SQL dùng cột cũ theo ánh xạ có valid_to; không có dòng ánh xạ nào bị xoá | CSDL | todo |  |
-| AC-04-03-07 | Quy tắc | Cho cột giữ tên nhưng đổi kiểu numeric sang varchar / Khi quét / Thì luôn có proposal chờ duyệt, không tự ghi phiên bản | CSDL | todo |  |
+| AC-04-03-07 | Quy tắc | Cho cột giữ tên nhưng đổi kiểu numeric sang varchar / Khi quét / Thì luôn có proposal chờ duyệt, không tự ghi phiên bản | CSDL | todo | `tests/integration/worker_agent/test_schema_scans.py` |
 
 </details>
 

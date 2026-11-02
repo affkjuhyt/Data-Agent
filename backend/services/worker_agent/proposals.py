@@ -506,6 +506,7 @@ async def decided(event: Event) -> None:
         "writeback",
         "metric_change",
         "knowledge_page",
+        "schema_change",
         *semantic_review.KINDS,
         *reviews.KINDS,
     )
@@ -528,6 +529,10 @@ async def decided(event: Event) -> None:
         outcome = await _apply_skill(event, proposal)
     elif proposal["kind"] == "knowledge_page":
         outcome = await _apply_knowledge(event, proposal)
+    elif proposal["kind"] == "schema_change":
+        from services.worker_agent import schema_changes
+
+        outcome = await schema_changes.apply(event, proposal)
     else:
         outcome = await _apply_writeback(event, proposal)
     accepted = event.payload.get("status") == "accepted"

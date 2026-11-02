@@ -298,3 +298,146 @@ async def test_columns_postgres_cannot_order_or_compare_are_profiled_as_text(
     photo = profiles[("scan_types", "product", "photo")]
     assert (photo["distinct_est"], photo["min_value"], photo["top_values"]) == (1, None, [])
     assert photo["category_values"] == []
+
+
+@pytest.mark.req("AC-04-03-02", "AC-04-03-03", "AC-04-03-07")
+async def test_a_moved_structure_is_versioned_when_additive_and_proposed_when_breaking(
+    seed: Seed, ddl_server: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """UC-04-03 AC-03, AC-07 and AC-02 (RES-22)."""
+    from services.worker_agent import proposals
+
+    dsn = ddl_server["dataagent"]
+    parts = urlsplit(dsn)
+
+    def sql(*statements: str) -> None:
+        with psycopg2.connect(dsn) as conn:
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                for s in statements:
+                    cur.execute(s)
+
+    sql(
+        "CREATE SCHEMA IF NOT EXISTS scan_uc0403",
+        "DROP TABLE IF EXISTS scan_uc0403.loans",
+        "CREATE TABLE scan_uc0403.loans (id integer PRIMARY KEY, du_no numeric)",
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dw_reader') "
+        "THEN CREATE ROLE dw_reader LOGIN; END IF; END $$",
+        "ALTER ROLE dw_reader PASSWORD 'warehouse-reader'",
+        "GRANT USAGE ON SCHEMA scan_uc0403 TO dw_reader",
+        "GRANT SELECT ON ALL TABLES IN SCHEMA scan_uc0403 TO dw_reader",
+    )
+    org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Schema moves")
+    user = seed.row(
+        "org.app_user", org_id=org, external_id="moves", username="moves", display_name="Moves"
+    )
+    space = seed.row("org.data_space", org_id=org, code="DS-MOVE", name="Moves", steward_id=user)
+    source_id = seed.row(
+        "catalog.source",
+        org_id=org,
+        data_space_id=space,
+        name="Moves source",
+        kind="postgresql",
+        host=parts.hostname,
+        port=parts.port,
+        database_name=parts.path.lstrip("/"),
+        conn_options=Json({"sslmode": "disable"}),
+        secret_ref=f"secret/tenants/{org}/sources/moves",
+        scan_schemas=["scan_uc0403"],
+        status="active",
+    )
+    reader = StaticReader(
+        {
+            f"secret/tenants/{org}/sources/moves": {
+                "user": "dw_reader",
+                "password": "warehouse-reader",
+            }
+        }
+    )
+    monkeypatch.setattr(schema_scans, "secrets", lambda: reader)
+
+    async def scan() -> None:
+        run = seed.row(
+            "catalog.scan_run", org_id=org, source_id=source_id, kind="schema", trigger="manual"
+        )
+        await schema_scans.scan_schema(
+            Event(
+                uuid.uuid4(),
+                org,
+                "scan_run.created",
+                "scan_run",
+                run,
+                {"scan_run_id": str(run), "source_id": str(source_id), "requested_by": str(user)},
+            )
+        )
+
+    await scan()
+    loans = seed.one("SELECT id FROM catalog.dataset WHERE source_id = %s", source_id)
+    sql("ALTER TABLE scan_uc0403.loans ADD COLUMN branch text")
+    await scan()
+    # AC-03: an added column is a new version at once, without a proposal.
+    assert seed.one("SELECT current_version FROM catalog.dataset WHERE id = %s", loans) == 2
+    assert (
+        seed.one(
+            "SELECT change_kind FROM catalog.dataset_version WHERE dataset_id = %s AND version = 2",
+            loans,
+        )
+        == "additive"
+    )
+    assert seed.one(
+        "SELECT valid_to IS NOT NULL FROM catalog.dataset_version"
+        " WHERE dataset_id = %s AND version = 1",
+        loans,
+    )
+    assert (
+        seed.one(
+            "SELECT dataset_version FROM catalog.column_meta WHERE dataset_id = %s"
+            " AND name = 'branch'",
+            loans,
+        )
+        == 2
+    )
+
+    sql("ALTER TABLE scan_uc0403.loans ALTER COLUMN du_no TYPE text")
+    await scan()
+    await scan()
+    # AC-07: a retyped column waits for a person, once, and nothing is written.
+    assert seed.one("SELECT current_version FROM catalog.dataset WHERE id = %s", loans) == 2
+    proposal = seed.one(
+        "SELECT id FROM inbox.proposal WHERE target_ref = %s AND kind = 'schema_change'"
+        " AND status = 'pending_review'",
+        loans,
+    )
+    assert proposal
+    assert seed.one("SELECT count(*) FROM inbox.proposal WHERE target_ref = %s", loans) == 1
+
+    # AC-02: accepted, the version is written and the old column closed, not deleted.
+    sql(f"UPDATE inbox.proposal SET status = 'accepted' WHERE id = '{proposal}'")
+    await proposals.decided(
+        Event(
+            uuid.uuid4(),
+            org,
+            "proposal.decided",
+            "proposal",
+            proposal,
+            {"proposal_id": str(proposal), "status": "accepted", "reviewer_id": str(user)},
+        )
+    )
+    assert seed.one("SELECT current_version FROM catalog.dataset WHERE id = %s", loans) == 3
+    assert (
+        seed.one(
+            "SELECT removed_in_version FROM catalog.column_meta WHERE dataset_id = %s"
+            " AND name = 'du_no' AND data_type = 'numeric'",
+            loans,
+        )
+        == 3
+    )
+    assert (
+        seed.one(
+            "SELECT dataset_version FROM catalog.column_meta WHERE dataset_id = %s"
+            " AND name = 'du_no' AND data_type = 'text'",
+            loans,
+        )
+        == 3
+    )
+    assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "applied"
