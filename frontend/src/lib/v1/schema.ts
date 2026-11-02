@@ -5271,6 +5271,27 @@ export interface paths {
         patch: operations["editQuestionPlan"];
         trace?: never;
     };
+    "/v1/questions/{id}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Các bước agent đã làm ở lượt gần nhất của câu hỏi
+         * @description What the agent did on the question's latest turn. The steps hold its reading and the SQL it
+         *     ran, so only the person who asked reads them (agent routes keep the same rule for the run).
+         */
+        get: operations["getQuestionSteps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/questions/{id}/stream": {
         parameters: {
             query?: never;
@@ -19145,6 +19166,27 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** QuestionStepsView */
+        QuestionStepsView: {
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /** Run Id */
+            run_id?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Steps */
+            steps?: components["schemas"]["services__api__modules__qa__schemas__StepView"][];
+            /**
+             * Tokens
+             * @default 0
+             */
+            tokens: number;
+        };
         /** QuestionView */
         QuestionView: {
             /** Answer Id */
@@ -20380,7 +20422,7 @@ export interface components {
             /** Status */
             status: string;
             /** Steps */
-            steps?: components["schemas"]["StepView"][] | null;
+            steps?: components["schemas"]["services__api__modules__agent__schemas__StepView"][] | null;
             /** Stop Detail */
             stop_detail: unknown;
             /** Stop Reason */
@@ -21407,41 +21449,6 @@ export interface components {
             shows: "dropped" | "output";
             /** Status */
             status: string;
-        };
-        /** StepView */
-        StepView: {
-            /** Attempt */
-            attempt: number;
-            /** Child Run Id */
-            child_run_id: string | null;
-            /** Cost */
-            cost: number | string;
-            /** Duration Ms */
-            duration_ms: number | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Input */
-            input: unknown | null;
-            /** Kind */
-            kind: string;
-            /** Name */
-            name: string;
-            /** Output */
-            output: unknown | null;
-            /** Seq */
-            seq: number;
-            /**
-             * Started At
-             * Format: date-time
-             */
-            started_at: string;
-            /** Status */
-            status: string;
-            /** Summary */
-            summary: string | null;
         };
         /** SubmitBody */
         SubmitBody: {
@@ -22966,6 +22973,41 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** StepView */
+        services__api__modules__agent__schemas__StepView: {
+            /** Attempt */
+            attempt: number;
+            /** Child Run Id */
+            child_run_id: string | null;
+            /** Cost */
+            cost: number | string;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Input */
+            input: unknown | null;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Output */
+            output: unknown | null;
+            /** Seq */
+            seq: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Status */
+            status: string;
+            /** Summary */
+            summary: string | null;
+        };
         /** ToolView */
         services__api__modules__agent__schemas__ToolView: {
             /** Allowed Targets */
@@ -23916,6 +23958,49 @@ export interface components {
             steps: unknown;
             /** Version */
             version: number;
+        };
+        /**
+         * StepView
+         * @description One step of an Ask turn as the timeline draws it (worker turn_trace.py step contract).
+         */
+        services__api__modules__qa__schemas__StepView: {
+            /** Action */
+            action: string;
+            /** Chips */
+            chips?: {
+                [key: string]: string;
+            }[];
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            } | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Parent */
+            parent?: string | null;
+            /** Seq */
+            seq: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "done" | "failed" | "skipped";
+            /** Step Id */
+            step_id: string;
+            /** Summary */
+            summary?: string | null;
+            /**
+             * Target
+             * @default
+             */
+            target: string;
+            /** Title */
+            title: string;
         };
         /**
          * Accepted
@@ -63914,6 +63999,118 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanAccepted"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    getQuestionSteps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionStepsView"];
                 };
             };
             /** @description Invalid request */

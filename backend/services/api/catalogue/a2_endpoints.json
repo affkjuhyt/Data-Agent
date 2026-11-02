@@ -154,6 +154,18 @@
   },
   {
    "group": "Hỏi đáp",
+   "method": "GET",
+   "path": "/v1/questions/{id}/steps",
+   "summary": "Các bước agent đã làm ở lượt gần nhất của câu hỏi",
+   "use_cases": [
+    "01-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
    "method": "POST",
    "path": "/v1/questions/{id}:cancel",
    "summary": "Dừng một câu hỏi đang chạy",

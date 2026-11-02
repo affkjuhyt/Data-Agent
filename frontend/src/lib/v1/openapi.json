@@ -34672,6 +34672,66 @@
     "title": "QuestionCreate",
     "type": "object"
    },
+   "QuestionStepsView": {
+    "properties": {
+     "duration_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Duration Ms"
+     },
+     "question_id": {
+      "format": "uuid",
+      "title": "Question Id",
+      "type": "string"
+     },
+     "run_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Run Id"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status"
+     },
+     "steps": {
+      "items": {
+       "$ref": "#/components/schemas/services__api__modules__qa__schemas__StepView"
+      },
+      "title": "Steps",
+      "type": "array"
+     },
+     "tokens": {
+      "default": 0,
+      "title": "Tokens",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "question_id"
+    ],
+    "title": "QuestionStepsView",
+    "type": "object"
+   },
    "QuestionView": {
     "properties": {
      "answer_id": {
@@ -38047,7 +38107,7 @@
       "anyOf": [
        {
         "items": {
-         "$ref": "#/components/schemas/StepView"
+         "$ref": "#/components/schemas/services__api__modules__agent__schemas__StepView"
         },
         "type": "array"
        },
@@ -40987,121 +41047,6 @@
      "status"
     ],
     "title": "StepPreview",
-    "type": "object"
-   },
-   "StepView": {
-    "properties": {
-     "attempt": {
-      "title": "Attempt",
-      "type": "integer"
-     },
-     "child_run_id": {
-      "anyOf": [
-       {
-        "format": "uuid",
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Child Run Id"
-     },
-     "cost": {
-      "anyOf": [
-       {
-        "type": "number"
-       },
-       {
-        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-        "type": "string"
-       }
-      ],
-      "title": "Cost"
-     },
-     "duration_ms": {
-      "anyOf": [
-       {
-        "type": "integer"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Duration Ms"
-     },
-     "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-     },
-     "input": {
-      "anyOf": [
-       {},
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Input"
-     },
-     "kind": {
-      "title": "Kind",
-      "type": "string"
-     },
-     "name": {
-      "title": "Name",
-      "type": "string"
-     },
-     "output": {
-      "anyOf": [
-       {},
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Output"
-     },
-     "seq": {
-      "title": "Seq",
-      "type": "integer"
-     },
-     "started_at": {
-      "format": "date-time",
-      "title": "Started At",
-      "type": "string"
-     },
-     "status": {
-      "title": "Status",
-      "type": "string"
-     },
-     "summary": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Summary"
-     }
-    },
-    "required": [
-     "id",
-     "seq",
-     "kind",
-     "name",
-     "input",
-     "output",
-     "summary",
-     "status",
-     "attempt",
-     "child_run_id",
-     "cost",
-     "started_at",
-     "duration_ms"
-    ],
-    "title": "StepView",
     "type": "object"
    },
    "SubmitBody": {
@@ -44995,6 +44940,121 @@
     "title": "PlanView",
     "type": "object"
    },
+   "services__api__modules__agent__schemas__StepView": {
+    "properties": {
+     "attempt": {
+      "title": "Attempt",
+      "type": "integer"
+     },
+     "child_run_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Child Run Id"
+     },
+     "cost": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       }
+      ],
+      "title": "Cost"
+     },
+     "duration_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Duration Ms"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "input": {
+      "anyOf": [
+       {},
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Input"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "output": {
+      "anyOf": [
+       {},
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Output"
+     },
+     "seq": {
+      "title": "Seq",
+      "type": "integer"
+     },
+     "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     }
+    },
+    "required": [
+     "id",
+     "seq",
+     "kind",
+     "name",
+     "input",
+     "output",
+     "summary",
+     "status",
+     "attempt",
+     "child_run_id",
+     "cost",
+     "started_at",
+     "duration_ms"
+    ],
+    "title": "StepView",
+    "type": "object"
+   },
    "services__api__modules__agent__schemas__ToolView": {
     "properties": {
      "allowed_targets": {
@@ -47381,6 +47441,112 @@
      "created_at"
     ],
     "title": "PlanView",
+    "type": "object"
+   },
+   "services__api__modules__qa__schemas__StepView": {
+    "description": "One step of an Ask turn as the timeline draws it (worker turn_trace.py step contract).",
+    "properties": {
+     "action": {
+      "title": "Action",
+      "type": "string"
+     },
+     "chips": {
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Chips",
+      "type": "array"
+     },
+     "detail": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Detail"
+     },
+     "duration_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Duration Ms"
+     },
+     "parent": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Parent"
+     },
+     "seq": {
+      "title": "Seq",
+      "type": "integer"
+     },
+     "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "running",
+       "done",
+       "failed",
+       "skipped"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "step_id": {
+      "title": "Step Id",
+      "type": "string"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     },
+     "target": {
+      "default": "",
+      "title": "Target",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "step_id",
+     "seq",
+     "action",
+     "title",
+     "status",
+     "started_at"
+    ],
+    "title": "StepView",
     "type": "object"
    },
    "services__api__modules__skill__schemas__Accepted": {
@@ -105446,6 +105612,150 @@
     ],
     "x-use-cases": [
      "UC-01-03"
+    ]
+   }
+  },
+  "/v1/questions/{id}/steps": {
+   "get": {
+    "description": "What the agent did on the question's latest turn. The steps hold its reading and the SQL it\nran, so only the person who asked reads them (agent routes keep the same rule for the run).",
+    "operationId": "getQuestionSteps",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QuestionStepsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Các bước agent đã làm ở lượt gần nhất của câu hỏi",
+    "tags": [
+     "Hỏi đáp"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-01-01"
     ]
    }
   },

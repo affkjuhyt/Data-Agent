@@ -87,6 +87,7 @@ Dịch vụ: Agent runtime (qa). 17 endpoint.
 | POST | /v1/questions | Gửi câu hỏi; trả 202 kèm question\_id | 01-01, 01-04, 05-04, 10-01 | ask |
 | GET | /v1/questions/{id} | Trạng thái câu hỏi, kế hoạch hiện hành | 01-01 | ask |
 | GET | /v1/questions/{id}/stream | Luồng SSE: cách hiểu, tiến độ, câu trả lời | 01-01 | ask |
+| GET | /v1/questions/{id}/steps | Các bước agent đã làm ở lượt gần nhất của câu hỏi (thêm 02/11/2026) | 01-01 | ask |
 | POST | /v1/questions/{id}:cancel | Dừng một câu hỏi đang chạy (thêm 01/11/2026) | 01-01 | ask |
 | PATCH | /v1/questions/{id}/plan | Sửa chip cách hiểu, chạy lại | 01-03 | ask |
 | GET | /v1/conversations | Danh sách hội thoại của tôi | 01-04 | ask |
@@ -694,6 +695,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/questions | text\*, as\_of, knowledge\_mode, knowledge\_at, purpose, parent\_question\_id, conversation\_id, stream | 202, Location tới question | 400 data\_space\_required; 403 policy\_denied; 422 business\_rule\_violated (knowledge\_mode = at thiếu knowledge\_at); 429 rate\_limited |
 | GET /v1/questions/{id} | — | Question. Kèm plan hiện hành và answer\_id khi đã trả lời | 404 not\_found |
 | GET /v1/questions/{id}/stream | — | Luồng SSE. Sự kiện understood, progress, clarification, answer, error, done | 404 not\_found |
+| GET /v1/questions/{id}/steps | — | 200, QuestionStepsView: run\_id, status, duration\_ms, tokens, steps (step\_id, seq, action, title, target, chips, status, started\_at, duration\_ms, detail, summary, parent). Chỉ người hỏi đọc được | 404 not\_found (không phải câu hỏi của mình) |
 | POST /v1/questions/{id}:cancel | — | 202, Location tới câu hỏi. Chỉ người hỏi dừng được; worker dừng giữa các bước và ghi lượt hỏi thành refusal | 404 not\_found (không phải câu hỏi của mình); 409 invalid\_state (câu hỏi đã xong); 503 service\_unavailable |
 | PATCH /v1/questions/{id}/plan | chips\*, edit\_note | 202, Location tới plan. Tạo phiên bản plan mới và chạy lại; mỗi chip ghi nguồn gốc người sửa | 409 invalid\_state (câu hỏi đang chạy); 422 validation\_failed (chip không ánh xạ được) |
 | GET /v1/conversations | ?q, ?from, ?to | Danh sách Conversation | — |

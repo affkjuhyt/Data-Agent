@@ -70,6 +70,22 @@
    ],
    "request_text": "—"
   },
+  "GET /v1/questions/{id}/steps": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "200, QuestionStepsView: run_id, status, duration_ms, tokens, steps (step_id, seq, action, title, target, chips, status, started_at, duration_ms, detail, summary, parent). Chỉ người hỏi đọc được",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
   "POST /v1/questions/{id}:cancel": {
    "group": "Hỏi đáp",
    "groups": [

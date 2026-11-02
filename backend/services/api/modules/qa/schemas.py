@@ -68,6 +68,33 @@ class PlanView(_Row):
     created_at: datetime.datetime
 
 
+class StepView(BaseModel):
+    """One step of an Ask turn as the timeline draws it (worker turn_trace.py step contract)."""
+
+    step_id: str
+    seq: int
+    action: str
+    title: str
+    target: str = ""
+    chips: list[dict[str, str]] = Field(default_factory=list)
+    status: Literal["running", "done", "failed", "skipped"]
+    started_at: datetime.datetime
+    duration_ms: int | None = None
+    detail: dict[str, Any] | None = None
+    summary: str | None = None
+    # The step a model call served; None for every other step.
+    parent: str | None = None
+
+
+class QuestionStepsView(BaseModel):
+    question_id: uuid.UUID
+    run_id: uuid.UUID | None = None
+    status: str | None = None
+    duration_ms: int | None = None
+    tokens: int = 0
+    steps: list[StepView] = Field(default_factory=list)
+
+
 class QuestionView(_Row):
     id: uuid.UUID
     conversation_id: uuid.UUID

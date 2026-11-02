@@ -37,6 +37,7 @@ from services.api.kernel.pagination import (
 from services.api.kernel.problems import FieldError, Problem
 from services.api.kernel.sse import Event, event_stream
 from services.api.kernel.sse import last_event_id as get_last_event_id
+from services.api.modules.agent import turn_steps
 from services.api.modules.eval.public import eval_set_accepts_items
 from services.api.modules.qa import progress, scope
 from services.api.modules.qa.answer_blocks import blocks_of
@@ -64,11 +65,13 @@ from services.api.modules.qa.schemas import (
     QueryRunRef,
     QuestionAccepted,
     QuestionCreate,
+    QuestionStepsView,
     QuestionView,
     ReceiptFigureView,
     ReceiptView,
     ReplayCreate,
     ReplayView,
+    StepView,
 )
 
 router = APIRouter()
@@ -262,7 +265,9 @@ async def cancel_question(
         if question.status in QUESTION_DONE:
             raise Problem(409, "invalid_state", "The question has already finished.")
     if not await progress.request_cancel(str(question_id)):
-        raise Problem(503, "service_unavailable", "Question cancellation is temporarily unavailable.")
+        raise Problem(
+            503, "service_unavailable", "Question cancellation is temporarily unavailable."
+        )
     response.headers["Location"] = f"/v1/questions/{question_id}"
     return JobAccepted(id=question_id, status="cancellation_requested", poll_after_ms=250)
 
@@ -300,6 +305,65 @@ def _stream_events(view: QuestionView, answer_kind: str | None) -> list[Event]:
             )
         )
     return events
+
+
+# agent_step.status → the timeline's status (turn_trace.STORED_STATUS, reversed).
+STEP_STATUS = {"ok": "done", "error": "failed", "skipped": "skipped", "retried": "done"}
+
+
+@router.get(
+    "/v1/questions/{id}/steps",
+    response_model=QuestionStepsView,
+    **endpoint("GET", "/v1/questions/{id}/steps", operation_id="getQuestionSteps"),
+)
+async def get_question_steps(
+    question_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> QuestionStepsView:
+    """What the agent did on the question's latest turn. The steps hold its reading and the SQL it
+    ran, so only the person who asked reads them (agent routes keep the same rule for the run)."""
+    async with transaction(ROLE, principal) as session:
+        owned = await session.scalar(
+            scope.questions_in(principal, data_space).where(
+                qa.Question.id == question_id, qa.Conversation.user_id == principal.user_id
+            )
+        )
+        if owned is None:
+            raise Problem(404, "not_found", "Question not found.")
+    turn = await turn_steps(principal, question_id)
+    if turn is None:
+        return QuestionStepsView(question_id=question_id)
+    duration = (
+        int((turn.finished_at - turn.started_at).total_seconds() * 1000)
+        if turn.finished_at and turn.started_at
+        else None
+    )
+    steps = []
+    for row in turn.steps:
+        view = row.output["_view"]
+        steps.append(
+            StepView(
+                step_id=str(view.get("step_id") or f"s{row.seq}"),
+                seq=row.seq,
+                action=row.name,
+                title=str(view.get("title") or row.name),
+                target=str(view.get("target") or ""),
+                chips=list(view.get("chips") or []),
+                status=STEP_STATUS.get(row.status, "done"),  # type: ignore[arg-type]
+                started_at=row.started_at,
+                duration_ms=row.duration_ms,
+                detail=row.output.get("detail"),
+                summary=row.summary,
+                parent=view.get("parent"),
+            )
+        )
+    return QuestionStepsView(
+        question_id=question_id,
+        run_id=turn.run_id,
+        status=turn.status,
+        duration_ms=duration,
+        tokens=turn.tokens,
+        steps=steps,
+    )
 
 
 @router.get(

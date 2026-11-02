@@ -149,3 +149,48 @@ async def agents_of_runs(
             select(run.id, run.agent_id).where(run.org_id == principal.org_id, run.id.in_(run_ids))
         )
         return dict(found.tuples().all())
+
+
+@dataclass(frozen=True)
+class TurnSteps:
+    """The persisted trace of an Ask turn (worker turn_trace.py): its run and the steps that
+    carry the timeline's view (`output._view`); steps recorded before that contract are left out."""
+
+    run_id: uuid.UUID
+    status: str
+    started_at: datetime.datetime | None
+    finished_at: datetime.datetime | None
+    tokens: int
+    steps: list[agent.AgentStep]
+
+
+async def turn_steps(principal: Principal, question_id: uuid.UUID) -> TurnSteps | None:
+    """The latest run of the question's turns, for the qa module's GET /v1/questions/{id}/steps;
+    the caller has already checked the question is the principal's."""
+    async with transaction(ROLE, principal) as session:
+        run = await session.scalar(
+            select(agent.AgentRun)
+            .where(
+                agent.AgentRun.org_id == principal.org_id,
+                agent.AgentRun.trigger_ref == f"question:{question_id}",
+            )
+            .order_by(agent.AgentRun.created_at.desc())
+            .limit(1)
+        )
+        if run is None:
+            return None
+        steps = (
+            await session.scalars(
+                select(agent.AgentStep)
+                .where(agent.AgentStep.run_id == run.id)
+                .order_by(agent.AgentStep.seq)
+            )
+        ).all()
+    return TurnSteps(
+        run_id=run.id,
+        status=run.status,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        tokens=run.tokens or 0,
+        steps=[s for s in steps if isinstance(s.output, dict) and "_view" in s.output],
+    )

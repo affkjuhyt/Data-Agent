@@ -322,6 +322,107 @@ async def test_only_the_asker_cancels_their_question(world: World, seed: Seed) -
         assert done.status_code == 409 and done.json()["code"] == "invalid_state"
 
 
+def turn_run(seed: Seed, world: World, question: str) -> uuid.UUID:
+    """What worker turn_trace writes for a turn: the built-in agent's run and its steps."""
+    owner = world.users["reviewer"]
+    agent_id = seed.row(
+        "agent.agent_def",
+        org_id=world.org,
+        data_space_id=world.space,
+        code=f"QA{uuid.uuid4().hex[:6]}",
+        name="Agent Hỏi đáp",
+        kind="analysis",
+        owner_user_id=owner,
+        account_user_id=owner,
+        status="retired",
+    )
+    run = seed.row(
+        "agent.agent_run",
+        org_id=world.org,
+        agent_id=agent_id,
+        config_version=1,
+        data_space_id=world.space,
+        trigger_kind="manual",
+        trigger_ref=f"question:{question}",
+        initiated_by=world.users["asker"],
+        status="succeeded",
+        stop_reason="completed",
+        tokens=40,
+    )
+    view = {"title": "Truy vấn", "target": "Kho cho: Doanh thu", "chips": [], "parent": None}
+    for seq, (name, kind, status, output) in enumerate(
+        [
+            (
+                "understand",
+                "plan",
+                "ok",
+                {
+                    "detail": {"reading": []},
+                    "_view": {**view, "step_id": "s1", "title": "Hiểu câu hỏi"},
+                },
+            ),
+            (
+                "query",
+                "query",
+                "error",
+                {"detail": {"sql": "SELECT 1"}, "_view": {**view, "step_id": "s2"}},
+            ),
+            # Recorded before the step contract: no _view, not shown.
+            ("narrate", "message", "ok", None),
+        ],
+        start=1,
+    ):
+        seed.row(
+            "agent.agent_step",
+            org_id=world.org,
+            run_id=run,
+            seq=seq,
+            kind=kind,
+            name=name,
+            status=status,
+            summary="Nguồn không trả lời" if status == "error" else None,
+            output=json.dumps(output) if output is not None else None,
+            started_at="2026-11-02T10:00:00+00:00",
+            duration_ms=120,
+        )
+    return run
+
+
+async def test_the_asker_reads_the_steps_of_their_question(world: World, seed: Seed) -> None:
+    async with api_for(world) as api:
+        created = await ask(api, world)
+        run = turn_run(seed, world, created["id"])
+        read = await api.get(f"/v1/questions/{created['id']}/steps", headers=as_(world, "asker"))
+        assert read.status_code == 200, read.text
+        body = read.json()
+        assert (body["run_id"], body["status"], body["tokens"]) == (str(run), "succeeded", 40)
+        assert [(s["action"], s["status"], s["title"]) for s in body["steps"]] == [
+            ("understand", "done", "Hiểu câu hỏi"),
+            ("query", "failed", "Truy vấn"),
+        ]
+        query = body["steps"][1]
+        assert query["detail"] == {"sql": "SELECT 1"} and query["summary"] == "Nguồn không trả lời"
+        assert (query["step_id"], query["seq"], query["duration_ms"]) == ("s2", 2, 120)
+
+
+async def test_another_member_cannot_read_the_steps(world: World, seed: Seed) -> None:
+    async with api_for(world) as api:
+        created = await ask(api, world)
+        turn_run(seed, world, created["id"])
+        other = await api.get(
+            f"/v1/questions/{created['id']}/steps", headers=as_(world, "reviewer")
+        )
+        assert other.status_code == 404
+
+
+async def test_a_question_without_a_run_has_no_steps(world: World) -> None:
+    async with api_for(world) as api:
+        created = await ask(api, world)
+        read = await api.get(f"/v1/questions/{created['id']}/steps", headers=as_(world, "asker"))
+        assert read.status_code == 200
+        assert (read.json()["run_id"], read.json()["steps"]) == (None, [])
+
+
 # --- conversations ------------------------------------------------------------------------------
 
 
