@@ -735,9 +735,7 @@ def _code(code: str) -> ErrorCode:
 async def _analyst_step(
     question_id: uuid.UUID, step_id: str, status: str, *, detail: str | None = None
 ) -> None:
-    """Expose the validated analyst DAG as replayable chat milestones, and keep it on the turn's
-    trace (turn_trace.py)."""
-    turn_trace.step(step_id, status, detail=detail)
+    """Expose the validated analyst DAG as replayable chat milestones."""
     labels = {
         "understand": "Hiểu mục tiêu câu hỏi",
         "resolve_scope": "Xác định phạm vi dữ liệu",

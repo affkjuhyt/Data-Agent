@@ -27,7 +27,7 @@ import logging
 import os
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from functools import cache
@@ -38,6 +38,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import agent, org, qa
+from services.worker_agent.progress import publish
 
 log = logging.getLogger(__name__)
 
@@ -47,8 +48,25 @@ AGENT_CODE = "QA"
 AGENT_NAME = "Agent Hỏi đáp"
 CONFIG_VERSION = 1
 
-# The analyst steps of questions._analyst_step, as agent_step kinds.
-STEP_KINDS = {"query": "query", "narrate": "message"}
+# The step contract (docs/superpowers/specs/2026-11-02-ask-chat-redesign-design.md): each action,
+# its agent_step kind and the title the timeline shows by default.
+ACTIONS: dict[str, tuple[str, str]] = {
+    "understand": ("plan", "Hiểu câu hỏi"),
+    "choose_metric": ("plan", "Chọn chỉ số"),
+    "ask_user": ("checkpoint", "Hỏi lại bạn"),
+    "query": ("query", "Truy vấn"),
+    "write_sql": ("tool_call", "Viết SQL thăm dò"),
+    "search_documents": ("tool_call", "Tìm trong tài liệu"),
+    "use_verified": ("query", "Dùng truy vấn đã duyệt"),
+    "use_tool": ("tool_call", "Dùng công cụ"),
+    "validate": ("plan", "Kiểm tra kết quả"),
+    "visualize": ("plan", "Chọn cách hiển thị"),
+    "analyze": ("skill", "Phân tích"),
+    "write_answer": ("message", "Viết câu trả lời"),
+    "model_call": ("llm_call", "Gọi mô hình"),
+}
+# agent_step.status of each step status the timeline shows.
+STORED_STATUS = {"done": "ok", "failed": "error", "skipped": "skipped"}
 # A turn starts from these; a plan edit puts an answered question back to planning.
 OPEN = frozenset({"received", "planning"})
 QUESTION_OUTCOME = {
@@ -73,6 +91,7 @@ class Step:
     output: dict[str, Any] | None = None
     summary: str | None = None
     cost: decimal.Decimal = decimal.Decimal(0)
+    seq: int = 0
     _clock: float = field(default_factory=time.monotonic)
 
 
@@ -82,7 +101,9 @@ class Trace:
     question_id: uuid.UUID
     user_id: uuid.UUID | None
     steps: list[Step] = field(default_factory=list)
-    open: dict[str, Step] = field(default_factory=dict)
+    # The step under way, which a model call made now belongs to.
+    open_step: str | None = None
+    seq: int = 0
     tokens: int = 0
     cost: decimal.Decimal = decimal.Decimal(0)
     started: datetime.datetime = field(default_factory=_now)
@@ -111,24 +132,128 @@ def price(model: str, role: str, input_tokens: int, output_tokens: int) -> decim
     return cost.quantize(decimal.Decimal("0.0001"))
 
 
-def step(name: str, status: str, *, detail: str | None = None) -> None:
-    """An analyst step of the turn: "running" opens it, any other status closes it."""
+@dataclass
+class StepHandle:
+    """What a step reports when it ends: its detail and how it ended."""
+
+    step_id: str
+    detail: dict[str, Any] = field(default_factory=dict)
+    status: str = "done"
+    # Shown under a failed or skipped step: the user-facing reason, never an exception's text.
+    summary: str | None = None
+
+
+def _view(
+    step_id: str, title: str, target: str, chips: Sequence[Mapping[str, str]], parent: str | None
+) -> dict[str, Any]:
+    return {
+        "step_id": step_id,
+        "title": title,
+        "target": target,
+        "chips": [dict(chip) for chip in chips],
+        "parent": parent,
+    }
+
+
+def _event(trace: Trace, step: Step, action: str, status: str, detail: Any) -> dict[str, Any]:
+    view = (step.output or {})["_view"]
+    return {
+        "kind": "step",
+        "step_id": view["step_id"],
+        "seq": step.seq,
+        "action": action,
+        "title": view["title"],
+        "target": view["target"],
+        "chips": view["chips"],
+        "status": status,
+        "started_at": step.started.isoformat(),
+        "duration_ms": step.duration_ms,
+        "detail": detail,
+        "parent": view["parent"],
+    }
+
+
+def _open(
+    trace: Trace, action: str, title: str | None, target: str, chips: Sequence[Mapping[str, str]]
+) -> Step:
+    kind, default_title = ACTIONS.get(action, ("plan", action))
+    trace.seq += 1
+    step_id = f"s{trace.seq}"
+    opened = Step(kind=kind, name=action, started=_now())
+    opened.seq = trace.seq
+    opened.output = {
+        "detail": None,
+        "_view": _view(step_id, title or default_title, target, chips, trace.open_step),
+    }
+    trace.steps.append(opened)
+    return opened
+
+
+def _close(step: Step, status: str, detail: Mapping[str, Any] | None, summary: str | None) -> None:
+    step.duration_ms = int((time.monotonic() - step._clock) * 1000)
+    step.status = STORED_STATUS.get(status, "ok")
+    step.summary = summary
+    assert step.output is not None
+    step.output["detail"] = dict(detail) if detail else None
+
+
+@asynccontextmanager
+async def stepping(
+    action: str,
+    *,
+    title: str | None = None,
+    target: str = "",
+    chips: Sequence[Mapping[str, str]] = (),
+) -> AsyncIterator[StepHandle]:
+    """One step of the turn: published as running now, and as it ended when the block exits (an
+    exception ends it failed and propagates). Outside a turn it records and publishes nothing."""
+    trace = _current.get()
+    if trace is None:
+        yield StepHandle(step_id="")
+        return
+    opened = _open(trace, action, title, target, chips)
+    handle = StepHandle(step_id=opened.output["_view"]["step_id"])  # type: ignore[index]
+    previous, trace.open_step = trace.open_step, handle.step_id
+    await publish(
+        str(trace.question_id), "activity", _event(trace, opened, action, "running", None)
+    )
+    try:
+        yield handle
+    except BaseException:
+        handle.status = "failed"
+        raise
+    finally:
+        trace.open_step = previous
+        _close(opened, handle.status, handle.detail, handle.summary)
+        await publish(
+            str(trace.question_id),
+            "activity",
+            _event(trace, opened, action, handle.status, opened.output["detail"]),  # type: ignore[index]
+        )
+
+
+async def record_step(
+    action: str,
+    *,
+    title: str | None = None,
+    target: str = "",
+    chips: Sequence[Mapping[str, str]] = (),
+    detail: Mapping[str, Any] | None = None,
+    status: str = "done",
+    summary: str | None = None,
+) -> None:
+    """A step that happened at once: one finished event."""
     trace = _current.get()
     if trace is None:
         return
-    if status == "running":
-        opened = Step(kind=STEP_KINDS.get(name, "plan"), name=name, started=_now())
-        trace.open[name] = opened
-        trace.steps.append(opened)
-        return
-    done = trace.open.pop(name, None)
-    if done is None:
-        # Closed without having been opened: a step the turn passed through at once.
-        done = Step(kind=STEP_KINDS.get(name, "plan"), name=name, started=_now())
-        trace.steps.append(done)
-    done.duration_ms = int((time.monotonic() - done._clock) * 1000)
-    done.status = "ok" if status == "done" else "error"
-    done.summary = detail
+    step = _open(trace, action, title, target, chips)
+    _close(step, status, detail, summary)
+    step.duration_ms = 0
+    await publish(
+        str(trace.question_id),
+        "activity",
+        _event(trace, step, action, status, step.output["detail"]),  # type: ignore[index]
+    )
 
 
 def model_call(
@@ -147,21 +272,26 @@ def model_call(
     cost = price(model, role, input_tokens, output_tokens)
     trace.tokens += input_tokens + output_tokens
     trace.cost += cost
+    trace.seq += 1
     trace.steps.append(
         Step(
             kind="llm_call",
-            name=role,
+            name="model_call",
             started=_now() - datetime.timedelta(milliseconds=latency_ms),
             status="error" if error else "ok",
             duration_ms=latency_ms,
             output={
-                "model": model,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "latency_ms": latency_ms,
+                "detail": {
+                    "model": model,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "latency_ms": latency_ms,
+                },
+                "_view": _view(f"s{trace.seq}", f"Gọi mô hình {role}", "", (), trace.open_step),
             },
             summary=error,
             cost=cost,
+            seq=trace.seq,
         )
     )
 

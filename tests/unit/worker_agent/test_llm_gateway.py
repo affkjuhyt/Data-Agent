@@ -115,16 +115,17 @@ async def test_each_call_lands_on_the_turns_trace_without_its_content(server: Se
     finally:
         turn_trace._current.reset(token)
     answered, failed = trace.steps
-    assert (answered.kind, answered.name, answered.status) == ("llm_call", "text_to_sql", "ok")
-    assert {k: v for k, v in answered.output.items() if k != "latency_ms"} == {
+    assert (answered.kind, answered.name, answered.status) == ("llm_call", "model_call", "ok")
+    assert answered.output["_view"]["title"] == "Gọi mô hình text_to_sql"
+    assert {k: v for k, v in answered.output["detail"].items() if k != "latency_ms"} == {
         "model": "agent-main",
         "input_tokens": 10,
         "output_tokens": 5,
     }
     assert "secret q" not in json.dumps(answered.output) and answered.summary is None
     # The kind of failure only, never the provider's message.
-    assert (failed.name, failed.status, failed.summary) == (
-        "planner",
+    assert (failed.output["_view"]["title"], failed.status, failed.summary) == (
+        "Gọi mô hình planner",
         "error",
         "ModelHTTPError 500",
     )
