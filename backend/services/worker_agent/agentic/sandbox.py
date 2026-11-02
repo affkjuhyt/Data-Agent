@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import json
 import os
+import shutil
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -72,7 +73,25 @@ FORBIDDEN_ATTR_PREFIXES = (
     "to_xml",
     "to_gbq",
 )
+# pandas and numpy are imported whole (`import pandas as pd`), never a submodule or a name from
+# them, so a reader of files or the network cannot be reached by a bare name.
+WHOLE_ONLY = {"pandas", "numpy"}
 FORBIDDEN_ATTRS = {
+    "loadtxt",
+    "genfromtxt",
+    "fromregex",
+    "DataSource",
+    "ExcelFile",
+    "ExcelWriter",
+    "HDFStore",
+    "f2py",
+    "compat",
+    "core",
+    "api",
+    "util",
+    "plotting",
+    "style",
+    "memmap",
     "eval",
     "query",
     "io",
@@ -98,6 +117,15 @@ class CodeRejected(ValueError):
     pass
 
 
+def _forbidden_name(name: str) -> bool:
+    return (
+        "__" in name
+        or name in FORBIDDEN_NAMES
+        or name in FORBIDDEN_ATTRS
+        or name.startswith(FORBIDDEN_ATTR_PREFIXES)
+    )
+
+
 def check(code: str) -> None:
     """CodeRejected when the code imports, calls or reaches what the sandbox does not allow."""
     try:
@@ -107,12 +135,18 @@ def check(code: str) -> None:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.split(".")[0] not in ALLOWED_IMPORTS:
+                top = alias.name.split(".")[0]
+                if top not in ALLOWED_IMPORTS or (top in WHOLE_ONLY and "." in alias.name):
                     raise CodeRejected(f"không được import {alias.name}")
         elif isinstance(node, ast.ImportFrom):
-            if (node.module or "").split(".")[0] not in ALLOWED_IMPORTS or node.level:
-                raise CodeRejected(f"không được import từ {node.module}")
-        elif isinstance(node, ast.Name) and node.id in FORBIDDEN_NAMES:
+            module = node.module or ""
+            top = module.split(".")[0]
+            if top not in ALLOWED_IMPORTS or top in WHOLE_ONLY or node.level:
+                raise CodeRejected(f"không được import từ {module}")
+            for alias in node.names:
+                if _forbidden_name(alias.name) or _forbidden_name(alias.asname or ""):
+                    raise CodeRejected(f"không được import {alias.name}")
+        elif isinstance(node, ast.Name) and _forbidden_name(node.id):
             raise CodeRejected(f"không được dùng {node.id}")
         elif isinstance(node, ast.Attribute):
             if (
@@ -134,9 +168,9 @@ ALLOWED = set(json.loads(sys.argv[1]))
 payload = json.loads(sys.stdin.read())
 real_import = builtins.__import__
 def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-    # Only the analysis code runs with these builtins and has no __name__; a library's own
-    # lazy imports (pandas, datetime) come from modules that do.
-    if not (globals or {}).get("__name__") and name.split(".")[0] not in ALLOWED:
+    # Only the analysis code imports through this: a library's own imports use its module's
+    # builtins, not these, so nothing outside the list is ever let through here.
+    if level or name.split(".")[0] not in ALLOWED:
         raise ImportError("import not allowed: " + name)
     return real_import(name, globals, locals, fromlist, level)
 safe = {k: getattr(builtins, k) for k in dir(builtins) if k not in json.loads(sys.argv[2])}
@@ -202,11 +236,36 @@ def _limits() -> None:  # pragma: no cover - runs in the child
     os.setsid()
 
 
+_NO_NETWORK: list[str] | None = None
+
+
+async def _no_network() -> list[str]:
+    """`unshare -rn` before the interpreter when this host lets an unprivileged process open a
+    network namespace with no interface; else nothing (the static check still applies). Probed
+    once per worker."""
+    global _NO_NETWORK
+    if _NO_NETWORK is None:
+        _NO_NETWORK = []
+        unshare = shutil.which("unshare")
+        if unshare:
+            probe = await asyncio.create_subprocess_exec(
+                unshare,
+                "-rn",
+                "true",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            if await probe.wait() == 0:
+                _NO_NETWORK = [unshare, "-rn"]
+    return _NO_NETWORK
+
+
 async def run(code: str, datasets: dict[str, dict[str, Any]]) -> Execution:
     check(code)
     payload = json.dumps({"code": code, "datasets": datasets}, ensure_ascii=False, default=str)
     with tempfile.TemporaryDirectory(prefix="analysis-") as cwd:
         proc = await asyncio.create_subprocess_exec(
+            *(await _no_network()),
             sys.executable,
             "-I",
             "-c",

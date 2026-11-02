@@ -166,3 +166,20 @@ def test_the_sandbox_runs_pandas_over_the_datasets() -> None:
         sandbox.run("result = d1['nope']", {"d1": {"columns": ["a"], "rows": [[1]]}})
     )
     assert not failed.ok and failed.error is not None and "KeyError" in failed.error
+
+
+def test_the_sandbox_refuses_the_ways_round_its_checks() -> None:
+    from services.worker_agent.agentic import sandbox
+
+    for code in (
+        "from pandas import read_csv",
+        "from pandas.io import pickle",
+        "import pandas.io.pickle",
+        "import numpy as np\nnp.loadtxt('/etc/passwd')",
+        "b = __builtins__",
+        "from math import __dict__",
+        "from json import loads as __x",
+        "import numpy as np\nnp.lib.npyio",
+    ):
+        with pytest.raises(sandbox.CodeRejected):
+            sandbox.check(code)
