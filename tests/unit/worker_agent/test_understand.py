@@ -169,6 +169,25 @@ def test_each_before_a_known_cut_leaves_nothing_unplaced() -> None:
     assert u.decision == "clarify" and u.unplaced_cut == "khu vuc"
 
 
+def test_a_name_said_in_part_asks_which_of_the_metrics_that_carry_it() -> None:
+    # DS-AW: "Lãi gộp năm 2013" names neither "Lãi gộp Internet" nor "Lãi gộp đại lý" whole; it
+    # was unknown, when the two metrics that carry those words are the question to ask.
+    internet, resellers, revenue = (
+        MetricEntry(uuid.uuid4(), code, name, True)
+        for code, name in (
+            ("LAI_GOP_INTERNET", "Lãi gộp Internet"),
+            ("LAI_GOP_DAI_LY", "Lãi gộp đại lý"),
+            ("DOANH_THU", "Doanh thu"),
+        )
+    )
+    vocab = Vocabulary(metrics=[internet, resellers, revenue], dimensions=[], synonyms={})
+    u = understand("Lãi gộp năm 2013", vocab, today=TODAY)
+    assert u.decision == "clarify" and set(u.options) == {internet, resellers}
+    assert understand("Lãi gộp Internet năm 2013", vocab, today=TODAY).metric == internet
+    # Words of no metric's name leave it unknown, for the model reader.
+    assert understand("Chi phí lương năm 2013", vocab, today=TODAY).decision == "unknown"
+
+
 def test_a_ranked_question_adds_the_dimension_and_limit() -> None:
     product = DimensionEntry(uuid.uuid4(), "product", "Sản phẩm")
     vocab = Vocabulary(

@@ -235,6 +235,14 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
         )
 
     if not metric_hits:
+        # A name said in part ("Lãi gộp" of "Lãi gộp Internet" and "Lãi gộp đại lý"): every word
+        # left is in the names of several metrics, so which one is the question to ask. One such
+        # metric is left to the model reader, never taken alone (invariant 3).
+        left = [w for w in out.rest.split() if w not in _FILLER and not w.isdigit()]
+        carrying = [m for m in vocab.metrics if left and set(left) <= set(norm(m.name).split())]
+        if len(carrying) > 1:
+            out.decision = "clarify"
+            out.options = sorted(carrying, key=lambda m: m.name)[:MAX_OPTIONS]
         return out
     best = max(metric_hits.values())
     top = [metrics[mid] for mid, score in metric_hits.items() if score == best]
