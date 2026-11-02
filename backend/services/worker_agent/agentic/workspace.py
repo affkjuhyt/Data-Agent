@@ -73,6 +73,10 @@ class Dataset:
     # For a certified metric's dataset: the reading it was queried with (metric code, group_by,
     # filters), so the turn can check the question names that metric (engine._names_what_was_asked).
     reading: dict[str, Any] | None = None
+    # For SQL the model wrote (explore_sql): how many of its ways of writing gave this result, out
+    # of how many, and whether that agreement is clear enough to use without checking (sqlgen vote).
+    consensus: tuple[int, int] | None = None
+    agreement_clear: bool = True
 
     def records(self, limit: int | None = None) -> list[dict[str, Any]]:
         rows = self.rows if limit is None else self.rows[:limit]

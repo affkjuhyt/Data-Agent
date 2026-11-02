@@ -308,6 +308,8 @@ class ExploreSql(Tool):
             columns=list(e.columns),
             rows=[list(r) for r in e.rows],
             trust="exploratory",
+            consensus=(e.agreeing, len(e.tried)),
+            agreement_clear=e.decision == "answer",
             query_run_ids=[str(e.query_run_id)],
             step_id=ctx.step_id,
             tool=self.name,

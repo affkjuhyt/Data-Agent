@@ -359,3 +359,37 @@ def test_query_metric_sends_a_quantity_no_metric_names_to_exploratory_sql() -> N
     assert not done.ok
     assert "explore_sql" in done.observation
     assert done.detail["unnamed"] == ["khach", "hang", "mua"]
+
+
+def test_caveats_carry_the_sql_vote_and_leave_out_a_failed_computation() -> None:
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+
+    ws = Workspace()
+    ws.add(
+        title="Số khách hàng 2013",
+        columns=["so_khach_hang"],
+        rows=[[17429]],
+        trust="exploratory",
+        tool="explore_sql",
+        consensus=(6, 6),
+    )
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(ws=ws),  # type: ignore[arg-type]
+        plan=_plan(
+            {"id": "s1", "tool": "explore_sql", "instruction": "a", "status": "done"},
+            {"id": "s2", "tool": "analyze", "instruction": "b", "status": "failed"},
+        ),
+    )
+    state.composition = [{"type": "kpi", "id": "b1", "items": [{"dataset": "d1"}]}]
+    engine._append_caveats(state)
+    caveats = state.composition[-1]["items"]
+    assert caveats == [
+        "Số khách hàng 2013: SQL thăm dò, chưa qua chỉ số chuẩn; 6/6 cách viết cho cùng kết quả."
+    ]
+    assert engine._consensus(state) == (6, 6)

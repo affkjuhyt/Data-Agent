@@ -608,6 +608,9 @@ def _checked(
     return block
 
 
+FETCHING = frozenset({"query_metric", "explore_sql", "search_documents"})
+
+
 def _append_caveats(s: State) -> None:
     assert s.ctx is not None
     ws = s.ctx.ws
@@ -619,13 +622,34 @@ def _append_caveats(s: State) -> None:
         if isinstance(it, dict)
     }
     for ds in ws.datasets.values():
-        if ds.id in used and ds.trust != "certified":
+        if ds.id in used and ds.consensus is not None:
+            # As the governed path's exploratory label says it (sqlgen/answer.label_of).
+            agreeing, written = ds.consensus
+            items.append(
+                f"{ds.title}: {TRUST_LABEL[ds.trust]}; {agreeing}/{written} cách viết cho cùng"
+                " kết quả."
+                + (
+                    ""
+                    if ds.agreement_clear
+                    else " Nên kiểm lại trước khi dùng: các cách viết" " chưa đồng thuận rõ."
+                )
+            )
+        elif ds.id in used and ds.trust != "certified":
             items.append(f"{ds.title}: {TRUST_LABEL[ds.trust]}.")
         if ds.id in used and ds.truncated:
             items.append(f"{ds.title}: kết quả bị cắt bớt, chỉ hiển thị một phần.")
     if s.dropped_sentences:
         items.append(f"Đã bỏ {s.dropped_sentences} câu có số không truy được nguồn.")
-    failed = [st for st in (s.plan.steps if s.plan else []) if st.status == "failed"]
+    # A failed step is said only when it was to fetch data and nothing fetched with that tool
+    # afterwards: a computation that failed, or a query a later one replaced, is on the timeline
+    # and casts no doubt on figures that were all traced.
+    steps = s.plan.steps if s.plan else []
+    fetched = {st.tool for st in steps if st.status == "done"}
+    failed = [
+        st
+        for st in steps
+        if st.status == "failed" and st.tool in FETCHING and st.tool not in fetched
+    ]
     if failed:
         items.append(
             f"{len(failed)} bước không thành công: "
@@ -669,6 +693,22 @@ def _figures(s: State) -> list[dict[str, Any]]:
                 }
             )
     return out
+
+
+def _consensus(s: State) -> tuple[int, int] | None:
+    """The agreement of the model-written SQL the answer shows, for its confidence meter (R1-14);
+    the weakest when it shows several."""
+    assert s.ctx is not None
+    used = {blk.get("dataset") for blk in s.composition} | {
+        it.get("dataset")
+        for blk in s.composition
+        for it in blk.get("items", [])
+        if isinstance(it, dict)
+    }
+    votes = [
+        d.consensus for d in s.ctx.ws.datasets.values() if d.id in used and d.consensus is not None
+    ]
+    return min(votes, key=lambda v: v[0] / v[1] if v[1] else 0) if votes else None
 
 
 def _text(s: State) -> str:
@@ -774,7 +814,11 @@ async def persist(s: State) -> None:
                 follow_ups=follow_ups,
                 blocks=s.composition,
                 number_check=verify_answer(
-                    kind, number_check, figures=figures, citations=ctx.ws.citations
+                    kind,
+                    number_check,
+                    figures=figures,
+                    citations=ctx.ws.citations,
+                    consensus=_consensus(s),
                 )
                 if kind not in ("refusal",)
                 else number_check,
