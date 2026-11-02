@@ -169,8 +169,27 @@ export default function ProposalPage() {
                     <Notice tone="error">Không gửi được quyết định: {error}</Notice>
                   </div>
                 )}
-                <div className="flex min-h-0 flex-1">
+                <div className="flex min-h-0 flex-1 max-[1279px]:flex-col">
                   <div className="flex min-w-0 flex-1 flex-col pl-da-3xl pr-da-2xl">
+                    {open && regressions > 0 && (
+                      // In the main column, where it is always seen: on a narrow window the side
+                      // panel goes below, and Chấp nhận stays off until this is ticked (BR-28).
+                      <div className="mt-da-xl flex flex-col gap-da-sm rounded-md border border-warning/30 bg-warning-subtle px-da-md py-da-sm">
+                        <span className="text-foreground da-body-small">
+                          {regressions} câu đánh giá đổi kết quả khi áp thay đổi này. Xem từng câu
+                          trước khi chấp nhận.
+                        </span>
+                        <label className="flex items-start gap-da-md text-foreground da-body-small">
+                          <input
+                            type="checkbox"
+                            checked={reviewedRegressions}
+                            onChange={(e) => setReviewedRegressions(e.target.checked)}
+                            className="mt-[3px]"
+                          />
+                          Tôi đã xem từng câu đổi kết quả ({regressions}) trước khi chấp nhận.
+                        </label>
+                      </div>
+                    )}
                     <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
                       <h2 className="text-foreground da-heading-3">Thay đổi</h2>
                       {p.diff ? (
@@ -200,7 +219,7 @@ export default function ProposalPage() {
                     </section>
                     {p.impact && <ImpactSection impact={p.impact} level={p.impact_level} />}
                   </div>
-                  <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:hidden">
+                  <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:w-full max-[1279px]:border-l-0 max-[1279px]:border-t max-[1279px]:pb-da-xl">
                     <h2 className="text-foreground da-heading-3">Kiểm thử</h2>
                     {p.checks.length === 0 && (
                       <p className="text-muted-foreground da-body-small">
@@ -221,17 +240,6 @@ export default function ProposalPage() {
                         {check.text}
                       </p>
                     ))}
-                    {open && regressions > 0 && (
-                      <label className="flex items-start gap-da-md text-foreground da-body-small">
-                        <input
-                          type="checkbox"
-                          checked={reviewedRegressions}
-                          onChange={(e) => setReviewedRegressions(e.target.checked)}
-                          className="mt-[3px]"
-                        />
-                        Tôi đã xem từng câu đổi kết quả ({regressions}) trước khi chấp nhận.
-                      </label>
-                    )}
                     {p.approval ? (
                       <>
                         <h2 className="text-foreground da-heading-3">Duyệt nhiều bước</h2>
