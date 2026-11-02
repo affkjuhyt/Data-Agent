@@ -287,6 +287,49 @@ VALUES
      'pending_review', NULL, NULL, NULL)
 ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, steps = EXCLUDED.steps;
 
+-- The two sessions the suggestion below was read from: opening it builds the skill draft from
+-- their cells (GET /v1/workspaces/{id}), so without them the page says "Workspace not found".
+-- The reviewer, helios-admin, sees them as a viewer.
+INSERT INTO workspace.workspace (
+    id, org_id, data_space_id, owner_id, title, description, created_from, tile_count, created_by, updated_by
+)
+VALUES
+    ('a0000000-0000-0000-0000-000000aa0d11', :org::uuid, :space::uuid, :engineer::uuid,
+     'Biên gộp Internet quý 4/2013', 'Doanh thu Internet theo nhóm sản phẩm, rồi phân rã biên gộp.',
+     'conversation', 3, :engineer::uuid, :engineer::uuid),
+    ('a0000000-0000-0000-0000-000000aa0d12', :org::uuid, :space::uuid, :engineer::uuid,
+     'Biên gộp Internet quý 1/2014', 'Cùng cách phân tích cho quý kế tiếp.',
+     'conversation', 3, :engineer::uuid, :engineer::uuid)
+ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, description = EXCLUDED.description,
+    tile_count = EXCLUDED.tile_count, deleted_at = NULL;
+
+INSERT INTO workspace.tile (id, org_id, workspace_id, position, kind, title, spec, created_by, updated_by)
+SELECT t.id::uuid, :org::uuid, t.ws::uuid, t.pos, t.kind, t.title, t.spec::jsonb, :engineer::uuid, :engineer::uuid
+FROM (VALUES
+    ('a0000000-0000-0000-0000-000000aa0d21', 'a0000000-0000-0000-0000-000000aa0d11', 1, 'question',
+     'Doanh thu Internet theo nhóm sản phẩm', '{"text": "Doanh thu Internet quý 4/2013 theo nhóm sản phẩm"}'),
+    ('a0000000-0000-0000-0000-000000aa0d22', 'a0000000-0000-0000-0000-000000aa0d11', 2, 'skill_run',
+     'Phân rã biên gộp Internet', '{"skill_id": "a0000000-0000-0000-0000-000000aa0d01", "params": {"period": "2013-Q4"}}'),
+    ('a0000000-0000-0000-0000-000000aa0d23', 'a0000000-0000-0000-0000-000000aa0d11', 3, 'text',
+     'Kết luận của phiên', '{"text": "Kết luận về biên gộp Internet của quý."}'),
+    ('a0000000-0000-0000-0000-000000aa0d24', 'a0000000-0000-0000-0000-000000aa0d12', 1, 'question',
+     'Doanh thu Internet theo nhóm sản phẩm', '{"text": "Doanh thu Internet quý 1/2014 theo nhóm sản phẩm"}'),
+    ('a0000000-0000-0000-0000-000000aa0d25', 'a0000000-0000-0000-0000-000000aa0d12', 2, 'skill_run',
+     'Phân rã biên gộp Internet', '{"skill_id": "a0000000-0000-0000-0000-000000aa0d01", "params": {"period": "2014-Q1"}}'),
+    ('a0000000-0000-0000-0000-000000aa0d26', 'a0000000-0000-0000-0000-000000aa0d12', 3, 'text',
+     'Kết luận của phiên', '{"text": "Kết luận về biên gộp Internet của quý."}')
+) AS t(id, ws, pos, kind, title, spec)
+ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, spec = EXCLUDED.spec, deleted_at = NULL;
+
+INSERT INTO workspace.ws_participant (id, org_id, workspace_id, principal_type, principal_id, role)
+SELECT p.id::uuid, :org::uuid, p.ws::uuid, 'user', u.id, 'viewer'
+FROM (VALUES
+    ('a0000000-0000-0000-0000-000000aa0d31', 'a0000000-0000-0000-0000-000000aa0d11'),
+    ('a0000000-0000-0000-0000-000000aa0d32', 'a0000000-0000-0000-0000-000000aa0d12')
+) AS p(id, ws)
+JOIN org.app_user u ON u.org_id = :org::uuid AND u.username = 'helios-admin'
+ON CONFLICT (workspace_id, principal_type, principal_id) DO NOTHING;
+
 INSERT INTO skill.skill_suggestion (
     id, org_id, data_space_id, pattern, session_ids, user_count, status, created_by, updated_by
 )
