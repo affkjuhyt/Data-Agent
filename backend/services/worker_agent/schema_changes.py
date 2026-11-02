@@ -178,14 +178,20 @@ async def write_version(
     )
     by_name = {str(c["name"]): c for c in after}
     closing = set(d.removed) | {r["name"] for r in d.retyped}
+    closed: dict[str, catalog.ColumnMeta] = {}
     for column in (await session.scalars(live_columns(dataset.id, old_version))).all():
         if column.name in closing:
             column.removed_in_version = new_version
+            closed[column.name] = column
         elif column.name in by_name:
             found = by_name[column.name]
             column.is_nullable = bool(found["is_nullable"])
             column.ordinal = int(found["ordinal"])
     for c in [*d.added, *(by_name[r["name"]] for r in d.retyped)]:
+        # A retyped column is the same column read differently: it keeps what people said of it.
+        # Its personal-data label above all, or a masked column would come back unmasked; the
+        # masking is to be confirmed again, as the type it is read as changed.
+        before = closed.get(str(c["name"]))
         session.add(
             catalog.ColumnMeta(
                 id=uuid7(),
@@ -198,6 +204,12 @@ async def write_version(
                 normalized_type=str(c["normalized_type"]),
                 is_nullable=bool(c["is_nullable"]),
                 is_key=bool(c.get("is_key", False)),
+                pii_label=before.pii_label if before else None,
+                pii_confirmed=False,
+                display_name=before.display_name if before else None,
+                description=before.description if before else None,
+                description_status=before.description_status if before else "none",
+                unit=before.unit if before else None,
                 created_by=by,
             )
         )

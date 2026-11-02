@@ -398,6 +398,11 @@ async def test_a_moved_structure_is_versioned_when_additive_and_proposed_when_br
         == 2
     )
 
+    # A personal-data label a steward set on the column must survive its retyping.
+    sql(
+        "UPDATE catalog.column_meta SET pii_label = 'account_no', pii_confirmed = true"
+        f" WHERE dataset_id = '{loans}' AND name = 'du_no'"
+    )
     sql("ALTER TABLE scan_uc0403.loans ALTER COLUMN du_no TYPE text")
     await scan()
     await scan()
@@ -440,4 +445,9 @@ async def test_a_moved_structure_is_versioned_when_additive_and_proposed_when_br
         )
         == 3
     )
+    assert seed.one(
+        "SELECT pii_label, pii_confirmed FROM catalog.column_meta WHERE dataset_id = %s"
+        " AND name = 'du_no' AND data_type = 'text'",
+        loans,
+    ) == ("account_no", False)
     assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "applied"
