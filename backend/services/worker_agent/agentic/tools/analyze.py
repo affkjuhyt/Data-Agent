@@ -15,6 +15,10 @@ def mode() -> str:
     """off (the default), service (the python-sandbox pod at AGENT_SANDBOX_URL: the boundary
     model-written code needs) or local (a checked child of the worker, for a trusted install)."""
     chosen = os.environ.get("AGENT_PYTHON_SANDBOX", "off").strip().lower()
+    # Service without its address is off, never local: a missing URL must not move the code into
+    # the worker.
+    if chosen == "service" and not os.environ.get("AGENT_SANDBOX_URL", "").strip():
+        return "off"
     return chosen if chosen in ("service", "local") else "off"
 
 
@@ -46,11 +50,13 @@ class Analyze(Tool):
             i: {"columns": ctx.ws.datasets[i].columns, "rows": ctx.ws.datasets[i].rows}
             for i in inputs
         }
-        url = os.environ.get("AGENT_SANDBOX_URL", "")
+        chosen = mode()
+        if chosen == "off":
+            return ToolResult(False, "phân tích bằng Python đang tắt", detail={"error": "off"})
         try:
             done = (
-                await client.run(url, args.code, frames)
-                if mode() == "service" and url
+                await client.run(os.environ["AGENT_SANDBOX_URL"], args.code, frames)
+                if chosen == "service"
                 else await local.run(args.code, frames)
             )
         except local.CodeRejected as exc:

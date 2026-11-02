@@ -217,3 +217,17 @@ def test_the_audit_hook_refuses_files_even_past_the_static_check(
         done = asyncio.run(sandbox.run(code, {}))
         assert not done.ok, code
         assert done.error is not None and "sandbox" in done.error, done.error
+
+
+def test_a_sandbox_service_without_its_address_is_off_never_in_place(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.worker_agent.agentic.tools import analyze
+
+    monkeypatch.setenv("AGENT_PYTHON_SANDBOX", "service")
+    monkeypatch.delenv("AGENT_SANDBOX_URL", raising=False)
+    assert analyze.mode() == "off"
+    monkeypatch.setenv("AGENT_SANDBOX_URL", "http://python-sandbox:8140")
+    assert analyze.mode() == "service"
+    monkeypatch.setenv("AGENT_PYTHON_SANDBOX", "anything")
+    assert analyze.mode() == "off"
