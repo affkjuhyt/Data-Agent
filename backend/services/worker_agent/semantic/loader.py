@@ -236,9 +236,29 @@ async def load(
             return None
         return column_types.get((dataset_id, d.expression.strip('"')))
 
+    def withheld(d: context.SemanticDimension) -> bool:
+        """A dimension whose members the asker may not read: its table is withheld or not in
+        use, or one of its columns is masked. Its values are never offered to a reader, the
+        planner or the timeline."""
+        dataset_id = entity_dataset.get(d.entity_id)
+        if dataset_id is None or dataset_id not in datasets:
+            return True
+        masked = restricted_columns.get(dataset_id)
+        if not masked:
+            return False
+        try:
+            columns = parse_one(d.expression).find_all(exp.Column)
+        except ParseError:
+            return True
+        return any(column.name.lower() in masked for column in columns)
+
+    readable = {d.id for d in dims if not withheld(d)}
     values = (
         await session.scalars(
-            select(ctx.ValueIndex).where(ctx.ValueIndex.data_space_id == space_id)
+            select(ctx.ValueIndex).where(
+                ctx.ValueIndex.data_space_id == space_id,
+                ctx.ValueIndex.dimension_id.in_(readable),
+            )
         )
     ).all()
     synonyms = (
@@ -255,7 +275,7 @@ async def load(
             targets[s.phrase_norm] = ("metric", str(s.target_id))
         elif s.target_kind == "dimension":
             targets[s.phrase_norm] = ("dimension", str(s.target_id))
-        elif s.target_kind == "value" and s.target_value and s.target_id in dim_by_id:
+        elif s.target_kind == "value" and s.target_value and s.target_id in readable:
             targets[s.phrase_norm] = ("value", dim_by_id[s.target_id].code, s.target_value)
     calendar = await clock.space_calendar(session, space_id)
     vocabulary = Vocabulary(
