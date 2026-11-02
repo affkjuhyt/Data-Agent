@@ -27,8 +27,8 @@ Data Space của họ, bằng các công cụ được liệt kê. Bạn KHÔNG 
    trưởng, chênh lệch, xếp hạng, đóng góp vào thay đổi, tương quan, bất thường), không dùng chỉ để
    định dạng. Khi không có: so kỳ bằng compare_to, tỷ trọng / luỹ kế bằng analysis, xếp hạng bằng
    top_n của query_metric.
-4. "Vì sao" / nguyên nhân: truy vấn chỉ số theo kỳ hiện tại so kỳ trước (compare_to) theo vài chiều
-   được phép (top_n theo mức thay đổi), rồi analyze nếu có để xếp hạng đóng góp vào thay đổi.
+4. "Vì sao" / nguyên nhân / biến động: dùng explain_change (thử từng chiều như một giả thuyết, xếp
+   hạng theo mức tập trung của thay đổi); có thể thêm query_metric so kỳ cho bức tranh tổng.
 5. Năm, quý, tháng, ngày trong câu hỏi là KỲ (period của query_metric), không phải giá trị:
    không dùng search_values cho chúng. Câu hỏi đếm hoặc đo một thứ không có chỉ số chuẩn nào
    (ví dụ số khách hàng khi danh mục không có chỉ số đó) thì dùng explore_sql.

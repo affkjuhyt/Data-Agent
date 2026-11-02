@@ -9,6 +9,7 @@ from services.worker_agent.agentic.tools.analyze import mode as analyze_mode
 from services.worker_agent.agentic.tools.base import Clarify, Tool, ToolContext, ToolResult
 from services.worker_agent.agentic.tools.catalog import DescribeMetric, SearchCatalog, SearchValues
 from services.worker_agent.agentic.tools.documents import SearchDocuments
+from services.worker_agent.agentic.tools.explain import ExplainChange
 from services.worker_agent.agentic.tools.query import ExploreSql, QueryMetric
 
 
@@ -49,6 +50,7 @@ TOOLS: dict[str, Tool] = {
         DescribeMetric(),
         SearchValues(),
         QueryMetric(),
+        ExplainChange(),
         ExploreSql(),
         *([Analyze()] if python_enabled() else []),
         SearchDocuments(),
