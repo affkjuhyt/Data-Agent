@@ -180,6 +180,39 @@ def test_the_sandbox_refuses_the_ways_round_its_checks() -> None:
         "from math import __dict__",
         "from json import loads as __x",
         "import numpy as np\nnp.lib.npyio",
+        "import datetime\nm = datetime.sys",
+        "import collections\nc = collections._sys",
+        "import numpy as np\nnp.savetxt('x', [1])",
     ):
         with pytest.raises(sandbox.CodeRejected):
             sandbox.check(code)
+
+
+def test_the_sandbox_runs_lazy_library_code_but_no_system_call() -> None:
+    pytest.importorskip("pandas")
+    from services.worker_agent.agentic import sandbox
+
+    printed = asyncio.run(
+        sandbox.run(
+            "print(d1.describe())\nresult = d1", {"d1": {"columns": ["a"], "rows": [[1], [2]]}}
+        )
+    )
+    assert printed.ok, printed.error
+    assert "mean" in printed.stdout
+
+
+def test_the_audit_hook_refuses_files_even_past_the_static_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("pandas")
+    from services.worker_agent.agentic import sandbox
+
+    monkeypatch.setattr(sandbox, "check", lambda code: None)
+    for code in (
+        "result = pd.read_csv('/etc/hostname')",
+        "result = pd.DataFrame({'a': [1]}).to_csv('/tmp/out.csv')",
+        "import collections\nresult = collections._sys.modules['os'].listdir('/')",
+    ):
+        done = asyncio.run(sandbox.run(code, {}))
+        assert not done.ok, code
+        assert done.error is not None and "sandbox" in done.error, done.error

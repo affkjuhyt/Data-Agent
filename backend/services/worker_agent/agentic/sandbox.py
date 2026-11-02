@@ -14,12 +14,15 @@ import ast
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import shutil
 import sys
 import tempfile
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_IMPORTS = {
     "pandas",
@@ -77,6 +80,20 @@ FORBIDDEN_ATTR_PREFIXES = (
 # them, so a reader of files or the network cannot be reached by a bare name.
 WHOLE_ONLY = {"pandas", "numpy"}
 FORBIDDEN_ATTRS = {
+    # Modules an allowed module holds as an attribute (datetime.sys, json.decoder.re → …).
+    "sys",
+    "os",
+    "modules",
+    "builtins",
+    "importlib",
+    "decoder",
+    "encoder",
+    "scanner",
+    "savetxt",
+    "savez",
+    "savez_compressed",
+    "dump",
+    "dumps",
     "loadtxt",
     "genfromtxt",
     "fromregex",
@@ -118,8 +135,10 @@ class CodeRejected(ValueError):
 
 
 def _forbidden_name(name: str) -> bool:
+    # A leading underscore reaches a module's private imports (collections._sys, …).
     return (
-        "__" in name
+        (name.startswith("_") and name != "_")
+        or "__" in name
         or name in FORBIDDEN_NAMES
         or name in FORBIDDEN_ATTRS
         or name.startswith(FORBIDDEN_ATTR_PREFIXES)
@@ -150,7 +169,7 @@ def check(code: str) -> None:
             raise CodeRejected(f"không được dùng {node.id}")
         elif isinstance(node, ast.Attribute):
             if (
-                node.attr.startswith("__")
+                node.attr.startswith("_")
                 or node.attr in FORBIDDEN_ATTRS
                 or node.attr.startswith(FORBIDDEN_ATTR_PREFIXES)
             ):
@@ -183,11 +202,47 @@ for name, ds in payload["datasets"].items():
         if converted.notna().sum() == frame[col].notna().sum():
             frame[col] = converted
     env[name] = frame
+# The boundary the static check cannot be: an audit hook (which Python code cannot remove) that
+# refuses writes, reads outside the interpreter's own libraries, processes, sockets and the
+# loading of modules that reach the system, from here on.
+code_object = compile(payload["code"], "<analysis>", "exec")
+import os as _os
+LIBS = tuple(_os.path.realpath(p) for p in {sys.prefix, sys.base_prefix, *sys.path} if p)
+DENIED_EVENTS = ("os.system", "os.exec", "os.spawn", "os.posix_spawn", "os.fork", "os.forkpty",
+    "os.kill", "os.remove", "os.rename", "os.rmdir", "os.mkdir", "os.chmod", "os.chown",
+    "os.link", "os.symlink", "os.truncate", "os.utime", "os.putenv",
+    "os.unsetenv", "os.chdir", "subprocess.", "socket.", "ctypes.", "shutil.", "urllib.",
+    "http.", "ftplib.", "smtplib.", "sqlite3.", "pty.", "fcntl.", "resource.", "pickle.",
+    "glob.", "tempfile.", "webbrowser.", "sys._getframe", "sys.settrace",
+    "sys.setprofile", "code.", "mmap.")
+DENIED_MODULES = {"subprocess", "socket", "_socket", "ssl", "ctypes", "_ctypes", "multiprocessing",
+    "pty", "shutil", "urllib", "http", "ftplib", "smtplib", "asyncio", "signal", "importlib",
+    "pickle", "_pickle", "marshal", "mmap", "sqlite3", "tempfile", "webbrowser", "pathlib"}
+def guard(event, args):
+    if event == "open":
+        path, mode = args[0], args[1] or "r"
+        flags = args[2] if len(args) > 2 and isinstance(args[2], int) else 0
+        writing = any(m in str(mode) for m in "wax+") or flags & (_os.O_WRONLY | _os.O_RDWR | _os.O_CREAT)
+        if writing or not isinstance(path, (str, bytes)):
+            raise PermissionError("sandbox: no file access")
+        real = _os.path.realpath(_os.fsdecode(path))
+        if not real.startswith(LIBS):
+            raise PermissionError("sandbox: no file access")
+    elif event in ("os.listdir", "os.scandir"):
+        # importlib lists the library folders when a library imports lazily; nothing else.
+        target = args[0] if args and isinstance(args[0], (str, bytes)) else "."
+        if not _os.path.realpath(_os.fsdecode(target)).startswith(LIBS):
+            raise PermissionError("sandbox: no file access")
+    elif event == "import" and str(args[0]).split(".")[0] in DENIED_MODULES:
+        raise ImportError("sandbox: import not allowed")
+    elif event.startswith(DENIED_EVENTS):
+        raise PermissionError("sandbox: " + event + " not allowed")
+sys.addaudithook(guard)
 out = io.StringIO()
 error = None
 try:
     with contextlib.redirect_stdout(out):
-        exec(compile(payload["code"], "<analysis>", "exec"), env)
+        exec(code_object, env)
 except Exception as exc:
     error = type(exc).__name__ + ": " + str(exc)[:500]
 result = env.get("result")
@@ -237,6 +292,7 @@ def _limits() -> None:  # pragma: no cover - runs in the child
 
 
 _NO_NETWORK: list[str] | None = None
+_PROBE = asyncio.Lock()
 
 
 async def _no_network() -> list[str]:
@@ -244,8 +300,10 @@ async def _no_network() -> list[str]:
     network namespace with no interface; else nothing (the static check still applies). Probed
     once per worker."""
     global _NO_NETWORK
-    if _NO_NETWORK is None:
-        _NO_NETWORK = []
+    async with _PROBE:
+        if _NO_NETWORK is not None:
+            return _NO_NETWORK
+        found: list[str] = []
         unshare = shutil.which("unshare")
         if unshare:
             probe = await asyncio.create_subprocess_exec(
@@ -256,7 +314,11 @@ async def _no_network() -> list[str]:
                 stderr=asyncio.subprocess.DEVNULL,
             )
             if await probe.wait() == 0:
-                _NO_NETWORK = [unshare, "-rn"]
+                found = [unshare, "-rn"]
+        if not found:
+            # The audit hook still refuses sockets; the namespace is the layer below it.
+            logger.warning("analysis sandbox: no network namespace on this host")
+        _NO_NETWORK = found
     return _NO_NETWORK
 
 
