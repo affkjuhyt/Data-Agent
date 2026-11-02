@@ -163,6 +163,23 @@ CASES: list[Any] = [
         f" WHERE f.{IN_2013} GROUP BY 1",
     ),
     (
+        "SO_KHACH_HANG_INTERNET",
+        [],
+        Y2013,
+        None,
+        f"SELECT COUNT(DISTINCT customer_key) FROM fact_internet_sales WHERE {IN_2013}",
+    ),
+    (
+        # A customer who bought in two categories is counted once in each, not split between them.
+        "SO_KHACH_HANG_INTERNET",
+        ["nhom_hang"],
+        Y2013,
+        None,
+        INTERNET_BY_CATEGORY.replace(
+            "SUM(f.sales_amount) AS v", "COUNT(DISTINCT f.customer_key) AS v"
+        ),
+    ),
+    (
         "GIA_TRI_DON_TB_INTERNET",
         [],
         Y2013,
@@ -324,6 +341,15 @@ def test_the_load_matches_the_published_totals(adventureworks: Any) -> None:
     assert _rows(adventureworks, "SELECT SUM(sales_amount) FROM fact_reseller_sales") == {
         (): decimal.Decimal("80450596.9823")
     }
+
+
+def test_the_customers_of_2013_are_the_ones_the_ask_flow_found(adventureworks: Any) -> None:
+    # 17,429: what exploratory SQL answered live before the metric existed (6/6 ways agreeing).
+    layer, metrics = _layer()
+    compiled = c.compile_metric(
+        c.Request(metrics["SO_KHACH_HANG_INTERNET"], period=Y2013), layer, dialect="postgres"
+    )
+    assert [float(v) for v in _rows(adventureworks, compiled.sql).values()] == [17429.0]
 
 
 @pytest.mark.parametrize(

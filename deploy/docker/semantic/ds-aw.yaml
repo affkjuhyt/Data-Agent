@@ -39,6 +39,7 @@ semantic_models:
       - {name: lai_gop_internet, label: Lãi gộp Internet, agg: sum, expr: sales_amount - total_product_cost, unit: USD}
       - {name: so_luong_internet, label: Số lượng bán Internet, agg: sum, expr: order_quantity, unit: sản phẩm}
       - {name: so_don_internet, label: Số đơn Internet, agg: count_distinct, expr: sales_order_number, additivity: none}
+      - {name: so_khach_hang_internet, label: Số khách hàng Internet, agg: count_distinct, expr: customer_key, additivity: none, unit: khách hàng}
       - {name: thue_internet, label: Thuế Internet, agg: sum, expr: tax_amt, unit: USD}
       - {name: van_chuyen_internet, label: Phí vận chuyển Internet, agg: sum, expr: freight, unit: USD}
   - name: ban_dai_ly
@@ -276,6 +277,18 @@ metrics:
     decimals: 0
     direction: higher_better
     dimensions: [nhom_hang, vung, quoc_gia_ban, khu_vuc, nam_tai_chinh]
+  - name: SO_KHACH_HANG_INTERNET
+    label: Số khách hàng mua qua Internet
+    description: >-
+      Số khách hàng khác nhau có đơn Internet trong kỳ; một khách mua nhiều lần đếm một lần. Không
+      cộng được qua các kỳ hay các nhóm hàng: một khách mua hai nhóm được đếm ở cả hai.
+    expr: so_khach_hang_internet
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: khách hàng
+    decimals: 0
+    direction: higher_better
+    dimensions: [nhom_hang, tieu_nhom, vung, quoc_gia_ban, khu_vuc, quoc_gia_khach, thanh_pho, gioi_tinh, hoc_van, nghe_nghiep, nam_tai_chinh]
   - name: GIA_TRI_DON_TB_INTERNET
     label: Giá trị đơn bình quân Internet
     expr: doanh_thu_internet / so_don_internet
@@ -402,6 +415,11 @@ synonyms:
   - {phrase: số đơn, metric: SO_DON_INTERNET}
   - {phrase: orders, metric: SO_DON_INTERNET}
   - {phrase: number of orders, metric: SO_DON_INTERNET}
+  - {phrase: số khách hàng, metric: SO_KHACH_HANG_INTERNET}
+  - {phrase: số lượng khách hàng, metric: SO_KHACH_HANG_INTERNET}
+  - {phrase: khách hàng mua, metric: SO_KHACH_HANG_INTERNET}
+  - {phrase: number of customers, metric: SO_KHACH_HANG_INTERNET}
+  - {phrase: customer count, metric: SO_KHACH_HANG_INTERNET}
   - {phrase: giá trị đơn trung bình, metric: GIA_TRI_DON_TB_INTERNET}
   - {phrase: average order value, metric: GIA_TRI_DON_TB_INTERNET}
   - {phrase: aov, metric: GIA_TRI_DON_TB_INTERNET}

@@ -336,7 +336,10 @@ FROM (VALUES
      '{"behavior": "refuse"}'),
     ('a0000000-0000-0000-0000-00000000ae3c', 'refusal',
      '{"question": "Tỷ lệ khách hàng rời bỏ năm 2013"}',
-     '{"behavior": "refuse"}')
+     '{"behavior": "refuse"}'),
+    ('a0000000-0000-0000-0000-00000000ae3d', 'correct_result',
+     '{"question": "Có bao nhiêu khách hàng mua qua Internet năm 2013"}',
+     '{"kind": "data", "metric": "SO_KHACH_HANG_INTERNET", "values": [17429.0]}')
 ) AS v(id, category, input, expected)
 ON CONFLICT (id) DO UPDATE SET category = EXCLUDED.category, input = EXCLUDED.input,
     expected = EXCLUDED.expected, status = EXCLUDED.status;

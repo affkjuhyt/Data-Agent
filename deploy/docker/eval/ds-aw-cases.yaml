@@ -661,3 +661,14 @@ cases:
   category: refusal
   expected:
     behavior: refuse
+- id: aw061
+  question: Có bao nhiêu khách hàng mua qua Internet năm 2013
+  category: correct_result
+  expected:
+    kind: data
+    metric: SO_KHACH_HANG_INTERNET
+    values:
+    - 17429.0
+  reference_sql: SELECT COUNT(DISTINCT customer_key) FROM fact_internet_sales WHERE order_date >= DATE
+    '2013-01-01' AND order_date < DATE '2014-01-01'
+  note: customers, not orders or units sold (it was answered with units sold once)

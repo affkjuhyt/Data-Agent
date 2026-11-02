@@ -79,3 +79,4 @@ Hai phiếu xong thì so với đáp án nháp; câu nào ba bên không khớp 
 | aw058 | Doanh số Trade Sales theo ngân sách năm 2013 | |
 | aw059 | Giá cổ phiếu của công ty hôm nay | |
 | aw060 | Tỷ lệ khách hàng rời bỏ năm 2013 | |
+| aw061 | Có bao nhiêu khách hàng mua qua Internet năm 2013 | |
