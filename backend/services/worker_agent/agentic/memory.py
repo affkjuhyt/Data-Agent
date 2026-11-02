@@ -2,8 +2,9 @@
 
 * extract: after an answered turn the planner model reads the exchange and proposes at most five
   durable things the person said (a presentation preference, a definition they use, a fact about
-  their work, a correction of the agent). Data-Analysis-Agent's extraction rules: nothing a query
-  returned, no credentials, nothing about a single task. A proposal holding a figure the turn
+  their work, a correction of the agent), with a list of what is never stored: nothing a query
+  returned, no credentials, nothing about a single task (an idea also in Data-Analysis-Agent,
+  whose licence forbids commercial use: independently written, none of its text used). A proposal holding a figure the turn
   fetched, or anything that looks like a secret, is dropped by the server, not left to the model.
 * store: one row per (space, person, normalised content); saying it again bumps `times` and
   `last_seen_at` (Memori's num_times / date_last_time) instead of adding a row.

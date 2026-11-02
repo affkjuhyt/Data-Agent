@@ -1,5 +1,7 @@
 # DataAgent (spring-ai-alibaba/DataAgent): notes for a Python port
 
+> Quoted material (appendix A prompts and code excerpts) © the spring-ai-alibaba/DataAgent authors, Apache-2.0, https://github.com/spring-ai-alibaba/DataAgent at the commit named below.
+
 Clone: `research/DataAgent` (depth 1, fetched 2026-11-02). All paths below are relative to
 `research/DataAgent/data-agent-management/src/main/` unless they start with `data-agent-frontend-nuxt/` or `docs/`.
 Java package root: `java/com/alibaba/cloud/ai/dataagent/` (abbreviated `DA/`).

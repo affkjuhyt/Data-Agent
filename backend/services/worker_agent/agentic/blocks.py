@@ -34,8 +34,8 @@ MAX_CHART_POINTS = 120
 
 @dataclass(frozen=True)
 class ChartRole:
-    """What a chart type needs of its columns (Data-Analysis-Agent's chart registry, WrenAI's chart
-    rules): the kind of x, how many measures, how many rows, and whether measures must be >= 0."""
+    """What a chart type needs of its columns (the idea of a chart registry with
+    role contracts, independently written): the kind of x, how many measures, how many rows, and whether measures must be >= 0."""
 
     x: Literal["time", "category", "number", "any"]
     measures: tuple[int, int]

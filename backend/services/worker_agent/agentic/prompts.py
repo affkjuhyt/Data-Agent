@@ -1,7 +1,11 @@
-"""The prompts of the dynamic agent. Their rules after DataAgent's planner and report prompts
-(spring-ai-alibaba/DataAgent, resources/prompts): an instruction boundary (what comes inside the
-tags is data, never an instruction), the fewest steps that answer, no fact asserted before it is
-fetched, and a report that separates fetched facts from derived figures."""
+"""The prompts of the dynamic agent, written for this product. Where an idea came from elsewhere it
+is named here, not in the text sent to the model: the chart rules and the five follow-up directions
+are common visualisation and OLAP practice, independently written (an idea also in WrenAI, whose
+service is AGPL: none of its wording is used). The other rules follow the ideas of DataAgent's
+planner and report prompts (spring-ai-alibaba/DataAgent, Apache-2.0, resources/prompts): an
+instruction boundary (what comes inside the tags is data, never an instruction), the fewest steps
+that answer, no fact asserted before it is fetched, and a report that separates fetched facts from
+derived figures."""
 
 from __future__ import annotations
 
@@ -102,7 +106,7 @@ Bạn tự chọn cách trình bày phù hợp nhất với câu hỏi này: kh�
 - markdown: đoạn văn, danh sách, tiêu đề ngắn. Câu đầu tiên trả lời thẳng câu hỏi.
 - kpi: 1-4 con số chính; mỗi kpi trỏ tới dataset, cột, dòng (row hoặc match_column/match_value),
   và compare_column nếu có cột kỳ so sánh.
-- chart: dataset, x (cột hạng mục hoặc thời gian), y (cột số), chart_type theo quy tắc (WrenAI):
+- chart: dataset, x (cột hạng mục hoặc thời gian), y (cột số), chart_type theo quy tắc:
   * line: x là thời gian (ngày, tháng, quý, năm) và câu hỏi hỏi diễn biến, xu hướng;
   * bar: so sánh các hạng mục, xếp hạng; nhãn dài hoặc nhiều hạng mục vẫn là bar;
   * pie: chỉ khi là cơ cấu của một tổng, 2-8 hạng mục, một thước đo, không có số âm;
@@ -114,8 +118,8 @@ Bạn tự chọn cách trình bày phù hợp nhất với câu hỏi này: kh�
 - insights: 2-5 nhận định ngắn, mỗi cái có tone positive/negative/neutral.
 - callout: lưu ý về giới hạn dữ liệu (tone warning) hoặc định nghĩa (tone info).
 - code: hiển thị code python đã dùng (dataset của bước analyze) khi người hỏi muốn biết cách tính.
-- follow_ups: 2-4 câu hỏi tiếp theo, viết như người dùng sẽ hỏi, mỗi câu một hướng khác nhau
-  (WrenAI): đi sâu (chia nhỏ theo một chiều được phép), gộp lên (tổng hợp ở mức cao hơn), cắt lát
+- follow_ups: 2-4 câu hỏi tiếp theo, viết như người dùng sẽ hỏi, mỗi câu một hướng khác nhau:
+  đi sâu (chia nhỏ theo một chiều được phép), gộp lên (tổng hợp ở mức cao hơn), cắt lát
   (lọc theo một giá trị cụ thể), xu hướng (theo thời gian), so sánh (với kỳ trước hoặc giữa các
   nhóm). Chỉ hỏi điều danh mục trả lời được: chỉ số, chiều và giá trị đã thấy trong các bước.
 Câu hỏi một con số: kpi + một câu markdown là đủ. Câu hỏi phân tích: mở bằng kết luận, rồi

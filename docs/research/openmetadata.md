@@ -1,5 +1,7 @@
 # OpenMetadata, read in depth: what it models, how, and what our data agent should take
 
+> Quoted schemas © Collate and the OpenMetadata authors, Apache-2.0 (openmetadata-spec), https://github.com/open-metadata/OpenMetadata at d77e1fe709b4. Ingestion, MCP and UI are Collate-licensed and described only.
+
 Researched 03/11/2026 against `open-metadata/OpenMetadata` `main` @ `d77e1fe709b4` (2 Nov 2026,
 "Fixes #36556: Record the asset's change event when an approved task changes it").
 
@@ -14,7 +16,9 @@ per the repo's ARCHITECTURE.md), `ingestion/src/`, `openmetadata-service/src/mai
 from the git tree listing only (pages and components), not file by file.
 
 **Licence, which matters before we copy anything.** The root `LICENSE` is Apache-2.0, and that
-covers the spec, the service and the UI. But `ingestion/LICENSE` is the **Collate Community License
+covers the spec and the service. The UI is ambiguous (`openmetadata-ui/LICENSE` is the Collate
+Community License 1.0 while its source headers say Apache-2.0: treat it as Collate), and
+`openmetadata-mcp/` is Collate. But `ingestion/LICENSE` is the **Collate Community License
 1.0**, and 1,213 ingestion files carry its header. It forbids an "Excluded Purpose": *"making
 available any software-as-a-service … that competes with Collate products"*. We sell a SaaS-capable
 data product, so we take ideas, schema shapes and algorithms described in prose from the ingestion
@@ -369,7 +373,7 @@ onto the contract, so the UI shows a contract badge on every asset.
    `create_lineage`, `create_entity`, `patch_entity` (RFC 6902), `describe_entity_type`,
    `get_user_context`, `get_persona_context`, `company_context`, `sparql_query`,
    `entity_neighborhood`, `find_by_tag`, `shacl_validate`, `ontology_describe`. The descriptions are
-   worth copying as a style: they state what is *not* returned (`hasSql: true` instead of the SQL),
+   worth imitating in our own words (the MCP module is Collate-licensed): they state what is *not* returned (`hasSql: true` instead of the SQL),
    they report partial views (`hiddenNodes` counts the lineage nodes removed for permission, and
    `hiddenNodesUnchecked` means the authorisation limit was hit), and they give pagination cursors.
 6. **Semantic search** is hybrid: keyword plus vector, fused with RRF through an *ad-hoc* OpenSearch

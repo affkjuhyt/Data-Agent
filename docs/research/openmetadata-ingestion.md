@@ -1,5 +1,7 @@
 # OpenMetadata ingestion, clean-room study: what it does, what we should build
 
+> OpenMetadata's ingestion is under the Collate Community License 1.0: this document describes behaviour in our words and own pseudo-code; nothing of it is quoted. Spec fragments © Collate, Apache-2.0.
+
 Source read: sparse clone `om-sparse/` at `d77e1fe709b4`. Date: 03/11/2026. The `OpenMetadata/` full-clone directory is empty, and the sparse clone has no `ingestion/tests`, so every behaviour below comes from reading source, not tests.
 
 ## 0. Licence map (read this first)

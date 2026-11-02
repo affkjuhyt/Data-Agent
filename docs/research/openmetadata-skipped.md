@@ -1,5 +1,7 @@
 # OpenMetadata: the three things we marked "skip", studied in depth
 
+> Quoted material © Collate and the OpenMetadata authors, Apache-2.0 (spec, service), https://github.com/open-metadata/OpenMetadata at d77e1fe709b4.
+
 Source: `open-metadata/OpenMetadata` at HEAD `d77e1fe709b4`, sparse clone in
 `research3/openmetadata/om-sparse`. Paths below are relative to that clone unless they start with
 `backend/` or `frontend/`, which are ours. Licensing: `openmetadata-spec`, `openmetadata-service`,

@@ -49,7 +49,8 @@ class Diagnosis(BaseModel):
     reasoning: str
 
 
-# After WrenAI's SQL correction (sql_diagnosis, then sql_correction): the model first says why the
+# Diagnose, then correct (an idea also in WrenAI's AGPL service; independently written, none of its
+# wording used): the model first says why the
 # statement failed, in a sentence or two, and only then rewrites it with that reason in front of it.
 DIAGNOSE = """You review a read-only {dialect} SELECT statement that failed when the source ran it.
 From the tables below, the question and the error, say in one or two sentences what in the
@@ -162,7 +163,7 @@ async def diagnose_and_repair(
     candidate: Candidate,
     error: str,
 ) -> Candidate:
-    """A candidate the source refused: diagnosed, then rewritten with the diagnosis (WrenAI)."""
+    """A candidate the source refused: diagnosed, then rewritten with the diagnosis."""
     context = (
         f"{schema_text(linked)}\n\nQuestion: {question}\n\nSQL:\n{candidate.sql}\n\n"
         f"Error from the source: {error[:300]}"

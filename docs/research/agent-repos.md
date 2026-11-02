@@ -1,5 +1,7 @@
 # Other repos: ideas to port into a dynamic Python data agent
 
+> Licences: Data-Analysis-Agent is CC BY-NC 4.0 with a commercial-use restriction and WrenAI's legacy `wren-ai-service` is AGPL-3.0: both are described in our words only. Quoted material from gpt-researcher (Apache-2.0), RD-Agent (MIT), ragflow (Apache-2.0) and Memori (Apache-2.0) is © its authors under those licences, from the commits named below.
+
 Scope: the planner, the graph/loop executor with replanning and reflection, persistent memory, and the typed-block UI stream.
 Clones are shallow (`--depth 1`) and live under `research2/repos/`. Clone date is 2026-11-02.
 
@@ -13,124 +15,24 @@ Clones are shallow (`--depth 1`) and live under `research2/repos/`. Clone date i
 
 ## 1. Zafer-Liu/Data-Analysis-Agent (Flask + SSE, tool-calling agent)
 
-The architecture is a single tool-calling loop over roughly 60 tools (`agent/agent.py`, 5118 lines). It is not a planner. Four pieces are still worth taking.
+**Licence: CC BY-NC 4.0, and the author requires a written licence for any commercial use. Study
+only: nothing of its code or prompts is quoted here or used in the product.** Upstream:
+https://github.com/Zafer-Liu/Data-Analysis-Agent. The ideas, in our own words:
 
-### 1a. Numeric provenance audit: every number in the final answer must trace to a tool result
-File: `agent/number_audit.py`. This is a deterministic gate that runs before the answer is emitted. It fits our invariants ("LLM proposes, deterministic checks decide", "trust label on every answer"), and it is the most portable piece in this list.
-
-```python
-# Tools whose success marks a turn as "data-derived"; only those turns are audited.
-NUMBER_EVIDENCE_TOOLS = frozenset({
-    "query_data", "run_analysis", "create_analysis_table", "profile_data",
-    "fetch_table", "browser_extract_tables", "generate_chart",
-})
-
-def collect_number_evidence(messages) -> tuple[list[str], list[str]]:
-    """Split a message list into ``(tool_result_texts, context_texts)``.
-
-    Context texts (user messages and the agent's own SQL/tool arguments) are
-    matched as legitimate number sources: thresholds written into SQL such as
-    ``AQI > 100`` and facts the user stated must not trigger the gate.
-    Assistant prose is intentionally excluded — that is exactly the channel
-    through which fabricated numbers would re-enter.
-    """
-    evidence_texts, context_texts = [], []
-    for message in messages:
-        role = message.get("role")
-        if role == "tool":
-            evidence_texts.append(str(message.get("content") or ""))
-        elif role == "user":
-            context_texts.append(str(message.get("content") or ""))
-        elif role == "assistant":
-            for call in message.get("tool_calls") or []:
-                function = call.get("function") or {}
-                context_texts.append(str(function.get("arguments") or ""))
-    return evidence_texts, context_texts
-
-def audit_report_numbers(report_text, evidence_texts, context_texts=()):
-    texts = [*(evidence_texts or []), *(context_texts or [])]
-    blob = " ".join(str(t)[:_MAX_TEXT_CHARS].replace(",", "") for t in texts if t)
-    values = _parse_corpus_values(texts)
-    float_values = {float(v) for v in values if v}
-    unsupported = []
-    for key, value, decimals in _extract_report_numbers(report_text):
-        if key in blob: continue
-        if value in values: continue
-        if any(_quantize(e, decimals) == value for e in values): continue   # 40.7 matches 40.73
-        if decimals == 0:
-            # Derived integer deltas: x == a + b or x == a - b, both operands >= 100
-            target = float(value); derived = False
-            for a in float_values:
-                if a < 100: continue
-                for partner in (round(target - a, 6), round(a - target, 6)):
-                    if partner >= 100 and partner in float_values:
-                        derived = True; break
-                if derived: break
-            if derived: continue
-        unsupported.append(key)
-    return unsupported[:_MAX_LISTED], len(unsupported)
-```
-The audit skips these as noise: integers below 100, years, decimals below 3, ranges (`2013-2017`), identifier-embedded numbers (`PM2.5`), and values followed by `% ‰ 万 亿 倍`.
-**Port:** run it over every `markdown`, `kpi` and `insight` block before the stream closes. When it flags numbers, either send the turn back to the writer, which is the reflection step, or downgrade the trust label. Our evidence corpus would be the query-run results instead of tool messages.
-
-### 1b. Deterministic stage routing that narrows the tools the model can see
-File: `agent/workflow_stage.py`. The stage is inferred from tools that already ran in the turn, not chosen by the LLM. Each stage then filters the tool schemas.
-
-```python
-STAGES = frozenset({"general","understand","inspect","analyze","visualize",
-                    "propose_output","generate_output","verify"})
-
-def infer_workflow_stage(*, activation, user_message, has_data_source,
-                         needs_chart, needs_output, completed_tools=()):
-    """Infer a conservative stage from immutable turn evidence."""
-    done = frozenset(str(name) for name in completed_tools)
-    if activation.internal_action.endswith("_confirm"):
-        return WorkflowStageContext("generate_output", needs_chart, True)
-    if done & _GENERATION_TOOLS:  return WorkflowStageContext("verify", needs_chart, needs_output)
-    if done & _PROPOSAL_TOOLS:    return WorkflowStageContext("propose_output", needs_chart, True)
-    if needs_chart and done & {"query_data", "run_analysis", "create_analysis_table"}:
-        return WorkflowStageContext("visualize", True, needs_output)
-    if done & {"get_schema", "get_table_detail", "query_data", "run_analysis"}:
-        return WorkflowStageContext("analyze", needs_chart, needs_output)
-    ...
-```
-**Port:** in a dynamic planner, the step types a replan may propose (for example `chart` before any `semantic_query` has produced data) can be constrained the same way. This works as a static guard on the plan DAG.
-
-### 1c. Long-term memory: typed, scoped, human-readable records, with extraction and consolidation prompts
-Files: `agent/memory.py` (prompts) and `data/memory_store.py` (store). Each record is a markdown file with YAML front matter. A `MEMORY.md` index is injected into the system prompt, and the full body is read on demand through a `memory_read(name)` tool.
-
-Record schema (`data/memory_store.py`):
-```python
-MEMORY_TYPES = {"user", "feedback", "project", "reference"}
-USER_TYPES = {"user", "feedback"}            # scope = user (global)
-WORKSPACE_TYPES = MEMORY_TYPES - USER_TYPES  # scope = workspace
-# front matter: name, type, title, created_at, updated_at, last_seen_at, source_session, [why], [how_to_apply]; body = markdown
-def render_memory_section(*, user_id="", workspace_id="") -> str:
-    ...
-    return "\n\n[LONG-TERM MEMORY]\n" + content + "Use memory_read(name) only when the full record is needed.\n[END LONG-TERM MEMORY]"
-```
-Extraction prompt, verbatim (`agent/memory.py`, `_EXTRACT_SYSTEM`; it runs on a background thread after each turn):
-```text
-You extract durable memory for a local data-analysis assistant. Return JSON only.
-Your first non-whitespace character must be `{`; do not emit reasoning, `<think>` tags, Markdown fences, or prose.
-Remember only explicit user preferences (user), corrections (feedback), confirmed workspace facts (project), or durable resource pointers (reference). Do not store tasks, casual chat, raw query values, credentials, connection strings, secrets, or private data. Existing memory summaries are included for deduplication.
-Explicit output preferences MUST be recorded: chart title/label language, number formatting, metric definitions, report style, and any rule the user says applies from now on. Example: "图表标题用中文" -> create user memory; "毛利口径=(收入-成本)/收入" -> create user memory.
-Scope is mandatory: user/feedback are global user memory; project/reference are current-workspace memory. Explicit wording wins: "本项目"、"当前工作区"、project names, table/field names, dataset rules, and file paths mean project/reference. "以后"、"所有项目"、"默认" and personal output preferences mean user/feedback. When unsure, choose project rather than polluting global memory.
-Output {"ops":[]} when nothing is durable. Each operation is create or update with type, name, title, body, optional why and how_to_apply. The "op" field holds the verb ("create" or "update"); the "type" field holds the memory category ("user", "feedback", "project", or "reference"). Never put the verb in "type" and never omit "type". Names must use lowercase kebab-case, for example unit-net-rate-formula. At most 5 operations.
-```
-Consolidation prompt (`_CONSOLIDATE_SYSTEM`; runs at most once every 24 h behind a lock file, with at most 20 operations):
-```text
-You curate the long-term memory of a local data-analysis assistant. Return JSON only.
-Given today's date and every memory record, merge duplicates or overlapping records into the most complete one, rewrite relative dates (e.g. "last week") as absolute dates, and archive records that are stale, superseded, or merged away. Never invent new facts and never store secrets. Output {"ops":[]} when nothing needs curation. Each operation is either {"op":"update","name":...,"title":...,"body":...} (partial fields allowed) or {"op":"archive","name":...}. At most 20 operations.
-```
-**Port:** this is the memory model closest to what we need. A "metric definition the user stated" is a `project` memory. For us that should become a *proposed* glossary or semantic-layer change that waits for review, not a silent override. Keep the hard rule "do not store raw query values".
-
-### 1d. Typed job events and a chart registry with role contracts
-`agent/events.py` defines frozen dataclasses (`JobCreated/Started/Progress/ArtifactCreated/Done/Error/Canceled`), each carrying a `ClassVar event_type`. Only the HTTP layer turns them into SSE JSON. This is the right shape for our block stream.
-
-`LLM/chart_selector.py` holds a chart registry with entries `dict(chart_id, name, category, required_roles=["x","y","series"], optional_roles, data_format, constraints, desc)`. The `select_chart(user_intent, available_columns)` tool returns the best matches, and the model must call it *before* `generate_chart(chart_id, field_mapping)`. That gives a two-step chart flow, "pick a type from a catalogue, then fill role→column mapping". The mapping is easy to validate deterministically.
-
----
+- **A numeric provenance gate.** Before an answer that rests on tool results goes out, every number
+  in it is matched against the numbers those tools returned; an answer with an unmatched number is
+  not sent as is. (Our own form: `agentic/verify.py`, tags the server fills, sentences with a stray
+  number dropped.)
+- **Tools narrowed by stage.** The stage of the analysis is worked out from which tools have
+  already run, and only the tools that fit the next stage are offered to the model.
+- **Long-term memory as typed, scoped records.** Records of a few kinds (the person's own
+  preferences and corrections, facts about a workspace, pointers to resources), each scoped to the
+  person or to the workspace, extracted from the conversation after a turn with a short list of
+  things never to store, and merged now and then into fewer, dated records. (Our own form:
+  `agentic/memory.py`, written independently.)
+- **Typed job events** for the progress stream, and **a chart registry** in which each chart type
+  declares which column roles it needs, so a model first picks a type and then maps columns to
+  roles, which a program can check. (Our own form: `agentic/blocks.py` CHART_ROLES.)
 
 ## 2. assafelovic/gpt-researcher (planner → parallel sub-research → writer → review loops)
 
@@ -369,217 +271,29 @@ The data-science scenario (`rdagent/scenarios/data_science/proposal/exp_gen/prop
 
 ## 4. Canner/WrenAI (wren-ai-service pipelines; legacy branch)
 
-Pipeline layout: `wren-ai-service/src/pipelines/{generation,retrieval,indexing}`. The generation pipelines are `intent_classification`, `sql_generation_reasoning`, `sql_generation`, `sql_correction`, `sql_diagnosis`, `followup_sql_generation`, `sql_answer`, `chart_generation`, `chart_adjustment`, `question_recommendation`, `data_assistance`, `misleading_assistance`, `user_guide_assistance` and `relationship_recommendation`. Each pipeline is a Hamilton DAG of small functions (`prompt → generate → post_process`) and is called from FastAPI services that keep a per-query status record.
+**Licence: the legacy branch that holds `wren-ai-service` is AGPL-3.0. Study only: nothing of its
+prompts, schemas or code is quoted here or used in the product.** (WrenAI's current `core/`,
+`sdk/` and `skills/` are Apache-2.0, its `docs/` CC BY 4.0.) Upstream:
+https://github.com/Canner/WrenAI, `wren-ai-service/src/pipelines/` on the legacy branch. The ideas,
+in our own words:
 
-### 4a. Chart generation: the prompt plus Pydantic-typed Vega-Lite as structured output, then JSON-Schema validation
-File: `pipelines/generation/chart_generation.py`. The system prompt (verbatim) is:
-```text
-### TASK ###
-
-You are a data analyst great at visualizing data using vega-lite! Given the user's question, SQL, sample data and sample column values, you need to generate vega-lite schema in JSON and provide suitable chart type.
-Besides, you need to give a concise and easy-to-understand reasoning to describe why you provide such vega-lite schema based on the question, SQL, sample data and sample column values.
-
-{chart_generation_instructions}
-- If the user provides a custom instruction, it should be followed strictly and you should use it to change the style of response for reasoning.
-
-### OUTPUT FORMAT ###
-
-Please provide your chain of thought reasoning, chart type and the vega-lite schema in JSON format.
-
-{
-    "reasoning": <REASON_TO_CHOOSE_THE_SCHEMA_IN_STRING_FORMATTED_IN_LANGUAGE_PROVIDED_BY_USER>,
-    "chart_type": "line" | "multi_line" | "bar" | "pie" | "grouped_bar" | "stacked_bar" | "area" | "",
-    "chart_schema": <VEGA_LITE_JSON_SCHEMA>
-}
-```
-The user template is:
-```jinja
-### INPUT ###
-Question: {{ query }}
-SQL: {{ sql }}
-Sample Data: {{ sample_data }}
-Sample Column Values: {{ sample_column_values }}
-Language: {{ language }}
-Custom Instruction: {{ custom_instruction }}
-
-Please think step by step
-```
-`chart_generation_instructions` (`pipelines/generation/utils/chart.py`, verbatim INSTRUCTIONS part; the file goes on with a "GUIDELINES TO PLOT CHART" section on data types and when to use each chart, and with seven worked examples):
-```text
-- Chart types: Bar chart, Line chart, Multi line chart, Area chart, Pie chart, Stacked bar chart, Grouped bar chart
-- You can only use the chart types provided in the instructions
-- Generated chart should answer the user's question and based on the semantics of the SQL query, and the sample data, sample column values are used to help you generate the suitable chart type
-- If the sample data is not suitable for visualization, you must return an empty string for the schema and chart type
-- If the sample data is empty, you must return an empty string for the schema and chart type
-- The language for the chart and reasoning must be the same language provided by the user
-- Please use the current time provided by the user to generate the chart
-- In order to generate the grouped bar chart, you need to follow the given instructions:
-    - Disable Stacking: Add "stack": null to the y-encoding.
-    - Use xOffset for subcategories to group bars.
-    - Don't use "transform" section.
-- In order to generate the pie chart, you need to follow the given instructions:
-    - Add {"type": "arc"} to the mark section.
-    - Add "theta" encoding to the encoding section.
-    - Add "color" encoding to the encoding section.
-    - Don't add "innerRadius" to the mark section.
-- If the x-axis of the chart is a temporal field, the time unit should be the same as the question user asked.
-    - For yearly question, the time unit should be "year".
-    - For monthly question, the time unit should be "yearmonth".
-    - For weekly question, the time unit should be "yearmonthdate".
-    - For daily question, the time unit should be "yearmonthdate".
-    - Default time unit is "yearmonth".
-- For each axis, generate the corresponding human-readable title based on the language provided by the user.
-- Make sure all of the fields(x, y, xOffset, color, etc.) in the encoding section of the chart schema are present in the column names of the data.
-```
-Example (multi-line, using `fold`):
-```json
-{ "title": "<TITLE_IN_LANGUAGE_PROVIDED_BY_USER>", "mark": {"type": "line"},
-  "transform": [{"fold": ["readCount", "clickCount"], "as": ["Metric", "Value"]}],
-  "encoding": {
-    "x": {"field": "Date", "type": "temporal", "title": "<...>"},
-    "y": {"field": "Value", "type": "quantitative", "title": "<...>"},
-    "color": {"field": "Metric", "type": "nominal", "title": "<...>"} } }
-```
-The structured-output schema is passed as `response_format={"type":"json_schema","json_schema":{"name":"chart_generation_schema","schema": ChartGenerationResults.model_json_schema()}}`:
-```python
-class ChartSchema(BaseModel):
-    class ChartType(BaseModel):
-        type: Literal["bar", "line", "area", "arc"]
-    class ChartEncoding(BaseModel):
-        field: str
-        type: Literal["ordinal", "quantitative", "nominal"]
-        title: str
-    title: str
-    mark: ChartType
-    encoding: ChartEncoding
-
-class TemporalChartEncoding(ChartSchema.ChartEncoding):
-    type: Literal["temporal"] = Field(default="temporal")
-    timeUnit: str = Field(default="yearmonth")
-
-class LineChartSchema(ChartSchema):
-    class LineChartMark(BaseModel):
-        type: Literal["line"] = Field(default="line")
-    class LineChartEncoding(BaseModel):
-        x: TemporalChartEncoding | ChartSchema.ChartEncoding
-        y: ChartSchema.ChartEncoding
-        color: ChartSchema.ChartEncoding
-    mark: LineChartMark
-    encoding: LineChartEncoding
-
-class MultiLineChartSchema(ChartSchema):      # + transform: list[{fold: list[str], as_: list[str] = Field(alias="as")}]
-class BarChartSchema(ChartSchema):            # x, y, color
-class GroupedBarChartSchema(ChartSchema):     # x, y, xOffset, color
-class StackedBarChartYEncoding(ChartSchema.ChartEncoding):
-    stack: Literal["zero"] = Field(default="zero")
-class StackedBarChartSchema(ChartSchema):     # x, y: StackedBarChartYEncoding, color
-class PieChartSchema(ChartSchema):            # mark arc; theta, color
-class AreaChartSchema(ChartSchema):           # x, y
-
-class ChartGenerationResults(BaseModel):
-    reasoning: str
-    chart_type: Literal["line", "multi_line", "bar", "pie", "grouped_bar", "stacked_bar", "area", ""]  # empty string for no chart
-    chart_schema: (LineChartSchema | MultiLineChartSchema | BarChartSchema | PieChartSchema
-                   | GroupedBarChartSchema | StackedBarChartSchema | AreaChartSchema)
-```
-Pre- and post-processing (`ChartDataPreprocessor`, `ChartGenerationPostProcessor`):
-```python
-# preprocess: 15 sampled rows + up to 5 distinct values per column go to the LLM, never the full result
-sample_column_values = {col: list(df[col].unique())[:sample_column_size] for col in df.columns}
-sample_data = df.sample(n=sample_data_count).to_dict(orient="records") if len(df) > sample_data_count else df.to_dict(orient="records")
-
-# postprocess
-chart_schema["$schema"] = "https://vega.github.io/schema/vega-lite/v5.json"
-chart_schema["data"] = {"values": sample_data}
-validate(chart_schema, schema=vega_schema)        # jsonschema against bundled utils/vega-lite-schema-v5.json
-if remove_data_from_chart_schema:
-    chart_schema["data"]["values"] = []           # the client re-binds real rows
-# on ValidationError / JSON error -> {"chart_schema": {}, "reasoning": "", "chart_type": ""}
-```
-**Port as is:** our `chart` block becomes `{chart_type, vega_lite (without data), data_ref → query run, reasoning}`. The LLM sees samples only. The server validates against the bundled Vega-Lite v5 JSON Schema, and the frontend binds the rows.
-
-### 4b. Chart adjustment: the user edits the chart, the LLM regenerates it
-`pipelines/generation/chart_adjustment.py` reuses the same instructions plus `- If you think the adjustment options are not suitable for the data, you can return an empty string for the schema and chart type and give reasoning to explain why.` Its input template:
-```jinja
-### INPUT ###
-Original Question: {{ query }}
-Original SQL: {{ sql }}
-Original Vega-Lite Schema: {{ chart_schema }}
-Sample Data: {{ sample_data }}
-Sample Column Values: {{ sample_column_values }}
-Language: {{ language }}
-
-Adjustment Options:
-- Chart Type: {{ adjustment_option.chart_type }}
-{% if adjustment_option.chart_type != "pie" %}{% if adjustment_option.x_axis %}- X Axis: {{ adjustment_option.x_axis }}{% endif %}
-{% if adjustment_option.y_axis %}- Y Axis: {{ adjustment_option.y_axis }}{% endif %}{% endif %}
-{% if adjustment_option.x_offset and adjustment_option.chart_type == "grouped_bar" %}- X Offset: {{ adjustment_option.x_offset }}{% endif %}
-{% if adjustment_option.color and adjustment_option.chart_type != "area" %}- Color: {{ adjustment_option.color }}{% endif %}
-{% if adjustment_option.theta and adjustment_option.chart_type == "pie" %}- Theta: {{ adjustment_option.theta }}{% endif %}
-```
-**Port:** a chart block can carry an "adjust" affordance (type / x / y / color / offset / theta pickers) that calls this one pipeline. No new agent turn is needed.
-
-### 4c. SQL → natural-language answer (`pipelines/generation/sql_answer.py`)
-```text
-### TASK
-You are a data analyst that great at answering non-technical user's questions based on the data, sql so that even non technical users can easily understand.
-Please answer the user's question in concise and clear manner in Markdown format.
-
-### INSTRUCTIONS
-1. Read the user's question and understand the user's intention.
-2. Read the sql and understand the data.
-3. Make sure the answer is aimed for non-technical users, so don't mention any technical terms such as SQL syntax.
-4. Generate a concise and clear answer in string format to answerthe user's question based on the data and sql.
-5. If answer is in list format, only list top few examples, and tell users there are more results omitted.
-6. Answer must be in the same language user specified.
-7. Do not include ```markdown or ``` in the answer.
-8. If the user provides a custom instruction, it should be followed strictly and you should use it to change the style of response.
-```
-Its inputs are `User's question`, `SQL`, `Data: columns / rows`, `Language`, `Current Time` and `Custom Instruction`. The answer is streamed.
-
-### 4d. Follow-ups and question recommendation (`pipelines/generation/question_recommendation.py`)
-Output is `{"questions":[{"question": "...", "category": "..."}]}`. Verbatim guidelines (excerpt):
-```text
-2. **Incorporate Diverse Analysis Techniques:**
-   - Use a mix of the following analysis techniques for each category:
-     - **Drill-down:** Delve into detailed levels of data.
-     - **Roll-up:** Aggregate data to higher levels.
-     - **Slice and Dice:** Analyze data from different perspectives.
-     - **Trend Analysis:** Identify patterns or changes over time.
-     - **Comparative Analysis:** Compare segments, groups, or time periods.
-3. **If a User Question is Provided:**
-   - Generate questions that are closely related to the user's previous question, ensuring that the new questions build upon or provide deeper insights into the original query.
-5. **General Guidelines for All Questions:**
-   - Ensure questions can be answered using the data model.
-   - Mix simple and complex questions.
-   - Avoid open-ended questions - each should have a definite answer.
-   - Incorporate time-based analysis where relevant.
-### Categories of Questions
-1. Descriptive Questions  2. Segmentation Questions  3. Comparative Questions  4. Data Quality/Accuracy Questions
-```
-**Port:** this becomes our `follow_ups` block. Validate each suggestion against the semantic layer (it must resolve to known metrics and dimensions) before rendering it.
-
-### 4e. Intent routing with rephrasing, and a status state machine for the progress block
-The `intent_classification.py` output is `{"rephrased_question", "reasoning" (≤20 words), "results": "MISLEADING_QUERY" | "TEXT_TO_SQL" | "GENERAL" | "USER_GUIDE"}`. Key rules: **Rephrase Question:** "Rewrite follow-up questions into full standalone questions using prior conversation context". **Incomplete Queries:** "references unspecified values (e.g., 'the following', 'these', 'those') without providing them, classify as `GENERAL`". **Time-related Queries:** "Don't rephrase time-related information".
-
-The ask service (`web/v1/services/ask.py`) writes a status record that the client polls or streams:
-```python
-status: Literal["understanding","searching","planning","generating","correcting","finished","failed","stopped"]
-rephrased_question, intent_reasoning, sql_generation_reasoning, type: Literal["GENERAL","TEXT_TO_SQL"],
-retrieved_tables, response: list[AskResult{sql, type: "llm"|"view", viewId}], invalid_sql,
-error: AskError{code: Literal["NO_RELEVANT_DATA","NO_RELEVANT_SQL","OTHERS"], message}, trace_id, is_followup
-```
-The correction loop runs `while retries < max_sql_correction_retries` and breaks on `TIME_OUT`. It runs `sql_diagnosis`, an LLM explanation of the error in 50 words or fewer, mapped back to the original SQL, and then `sql_correction` on `{sql, error: diagnosis_reasoning}`.
-
-The `sql_generation_reasoning` system prompt produces a user-visible numbered plan. That is a candidate `plan` block:
-```text
-10. Each step in the reasoning plan must start with a number, a title(in bold format in markdown), and a reasoning for the step.
-12. A table name in the reasoning plan must be in this format: `table: <table_name>`.
-13. A column name in the reasoning plan must be in this format: `column: <table_name>.<column_name>`.
-9. Don't include SQL in the reasoning plan.
-```
-
----
+- **Chart generation as a constrained spec.** The model sees a small sample of the result (a few
+  rows, a few distinct values per column) and the question, and returns a chart type, the columns
+  it maps to each channel and a reason; the spec is validated against the charting library's
+  schema, and the real rows are bound by the client, never written by the model. On a validation
+  failure the chart is simply left out.
+- **Choosing the chart type** follows common visualisation practice (a line for change over time,
+  bars to compare categories, a pie only for a few parts of one whole).
+- **Chart adjustment.** The person changes the chart (type, axes), and the chart is regenerated
+  from the same result instead of re-asking the question.
+- **The SQL answer** is written from the question, the SQL and its result rows, in the person's
+  language.
+- **Follow-up questions** grouped by the kind of exploration they make (go deeper into a cut,
+  roll up, filter to a member, look at the trend, compare).
+- **Intent routing** that also rewrites a follow-up as a standalone question, and a named status
+  sequence for the progress of a turn.
+- **SQL correction** in two passes: the model first says why a statement failed, then rewrites it
+  with that reason. (Our own form: `sqlgen/generate.diagnose_and_repair`, written independently.)
 
 ## 5. infiniflow/ragflow (now in Go; agent canvas, DeepResearcher, citations)
 
@@ -718,7 +432,7 @@ The Deep Research lead-agent prompt classifies the query before planning, into "
 **Port:** we only need the *plan* to be a small DSL like this one: node = `{id, kind, params, depends_on, on_error: retry|skip|goto|default}`. The per-node `exception_*` fields are a good shape for "what happens when a step fails" in a statically validated plan DAG.
 
 ### 5d. Related questions (`internal/rag/prompts/related_question.md`)
-"generate **5-10 related questions** … help **expand the search query scope** … each alternative should be **unique** but still **relevant** … ensure that each question **broadens** the search angle, **not narrows** it … If you cannot generate any relevant alternatives, do **not** return any questions." These are used for retrieval expansion. WrenAI's recommendation prompt (4d) is the better fit for user-facing follow-ups.
+"generate **5-10 related questions** … help **expand the search query scope** … each alternative should be **unique** but still **relevant** … ensure that each question **broadens** the search angle, **not narrows** it … If you cannot generate any relevant alternatives, do **not** return any questions." These are used for retrieval expansion. The idea of follow-ups grouped by kind of exploration (4d, AGPL: idea only, our own wording) fits user-facing follow-ups better.
 
 ---
 
@@ -791,7 +505,7 @@ Injected messages are counted in `_memori_injected_count` and stripped before th
 - the `"Stated at {ts}"` suffix fits our point-in-time invariant;
 - stripping injected context before persisting is a must-copy.
 
-Combine this with Data-Analysis-Agent's typed extraction prompt (1c), because Memori's extractor is closed.
+Combine this with typed, scoped extraction written by us (the idea in 1c; that repo's licence forbids commercial use), because Memori's extractor is closed.
 
 ---
 
@@ -812,16 +526,16 @@ Combine this with Data-Analysis-Agent's typed extraction prompt (1c), because Me
 
 1. **Plan representation.** Use a small typed DAG, in the style of ragflow's DSL, that is statically validated:
    - nodes are `{id, kind ∈ {semantic_query, sql, python, chart, retrieve, ask_user}, params, depends_on, on_error}`;
-   - which kinds are legal follows DAA-style stage rules, e.g. no `chart` without an upstream data node.
+   - which kinds are legal follows stage rules (an idea in 1b, written by us), e.g. no `chart` without an upstream data node.
 2. **Executor loop.** Use RD-Agent's step loop: `propose/plan → execute → feedback → record`.
    - Exceptions become feedback with `decision=false`.
    - Parallel branches run under a semaphore (gpt-researcher), and a level where every branch failed stops the loop.
    - Revise loops are bounded and force-accept at the ceiling, with a trust downgrade (gpt-researcher).
 3. **Reflection contracts.** Use ragflow's `{is_sufficient, reasoning, missing_information}` after every data or retrieval step, and RD-Agent's `{observations, hypothesis_evaluation, decision, new_hypothesis}` for diagnostic "why" questions. The replanner reads the rendered trace (the RD-Agent template).
 4. **Answer assembly.** Pick a block type per renderer:
-   - `markdown`/`insight` use WrenAI's sql_answer rules plus `[ID:n]` citations (ragflow) over query runs and chunks;
-   - `chart` uses WrenAI's typed Vega-Lite (Pydantic union → json_schema response_format → jsonschema validation → data stripped and bound client-side by `data_ref`), with chart adjustment as a block-level action;
-   - `follow_ups` uses WrenAI's recommendation prompt, validated against the semantic layer;
-   - `plan`/`progress` use WrenAI's status enum plus the numbered reasoning plan.
-5. **Gates before publish.** Run DAA's numeric provenance audit first, which is deterministic, then an LLM fact-checker (gpt-researcher) only if needed.
-6. **Memory.** Use Memori's SQL schema (entity/process/conversation summary, `uniq` dedup, `num_times`/`date_last_time`, mention provenance, hybrid recall with threshold, injected-context stripping) together with DAA's typed extraction and consolidation prompts (user/feedback/project/reference, scope rules, "no raw query values", daily consolidation). Metric definitions the user states become *proposals* to the semantic layer, not silent memory.
+   - `markdown`/`insight` follow our own answer rules (the idea of 4c) plus `[ID:n]` citations (ragflow) over query runs and chunks;
+   - `chart` is a typed chart spec of our own, validated, with the data bound by the server or client, never written by the model (the idea of 4a), with chart adjustment as a block-level action;
+   - `follow_ups` are written by our own prompt (the idea of 4d), validated against the semantic layer;
+   - `plan`/`progress` use a status sequence of our own plus the numbered reasoning plan.
+5. **Gates before publish.** Run a numeric provenance check first (the idea of 1a, our own code), which is deterministic, then an LLM fact-checker (gpt-researcher) only if needed.
+6. **Memory.** Use Memori's SQL schema (entity/process/conversation summary, `uniq` dedup, `num_times`/`date_last_time`, mention provenance, hybrid recall with threshold, injected-context stripping) together with typed extraction and consolidation of our own (the ideas of 1c: kinds, scope, no raw query values, periodic merging). Metric definitions the user states become *proposals* to the semantic layer, not silent memory.

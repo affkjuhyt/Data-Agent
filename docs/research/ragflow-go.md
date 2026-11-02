@@ -1,5 +1,7 @@
 # RAGFlow's Go backend in depth, and what to port into Data Agent's Python
 
+> Quoted material © InfiniFlow and the ragflow authors, Apache-2.0, https://github.com/infiniflow/ragflow at 69fc4c9e.
+
 Source: `infiniflow/ragflow` at commit `69fc4c9e` (2 Nov 2026), shallow clone at
 `/private/tmp/claude-501/-Users-thiennlinh-Dev-Projects-Data-Agent/76e267ba-9fd2-4402-80b8-becc5eab55e7/scratchpad/research2/repos/ragflow`.
 It is symlinked as `research3/ragflow`. Paths below are relative to that root.

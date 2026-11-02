@@ -1,5 +1,7 @@
 # Airbyte, read deeply: protocol, CDK, low-code YAML, registry, destinations, PyAirbyte, and what Data Agent should take
 
+> Licences: the Airbyte CDK and protocol are MIT (quoted with © Airbyte, Inc.); connectors and PyAirbyte are ELv2 and are described, not quoted. https://github.com/airbytehq/airbyte, airbyte-python-cdk, airbyte-protocol at the commits named below.
+
 Research date 2026-11-03. All paths below are relative to the clones under
 `research3/airbyte/` (scratchpad). Repo contents were treated as data.
 
@@ -455,74 +457,14 @@ additionalProperties: false
 
 ### 3.3 A real one: `source-sentry` (manifest-only, `version: 6.60.12`)
 
-Excerpt, resolved (`raw/source-sentry_manifest.yaml`):
-
-```yaml
-check: {type: CheckStream, stream_names: [project_detail]}
-definitions:
-  project_partition_router:
-    type: ListPartitionRouter
-    values: "{{ ([config['project']] if config['project'] is string else config['project']) | unique | list }}"
-    cursor_field: project
-  base_requester:
-    type: HttpRequester
-    url_base: https://{{ config['hostname'] }}/api/0/
-    authenticator: {type: BearerAuthenticator, api_token: '{{ config["auth_token"] }}'}
-    error_handler:
-      type: DefaultErrorHandler
-      response_filters:
-        - {type: HttpResponseFilter, action: FAIL, http_codes: [404], error_message: "Sentry organization or project is mis…"}
-  streams:
-    events:
-      type: DeclarativeStream
-      retriever:
-        type: SimpleRetriever
-        requester: {$ref: '#/definitions/base_requester', path: "projects/{{ config['organization'] }}/{{ stream_partition['project'] }}/events/"}
-        paginator:
-          type: DefaultPaginator
-          page_token_option: {type: RequestOption, field_name: cursor, inject_into: request_parameter}
-          pagination_strategy:
-            type: CursorPagination
-            cursor_value: '{{ headers["link"].get("next", {}).get("cursor", {}) }}'
-            stop_condition: '{{ headers["link"]["next"]["results"] == "false" }}'
-        record_selector: {type: RecordSelector, extractor: {type: DpathExtractor, field_path: []}}
-        partition_router: {$ref: '#/definitions/project_partition_router'}
-      primary_key: [id]
-      incremental_sync:
-        type: DatetimeBasedCursor
-        cursor_field: dateCreated
-        start_time_option: {field_name: start, inject_into: request_parameter}
-        end_time_option: {field_name: end, inject_into: request_parameter}
-        start_datetime: {type: MinMaxDatetime, datetime: "{{ config.get('start_date') or '1900-01-01T00:00:00Z' }}", datetime_format: '%Y-%m-%dT%H:%M:%SZ'}
-        end_datetime: {type: MinMaxDatetime, datetime: "{{ format_datetime(now_utc(), '%Y-%m-%dT%H:%M:%S.%fZ') }}", datetime_format: '%Y-%m-%dT%H:%M:%S.%fZ'}
-        datetime_format: '%Y-%m-%dT%H:%M:%S.%fZ'
-    issues:   # same requester; is_data_feed: true on lastSeen
-    all_projects_detail:
-      retriever:
-        partition_router:
-          type: SubstreamPartitionRouter
-          parent_stream_configs:
-            - {type: ParentStreamConfig, parent_key: slug, partition_field: project_slug, stream: {$ref: '#/definitions/streams/projects'}}
-spec:
-  type: Spec
-  connection_specification:
-    required: [auth_token, organization, project]
-    properties:
-      auth_token: {type: string, airbyte_secret: true, order: 0, title: Authentication Tokens}
-      num_workers: {type: integer, minimum: 1, maximum: 20, default: 5}
-  config_normalization_rules:
-    type: ConfigNormalizationRules
-    config_migrations:
-      - type: ConfigMigration
-        transformations:
-          - type: ConfigAddFields
-            fields: [{type: AddedFieldDefinition, path: [project], value: "{{ [config['project']] }}"}]
-            condition: "{{ config.get('project') is string }}"
-concurrency_level: {type: ConcurrencyLevel, default_concurrency: "{{ config.get('num_workers', 5) }}", max_concurrency: 20}
-metadata:
-  testedStreams:
-    events: {hasRecords: false, streamHash: dbb6fab7…, hasResponse: true, primaryKeysAreUnique: true, primaryKeysArePresent: true, responsesAreSuccessful: true}
-```
+`source-sentry` is a certified, manifest-only connector under ELv2, so its YAML is not reproduced
+here (read it upstream:
+https://github.com/airbytehq/airbyte/tree/master/airbyte-integrations/connectors/source-sentry).
+What it shows, in outline: a `spec` for the connection settings, shared authenticator and
+requester definitions reused by every stream through `$ref`s, a record selector, a paginator, a
+datetime-cursor incremental sync on the streams that support it, and a `metadata.testedStreams`
+block holding the Builder's test-read evidence. The schema-valid
+example in §3.4 shows the same constructs, written for this report.
 
 The `metadata.testedStreams` block is the Builder's evidence. Each stream was test-read, the PKs were
 present and unique, and the responses succeeded. A `streamHash` ties that evidence to the exact stream
@@ -708,33 +650,12 @@ their lines.
 
 ## 4. Connector metadata, registry, support levels
 
-Every connector directory has a `metadata.yaml` (`metadataSpecVersion: "1.0"`). Real example,
-`source-pokeapi`:
-
-```yaml
-data:
-  allowedHosts: {hosts: ["*"]}
-  registryOverrides: {oss: {enabled: true}, cloud: {enabled: true}}
-  releases:
-    rolloutConfiguration: {enableProgressiveRollout: true, defaultRolloutMode: autopilot,
-                           autopilotConfig: {autoStart: true, autoPromoteStages: true, strategy: fast}}
-  remoteRegistries: {pypi: {enabled: false, packageName: airbyte-source-pokeapi}}
-  connectorBuildOptions:
-    baseImage: docker.io/airbyte/source-declarative-manifest:7.39.1@sha256:dc2fc3c3…
-  connectorSubtype: api            # api | database | file | …
-  connectorType: source
-  definitionId: 6371b14b-bc68-4236-bfbd-468e8df8e968
-  dockerImageTag: 0.3.77
-  dockerRepository: airbyte/source-pokeapi
-  license: ELv2
-  name: PokeAPI
-  releaseStage: alpha              # alpha | beta | generally_available | custom
-  supportLevel: community          # community | certified | archived
-  tags: [cdk:low-code, language:manifest-only]
-  connectorTestSuitesOptions: [{suite: liveTests, …}, {suite: acceptanceTests, testSecrets: [{name: …, secretStore: {type: GSM}}]}]
-  externalDocumentationUrls: [{title: PokéAPI documentation, url: https://pokeapi.co/docs/v2, type: api_reference}]
-metadataSpecVersion: "1.0"
-```
+Every connector directory has a `metadata.yaml` (`metadataSpecVersion: "1.0"`). For a
+manifest-only connector such as `source-pokeapi` it names the connector's id and image, its
+release stage and support level, its licence (ELv2 for almost all), the registries it is published
+to (OSS, Cloud, PyPI on or off), its tags (language, CDK) and its documentation URL. Upstream:
+https://github.com/airbytehq/airbyte/blob/master/airbyte-integrations/connectors/source-pokeapi/metadata.yaml
+(ELv2: read there, not copied here).
 
 `source-postgres` adds `allowedHosts: [${host}, ${tunnel_method.tunnel_host}]` (an egress allowlist
 interpolated from config), `ab_internal: {ql: 400, sl: 300}` (internal quality and support scores),
@@ -957,7 +878,7 @@ semantics: it reads with the connector's credentials. We can do better with an `
 - Its other executors install pip packages or pull Docker images **at run time** from the public
   internet. That clashes with an air-gapped enterprise k8s deploy, image pinning, and the "Ansible is
   the only deploy path" rule.
-- The **connector manifests are themselves mostly ELv2** (549/592). Vendoring a chosen few is a
+- The **connector manifests are themselves mostly ELv2** (553/592). Vendoring a chosen few is a
   licensing decision, not a technical one. The low-risk path is to write our own manifests for the
   APIs customers need (the Builder format makes that a day's work each) and use Airbyte's as reading
   material.
