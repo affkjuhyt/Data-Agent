@@ -4,9 +4,7 @@ Clone: `research/DataAgent` (depth 1, fetched 2026-11-02). All paths below are r
 `research/DataAgent/data-agent-management/src/main/` unless they start with `data-agent-frontend-nuxt/` or `docs/`.
 Java package root: `java/com/alibaba/cloud/ai/dataagent/` (abbreviated `DA/`).
 
-Web sources: `https://dataagent.top/presentations` is not DataAgent product docs: it is a JS-only SPA titled
-"KDD Cup 2026: Data Agents for Complex Data Analysis", with nothing readable server-side. The DataWorks page
-(help.aliyun.com "new-data-agent") is Alibaba's commercial sibling. Its design intent: intent → plan → to-do
+Web source: the DataWorks page (help.aliyun.com "new-data-agent") is Alibaba's commercial sibling. Its design intent: intent → plan → to-do
 list with live step status → security check → human confirmation → reuse (save a successful flow as a Skill).
 It asks for clarification rather than assuming. Approval modes run from Default (confirm edits) through Auto
 (confirm only high-risk) to Full access. It pauses on plan approval, destructive or expensive actions and
