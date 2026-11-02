@@ -39,7 +39,7 @@ from services.worker_agent.agentic import prompts, verify
 from services.worker_agent.agentic.graph import END, StateGraph
 from services.worker_agent.agentic.grounded import unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, ToolContext, ToolResult
-from services.worker_agent.agentic.workspace import TRUST_LABEL, Workspace
+from services.worker_agent.agentic.workspace import TRUST_LABEL, Workspace, number
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
 from services.worker_agent.llm import Gateway, ModelUnavailable
@@ -669,29 +669,86 @@ def _append_caveats(s: State) -> None:
 # ---------------------------------------------------------------- persist
 
 
+# Figures kept from a table or chart when the answer has no KPI: the receipt and the eval read
+# them; the rest stays in the query run.
+MAX_SHOWN_FIGURES = 50
+
+
+def _figure(
+    key: str,
+    label: str,
+    value: float | None,
+    unit: str | None,
+    trust_label: str | None,
+    runs: list[str],
+    dimensions: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "value": None if value is None else format(value, "f"),
+        "unit": unit,
+        "decimals": verify._decimals(value) if value is not None else 0,
+        "dimensions": dimensions,
+        "trust": trust_label,
+        "display_state": "shown",
+        "query_run_id": runs[0] if runs else None,
+        "source": {"query_run_id": runs[0] if runs else None},
+    }
+
+
 def _figures(s: State) -> list[dict[str, Any]]:
-    """The answer's figures, from its KPI blocks: each traced to its query runs (the receipt and
-    the trust label read them)."""
+    """The answer's figures, each traced to its query runs (the receipt, the trust label and the
+    eval read them): its KPIs; without one, the measure of the first table or chart it shows, row
+    by row in the order shown, with the row's other cells as the figure's dimensions."""
     out = []
     for blk in s.composition:
         if blk["type"] != "kpi":
             continue
         for i, it in enumerate(blk["items"]):
-            runs = it.get("query_run_ids") or []
             out.append(
-                {
-                    "key": f"{blk['id']}-{i}",
-                    "label": it["label"],
-                    "value": None if it.get("value") is None else format(it["value"], "f"),
-                    "unit": it.get("unit"),
-                    "decimals": verify._decimals(it["value"]) if it.get("value") is not None else 0,
-                    "dimensions": {},
-                    "trust": it.get("trust_label"),
-                    "display_state": "shown",
-                    "query_run_id": runs[0] if runs else None,
-                    "source": {"query_run_id": runs[0] if runs else None},
-                }
+                _figure(
+                    f"{blk['id']}-{i}",
+                    it["label"],
+                    it.get("value"),
+                    it.get("unit"),
+                    it.get("trust_label"),
+                    it.get("query_run_ids") or [],
+                    {},
+                )
             )
+    if out:
+        return out
+    for blk in s.composition:
+        if blk["type"] == "chart":
+            spec = blk["spec"]
+            rows, measure = spec["data"], spec["y_keys"][0]
+        elif blk["type"] == "table":
+            rows = blk["rows"]
+            numeric = [
+                c
+                for c in blk["columns"]
+                if rows and all(number(r.get(c)) is not None for r in rows if r.get(c) is not None)
+            ]
+            if not numeric:
+                continue
+            # The aggregate is written last (a year or a code may be a number too).
+            measure = numeric[-1]
+        else:
+            continue
+        for i, row in enumerate(rows[:MAX_SHOWN_FIGURES]):
+            out.append(
+                _figure(
+                    f"{blk['id']}-{i}",
+                    measure,
+                    number(row.get(measure)),
+                    blk.get("unit"),
+                    blk.get("trust_label"),
+                    blk.get("query_run_ids") or [],
+                    {k: v for k, v in row.items() if k != measure},
+                )
+            )
+        return out
     return out
 
 
@@ -731,6 +788,7 @@ async def persist(s: State) -> None:
                 "tool": ds.tool,
                 "trust": ds.trust,
                 "query_run_ids": ds.query_run_ids,
+                "metric": (ds.reading or {}).get("metric"),
             }
             for ds in ctx.ws.datasets.values()
         },

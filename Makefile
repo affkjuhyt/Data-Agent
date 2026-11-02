@@ -244,6 +244,7 @@ eval-retrieval:  ## recall@k, MRR and not-found accuracy of document retrieval (
 # the worker pod (worker_agent/sqlgen/ablation.py). Reads as ABLATION_AS; writes only query runs.
 ABLATION_ORG ?=
 ABLATION_SPACE ?= DS-AW
+AGENT_EVAL_SPACE ?= DS-AW
 ABLATION_AS ?=
 ABLATION_SET ?= Câu hỏi AdventureWorks
 ABLATION_ARGS ?=
@@ -253,6 +254,11 @@ sqlgen-ablation:  ## SQL expert ablation on ABLATION_SET (ABLATION_ORG, ABLATION
 	@kubectl -n dataagent-service exec -i deploy/worker-agent -- \
 		python -m services.worker_agent.sqlgen.ablation --org "$(ABLATION_ORG)" \
 		--space "$(ABLATION_SPACE)" --as "$(ABLATION_AS)" --set "$(ABLATION_SET)" $(ABLATION_ARGS)
+
+agent-eval:  ## the dynamic agent on a Data Space's eval set (AGENT_EVAL_ORG, AGENT_EVAL_AS; AGENT_EVAL_ARGS)
+	@kubectl -n dataagent-service exec -i deploy/worker-agent -c worker-agent -- \
+		python -m services.worker_agent.agentic.evaluate --org "$(AGENT_EVAL_ORG)" \
+		--space "$(AGENT_EVAL_SPACE)" --as "$(AGENT_EVAL_AS)" $(AGENT_EVAL_ARGS)
 
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
