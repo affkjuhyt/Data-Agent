@@ -32,7 +32,7 @@ import logging
 import os
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -45,7 +45,7 @@ from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
-from services.worker_agent import suggestions, turn_trace
+from services.worker_agent import explore, suggestions, turn_trace
 from services.worker_agent.analyst_plan import build_analysis_plan
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.comparison import (
@@ -236,6 +236,14 @@ class Prepared:
     best_effort_note: str | None = None
     # The next questions the answer offers, each read back and compiled (suggestions.py).
     follow_ups: list[str] = field(default_factory=list)
+    # What the turn needs to look again when the asked period has no data (explore.py): the
+    # compiled request, how to compile it again for the source, and for a probe along time.
+    request: c.Request | None = None
+    recompile: Callable[[c.Request], c.Compiled] | None = None
+    probe_compile: Callable[[c.Request], c.Compiled] | None = None
+    time_code: str | None = None
+    # Said first in the answer: the period asked had no data and which one is shown (explore.py).
+    lead_note: str | None = None
 
 
 def _plan_ir(
@@ -891,6 +899,12 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
                 ]
             },
         )
+        # Look where the data is before refusing: the nearest period that has a figure.
+        explored = await _explore_period(question_id, prepared)
+        if explored is not None:
+            prepared, outcome = explored
+            await _answer(event, question_id, prepared, outcome)
+            return
         await _refuse(
             event,
             question_id,
@@ -900,6 +914,114 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
         )
         return
     await _answer(event, question_id, prepared, outcome)
+
+
+def _probe_time_code(layer: SpaceLayer, version: c.MetricVersion) -> str | None:
+    """The time dimension a probe cuts along: the metric's own, else one it allows, else any."""
+    times = [d for d in layer.vocabulary.dimensions if d.is_time]
+    for d in times:
+        if version.time_dimension_id is not None and d.dimension_id == version.time_dimension_id:
+            return d.code
+    for d in times:
+        if d.dimension_id in version.allowed_dimension_ids:
+            return d.code
+    return times[0].code if times else None
+
+
+async def _explore_period(question_id: uuid.UUID, p: Prepared) -> tuple[Prepared, Any] | None:
+    """The asked period had no data: find the periods that do, answer for the nearest (explore.py).
+    None when there is nothing to look at, or nothing found; the caller then refuses as before."""
+    request = p.request
+    if (
+        request is None
+        or request.period is None
+        or p.period_close_id is not None
+        or p.probe_compile is None
+        or p.recompile is None
+        or p.time_code is None
+    ):
+        return None
+    asked = request.period
+    grain = explore.grain_of(asked)
+    source_name = p.source.name
+    async with turn_trace.stepping(
+        "explore", target=period_label(asked), chips=[{"kind": "metric", "label": p.metric_name}]
+    ) as step:
+        try:
+            probe_sql = p.probe_compile(
+                replace(request, group_by=[p.time_code], period=None, grain=grain, top_n=None)
+            )
+        except (c.CompileError, SqlRejected):
+            step.status, step.summary = "skipped", "Không dò được chiều thời gian của chỉ số."
+            return None
+        probe = await run_query(
+            org_id=p.org_id,
+            data_space_id=p.space_id,
+            principal_id=p.user_id,
+            caller_kind="question",
+            caller_id=question_id,
+            source=p.source,
+            sql=probe_sql.sql,
+            secrets=secrets(),
+            metric_version_ids=[p.compiled.metric_version_id],
+            as_of=p.as_of,
+        )
+        found = explore.periods_with_data(probe.rows) if probe.ok else []
+        start = explore.nearest(found, asked)
+        step.detail = {
+            "asked": period_label(asked),
+            "grain": grain,
+            "available": [period_label(explore.bucket(f, grain)) for f in found][-12:],
+            "chosen": period_label(explore.bucket(start, grain)) if start else None,
+            "query_run_id": str(probe.query_run_id),
+        }
+        if start is None:
+            step.status = "failed"
+            step.summary = "Chỉ số không có dữ liệu ở kỳ nào với các điều kiện này."
+            return None
+    chosen = explore.bucket(start, grain)
+    again = replace(request, period=chosen)
+    try:
+        compiled = p.recompile(again)
+    except (c.CompileError, SqlRejected):
+        return None
+    u = p.understanding
+    if u.period is not None:
+        u.period = replace(u.period, start=chosen.start, end=chosen.end, label=period_label(chosen))
+    note = explore.note(asked, chosen, found, grain)
+    redone = replace(
+        p,
+        compiled=compiled,
+        request=again,
+        lead_note=note,
+    )
+    async with turn_trace.stepping(
+        "query",
+        target=f"{source_name} cho: {p.metric_name} · {period_label(chosen)}",
+        chips=[{"kind": "source", "label": source_name}],
+    ) as step:
+        outcome = await run_query(
+            org_id=p.org_id,
+            data_space_id=p.space_id,
+            principal_id=p.user_id,
+            caller_kind="question",
+            caller_id=question_id,
+            source=p.source,
+            sql=compiled.sql,
+            secrets=secrets(),
+            metric_version_ids=[compiled.metric_version_id],
+            as_of=p.as_of,
+        )
+        step.detail = {
+            "row_count": len(outcome.rows or []),
+            "truncated": bool(outcome.truncated),
+            "query_run_id": str(outcome.query_run_id),
+            "columns": list(compiled.columns),
+        }
+        if not outcome.ok or not outcome.rows or _no_value(compiled.columns, outcome.rows):
+            step.status, step.summary = "failed", "Kỳ thay thế cũng không cho số."
+            return None
+    return redone, outcome
 
 
 async def _cancel(event: Event, question_id: uuid.UUID, prepared: Prepared) -> None:
@@ -1551,6 +1673,18 @@ async def _understand_and_plan(
                     u, layer, today=today, grain=grain, compared=compare_to is not None
                 ),
                 best_effort_note=best_effort_note,
+                request=compile_request,
+                recompile=lambda request,
+                _layer=layer,
+                _to=compare_to,
+                _shown=shown,
+                _d=dialect_for_source(source.kind): _compiled(request, _layer, _to, _d, _shown),
+                probe_compile=lambda request,
+                _layer=layer,
+                _d=dialect_for_source(source.kind): c.compile_metric(
+                    request, _layer.layer, dialect=_d
+                ),
+                time_code=_probe_time_code(layer, layer.versions[u.metric.metric_id]),
             )
 
     if u.decision == "clarify":
@@ -2034,9 +2168,10 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             "sentences_dropped": 0,
             "untraceable_final": 0,
         }
-        if p.best_effort_note:
-            # What the answer left out and says so; drawn again among its caveats.
-            check["notes"] = [p.best_effort_note]
+        notes = [n for n in (p.lead_note, p.best_effort_note) if n]
+        if notes:
+            # What the answer left out or changed and says so; drawn again among its caveats.
+            check["notes"] = notes
         model = gateway()
         async with turn_trace.stepping("write_answer") as written_step:
             written_step.detail = {"by": "template"}
@@ -2105,6 +2240,8 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             if filed_items
             else None
         )
+        if p.lead_note:
+            text = f"{p.lead_note} {text}"
         number_check = verify("data", check, figures=stored_figures, reconcile_badge=badge)
         checks = number_check.get("verification", {}).get("checks", [])
         await turn_trace.record_step(

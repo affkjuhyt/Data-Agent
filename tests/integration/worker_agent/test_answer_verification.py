@@ -64,11 +64,28 @@ async def test_a_refusal_keeps_its_code_and_what_to_do_about_it(
     )
 
 
-async def test_a_period_with_no_data_is_refused_not_answered_as_missing(
+async def test_a_period_with_no_data_is_never_answered_as_missing(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # R0-13 defect 11: SUM over no row still returns one row, its value NULL; that is no data for
-    # the period, refused with its code, not an answer saying "CHƯA CÓ".
+    # the period, never an answer saying "CHƯA CÓ". The agent looks where the data is and answers
+    # for the nearest period that has it, saying so first (explore.py)…
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank, metrics=("DU_NO",))
+    q = bank.ask("Dư nợ tháng 1/2015")
+    await drain()
+    status, kind, text, _, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    assert text.startswith("Không có dữ liệu cho tháng 1/2015;") and "CHƯA CÓ" not in text
+
+
+async def test_no_data_in_any_period_is_refused_with_its_code(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # …and when no period has data either, it is refused with its code, as before.
+    from services.worker_agent import explore
+
+    monkeypatch.setattr(explore, "nearest", lambda found, asked: None)
     bank = build(seed, warehouse, monkeypatch)
     activate(bank, metrics=("DU_NO",))
     q = bank.ask("Dư nợ tháng 1/2015")

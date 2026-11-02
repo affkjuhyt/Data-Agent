@@ -124,6 +124,16 @@ function Body({ step }: { step: TurnStep }) {
           ))}
         </ul>
       );
+    case 'explore':
+      return (
+        <Pairs
+          rows={[
+            ['Kỳ được hỏi', str(d.asked)],
+            ['Kỳ có dữ liệu', list(d.available).map(str).join(' · ') || 'không có'],
+            ['Kỳ trả lời', d.chosen ? str(d.chosen) : ''],
+          ]}
+        />
+      );
     case 'visualize':
       return <Pairs rows={[['Biểu đồ', str(d.chart_type)], ['Vì', str(d.reason)]]} />;
     case 'search_documents':

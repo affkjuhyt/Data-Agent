@@ -88,6 +88,18 @@ describe('StepTimeline', () => {
     expect(within(row).getByLabelText('Lỗi')).toBeInTheDocument();
   });
 
+  it('the search for a period with data says what was asked, what exists and what is shown', () => {
+    const explored = [step({
+      stepId: 's5', action: 'explore', title: 'Tìm kỳ có dữ liệu', target: 'năm 2026',
+      detail: { asked: 'năm 2026', grain: 'year', available: ['năm 2013', 'năm 2014'], chosen: 'năm 2014', query_run_id: 'run-1' },
+    })];
+    render(<StepTimeline steps={explored} running={false} durationMs={100} recorded />);
+    fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xem chi tiết: Tìm kỳ có dữ liệu' }));
+    expect(screen.getByText('năm 2013 · năm 2014')).toBeInTheDocument();
+    expect(screen.getByText('năm 2014', { selector: 'dd' })).toBeInTheDocument();
+  });
+
   it('a turn recorded before steps were kept says so', () => {
     render(<StepTimeline steps={[]} running={false} recorded={false} />);
     expect(screen.getByText('Lượt này chưa ghi chi tiết các bước.')).toBeInTheDocument();

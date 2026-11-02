@@ -431,6 +431,37 @@ async def test_ac_01_01_01_a_ratio_by_region_in_scope_with_a_sealed_receipt(
     assert steps[2][2]["_view"]["title"] == "Truy vấn"
 
 
+async def test_a_period_with_no_data_is_answered_for_the_nearest_one_that_has_it(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # July has no loans in the warehouse: the agent looks where the data is (August and
+    # September), answers for the nearest month after, and says so.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    q = bank.ask("Tỷ lệ nợ xấu theo vùng tháng 7/2026")
+    await drain()
+    status, kind, text, figures, _, answer = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    assert text.startswith(
+        "Không có dữ liệu cho tháng 7/2026; dữ liệu có từ tháng 8/2026 đến tháng 9/2026."
+    )
+    assert "Dưới đây là số của tháng 8/2026." in text
+    assert figures and all(f["trust"] == "Theo chỉ số chuẩn" for f in figures)
+    steps = seed.all(
+        "SELECT s.name, s.status, s.output FROM agent.agent_step s JOIN agent.agent_run r"
+        " ON r.id = s.run_id WHERE r.trigger_ref = %s AND s.name <> 'model_call' ORDER BY s.seq",
+        f"question:{q}",
+    )
+    names = [name for name, _, _ in steps]
+    assert names[:5] == ["understand", "choose_metric", "query", "validate", "explore"]
+    assert steps[3][1] == "error" and names[5] == "query"
+    explored = steps[4][2]["detail"]
+    assert explored["asked"] == "tháng 7/2026" and explored["chosen"] == "tháng 8/2026"
+    assert explored["available"] == ["tháng 8/2026", "tháng 9/2026"]
+    caveats = seed.one("SELECT number_check->'notes' FROM qa.answer WHERE id = %s", answer)
+    assert caveats and caveats[0].startswith("Không có dữ liệu cho tháng 7/2026")
+
+
 async def test_a_source_that_cannot_be_reached_fails_the_query_step(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
