@@ -1300,7 +1300,9 @@ async def get_tile_snapshot(
                 ),
             )
         )
-        return _snapshot_view(snap, version=int(older or 0) + 1, latest_id=tile.latest_snapshot_id)
+        return _snapshot_view(
+            snap, version=int(older or 0) + 1, latest_id=tile.latest_snapshot_id
+        )
 
 
 @router.get(

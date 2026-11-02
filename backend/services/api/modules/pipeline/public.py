@@ -167,7 +167,7 @@ async def create_published_product(
         if self_approved:
             await record_self_approval(
                 principal,
-                step="data_product.publish",
+                step="data_product.owner",
                 object_kind="data_product",
                 object_id=product.id,
             )

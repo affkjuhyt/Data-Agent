@@ -80,3 +80,37 @@ async def test_record_writes_one_audit_row(monkeypatch):
             },
         )
     ]
+
+
+async def test_a_client_acting_for_the_user_never_self_approves():
+    from types import SimpleNamespace
+
+    from services.api.kernel.auth import Identity, current_principal
+
+    class Resolver:
+        async def resolve(self, *, org_id, external_id, data_space):
+            return Identity(user_id=uuid.uuid4(), capabilities=frozenset(), self_approval=True)
+
+    class Verifier:
+        def __init__(self, claims):
+            self._claims = claims
+
+        def claims(self, token):
+            return self._claims
+
+    async def principal_for(claims):
+        request = SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(token_verifier=Verifier(claims), identity_resolver=Resolver())
+            ),
+            headers={},
+            state=SimpleNamespace(),
+        )
+        credentials = SimpleNamespace(scheme="Bearer", credentials="t")
+        return await current_principal(request, credentials)
+
+    base = {"sub": "kc-user", "org_id": str(uuid.uuid4())}
+    assert (await principal_for(base)).self_approval is True
+    acting = await principal_for({**base, "act": {"sub": "mcp-client-1"}})
+    assert acting.client_id == "mcp-client-1"
+    assert acting.self_approval is False

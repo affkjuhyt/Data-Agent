@@ -690,6 +690,20 @@ async def test_data_product_owner_self_approved_when_the_org_allows_it(
     assert self_approvals(ds.org) == ["data_product.owner"]
 
 
+async def test_one_person_owner_and_steward_when_the_org_allows_it(
+    ds: Space, self_approvals: Any
+) -> None:
+    async with client(ds) as api:
+        both = _body(ds, owner_id=str(ds.users["owner"]), steward_id=str(ds.users["owner"]))
+        refused = await api.post("/v1/data-products", json=both, headers=ds.headers("steward"))
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["errors"][0]["field"] == "steward_id"
+        ds.seed.allow_self_approval(ds.org)
+        made = await api.post("/v1/data-products", json=both, headers=ds.headers("steward"))
+    assert made.status_code == 201, made.text
+    assert self_approvals(ds.org) == ["data_product.steward"]
+
+
 async def test_personal_data_raises_the_product_classification(ds: Space) -> None:
     ds.seed.row(
         "catalog.column_meta",

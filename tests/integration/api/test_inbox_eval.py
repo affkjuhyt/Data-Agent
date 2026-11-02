@@ -1047,7 +1047,7 @@ async def test_proposal_accept_edit_self_approved_when_the_org_allows_it(
 async def test_proposal_second_step_self_approved_when_the_org_allows_it(
     team: Team, self_approvals: Any
 ) -> None:
-    # One compliance holder proposed it and does both steps of BR-119: one row per decision.
+    # One compliance holder proposed it and does both steps of BR-119: one row per step taken.
     team.seed.allow_self_approval(team.org)
     proposal = _proposal(
         team,
@@ -1070,4 +1070,8 @@ async def test_proposal_second_step_self_approved_when_the_org_allows_it(
         )
     assert second.status_code == 200, second.text
     assert second.json()["status"] == "accepted"
-    assert self_approvals(team.org) == ["proposal.review", "proposal.second_step"]
+    assert self_approvals(team.org) == [
+        "proposal.review",
+        "proposal.review",
+        "proposal.second_step",
+    ]

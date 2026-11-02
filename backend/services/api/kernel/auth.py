@@ -171,7 +171,8 @@ async def current_principal(
         client_id=client_id,
         capabilities=identity.capabilities & CAPABILITIES,
         data_space_id=identity.data_space_id,
-        self_approval=identity.self_approval,
+        # A client acting for the user never approves (invariant 12: agents do not approve).
+        self_approval=identity.self_approval and client_id is None,
     )
     # Read back by the access log (kernel/access_log.py) once the response is known.
     request.state.principal = principal

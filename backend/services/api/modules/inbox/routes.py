@@ -599,7 +599,7 @@ async def decide_proposal(
             raise Problem(
                 409, "invalid_state", f"The proposal is {row.status} and cannot be decided."
             )
-        # One audit row per decision, named for the last step the caller took on their own work.
+        # Each step the caller takes on their own work writes its own audit row.
         self_steps: list[str] = []
         if two_people(
             principal,
@@ -739,8 +739,8 @@ async def decide_proposal(
             )
         )
         await session.flush()
-        if self_steps:
+        for step in self_steps:
             await record_self_approval(
-                principal, step=self_steps[-1], object_kind="proposal", object_id=row.id
+                principal, step=step, object_kind="proposal", object_id=row.id
             )
         return await _proposal_detail(session, row)

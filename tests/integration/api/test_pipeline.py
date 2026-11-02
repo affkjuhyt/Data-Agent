@@ -1160,7 +1160,7 @@ async def test_data_product_publish_self_approved_when_the_org_allows_it(
     assert published.status_code == 200, published.text
     assert published.json()["status"] == "published"
     assert published.json()["approved_by"] == str(pp.users["lead"])
-    assert self_approvals(pp.org) == ["data_product.publish", "data_product.publish"]
+    assert self_approvals(pp.org) == ["data_product.owner", "data_product.publish"]
 
 
 # AC-06-06-03
