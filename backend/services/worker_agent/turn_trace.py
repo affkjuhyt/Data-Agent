@@ -171,6 +171,8 @@ def _event(trace: Trace, step: Step, action: str, status: str, detail: Any) -> d
         "started_at": step.started.isoformat(),
         "duration_ms": step.duration_ms,
         "detail": detail,
+        # Why a failed or skipped step ended so: shown under it while the turn is live.
+        "summary": step.summary,
         "parent": view["parent"],
     }
 

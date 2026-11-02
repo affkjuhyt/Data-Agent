@@ -675,3 +675,28 @@ async def test_rows_of_an_unfinished_or_expired_run(world: World, seed: Seed) ->
         assert busy.status_code == 409 and busy.json()["code"] == "invalid_state"
         gone = await api.get(f"/v1/query-runs/{expired}/rows", headers=as_(world, "reviewer"))
         assert gone.status_code == 410 and gone.json()["code"] == "gone"
+
+
+async def test_only_the_asker_receives_the_steps_on_the_stream(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The steps carry the question's reading and the tables it read, as /steps does: another
+    # member following the stream gets the turn's progress, not its steps.
+    from services.api.kernel.sse import Event
+    from services.api.modules.qa import progress
+
+    async def read(question_id: str, last_id: str | None = None) -> list[Event]:
+        return [
+            Event("1-0", "activity", {"kind": "step", "step_id": "s1", "action": "understand"}),
+            Event("2-0", "done", {"status": "answered"}),
+        ]
+
+    monkeypatch.setattr(progress, "read", read)
+    async with api_for(world) as api:
+        created = await ask(api, world)
+        url = f"/v1/questions/{created['id']}/stream"
+        mine = await api.get(url, headers=as_(world, "asker"))
+        assert "event: activity" in mine.text and "event: done" in mine.text
+        other = await api.get(url, headers=as_(world, "reviewer"))
+        assert other.status_code == 200
+        assert "event: activity" not in other.text and "event: done" in other.text

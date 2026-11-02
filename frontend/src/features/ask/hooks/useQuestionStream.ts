@@ -29,6 +29,9 @@ import { applyStepEvent, stepsFromView, type TurnStep } from '../steps';
 import type { AskMessage, ClarificationReply } from '../types';
 
 const POLL_MS = 400;
+// Reading a turn's steps back after `done`: a few short tries while the worker writes them.
+const READ_BACK_MS = 300;
+const READ_BACK_TRIES = 5;
 // A turn the worker has not finished in this long is shown as failed; the question stays
 // recorded and can be opened again from the conversation.
 const GIVE_UP_MS = 5 * 60_000;
@@ -181,6 +184,27 @@ export function useQuestionStream() {
     if (mounted.current) setMessages((prev) => prev.map((m) => (m.id === id ? fn(m) : m)));
   }, []);
 
+  /** Once a turn ends, its steps as kept: the model calls the stream does not send included. The
+   *  worker writes them just after `done`, so the first reads may find no run yet. */
+  const readBack = useCallback(
+    async (assistantId: string, questionId: string, signal: AbortSignal) => {
+      for (let attempt = 0; attempt < READ_BACK_TRIES; attempt++) {
+        try {
+          await sleep(READ_BACK_MS, signal);
+          const view = await getQuestionSteps(questionId);
+          if (view.run_id && view.steps?.length) {
+            const steps = stepsFromView(view);
+            patch(assistantId, (m) => ({ ...m, steps }));
+            return;
+          }
+        } catch {
+          return;
+        }
+      }
+    },
+    [patch],
+  );
+
   const follow = useCallback(
     async (assistantId: string, questionId: string, signal: AbortSignal) => {
       const started = Date.now();
@@ -230,6 +254,7 @@ export function useQuestionStream() {
               content: m.content || 'Agent không trả lời được câu hỏi này.',
             }));
           } else if (e.event === 'done') {
+            void readBack(assistantId, questionId, signal);
             patch(assistantId, (m) => ({
               ...m,
               status: m.status === 'error' ? 'error' : 'done',
@@ -250,7 +275,7 @@ export function useQuestionStream() {
         await sleep(POLL_MS, signal);
       }
     },
-    [patch],
+    [patch, readBack],
   );
 
   const runTurn = useCallback(

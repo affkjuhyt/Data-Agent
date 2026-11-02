@@ -393,6 +393,9 @@ async def stream_question(
             if view.answer_id
             else None
         )
+        asker = await session.scalar(
+            select(qa.Conversation.user_id).where(qa.Conversation.id == question.conversation_id)
+        )
     # Redis is the live/replay path from worker-agent. The database snapshot remains the
     # fallback for a cold stream, Redis outage, or an older numeric Last-Event-ID.
     events = await progress.read(str(question_id), redis_last_id)
@@ -403,6 +406,10 @@ async def stream_question(
         events = [e for e in _stream_events(view, kind) if e.event == "understood"] + events
     elif not events:
         events = [e for e in _stream_events(view, kind) if int(e.id) > after]
+    if asker != principal.user_id:
+        # The steps carry the question's reading and the tables it read: only the asker sees
+        # them, here as at GET /v1/questions/{id}/steps.
+        events = [e for e in events if e.event != "activity"]
 
     async def produce() -> AsyncIterator[Event]:
         for item in events:

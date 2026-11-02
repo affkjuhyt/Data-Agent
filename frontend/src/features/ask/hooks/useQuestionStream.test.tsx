@@ -121,6 +121,32 @@ describe('useQuestionStream', () => {
     expect(reopened.result.current.messages[1].answerId).toBe(answerId);
   });
 
+  it('once a turn ends, its steps are read back, with the model calls the stream does not send', async () => {
+    let reads = 0;
+    server.use(
+      http.get('*/v1/questions/:id/steps', ({ params }) => {
+        reads += 1;
+        // The worker writes the trace just after `done`: the first read finds no run yet.
+        if (reads === 1) return HttpResponse.json({ question_id: String(params.id), run_id: null, status: null, duration_ms: null, tokens: 0, steps: [] });
+        const at = '2026-11-02T10:00:00Z';
+        return HttpResponse.json({
+          question_id: String(params.id), run_id: 'run-1', status: 'succeeded', duration_ms: 1800, tokens: 296,
+          steps: [
+            { step_id: 's1', seq: 1, action: 'write_answer', title: 'Viết câu trả lời', target: '', chips: [], status: 'done', started_at: at, duration_ms: 900, detail: null, summary: null, parent: null },
+            { step_id: 's2', seq: 2, action: 'model_call', title: 'Gọi mô hình responder', target: '', chips: [], status: 'done', started_at: at, duration_ms: 760, detail: { model: 'responder' }, summary: null, parent: 's1' },
+          ],
+        });
+      }),
+    );
+    setDataSpace('ds-rr');
+    const { result } = renderHook(() => useQuestionStream());
+    await act(async () => {
+      await result.current.send('Tỷ lệ nợ xấu tháng 9/2026 theo vùng');
+    });
+    await waitFor(() => expect(result.current.messages[1].steps?.[0]?.children).toHaveLength(1), { timeout: 4000 });
+    expect(result.current.messages[1].steps?.map((step) => step.action)).toEqual(['write_answer']);
+  });
+
   it('reads the steps of an ended turn back when the conversation is reopened', async () => {
     setDataSpace('ds-rr');
     const first = renderHook(() => useQuestionStream());

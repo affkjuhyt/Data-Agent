@@ -73,6 +73,15 @@ async def test_an_exception_fails_the_step_and_propagates(
     assert trace.steps[0].status == "error"
 
 
+async def test_a_failed_step_says_why_while_the_turn_is_live(
+    trace: turn_trace.Trace, published: list[dict]
+) -> None:
+    async with turn_trace.stepping("query") as s:
+        s.status, s.summary = "failed", "Nguồn Kho không trả kết quả trong thời gian cho phép."
+    assert published[0]["summary"] is None
+    assert published[-1]["summary"] == "Nguồn Kho không trả kết quả trong thời gian cho phép."
+
+
 async def test_a_model_call_nests_under_the_open_step(
     trace: turn_trace.Trace, published: list[dict]
 ) -> None:
