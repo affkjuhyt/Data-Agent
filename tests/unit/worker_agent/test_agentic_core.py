@@ -183,6 +183,7 @@ def test_the_sandbox_refuses_the_ways_round_its_checks() -> None:
         "import datetime\nm = datetime.sys",
         "import collections\nc = collections._sys",
         "import numpy as np\nnp.savetxt('x', [1])",
+        "g = (i for i in [1])\nf = g.gi_frame.f_back.f_globals",
     ):
         with pytest.raises(sandbox.CodeRejected):
             sandbox.check(code)

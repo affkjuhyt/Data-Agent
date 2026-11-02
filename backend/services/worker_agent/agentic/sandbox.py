@@ -80,6 +80,20 @@ FORBIDDEN_ATTR_PREFIXES = (
 # them, so a reader of files or the network cannot be reached by a bare name.
 WHOLE_ONLY = {"pandas", "numpy"}
 FORBIDDEN_ATTRS = {
+    # Frames and code objects lead back to the runner's globals.
+    "f_back",
+    "f_globals",
+    "f_locals",
+    "f_builtins",
+    "f_code",
+    "gi_frame",
+    "gi_code",
+    "cr_frame",
+    "cr_code",
+    "ag_frame",
+    "ag_code",
+    "tb_frame",
+    "tb_next",
     # Modules an allowed module holds as an attribute (datetime.sys, json.decoder.re → …).
     "sys",
     "os",
@@ -185,13 +199,16 @@ import builtins, io, json, sys, contextlib
 import pandas as pd, numpy as np
 ALLOWED = set(json.loads(sys.argv[1]))
 payload = json.loads(sys.stdin.read())
-real_import = builtins.__import__
-def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-    # Only the analysis code imports through this: a library's own imports use its module's
-    # builtins, not these, so nothing outside the list is ever let through here.
-    if level or name.split(".")[0] not in ALLOWED:
-        raise ImportError("import not allowed: " + name)
-    return real_import(name, globals, locals, fromlist, level)
+def make_import(allowed, real_import):
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        # Only the analysis code imports through this: a library's own imports use its
+        # module's builtins, not these, so nothing outside the list is let through here.
+        if level or name.split(".")[0] not in allowed:
+            raise ImportError("import not allowed: " + name)
+        return real_import(name, globals, locals, fromlist, level)
+    return guarded_import
+guarded_import = make_import(frozenset(ALLOWED), builtins.__import__)
+del make_import
 safe = {k: getattr(builtins, k) for k in dir(builtins) if k not in json.loads(sys.argv[2])}
 safe["__import__"] = guarded_import
 env = {"__builtins__": safe, "pd": pd, "np": np}
@@ -205,39 +222,61 @@ for name, ds in payload["datasets"].items():
 # The boundary the static check cannot be: an audit hook (which Python code cannot remove) that
 # refuses writes, reads outside the interpreter's own libraries, processes, sockets and the
 # loading of modules that reach the system, from here on.
+def install_guard():
+    # The policy lives in this closure's frozen values, never in a global the analysis code
+    # could rebind; the factory and its names are deleted before the code runs.
+    import os
+    libs = tuple(
+        os.path.realpath(p)
+        for p in sys.path
+        if p and ("site-packages" in p or os.path.realpath(p).startswith(os.path.realpath(sys.base_prefix)))
+    )
+    sep = os.sep
+    realpath, fsdecode = os.path.realpath, os.fsdecode
+    read_only = os.O_RDONLY
+    access_mode = getattr(os, "O_ACCMODE", 3)
+    write_flags = os.O_CREAT | os.O_TRUNC | os.O_APPEND | os.O_EXCL
+    denied_events = ("os.system", "os.exec", "os.spawn", "os.posix_spawn", "os.fork",
+        "os.forkpty", "os.kill", "os.remove", "os.rename", "os.rmdir", "os.mkdir", "os.chmod",
+        "os.chown", "os.link", "os.symlink", "os.truncate", "os.utime", "os.putenv",
+        "os.unsetenv", "os.chdir", "subprocess.", "socket.", "ctypes.", "shutil.", "urllib.",
+        "http.", "ftplib.", "smtplib.", "sqlite3.", "pty.", "fcntl.", "resource.", "pickle.",
+        "glob.", "tempfile.", "webbrowser.", "sys.settrace", "sys.setprofile", "code.", "mmap.",
+        "sys.addaudithook")
+    denied_modules = frozenset({"subprocess", "socket", "_socket", "ssl", "ctypes", "_ctypes",
+        "multiprocessing", "pty", "shutil", "urllib", "http", "ftplib", "smtplib", "asyncio",
+        "signal", "importlib", "pickle", "_pickle", "marshal", "mmap", "sqlite3", "tempfile",
+        "webbrowser", "pathlib"})
+
+    def inside(path):
+        real = realpath(fsdecode(path))
+        return any(real == lib or real.startswith(lib + sep) for lib in libs)
+
+    def guard(event, args):
+        if event == "open":
+            path, mode = args[0], args[1] or "r"
+            flags = args[2] if len(args) > 2 and isinstance(args[2], int) else 0
+            writing = (
+                any(m in str(mode) for m in "wax+")
+                or (flags & access_mode) != read_only
+                or flags & write_flags
+            )
+            if writing or not isinstance(path, (str, bytes)) or not inside(path):
+                raise PermissionError("sandbox: no file access")
+        elif event in ("os.listdir", "os.scandir"):
+            # importlib lists the library folders when a library imports lazily; nothing else.
+            target = args[0] if args and isinstance(args[0], (str, bytes)) else "."
+            if not inside(target):
+                raise PermissionError("sandbox: no file access")
+        elif event == "import" and str(args[0]).split(".")[0] in denied_modules:
+            raise ImportError("sandbox: import not allowed")
+        elif event.startswith(denied_events):
+            raise PermissionError("sandbox: " + event + " not allowed")
+
+    sys.addaudithook(guard)
 code_object = compile(payload["code"], "<analysis>", "exec")
-import os as _os
-LIBS = tuple(_os.path.realpath(p) for p in {sys.prefix, sys.base_prefix, *sys.path} if p)
-DENIED_EVENTS = ("os.system", "os.exec", "os.spawn", "os.posix_spawn", "os.fork", "os.forkpty",
-    "os.kill", "os.remove", "os.rename", "os.rmdir", "os.mkdir", "os.chmod", "os.chown",
-    "os.link", "os.symlink", "os.truncate", "os.utime", "os.putenv",
-    "os.unsetenv", "os.chdir", "subprocess.", "socket.", "ctypes.", "shutil.", "urllib.",
-    "http.", "ftplib.", "smtplib.", "sqlite3.", "pty.", "fcntl.", "resource.", "pickle.",
-    "glob.", "tempfile.", "webbrowser.", "sys._getframe", "sys.settrace",
-    "sys.setprofile", "code.", "mmap.")
-DENIED_MODULES = {"subprocess", "socket", "_socket", "ssl", "ctypes", "_ctypes", "multiprocessing",
-    "pty", "shutil", "urllib", "http", "ftplib", "smtplib", "asyncio", "signal", "importlib",
-    "pickle", "_pickle", "marshal", "mmap", "sqlite3", "tempfile", "webbrowser", "pathlib"}
-def guard(event, args):
-    if event == "open":
-        path, mode = args[0], args[1] or "r"
-        flags = args[2] if len(args) > 2 and isinstance(args[2], int) else 0
-        writing = any(m in str(mode) for m in "wax+") or flags & (_os.O_WRONLY | _os.O_RDWR | _os.O_CREAT)
-        if writing or not isinstance(path, (str, bytes)):
-            raise PermissionError("sandbox: no file access")
-        real = _os.path.realpath(_os.fsdecode(path))
-        if not real.startswith(LIBS):
-            raise PermissionError("sandbox: no file access")
-    elif event in ("os.listdir", "os.scandir"):
-        # importlib lists the library folders when a library imports lazily; nothing else.
-        target = args[0] if args and isinstance(args[0], (str, bytes)) else "."
-        if not _os.path.realpath(_os.fsdecode(target)).startswith(LIBS):
-            raise PermissionError("sandbox: no file access")
-    elif event == "import" and str(args[0]).split(".")[0] in DENIED_MODULES:
-        raise ImportError("sandbox: import not allowed")
-    elif event.startswith(DENIED_EVENTS):
-        raise PermissionError("sandbox: " + event + " not allowed")
-sys.addaudithook(guard)
+install_guard()
+del install_guard, safe
 out = io.StringIO()
 error = None
 try:
