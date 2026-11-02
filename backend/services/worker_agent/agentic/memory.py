@@ -98,6 +98,49 @@ _SECRET = re.compile(
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
 
+# Words that say something meant to last (a preference, a definition, a correction): a turn without
+# any is not read for memories, which saves a model call on most questions (RES-05).
+_LASTING = (
+    "toi ",
+    "minh ",
+    "chung toi",
+    "luon",
+    "tu nay",
+    "tu gio",
+    "lan sau",
+    "mac dinh",
+    "dinh nghia",
+    "nghia la",
+    "hieu la",
+    "duoc tinh",
+    "tinh bang",
+    "dung ",
+    "khong phai",
+    "y toi",
+    "toi muon",
+    "toi phu trach",
+    "toi quan tam",
+    "always",
+    "from now",
+    "by default",
+    "define",
+    "means",
+    "i mean",
+    "i am",
+    "i'm",
+    "my ",
+    "we ",
+    "don't",
+    "do not",
+    "instead",
+)
+
+
+def worth_remembering(question: str) -> bool:
+    text = f" {norm(question)} "
+    return any(f" {w}" in text for w in _LASTING)
+
+
 def content_hash(content: str) -> str:
     return hashlib.sha256(norm(content).encode()).hexdigest()
 

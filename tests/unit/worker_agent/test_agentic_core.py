@@ -532,3 +532,36 @@ def test_a_sql_that_ran_is_audited_against_the_question() -> None:
     )
     assert audit is not None and not audit.passed and "quota" in audit.reason
     assert "<sql>" in seen[0] and "29507000" in seen[0] and "Doanh thu năm 2013" in seen[0]
+
+
+def test_a_lookup_and_one_governed_query_is_a_simple_question() -> None:
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+
+    one = Workspace()
+    one.add(title="t", columns=["v"], rows=[[1]], trust="certified")
+
+    def state(*steps: dict[str, Any], ws: Workspace = one) -> engine.State:
+        return engine.State(
+            event=types.SimpleNamespace(),  # type: ignore[arg-type]
+            question_id=uuid.uuid4(),
+            model=types.SimpleNamespace(),  # type: ignore[arg-type]
+            ctx=types.SimpleNamespace(ws=ws),  # type: ignore[arg-type]
+            plan=_plan(*steps),
+        )
+
+    assert engine.simple(
+        state(
+            {"id": "s1", "tool": "search_catalog", "instruction": "a"},
+            {"id": "s2", "tool": "query_metric", "instruction": "b"},
+        )
+    )
+    assert not engine.simple(state({"id": "s1", "tool": "explore_sql", "instruction": "a"}))
+    assert not engine.simple(
+        state(
+            {"id": "s1", "tool": "query_metric", "instruction": "a"},
+            {"id": "s2", "tool": "query_metric", "instruction": "b"},
+        )
+    )

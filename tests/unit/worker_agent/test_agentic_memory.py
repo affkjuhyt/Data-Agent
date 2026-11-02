@@ -51,3 +51,12 @@ def test_recalled_memories_reach_the_planner_with_when_they_were_said() -> None:
     text = memory.render([_m("preference", "Dùng đơn vị triệu", days_ago=3, times=2)])
     assert text.startswith("<memory>") and "nói lúc 2026-10-31, 2 lần" in text
     assert memory.render([]) == ""
+
+
+def test_only_a_turn_that_says_something_lasting_is_read_for_memories() -> None:
+    assert not memory.worth_remembering("Doanh thu Internet năm 2013")
+    assert not memory.worth_remembering("Top 5 sản phẩm 2013")
+    assert memory.worth_remembering("Từ nay luôn hiển thị theo triệu")
+    assert memory.worth_remembering("Khách hàng mới nghĩa là mua lần đầu")
+    assert memory.worth_remembering("Không phải, ý tôi là doanh thu thuần")
+    assert memory.worth_remembering("From now on answer in English")

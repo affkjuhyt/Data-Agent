@@ -443,9 +443,26 @@ async def replan(s: State) -> None:
         s.clarify = Clarify(new.clarification or "Bạn có thể nói rõ hơn?", new.options[:5])
 
 
+# Tools that only look up or read one governed figure: a plan made of them alone is a simple
+# question, which needs neither the sufficiency review nor the reviewer of the draft (RES-05):
+# its numbers are checked by rule (verify.py, grounded.py) whatever the model writes.
+SIMPLE_TOOLS = frozenset({"search_catalog", "describe_metric", "search_values", "query_metric"})
+
+
+def simple(s: State) -> bool:
+    if s.plan is None or s.plan.mode != "analyze" or s.ctx is None:
+        return False
+    queried = [st for st in s.plan.steps if st.tool == "query_metric"]
+    return (
+        all(st.tool in SIMPLE_TOOLS for st in s.plan.steps)
+        and len(queried) <= 1
+        and len(s.ctx.ws.datasets) <= 1
+    )
+
+
 async def review(s: State) -> None:
     assert s.plan is not None
-    if s.reviews >= MAX_REVIEWS or not s.ctx or not s.ctx.ws.datasets:
+    if s.reviews >= MAX_REVIEWS or not s.ctx or not s.ctx.ws.datasets or simple(s):
         s.reviews = MAX_REVIEWS
         return
     s.reviews += 1
@@ -653,7 +670,7 @@ async def compose(s: State) -> None:
                     errors.append(f"{d.type}: {exc}")
             if not errors:
                 break
-        if drafts and not errors:
+        if drafts and not errors and not simple(s):
             drafts = await _reviewed(s, user, drafts)
         made = 0
         for d in drafts:
@@ -1104,6 +1121,8 @@ async def _remember(s: State) -> None:
     for their next ones (memory.py). Never in the way of the turn."""
     assert s.ctx is not None
     ctx = s.ctx
+    if not memory.worth_remembering(ctx.question):
+        return
     fetched = {
         n
         for ds in ctx.ws.datasets.values()
