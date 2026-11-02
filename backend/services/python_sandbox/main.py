@@ -26,8 +26,9 @@ from libs.code_sandbox import local
 logger = logging.getLogger("python_sandbox")
 
 PORT = int(os.environ.get("PYTHON_SANDBOX_PORT", "8140"))
-# Runs at once; a request beyond waits, as the worker's own timeout allows.
-SLOTS = BoundedSemaphore(int(os.environ.get("PYTHON_SANDBOX_CONCURRENCY", "4")))
+# One run at a time: runs of different askers never share the pod at the same moment (a child
+# could otherwise read a sibling's /proc as the same user). Scale with replicas, not with this.
+SLOTS = BoundedSemaphore(int(os.environ.get("PYTHON_SANDBOX_CONCURRENCY", "1")))
 MAX_BODY = 20 * 1024 * 1024
 
 

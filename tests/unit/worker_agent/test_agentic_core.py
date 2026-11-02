@@ -231,3 +231,20 @@ def test_a_sandbox_service_without_its_address_is_off_never_in_place(
     assert analyze.mode() == "service"
     monkeypatch.setenv("AGENT_PYTHON_SANDBOX", "anything")
     assert analyze.mode() == "off"
+
+
+def test_the_worker_reads_the_sandbox_answer_as_untrusted() -> None:
+    from libs.code_sandbox import client
+
+    good = client._shaped({"ok": True, "columns": ["a"], "rows": [[1]], "stdout": "x" * 9000})
+    assert good.ok and good.rows == [[1]] and len(good.stdout) == 4000
+    for bad in (
+        [],
+        {"ok": True, "columns": ["a"], "rows": [[1, 2]]},
+        {"ok": True, "columns": [1], "rows": []},
+        {"ok": True, "columns": ["a"], "rows": [[{"nested": 1}]]},
+        {"ok": True, "columns": ["a"], "rows": [[1]] * 2001},
+        {"ok": True, "columns": [], "rows": [], "error": {"x": 1}},
+    ):
+        assert not client._shaped(bad).ok
+    assert client._shaped({"ok": "yes", "columns": [], "rows": []}).ok is False

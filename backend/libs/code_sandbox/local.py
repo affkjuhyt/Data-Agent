@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import shutil
+import signal
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -388,9 +389,14 @@ async def run(code: str, datasets: dict[str, dict[str, Any]]) -> Execution:
         try:
             out, err = await asyncio.wait_for(proc.communicate(payload.encode()), TIMEOUT_S)
         except TimeoutError:
-            proc.kill()
-            await proc.wait()
             return Execution(False, [], [], False, "", f"quá {TIMEOUT_S} giây")
+        finally:
+            # The child leads its own session (setsid): whatever it left running goes with it,
+            # so nothing of one run waits in the pod for the next.
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            with contextlib.suppress(ProcessLookupError):
+                await proc.wait()
     if proc.returncode != 0:
         tail = err.decode(errors="replace").strip().splitlines()[-1:] or ["lỗi không rõ"]
         return Execution(False, [], [], False, "", tail[0][:300])
