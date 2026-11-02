@@ -718,15 +718,16 @@ async def test_existing_self_approved_owner_does_not_block_unrelated_edit_when_d
 async def test_one_person_owner_and_steward_when_the_org_allows_it(
     ds: Space, self_approvals: Any
 ) -> None:
+    # The caller holds both roles of a product they create: two waivers of their own.
     async with client(ds) as api:
-        both = _body(ds, owner_id=str(ds.users["owner"]), steward_id=str(ds.users["owner"]))
+        both = _body(ds, owner_id=str(ds.users["steward"]), steward_id=str(ds.users["steward"]))
         refused = await api.post("/v1/data-products", json=both, headers=ds.headers("steward"))
         assert refused.status_code == 422, refused.text
         assert refused.json()["errors"][0]["field"] == "steward_id"
         ds.seed.allow_self_approval(ds.org)
         made = await api.post("/v1/data-products", json=both, headers=ds.headers("steward"))
     assert made.status_code == 201, made.text
-    assert self_approvals(ds.org) == ["data_product.steward"]
+    assert self_approvals(ds.org) == ["data_product.steward", "data_product.owner"]
 
 
 async def test_a_proposed_self_approved_change_is_recorded_as_proposed(
@@ -749,6 +750,158 @@ async def test_a_proposed_self_approved_change_is_recorded_as_proposed(
         "data_product.steward.proposed",
         "data_product.owner.proposed",
     ]
+
+
+def _awaiting_activation(ds: Space, creator: uuid.UUID, submitter: uuid.UUID) -> uuid.UUID:
+    """A product `creator` made and owns (the waiver let them), submitted by `submitter`: its
+    activation proposal, waiting for the owner's decision."""
+    product, proposal = uuid.uuid4(), uuid.uuid4()
+    ds.seed.row(
+        "inbox.proposal",
+        id=proposal,
+        org_id=ds.org,
+        data_space_id=ds.space,
+        kind="data_product",
+        target_service="context",
+        target_ref=product,
+        title="Kích hoạt data product",
+        proposed_by=submitter,
+        status="pending_review",
+    )
+    with ds.seed.conn.cursor() as cur:
+        # The creator as owner needs the switch at the time it was named; turned on only for
+        # the insert, the test sets it as it wants afterwards.
+        cur.execute(
+            "UPDATE org.organization SET allow_self_approval = true WHERE id = %s", (str(ds.org),)
+        )
+    ds.seed.row(
+        "context.data_product",
+        id=product,
+        org_id=ds.org,
+        data_space_id=ds.space,
+        code=f"san_pham_{product.hex[:6]}",
+        name="Sản phẩm",
+        description="Mô tả",
+        period_grain="month",
+        period_from="2024-01-01",
+        owner_id=creator,
+        steward_id=ds.users["steward"],
+        freshness_statement="Hằng ngày",
+        status="pending_review",
+        proposal_id=proposal,
+        created_by=creator,
+        updated_by=submitter,
+    )
+    with ds.seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE org.organization SET allow_self_approval = false WHERE id = %s", (str(ds.org),)
+        )
+    return proposal
+
+
+def _approver(ds: Space, name: str) -> uuid.UUID:
+    role = ds.seed.row(
+        "org.role",
+        org_id=ds.org,
+        code=f"APPROVE_{name.upper()}",
+        name="Approve",
+        capabilities=["ask", "steward", "approve"],
+    )
+    return _user(ds.seed, ds.org, name, role, ds.space)
+
+
+async def test_the_creator_accepting_their_product_an_editor_submitted_is_a_self_approval(
+    ds: Space, self_approvals: Any
+) -> None:
+    # An editor submitted it, so the proposer is not the creator; the creator (its owner) still
+    # approves their own product by accepting its activation.
+    creator = _approver(ds, "creator")
+    refused_one = _awaiting_activation(ds, creator, ds.users["steward"])
+    accepted_one = _awaiting_activation(ds, creator, ds.users["steward"])
+    async with client(ds) as api:
+        refused = await api.post(
+            f"/v1/proposals/{refused_one}:decide",
+            json={"decision": "accept"},
+            headers=ds.headers("creator"),
+        )
+        ds.seed.allow_self_approval(ds.org)
+        accepted = await api.post(
+            f"/v1/proposals/{accepted_one}:decide",
+            json={"decision": "accept"},
+            headers=ds.headers("creator"),
+        )
+    assert refused.status_code == 403, refused.text
+    assert ds.one("SELECT status FROM inbox.proposal WHERE id = %s", refused_one) == (
+        "pending_review"
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["status"] == "accepted"
+    assert self_approvals(ds.org) == ["data_product.activate"]
+
+
+async def test_another_owner_accepting_is_not_a_self_approval(
+    ds: Space, self_approvals: Any
+) -> None:
+    creator = _approver(ds, "creator")
+    other = _approver(ds, "other")
+    proposal = _awaiting_activation(ds, creator, creator)
+    async with client(ds) as api:
+        accepted = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            json={"decision": "accept"},
+            headers=ds.headers("other"),
+        )
+    assert other is not None
+    assert accepted.status_code == 200, accepted.text
+    assert self_approvals(ds.org) == []
+
+
+async def test_naming_owner_and_steward_one_other_person_is_not_the_callers_self_approval(
+    ds: Space, self_approvals: Any
+) -> None:
+    # The waiver is used (owner == steward), but by neither of them: the caller is neither.
+    ds.seed.allow_self_approval(ds.org)
+    async with client(ds) as api:
+        both = _body(ds, owner_id=str(ds.users["owner"]), steward_id=str(ds.users["owner"]))
+        made = await api.post("/v1/data-products", json=both, headers=ds.headers("steward"))
+        product = (await _create(api, ds, code="gia_khac"))["id"]
+        pair = await api.patch(
+            f"/v1/data-products/{product}",
+            json={"steward_id": str(ds.users["owner"])},
+            headers=ds.headers("steward"),
+        )
+    assert made.status_code == 201, made.text
+    assert pair.status_code == 200, pair.text
+    assert self_approvals(ds.org) == []
+
+
+async def test_a_versioned_change_by_a_non_creator_records_no_owner_step(
+    ds: Space, self_approvals: Any
+) -> None:
+    # The owner names the creator owner of a new version: allowed under the waiver, but it is
+    # not the caller's own approval (the creator's later acceptance would be).
+    async with client(ds) as api:
+        product = (await _create(api, ds))["id"]
+        await _members(api, ds, product)
+        _activate(ds, product)
+        ds.seed.allow_self_approval(ds.org)
+        renamed = await api.patch(
+            f"/v1/data-products/{product}",
+            json={"name": "Tên mới"},
+            headers=ds.headers("steward"),
+        )
+        assert renamed.status_code == 200, renamed.text
+        ds.seed.conn.cursor().execute(
+            "UPDATE context.data_product SET proposal_id = NULL WHERE id = %s", (product,)
+        )
+        handed = await api.patch(
+            f"/v1/data-products/{product}",
+            json={"owner_id": str(ds.users["steward"])},
+            headers=ds.headers("owner"),
+        )
+    assert handed.status_code == 200, handed.text
+    assert handed.json()["status"] == "pending_review"
+    assert self_approvals(ds.org) == []
 
 
 async def test_personal_data_raises_the_product_classification(ds: Space) -> None:

@@ -1,5 +1,6 @@
 """context module (schema `context`): A2 group Lớp ngữ cảnh."""
 
+from services.api.modules.context.public import data_product_awaiting
 from services.api.modules.context.routes import router
 
-__all__ = ["router"]
+__all__ = ["data_product_awaiting", "router"]

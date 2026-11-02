@@ -39,6 +39,7 @@ from services.api.kernel.pagination import (
 )
 from services.api.kernel.problems import Problem
 from services.api.modules.audit import record_self_approval
+from services.api.modules.context import data_product_awaiting
 from services.api.modules.inbox.schemas import (
     ApprovalStepView,
     ChangedResult,
@@ -622,6 +623,18 @@ async def decide_proposal(
             message="The proposer cannot review their own proposal.",
         ):
             self_steps.append("proposal.review")
+        if accepting and row.kind == "data_product" and row.target_service == "context":
+            # The activation is approved by the owner, who is not the creator (BR-175). The
+            # proposer is whoever submitted, maybe an editor, so the creator accepting is their
+            # own approval only the creator's row shows.
+            creator = await data_product_awaiting(principal, row.id)
+            if two_people(
+                principal,
+                creator,
+                message="The creator of the data product does not accept its activation"
+                " unless the organisation allows self-approval.",
+            ):
+                self_steps.append("data_product.activate")
         if accepting and row.eval_run_id is not None and not body.reviewed_regressions:
             run = await session.scalar(
                 select(evaluation.EvalRun).where(evaluation.EvalRun.id == row.eval_run_id)

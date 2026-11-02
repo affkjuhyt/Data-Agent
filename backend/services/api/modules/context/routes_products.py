@@ -175,7 +175,10 @@ def _distinct_people(
     if owner_id is not None and owner_id == steward_id:
         if not principal.self_approval:
             raise field_error("steward_id", "Owner and steward are two different people (BR-175).")
-        steps.append("data_product.steward")
+        # The waiver is used either way; it is the caller's own approval only if they are the
+        # one person holding both roles.
+        if principal.user_id == owner_id:
+            steps.append("data_product.steward")
     # The owner approves activation and the approver is not the creator (BR-175): a creator
     # naming themselves owner would leave the product with no one able to activate it. Not
     # two_people(): that raises a bare Problem, and this refusal names the field.
@@ -645,7 +648,8 @@ async def update_data_product(
                 raise field_error(
                     "steward_id", "Owner and steward are two different people (BR-175)."
                 )
-            self_steps.append("data_product.steward")
+            if principal.user_id == owner:
+                self_steps.append("data_product.steward")
         if owner_changed and owner == row.created_by:
             if not principal.self_approval:
                 raise field_error(
