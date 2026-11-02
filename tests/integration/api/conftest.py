@@ -118,3 +118,35 @@ def self_approvals(
 
     yield steps
     conn.close()
+
+
+@pytest.fixture
+def audit_log(
+    ddl_server: dict[str, str],  # noqa: F811
+    api_database: str,
+) -> Iterator[Any]:
+    """rows(org, action) -> the audit.audit_log rows of that action, oldest first, as dicts of
+    action, actor_kind, actor_id, object_kind, object_id, before and after."""
+    conn = psycopg2.connect(ddl_server["dataagent_audit"])
+    conn.autocommit = True
+
+    def rows(org_id: uuid.UUID, action: str) -> list[dict[str, Any]]:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT action, actor_kind, actor_id::text, object_kind, object_id::text, before, after"
+                " FROM audit.audit_log WHERE org_id = %s AND action = %s ORDER BY seq",
+                (str(org_id), action),
+            )
+            names = [
+                "action",
+                "actor_kind",
+                "actor_id",
+                "object_kind",
+                "object_id",
+                "before",
+                "after",
+            ]
+            return [dict(zip(names, r, strict=True)) for r in cur.fetchall()]
+
+    yield rows
+    conn.close()

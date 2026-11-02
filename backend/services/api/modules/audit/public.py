@@ -29,6 +29,7 @@ async def append(
     data_space_id: uuid.UUID | None = None,
     object_kind: str | None = None,
     object_id: uuid.UUID | None = None,
+    before: dict[str, Any] | None = None,
     after: dict[str, Any] | None = None,
     service: str = "api",
 ) -> None:
@@ -49,6 +50,7 @@ async def append(
                 object_kind=object_kind,
                 object_id=object_id,
                 outcome=outcome,
+                before=before,
                 after=after,
             )
         )

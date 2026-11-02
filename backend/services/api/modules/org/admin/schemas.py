@@ -345,5 +345,6 @@ class OrganizationView(_Row):
 
 class OrganizationPatch(BaseModel):
     # On: one person may both make and approve (org.two_people lets the pair through), and every
-    # such approval writes a self_approval row to the audit log.
+    # such approval writes a self_approval row to the audit log. The change itself is logged as
+    # organization.updated with its before and after.
     allow_self_approval: bool

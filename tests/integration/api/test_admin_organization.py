@@ -9,10 +9,14 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
 
+from services.api.app import create_app
+from services.api.config import Settings
+
 from . import test_org_admin as org_admin
-from .test_org_admin import World, client
+from .test_org_admin import Tokens, World, client
 
 pytestmark = [pytest.mark.integration, pytest.mark.contract]
 
@@ -27,11 +31,27 @@ def _flag(world: World) -> bool:
     )
 
 
-def _audits(world: World) -> list[dict[str, Any]]:
-    return [p for e, p in world.events(world.org) if e == "audit.requested"]
+def _audits(audit_log: Any, world: World) -> list[dict[str, Any]]:
+    return audit_log(world.org, "organization.updated")
 
 
-async def test_only_an_admin_turns_it_on(world: World) -> None:
+class _DelegatedTokens(Tokens):
+    """A token "<user>#agent" is an agent acting for that user through token exchange."""
+
+    def claims(self, token: str) -> dict[str, Any]:
+        user, _, actor = token.partition("#")
+        out = super().claims(user)
+        if actor:
+            out["act"] = {"sub": actor}
+        return out
+
+
+def _delegated_client(world: World) -> httpx.AsyncClient:
+    app = create_app(Settings(), token_verifier=_DelegatedTokens(world))
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://api")
+
+
+async def test_only_an_admin_turns_it_on(world: World, audit_log: Any) -> None:
     async with client(world) as api:
         read = await api.get(URL, headers=world.headers("steward"))
         turned = await api.patch(
@@ -47,10 +67,25 @@ async def test_only_an_admin_turns_it_on(world: World) -> None:
     assert turned.status_code == 403, turned.text
     assert rogue.status_code == 403, rogue.text
     assert _flag(world) is False
-    assert _audits(world) == []
+    assert _audits(audit_log, world) == []
 
 
-async def test_an_admin_turns_it_on_and_off_and_each_change_is_audited(world: World) -> None:
+async def test_an_agent_acting_for_an_admin_does_not_turn_it(world: World, audit_log: Any) -> None:
+    # The switch decides who may approve; a client acting for the admin may not widen that.
+    async with _delegated_client(world) as api:
+        delegated = await api.patch(
+            URL, headers=world.headers("admin#agent"), json={"allow_self_approval": True}
+        )
+        read = await api.get(URL, headers=world.headers("admin#agent"))
+    assert delegated.status_code == 403, delegated.text
+    assert read.status_code == 200, read.text
+    assert _flag(world) is False
+    assert _audits(audit_log, world) == []
+
+
+async def test_an_admin_turns_it_on_and_off_and_each_change_is_audited(
+    world: World, audit_log: Any
+) -> None:
     async with client(world) as api:
         before = await api.get(URL, headers=world.headers("admin"))
         on = await api.patch(
@@ -74,8 +109,9 @@ async def test_an_admin_turns_it_on_and_off_and_each_change_is_audited(world: Wo
     assert off.json()["allow_self_approval"] is False
     assert missing.status_code == 422
     assert _flag(world) is False
-    # Setting the value it already has changes nothing, so it is not a change to audit.
-    audits = _audits(world)
+    # Setting the value it already has changes nothing, so it is not a change to audit. The rows
+    # are in the audit log itself, not only requested through an outbox nobody reads.
+    audits = _audits(audit_log, world)
     assert [(a["before"], a["after"]) for a in audits] == [
         ({"allow_self_approval": False}, {"allow_self_approval": True}),
         ({"allow_self_approval": True}, {"allow_self_approval": False}),
@@ -83,6 +119,8 @@ async def test_an_admin_turns_it_on_and_off_and_each_change_is_audited(world: Wo
     assert {a["action"] for a in audits} == {"organization.updated"}
     assert {a["actor_id"] for a in audits} == {str(world.users["admin"])}
     assert {a["object_kind"] for a in audits} == {"organization"}
+    assert {a["object_id"] for a in audits} == {str(world.org)}
+    assert {a["actor_kind"] for a in audits} == {"user"}
 
 
 async def test_the_next_request_sees_the_new_value(world: World, self_approvals: Any) -> None:
