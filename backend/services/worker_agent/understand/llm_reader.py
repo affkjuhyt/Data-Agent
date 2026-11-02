@@ -170,7 +170,7 @@ async def read(
     # answered as is. A paraphrase sharing no word ("khoản vay khó đòi" for "Tỷ lệ nợ xấu") is the
     # model's reading to make (G5.1), at the proceed threshold.
     if grounding(question, u, vocab, today=today) == "partial":
-        return Understanding(decision="clarify", options=[u.metric]), reply
+        return Understanding(decision="clarify", options=[u.metric], to_confirm=True), reply
     # A model reading is trusted to the proceed threshold, not as a name or a synonym is.
     u.chips = [
         Chip(c.kind, c.value, c.label, "default", min(c.confidence, MODEL_CONFIDENCE))

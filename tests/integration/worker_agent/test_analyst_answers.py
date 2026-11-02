@@ -134,3 +134,20 @@ async def test_values_of_a_withheld_or_masked_column_are_never_offered(
         **policy,
     )
     assert await offered() == []
+
+
+async def test_a_proposal_the_words_only_partly_name_is_asked_back_not_answered(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Seen on DS-AW: "Doanh thu Internet năm 2013" with only another sales metric certified. The
+    # planner proposes the nearest one; the question's words name it in part, so the asker
+    # confirms it rather than getting another quantity's number.
+    bank = build(seed, warehouse, monkeypatch)
+    planner = Planner(
+        {"tool": "propose", "args": {"metric": "DU_NO", "period": "2026-09"}},
+    )
+    monkeypatch.setattr(questions, "gateway", lambda: planner)
+    q = bank.ask("Khoản nợ thẻ tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind, figures) == ("clarifying", "clarification", []), text

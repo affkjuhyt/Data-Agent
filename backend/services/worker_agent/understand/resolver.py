@@ -116,6 +116,9 @@ class Understanding:
     # narrated, so the answer and its evidence contain exactly the requested rows.
     top_n: int | None = None
     top_desc: bool = True
+    # The one option is a model's reading the question's own words only partly name (grounding
+    # "partial"): the asker confirms it. It is never taken as the lone candidate (invariant 3).
+    to_confirm: bool = False
 
     @property
     def confidence(self) -> float:

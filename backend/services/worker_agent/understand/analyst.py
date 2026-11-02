@@ -300,7 +300,7 @@ async def resolve(
                 if grounding(question, u, layer.vocabulary, today=today) == "partial":
                     await _taken(steps, Step(turn.tool, args, turn.reason, "asked back: partial"))
                     return Resolved(
-                        Understanding(decision="clarify", options=[u.metric]),
+                        Understanding(decision="clarify", options=[u.metric], to_confirm=True),
                         steps,
                         model_name,
                         tokens,

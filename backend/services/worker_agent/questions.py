@@ -594,7 +594,7 @@ def _dimension_name(layer: SpaceLayer, code: str | None) -> str | None:
 
 def _auto_select_single_metric(u: Understanding) -> bool:
     """Use the only ranked metric candidate instead of creating a needless clarification turn."""
-    if u.decision != "clarify" or u.unplaced_cut is not None or len(u.options) != 1:
+    if u.decision != "clarify" or u.unplaced_cut is not None or u.to_confirm or len(u.options) != 1:
         return False
     u.metric = u.options[0]
     u.options = []

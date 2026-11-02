@@ -32,6 +32,15 @@ def test_single_metric_suggestion_is_selected_without_a_clarification_turn() -> 
     assert understanding.metric == metric
 
 
+def test_a_reading_to_confirm_is_asked_back_even_as_the_lone_candidate() -> None:
+    # "Doanh thu Internet" read as "Chỉ tiêu doanh số": the words name it only in part.
+    metric = MetricEntry(uuid.uuid4(), "SALES", "Chỉ tiêu doanh số", certified=True)
+    understanding = Understanding(decision="clarify", options=[metric], to_confirm=True)
+
+    assert _auto_select_single_metric(understanding) is False
+    assert understanding.decision == "clarify" and understanding.metric is None
+
+
 def test_unsupported_breakdown_is_removed_for_a_best_effort_total() -> None:
     understanding = Understanding(
         decision="proceed", group_by=["fiscal_year", "region"], filters={"fiscal_year": ["FY2026"]}
