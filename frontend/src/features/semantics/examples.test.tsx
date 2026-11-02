@@ -3,6 +3,7 @@
  * right or its SQL corrected, and a new example is refused until its SQL runs.
  */
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -46,6 +47,25 @@ describe('ExamplesPage', () => {
     expect(await screen.findByText('Đã đánh dấu đúng')).toBeInTheDocument();
     // The panel is keyed by the example, so it is a new element once the selection moves on.
     expect(await screen.findByRole('heading', { name: 'Nợ xấu nhóm 2–5' })).toBeInTheDocument();
+  });
+
+  it('tells who wrote the example why they cannot confirm it while self-approval is off', async () => {
+    const detail =
+      'The one who created or last changed the example does not confirm it unless the organisation allows self-approval.';
+    server.use(
+      http.patch('*/v1/examples/:id', () =>
+        HttpResponse.json(
+          { title: 'Forbidden', status: 403, code: 'forbidden', detail },
+          { status: 403, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    );
+    page();
+    const detailPanel = await screen.findByRole('complementary', { name: 'Câu hỏi mẫu đang xem' });
+    fireEvent.click(within(detailPanel).getByRole('button', { name: 'Đánh dấu đúng' }));
+    expect(await within(detailPanel).findByText(detail)).toBeInTheDocument();
+    expect(screen.queryByText('Đã đánh dấu đúng')).toBeNull();
+    expect(within(detailPanel).getByRole('button', { name: 'Đánh dấu đúng' })).toBeEnabled();
   });
 
   it('refuses a new example whose SQL does not run', async () => {

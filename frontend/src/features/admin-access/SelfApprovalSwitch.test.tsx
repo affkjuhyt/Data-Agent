@@ -65,7 +65,7 @@ describe('SelfApprovalSwitch', () => {
     ).toBeInTheDocument();
   });
 
-  it('an admin turns it on', async () => {
+  it('an admin turns it on after confirming what it allows', async () => {
     capabilities = ['admin'];
     serve(false);
     draw();
@@ -73,9 +73,38 @@ describe('SelfApprovalSwitch', () => {
     await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
     expect(toggle).toBeEnabled();
     fireEvent.click(toggle);
+    const dialog = await screen.findByRole('alertdialog', { name: 'Bật tự duyệt cho tổ chức?' });
+    expect(dialog).toHaveTextContent('người tạo được tự duyệt việc của mình');
+    expect(patched).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Bật tự duyệt' }));
     await waitFor(() => expect(patched).toEqual([{ allow_self_approval: true }]));
     await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
     expect(await screen.findByText('Đã bật tự duyệt cho tổ chức')).toBeInTheDocument();
+  });
+
+  it('cancelling the confirmation leaves it off', async () => {
+    capabilities = ['admin'];
+    serve(false);
+    draw();
+    const toggle = await screen.findByRole('switch', { name: 'Cho phép tự duyệt' });
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+    fireEvent.click(toggle);
+    fireEvent.click(await screen.findByRole('button', { name: 'Huỷ' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(patched).toEqual([]);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('an admin turns it off at once: that only narrows who may approve', async () => {
+    capabilities = ['admin'];
+    serve(true);
+    draw();
+    const toggle = await screen.findByRole('switch', { name: 'Cho phép tự duyệt' });
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+    fireEvent.click(toggle);
+    await waitFor(() => expect(patched).toEqual([{ allow_self_approval: false }]));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(await screen.findByText('Đã tắt tự duyệt cho tổ chức')).toBeInTheDocument();
   });
 
   it('is disabled for someone without admin', async () => {

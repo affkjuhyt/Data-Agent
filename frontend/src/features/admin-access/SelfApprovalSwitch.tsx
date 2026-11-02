@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
+import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { Notice } from '../../design-system/Notice';
 import { Toggle } from '../../design-system/Toggle';
 import { useToast } from '../../design-system/Toast';
@@ -12,7 +13,8 @@ import { useV1 } from '../../lib/v1/useV1';
  * "Người dùng và vai trò". Off, every approval needs someone other than the creator; on, the
  * creator may approve their own work and each time is written to the audit log. Everyone may see
  * it; only an organisation-wide `admin` (GET /v1/me, as the shell's rail reads it) turns it.
- * The toggle applies at once, so the change is confirmed with a toast.
+ * Turning it on widens who may approve, so it is confirmed first; turning it off only narrows
+ * that and applies at once. Either change is acknowledged with a toast.
  */
 export function SelfApprovalSwitch() {
   const organization = useV1(['getOrganization'], getOrganization);
@@ -27,6 +29,7 @@ function Switch({ organization, onChanged }: { organization: Organization; onCha
   const toast = useToast();
   const { me } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string>();
   const isAdmin = me?.capabilities.includes('admin') ?? false;
 
@@ -39,6 +42,7 @@ function Switch({ organization, onChanged }: { organization: Organization; onCha
         tone: 'success',
         message: on ? 'Đã bật tự duyệt cho tổ chức' : 'Đã tắt tự duyệt cho tổ chức',
       });
+      setConfirming(false);
       onChanged();
     } catch (e) {
       setError((e as Error).message);
@@ -54,7 +58,7 @@ function Switch({ organization, onChanged }: { organization: Organization; onCha
           checked={organization.allow_self_approval}
           disabled={!isAdmin || saving}
           label="Cho phép tự duyệt"
-          onChange={turn}
+          onChange={(on) => (on ? setConfirming(true) : turn(false))}
         />
         <div className="flex min-w-0 flex-1 flex-col gap-da-xs">
           <span className="text-foreground da-body-strong">Cho phép tự duyệt</span>
@@ -67,7 +71,23 @@ function Switch({ organization, onChanged }: { organization: Organization; onCha
           {organization.allow_self_approval ? 'Đang bật' : 'Đang tắt'}
         </span>
       </div>
-      {error && <Notice tone="error">Không đổi được: {error}</Notice>}
+      {error && !confirming && <Notice tone="error">Không đổi được: {error}</Notice>}
+      <ConfirmDialog
+        open={confirming}
+        title="Bật tự duyệt cho tổ chức?"
+        confirmLabel="Bật tự duyệt"
+        tone="primary"
+        loading={saving}
+        error={error && `Không đổi được: ${error}`}
+        onCancel={() => {
+          setConfirming(false);
+          setError(undefined);
+        }}
+        onConfirm={() => turn(true)}
+      >
+        Từ giờ người tạo được tự duyệt việc của mình, không cần người thứ hai. Mỗi lần tự duyệt
+        được ghi vào nhật ký kiểm toán.
+      </ConfirmDialog>
     </div>
   );
 }
