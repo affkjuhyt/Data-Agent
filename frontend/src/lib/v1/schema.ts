@@ -18614,6 +18614,7 @@ export interface components {
             reviews?: components["schemas"]["ProposalReviewView"][];
             /** Status */
             status: string;
+            summary: components["schemas"]["ProposalSummary"];
             /** Target Ref */
             target_ref: string | null;
             /** Target Service */
@@ -18651,6 +18652,21 @@ export interface components {
             reviewer_id: string;
             /** Step */
             step: number;
+        };
+        /**
+         * ProposalSummary
+         * @description What accepting the proposal does, in words (P07 "Thay đổi", describe.py): ids resolved to
+         *     names under the caller's organisation, the raw diff left in `diff`.
+         */
+        ProposalSummary: {
+            /** Checks Note */
+            checks_note?: string | null;
+            /** Fields */
+            fields?: components["schemas"]["SummaryField"][];
+            /** Headline */
+            headline: string;
+            /** Preview Note */
+            preview_note?: string | null;
         };
         /** PublicationCreate */
         PublicationCreate: {
@@ -21576,6 +21592,19 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+        };
+        /**
+         * SummaryField
+         * @description One thing the proposal changes, as the reviewer reads it; None where there is no value
+         *     (a field the change adds has no current one, one it removes no proposed one).
+         */
+        SummaryField: {
+            /** After */
+            after?: string | null;
+            /** Before */
+            before?: string | null;
+            /** Label */
+            label: string;
         };
         /** SynonymCreate */
         SynonymCreate: {

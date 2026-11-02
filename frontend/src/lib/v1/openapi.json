@@ -33075,6 +33075,9 @@
       "title": "Status",
       "type": "string"
      },
+     "summary": {
+      "$ref": "#/components/schemas/ProposalSummary"
+     },
      "target_ref": {
       "anyOf": [
        {
@@ -33121,7 +33124,8 @@
      "expires_at",
      "applied_at",
      "created_at",
-     "updated_at"
+     "updated_at",
+     "summary"
     ],
     "title": "ProposalDetail",
     "type": "object"
@@ -33177,6 +33181,49 @@
      "decided_at"
     ],
     "title": "ProposalReviewView",
+    "type": "object"
+   },
+   "ProposalSummary": {
+    "description": "What accepting the proposal does, in words (P07 \"Thay đổi\", describe.py): ids resolved to\nnames under the caller's organisation, the raw diff left in `diff`.",
+    "properties": {
+     "checks_note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Checks Note"
+     },
+     "fields": {
+      "items": {
+       "$ref": "#/components/schemas/SummaryField"
+      },
+      "title": "Fields",
+      "type": "array"
+     },
+     "headline": {
+      "title": "Headline",
+      "type": "string"
+     },
+     "preview_note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Preview Note"
+     }
+    },
+    "required": [
+     "headline"
+    ],
+    "title": "ProposalSummary",
     "type": "object"
    },
    "PublicationCreate": {
@@ -41328,6 +41375,42 @@
      "updated_at"
     ],
     "title": "SubscriptionView",
+    "type": "object"
+   },
+   "SummaryField": {
+    "description": "One thing the proposal changes, as the reviewer reads it; None where there is no value\n(a field the change adds has no current one, one it removes no proposed one).",
+    "properties": {
+     "after": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "After"
+     },
+     "before": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Before"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "label"
+    ],
+    "title": "SummaryField",
     "type": "object"
    },
    "SynonymCreate": {

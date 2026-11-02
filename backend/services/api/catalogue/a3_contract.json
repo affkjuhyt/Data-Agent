@@ -3763,7 +3763,7 @@
    ],
    "body": {},
    "query": [],
-   "returns": "Proposal. Kèm diff, ảnh hưởng, kết quả eval_run và các mục đổi kết quả",
+   "returns": "Proposal. Kèm diff, ảnh hưởng, kết quả eval_run và các mục đổi kết quả; summary nói bằng lời việc chấp nhận làm gì (headline, fields với label, before, after; checks_note; preview_note), id đã đổi ra tên người gọi đọc được",
    "errors": [],
    "request_text": "—"
   },
@@ -3779,7 +3779,7 @@
     "edited_diff": false
    },
    "query": [],
-   "returns": "Proposal",
+   "returns": "Proposal, kèm summary như GET /v1/proposals/{id}",
    "errors": [
     [
      403,

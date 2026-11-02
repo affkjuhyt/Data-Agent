@@ -960,8 +960,8 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/inbox | ?kind, ?risk, ?status, ?assignee | Danh sách HitlRequest. Gồm hitl\_request và proposal đang chờ người gọi | — |
 | GET /v1/hitl-requests/{id} | — | HitlRequest | — |
 | POST /v1/hitl-requests/{id}:resolve | decision\*, option, note, reassign\_to, remember\_as\_rule | HitlRequest | 409 invalid\_state (đã xử lý hoặc hết hạn); 403 forbidden (không phải người được giao); 422 business\_rule\_violated (bước duyệt thứ hai trùng người thứ nhất) |
-| GET /v1/proposals/{id} | — | Proposal. Kèm diff, ảnh hưởng, kết quả eval\_run và các mục đổi kết quả | — |
-| POST /v1/proposals/{id}:decide | decision\*, note, reviewed\_regressions, edited\_diff | Proposal | 403 forbidden (người duyệt là người đề xuất); 422 business\_rule\_violated (có mục đổi kết quả chưa xem, BR-28) |
+| GET /v1/proposals/{id} | — | Proposal. Kèm diff, ảnh hưởng, kết quả eval\_run và các mục đổi kết quả; summary nói bằng lời việc chấp nhận làm gì (headline, fields với label, before, after; checks\_note; preview\_note), id đã đổi ra tên người gọi đọc được | — |
+| POST /v1/proposals/{id}:decide | decision\*, note, reviewed\_regressions, edited\_diff | Proposal, kèm summary như GET /v1/proposals/{id} | 403 forbidden (người duyệt là người đề xuất); 422 business\_rule\_violated (có mục đổi kết quả chưa xem, BR-28) |
 | POST /v1/eval-sets/{id}/items | category, input\*, as\_of, expected\*, tolerance | EvalItem | — |
 | PATCH /v1/eval-items/{id} | input, as\_of, expected, tolerance, reason | EvalItem. Đổi đáp án (expected, as\_of, tolerance) cần reason và phát eval\_item.answer\_changed | 404 not\_found; 422 validation\_failed (thiếu reason khi đổi đáp án) |
 | POST /v1/eval-sets/{id}/runs | subject\_version | 202, Location tới eval\_run | — |
