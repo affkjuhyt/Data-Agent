@@ -54,7 +54,7 @@ from libs.dataagent_db.models import (
     skill,
 )
 from libs.dataagent_db.models import org as org_models
-from services.worker_agent import proposals, questions, semantic_review
+from services.worker_agent import proposals, questions, self_approval, semantic_review
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
 from services.worker_agent.query.scope import can_ask_data_space
@@ -616,7 +616,9 @@ async def apply(event: Event, proposal: dict[str, Any]) -> bool:
     # Fail closed: without a recorded author the reviewer could be it, so the version is not
     # certified; one created before the api recorded authors is saved again as a new version.
     author = await _author(event.org_id, reviewer, version_id)
-    if author is None or reviewer == author:
+    async with scoped_session("svc_context", event.org_id, reviewer) as session:
+        self_approved = reviewer == author and await self_approval.allowed(session, event.org_id)
+    if author is None or (reviewer == author and not self_approved):
         logger.info(
             "worker-agent | metric_change %s not applied: %s",
             proposal["id"],

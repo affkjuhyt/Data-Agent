@@ -22,12 +22,14 @@ import {
 import { useV1 } from '../../lib/v1/useV1';
 import { clock, count, dayMonth } from './format';
 import { InviteDialog } from './InviteDialog';
+import { SelfApprovalSwitch } from './SelfApprovalSwitch';
 
 /*
  * "P11 · Người dùng & vai trò" (2305:19433, UC-11-01 · UC-11-08): everyone with access, people
  * synced from the identity source and agents, with their effective role, Data Spaces, row
  * scope and expiry; a narrowed row scope is drawn in warning. On the right, on --background,
- * what each role may do. "Thêm vào Data Space" opens "Hộp thoại · invite".
+ * what each role may do. "Thêm vào Data Space" opens "Hộp thoại · invite". Above the list, the
+ * organisation's self-approval switch.
  */
 export default function UsersPage() {
   const toast = useToast();
@@ -79,6 +81,7 @@ export default function UsersPage() {
       />
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col gap-da-lg pl-da-3xl pr-da-2xl pt-da-xl pb-da-xl">
+          <SelfApprovalSwitch />
           <AsyncRegion
             state={users}
             what="người dùng"

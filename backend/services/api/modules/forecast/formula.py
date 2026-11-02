@@ -22,6 +22,7 @@ from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import context
 from libs.dataagent_db.models import forecast as fc
 from services.api.catalogue import endpoint
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -34,6 +35,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.forecast import jobs, rules, store
 from services.api.modules.forecast.schemas import (
     ComponentCertify,
@@ -511,10 +513,12 @@ async def certify_component(
             raise Problem(
                 409, "invalid_state", f"The parameter is {row.status}, not awaiting review."
             )
-        if row.created_by == principal.user_id:
-            raise Problem(
-                403, "policy_denied", "Whoever entered the value cannot certify it (BR-182)."
-            )
+        self_approved = two_people(
+            principal,
+            row.created_by,
+            message="Whoever entered the value cannot certify it (BR-182).",
+            code="policy_denied",
+        )
         # BR-182: the open certified value is closed at this one's valid_from by the trigger, which
         # needs the new value to start later; any other certified interval must not overlap.
         same = and_(
@@ -572,6 +576,13 @@ async def certify_component(
             certified_by=principal.user_id,
         )
         await session.flush()
+        if self_approved:
+            await record_self_approval(
+                principal,
+                step="formula_value.certify",
+                object_kind="formula_component",
+                object_id=row.id,
+            )
         await session.refresh(row)
         return _component_view(row)
 

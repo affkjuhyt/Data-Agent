@@ -71,7 +71,7 @@ REVOKE UPDATE, DELETE ON audit.audit_log FROM svc_audit;
 -- org_isolation applies to every role, so it stays inside the organisation it sets.
 GRANT USAGE ON SCHEMA audit TO svc_audit_worker;
 GRANT SELECT ON audit.export_job TO svc_audit_worker;
-GRANT UPDATE (status, approved_by, approved_at, updated_at) ON audit.export_job TO svc_audit_worker;
+GRANT UPDATE (status, approved_by, approved_at, self_approved, updated_at) ON audit.export_job TO svc_audit_worker;
 -- The only change it makes is the approver's decision on a waiting export: approved (queued, with
 -- the approver; the table's CHECK keeps the approver apart from the requester) or rejected (failed).
 CREATE POLICY worker_decision_only ON audit.export_job AS RESTRICTIVE FOR UPDATE TO svc_audit_worker

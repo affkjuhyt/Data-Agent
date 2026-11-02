@@ -22,9 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, governance, org
 from services.api.catalogue import endpoint
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.audit import record_self_approval
 
 router = APIRouter()
 ROLE = "svc_governance"
@@ -790,6 +792,11 @@ async def activate_policy(policy_id: PolicyId, principal: CurrentPrincipal) -> P
         row = await _policy(session, principal, policy_id, lock=True)
         if row.status not in ("draft", "disabled"):
             raise Problem(409, "invalid_state", f"A {row.status} policy is not activated.")
+        self_approved = two_people(
+            principal,
+            row.created_by,
+            message="Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt.",
+        )
         if isinstance(row, governance.AccessPolicy):
             if row.simulated_at is None:
                 raise Problem(
@@ -843,6 +850,13 @@ async def activate_policy(policy_id: PolicyId, principal: CurrentPrincipal) -> P
         )
         await session.flush()
         await session.refresh(row)
+        if self_approved:
+            await record_self_approval(
+                principal,
+                step="policy.activate",
+                object_kind=row.__tablename__,
+                object_id=row.id,
+            )
         return _view(row)
 
 

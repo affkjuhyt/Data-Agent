@@ -113,6 +113,8 @@ def ctx(seed: Seed) -> Ctx:
         "steward": _user(seed, org, "steward", roles["steward"]),
         "asker": _user(seed, org, "asker", roles["ask"]),
         "nocap": _user(seed, org, "nocap", roles["none"]),
+        "steward_b": _user(seed, org, "steward_b", roles["steward"]),
+        "steward_c": _user(seed, org, "steward_c", roles["steward"]),
     }
     space = seed.row(
         "org.data_space", org_id=org, code="DS-CTX", name="Ctx", steward_id=users["steward"]
@@ -120,7 +122,13 @@ def ctx(seed: Seed) -> Ctx:
     other = seed.row(
         "org.data_space", org_id=org, code="DS-CTX-B", name="Ctx B", steward_id=users["steward"]
     )
-    for name, role in (("steward", "steward"), ("asker", "ask"), ("nocap", "none")):
+    for name, role in (
+        ("steward", "steward"),
+        ("asker", "ask"),
+        ("nocap", "none"),
+        ("steward_b", "steward"),
+        ("steward_c", "steward"),
+    ):
         _member(seed, org, space, users[name], roles[role])
     _member(seed, org, other, users["steward"], roles["steward"])
 
@@ -612,6 +620,105 @@ async def test_a_checked_suggestion_is_confirmed_and_a_draft_is_not(ctx: Ctx) ->
             f"/v1/examples/{draft}", json={"status": "verified"}, headers=ctx.headers("steward")
         )
         assert unknown.status_code == 422
+
+
+async def test_example_confirmation_needs_another_person(ctx: Ctx, self_approvals: Any) -> None:
+    own = _example(ctx, "Số hợp đồng?", "pending_review", created_by=ctx.users["steward"])
+    async with client(ctx) as api:
+        refused = await api.patch(
+            f"/v1/examples/{own}", json={"status": "active"}, headers=ctx.headers("steward")
+        )
+        assert refused.status_code == 403 and refused.json()["code"] == "forbidden", refused.text
+        assert refused.json()["detail"] == (
+            "Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt."
+        )
+        # Editing its text is not a confirmation.
+        edited = await api.patch(
+            f"/v1/examples/{own}",
+            json={"question": "Bao nhiêu hợp đồng?"},
+            headers=ctx.headers("steward"),
+        )
+        assert edited.status_code == 200, edited.text
+    assert ctx.one("SELECT status FROM context.example_query WHERE id = %s", own) == (
+        "pending_review"
+    )
+    assert self_approvals(ctx.org) == []
+
+
+async def test_example_self_confirmation_when_the_org_allows_it(
+    ctx: Ctx, self_approvals: Any
+) -> None:
+    ctx.seed.allow_self_approval(ctx.org)
+    own = _example(ctx, "Số hợp đồng?", "pending_review", created_by=ctx.users["steward"])
+    async with client(ctx) as api:
+        confirmed = await api.patch(
+            f"/v1/examples/{own}", json={"status": "active"}, headers=ctx.headers("steward")
+        )
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["status"] == "active"
+    assert self_approvals(ctx.org) == ["example.confirm"]
+
+
+async def test_the_one_who_changed_an_examples_sql_does_not_confirm_it(
+    ctx: Ctx, self_approvals: Any
+) -> None:
+    def created_by_b() -> uuid.UUID:
+        return _example(
+            ctx,
+            "Số khách hàng?",
+            "pending_review",
+            created_by=ctx.users["steward_b"],
+            sql_changed_by=ctx.users["steward_b"],
+        )
+
+    # A changes B's SQL; the checker (which writes the status, not updated_by nor sql_changed_by)
+    # passes it to review.
+    async def change_sql(api: httpx.AsyncClient, example: uuid.UUID, who: str) -> None:
+        changed = await api.patch(
+            f"/v1/examples/{example}",
+            json={"sql": "SELECT count(DISTINCT ma_kh) FROM silver.khach_hang"},
+            headers=ctx.headers(who),
+        )
+        assert changed.status_code == 200 and changed.json()["status"] == "draft", changed.text
+        assert ctx.one(
+            "SELECT sql_changed_by FROM context.example_query WHERE id = %s", example
+        ) == str(ctx.users[who])
+        ctx.run(
+            "UPDATE context.example_query SET status = 'pending_review', last_verified_at = now()"
+            " WHERE id = %s",
+            example,
+        )
+        assert ctx.one(
+            "SELECT sql_changed_by FROM context.example_query WHERE id = %s", example
+        ) == str(ctx.users[who])
+
+    first = created_by_b()
+    async with client(ctx) as api:
+        await change_sql(api, first, "steward")
+        refused = await api.patch(
+            f"/v1/examples/{first}", json={"status": "active"}, headers=ctx.headers("steward")
+        )
+        assert refused.status_code == 403 and refused.json()["code"] == "forbidden", refused.text
+        # The creator is still refused.
+        by_creator = await api.patch(
+            f"/v1/examples/{first}", json={"status": "active"}, headers=ctx.headers("steward_b")
+        )
+        assert by_creator.status_code == 403, by_creator.text
+        third = await api.patch(
+            f"/v1/examples/{first}", json={"status": "active"}, headers=ctx.headers("steward_c")
+        )
+        assert third.status_code == 200 and third.json()["status"] == "active", third.text
+    assert self_approvals(ctx.org) == []
+
+    ctx.seed.allow_self_approval(ctx.org)
+    second = created_by_b()
+    async with client(ctx) as api:
+        await change_sql(api, second, "steward")
+        allowed = await api.patch(
+            f"/v1/examples/{second}", json={"status": "active"}, headers=ctx.headers("steward")
+        )
+        assert allowed.status_code == 200, allowed.text
+    assert self_approvals(ctx.org) == ["example.confirm"]
 
 
 async def test_editing_an_example_needs_steward_in_its_data_space(ctx: Ctx) -> None:

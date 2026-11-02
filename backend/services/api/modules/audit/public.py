@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import audit
+from services.api.kernel.auth import Principal
 
 ROLE = "svc_audit"
 
@@ -51,3 +52,24 @@ async def append(
                 after=after,
             )
         )
+
+
+async def record_self_approval(
+    principal: Principal, *, step: str, object_kind: str, object_id: uuid.UUID
+) -> None:
+    """Log that the caller did both halves of a two-person step (the org allows it).
+
+    Lives here, not in kernel/approval.py: the kernel may not import a module (import-linter
+    api-kernel-is-a-leaf). Call it inside the transaction of the approval, after its writes,
+    so a failed audit write rolls the approval back."""
+    await append(
+        principal.org_id,
+        actor_kind="user",
+        actor_id=principal.user_id,
+        on_behalf_of=None,
+        data_space_id=principal.data_space_id,
+        action="self_approval",
+        object_kind=object_kind,
+        object_id=object_id,
+        after={"step": step},
+    )

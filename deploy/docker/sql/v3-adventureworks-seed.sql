@@ -16,6 +16,11 @@
 \set engineer '''a0000000-0000-0000-0000-000000000022'''
 \set space '''a0000000-0000-0000-0000-000000000a01'''
 
+-- DS-AW is the test organisation; self-approval is useful for end-to-end testing there.
+UPDATE org.organization
+SET allow_self_approval = true
+WHERE id = :org::uuid;
+
 INSERT INTO org.data_space (
     id, org_id, code, name, description, steward_id, status, opened_at, created_by, updated_by
 )

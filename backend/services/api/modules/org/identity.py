@@ -123,10 +123,14 @@ class OrgIdentityResolver:
         self, *, org_id: uuid.UUID, external_id: str, data_space: str | None
     ) -> Identity | None:
         async with scoped_session(ROLE, org_id) as session:
-            organization_active = await session.scalar(
-                select(org.Organization.status == "active").where(org.Organization.id == org_id)
-            )
-            if organization_active is not True:
+            organization = (
+                await session.execute(
+                    select(org.Organization.status, org.Organization.allow_self_approval).where(
+                        org.Organization.id == org_id
+                    )
+                )
+            ).one_or_none()
+            if organization is None or organization.status != "active":
                 return None
             user_id = await session.scalar(
                 select(org.AppUser.id).where(
@@ -149,4 +153,9 @@ class OrgIdentityResolver:
                 if await session.scalar(select(in_space.exists())) is not True:
                     raise DataSpaceNotFound(data_space)
                 capabilities |= await _capabilities(session, in_space) - ORG_ONLY_CAPABILITIES
-            return Identity(user_id=user_id, capabilities=capabilities, data_space_id=space_id)
+            return Identity(
+                user_id=user_id,
+                capabilities=capabilities,
+                data_space_id=space_id,
+                self_approval=organization.allow_self_approval,
+            )

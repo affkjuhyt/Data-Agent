@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import forecast as fc
 from services.api.catalogue import endpoint
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -36,6 +37,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.forecast import jobs, rules, store
 from services.api.modules.forecast.schemas import (
     AccuracyPage,
@@ -268,16 +270,20 @@ async def submit_version(
         return ModelVersionView.model_validate(row)
 
 
-def _check_decider(row: fc.ModelVersion, owner: fc.ForecastModel, principal: Principal) -> None:
-    """BR-158 / UC-15-04 E1: the metric owner decides, never whoever built the version."""
-    if row.created_by == principal.user_id:
-        raise Problem(
-            403, "policy_denied", "Whoever built the version cannot decide on it (BR-158)."
-        )
+def _check_decider(row: fc.ModelVersion, owner: fc.ForecastModel, principal: Principal) -> bool:
+    """BR-158 / UC-15-04 E1: the metric owner decides, never whoever built the version, unless
+    the org allows it. True when the decider built the version (a self-approval)."""
+    built_it = two_people(
+        principal,
+        row.created_by,
+        message="Whoever built the version cannot decide on it (BR-158).",
+        code="policy_denied",
+    )
     if owner.owner_id != principal.user_id:
         raise Problem(
             403, "policy_denied", "Only the metric owner decides on a forecast model (BR-158)."
         )
+    return built_it
 
 
 @router.post(
@@ -301,7 +307,7 @@ async def approve_version(
             raise Problem(
                 409, "invalid_state", f"The version is {row.status}, not pending_approval."
             )
-        _check_decider(row, owner, principal)
+        self_approved = _check_decider(row, owner, principal)
         if owner.status == "retired":
             # A retired model takes no new version (12/10/2026): approving would bring it back.
             raise Problem(409, "invalid_state", "The model is retired; it takes no new version.")
@@ -361,6 +367,13 @@ async def approve_version(
                 status=owner.status,
             )
         await session.flush()
+        if self_approved:
+            await record_self_approval(
+                principal,
+                step="forecast_model.decide",
+                object_kind="model_version",
+                object_id=row.id,
+            )
         return ModelVersionView.model_validate(row)
 
 
@@ -384,7 +397,7 @@ async def reject_version(
                 409, "invalid_state", f"The version is {row.status}, not pending_approval."
             )
         # Approve and reject are one decision (UC-15-04 step 3) under one set of rules.
-        _check_decider(row, owner, principal)
+        self_decided = _check_decider(row, owner, principal)
         row.status = "rejected"
         row.updated_by, row.updated_at = principal.user_id, store.now()
         # AC-15-04-02: the reason stays with the decision.
@@ -402,6 +415,13 @@ async def reject_version(
             rejected_by=principal.user_id,
         )
         await session.flush()
+        if self_decided:
+            await record_self_approval(
+                principal,
+                step="forecast_model.decide",
+                object_kind="model_version",
+                object_id=row.id,
+            )
         return ModelVersionView.model_validate(row)
 
 

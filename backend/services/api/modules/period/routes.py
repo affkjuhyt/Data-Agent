@@ -37,6 +37,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.inbox.public import EVENT_TYPE as HITL_REQUESTED
 from services.api.modules.inbox.public import hitl_requested
 from services.api.modules.period.schemas import (
@@ -764,18 +765,22 @@ async def publish_period(
                     + ", ".join(sorted(str(u) for u in uncertified))
                     + " (UC-10-03 E1).",
                 )
+        own_approvals = 0
         for i, override in enumerate(body.overrides):
             approver = override.approver_id
-            if approver == principal.user_id or not await _holds_compliance(
+            # AC-10-03-06: the filer does not approve their own manual number, unless the org
+            # allows it; the approver still holds compliance.
+            self_named = approver == principal.user_id
+            if (self_named and not principal.self_approval) or not await _holds_compliance(
                 session, principal, approver
             ):
-                # AC-10-03-06: the filer does not approve their own manual number.
                 raise Problem(
                     422,
                     "business_rule_violated",
                     f"overrides[{i}]: approver_id must be another person holding compliance "
                     "(BR-133).",
                 )
+            own_approvals += self_named
         approval_ids = {o.metric_version_id: uuid7() for o in body.overrides}
         row.filed_report_code = body.report_code
         row.filed_at = body.filed_at
@@ -851,6 +856,15 @@ async def publish_period(
                 ),
             )
         await session.flush()
+        # The number is approved later, in the inbox, which logs that step itself; the filing is
+        # where the waiver is granted, so the rows say ".proposed" for each override naming the filer.
+        for _ in range(own_approvals):
+            await record_self_approval(
+                principal,
+                step="period_number.approve.proposed",
+                object_kind="period_close",
+                object_id=row.id,
+            )
         return PeriodCloseView.model_validate(row)
 
 

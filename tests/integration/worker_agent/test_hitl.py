@@ -152,3 +152,46 @@ async def test_an_approved_audit_export_is_released_once(
         )
         assert cur.fetchone() == ("queued", str(approver))
     audit.close()
+
+
+async def test_an_audit_export_approved_by_its_requester_is_released(
+    seed: Seed, ddl_server: dict[str, str]
+) -> None:
+    # The API let the requester decide because the org's switch was on; the job says so itself.
+    org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Tổ chức thử")
+    requester = uuid.uuid4()
+    job, hitl_id = uuid.uuid4(), uuid.uuid4()
+    audit = psycopg2.connect(ddl_server["dataagent_audit"])
+    audit.autocommit = True
+    with audit.cursor() as cur:
+        cur.execute(
+            "INSERT INTO audit.export_job (id, org_id, filters, row_count, status, requested_by, "
+            "hitl_request_id) VALUES (%s, %s, '{}', 200000, 'waiting_approval', %s, %s)",
+            (str(job), str(org), str(requester), str(hitl_id)),
+        )
+    seed.row(
+        "inbox.outbox",
+        org_id=org,
+        aggregate_type="hitl_request",
+        aggregate_id=hitl_id,
+        event_type="hitl.resolved",
+        payload=json.dumps(
+            {
+                "hitl_request_id": str(hitl_id),
+                "kind": "export",
+                "status": "approved",
+                "decision": "approve",
+                "source_service": "audit",
+                "source_ref": str(job),
+                "resolved_by": str(requester),
+            }
+        ),
+    )
+    await _drain()
+    with audit.cursor() as cur:
+        cur.execute(
+            "SELECT status, approved_by::text, self_approved FROM audit.export_job WHERE id = %s",
+            (str(job),),
+        )
+        assert cur.fetchone() == ("queued", str(requester), True)
+    audit.close()

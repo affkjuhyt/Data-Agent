@@ -24,6 +24,7 @@ from libs import cron
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, org
 from services.api.catalogue import endpoint
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -38,6 +39,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.catalog import rules
 from services.api.modules.catalog.public import working_days
 from services.api.modules.catalog.schemas import (
@@ -1490,13 +1492,13 @@ async def certify_version(
     note = (body.note or "").strip() or None
     async with transaction(ROLE, principal) as session:
         version, dataset = await _certifiable(session, principal, space, version_id)
-        if version.created_by == principal.user_id:
-            # Four eyes: whoever last edited the consolidation spec does not certify its output.
-            raise Problem(
-                403,
-                "policy_denied",
-                "The creator of a dataset version cannot certify it (BR-156).",
-            )
+        # Four eyes: whoever last edited the consolidation spec does not certify its output.
+        self_approved = two_people(
+            principal,
+            version.created_by,
+            message="The creator of a dataset version cannot certify it (BR-156).",
+            code="policy_denied",
+        )
         if dataset.origin != "consolidated":
             raise Problem(
                 422,
@@ -1505,7 +1507,15 @@ async def certify_version(
             )
         if version.certified_at is not None:
             raise Problem(409, "invalid_state", "The version is already certified.")
-        return await _record(session, principal, version, "certify", note=note)
+        certified = await _record(session, principal, version, "certify", note=note)
+        if self_approved:
+            await record_self_approval(
+                principal,
+                step="dataset_version.certify",
+                object_kind="dataset_version",
+                object_id=version.id,
+            )
+        return certified
 
 
 @router.post(

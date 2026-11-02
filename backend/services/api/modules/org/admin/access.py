@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import org
 from services.api.catalogue import endpoint
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -28,6 +29,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.org.admin.common import audit, emit, now, org_only
 from services.api.modules.org.admin.schemas import (
     AccessDecision,
@@ -234,10 +236,11 @@ async def decide_access_request(
         )
         if row is None:
             raise Problem(404, "not_found", "Access request not found.")
-        if row.requester_id == principal.user_id:
-            raise Problem(
-                403, "forbidden", "A request is decided by someone other than its requester."
-            )
+        own_request = two_people(
+            principal,
+            row.requester_id,
+            message="A request is decided by someone other than its requester.",
+        )
         if row.status != "pending":
             raise Problem(409, "invalid_state", f"The request is already {row.status}.")
         granting = body.decision != "reject"
@@ -336,5 +339,12 @@ async def decide_access_request(
             },
         )
         await session.flush()
+        if own_request:
+            await record_self_approval(
+                principal,
+                step="access_request.decide",
+                object_kind="access_request",
+                object_id=row.id,
+            )
         await session.refresh(row)
         return AccessRequestView.model_validate(row)

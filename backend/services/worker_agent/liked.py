@@ -87,6 +87,7 @@ async def propose_example(event: Event) -> None:
             origin="feedback",
             status="draft",
             created_by=user_id,
+            sql_changed_by=user_id,
             updated_by=user_id,
         )
         session.add(row)

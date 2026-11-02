@@ -675,6 +675,82 @@ async def test_the_creator_cannot_be_the_owner(ds: Space) -> None:
         assert swap.status_code == 422
 
 
+async def test_data_product_owner_self_approved_when_the_org_allows_it(
+    ds: Space, self_approvals: Any
+) -> None:
+    ds.seed.allow_self_approval(ds.org)
+    async with client(ds) as api:
+        mine = await api.post(
+            "/v1/data-products",
+            json=_body(ds, owner_id=str(ds.users["steward"]), steward_id=str(ds.users["owner"])),
+            headers=ds.headers("steward"),
+        )
+    assert mine.status_code == 201, mine.text
+    assert mine.json()["owner_id"] == str(ds.users["steward"])
+    assert self_approvals(ds.org) == ["data_product.owner"]
+
+
+async def test_existing_self_approved_owner_does_not_block_unrelated_edit_when_disabled(
+    ds: Space,
+) -> None:
+    ds.seed.allow_self_approval(ds.org)
+    async with client(ds) as api:
+        product = await _create(
+            api,
+            ds,
+            owner_id=str(ds.users["steward"]),
+            steward_id=str(ds.users["owner"]),
+        )
+        with ds.seed.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE org.organization SET allow_self_approval = false WHERE id = %s",
+                (str(ds.org),),
+            )
+        renamed = await api.patch(
+            f"/v1/data-products/{product['id']}",
+            json={"name": "Tên mới"},
+            headers=ds.headers("steward"),
+        )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "Tên mới"
+
+
+async def test_one_person_owner_and_steward_when_the_org_allows_it(
+    ds: Space, self_approvals: Any
+) -> None:
+    async with client(ds) as api:
+        both = _body(ds, owner_id=str(ds.users["owner"]), steward_id=str(ds.users["owner"]))
+        refused = await api.post("/v1/data-products", json=both, headers=ds.headers("steward"))
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["errors"][0]["field"] == "steward_id"
+        ds.seed.allow_self_approval(ds.org)
+        made = await api.post("/v1/data-products", json=both, headers=ds.headers("steward"))
+    assert made.status_code == 201, made.text
+    assert self_approvals(ds.org) == ["data_product.steward"]
+
+
+async def test_a_proposed_self_approved_change_is_recorded_as_proposed(
+    ds: Space, self_approvals: Any
+) -> None:
+    async with client(ds) as api:
+        product = (await _create(api, ds))["id"]
+        await _members(api, ds, product)
+        _activate(ds, product)
+        ds.seed.allow_self_approval(ds.org)
+        me = str(ds.users["steward"])
+        draft = await api.patch(
+            f"/v1/data-products/{product}",
+            json={"owner_id": me, "steward_id": me},
+            headers=ds.headers("steward"),
+        )
+    assert draft.status_code == 200, draft.text
+    assert draft.json()["status"] == "pending_review"
+    assert self_approvals(ds.org) == [
+        "data_product.steward.proposed",
+        "data_product.owner.proposed",
+    ]
+
+
 async def test_personal_data_raises_the_product_classification(ds: Space) -> None:
     ds.seed.row(
         "catalog.column_meta",

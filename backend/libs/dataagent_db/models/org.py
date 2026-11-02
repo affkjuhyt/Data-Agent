@@ -68,6 +68,11 @@ class Organization(Base):
         server_default=sql_text("'{}'"),
         comment="Ngưỡng chung, ví dụ tỷ lệ đúng tối thiểu để mở Data Space (NFR-07)",
     )
+    allow_self_approval: Mapped[bool] = mapped_column(
+        Boolean,
+        server_default=sql_text("false"),
+        comment="Tổ chức cho phép một người vừa tạo vừa duyệt (tự duyệt). Tắt: trigger org.two_people từ chối cặp người trùng nhau ở các bảng duyệt; bật: cho qua. Không đổi các dòng đã có",
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )

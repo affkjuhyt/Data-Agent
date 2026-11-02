@@ -146,6 +146,22 @@ export const syncDirectory = () => ok<{ status: string }>(api.POST('/v1/admin/di
 export const inviteUser = (body: Invitation) =>
   okAs<AdminUser>(api.POST('/v1/admin/invitations', { body }));
 
+/* ─── Tổ chức: tự duyệt ──────────────────────────────────────────────── */
+
+/** org.organization with allow_self_approval: on, a creator may approve their own work. */
+export type Organization = Schemas['OrganizationView'];
+
+/** GET /v1/admin/organization: anyone in the organisation may read it. */
+export const getOrganization = () => ok<Organization>(api.GET('/v1/admin/organization'));
+
+/** PATCH /v1/admin/organization (admin): each change is audited with its before and after. */
+export const setSelfApproval = (on: boolean) =>
+  ok<Organization>(
+    api.PATCH('/v1/admin/organization', {
+      body: { allow_self_approval: on } satisfies Schemas['OrganizationPatch'],
+    }),
+  );
+
 /* ─── Data Space, thành viên và quyền (UC-11-08) ─────────────────────── */
 
 export interface DataSpaceSummary extends DataSpace {

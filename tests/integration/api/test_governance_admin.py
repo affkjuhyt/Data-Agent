@@ -86,6 +86,7 @@ def gov(seed: Seed) -> Org:
     }
     users = {
         "admin": _user(seed, org, "admin", roles["admin"], {"branch_code": "HN01"}),
+        "admin2": _user(seed, org, "admin2", roles["admin"], {"branch_code": "HN01"}),
         "officer": _user(seed, org, "officer", roles["compliance"], {}),
         "teller": _user(seed, org, "teller", roles["branch"], {"branch_code": "HCM02"}),
     }
@@ -168,7 +169,7 @@ async def test_an_access_policy_is_simulated_before_it_is_switched_on(gov: Org) 
         ]
 
         early = await api.post(
-            f"/v1/policies/{policy['id']}:activate", headers=gov.headers("admin")
+            f"/v1/policies/{policy['id']}:activate", headers=gov.headers("admin2")
         )
         assert early.status_code == 422
 
@@ -205,17 +206,17 @@ async def test_an_access_policy_is_simulated_before_it_is_switched_on(gov: Org) 
                 "WHERE policy_id = %s",
                 ([str(gov.users["teller"])], policy["id"]),
             )
-        on = await api.post(f"/v1/policies/{policy['id']}:activate", headers=gov.headers("admin"))
+        on = await api.post(f"/v1/policies/{policy['id']}:activate", headers=gov.headers("admin2"))
         assert on.status_code == 200, on.text
         assert on.json()["status"] == "active" and on.json()["activated_by"] == str(
-            gov.users["admin"]
+            gov.users["admin2"]
         )
         events = gov.events(policy["id"])
         warning = next(payload for event, payload in events if event == "policy.impact_warning")
         assert warning["changed_result_count"] == 2
         assert warning["affected_agent_ids"] == [str(gov.users["teller"])]
         again = await api.post(
-            f"/v1/policies/{policy['id']}:activate", headers=gov.headers("admin")
+            f"/v1/policies/{policy['id']}:activate", headers=gov.headers("admin2")
         )
         assert again.status_code == 409
 
@@ -283,7 +284,7 @@ async def test_permissions_compare_two_roles_on_one_table(gov: Org) -> None:
                 json={"as_user_id": str(gov.users["teller"])},
                 headers=gov.headers("admin"),
             )
-            await api.post(f"/v1/policies/{made['id']}:activate", headers=gov.headers("admin"))
+            await api.post(f"/v1/policies/{made['id']}:activate", headers=gov.headers("admin2"))
         compared = await api.post(
             "/v1/permissions:simulate",
             json={
@@ -344,12 +345,72 @@ async def test_behaviour_policy_and_backtest(gov: Org) -> None:
             gov.one("SELECT policy_kind FROM governance.policy_backtest WHERE id = %s", backtest)
             == "behavior"
         )
-        on = await api.post(f"/v1/policies/{policy['id']}:activate", headers=gov.headers("admin"))
+        on = await api.post(f"/v1/policies/{policy['id']}:activate", headers=gov.headers("admin2"))
         assert on.json()["status"] == "active"
         listed = await api.get("/v1/policies", headers=gov.headers("teller", space=True))
         assert [p["id"] for p in listed.json()] == [policy["id"]]
         outside = await api.get("/v1/policies", headers=gov.headers("teller"))
         assert outside.json() == []
+
+
+_NO_SELF_APPROVAL = "Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt."
+
+
+async def _behaviour_policy(api: httpx.AsyncClient, gov: Org) -> str:
+    made = await api.post(
+        "/v1/policies",
+        json={
+            "type": "behavior",
+            "definition": {
+                "scope": "data_space",
+                "data_space_id": str(gov.space),
+                "kind": "auto_handle",
+                "description": "Lệch dưới 0,05% ngày chốt kỳ thì dùng nguồn A",
+                "condition": {"max_diff_pct": 0.05},
+                "action": {"prefer_source": "A"},
+            },
+        },
+        headers=gov.headers("admin"),
+    )
+    assert made.status_code == 201, made.text
+    return str(made.json()["id"])
+
+
+async def test_policy_activation_needs_another_person(gov: Org, self_approvals: Any) -> None:
+    async with client(gov) as api:
+        policy = await _behaviour_policy(api, gov)
+        own = await api.post(f"/v1/policies/{policy}:activate", headers=gov.headers("admin"))
+        assert own.status_code == 403 and own.json()["code"] == "forbidden", own.text
+        assert own.json()["detail"] == _NO_SELF_APPROVAL
+        assert (
+            gov.one("SELECT status FROM governance.behavior_policy WHERE id = %s", policy)
+            == "draft"
+        )
+        other = await api.post(f"/v1/policies/{policy}:activate", headers=gov.headers("admin2"))
+        assert other.status_code == 200, other.text
+    assert self_approvals(gov.org) == []
+
+
+async def test_a_creator_is_refused_before_the_simulation_state_is_told(gov: Org) -> None:
+    # The creator learns nothing about the policy from an action they cannot take: an unsimulated
+    # access policy answers 403 to them and 422 to someone else.
+    async with client(gov) as api:
+        made = await api.post("/v1/policies", json=_access(gov), headers=gov.headers("admin"))
+        policy = made.json()["id"]
+        own = await api.post(f"/v1/policies/{policy}:activate", headers=gov.headers("admin"))
+        assert own.status_code == 403 and own.json()["detail"] == _NO_SELF_APPROVAL, own.text
+        other = await api.post(f"/v1/policies/{policy}:activate", headers=gov.headers("admin2"))
+        assert other.status_code == 422, other.text
+
+
+async def test_policy_self_activation_when_the_org_allows_it(gov: Org, self_approvals: Any) -> None:
+    gov.seed.allow_self_approval(gov.org)
+    async with client(gov) as api:
+        policy = await _behaviour_policy(api, gov)
+        own = await api.post(f"/v1/policies/{policy}:activate", headers=gov.headers("admin"))
+        assert own.status_code == 200, own.text
+        assert own.json()["status"] == "active"
+    assert self_approvals(gov.org) == ["policy.activate"]
 
 
 KEY = "k" * 40

@@ -91,12 +91,11 @@ ALTER TABLE context.knowledge_page ADD CONSTRAINT knowledge_page_kind_subject_ch
 );
 
 -- covers: context.knowledge_page_version#0
--- Certifier recorded with both columns and is a third person (BR-164); a certified version has one.
+-- Certifier recorded with both columns; a certified version has one (BR-164). That the certifier
+-- is a third person is org.two_people's rule (routines/org.sql), which an organisation may switch off.
 ALTER TABLE context.knowledge_page_version ADD CONSTRAINT knowledge_page_version_certifier_check CHECK (
   (certified_by IS NULL) = (certified_at IS NULL)
   AND (status <> 'certified' OR certified_by IS NOT NULL)
-  AND (certified_by IS NULL OR (certified_by IS DISTINCT FROM created_by
-                                AND certified_by IS DISTINCT FROM reviewed_by))
 );
 
 -- covers: context.knowledge_page_version#5

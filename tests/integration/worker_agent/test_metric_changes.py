@@ -277,6 +277,31 @@ async def test_its_author_cannot_approve_a_version_someone_else_previewed(
     assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v1) == "certified"
 
 
+@pytest.mark.parametrize(("switch", "certified"), [(False, False), (True, True)])
+async def test_a_metric_version_its_author_accepted_is_certified_only_when_the_org_allows_it(
+    seed: Seed,
+    warehouse: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    switch: bool,
+    certified: bool,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    metric, v1 = du_no(bank)
+    author = reviewer(bank)
+    v2 = new_version(bank, metric, dims=["vung", "san_pham"], author=author)
+    proposal = await preview(bank, v2)
+    seed.conn.cursor().execute(
+        "UPDATE org.organization SET allow_self_approval = %s WHERE id = %s",
+        (switch, str(bank.org)),
+    )
+    await decide(bank, proposal, "accepted")  # decided by the author
+    expected = "applied" if certified else "apply_failed"
+    assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == expected
+    assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v2) == (
+        "certified" if certified else "draft"
+    )
+
+
 async def test_an_edited_proposal_is_not_certified_as_the_version(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -330,6 +355,21 @@ async def test_a_version_without_a_recorded_author_is_not_certified(
     metric, v1 = du_no(bank)
     v2 = new_version(bank, metric, dims=["vung", "san_pham"], recorded=False)
     proposal = await preview(bank, v2)
+    await decide(bank, proposal, "accepted")
+    assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "apply_failed"
+    assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v1) == "certified"
+
+
+async def test_a_version_without_a_recorded_author_is_not_certified_even_when_the_org_allows_it(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    metric, v1 = du_no(bank)
+    v2 = new_version(bank, metric, dims=["vung", "san_pham"], recorded=False)
+    proposal = await preview(bank, v2)
+    seed.conn.cursor().execute(
+        "UPDATE org.organization SET allow_self_approval = true WHERE id = %s", (str(bank.org),)
+    )
     await decide(bank, proposal, "accepted")
     assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "apply_failed"
     assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v1) == "certified"

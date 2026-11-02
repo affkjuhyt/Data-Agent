@@ -257,6 +257,10 @@ ngày 01/11/2026.
 | **14 (mới)** | **Mỗi câu trả lời có nhãn tin cậy** (VERIFIED, GOVERNED, EXPLORATORY, DOCUMENT, INSUFFICIENT) và mở được tới SQL/tài liệu gốc |
 | **15 (mới)** | **Truy vấn tại chỗ là mặc định**; sao chép dữ liệu khách chỉ khi cần vintage hoặc governance yêu cầu, và phải ghi lý do |
 
+**Duyệt hai người:** người tạo không tự duyệt khi tổ chức chưa bật `allow_self_approval`. Công tắc
+này mặc định tắt, chỉ quản trị tổ chức được đổi; khi bật, mỗi bước tự duyệt đều có dòng audit riêng.
+Quy tắc áp dụng ở API và trong CSDL.
+
 ## 6. Agent "tự biến hoá": định nghĩa để làm được
 
 "Tự biến hoá" dễ bị hiểu thành agent tự viết agent khác và tự chạy trên production. Như vậy vi phạm

@@ -746,6 +746,78 @@ async def test_a_manual_number_is_approved_by_the_controller_the_filer_names(ps:
         assert approval["hitl_kind"] == "period_exception"
 
 
+async def test_period_number_approve_self_named_when_the_org_allows_it(
+    ps: Space, self_approvals: Any
+) -> None:
+    ps.seed.allow_self_approval(ps.org)
+    # One person who is both controller and steward files and approves their own number.
+    ps.seed.row(
+        "org.data_space_member",
+        org_id=ps.org,
+        data_space_id=ps.space,
+        principal_type="user",
+        principal_id=ps.users["controller"],
+        role_id=ps.one("SELECT id FROM org.role WHERE org_id = %s AND code = 'AC03'", ps.org),
+    )
+    sept = ps.period("2026-09", "closed")
+    override = {
+        "metric_version_id": str(ps.mv2),
+        "reported_value": "2.31",
+        "override_reason": "Báo cáo đã nộp ghi 2,31%",
+        "approver_id": str(ps.users["controller"]),
+    }
+    async with client(ps) as api:
+        # The approver must still hold compliance: a steward naming themself is refused.
+        not_compliance = await api.post(
+            f"/v1/periods/{sept}:publish",
+            json={
+                "report_code": REPORT,
+                "filed_at": "2026-10-10",
+                "overrides": [{**override, "approver_id": str(ps.users["steward"])}],
+            },
+            headers=ps.headers("steward"),
+        )
+        assert not_compliance.status_code == 422, not_compliance.text
+        assert self_approvals(ps.org) == []
+        filed = await api.post(
+            f"/v1/periods/{sept}:publish",
+            json={"report_code": REPORT, "filed_at": "2026-10-10", "overrides": [override]},
+            headers=ps.headers("controller"),
+        )
+    assert filed.status_code == 200, filed.text
+    assert self_approvals(ps.org) == ["period_number.approve.proposed"]
+    # The inbox opens the request from hitl.requested (as the worker does): the filer, who is
+    # also its assignee and excluded by name, decides it.
+    approval = dict(ps.events(sept))["period.override_approval_requested"]
+    assert approval["excluded_approver_ids"] == [str(ps.users["controller"])]
+    request = ps.seed.row(
+        "inbox.hitl_request",
+        id=uuid.UUID(approval["hitl_request_id"]),
+        org_id=ps.org,
+        data_space_id=ps.space,
+        kind="period_exception",
+        title="Duyệt số nộp khác số tính",
+        source_service="period",
+        source_ref=sept,
+        assignee_id=ps.users["controller"],
+        created_by=ps.users["controller"],
+        context=Json({"excluded_approver_ids": [str(ps.users["controller"])]}),
+    )
+    async with client(ps) as api:
+        decided = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            json={"decision": "approve"},
+            headers=ps.headers("controller"),
+        )
+    assert decided.status_code == 200, decided.text
+    assert decided.json()["status"] == "approved"
+    assert self_approvals(ps.org) == [
+        "period_number.approve.proposed",
+        "hitl.excluded_approver",
+        "hitl.approve",
+    ]
+
+
 # AC-10-03-05
 @pytest.mark.req("AC-10-03-05")
 def test_published_results_are_insert_only_for_svc_period(ps: Space, api_database: str) -> None:

@@ -235,7 +235,7 @@ def parse_indexes(text: str, table: str, notes: list[str]) -> list[dict]:
 
 
 FORMAL = re.compile(
-    r"^(CHECK|UNIQUE(?: NULLS NOT DISTINCT)?|FOREIGN KEY|EXCLUDE(?: USING \w+)?)\s*\("
+    r"^(?:CONSTRAINT [a-z_]+ )?(CHECK|UNIQUE(?: NULLS NOT DISTINCT)?|FOREIGN KEY|EXCLUDE(?: USING \w+)?)\s*\("
 )
 
 

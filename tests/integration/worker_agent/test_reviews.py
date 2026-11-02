@@ -140,6 +140,29 @@ async def test_a_product_at_the_bar_is_proposed_then_activated_by_its_reviewer(
     assert (status, activated_by) == ("active", reviewer)
 
 
+@pytest.mark.parametrize(("switch", "status"), [(False, "pending_review"), (True, "active")])
+async def test_a_data_product_its_author_accepted_is_activated_only_when_the_org_allows_it(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    switch: bool,
+    status: str,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid_product = product(bank, 3000)
+    await drain_all()
+    proposal = seed.one("SELECT proposal_id FROM context.data_product WHERE id = %s", pid_product)
+    seed.conn.cursor().execute(
+        "UPDATE org.organization SET allow_self_approval = %s WHERE id = %s",
+        (switch, str(bank.org)),
+    )
+    decide(seed, bank.org, proposal, "accepted", bank.user)  # the author decides
+    await drain_all()
+    assert seed.one(
+        "SELECT status, activated_by FROM context.data_product WHERE id = %s", pid_product
+    ) == (status, bank.user if switch else None)
+
+
 async def test_a_product_below_the_bar_stays_a_draft(
     seed: Seed,
     warehouse: dict[str, Any],  # noqa: F811

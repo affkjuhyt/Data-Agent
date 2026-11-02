@@ -22,10 +22,12 @@ from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, context
 from libs.sql_guard import read_only_problem
 from services.api.catalogue import endpoint
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import Page, encode_page_token, invalid_page_token
 from services.api.kernel.problems import Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.context.common import (
     ROLE,
     ContextPage,
@@ -1110,6 +1112,7 @@ async def create_example(
             origin="manual",
             status="draft",
             created_by=principal.user_id,
+            sql_changed_by=principal.user_id,
             updated_by=principal.user_id,
         )
         session.add(row)
@@ -1172,12 +1175,21 @@ async def update_example(
                 "invalid_state",
                 f"The example is {row.status}; it is confirmed once the checker has run its SQL.",
             )
+        # The SQL's last author counts as much as the creator: changing someone's SQL does not
+        # make the example one's own to confirm.
+        self_approved = body.status == "active" and two_people(
+            principal,
+            row.created_by,
+            row.sql_changed_by,
+            message="Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt.",
+        )
         if body.question is not None:
             row.question = body.question
         if sql is not None and rerun:
             # Out of the standard set until the checker has run the new SQL (BR-118): it goes
             # back to draft, as a new example does, and the checker acts on the event below.
             row.sql, row.status, row.last_verified_at = sql, "draft", None
+            row.sql_changed_by = principal.user_id
         if body.status is not None:
             row.status = body.status
         row.updated_by, row.updated_at = principal.user_id, now()
@@ -1196,6 +1208,10 @@ async def update_example(
         )
         await session.flush()
         await session.refresh(row)
+        if self_approved:
+            await record_self_approval(
+                principal, step="example.confirm", object_kind="example_query", object_id=row.id
+            )
         return ExampleView.model_validate(row)
 
 

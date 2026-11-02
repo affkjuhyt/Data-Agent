@@ -672,6 +672,39 @@ async def test_session_report_checks_and_publication(team: Team, seed: Seed) -> 
     assert events[3][2]["recipients"][0]["principal_type"] == "group"
 
 
+@pytest.mark.req("AC-02-07-06")
+async def test_session_report_approve_self_approved_when_the_org_allows_it(
+    team: Team, seed: Seed, self_approvals: Any
+) -> None:
+    seed.allow_self_approval(team.org)
+    owner = _as(team, "owner")
+    async with _api(team) as api:
+        workspace_id = await _workspace(api, team)
+        tile = await _tile(api, team, workspace_id)
+        created = await api.post(
+            f"/v1/workspaces/{workspace_id}/reports",
+            headers=owner,
+            json={"title": "Báo cáo T9", "tile_ids": [tile["id"]]},
+        )
+        assert created.status_code == 201, created.text
+        report = created.json()
+        _sql(
+            seed,
+            """UPDATE workspace.session_report SET status = 'ready',
+               checks = '{"grounding": "pass", "filed": "pass", "access": "pass", "personal_data": "pass"}'
+               WHERE id = %s""",
+            report["id"],
+        )
+        # The author's own :publish publishes: the org takes the author as the approver too.
+        published = await api.post(
+            f"/v1/session-reports/{report['id']}:publish", headers=owner, json={}
+        )
+    assert published.status_code == 200, published.text
+    assert published.json()["status"] == "published"
+    assert published.json()["approved_by"] == str(team.owner)
+    assert self_approvals(team.org) == ["session_report.approve"]
+
+
 async def test_workspace_isolation_between_orgs(team: Team, seed: Seed) -> None:
     other = _team(seed)
     async with _api(team) as api:

@@ -283,7 +283,9 @@ class WritebackRequest(Base):
         Text, nullable=True, comment="Ảnh chụp bảng đích để hoàn tác 30 ngày"
     )
     approved_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, comment="Phải khác người yêu cầu (BR-24)"
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="Phải khác người yêu cầu trừ khi tổ chức bật tự duyệt (org.two_people) (BR-24)",
     )
     proposal_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, comment="logic → inbox.proposal"

@@ -37,6 +37,7 @@ from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import acquire, catalog, org
 from services.api.catalogue import endpoint
 from services.api.kernel import ingest_profile
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -90,6 +91,7 @@ from services.api.modules.acquire.schemas import (
     SchemaTestRequest,
     SourcePage,
 )
+from services.api.modules.audit import record_self_approval
 
 router = APIRouter()
 ROLE = "svc_acquire"
@@ -786,10 +788,12 @@ async def legal_review(
         row = await _source(session, principal, space, source_id, lock=True)
         if row.status == "retired":
             raise Problem(409, "invalid_state", "A retired source is not reviewed.")
-        if row.owner_id == principal.user_id:
-            raise Problem(
-                403, "policy_denied", "The source's owner cannot review it legally (BR-174)."
-            )
+        own_source = two_people(
+            principal,
+            row.owner_id,
+            message="The source's owner cannot review it legally (BR-174).",
+            code="policy_denied",
+        )
         rules.check_urls_in_scope("terms_url", [body.terms_url], row.allowed_domains)
         previous = row.status
         row.terms_url = body.terms_url
@@ -825,6 +829,13 @@ async def legal_review(
             legal_review_due_at=row.legal_review_due_at,
         )
         _status_changed(session, principal, row, previous)
+        if own_source:
+            await record_self_approval(
+                principal,
+                step="crawl_source.legal_review",
+                object_kind="crawl_source",
+                object_id=row.id,
+            )
         return _source_view(row)
 
 

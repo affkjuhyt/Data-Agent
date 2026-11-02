@@ -292,6 +292,57 @@ async def test_a_frontier_provider_is_enabled_only_after_another_person_approves
         assert changed[-1]["enabled"] is True
 
 
+async def test_model_provider_approve_and_enable_self_approved_when_the_org_allows_it(
+    gov: Org, self_approvals: Any
+) -> None:
+    gov.seed.allow_self_approval(gov.org)
+    async with client(gov) as api:
+        provider = (
+            await api.post(
+                "/v1/admin/model-providers", json=_frontier(gov), headers=gov.headers("admin")
+            )
+        ).json()["id"]
+        url = f"/v1/admin/model-providers/{provider}"
+        # One person who is both admin and compliance approves, then enables, the same provider.
+        approved = await api.post(
+            f"{url}:approve", json={"note": "Đã xem hợp đồng"}, headers=gov.headers("both")
+        )
+        assert approved.status_code == 200, approved.text
+        assert self_approvals(gov.org) == []
+        enabled = await api.patch(url, json={"enabled": True}, headers=gov.headers("both"))
+        assert enabled.status_code == 200, enabled.text
+        assert enabled.json()["enabled"] is True
+        assert self_approvals(gov.org) == ["model_provider.enable"]
+
+
+async def test_model_provider_approve_after_own_enable_when_the_org_allows_it(
+    gov: Org, self_approvals: Any
+) -> None:
+    gov.seed.allow_self_approval(gov.org)
+    provider = gov.provider(
+        code="frontier-d",
+        kind="frontier",
+        endpoint=f"https://{PUBLIC_HOST}/v1",
+        secret_ref=f"secret/tenants/{gov.org}/providers/d",
+        data_region="sg",
+        zero_retention=True,
+        max_classification="public",
+        enabled=True,
+        enabled_by=gov.users["both"],
+        approved_by=gov.users["officer"],
+        approved_at=datetime.datetime.now(datetime.UTC),
+    )
+    async with client(gov) as api:
+        approved = await api.post(
+            f"/v1/admin/model-providers/{provider}:approve",
+            json={"note": "x"},
+            headers=gov.headers("both"),
+        )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["approved_by"] == str(gov.users["both"])
+    assert self_approvals(gov.org) == ["model_provider.approve"]
+
+
 async def test_the_enabler_cannot_approve(gov: Org) -> None:
     provider = gov.provider(
         code="frontier-b",

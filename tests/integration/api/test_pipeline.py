@@ -1144,6 +1144,25 @@ async def test_the_owner_publishes_what_the_engineer_drafted(pp: Space) -> None:
         assert self_approved.status_code == 403, self_approved.text
 
 
+@pytest.mark.req("AC-06-06-01")
+async def test_data_product_publish_self_approved_when_the_org_allows_it(
+    pp: Space, self_approvals: Any
+) -> None:
+    pp.seed.allow_self_approval(pp.org)
+    async with client(pp) as api:
+        # The lead drafts it, names themselves owner, and publishes it.
+        own = await _product(
+            api, pp, who="lead", code="tu_lam_tu_duyet", owner_id=str(pp.users["lead"])
+        )
+        published = await api.post(
+            f"/v1/data-products/{own['id']}:publish", headers=pp.headers("lead")
+        )
+    assert published.status_code == 200, published.text
+    assert published.json()["status"] == "published"
+    assert published.json()["approved_by"] == str(pp.users["lead"])
+    assert self_approvals(pp.org) == ["data_product.owner", "data_product.publish"]
+
+
 # AC-06-06-03
 @pytest.mark.req("AC-06-06-03")
 async def test_a_mart_whose_relations_failed_is_not_published(pp: Space) -> None:
@@ -1390,7 +1409,7 @@ async def test_submit_sends_a_previewed_diff_without_deletes_for_review(pp: Spac
         assert again.status_code == 409
 
     # The same rule held by the database.
-    with pytest.raises(Exception, match="writeback_request"):
+    with pytest.raises(Exception, match="approved_by và requested_by"):
         pp.run(
             "UPDATE pipeline.writeback_request SET approved_by = requested_by WHERE id = %s",
             made["id"],

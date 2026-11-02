@@ -25,6 +25,7 @@ from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import eval as evaluation
 from libs.dataagent_db.models import inbox, org
 from services.api.catalogue import endpoint
+from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -37,6 +38,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import Problem
+from services.api.modules.audit import record_self_approval
 from services.api.modules.inbox.schemas import (
     ApprovalStepView,
     ChangedResult,
@@ -344,8 +346,11 @@ async def _decide_step(
     body: HitlResolve,
     principal: Principal,
     org_caps: frozenset[str],
+    self_steps: list[str],
 ) -> bool:
-    """Records the caller's decision on the current step of a chain; True when the chain is done."""
+    """Records the caller's decision on the current step of a chain; True when the chain is done.
+    A step the caller decides after deciding an earlier one, allowed by the org's switch, is
+    added to `self_steps` for the caller to log (whatever the decision)."""
     if body.decision not in ("approve", "reject"):
         raise Problem(
             422, "validation_failed", "A step of an approval chain is approved or rejected."
@@ -353,8 +358,9 @@ async def _decide_step(
     current = next(s for s in steps if s.decision is None)
     if current.approver_id is not None and current.approver_id != principal.user_id:
         raise Problem(403, "forbidden", "This approval step is assigned to someone else.")
-    if any(s.approver_id == principal.user_id for s in steps if s.decision is not None):
-        # BR-132 / BR-62: each step of a chain is a different person.
+    again = any(s.approver_id == principal.user_id for s in steps if s.decision is not None)
+    if again and not principal.self_approval:
+        # BR-132 / BR-62: each step of a chain is a different person, unless the org allows it.
         raise Problem(
             422,
             "business_rule_violated",
@@ -366,6 +372,9 @@ async def _decide_step(
         raise Problem(
             403, "forbidden", f"This step is decided by someone holding {current.approver_role}."
         )
+    if again:
+        # Logged once every check has passed, so a refused step leaves no row.
+        self_steps.append("hitl.chain_step")
     current.approver_id = principal.user_id
     current.decision = body.decision
     current.note = body.note
@@ -394,6 +403,13 @@ async def _decide_step(
         )
         return False
     return True
+
+
+async def _record_self_steps(principal: Principal, request_id: uuid.UUID, steps: list[str]) -> None:
+    for step in steps:
+        await record_self_approval(
+            principal, step=step, object_kind="hitl_request", object_id=request_id
+        )
 
 
 @router.post(
@@ -431,13 +447,20 @@ async def resolve_hitl(
         if not step_approver and not await _is_assignee(session, row, principal, org_caps):
             raise Problem(403, "forbidden", "Only the assignee can resolve this request.")
         excluded = (row.context or {}).get("excluded_approver_ids") or []
+        self_steps: list[str] = []
         if str(principal.user_id) in excluded:
             # Named by the module that asked (the filer, the closer of the period). Not even a
-            # reassign: they would pick who approves their own request.
-            raise Problem(403, "forbidden", "You may not decide this request.")
-        if body.decision == "approve" and row.created_by == principal.user_id:
-            # BR-62: whoever raised the change does not approve it.
-            raise Problem(403, "forbidden", "The requester cannot approve their own request.")
+            # reassign: they would pick who approves their own request. The org's switch lifts it.
+            if not principal.self_approval:
+                raise Problem(403, "forbidden", "You may not decide this request.")
+            self_steps.append("hitl.excluded_approver")
+        if body.decision == "approve" and two_people(
+            principal,
+            row.created_by,
+            # BR-62: whoever raised the change does not approve it, unless the org allows it.
+            message="The requester cannot approve their own request.",
+        ):
+            self_steps.append("hitl.approve")
         _check_option(row, body.option)
         now = _now()
         row.updated_by = principal.user_id
@@ -467,9 +490,13 @@ async def resolve_hitl(
                 )
             )
             await session.flush()
+            await _record_self_steps(principal, row.id, self_steps)
             return _detail(row, steps)
-        if chained and not await _decide_step(session, row, steps, body, principal, org_caps):
+        if chained and not await _decide_step(
+            session, row, steps, body, principal, org_caps, self_steps
+        ):
             await session.flush()
+            await _record_self_steps(principal, row.id, self_steps)
             return _detail(row, steps)
         row.status = HITL_STATUS[body.decision]
         row.response = {"decision": body.decision, "option": body.option, "note": note}
@@ -496,6 +523,7 @@ async def resolve_hitl(
             )
         )
         await session.flush()
+        await _record_self_steps(principal, row.id, self_steps)
         return _detail(row, steps)
 
 
@@ -586,8 +614,14 @@ async def decide_proposal(
             raise Problem(
                 409, "invalid_state", f"The proposal is {row.status} and cannot be decided."
             )
-        if row.proposed_by == principal.user_id:
-            raise Problem(403, "forbidden", "The proposer cannot review their own proposal.")
+        # Each step the caller takes on their own work writes its own audit row.
+        self_steps: list[str] = []
+        if two_people(
+            principal,
+            row.proposed_by,
+            message="The proposer cannot review their own proposal.",
+        ):
+            self_steps.append("proposal.review")
         if accepting and row.eval_run_id is not None and not body.reviewed_regressions:
             run = await session.scalar(
                 select(evaluation.EvalRun).where(evaluation.EvalRun.id == row.eval_run_id)
@@ -621,10 +655,12 @@ async def decide_proposal(
                     editors.add(review.reviewer_id)
                 elif review.decision == "request_changes":
                     editors = set()
-        if principal.user_id in editors:
-            raise Problem(
-                403, "forbidden", "Whoever edited the proposal cannot also accept the edit."
-            )
+        if two_people(
+            principal,
+            *editors,
+            message="Whoever edited the proposal cannot also accept the edit.",
+        ):
+            self_steps.append("proposal.accept_edit")
         chain_step = len(accepted_before) + 1
         if chain_step > 1:
             # BR-119 second step: the controller (AC06), another person than the first reviewer.
@@ -632,12 +668,14 @@ async def decide_proposal(
                 raise Problem(
                     403, "forbidden", "The second approval step needs the compliance capability."
                 )
-            if any(r.reviewer_id == principal.user_id for r in accepted_before):
-                raise Problem(
-                    422,
-                    "business_rule_violated",
-                    "The second approval step must be another person than the first (BR-119).",
-                )
+            if two_people(
+                principal,
+                *(r.reviewer_id for r in accepted_before),
+                message="The second approval step must be another person than the first (BR-119).",
+                status=422,
+                code="business_rule_violated",
+            ):
+                self_steps.append("proposal.second_step")
         session.add(
             inbox.ProposalReview(
                 id=uuid7(),
@@ -716,4 +754,8 @@ async def decide_proposal(
             )
         )
         await session.flush()
+        for step in self_steps:
+            await record_self_approval(
+                principal, step=step, object_kind="proposal", object_id=row.id
+            )
         return await _proposal_detail(session, row)

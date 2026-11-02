@@ -3,6 +3,7 @@
  * backtest counts, the owner switching it on, and dropping it after confirmation with a reason.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -50,6 +51,23 @@ describe('DecisionRulePage', () => {
     expect(await screen.findByText('Đã bật quy tắc')).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Bật quy tắc' })).toBeNull());
     expect(screen.getAllByText('Đang áp dụng').length).toBeGreaterThan(0);
+  });
+
+  it('tells the owner why they cannot switch on a rule they wrote while self-approval is off', async () => {
+    const detail = 'Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt.';
+    server.use(
+      http.post('*/v1/policies/:action', () =>
+        HttpResponse.json(
+          { title: 'forbidden', status: 403, code: 'forbidden', detail },
+          { status: 403, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    );
+    page();
+    fireEvent.click(await screen.findByRole('button', { name: 'Bật quy tắc' }));
+    expect(await screen.findByText(`Không thực hiện được: ${detail}`)).toBeInTheDocument();
+    expect(screen.queryByText('Đã bật quy tắc')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Bật quy tắc' })).toBeEnabled();
   });
 
   it('drops the draft only after confirmation and with a reason', async () => {
