@@ -390,3 +390,23 @@ async def test_an_agent_versions_eval_run_never_writes_sql_outside_its_data_scop
         )
         == 0
     )
+
+
+async def test_a_table_without_a_display_name_is_named_by_its_semantic_entity(
+    seed: Seed, credit: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A scanned table often has only its technical name (AdventureWorks: fact_internet_sales):
+    # the entity the semantic layer names it by ("Khoản vay") is its label, for linking a
+    # question to it and in the prompt.
+    bank = build(seed, credit, monkeypatch)
+    script = Script([GOOD[0], GOOD[1]] * 3)
+    monkeypatch.setattr(questions, "_gateway", script)
+    monkeypatch.setattr(questions, "_gateway_read", True)
+    catalogue(bank)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE catalog.dataset SET display_name = NULL WHERE id = %s", (str(bank.loans),)
+        )
+    bank.ask(QUESTION)
+    await drain()
+    assert script.asked and "TABLE bank.loan -- Khoản vay" in script.asked[0][0]

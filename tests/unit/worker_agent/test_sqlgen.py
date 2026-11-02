@@ -172,3 +172,47 @@ def test_examples_and_joins_name_only_readable_tables() -> None:
 )
 def test_nothing_outside_the_linked_tables_is_read(sql: str, dialect: str) -> None:
     assert problems(sql, CHECKED, dialect), sql
+
+
+def test_a_word_of_a_tables_label_links_it_when_the_phrase_is_not_said() -> None:
+    # "mua qua Internet" does not say "Bán qua Internet", but its distinctive word does.
+    sales = Tbl(
+        uuid.uuid4(),
+        "public",
+        "fact_internet_sales",
+        "Bán qua Internet",
+        # Its columns carry only their technical names, as AdventureWorks' do.
+        (
+            Col("customer_key", "customer_key", "integer"),
+            Col("order_quantity", "order_quantity", "integer"),
+        ),
+    )
+    customers = Tbl(
+        uuid.uuid4(),
+        "public",
+        "dim_customer",
+        "Khách hàng",
+        (Col("customer_key", "customer_key", "integer"),),
+    )
+    other = Tbl(
+        uuid.uuid4(), "public", "fact_finance", "Tài chính", (Col("amount", "amount", "decimal"),)
+    )
+    linked = link(
+        "Có bao nhiêu khách hàng mua qua Internet năm 2013",
+        Schema((sales, customers, other), ()),
+    )
+    assert {t.name for t in linked.tables} == {"fact_internet_sales", "dim_customer"}
+
+
+def test_common_words_of_a_label_link_nothing() -> None:
+    # "qua", "năm", "bao" and the like are in every question: only a distinctive word counts.
+    other = Tbl(
+        uuid.uuid4(),
+        "public",
+        "fact_finance",
+        "Số liệu qua năm",
+        (Col("amount", "amount", "decimal"),),
+    )
+    assert (
+        link("Có bao nhiêu khách hàng mua qua Internet năm 2013", Schema((other,), ())).tables == []
+    )

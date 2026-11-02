@@ -96,13 +96,28 @@ def _says(question: str, phrase: str) -> bool:
     return bool(p) and f" {p} " in question
 
 
+# Words too common in questions to say which table is meant, folded (a label's distinctive words
+# are its longer ones: "internet" in "Bán qua Internet", not "qua").
+_COMMON = frozenset(
+    {"nhieu", "trong", "thang", "nhung", "duoc", "khong", "theo", "tong", "cua", "nhat", "bang"}
+)
+
+
+def _distinctive(question: str, label: str) -> int:
+    """How many of the label's distinctive words the question says (none when the label is said
+    whole: that already scores)."""
+    words = {w for w in norm(label.replace("_", " ")).split() if len(w) >= 5 and w not in _COMMON}
+    return sum(1 for w in words if f" {w} " in question)
+
+
 def link(question: str, schema: Schema, *, max_tables: int = MAX_TABLES) -> Linked:
     q = f" {norm(question)} "
     scored: list[tuple[int, int, Tbl]] = []
     values: list[tuple[str, str, str]] = []
     words = q.split()
     for order, t in enumerate(schema.tables):
-        score = 3 * (_says(q, t.label) or _says(q, t.name))
+        named = _says(q, t.label) or _says(q, t.name)
+        score = 3 if named else _distinctive(q, t.label)
         for c in t.columns:
             score += 2 * (_says(q, c.label) or _says(q, c.name))
             said = [v for v in c.samples if _says(q, v)]

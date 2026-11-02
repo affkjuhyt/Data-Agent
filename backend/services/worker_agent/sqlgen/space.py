@@ -109,6 +109,37 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: u
         key = (dataset_id, expression.strip('"'))
         if value not in samples[key]:
             samples[key].append(value)
+    # The semantic layer's names: a table or column scanned with only its technical name
+    # (AdventureWorks' fact_internet_sales) is labelled by the entity or dimension that names it,
+    # for linking the question to it and in the prompt.
+    entity_names: dict[uuid.UUID, str] = dict(
+        (
+            await session.execute(
+                select(
+                    context.SemanticEntity.primary_dataset_id, context.SemanticEntity.name
+                ).where(context.SemanticEntity.data_space_id == space_id)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    dimension_names: dict[tuple[uuid.UUID, str], str] = {
+        (dataset_id, expression.strip('"')): name
+        for dataset_id, expression, name in (
+            await session.execute(
+                select(
+                    context.SemanticEntity.primary_dataset_id,
+                    context.SemanticDimension.expression,
+                    context.SemanticDimension.name,
+                )
+                .join(
+                    context.SemanticDimension,
+                    context.SemanticDimension.entity_id == context.SemanticEntity.id,
+                )
+                .where(context.SemanticEntity.data_space_id == space_id)
+            )
+        ).all()
+    }
     columns: dict[uuid.UUID, list[Col]] = defaultdict(list)
     for m in metas:
         # A personal-data column is not part of what this path may read: never shown to the
@@ -119,7 +150,7 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: u
         columns[m.dataset_id].append(
             Col(
                 m.name,
-                m.display_name or m.name,
+                m.display_name or dimension_names.get((m.dataset_id, m.name)) or m.name,
                 m.normalized_type,
                 m.description,
                 tuple(samples.get((m.dataset_id, m.name), [])[:MAX_SAMPLES]),
@@ -130,7 +161,7 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: u
             d.id,
             d.schema_name,
             d.table_name,
-            d.display_name or d.table_name,
+            d.display_name or entity_names.get(d.id) or d.table_name,
             tuple(columns[d.id]),
             d.description,
         )
