@@ -630,7 +630,8 @@ async def test_example_confirmation_needs_another_person(ctx: Ctx, self_approval
         )
         assert refused.status_code == 403 and refused.json()["code"] == "forbidden", refused.text
         assert refused.json()["detail"] == (
-            "Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt."
+            "The one who created or last changed the example does not confirm it unless the"
+            " organisation allows self-approval."
         )
         # Editing its text is not a confirmation.
         edited = await api.patch(
@@ -654,9 +655,29 @@ async def test_example_self_confirmation_when_the_org_allows_it(
         confirmed = await api.patch(
             f"/v1/examples/{own}", json={"status": "active"}, headers=ctx.headers("steward")
         )
+        # Confirming what is already active is no new approval: no second row, no check.
+        again = await api.patch(
+            f"/v1/examples/{own}", json={"status": "active"}, headers=ctx.headers("steward")
+        )
     assert confirmed.status_code == 200, confirmed.text
     assert confirmed.json()["status"] == "active"
+    assert again.status_code == 200, again.text
+    assert again.json()["status"] == "active"
     assert self_approvals(ctx.org) == ["example.confirm"]
+
+
+async def test_an_active_example_set_active_again_is_not_checked_again(
+    ctx: Ctx, self_approvals: Any
+) -> None:
+    # Its creator, with the switch off, re-sends the status it already has: nothing is
+    # approved, so nothing is refused.
+    own = _example(ctx, "Số hợp đồng?", "active", created_by=ctx.users["steward"])
+    async with client(ctx) as api:
+        again = await api.patch(
+            f"/v1/examples/{own}", json={"status": "active"}, headers=ctx.headers("steward")
+        )
+    assert again.status_code == 200, again.text
+    assert self_approvals(ctx.org) == []
 
 
 async def test_the_one_who_changed_an_examples_sql_does_not_confirm_it(

@@ -1176,12 +1176,18 @@ async def update_example(
                 f"The example is {row.status}; it is confirmed once the checker has run its SQL.",
             )
         # The SQL's last author counts as much as the creator: changing someone's SQL does not
-        # make the example one's own to confirm.
-        self_approved = body.status == "active" and two_people(
-            principal,
-            row.created_by,
-            row.sql_changed_by,
-            message="Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt.",
+        # make the example one's own to confirm. Re-sending the status an active example
+        # already has confirms nothing, so it is neither checked nor recorded again.
+        self_approved = (
+            body.status == "active"
+            and previous != "active"
+            and two_people(
+                principal,
+                row.created_by,
+                row.sql_changed_by,
+                message="The one who created or last changed the example does not confirm it"
+                " unless the organisation allows self-approval.",
+            )
         )
         if body.question is not None:
             row.question = body.question
