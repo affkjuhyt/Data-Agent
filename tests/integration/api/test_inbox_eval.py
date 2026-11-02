@@ -424,6 +424,11 @@ async def test_accepting_a_regression_needs_each_item_reviewed(team: Team) -> No
         assert detail.status_code == 200, detail.text
         assert detail.json()["eval_run"]["regressions"] == 2
         assert [r["eval_item_id"] for r in detail.json()["changed_results"]] == [str(item)]
+        # The run, not the diff, says how the evaluation went.
+        assert detail.json()["summary"]["checks_note"] == (
+            "Bộ đánh giá 92 câu: 90 câu đạt với thay đổi này; 2 câu đang đạt sẽ không đạt nữa."
+            " Xem từng câu trước khi chấp nhận."
+        )
 
         blocked = await api.post(
             f"/v1/proposals/{proposal}:decide",
@@ -446,6 +451,8 @@ async def test_accepting_a_regression_needs_each_item_reviewed(team: Team) -> No
         # An edit is content nobody else has reviewed: it waits for another person (BR-62).
         assert accepted.json()["status"] == "pending_review"
         assert accepted.json()["diff"] == {"add": ["xăng"]}
+        # :decide answers with the summary of the diff as it now stands (no synonym shape left).
+        assert accepted.json()["summary"]["headline"] == "Thêm từ đồng nghĩa"
         assert accepted.json()["reviews"][0]["reviewed_regressions"] is True
 
         own_edit = await api.post(
@@ -1211,3 +1218,634 @@ async def test_proposal_second_step_self_approved_when_the_org_allows_it(
         "proposal.review",
         "proposal.second_step",
     ]
+
+
+# ---------------------------------------------------------------- the change in words (P07)
+#
+# GET /v1/proposals/{id} says what accepting does: a headline, the fields it changes (current and
+# proposed), the evaluation and the preview in words, with every id the reviewer would have to
+# look up resolved to a name under their own organisation.
+
+MANY_TO_ONE = "nhiều–một"  # noqa: RUF001 - the screen's en dash, not a mistyped hyphen
+
+
+def _dataset(team: Team, table: str, schema: str = "dbo", **values: Any) -> uuid.UUID:
+    return team.seed.row(
+        "catalog.dataset",
+        org_id=team.org,
+        data_space_id=team.space,
+        # A derived table needs no source row behind it (dataset CHECK on origin).
+        origin="derived",
+        schema_name=schema,
+        table_name=table,
+        **values,
+    )
+
+
+def _dimension(team: Team, code: str, name: str) -> uuid.UUID:
+    entity = team.seed.row(
+        "context.semantic_entity",
+        org_id=team.org,
+        data_space_id=team.space,
+        code=f"e_{code}",
+        name=f"Thực thể {name}",
+        primary_dataset_id=_dataset(team, f"dim_{code}"),
+        key_columns=[f"{code}_key"],
+    )
+    return team.seed.row(
+        "context.semantic_dimension",
+        org_id=team.org,
+        data_space_id=team.space,
+        entity_id=entity,
+        code=code,
+        name=name,
+        expression=code,
+    )
+
+
+def _metric(team: Team, code: str, name: str) -> tuple[uuid.UUID, uuid.UUID]:
+    metric = team.seed.row(
+        "context.metric",
+        org_id=team.org,
+        data_space_id=team.space,
+        code=code,
+        owner_id=team.users["steward"],
+        current_version=1,
+        status="active",
+    )
+    version = team.seed.row(
+        "context.metric_version",
+        org_id=team.org,
+        metric_id=metric,
+        version=1,
+        display_name=name,
+        expression="sum(amount)",
+        period_semantics="sum_over_period",
+    )
+    return metric, version
+
+
+async def _summary(team: Team, proposal: uuid.UUID) -> dict[str, Any]:
+    async with client(team) as api:
+        detail = await api.get(f"/v1/proposals/{proposal}", headers=team.headers("reviewer"))
+    assert detail.status_code == 200, detail.text
+    return detail.json()["summary"]
+
+
+def _field(label: str, after: str | None, before: str | None = None) -> dict[str, Any]:
+    return {"label": label, "before": before, "after": after}
+
+
+async def test_summary_of_a_synonym_names_its_target_and_reads_the_evaluation(
+    team: Team,
+) -> None:
+    occupation = _dimension(team, "occupation", "Nghề nghiệp")
+    proposal = _proposal(
+        team,
+        kind="synonym",
+        title="Từ đồng nghĩa “occupation”",
+        diff=Json(
+            {
+                "phrase": "occupation",
+                "target_kind": "dimension",
+                "target_id": str(occupation),
+                "target_value": None,
+                "impact": {
+                    "items": 60,
+                    "passed": 10,
+                    "pass_rate": "0.1667",
+                    "regressions": 0,
+                    "changed_items": [],
+                },
+            }
+        ),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == "Thêm từ đồng nghĩa “occupation” cho chiều Nghề nghiệp."
+    assert summary["fields"] == [
+        _field("Cụm từ", "occupation"),
+        _field("Trỏ tới", "chiều Nghề nghiệp"),
+    ]
+    # A low pass rate without regressions is the set's baseline, not this change's doing.
+    assert summary["checks_note"] == (
+        "Bộ đánh giá 60 câu: 10 câu đạt trước và sau thay đổi, không câu nào tệ đi."
+        " Các câu chưa đạt có từ trước, không do thay đổi này: bộ đánh giá hiện mới đạt 10/60."
+    )
+    assert summary["preview_note"] is None
+
+
+async def test_summary_of_a_value_synonym_names_the_value_and_its_dimension(team: Team) -> None:
+    city = _dimension(team, "city", "Thành phố")
+    proposal = _proposal(
+        team,
+        kind="synonym",
+        diff=Json(
+            {
+                "phrase": "hcm",
+                "target_kind": "value",
+                "target_id": str(city),
+                "target_value": "Hồ Chí Minh",
+                "impact": {"note": "Data Space chưa có bộ câu hỏi chuẩn; chưa đo được ảnh hưởng."},
+            }
+        ),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == (
+        "Thêm từ đồng nghĩa “hcm” cho giá trị “Hồ Chí Minh” của chiều Thành phố."
+    )
+    assert summary["fields"] == [
+        _field("Cụm từ", "hcm"),
+        _field("Trỏ tới", "chiều Thành phố"),
+        _field("Giá trị", "Hồ Chí Minh"),
+    ]
+    assert summary["checks_note"] == (
+        "Data Space chưa có bộ câu hỏi chuẩn; chưa đo được ảnh hưởng."
+    )
+
+
+async def test_summary_of_a_metric_change_reads_each_changed_field(team: Team) -> None:
+    metric, _ = _metric(team, "TON_KHO", "Tồn kho")
+    _dimension(team, "vung", "Vùng")
+    _dimension(team, "san_pham", "Sản phẩm")
+    proposal = _proposal(
+        team,
+        kind="metric_change",
+        title="Duyệt định nghĩa TON_KHO phiên bản 2",
+        diff=Json(
+            {
+                "action": "certify",
+                "metric_id": str(metric),
+                "metric_code": "TON_KHO",
+                "version_id": str(uuid.uuid4()),
+                "version": 2,
+                "replaces_version": 1,
+                "changes": {
+                    "display_name": {"before": "Tồn kho", "after": "Tồn kho cuối kỳ"},
+                    "decimals": {"before": 2, "after": 0},
+                    "period_semantics": {"before": "sum_over_period", "after": "end_of_period"},
+                    "time_grain": {"before": "day", "after": "month"},
+                    "filters": {
+                        "before": [],
+                        "after": [{"dimension": "vung", "op": "=", "value": "Bắc"}],
+                    },
+                    "dimensions_added": ["san_pham"],
+                    "dimensions_removed": ["vung"],
+                },
+                "preview": [
+                    {"period": f"2026-0{m}", "new": None, "current": None, "filed": None}
+                    for m in range(4, 10)
+                ],
+                "preview_withheld": None,
+                "eval": {
+                    "items": 60,
+                    "passed": 12,
+                    "pass_rate": "0.2",
+                    "regressions": 0,
+                    "changed_items": [str(uuid.uuid4()), str(uuid.uuid4())],
+                },
+            }
+        ),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == (
+        "Chứng nhận chỉ số Tồn kho cuối kỳ (TON_KHO), phiên bản 2, thay phiên bản 1."
+    )
+    assert summary["fields"] == [
+        _field("Tên hiển thị", "Tồn kho cuối kỳ", "Tồn kho"),
+        _field("Bộ lọc", "Vùng = Bắc", "Không có"),
+        _field("Số chữ số thập phân", "0", "2"),
+        _field("Cách tính theo kỳ", "Giá trị cuối kỳ", "Cộng dồn trong kỳ"),
+        _field("Độ hạt thời gian", "Tháng", "Ngày"),
+        _field("Chiều được phép", "Thêm Sản phẩm · bỏ Vùng"),
+    ]
+    assert summary["checks_note"] == (
+        "Bộ đánh giá 60 câu: 12 câu đạt với thay đổi này (2 câu tốt lên), không câu nào tệ đi."
+        " Các câu chưa đạt có từ trước, không do thay đổi này: bộ đánh giá hiện mới đạt 12/60."
+    )
+    assert summary["preview_note"] == "Chưa có số liệu trong 6 kỳ gần nhất để xem trước."
+
+
+async def test_summary_of_a_first_metric_version_names_the_metric(team: Team) -> None:
+    metric, _ = _metric(team, "DOANH_THU", "Doanh thu")
+    proposal = _proposal(
+        team,
+        kind="metric_change",
+        diff=Json(
+            {
+                "action": "certify",
+                "metric_id": str(metric),
+                "metric_code": "DOANH_THU",
+                "version": 1,
+                "replaces_version": None,
+                "changes": {"unit": {"before": None, "after": "VND"}},
+                "preview": [],
+                "preview_withheld": "Chưa bật bảng fact_sales cho Data Space.",
+            }
+        ),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == "Chứng nhận chỉ số Doanh thu (DOANH_THU), phiên bản 1."
+    assert summary["fields"] == [_field("Đơn vị", "VND")]
+    assert summary["checks_note"] is None
+    assert summary["preview_note"] == (
+        "Chưa xem trước được: Chưa bật bảng fact_sales cho Data Space."
+    )
+
+
+async def test_summary_of_a_relationship_names_both_tables(team: Team) -> None:
+    sales = _dataset(team, "fact_internet_sales")
+    customers = _dataset(team, "dim_customer", display_name="Khách hàng")
+    joined = {
+        "from_dataset_id": str(sales),
+        "from_columns": ["customer_key"],
+        "to_dataset_id": str(customers),
+        "to_columns": ["customer_key"],
+        "cardinality": "many_to_one",
+    }
+    added = _proposal(
+        team,
+        kind="relationship",
+        diff=Json(
+            {
+                **joined,
+                "impact": {
+                    "items": 60,
+                    "passed": 50,
+                    "pass_rate": "0.8333",
+                    "regressions": 2,
+                    "changed_items": [str(uuid.uuid4()), str(uuid.uuid4())],
+                },
+            }
+        ),
+    )
+    retired = _proposal(
+        team,
+        kind="relationship",
+        diff=Json({"action": "retire", "reason": "Khoá sai cột", **joined}),
+    )
+    summary = await _summary(team, added)
+    assert summary["headline"] == (
+        f"Nối bảng fact_internet_sales.customer_key → dim_customer.customer_key ({MANY_TO_ONE})."
+    )
+    assert summary["fields"] == [
+        _field("Từ", "dbo.fact_internet_sales (customer_key)"),
+        _field("Đến", "Khách hàng · dbo.dim_customer (customer_key)"),
+        _field("Kiểu nối", MANY_TO_ONE),
+    ]
+    assert summary["checks_note"] == (
+        "Bộ đánh giá 60 câu: 50 câu đạt với thay đổi này; 2 câu đang đạt sẽ không đạt nữa."
+        " Xem từng câu trước khi chấp nhận."
+    )
+
+    summary = await _summary(team, retired)
+    assert summary["headline"] == (
+        "Gỡ quan hệ nối fact_internet_sales.customer_key → dim_customer.customer_key"
+        f" ({MANY_TO_ONE})."
+    )
+    assert summary["fields"] == [
+        _field("Từ", None, "dbo.fact_internet_sales (customer_key)"),
+        _field("Đến", None, "Khách hàng · dbo.dim_customer (customer_key)"),
+        _field("Kiểu nối", None, MANY_TO_ONE),
+        _field("Lý do", "Khoá sai cột"),
+    ]
+    assert summary["checks_note"] is None
+
+
+async def test_summary_of_an_example_and_a_glossary_term(team: Team) -> None:
+    example = _proposal(
+        team,
+        kind="example",
+        diff=Json(
+            {
+                "question": "Doanh thu năm 2013?",
+                "sql": "SELECT sum(sales_amount) FROM dbo.fact_internet_sales",
+                "rows": 1,
+                "query_run_id": str(uuid.uuid4()),
+            }
+        ),
+    )
+    term = _proposal(
+        team,
+        kind="glossary",
+        diff=Json({"term": "CASA", "definition": "Tiền gửi không kỳ hạn"}),
+    )
+    summary = await _summary(team, example)
+    assert summary["headline"] == "Thêm câu hỏi mẫu “Doanh thu năm 2013?” và câu SQL trả lời nó."
+    assert summary["fields"] == [
+        _field("Câu hỏi", "Doanh thu năm 2013?"),
+        _field("SQL", "SELECT sum(sales_amount) FROM dbo.fact_internet_sales"),
+        _field("Chạy thử", "1 dòng"),
+    ]
+    summary = await _summary(team, term)
+    assert summary["headline"] == "Thêm thuật ngữ “CASA” vào bảng thuật ngữ."
+    assert summary["fields"] == [
+        _field("Thuật ngữ", "CASA"),
+        _field("Định nghĩa", "Tiền gửi không kỳ hạn"),
+    ]
+
+
+async def test_summary_of_a_data_product_names_it_and_its_reviewer(team: Team) -> None:
+    product = team.seed.row(
+        "context.data_product",
+        org_id=team.org,
+        data_space_id=team.space,
+        code="ban_hang",
+        name="Bán hàng trực tuyến",
+        description="Doanh thu bán hàng",
+        period_grain="month",
+        period_from="2024-01-01",
+        owner_id=team.users["steward"],
+        steward_id=team.users["reviewer"],
+        freshness_statement="Hằng ngày",
+        scope_entities=Json([]),
+    )
+    proposal = _proposal(
+        team,
+        kind="data_product",
+        diff=Json(
+            {
+                "data_product_id": str(product),
+                "code": "ban_hang",
+                "version": 1,
+                "eval": {"items": 20, "passed": 20, "pass_rate": "1"},
+                "assignee_id": str(team.users["steward"]),
+            }
+        ),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == (
+        "Kích hoạt data product Bán hàng trực tuyến (ban_hang), phiên bản 1."
+    )
+    assert summary["fields"] == [
+        _field("Data product", "Bán hàng trực tuyến (ban_hang)"),
+        _field("Phiên bản", "1"),
+        _field("Người duyệt", "Owner"),
+    ]
+    assert summary["checks_note"] == "Bộ đánh giá 20 câu: 20 câu đạt."
+
+
+async def test_summary_of_a_skill_publish_and_share(team: Team) -> None:
+    skill = team.seed.row(
+        "skill.skill",
+        org_id=team.org,
+        data_space_id=team.space,
+        code="phan_ra",
+        name="Phân rã biến động",
+        category="decomposition",
+        scope="personal",
+        owner_id=team.users["proposer"],
+    )
+    publish = _proposal(
+        team,
+        kind="skill_publish",
+        target_service="skill",
+        diff=Json({"action": "publish", "skill_id": str(skill), "version": 3, "scope": "personal"}),
+    )
+    share = _proposal(
+        team,
+        kind="skill_publish",
+        target_service="skill",
+        diff=Json(
+            {
+                "action": "share",
+                "skill_id": str(skill),
+                "previous_scope": "personal",
+                "scope": "data_space",
+            }
+        ),
+    )
+    summary = await _summary(team, publish)
+    assert summary["headline"] == "Phát hành kỹ năng Phân rã biến động, phiên bản 3."
+    assert summary["fields"] == [
+        _field("Kỹ năng", "Phân rã biến động"),
+        _field("Phiên bản", "3"),
+        _field("Phạm vi", "Cá nhân"),
+    ]
+    summary = await _summary(team, share)
+    assert summary["headline"] == (
+        "Mở rộng phạm vi kỹ năng Phân rã biến động từ Cá nhân ra Data Space."
+    )
+    assert summary["fields"] == [
+        _field("Kỹ năng", "Phân rã biến động"),
+        _field("Phạm vi", "Data Space", "Cá nhân"),
+    ]
+
+
+async def test_summary_of_a_writeback_counts_the_rows(team: Team) -> None:
+    source = team.seed.row(
+        "catalog.source",
+        org_id=team.org,
+        data_space_id=team.space,
+        name="Core banking",
+        kind="postgresql",
+        secret_ref=f"secret/tenants/{team.org}/core",
+        status="active",
+    )
+    loans = _dataset(team, "khoan_vay", schema="silver")
+    proposal = _proposal(
+        team,
+        kind="writeback",
+        target_service="pipeline",
+        diff=Json(
+            {
+                "source_id": str(source),
+                "target_table": "dbo.loan_overdue",
+                "from_dataset_id": str(loans),
+                "diff_summary": {"inserts": 2, "updates": 214, "deletes": 0, "sample": []},
+            }
+        ),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == (
+        "Ghi ngược vào bảng dbo.loan_overdue của Core banking: thêm 2 dòng, sửa 214 dòng."
+    )
+    assert summary["fields"] == [
+        _field("Bảng đích", "dbo.loan_overdue"),
+        _field("Nguồn", "Core banking"),
+        _field("Lấy từ", "silver.khoan_vay"),
+        _field("Dòng thêm", "2"),
+        _field("Dòng sửa", "214"),
+        _field("Dòng xoá", "0"),
+    ]
+
+
+async def test_summary_of_a_source_authority_ranks_the_sources(team: Team) -> None:
+    core, dwh = (
+        team.seed.row(
+            "catalog.source",
+            org_id=team.org,
+            data_space_id=team.space,
+            name=name,
+            kind="postgresql",
+            secret_ref=f"secret/tenants/{team.org}/{name}",
+            status="active",
+        )
+        for name in ("Core banking", "DWH bán lẻ")
+    )
+    proposal = _proposal(
+        team,
+        kind="source_authority",
+        target_service="conflict",
+        diff=Json({"data_kind": "dư nợ", "ranking": [str(core), str(dwh)], "active_id": None}),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == (
+        "Đặt thứ tự thẩm quyền nguồn cho dư nợ: Core banking, rồi DWH bán lẻ."
+    )
+    assert summary["fields"] == [
+        _field("Loại dữ liệu", "dư nợ"),
+        _field("Thứ tự nguồn", "1. Core banking · 2. DWH bán lẻ"),
+    ]
+
+
+async def test_summary_of_a_document_validity_names_both_documents(team: Team) -> None:
+    collection = uuid.uuid4()
+    team.seed.row(
+        "document.collection",
+        id=collection,
+        org_id=team.org,
+        data_space_id=team.space,
+        code="phap-quy",
+        name="phap-quy",
+        purpose="tra cứu văn bản pháp quy",
+        qdrant_collection=f"doc_{collection.hex}",
+        embed_model="bge-m3",
+    )
+
+    def document(title: str) -> uuid.UUID:
+        sha = uuid.uuid4().hex * 2
+        return team.seed.row(
+            "document.document",
+            org_id=team.org,
+            collection_id=collection,
+            status="ready",
+            media="pdf",
+            sha256=sha,
+            file_name="qd.pdf",
+            object_key=f"{team.org}/{sha}",
+            size_bytes=1000,
+            title=title,
+        )
+
+    new, old = document("QĐ 845/2026"), document("QĐ 120/2024")
+    proposal = _proposal(
+        team,
+        kind="document_validity",
+        target_service="document",
+        target_ref=new,
+        diff=Json(
+            {
+                "effective_from": "2026-09-01",
+                "supersedes_id": str(old),
+                "excerpt": "Quyết định này thay thế Quyết định 120/2024",
+                "detected": True,
+            }
+        ),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == "Ghi nhận văn bản QĐ 845/2026 thay thế QĐ 120/2024."
+    assert summary["fields"] == [
+        _field("Văn bản", "QĐ 845/2026"),
+        _field("Hiệu lực từ", "01/09/2026"),
+        _field("Thay thế văn bản", "QĐ 120/2024"),
+        _field("Trích đoạn", "Quyết định này thay thế Quyết định 120/2024"),
+    ]
+
+
+async def test_summary_of_a_knowledge_page_names_the_page(team: Team) -> None:
+    page = team.seed.row(
+        "context.knowledge_page",
+        org_id=team.org,
+        data_space_id=team.space,
+        kind="topic",
+        subject_kind="topic",
+        slug=f"trang-{uuid.uuid4().hex[:8]}",
+        title="Doanh thu theo kênh",
+        owner_id=team.users["steward"],
+    )
+    proposal = _proposal(
+        team,
+        kind="knowledge_page",
+        diff=Json(
+            {
+                "page_id": str(page),
+                "version_id": str(uuid.uuid4()),
+                "version": 2,
+                "origin": "agent",
+                "change_size": "minor",
+            }
+        ),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == "Phục vụ trang tri thức Doanh thu theo kênh, phiên bản 2."
+    assert summary["fields"] == [
+        _field("Trang", "Doanh thu theo kênh"),
+        _field("Phiên bản", "2"),
+        _field("Nguồn gốc", "agent"),
+        _field("Mức thay đổi", "minor"),
+    ]
+
+
+async def test_summary_never_shows_an_id_the_caller_cannot_read(team: Team, seed: Seed) -> None:
+    # A metric of another organisation: RLS hides it, and its id is not shown in its place.
+    elsewhere = seed.org()
+    foreign = seed.row(
+        "org.app_user",
+        org_id=elsewhere,
+        external_id=f"kc-x-{elsewhere.hex[:6]}",
+        username="x",
+        display_name="X",
+    )
+    hidden = seed.row(
+        "context.metric",
+        org_id=elsewhere,
+        data_space_id=seed.row(
+            "org.data_space", org_id=elsewhere, code="DS-X", name="X", steward_id=foreign
+        ),
+        code="BI_MAT",
+        owner_id=foreign,
+    )
+    proposal = _proposal(
+        team,
+        kind="synonym",
+        diff=Json(
+            {
+                "phrase": "doanh thu",
+                "target_kind": "metric",
+                "target_id": str(hidden),
+                "target_value": None,
+                "impact": {},
+            }
+        ),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == "Thêm từ đồng nghĩa “doanh thu” cho chỉ số (không xem được)."
+    assert summary["fields"][1] == _field("Trỏ tới", "chỉ số (không xem được)")
+    assert str(hidden) not in str(summary)
+    assert "BI_MAT" not in str(summary)
+
+
+async def test_summary_of_an_unknown_kind_falls_back_to_the_title(team: Team) -> None:
+    proposal = _proposal(
+        team,
+        # A kind no summary is written for (yet): the CHECK on kind admits it, describe does not.
+        kind="feedback_fix",
+        title="Một thay đổi chưa biết",
+        diff=Json({"rate": 0.5, "label": "mới", "enabled": True, "nested": {"a": 1}, "none": None}),
+    )
+    summary = await _summary(team, proposal)
+    assert summary == {
+        "headline": "Một thay đổi chưa biết",
+        "fields": [
+            _field("rate", "0.5"),
+            _field("label", "mới"),
+            _field("enabled", "có"),
+        ],
+        "checks_note": None,
+        "preview_note": None,
+    }
+    # A known kind whose diff has not its shape is read the same way, and never fails the page.
+    broken = _proposal(team, kind="synonym", title="Từ đồng nghĩa lạ", diff=Json(["x"]))
+    summary = await _summary(team, broken)
+    assert summary["headline"] == "Từ đồng nghĩa lạ"
+    assert summary["fields"] == []

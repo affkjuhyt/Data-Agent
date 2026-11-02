@@ -40,6 +40,7 @@ from services.api.kernel.pagination import (
 from services.api.kernel.problems import Problem
 from services.api.modules.audit import record_self_approval
 from services.api.modules.context import data_product_awaiting
+from services.api.modules.inbox.describe import describe
 from services.api.modules.inbox.schemas import (
     ApprovalStepView,
     ChangedResult,
@@ -549,7 +550,9 @@ async def _proposal(
     return row
 
 
-async def _proposal_detail(session: AsyncSession, row: inbox.Proposal) -> ProposalDetail:
+async def _proposal_detail(
+    session: AsyncSession, row: inbox.Proposal, principal: Principal
+) -> ProposalDetail:
     run = changed = None
     if row.eval_run_id is not None:
         run = await session.scalar(
@@ -572,6 +575,9 @@ async def _proposal_detail(session: AsyncSession, row: inbox.Proposal) -> Propos
     ).all()
     return ProposalDetail(
         **ProposalView.model_validate(row, from_attributes=True).model_dump(),
+        summary=await describe(
+            session, row, principal, run=run, changed=None if changed is None else len(changed)
+        ),
         eval_run=EvalRunSummary.model_validate(run, from_attributes=True) if run else None,
         changed_results=[
             ChangedResult.model_validate(r, from_attributes=True) for r in changed or []
@@ -592,7 +598,7 @@ async def get_proposal(
 ) -> ProposalDetail:
     async with transaction(ROLE, principal) as session:
         row = await _proposal(session, proposal_id, principal, data_space)
-        return await _proposal_detail(session, row)
+        return await _proposal_detail(session, row, principal)
 
 
 @router.post(
@@ -771,4 +777,4 @@ async def decide_proposal(
             await record_self_approval(
                 principal, step=step, object_kind="proposal", object_id=row.id
             )
-        return await _proposal_detail(session, row)
+        return await _proposal_detail(session, row, principal)

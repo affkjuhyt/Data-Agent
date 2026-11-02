@@ -130,7 +130,29 @@ class ChangedResult(BaseModel):
     reviewed_by: uuid.UUID | None
 
 
+class SummaryField(BaseModel):
+    """One thing the proposal changes, as the reviewer reads it; None where there is no value
+    (a field the change adds has no current one, one it removes no proposed one)."""
+
+    label: str
+    before: str | None = None
+    after: str | None = None
+
+
+class ProposalSummary(BaseModel):
+    """What accepting the proposal does, in words (P07 "Thay đổi", describe.py): ids resolved to
+    names under the caller's organisation, the raw diff left in `diff`."""
+
+    headline: str
+    fields: list[SummaryField] = Field(default_factory=list)
+    # The evaluation the change was run with, for the reviewer (diff.impact / diff.eval / eval_run).
+    checks_note: str | None = None
+    # Why there is nothing to preview, when every previewed figure is empty or withheld.
+    preview_note: str | None = None
+
+
 class ProposalDetail(ProposalView):
+    summary: ProposalSummary
     eval_run: EvalRunSummary | None = None
     changed_results: list[ChangedResult] = Field(default_factory=list)
     reviews: list[ProposalReviewView] = Field(default_factory=list)
