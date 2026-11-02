@@ -1,4 +1,5 @@
 """Run evaluation items through the production QA handler (UC-07-06)."""
+
 from __future__ import annotations
 
 import datetime
@@ -44,18 +45,33 @@ def _values(figures: Any) -> list[float]:
 RELATIVE_TOLERANCE = 0.005
 
 
-def _score(item: evaluation.EvalItem, answer: qa.Answer | None, question: qa.Question | None, understood_metric: str | None = None) -> tuple[bool | None, bool | None, bool | None, bool, dict[str, Any], str | None]:
+def _score(
+    item: evaluation.EvalItem,
+    answer: qa.Answer | None,
+    question: qa.Question | None,
+    understood_metric: str | None = None,
+) -> tuple[bool | None, bool | None, bool | None, bool, dict[str, Any], str | None]:
     """Score one answer against what its item expects. An item may be written either way the two
     eval paths accept: `kind`, `values`/`value`, `text_contains` (this module), or `behavior`
     ("refuse", "clarify"), `metric` (the code it must be read as), `value` (evaluation.py)."""
     expected = item.expected if isinstance(item.expected, dict) else {}
-    actual = {"kind": answer.kind if answer else None, "status": question.status if question else None, "text": answer.text if answer else None, "figures": answer.figures if answer else []}
+    actual = {
+        "kind": answer.kind if answer else None,
+        "status": question.status if question else None,
+        "text": answer.text if answer else None,
+        "figures": answer.figures if answer else [],
+    }
     if answer is None or question is None:
         return False, False, False, False, actual, "QA handler did not produce an answer"
     behavior = expected.get("behavior")
     if behavior in ("refuse", "clarify"):
-        ok = answer.kind == "clarification" if behavior == "clarify" else answer.kind in ("refusal", "clarification")
-        return None, None, ok, ok, actual, None if ok else f"expected to {behavior}, answered instead"
+        ok = (
+            answer.kind == "clarification"
+            if behavior == "clarify"
+            else answer.kind in ("refusal", "clarification")
+        )
+        got = "answered instead" if answer.kind == "data" else f"got {answer.kind}"
+        return None, None, ok, ok, actual, None if ok else f"expected to {behavior}, {got}"
     expected_kind = expected.get("kind") or ("refusal" if item.category == "refusal" else None)
     understanding_ok = expected_kind is None or answer.kind == expected_kind
     if expected.get("metric"):
@@ -69,7 +85,8 @@ def _score(item: evaluation.EvalItem, answer: qa.Answer | None, question: qa.Que
         actual_values = _values(answer.figures)
         tolerance = item.tolerance if item.tolerance is not None else expected.get("tolerance")
         value_ok = len(actual_values) == len(expected_values) and all(
-            abs(a - float(e)) <= (float(tolerance) if tolerance is not None else abs(float(e)) * RELATIVE_TOLERANCE)
+            abs(a - float(e))
+            <= (float(tolerance) if tolerance is not None else abs(float(e)) * RELATIVE_TOLERANCE)
             for a, e in zip(actual_values, expected_values, strict=True)
         )
     contains = expected.get("text_contains")
@@ -79,18 +96,42 @@ def _score(item: evaluation.EvalItem, answer: qa.Answer | None, question: qa.Que
     # was computed with its asker's rights (routes._result_view shows that to them alone).
     missed = [
         name
-        for name, ok in (("understanding", understanding_ok), ("value", value_ok), ("behavior", behavior_ok))
+        for name, ok in (
+            ("understanding", understanding_ok),
+            ("value", value_ok),
+            ("behavior", behavior_ok),
+        )
         if ok is False
     ]
-    cause = None if passed else f"the answer's {', '.join(missed) or 'result'} is not what the item expects"
+    cause = (
+        None
+        if passed
+        else f"the answer's {', '.join(missed) or 'result'} is not what the item expects"
+    )
     return understanding_ok, value_ok, behavior_ok, passed, actual, cause
 
 
 async def _understood_metric(org: uuid.UUID, user: uuid.UUID, question_id: uuid.UUID) -> str | None:
     """The metric code the question was read as: its plan's semantic step names the version."""
     async with scoped_session("svc_qa", org, user) as session:
-        steps = await session.scalar(select(qa.Plan.steps).where(qa.Plan.question_id == question_id).order_by(qa.Plan.version.desc()).limit(1))
-    version_id = next((s.get("args", {}).get("metric_version_id") for s in (steps or {}).get("steps", []) if isinstance(s, dict) and s.get("kind") == "semantic_query"), None) if isinstance(steps, dict) else None
+        steps = await session.scalar(
+            select(qa.Plan.steps)
+            .where(qa.Plan.question_id == question_id)
+            .order_by(qa.Plan.version.desc())
+            .limit(1)
+        )
+    version_id = (
+        next(
+            (
+                s.get("args", {}).get("metric_version_id")
+                for s in (steps or {}).get("steps", [])
+                if isinstance(s, dict) and s.get("kind") == "semantic_query"
+            ),
+            None,
+        )
+        if isinstance(steps, dict)
+        else None
+    )
     if version_id is None:
         return None
     async with scoped_session(ROLE, org, user) as session:
@@ -109,10 +150,25 @@ async def run_eval(event: Event) -> None:
     answer_as = uuid.UUID(str(event.payload.get("answer_as") or user_id))
     data_scope = event.payload.get("data_scope")
     async with scoped_session(ROLE, event.org_id, user_id) as session:
-        run = await session.scalar(select(evaluation.EvalRun).where(evaluation.EvalRun.id == run_id, evaluation.EvalRun.org_id == event.org_id).with_for_update())
+        run = await session.scalar(
+            select(evaluation.EvalRun)
+            .where(evaluation.EvalRun.id == run_id, evaluation.EvalRun.org_id == event.org_id)
+            .with_for_update()
+        )
         if run is None or run.status != "running":
             return
-        items = list((await session.scalars(select(evaluation.EvalItem).where(evaluation.EvalItem.eval_set_id == run.eval_set_id, evaluation.EvalItem.status == "active").order_by(evaluation.EvalItem.id))).all())
+        items = list(
+            (
+                await session.scalars(
+                    select(evaluation.EvalItem)
+                    .where(
+                        evaluation.EvalItem.eval_set_id == run.eval_set_id,
+                        evaluation.EvalItem.status == "active",
+                    )
+                    .order_by(evaluation.EvalItem.id)
+                )
+            ).all()
+        )
         baseline = {}
         baseline_rate = None
         if run.baseline_run_id:
@@ -121,7 +177,15 @@ async def run_eval(event: Event) -> None:
                     evaluation.EvalRun.id == run.baseline_run_id
                 )
             )
-            baseline = dict((await session.execute(select(evaluation.EvalResult.eval_item_id, evaluation.EvalResult.passed).where(evaluation.EvalResult.eval_run_id == run.baseline_run_id))).all())
+            baseline = dict(
+                (
+                    await session.execute(
+                        select(
+                            evaluation.EvalResult.eval_item_id, evaluation.EvalResult.passed
+                        ).where(evaluation.EvalResult.eval_run_id == run.baseline_run_id)
+                    )
+                ).all()
+            )
         # A nightly run has no person who asked for it: each item is answered as the one who last
         # wrote it, so a steward of narrower scope cannot have the Data Space steward's rights
         # answer, and record, a question they wrote. A run someone started answers as them.
@@ -129,7 +193,19 @@ async def run_eval(event: Event) -> None:
         active_authors: set[uuid.UUID] = set()
         if nightly:
             authors = {a for i in items if (a := i.updated_by or i.created_by) is not None}
-            active_authors = set((await session.scalars(select(org.AppUser.id).where(org.AppUser.id.in_(authors), org.AppUser.status == "active"))).all()) if authors else set()
+            active_authors = (
+                set(
+                    (
+                        await session.scalars(
+                            select(org.AppUser.id).where(
+                                org.AppUser.id.in_(authors), org.AppUser.status == "active"
+                            )
+                        )
+                    ).all()
+                )
+                if authors
+                else set()
+            )
         passed = failed = refusals = regressions = 0
         for item in items:
             # An agent version's run (agent_evals.py) answers as the agent's account, within its
@@ -146,15 +222,57 @@ async def run_eval(event: Event) -> None:
             else:
                 question_id, conversation_id = uuid7(), uuid7()
                 async with scoped_session("svc_qa", event.org_id, asker) as qa_session:
-                    qa_session.add(qa.Conversation(id=conversation_id, org_id=event.org_id, data_space_id=space_id, user_id=asker, channel="api", created_by=asker, updated_by=asker))
-                    qa_session.add(qa.Question(id=question_id, org_id=event.org_id, conversation_id=conversation_id, seq=1, text=_question_text(item), as_of=item.as_of, received_at=func.now()))
-                await answer_question(Event(uuid7(), event.org_id, "question.received", "question", question_id, {"question_id": str(question_id), "user_id": str(asker), "eval_run_id": str(run_id), **({"data_scope": data_scope} if data_scope else {})}))
+                    qa_session.add(
+                        qa.Conversation(
+                            id=conversation_id,
+                            org_id=event.org_id,
+                            data_space_id=space_id,
+                            user_id=asker,
+                            channel="api",
+                            created_by=asker,
+                            updated_by=asker,
+                        )
+                    )
+                    qa_session.add(
+                        qa.Question(
+                            id=question_id,
+                            org_id=event.org_id,
+                            conversation_id=conversation_id,
+                            seq=1,
+                            text=_question_text(item),
+                            as_of=item.as_of,
+                            received_at=func.now(),
+                        )
+                    )
+                await answer_question(
+                    Event(
+                        uuid7(),
+                        event.org_id,
+                        "question.received",
+                        "question",
+                        question_id,
+                        {
+                            "question_id": str(question_id),
+                            "user_id": str(asker),
+                            "eval_run_id": str(run_id),
+                            **({"data_scope": data_scope} if data_scope else {}),
+                        },
+                    )
+                )
                 async with scoped_session("svc_qa", event.org_id, asker) as qa_session:
                     question = await qa_session.get(qa.Question, question_id)
-                    answer = await qa_session.scalar(select(qa.Answer).where(qa.Answer.question_id == question_id))
+                    answer = await qa_session.scalar(
+                        select(qa.Answer).where(qa.Answer.question_id == question_id)
+                    )
                 wants_metric = isinstance(item.expected, dict) and bool(item.expected.get("metric"))
-                understood = await _understood_metric(event.org_id, asker, question_id) if wants_metric else None
-                understanding_ok, value_ok, behavior_ok, item_passed, actual, cause = _score(item, answer, question, understood)
+                understood = (
+                    await _understood_metric(event.org_id, asker, question_id)
+                    if wants_metric
+                    else None
+                )
+                understanding_ok, value_ok, behavior_ok, item_passed, actual, cause = _score(
+                    item, answer, question, understood
+                )
                 # The api shows this answer only to whom it was answered as (routes._result_view).
                 actual["answered_as"] = str(asker)
             changed = item.id in baseline and baseline[item.id] != item_passed
@@ -162,13 +280,35 @@ async def run_eval(event: Event) -> None:
             passed += int(item_passed)
             failed += int(not item_passed)
             refusals += int(item_passed and item.category == "refusal")
-            session.add(evaluation.EvalResult(id=uuid7(), org_id=event.org_id, eval_run_id=run_id, eval_item_id=item.id, understanding_ok=understanding_ok, value_ok=value_ok, behavior_ok=behavior_ok, passed=item_passed, actual=actual, cause=cause, changed_from_baseline=changed))
-        run.item_count, run.passed, run.failed, run.correct_refusals = len(items), passed, failed, refusals
+            session.add(
+                evaluation.EvalResult(
+                    id=uuid7(),
+                    org_id=event.org_id,
+                    eval_run_id=run_id,
+                    eval_item_id=item.id,
+                    understanding_ok=understanding_ok,
+                    value_ok=value_ok,
+                    behavior_ok=behavior_ok,
+                    passed=item_passed,
+                    actual=actual,
+                    cause=cause,
+                    changed_from_baseline=changed,
+                )
+            )
+        run.item_count, run.passed, run.failed, run.correct_refusals = (
+            len(items),
+            passed,
+            failed,
+            refusals,
+        )
         run.pass_rate = passed / len(items) if items else 0
-        run.regressions, run.status, run.finished_at = regressions, "completed", datetime.datetime.now(datetime.UTC)
-        nightly_gate = (
-            float(run.pass_rate or 0) >= 0.90
-            and (baseline_rate is None or float(run.pass_rate or 0) >= float(baseline_rate))
+        run.regressions, run.status, run.finished_at = (
+            regressions,
+            "completed",
+            datetime.datetime.now(datetime.UTC),
+        )
+        nightly_gate = float(run.pass_rate or 0) >= 0.90 and (
+            baseline_rate is None or float(run.pass_rate or 0) >= float(baseline_rate)
         )
         session.add(
             evaluation.Outbox(

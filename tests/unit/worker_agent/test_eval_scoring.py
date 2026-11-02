@@ -57,3 +57,16 @@ def test_an_item_written_for_the_proposals_path_is_scored_the_same_way() -> None
     assert _score(item({"metric": "DU_NO", "value": 3000}), near, QUESTION, "DU_NO")[3] is True
     assert _score(item({"metric": "DU_NO", "value": 3000}), near, QUESTION, "NPL")[3] is False
     assert _score(item({"value": 3000}), answer(figure("3020")), QUESTION)[3] is False
+
+
+def test_an_item_that_should_ask_back_names_what_it_got() -> None:
+    # A reading that found nothing is not an answer: "answered instead" sent reviewers looking
+    # for an answer that was never given.
+    from services.worker_agent.evaluation import Asked, score
+
+    assert score({"behavior": "clarify"}, None, Asked("unknown"))[4] == (
+        "expected to clarify, got unknown"
+    )
+    assert score({"behavior": "refuse"}, None, Asked("proceed", "DU_NO"))[4] == (
+        "expected to refuse, answered instead"
+    )

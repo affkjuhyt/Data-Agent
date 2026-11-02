@@ -202,6 +202,62 @@ async def test_a_metric_draft_is_previewed_proposed_and_certified_on_acceptance(
 
 
 @pytest.mark.req("AC-07-02-01")
+def proposed_synonym(bank: Bank, du_no: Any, phrase: str, norm: str) -> uuid.UUID:
+    synonym = bank.seed.row(
+        "context.synonym",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        phrase=phrase,
+        phrase_norm=norm,
+        target_kind="metric",
+        target_id=du_no,
+        status="pending_review",
+        created_by=bank.user,
+    )
+    bank.seed.row(
+        "context.outbox",
+        org_id=bank.org,
+        aggregate_type="synonym",
+        aggregate_id=synonym,
+        event_type="synonym.created",
+        payload=json.dumps({"synonym_id": str(synonym), "data_space_id": str(bank.space)}),
+    )
+    return synonym
+
+
+async def test_a_proposal_is_compared_with_what_is_in_use_not_with_another_proposal(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Two synonyms proposed together: each one's run used to take the other's as its baseline,
+    # so "dư nợ ròng" was charged with the item "tổng cho vay" had made pass.
+    bank = build(seed, warehouse, monkeypatch)
+    eval_set(
+        bank,
+        [
+            ({"question": "Tổng cho vay tháng 9/2026"}, {"metric": "DU_NO", "value": 3000}),
+            ({"question": "Giá vàng hôm nay là bao nhiêu?"}, {"behavior": "refuse"}),
+        ],
+    )
+    du_no = seed.one(
+        "SELECT id FROM context.metric WHERE code = 'DU_NO' AND data_space_id = %s", bank.space
+    )
+    lending = proposed_synonym(bank, du_no, "tổng cho vay", "tong cho vay")
+    await drain_all()
+    unrelated = proposed_synonym(bank, du_no, "dư nợ ròng", "du no rong")
+    await drain_all()
+
+    def evaluated(synonym: uuid.UUID) -> dict[str, Any]:
+        return seed.one("SELECT diff->'impact' FROM inbox.proposal WHERE target_ref = %s", synonym)
+
+    helps, neutral = evaluated(lending), evaluated(unrelated)
+    item = seed.one("SELECT id FROM eval.eval_item WHERE input->>'question' LIKE 'Tổng cho vay%%'")
+    # The item "tổng cho vay" turns from failing to passing: changed, and no regression.
+    assert (helps["regressions"], helps["changed_items"]) == (0, [str(item)])
+    assert (neutral["regressions"], neutral["changed_items"]) == (0, [])
+
+
 async def test_an_accepted_synonym_is_what_the_agent_understands(
     seed: Seed,
     warehouse: dict[str, Any],  # noqa: F811

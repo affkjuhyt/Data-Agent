@@ -174,6 +174,13 @@ async def ask(
     )
 
 
+def _missed(behavior: str, decision: str) -> str:
+    """Why an item that should refuse or ask back did not: an answer, or something else (an
+    `unknown` reading was once reported as "answered instead")."""
+    got = "answered instead" if decision == "proceed" else f"got {decision}"
+    return f"expected to {behavior}, {got}"
+
+
 def score(
     expected: dict[str, Any], tolerance: decimal.Decimal | None, asked: Asked
 ) -> tuple[bool | None, bool | None, bool | None, bool, str | None]:
@@ -181,7 +188,7 @@ def score(
     behavior = expected.get("behavior")
     if behavior in ("refuse", "clarify"):
         ok = asked.decision != "proceed" and (behavior != "clarify" or asked.decision == "clarify")
-        return None, None, ok, ok, None if ok else f"expected to {behavior}, answered instead"
+        return None, None, ok, ok, None if ok else _missed(behavior, asked.decision)
     understanding = None
     if expected.get("metric"):
         understanding = asked.metric_code == expected["metric"]
@@ -257,7 +264,22 @@ async def run_set(
         understanding, value_ok, behavior, passed, cause = score(
             dict(item.expected or {}), item.tolerance, asked
         )
-        changed = item.id in baseline and baseline[item.id] != passed
+        if overlay is not None and question:
+            # A proposal's run is compared with the same question asked now without the change.
+            # The set's previous run is no baseline for it: proposals are run back to back, and
+            # each was charged with what the one run before it had changed (a synonym "budget"
+            # with the item a synonym "ngân sách" had made pass).
+            before = await ask(
+                org_id=org_id,
+                space_id=space_id,
+                user_id=user_id,
+                question=question,
+                as_of=item.as_of,
+                caller_id=run_id,
+            )
+            changed = score(dict(item.expected or {}), item.tolerance, before)[3] != passed
+        else:
+            changed = item.id in baseline and baseline[item.id] != passed
         summary.item_count += 1
         summary.passed += passed
         summary.failed += not passed
