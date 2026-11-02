@@ -28,7 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import conflict, context, document
 from libs.dataagent_db.models import eval as ev
-from services.worker_agent import evaluation
+from services.worker_agent import evaluation, self_approval
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
@@ -288,8 +288,12 @@ async def _apply(event: Event, proposal: dict[str, Any]) -> bool:
             if not accepted:
                 row.status, row.proposal_id = "draft", None
                 return True
-            if row.created_by == reviewer:
-                return False  # the author does not activate their own product (CHECK)
+            # The author activates their own product only under the org's switch: the
+            # org.two_people trigger refuses it otherwise.
+            if row.created_by == reviewer and not await self_approval.allowed(
+                session, event.org_id
+            ):
+                return False
             # What the submit checked may have changed while the proposal waited: the run must
             # still be at its set's bar, and a member metric certified, the primary dataset
             # committed to a freshness (BR-175).
