@@ -69,6 +69,13 @@ async def test_an_approved_query_answers_its_question_verified_without_the_model
         q,
     )
     assert "2026-09-01" in ran and "2026-10-01" in ran
+    turn = seed.all(
+        "SELECT s.name, s.status, s.output FROM agent.agent_step s JOIN agent.agent_run r"
+        " ON r.id = s.run_id WHERE r.trigger_ref = %s AND s.name <> 'model_call' ORDER BY s.seq",
+        f"question:{q}",
+    )
+    assert [name for name, _, _ in turn] == ["use_verified", "query"]
+    assert "2026-09-01" in turn[1][2]["detail"]["sql"] and turn[1][1] == "ok"
 
 
 async def test_an_example_not_yet_approved_is_not_used(

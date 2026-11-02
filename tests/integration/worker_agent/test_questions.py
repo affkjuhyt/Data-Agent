@@ -167,8 +167,14 @@ async def test_a_turn_is_a_run_of_the_data_spaces_ask_agent(seed: Seed) -> None:
         "SELECT seq, kind, name, status FROM agent.agent_step WHERE run_id = %s ORDER BY seq",
         run_id,
     )
-    # Nothing could be placed: the turn stopped at understanding.
-    assert [(kind, name) for _, kind, name, _ in steps][:1] == [("plan", "understand")]
+    # Nothing could be placed: the documents were looked in (the space has none to answer
+    # from, so nothing was written), then choosing a metric failed and says why.
+    assert [(name, state) for _, _, name, state in steps] == [
+        ("understand", "ok"),
+        ("search_documents", "ok"),
+        ("write_answer", "skipped"),
+        ("choose_metric", "error"),
+    ]
 
 
 async def test_a_redelivered_turn_leaves_no_second_run(seed: Seed) -> None:

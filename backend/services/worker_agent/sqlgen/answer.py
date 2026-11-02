@@ -24,6 +24,7 @@ from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, qa
 from libs.sql_guard import dialect_of
+from services.worker_agent import turn_trace
 from services.worker_agent.answer.narrate import Figure, shown_value
 from services.worker_agent.answer.verification import verify
 from services.worker_agent.events import Event
@@ -207,13 +208,38 @@ async def answer_by_sql(
             error=envelope.error,
         )
 
-    e = await explore(
-        gateway, text, linked, dialect_of(source.kind), space.schema.examples, run_sql
-    )
+    async with turn_trace.stepping(
+        "write_sql",
+        target=f"{source.name} cho: {text[:80]}",
+        chips=[{"kind": "source", "label": source.name}],
+    ) as written:
+        e = await explore(
+            gateway, text, linked, dialect_of(source.kind), space.schema.examples, run_sql
+        )
+        written.detail = {
+            "candidates": len(e.tried),
+            "agreeing": e.agreeing,
+            "rejected": sum(1 for t in e.tried if t.get("status") == "rejected"),
+            "sql": e.sql,
+        }
+        if e.decision == "failed":
+            written.status, written.summary = "failed", "Không cách viết SQL nào chạy được."
     for name in e.models:
         models.append({"task": "text_to_sql", "model_name": name, "tokens": e.tokens})
     if e.decision == "failed":
         return False
+    await turn_trace.record_step(
+        "query",
+        target=f"{source.name} cho: {text[:80]}",
+        chips=[{"kind": "source", "label": source.name}],
+        detail={
+            "sql": e.sql,
+            "row_count": len(e.rows),
+            "truncated": e.truncated,
+            "query_run_id": str(e.query_run_id) if e.query_run_id else None,
+            "columns": list(e.columns),
+        },
+    )
     figures = figures_of(e.columns, e.rows) if e.decision != "ask" else []
     if e.decision == "ask":
         kind, status = "clarification", "clarifying"
@@ -221,6 +247,9 @@ async def answer_by_sql(
             f"Chưa đủ chắc chắn để đưa số: các cách viết truy vấn cho kết quả khác nhau (chỉ "
             f"{e.agreeing}/6 trùng nhau). Hãy hỏi cụ thể hơn: nêu bảng, cột hoặc điều kiện cần "
             "dùng, hoặc nhờ người phụ trách định nghĩa chỉ số này."
+        )
+        await turn_trace.record_step(
+            "ask_user", target=body, detail={"question": body, "options": []}
         )
     else:
         kind, status, body = "data", "answered", text_of(e, figures)
@@ -302,6 +331,11 @@ async def answer_verified_first(
             )
         )
     await publish(str(question_id), "planning", {"question_id": str(question_id)})
+    await turn_trace.record_step(
+        "use_verified",
+        target=found.question,
+        detail={"name": found.question, "example_id": str(found.example_id)},
+    )
     return await _answer_verified(
         event,
         question_id,
@@ -353,16 +387,31 @@ async def _answer_verified(
             return False
         if origin.source_id is not None:
             session.expunge(source)
-    outcome = await run_query(
-        org_id=event.org_id,
-        data_space_id=space_id,
-        principal_id=user_id,
-        caller_kind="question",
-        caller_id=question_id,
-        source=source,
-        sql=found.sql,
-        secrets=secrets,
-    )
+    async with turn_trace.stepping(
+        "query",
+        target=f"{source.name} cho: {found.question}",
+        chips=[{"kind": "source", "label": source.name}],
+    ) as step:
+        outcome = await run_query(
+            org_id=event.org_id,
+            data_space_id=space_id,
+            principal_id=user_id,
+            caller_kind="question",
+            caller_id=question_id,
+            source=source,
+            sql=found.sql,
+            secrets=secrets,
+        )
+        step.detail = {
+            "sql": found.sql,
+            "row_count": len(outcome.rows or []),
+            "truncated": bool(outcome.truncated),
+            "query_run_id": str(outcome.query_run_id) if outcome.query_run_id else None,
+            "columns": [str(c.get("name")) for c in outcome.columns],
+        }
+        if not outcome.ok:
+            # The model writes a query instead (the caller's next path); this one is set aside.
+            step.status, step.summary = "skipped", "Truy vấn đã duyệt không chạy được cho bạn."
     if not outcome.ok:
         return False
     columns = [str(c.get("name")) for c in outcome.columns]

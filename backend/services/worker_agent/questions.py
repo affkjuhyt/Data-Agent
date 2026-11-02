@@ -1552,6 +1552,11 @@ async def _understand_and_plan(
                 else f"Câu hỏi khớp với nhiều chỉ số. Bạn muốn hỏi chỉ số nào: {listed}?"
             )
             choices = [{"value": m.code, "label": m.name} for m in u.options]
+        await turn_trace.record_step(
+            "ask_user",
+            target=text,
+            detail={"question": text, "options": [choice["label"] for choice in choices]},
+        )
         answer_id = await _finish(
             question_id,
             event.org_id,
@@ -1686,14 +1691,20 @@ async def _answer_from_documents(
         as_of = question.as_of or clock.today(
             await clock.space_zone(session, conversation.data_space_id)
         )
-        passages = await retrieve(
-            session,
-            search_services(),
-            data_space_id=conversation.data_space_id,
-            question=question.text,
-            as_of=as_of,
-            purpose=question.purpose,
-        )
+        async with turn_trace.stepping("search_documents", target=question.text[:80]) as searched:
+            passages = await retrieve(
+                session,
+                search_services(),
+                data_space_id=conversation.data_space_id,
+                question=question.text,
+                as_of=as_of,
+                purpose=question.purpose,
+            )
+            # The passages' titles and pages only: their text reaches the answer as citations.
+            searched.detail = {
+                "hits": [{"title": hit.title, "page": hit.page_from} for hit in passages[:10]],
+                "found": len(passages),
+            }
         # Any passage at all in the space: then "not found in the documents" is the true answer;
         # without one the question was never a document question and is refused as before.
         has_documents = (
@@ -1714,19 +1725,27 @@ async def _answer_from_documents(
             is not None
         )
         text, plan = question.text, _document_plan(question, as_of)
-        if not has_documents:
-            told = await document_answer.compose_general(gateway(), text)
-            if told is None:
-                return False
-            plan = _general_plan(question, as_of)
-        else:
-            told = await document_answer.compose(gateway(), text, passages, as_of)
-            if not told.found:
-                general = await document_answer.compose_general(gateway(), text)
-                if general is None:
+        async with turn_trace.stepping("write_answer") as written:
+            if not has_documents:
+                told = await document_answer.compose_general(gateway(), text)
+                if told is None:
+                    written.status = "skipped"
                     return False
-                told = general
                 plan = _general_plan(question, as_of)
+            else:
+                told = await document_answer.compose(gateway(), text, passages, as_of)
+                if not told.found:
+                    general = await document_answer.compose_general(gateway(), text)
+                    if general is None:
+                        written.status = "skipped"
+                        return False
+                    told = general
+                    plan = _general_plan(question, as_of)
+            written.detail = {
+                "by": "general" if told.general else "documents",
+                "citations": len(told.citations),
+                "claims_dropped": len(told.dropped),
+            }
     await publish(
         str(question_id), "progress", {"question_id": str(question_id), "status": "running"}
     )

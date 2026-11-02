@@ -144,6 +144,16 @@ async def test_a_question_naming_no_metric_is_answered_from_documents_with_citat
     assert cited["effective_from"] == "2026-01-01" and cited["quote"] in RATE
     steps = seed.one("SELECT steps FROM qa.plan WHERE question_id = %s", question)
     assert [s["kind"] for s in steps["steps"]] == ["document_search"]
+    turn = seed.all(
+        "SELECT s.name, s.status, s.output FROM agent.agent_step s JOIN agent.agent_run r"
+        " ON r.id = s.run_id WHERE r.trigger_ref = %s AND s.name <> 'model_call' ORDER BY s.seq",
+        f"question:{question}",
+    )
+    names = [name for name, _, _ in turn]
+    assert names[-2:] == ["search_documents", "write_answer"]
+    searched = turn[-2][2]["detail"]
+    assert searched["found"] >= 1 and searched["hits"][0]["page"] == 1
+    assert turn[-1][2]["detail"]["citations"] == 1
 
 
 @pytest.mark.req("AC-05-04-03")

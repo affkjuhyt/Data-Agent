@@ -1018,6 +1018,13 @@ async def test_ac_01_01_02_two_metrics_ask_which_and_run_nothing(
     status, kind, text, *_ = answer_of(seed, q)
     assert (status, kind) == ("clarifying", "clarification") and "Dư nợ" in text
     assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", q) == 0
+    steps = seed.all(
+        "SELECT s.name, s.status, s.output FROM agent.agent_step s JOIN agent.agent_run r"
+        " ON r.id = s.run_id WHERE r.trigger_ref = %s AND s.name <> 'model_call' ORDER BY s.seq",
+        f"question:{q}",
+    )
+    assert [name for name, _, _ in steps] == ["understand", "ask_user"]
+    assert len(steps[1][2]["detail"]["options"]) == 2
 
 
 async def test_an_unknown_metric_is_refused_with_a_way_forward(
