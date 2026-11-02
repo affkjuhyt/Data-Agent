@@ -2177,13 +2177,22 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             written_step.detail = {"by": "template"}
             if model is not None:
                 # G5.15: the main model writes the sentences, numbers only as figure tags.
+                # The period answered differs from the one asked (explore.py): the model is told
+                # which, so it does not write "năm nay" for 2014's figures, and may name it.
+                shown_period = u.period.label if p.lead_note and u.period else None
                 told = await narrator.narrate(
                     model,
                     every,
-                    question=question.text,
+                    question=(
+                        f"{question.text} (không có dữ liệu cho kỳ được hỏi; các số là của "
+                        f"{shown_period}, hãy gọi đúng kỳ này)"
+                        if shown_period
+                        else question.text
+                    ),
                     metric_name=metric_name,
                     exempt_text=[c.label for c in u.chips]
-                    + [v for f in figures for v in f.dimensions.values()],
+                    + [v for f in figures for v in f.dimensions.values()]
+                    + ([shown_period] if shown_period else []),
                     hints=ins.sentences,
                 )
                 if told is not None:
