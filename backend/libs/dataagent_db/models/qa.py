@@ -32,6 +32,7 @@ __all__ = [
     "Plan",
     "Answer",
     "Feedback",
+    "MemoryFact",
     "ExportJob",
     "AnswerReceipt",
     "AnswerReceiptFigure",
@@ -275,6 +276,52 @@ class Feedback(Base):
     )
     eval_item_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, comment="logic → eval.eval_item"
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=sql_text("now()")
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=sql_text("now()")
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
+class MemoryFact(Base):
+    """Trí nhớ dài hạn của agent về một người dùng trong một Data Space (sau Memori): sở thích trình bày, định nghĩa người dùng tự nêu, sự kiện bền về công việc của họ. Trích từ hội thoại sau mỗi lượt, không bao giờ chứa số liệu truy vấn hay bí mật; gộp trùng theo content_hash, đếm lần nhắc lại (`worker_agent/agentic/memory.py`)."""
+
+    __tablename__ = "memory_fact"
+    __table_args__ = ({"schema": "qa"},)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    data_space_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), comment="Data Space nơi trí nhớ được nói ra"
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), comment="Người dùng mà trí nhớ thuộc về; chỉ người đó được truy hồi"
+    )
+    kind: Mapped[str] = mapped_column(Text, comment="preference, definition, fact, feedback")
+    content: Mapped[str] = mapped_column(Text, comment="Một câu, ngôn ngữ người dùng")
+    content_hash: Mapped[str] = mapped_column(
+        Text,
+        comment="SHA-256 của nội dung đã chuẩn hoá: cùng ý nói lại thì tăng times, không thêm dòng",
+    )
+    times: Mapped[int] = mapped_column(
+        Integer, server_default=sql_text("1"), comment="Số lượt hội thoại đã nói ý này"
+    )
+    last_seen_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        comment="Lần gần nhất ý này được nói",
+    )
+    source_question_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="logic → qa.question: câu hỏi đầu tiên nói ra ý này",
+    )
+    status: Mapped[str] = mapped_column(
+        Text, server_default=sql_text("'active'"), comment="active, archived"
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")

@@ -22,6 +22,7 @@ import datetime
 import json
 import logging
 import os
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -34,8 +35,8 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
 from services.worker_agent import turn_trace
 from services.worker_agent.agentic import blocks as b
+from services.worker_agent.agentic import memory, prompts, verify
 from services.worker_agent.agentic import plan as p
-from services.worker_agent.agentic import prompts, verify
 from services.worker_agent.agentic.graph import END, StateGraph
 from services.worker_agent.agentic.grounded import unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, ToolContext, ToolResult
@@ -97,6 +98,9 @@ class State:
     dropped_sentences: int = 0
     numbers: int = 0
     started: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
+    # What the person said in earlier conversations that bears on this question (memory.py).
+    memories: list[memory.Memory] = field(default_factory=list)
+    answered: bool = False
     cancelled: bool = False
 
 
@@ -165,6 +169,7 @@ async def prepare(s: State) -> None:
         layer = await load(session, space_id)
         s.history = await _history(session, question)
         s.conversation_id = conversation.id
+        question_text = question.text
         s.ctx = ToolContext(
             org_id=event.org_id,
             space_id=space_id,
@@ -179,6 +184,12 @@ async def prepare(s: State) -> None:
             ws=Workspace(),
             period=find_period(question.text, today, layer.vocabulary.calendar),
         )
+    try:
+        known = await memory.load(event.org_id, space_id, user_id)
+        s.memories = memory.rank(question_text, known, datetime.datetime.now(datetime.UTC))
+    except Exception:
+        # Memory helps; a turn never fails for it (a cluster before v3_0027, a slow read).
+        logger.exception("question %s: memory not recalled", s.question_id)
 
 
 # ---------------------------------------------------------------- plan
@@ -204,6 +215,8 @@ def _situation(s: State) -> str:
     parts = [f"Hôm nay: {s.ctx.today.isoformat()}"]
     if s.history:
         parts.append(f"<conversation>\n{s.history}\n</conversation>")
+    if s.memories:
+        parts.append(memory.render(s.memories))
     parts.append(f"<question>\n{s.ctx.question}\n</question>")
     if s.ctx.period is not None:
         p_ = s.ctx.period
@@ -890,6 +903,7 @@ async def persist(s: State) -> None:
         question.status = status
         if status == "answered":
             question.answered_at = func.now()
+    s.answered = status == "answered"
     payload = {"question_id": str(s.question_id), "answer_id": str(answer_id), "kind": kind}
     event = {"clarification": "clarification", "refusal": "answer"}.get(kind, "answer")
     await publish(str(s.question_id), event, payload)
@@ -940,4 +954,39 @@ async def run(event: Event, question_id: uuid.UUID, model: Gateway | None) -> bo
             logger.exception("question %s: agentic turn failed before planning", question_id)
             return False
         raise
+    if state.answered:
+        await _remember(state)
     return not state.handed_back
+
+
+async def _remember(s: State) -> None:
+    """After the answer is out: what the person said that should outlive the conversation, kept
+    for their next ones (memory.py). Never in the way of the turn."""
+    assert s.ctx is not None
+    ctx = s.ctx
+    fetched = {
+        n
+        for ds in ctx.ws.datasets.values()
+        for row in ds.rows
+        for v in row
+        if number(v) is not None
+        for n in re.findall(r"\d+(?:[.,]\d+)*", str(v))
+    } | {n for f in verify.facts(ctx.ws).values() for n in re.findall(r"\d+(?:[.,]\d+)*", f.shown)}
+    try:
+        ops = await memory.extract(
+            s.model,
+            question=ctx.question,
+            answer=_text(s),
+            history=s.history,
+            known=s.memories,
+            fetched_numbers=fetched,
+        )
+        kept = await memory.store(ctx.org_id, ctx.space_id, ctx.user_id, s.question_id, ops)
+        if kept:
+            await turn_trace.record_step(
+                "remember",
+                target=f"Ghi nhớ {kept} điều cho các hội thoại sau",
+                detail={"kinds": [op.kind for op in ops]},
+            )
+    except Exception:
+        logger.exception("question %s: memory not stored", s.question_id)

@@ -72,12 +72,14 @@ ACTIONS: dict[str, tuple[str, str]] = {
     "replan": ("plan", "Điều chỉnh kế hoạch"),
     "review": ("plan", "Rà soát"),
     "handover": ("plan", "Chuyển sang cách trả lời chuẩn"),
+    "remember": ("plan", "Ghi nhớ"),
     "search_catalog": ("tool_call", "Tìm trong danh mục"),
     "describe_metric": ("tool_call", "Xem định nghĩa chỉ số"),
     "search_values": ("tool_call", "Tìm giá trị"),
     "query_metric": ("query", "Truy vấn chỉ số"),
     "explore_sql": ("tool_call", "Viết SQL thăm dò"),
     "run_python": ("tool_call", "Phân tích bằng Python"),
+    "explain_change": ("tool_call", "Tìm nguyên nhân biến động"),
 }
 # agent_step.status of each step status the timeline shows.
 STORED_STATUS = {"done": "ok", "failed": "error", "skipped": "skipped"}

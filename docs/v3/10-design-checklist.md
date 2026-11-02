@@ -12,7 +12,7 @@
 | Use case (tab 8) | 115 | 13 UC đủ tiêu chí bắt buộc | todo 13, partial 89, done 8, na 5 |
 | Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 333 có test nhắc mã AC | todo 739, na 39 |
 | Endpoint A2 (tab 4) | 458 (A2 ghi 459 dòng; POST /v1/data-products ở hai nhóm) | 458 được `api` phục vụ | — |
-| Bảng (tab 3/3b) | 206 trong DDL | DDL sinh từ thiết kế | — |
+| Bảng (tab 3/3b) | 207 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 156 có mã nhắc tới | todo 188, na 7 |
 | Màn hình (SCR) | 75 | 15 có mã nhắc tới | todo 72, na 3 |
 | ADR (tab 6) | 48 | — | todo 45, partial 2, done 1 |

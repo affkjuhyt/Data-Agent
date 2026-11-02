@@ -14,9 +14,9 @@ def test_object_counts_match_the_design(db):
         "WHERE c.relkind IN ('r','p') AND NOT c.relispartition "
         "AND n.nspname NOT IN ('pg_catalog','information_schema','public')",
     )
-    # 180 tables of 22 schemas (agent.tool_def since 12/10/2026, schema pack gone 01/11/2026) plus
-    # one outbox per schema (D5.1).
-    assert tables == 180 + 22
+    # 181 tables of 22 schemas (agent.tool_def since 12/10/2026, schema pack gone 01/11/2026,
+    # qa.memory_fact since 03/11/2026) plus one outbox per schema (D5.1).
+    assert tables == 181 + 22
     fks = one(
         db,
         "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace "

@@ -2369,6 +2369,38 @@ COMMENT ON COLUMN qa.feedback.status IS 'open, in_review, confirmed, rejected';
 COMMENT ON COLUMN qa.feedback.proposal_id IS 'logic → inbox.proposal';
 COMMENT ON COLUMN qa.feedback.eval_item_id IS 'logic → eval.eval_item';
 
+CREATE TABLE qa.memory_fact (
+  id uuid NOT NULL,
+  org_id uuid NOT NULL,
+  data_space_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  kind text NOT NULL,
+  content text NOT NULL,
+  content_hash text NOT NULL,
+  times integer NOT NULL DEFAULT 1,
+  last_seen_at timestamptz NOT NULL DEFAULT now(),
+  source_question_id uuid,
+  status text NOT NULL DEFAULT 'active',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  created_by uuid,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by uuid,
+  CONSTRAINT memory_fact_pkey PRIMARY KEY (id),
+  CHECK (kind IN ('preference','definition','fact','feedback')),
+  CHECK (status IN ('active','archived')),
+  CHECK (times >= 1)
+);
+COMMENT ON TABLE qa.memory_fact IS 'Trí nhớ dài hạn của agent về một người dùng trong một Data Space (sau Memori): sở thích trình bày, định nghĩa người dùng tự nêu, sự kiện bền về công việc của họ. Trích từ hội thoại sau mỗi lượt, không bao giờ chứa số liệu truy vấn hay bí mật; gộp trùng theo content_hash, đếm lần nhắc lại (`worker_agent/agentic/memory.py`).';
+COMMENT ON COLUMN qa.memory_fact.data_space_id IS 'Data Space nơi trí nhớ được nói ra';
+COMMENT ON COLUMN qa.memory_fact.user_id IS 'Người dùng mà trí nhớ thuộc về; chỉ người đó được truy hồi';
+COMMENT ON COLUMN qa.memory_fact.kind IS 'preference, definition, fact, feedback';
+COMMENT ON COLUMN qa.memory_fact.content IS 'Một câu, ngôn ngữ người dùng';
+COMMENT ON COLUMN qa.memory_fact.content_hash IS 'SHA-256 của nội dung đã chuẩn hoá: cùng ý nói lại thì tăng times, không thêm dòng';
+COMMENT ON COLUMN qa.memory_fact.times IS 'Số lượt hội thoại đã nói ý này';
+COMMENT ON COLUMN qa.memory_fact.last_seen_at IS 'Lần gần nhất ý này được nói';
+COMMENT ON COLUMN qa.memory_fact.source_question_id IS 'logic → qa.question: câu hỏi đầu tiên nói ra ý này';
+COMMENT ON COLUMN qa.memory_fact.status IS 'active, archived';
+
 CREATE TABLE qa.export_job (
   id uuid NOT NULL,
   org_id uuid NOT NULL,
@@ -2587,6 +2619,8 @@ CREATE INDEX conversation_user_id_last_question_at_idx ON qa.conversation (user_
 CREATE INDEX answer_question_id_idx ON qa.answer (question_id);
 CREATE INDEX answer_data_product_id_created_at_idx ON qa.answer (data_product_id, created_at) WHERE data_product_id IS NOT NULL;
 CREATE INDEX feedback_status_idx ON qa.feedback (status) WHERE status IN ('open','in_review');
+CREATE UNIQUE INDEX memory_fact_data_space_id_user_id_content_hash_key ON qa.memory_fact (data_space_id, user_id, content_hash);
+CREATE INDEX memory_fact_user_id_data_space_id_last_seen_at_idx ON qa.memory_fact (user_id, data_space_id, last_seen_at DESC) WHERE status = 'active';
 CREATE INDEX answer_receipt_data_product_id_answered_at_idx ON qa.answer_receipt (data_product_id, answered_at DESC);
 CREATE INDEX answer_receipt_answered_at_idx ON qa.answer_receipt (answered_at) WHERE frontier_used;
 CREATE INDEX answer_receipt_figure_metric_version_id_idx ON qa.answer_receipt_figure (metric_version_id);
@@ -7110,6 +7144,8 @@ ALTER TABLE qa.answer ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON qa.answer USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE qa.feedback ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON qa.feedback USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+ALTER TABLE qa.memory_fact ENABLE ROW LEVEL SECURITY;
+CREATE POLICY org_isolation ON qa.memory_fact USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE qa.export_job ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON qa.export_job USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE qa.answer_receipt ENABLE ROW LEVEL SECURITY;
@@ -7491,6 +7527,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON qa.answer TO svc_qa;
 GRANT SELECT ON qa.answer TO qa_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON qa.feedback TO svc_qa;
 GRANT SELECT ON qa.feedback TO qa_read;
+GRANT SELECT, INSERT, UPDATE, DELETE ON qa.memory_fact TO svc_qa;
+GRANT SELECT ON qa.memory_fact TO qa_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON qa.export_job TO svc_qa;
 GRANT SELECT ON qa.export_job TO qa_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON qa.answer_receipt TO svc_qa;

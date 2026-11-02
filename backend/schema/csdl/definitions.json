@@ -11011,6 +11011,155 @@
   },
   {
    "schema": "qa",
+   "name": "memory_fact",
+   "qualified": "qa.memory_fact",
+   "description": "Trí nhớ dài hạn của agent về một người dùng trong một Data Space (sau Memori): sở thích trình bày, định nghĩa người dùng tự nêu, sự kiện bền về công việc của họ. Trích từ hội thoại sau mỗi lượt, không bao giờ chứa số liệu truy vấn hay bí mật; gộp trùng theo content_hash, đếm lần nhắc lại (`worker_agent/agentic/memory.py`).",
+   "use_cases": [],
+   "columns": [
+    {
+     "name": "data_space_id",
+     "type": "uuid",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Data Space nơi trí nhớ được nói ra",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "user_id",
+     "type": "uuid",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Người dùng mà trí nhớ thuộc về; chỉ người đó được truy hồi",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "kind",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "preference, definition, fact, feedback",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "content",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Một câu, ngôn ngữ người dùng",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "content_hash",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "SHA-256 của nội dung đã chuẩn hoá: cùng ý nói lại thì tăng times, không thêm dòng",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "times",
+     "type": "integer",
+     "not_null": true,
+     "default": "1",
+     "unique": false,
+     "comment": "Số lượt hội thoại đã nói ý này",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "last_seen_at",
+     "type": "timestamptz",
+     "not_null": true,
+     "default": "now()",
+     "unique": false,
+     "comment": "Lần gần nhất ý này được nói",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "source_question_id",
+     "type": "uuid",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "logic → qa.question: câu hỏi đầu tiên nói ra ý này",
+     "fk": null,
+     "logic_ref": "qa.question",
+     "pii": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "not_null": true,
+     "default": "'active'",
+     "unique": false,
+     "comment": "active, archived",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    }
+   ],
+   "common_columns": [
+    "id",
+    "org_id",
+    "created_at",
+    "created_by",
+    "updated_at",
+    "updated_by"
+   ],
+   "constraints": [
+    {
+     "kind": "check",
+     "sql": "CHECK (kind IN ('preference','definition','fact','feedback'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (status IN ('active','archived'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (times >= 1)"
+    }
+   ],
+   "indexes": [
+    {
+     "unique": true,
+     "method": "btree",
+     "expr": "data_space_id, user_id, content_hash",
+     "where": null,
+     "comment": null
+    },
+    {
+     "unique": false,
+     "method": "btree",
+     "expr": "user_id, data_space_id, last_seen_at DESC",
+     "where": "status = 'active'",
+     "comment": null
+    }
+   ],
+   "partition": null,
+   "immutable": false,
+   "notes": []
+  },
+  {
+   "schema": "qa",
    "name": "export_job",
    "qualified": "qa.export_job",
    "description": "Việc xuất kết quả ra tệp; liên kết tải hết hạn sau 24 giờ (BR-86). Use case: UC-01-06.",
