@@ -116,12 +116,24 @@ class Window:
     upto: str
 
 
+_NUMBER = re.compile(r"-?\d+(\.\d+)?")
+_MOMENT = re.compile(
+    r"\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?)?(Z|[+-]\d{2}(:?\d{2})?)?"
+)
+
+
 def _literal(value: str) -> str:
-    """A cursor value as a SQL literal for the DB-API engines: a number as it is, anything else
-    quoted with its quotes doubled (the value is the source's own maximum, read back as text)."""
-    if re.fullmatch(r"-?\d+(\.\d+)?", value):
+    """A cursor value as a SQL literal for the DB-API engines, which take the statement as text:
+    only a number or an ISO date or timestamp, never any other text. The value is the source's
+    own maximum, so a cursor over free text (whose quoting each engine escapes its own way, MySQL
+    with backslashes too) is refused rather than quoted."""
+    if _NUMBER.fullmatch(value):
         return value
-    return "'" + value.replace("'", "''") + "'"
+    if _MOMENT.fullmatch(value):
+        return "'" + value + "'"
+    raise ValueError(
+        "an incremental cursor on this engine must be a number, a date or a timestamp column"
+    )
 
 
 def _driver_where(kind: str, window: Window | None) -> str:
