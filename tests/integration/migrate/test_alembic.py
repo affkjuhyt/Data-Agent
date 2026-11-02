@@ -436,3 +436,177 @@ def test_the_calendar_the_time_dimension_and_one_normal_form_reach_a_migrated_cl
     assert checks.count("time_grain") == 1 and "'fiscal_year'" in checks, checks
     assert _one(db, "SELECT phrase_norm FROM context.synonym") == "doanh thu thuan"
     assert _one(db, "SELECT term_norm FROM context.glossary_term") == "ty le %"
+
+
+# The ten approval tables of v3_0024 and audit.export_job, before it: the person-inequality
+# CHECKs (unnamed in the baseline, so found by definition), the old certifier CHECK, no switch,
+# no trigger, no self_approved, no sql_changed_by (v3_0026).
+_BEFORE_SELF_APPROVAL = """
+DROP FUNCTION org.two_people() CASCADE;
+DROP FUNCTION org.self_approval_allowed(uuid);
+ALTER TABLE org.organization DROP COLUMN allow_self_approval;
+ALTER TABLE context.example_query DROP COLUMN sql_changed_by;
+ALTER TABLE catalog.dataset_version DROP CONSTRAINT dataset_version_certifier_created_check;
+ALTER TABLE catalog.dataset_version
+  ADD CHECK (certified_by IS NULL OR (created_by IS NOT NULL AND certified_by <> created_by));
+ALTER TABLE context.knowledge_page_version ADD CHECK (reviewed_by IS NULL OR reviewed_by <> created_by);
+ALTER TABLE context.knowledge_page_version DROP CONSTRAINT knowledge_page_version_certifier_check;
+ALTER TABLE context.knowledge_page_version ADD CONSTRAINT knowledge_page_version_certifier_check CHECK (
+  (certified_by IS NULL) = (certified_at IS NULL)
+  AND (status <> 'certified' OR certified_by IS NOT NULL)
+  AND (certified_by IS NULL OR (certified_by IS DISTINCT FROM created_by
+                                AND certified_by IS DISTINCT FROM reviewed_by)));
+ALTER TABLE context.data_product ADD CHECK (owner_id <> steward_id);
+ALTER TABLE context.data_product ADD CHECK (activated_by IS NULL OR activated_by <> created_by);
+ALTER TABLE pipeline.writeback_request ADD CHECK (approved_by IS NULL OR approved_by <> requested_by);
+ALTER TABLE acquire.crawl_source ADD CHECK (legal_reviewed_by IS NULL OR legal_reviewed_by <> owner_id);
+ALTER TABLE forecast.model_version ADD CHECK (approved_by IS NULL OR approved_by <> created_by);
+ALTER TABLE forecast.formula_component ADD CHECK (certified_by IS NULL OR certified_by <> created_by);
+DO $$
+DECLARE c record;
+BEGIN
+  FOR c IN SELECT conname FROM pg_constraint
+            WHERE conrelid = 'governance.model_provider'::regclass AND contype = 'c'
+              AND pg_get_constraintdef(oid) ~ 'zero_retention AND'
+  LOOP
+    EXECUTE format('ALTER TABLE governance.model_provider DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+END $$;
+ALTER TABLE governance.model_provider ADD CHECK (NOT (kind = 'frontier' AND enabled)
+  OR (zero_retention AND enabled_by IS NOT NULL AND approved_by IS NOT NULL
+      AND approved_at IS NOT NULL AND approved_by <> enabled_by));
+"""
+
+_AUDIT_BEFORE_SELF_APPROVAL = """
+ALTER TABLE audit.export_job DROP CONSTRAINT export_job_self_approved_check;
+ALTER TABLE audit.export_job DROP COLUMN self_approved;
+ALTER TABLE audit.export_job ADD CHECK (approved_by IS NULL OR approved_by <> requested_by);
+"""
+
+_APPROVAL_TABLES = (
+    "catalog.dataset_version",
+    "context.knowledge_page_version",
+    "context.data_product",
+    "pipeline.writeback_request",
+    "acquire.crawl_source",
+    "forecast.model_version",
+    "forecast.formula_component",
+    "governance.model_provider",
+)
+
+
+def _rows(dsn: str, query: str) -> list[tuple]:
+    conn = psycopg2.connect(dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query)
+            return sorted(cur.fetchall())
+    finally:
+        conn.close()
+
+
+def _self_approval_shape(dataagent: str, audit: str) -> dict[str, list[tuple]]:
+    """What v3_0024 to v3_0026 change, by definition (an unnamed CHECK's name is the server's)."""
+    tables = ", ".join(f"'{t}'::regclass" for t in _APPROVAL_TABLES)
+    return {
+        "checks": _rows(
+            dataagent,
+            "SELECT conrelid::regclass::text, pg_get_constraintdef(oid) FROM pg_constraint"
+            f" WHERE conrelid IN ({tables}) AND contype = 'c'",
+        ),
+        "named": _rows(
+            dataagent,
+            "SELECT conrelid::regclass::text, conname FROM pg_constraint"
+            " WHERE conname IN ('dataset_version_certifier_created_check',"
+            " 'knowledge_page_version_certifier_check')",
+        ),
+        "triggers": _rows(
+            dataagent,
+            "SELECT pg_get_triggerdef(t.oid) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid"
+            " WHERE p.pronamespace = 'org'::regnamespace AND p.proname = 'two_people'"
+            " AND NOT t.tgisinternal",
+        ),
+        "functions": _rows(
+            dataagent,
+            "SELECT proname, prosrc, prosecdef, proconfig::text, proacl::text FROM pg_proc"
+            " WHERE pronamespace = 'org'::regnamespace"
+            " AND proname IN ('two_people', 'self_approval_allowed')",
+        ),
+        "columns": _rows(
+            dataagent,
+            "SELECT table_schema, table_name, column_name, data_type, column_default, is_nullable"
+            " FROM information_schema.columns WHERE (table_schema, table_name, column_name) IN"
+            " (('org', 'organization', 'allow_self_approval'),"
+            " ('context', 'example_query', 'sql_changed_by'))",
+        ),
+        "audit_checks": _rows(
+            audit,
+            "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint"
+            " WHERE conrelid = 'audit.export_job'::regclass AND contype = 'c'"
+            " AND pg_get_constraintdef(oid) ~ 'requested_by'",
+        ),
+        "audit_columns": _rows(
+            audit,
+            "SELECT column_name, data_type, column_default, is_nullable"
+            " FROM information_schema.columns WHERE table_schema = 'audit'"
+            " AND table_name = 'export_job' AND column_name = 'self_approved'",
+        ),
+        "audit_grants": _rows(
+            audit,
+            "SELECT column_name, privilege_type FROM information_schema.column_privileges"
+            " WHERE table_schema = 'audit' AND table_name = 'export_job'"
+            " AND grantee = 'svc_audit_worker' AND privilege_type = 'UPDATE'",
+        ),
+    }
+
+
+def _same_shape(got: dict[str, list[tuple]], want: dict[str, list[tuple]]) -> None:
+    for key in want:
+        extra = sorted(set(got[key]) - set(want[key]))
+        missing = sorted(set(want[key]) - set(got[key]))
+        assert (key, extra, missing) == (key, [], []) and got[key] == want[key]
+
+
+def test_self_approval_reaches_a_migrated_cluster_as_a_fresh_install_has_it(admin):
+    # v3_0024 to v3_0026 (02/11/2026): a cluster migrated before them has the person-inequality
+    # CHECKs, no switch, no trigger, the old export CHECK and grant. The baseline is generated
+    # with the new shape, so the test puts the old one back before the upgrade.
+    _fresh(admin, "chain_sa_fresh", "chain_sa_fresh_audit")
+    _alembic(_db(admin, "chain_sa_fresh"), "upgrade", "head")
+    fresh = _self_approval_shape(_db(admin, "chain_sa_fresh"), _db(admin, "chain_sa_fresh_audit"))
+
+    _fresh(admin, "chain_sa", "chain_sa_audit")
+    db, audit = _db(admin, "chain_sa"), _db(admin, "chain_sa_audit")
+    _alembic(db, "upgrade", "v3_0023")
+    for dsn, sql in ((db, _BEFORE_SELF_APPROVAL), (audit, _AUDIT_BEFORE_SELF_APPROVAL)):
+        conn = psycopg2.connect(dsn)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(sql)
+        conn.close()
+    before = _self_approval_shape(db, audit)
+    assert before["triggers"] == [] and before["columns"] == [] and before["audit_columns"] == []
+    assert ("context.data_product", "CHECK ((owner_id <> steward_id))") in before["checks"]
+
+    _alembic(db, "upgrade", "head")
+    migrated = _self_approval_shape(db, audit)
+    _same_shape(migrated, fresh)
+    pairs = (
+        "certified_by <> created_by",
+        "reviewed_by <> created_by",
+        "owner_id <> steward_id",
+        "activated_by <> created_by",
+        "approved_by <> requested_by",
+        "legal_reviewed_by <> owner_id",
+        "approved_by <> created_by",
+        "approved_by <> enabled_by",
+        "DISTINCT FROM",
+    )
+    assert sum(p in d for p in pairs for _, d in before["checks"]) >= len(pairs)
+    assert [d for _, d in migrated["checks"] if any(p in d for p in pairs)] == []
+    assert len(migrated["triggers"]) == len(_APPROVAL_TABLES)
+
+    # Each revision is idempotent: run again over what it already did, nothing changes.
+    _alembic(db, "stamp", "v3_0023")
+    _alembic(db, "upgrade", "head")
+    _same_shape(_self_approval_shape(db, audit), fresh)
