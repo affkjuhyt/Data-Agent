@@ -108,3 +108,13 @@ def note(asked: Period, chosen: Period, found: Sequence[D], grain: str) -> str:
         f"Không có dữ liệu cho {period_label(asked)}; {span}. "
         f"Dưới đây là số của {period_label(chosen)}."
     )
+
+
+def retold(question: str, asked: str, shown: str) -> str:
+    """The question as the model is shown it when another period is answered: the asked period's
+    words replaced by the period shown, so the answer does not say "năm nay" beside 2014's
+    figures; written differently from its chip, the period shown follows the question."""
+    pattern = re.compile(re.escape(asked), re.IGNORECASE)
+    if asked and pattern.search(question):
+        return pattern.sub(shown, question, count=1)
+    return f"{question} (số của {shown})"

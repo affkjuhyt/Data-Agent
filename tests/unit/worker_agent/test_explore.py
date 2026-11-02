@@ -77,3 +77,16 @@ def test_the_note_says_what_was_asked_what_exists_and_what_is_shown() -> None:
         "Không có dữ liệu cho năm 2026; dữ liệu có từ năm 2011 đến năm 2014. "
         "Dưới đây là số của năm 2014."
     )
+
+
+def test_the_question_is_retold_for_the_period_answered() -> None:
+    assert (
+        explore.retold("Top 5 khu vực có số lượng bán cao nhất năm nay", "năm nay", "năm 2014")
+        == "Top 5 khu vực có số lượng bán cao nhất năm 2014"
+    )
+    # Written differently from its chip: the period answered is said after the question.
+    assert (
+        explore.retold("Doanh thu Năm Nay?", "năm 2026", "năm 2014")
+        == "Doanh thu Năm Nay? (số của năm 2014)"
+    )
+    assert explore.retold("Doanh thu NĂM NAY", "năm nay", "năm 2014") == "Doanh thu năm 2014"

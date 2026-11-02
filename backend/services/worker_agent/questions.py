@@ -2177,15 +2177,19 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             written_step.detail = {"by": "template"}
             if model is not None:
                 # G5.15: the main model writes the sentences, numbers only as figure tags.
-                # The period answered differs from the one asked (explore.py): the model is told
-                # which, so it does not write "năm nay" for 2014's figures, and may name it.
+                # The period answered differs from the one asked (explore.py): the model reads the
+                # question with that period in it, so it does not write "năm nay" beside 2014's
+                # figures, and the period's words pass the number check.
                 shown_period = u.period.label if p.lead_note and u.period else None
                 told = await narrator.narrate(
                     model,
                     every,
                     question=(
-                        f"{question.text} (không có dữ liệu cho kỳ được hỏi; các số là của "
-                        f"{shown_period}, hãy gọi đúng kỳ này)"
+                        explore.retold(
+                            question.text,
+                            next((c.label for c in u.chips if c.kind == "period"), ""),
+                            shown_period,
+                        )
                         if shown_period
                         else question.text
                     ),
