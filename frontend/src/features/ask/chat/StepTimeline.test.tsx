@@ -113,6 +113,18 @@ describe('StepTimeline', () => {
     expect(await screen.findByText(/GROUP BY vung/)).toBeInTheDocument();
   });
 
+  it('a name looked up in the data says where it was found', () => {
+    const looked = [step({
+      stepId: 's2', action: 'find_value', title: 'Tìm giá trị', target: '“mien nam”',
+      detail: { phrase: 'mien nam', dimension: 'vùng', value: 'Miền Nam' },
+    })];
+    render(<StepTimeline steps={looked} running={false} durationMs={100} recorded />);
+    fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xem chi tiết: Tìm giá trị' }));
+    expect(screen.getByText('Miền Nam', { selector: 'dd' })).toBeInTheDocument();
+    expect(screen.getByText('vùng', { selector: 'dd' })).toBeInTheDocument();
+  });
+
   it('a turn recorded before steps were kept says so', () => {
     render(<StepTimeline steps={[]} running={false} recorded={false} />);
     expect(screen.getByText('Lượt này chưa ghi chi tiết các bước.')).toBeInTheDocument();

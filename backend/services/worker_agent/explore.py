@@ -16,6 +16,7 @@ import unicodedata
 from collections.abc import Sequence
 from typing import Any
 
+from libs.language import norm
 from services.worker_agent.answer.comparison import period_label
 from services.worker_agent.semantic.compiler import Period
 
@@ -136,3 +137,45 @@ def retold(question: str, span: str, shown: str) -> str:
         return f"{question} (số của {shown})"
     start, end = where[at], where[at + len(span) - 1] + 1
     return text[:start] + shown + text[end:]
+
+
+_QUOTED = re.compile(r"“([^”]+)”|\"([^\"]+)\"")
+
+
+def _capitalised_runs(text: str) -> list[str]:
+    """Runs of words that begin with a capital letter, the question's first word excepted."""
+    runs: list[list[str]] = []
+    current: list[str] = []
+    for at, word in enumerate(re.findall(r"[^\W\d_][\w]*|\S", text)):
+        if at > 0 and word[:1].isupper():
+            current.append(word)
+            continue
+        if current:
+            runs.append(current)
+            current = []
+    if current:
+        runs.append(current)
+    return [" ".join(run) for run in runs]
+
+
+def unread_names(question: str, rest: str) -> list[str]:
+    """Names in the question the reader did not place, folded: quoted phrases and runs of
+    capitalised words (the first word excepted) whose words are all still in `rest`, the folded
+    words left unread. These are the words worth looking up among the members in the data."""
+    left = set(rest.split())
+    text = unicodedata.normalize("NFC", question)
+    quoted = [m.group(1) or m.group(2) for m in _QUOTED.finditer(text)]
+    names: list[str] = []
+    for raw in [*quoted, *_capitalised_runs(_QUOTED.sub(" ", text))]:
+        name = norm(raw)
+        if name and name not in names and all(w in left for w in name.split()):
+            names.append(name)
+    return names
+
+
+def matching_member(members: Sequence[Any], name: str) -> str | None:
+    """The member whose folded words are the name's (exact, so "america" is not North America)."""
+    for member in members:
+        if member is not None and norm(str(member)) == name:
+            return str(member)
+    return None

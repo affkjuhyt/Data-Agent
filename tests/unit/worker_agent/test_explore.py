@@ -91,3 +91,24 @@ def test_the_question_is_retold_for_the_period_answered() -> None:
         explore.retold("Doanh thu kỳ này", "nam nay", "năm 2014")
         == "Doanh thu kỳ này (số của năm 2014)"
     )
+
+
+def test_names_left_unread_are_the_candidates_to_look_up() -> None:
+    # A capitalised run of words the reader did not place (its folded words are still in the
+    # rest): "Miền Nam". The first word of the question and placed words are not candidates.
+    assert explore.unread_names("Tỷ lệ nợ xấu Miền Nam tháng 9/2026", "mien nam") == ["mien nam"]
+    assert explore.unread_names("Doanh thu North America năm 2013", "north america") == [
+        "north america"
+    ]
+    assert explore.unread_names("Doanh thu Internet năm 2013", "") == []
+    assert explore.unread_names("Tỷ lệ nợ xấu tháng 9", "ty le") == []
+    assert explore.unread_names("Số bán ở “Hà Nội” và Đà Nẵng", "ha noi va da nang") == [
+        "ha noi",
+        "da nang",
+    ]
+
+
+def test_a_member_matches_a_name_by_its_folded_words() -> None:
+    assert explore.matching_member(["Miền Bắc", "Miền Nam"], "mien nam") == "Miền Nam"
+    assert explore.matching_member(["North America", "Europe"], "america") is None
+    assert explore.matching_member([None, "Miền Nam"], "mien nam") == "Miền Nam"

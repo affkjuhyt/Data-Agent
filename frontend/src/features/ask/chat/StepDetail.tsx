@@ -124,6 +124,16 @@ function Body({ step }: { step: TurnStep }) {
           ))}
         </ul>
       );
+    case 'find_value':
+      return (
+        <Pairs
+          rows={[
+            ['Cụm từ', str(d.phrase)],
+            ['Chiều', str(d.dimension)],
+            ['Giá trị', d.value ? str(d.value) : 'không tìm thấy'],
+          ]}
+        />
+      );
     case 'widen_filter': {
       const runId = str(d.query_run_id);
       return (

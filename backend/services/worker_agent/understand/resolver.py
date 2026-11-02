@@ -109,6 +109,9 @@ class Understanding:
     chips: list[Chip] = field(default_factory=list)
     options: list[MetricEntry] = field(default_factory=list)  # when clarifying
     unmapped: list[str] = field(default_factory=list)
+    # Every word of the question this pass left unread, folded (short ones too): where a name
+    # missing from the value index is still found (questions._find_values, explore.unread_names).
+    rest: str = ""
     # A cut asked for ("theo khu vực") that names no dimension: the question asks which one
     # rather than answering the total, which would answer another question (BR-80).
     unplaced_cut: str | None = None
@@ -222,6 +225,7 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
     out.unplaced_cut = _unplaced_cut(taken)
     leftover = " ".join(w for w in re.sub(r"#+", " ", taken).split() if len(w) > 3)
     out.unmapped = [leftover] if leftover and not metric_hits else []
+    out.rest = " ".join(re.sub(r"#+", " ", taken).split())
     out.top_n = top_n
     out.top_desc = not ascending
     if period:

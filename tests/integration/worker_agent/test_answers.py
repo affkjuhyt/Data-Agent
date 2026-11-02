@@ -518,6 +518,44 @@ async def test_a_filter_with_no_data_is_widened_to_the_members_that_have_it(
     }
 
 
+async def test_a_value_missing_from_the_index_is_looked_up_in_the_data(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The value index has not caught up with "Miền Nam": the words are not read as a filter.
+    # Instead of answering the total as if they were not there, the agent looks for them among
+    # the members the metric's dimensions have in the data, and filters by the one it finds.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM context.value_index WHERE data_space_id = %s AND value_code = 'Miền Nam'",
+            (str(bank.space),),
+        )
+    q = bank.ask("Tỷ lệ nợ xấu Miền Nam tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    assert text.startswith("Đã tìm thấy “Miền Nam” là vùng trong dữ liệu."), text
+    # The total is 10% too: what tells them apart is the filter in the SQL that ran.
+    ran = seed.all(
+        "SELECT sql_executed FROM query.query_run WHERE caller_id = %s AND status = 'succeeded'", q
+    )
+    assert figures and any("Miền Nam" in sql for (sql,) in ran)
+    steps = seed.all(
+        "SELECT s.name, s.status, s.output FROM agent.agent_step s JOIN agent.agent_run r"
+        " ON r.id = s.run_id WHERE r.trigger_ref = %s AND s.name <> 'model_call' ORDER BY s.seq",
+        f"question:{q}",
+    )
+    names = [name for name, _, _ in steps]
+    assert names[:4] == ["understand", "find_value", "choose_metric", "query"], names
+    found = steps[1][2]["detail"]
+    assert {k: found[k] for k in ("phrase", "dimension", "value")} == {
+        "phrase": "mien nam",
+        "dimension": "vùng",
+        "value": "Miền Nam",
+    }
+
+
 async def test_a_source_that_cannot_be_reached_fails_the_query_step(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:

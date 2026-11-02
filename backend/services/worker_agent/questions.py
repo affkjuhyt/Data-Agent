@@ -818,6 +818,7 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
     if await is_cancel_requested(str(question_id)):
         await _cancel(event, question_id, prepared)
         return
+    prepared = await _find_values(question_id, prepared, await _question_text(event, question_id))
     await _metric_chosen(prepared)
     await publish(
         str(question_id), "progress", {"question_id": str(question_id), "status": "running"}
@@ -917,6 +918,10 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
         )
         return
     await _answer(event, question_id, prepared, outcome)
+
+
+# How many of a metric's dimensions a name missing from the value index is looked for in.
+FIND_VALUE_DIMENSIONS = 6
 
 
 def _probe_time_code(layer: SpaceLayer, version: c.MetricVersion) -> str | None:
@@ -1025,6 +1030,77 @@ async def _explore_period(question_id: uuid.UUID, p: Prepared) -> tuple[Prepared
             step.status, step.summary = "failed", "Kỳ thay thế cũng không cho số."
             return None
     return redone, outcome
+
+
+async def _find_values(question_id: uuid.UUID, p: Prepared, question_text: str) -> Prepared:
+    """Names in the question the reader did not place ("Miền Nam" when the value index has not
+    caught up): looked up among the members each dimension of the metric has in the data, through
+    the compiler, and filtered by when one matches. One that is found nowhere is said, not
+    silently left out of the answer."""
+    request, u = p.request, p.understanding
+    names = explore.unread_names(question_text, u.rest)
+    if request is None or not names or p.probe_compile is None or p.recompile is None:
+        return p
+    notes: list[str] = []
+    for name in names:
+        async with turn_trace.stepping("find_value", target=f"“{name}”") as step:
+            found: tuple[str, str, str] | None = None
+            for code, dimension in p.cuts[:FIND_VALUE_DIMENSIONS]:
+                if code in request.filters:
+                    continue
+                try:
+                    probe = p.probe_compile(replace(request, group_by=[code], top_n=None))
+                except (c.CompileError, SqlRejected):
+                    continue
+                outcome = await run_query(
+                    org_id=p.org_id,
+                    data_space_id=p.space_id,
+                    principal_id=p.user_id,
+                    caller_kind="question",
+                    caller_id=question_id,
+                    source=p.source,
+                    sql=probe.sql,
+                    secrets=secrets(),
+                    metric_version_ids=[probe.metric_version_id],
+                    as_of=p.as_of,
+                )
+                member = (
+                    explore.matching_member([row[0] for row in outcome.rows or []], name)
+                    if outcome.ok
+                    else None
+                )
+                if member is not None:
+                    found = (code, dimension, member)
+                    break
+            if found is None:
+                step.status = "failed"
+                step.summary = f"Không tìm thấy “{name}” trong các chiều của chỉ số."
+                step.detail = {"phrase": name}
+                notes.append(
+                    f"Không tìm thấy “{name}” trong dữ liệu của chỉ số; số dưới đây chưa lọc "
+                    "theo cụm từ này."
+                )
+                continue
+            code, dimension, member = found
+            step.detail = {"phrase": name, "dimension": dimension, "value": member}
+        request = replace(request, filters={**request.filters, code: [member]})
+        u.filters = {**u.filters, code: [member]}
+        notes.append(f"Đã tìm thấy “{member}” là {dimension} trong dữ liệu.")
+    if request is p.request:
+        return replace(p, lead_note=" ".join(notes)) if notes else p
+    try:
+        compiled = p.recompile(request)
+    except (c.CompileError, SqlRejected):
+        return p
+    return replace(p, compiled=compiled, request=request, lead_note=" ".join(notes))
+
+
+async def _question_text(event: Event, question_id: uuid.UUID) -> str:
+    async with scoped_session(ROLE, event.org_id, _user_of(event)) as session:
+        return str(
+            await session.scalar(select(qa.Question.text).where(qa.Question.id == question_id))
+            or ""
+        )
 
 
 async def _widen_filter(question_id: uuid.UUID, p: Prepared) -> tuple[Prepared, Any] | None:
