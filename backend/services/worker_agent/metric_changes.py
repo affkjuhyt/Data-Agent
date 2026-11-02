@@ -677,8 +677,11 @@ async def apply(event: Event, proposal: dict[str, Any]) -> bool:
     # Fail closed: without a recorded author the reviewer could be it, so the version is not
     # certified; one created before the api recorded authors is saved again as a new version.
     author = await _author(event.org_id, reviewer, version_id)
-    async with scoped_session("svc_context", event.org_id, reviewer) as session:
-        self_approved = reviewer == author and await self_approval.allowed(session, event.org_id)
+    self_approved = False
+    if reviewer == author:
+        # Only the author's own decision needs the switch; any other reviewer opens no session.
+        async with scoped_session("svc_context", event.org_id, reviewer) as session:
+            self_approved = await self_approval.allowed(session, event.org_id)
     if author is None or (reviewer == author and not self_approved):
         logger.info(
             "worker-agent | metric_change %s not applied: %s",
