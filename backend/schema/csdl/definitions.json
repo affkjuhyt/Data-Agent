@@ -7308,6 +7308,17 @@
      "fk": null,
      "logic_ref": null,
      "pii": false
+    },
+    {
+     "name": "sql_changed_by",
+     "type": "uuid",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "logic → org.app_user; người đặt hoặc sửa SQL gần nhất (khi tạo là created_by); người xác nhận ví dụ phải khác created_by và sql_changed_by trừ khi tổ chức bật tự duyệt. Khác updated_by, vốn đổi ở mọi lần sửa",
+     "fk": null,
+     "logic_ref": "org.app_user",
+     "pii": false
     }
    ],
    "common_columns": [

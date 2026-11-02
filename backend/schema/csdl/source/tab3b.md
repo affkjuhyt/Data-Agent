@@ -853,6 +853,7 @@ Câu hỏi mẫu kèm SQL đúng; chỉ dùng làm mẫu khi đã duyệt và c�
 | origin | text, bắt buộc, mặc định 'manual' | manual, agent\_suggested, feedback |
 | last\_verified\_at | timestamptz |  |
 | status | text, bắt buộc, mặc định 'draft' | draft, pending\_review, active, stale, rejected |
+| sql\_changed\_by | uuid | logic → org.app\_user; người đặt hoặc sửa SQL gần nhất (khi tạo là created\_by); người xác nhận ví dụ phải khác created\_by và sql\_changed\_by trừ khi tổ chức bật tự duyệt. Khác updated\_by, vốn đổi ở mọi lần sửa |
 
 Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (origin IN ('manual','agent\_suggested','feedback')); CHECK (status IN ('draft','pending\_review','active','stale','rejected')).
 

@@ -399,6 +399,11 @@ class ExampleQuery(Base):
         server_default=sql_text("'draft'"),
         comment="draft, pending_review, active, stale, rejected",
     )
+    sql_changed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="logic → org.app_user; người đặt hoặc sửa SQL gần nhất (khi tạo là created_by); người xác nhận ví dụ phải khác created_by và sql_changed_by trừ khi tổ chức bật tự duyệt. Khác updated_by, vốn đổi ở mọi lần sửa",
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )

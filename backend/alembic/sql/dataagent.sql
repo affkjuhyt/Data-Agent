@@ -1646,6 +1646,7 @@ CREATE TABLE context.example_query (
   origin text NOT NULL DEFAULT 'manual',
   last_verified_at timestamptz,
   status text NOT NULL DEFAULT 'draft',
+  sql_changed_by uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -1658,6 +1659,7 @@ COMMENT ON TABLE context.example_query IS 'Câu hỏi mẫu kèm SQL đúng; ch�
 COMMENT ON COLUMN context.example_query.qdrant_point_id IS 'Điểm vector trong collection example_queries';
 COMMENT ON COLUMN context.example_query.origin IS 'manual, agent_suggested, feedback';
 COMMENT ON COLUMN context.example_query.status IS 'draft, pending_review, active, stale, rejected';
+COMMENT ON COLUMN context.example_query.sql_changed_by IS 'logic → org.app_user; người đặt hoặc sửa SQL gần nhất (khi tạo là created_by); người xác nhận ví dụ phải khác created_by và sql_changed_by trừ khi tổ chức bật tự duyệt. Khác updated_by, vốn đổi ở mọi lần sửa';
 
 CREATE TABLE context.glossary_term (
   id uuid NOT NULL,

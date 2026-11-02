@@ -391,6 +391,18 @@ async def test_policy_activation_needs_another_person(gov: Org, self_approvals: 
     assert self_approvals(gov.org) == []
 
 
+async def test_a_creator_is_refused_before_the_simulation_state_is_told(gov: Org) -> None:
+    # The creator learns nothing about the policy from an action they cannot take: an unsimulated
+    # access policy answers 403 to them and 422 to someone else.
+    async with client(gov) as api:
+        made = await api.post("/v1/policies", json=_access(gov), headers=gov.headers("admin"))
+        policy = made.json()["id"]
+        own = await api.post(f"/v1/policies/{policy}:activate", headers=gov.headers("admin"))
+        assert own.status_code == 403 and own.json()["detail"] == _NO_SELF_APPROVAL, own.text
+        other = await api.post(f"/v1/policies/{policy}:activate", headers=gov.headers("admin2"))
+        assert other.status_code == 422, other.text
+
+
 async def test_policy_self_activation_when_the_org_allows_it(gov: Org, self_approvals: Any) -> None:
     gov.seed.allow_self_approval(gov.org)
     async with client(gov) as api:

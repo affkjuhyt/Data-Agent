@@ -1112,6 +1112,7 @@ async def create_example(
             origin="manual",
             status="draft",
             created_by=principal.user_id,
+            sql_changed_by=principal.user_id,
             updated_by=principal.user_id,
         )
         session.add(row)
@@ -1174,9 +1175,12 @@ async def update_example(
                 "invalid_state",
                 f"The example is {row.status}; it is confirmed once the checker has run its SQL.",
             )
+        # The SQL's last author counts as much as the creator: changing someone's SQL does not
+        # make the example one's own to confirm.
         self_approved = body.status == "active" and two_people(
             principal,
             row.created_by,
+            row.sql_changed_by,
             message="Người tạo không tự duyệt được khi tổ chức chưa bật tự duyệt.",
         )
         if body.question is not None:
@@ -1185,6 +1189,7 @@ async def update_example(
             # Out of the standard set until the checker has run the new SQL (BR-118): it goes
             # back to draft, as a new example does, and the checker acts on the event below.
             row.sql, row.status, row.last_verified_at = sql, "draft", None
+            row.sql_changed_by = principal.user_id
         if body.status is not None:
             row.status = body.status
         row.updated_by, row.updated_at = principal.user_id, now()
