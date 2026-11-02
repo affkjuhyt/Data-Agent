@@ -984,6 +984,18 @@ export function proposalsFixture(): ProposalWire[] {
           text: 'debt_group IN (3,4,5)\n  OR restructure_count >= 2',
         },
       },
+      summary: {
+        headline: 'Chứng nhận chỉ số Tỷ lệ nợ xấu (NPL_RATIO), phiên bản 5, thay phiên bản 4.',
+        fields: [
+          {
+            label: 'Công thức',
+            before: 'debt_group IN (3,4,5)',
+            after: 'debt_group IN (3,4,5) OR restructure_count >= 2',
+          },
+        ],
+        checks_note: null,
+        preview_note: null,
+      },
       reason:
         'văn bản QĐ 845/2026 hiệu lực 01/09/2026 yêu cầu khoản cơ cấu lần 2 xếp tối thiểu nhóm 3.',
       impact: {
@@ -1028,6 +1040,16 @@ export function proposalsFixture(): ProposalWire[] {
           label: 'Bản số liệu đề xuất',
           text: 'overdue_days theo Core banking (30/09)\n  cho 214 khoản lệch ngày quá hạn',
         },
+      },
+      summary: {
+        headline: 'Ghi ngược vào bảng overdue_loans của Core banking: sửa 214 dòng.',
+        fields: [
+          { label: 'Bảng đích', before: null, after: 'overdue_loans' },
+          { label: 'Nguồn', before: null, after: 'Core banking' },
+          { label: 'Dòng sửa', before: null, after: '214' },
+        ],
+        checks_note: null,
+        preview_note: null,
       },
       reason:
         'số nội bộ thấp hơn số đã nộp 0,12%; 214 khoản có ngày quá hạn khác nhau giữa hai nguồn.',

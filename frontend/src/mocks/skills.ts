@@ -297,6 +297,16 @@ function publishProposalFixture(): Schemas['ProposalDetail'] {
     target_ref: 'skv-segment-3',
     title: 'Phát hành kỹ năng phiên bản 3',
     diff: { action: 'publish', skill_id: 'sk-segment', version: 3, scope: 'data_space' },
+    summary: {
+      headline: 'Phát hành kỹ năng Phân nhóm khách hàng, phiên bản 3.',
+      fields: [
+        { label: 'Kỹ năng', before: null, after: 'Phân nhóm khách hàng' },
+        { label: 'Phiên bản', before: null, after: '3' },
+        { label: 'Phạm vi', before: null, after: 'Data Space' },
+      ],
+      checks_note: null,
+      preview_note: null,
+    },
     reason: null,
     evidence: [],
     impact: null,

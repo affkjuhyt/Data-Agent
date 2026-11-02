@@ -11,7 +11,6 @@ import type {
   HitlOption,
   HitlWire,
   Proposal,
-  ProposalDiff,
   ProposalImpact,
   ProposalWire,
   AgentRun,
@@ -80,20 +79,6 @@ export function readHitl(raw: HitlWire): HitlRequest {
   };
 }
 
-const readSide = (raw: unknown, label: string) =>
-  isText(raw)
-    ? { label, text: raw }
-    : isRecord(raw) && isText(raw.text)
-      ? { label: isText(raw.label) ? raw.label : label, text: raw.text }
-      : null;
-
-function readDiff(raw: unknown): ProposalDiff | null {
-  if (!isRecord(raw)) return null;
-  const before = readSide(raw.before, 'Hiện tại');
-  const after = readSide(raw.after, 'Đề xuất');
-  return before && after ? { before, after } : null;
-}
-
 function readImpact(raw: unknown): ProposalImpact | null {
   if (!isRecord(raw) || !Array.isArray(raw.rows) || !Array.isArray(raw.columns)) return null;
   const [left, right] = raw.columns;
@@ -128,8 +113,6 @@ function readProposal(raw: ProposalWire): Proposal {
     ...raw,
     status: raw.status as Proposal['status'],
     impact_level: raw.impact_level as Proposal['impact_level'],
-    diff: readDiff(raw.diff),
-    raw_diff: raw.diff,
     impact: readImpact(raw.impact),
     checks: checksOf(raw),
     approval: raw.approval ?? null,

@@ -415,12 +415,6 @@ export type ProposalStatus =
   | 'expired'
   | 'withdrawn';
 
-/** PROPOSAL: the shape of `diff` for a definition change — the two versions side by side. */
-export interface ProposalDiff {
-  before: { label: string; text: string };
-  after: { label: string; text: string };
-}
-
 /**
  * "Kèm diff, ảnh hưởng, kết quả eval_run". PROPOSAL: the shape of `impact` — a backtest table
  * over past periods and the consequence in one sentence.
@@ -448,18 +442,16 @@ export interface ProposalDisplay {
 export type ProposalWire = components['schemas']['ProposalDetail'] & Partial<ProposalDisplay>;
 
 /**
- * A proposal as "P07 · Duyệt đề xuất" reads it; `readProposal` (lib/v1/api.ts) keeps `diff` and
- * `impact` only when they have the drawn shape and derives `checks` from eval_run without them.
+ * A proposal as "P07 · Duyệt đề xuất" reads it; `readProposal` (lib/v1/api.ts) keeps `impact`
+ * only when it has the drawn shape and derives `checks` from eval_run without them. The change is
+ * read from `summary` (the api says it in words); `diff` stays as sent, for "Chi tiết kỹ thuật".
  */
 export type Proposal = Omit<
   ProposalWire,
-  'diff' | 'impact' | 'status' | 'impact_level' | keyof ProposalDisplay
+  'impact' | 'status' | 'impact_level' | keyof ProposalDisplay
 > & {
   status: ProposalStatus;
   impact_level: 'low' | 'medium' | 'high';
-  diff: ProposalDiff | null;
-  /** The column as sent, shown as is when it does not have the side-by-side shape. */
-  raw_diff: unknown;
   impact: ProposalImpact | null;
   checks: ProposalDisplay['checks'];
   approval: ProposalDisplay['approval'] | null;

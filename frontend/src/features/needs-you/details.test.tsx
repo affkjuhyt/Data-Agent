@@ -33,7 +33,12 @@ describe('ProposalPage', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: /NPL_RATIO v5/ }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Bản đề xuất v5')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Chứng nhận chỉ số Tỷ lệ nợ xấu (NPL_RATIO), phiên bản 5, thay phiên bản 4.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'Công thức' })).toBeInTheDocument();
     expect(screen.getByText('+0,12 điểm · 214 khoản')).toBeInTheDocument();
     expect(screen.getByText('Bộ câu hỏi chuẩn 96,8% (v4: 96,5%)')).toBeInTheDocument();
 
@@ -71,6 +76,12 @@ const fromApi = (eval_run: ProposalWire['eval_run']): ProposalWire => ({
   target_ref: null,
   title: 'Đổi định nghĩa CASA_RATIO',
   diff: { sql: 'balance_type IN (1, 2)' },
+  summary: {
+    headline: 'Đổi định nghĩa CASA_RATIO',
+    fields: [{ label: 'sql', before: null, after: 'balance_type IN (1, 2)' }],
+    checks_note: null,
+    preview_note: null,
+  },
   reason: null,
   evidence: [],
   impact: {},
@@ -90,7 +101,7 @@ const fromApi = (eval_run: ProposalWire['eval_run']): ProposalWire => ({
 });
 
 describe('ProposalPage on the api', () => {
-  it('shows an unshaped diff as sent and asks for the regressions to be reviewed (BR-28)', async () => {
+  it('shows the change the api describes and asks for the regressions to be reviewed (BR-28)', async () => {
     let body: unknown;
     const proposal = fromApi({
       id: '0192f0aa-0000-7000-8000-0000000000e1',
@@ -126,6 +137,92 @@ describe('ProposalPage on the api', () => {
     fireEvent.click(accept);
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('needs-you'));
     expect(body).toEqual({ decision: 'accept', reviewed_regressions: true });
+  });
+
+  it('says a synonym in words and keeps the JSON behind "Chi tiết kỹ thuật"', async () => {
+    const synonym: ProposalWire = {
+      ...fromApi(null),
+      kind: 'synonym',
+      title: 'Từ đồng nghĩa “occupation”',
+      diff: { phrase: 'occupation', target_kind: 'dimension', target_id: 'dim-9f3a' },
+      summary: {
+        headline: 'Thêm từ đồng nghĩa “occupation” cho chiều Nghề nghiệp.',
+        fields: [
+          { label: 'Cụm từ', before: null, after: 'occupation' },
+          { label: 'Trỏ tới', before: null, after: 'chiều Nghề nghiệp' },
+        ],
+        checks_note: 'Bộ đánh giá 60 câu: 10 câu đạt trước và sau thay đổi, không câu nào tệ đi.',
+        preview_note: null,
+      },
+    };
+    server.use(http.get('*/v1/proposals/:id', () => HttpResponse.json(synonym)));
+    routeId = synonym.id;
+    wrap(<ProposalPage />);
+    expect(
+      await screen.findByText('Thêm từ đồng nghĩa “occupation” cho chiều Nghề nghiệp.'),
+    ).toBeInTheDocument();
+    const table = screen.getByRole('table', { name: 'Thay đổi' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['Mục', 'Hiện tại', 'Đề xuất']);
+    const pointsTo = within(table).getByRole('row', { name: /Trỏ tới/ });
+    expect(
+      within(pointsTo)
+        .getAllByRole('cell')
+        .map((c) => c.textContent),
+    ).toEqual(['Trỏ tới', '—', 'chiều Nghề nghiệp']);
+    expect(
+      screen.getByText(
+        'Bộ đánh giá 60 câu: 10 câu đạt trước và sau thay đổi, không câu nào tệ đi.',
+      ),
+    ).toBeInTheDocument();
+    // The raw diff (and its ids) only once the reviewer asks for it.
+    expect(screen.queryByText(/dim-9f3a/)).not.toBeInTheDocument();
+    const details = screen.getByRole('button', { name: 'Chi tiết kỹ thuật' });
+    expect(details).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(details);
+    expect(details).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText(/dim-9f3a/)).toBeInTheDocument();
+  });
+
+  it('reads a metric change field by field and says why there is no preview', async () => {
+    const change: ProposalWire = {
+      ...fromApi(null),
+      kind: 'metric_change',
+      title: 'Duyệt định nghĩa TON_KHO phiên bản 2',
+      diff: { action: 'certify', metric_code: 'TON_KHO', preview: [] },
+      summary: {
+        headline: 'Chứng nhận chỉ số Tồn kho (TON_KHO), phiên bản 2, thay phiên bản 1.',
+        fields: [
+          { label: 'Cách tính theo kỳ', before: 'Cộng dồn trong kỳ', after: 'Giá trị cuối kỳ' },
+          { label: 'Đơn vị', before: null, after: 'cái' },
+        ],
+        checks_note: null,
+        preview_note: 'Chưa có số liệu trong 6 kỳ gần nhất để xem trước.',
+      },
+    };
+    server.use(http.get('*/v1/proposals/:id', () => HttpResponse.json(change)));
+    routeId = change.id;
+    wrap(<ProposalPage />);
+    expect(
+      await screen.findByText(
+        'Chứng nhận chỉ số Tồn kho (TON_KHO), phiên bản 2, thay phiên bản 1.',
+      ),
+    ).toBeInTheDocument();
+    const row = screen.getByRole('row', { name: /Cách tính theo kỳ/ });
+    expect(
+      within(row)
+        .getAllByRole('cell')
+        .map((c) => c.textContent),
+    ).toEqual(['Cách tính theo kỳ', 'Cộng dồn trong kỳ', 'Giá trị cuối kỳ']);
+    const unit = screen.getByRole('row', { name: /Đơn vị/ });
+    expect(within(unit).getAllByRole('cell')[1]).toHaveTextContent('—');
+    expect(
+      screen.getByText('Chưa có số liệu trong 6 kỳ gần nhất để xem trước.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/"metric_code"/)).not.toBeInTheDocument();
   });
 
   it('says when the proposal has not been evaluated', async () => {

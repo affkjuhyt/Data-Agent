@@ -23,8 +23,10 @@ import { LinkButton } from '../../components/shell/AppLink';
  * on the right, on --background, the checks it passed and who must approve it.
  * Rejecting needs a reason (proposal_review: note required for reject). When the eval run changed
  * the result of some items, accepting waits until the reviewer says they looked at each (BR-28).
- * The api sends `diff` and `impact` as jsonb: a block without the drawn shape is shown as sent or
- * left out, never invented.
+ * "Thay đổi" is the api's `summary` (inbox/describe.py): one sentence saying what accepting does
+ * and the fields it changes, current against proposed, with ids already turned into names. The
+ * raw `diff` waits behind "Chi tiết kỹ thuật" for whoever needs it; `impact` without the drawn
+ * shape is left out, never invented.
  */
 type Dialog = { decision: 'reject' | 'request_changes' } | null;
 
@@ -192,36 +194,30 @@ export default function ProposalPage() {
                     )}
                     <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
                       <h2 className="text-foreground da-heading-3">Thay đổi</h2>
-                      {p.diff ? (
-                        <div className="flex gap-da-lg">
-                          {[p.diff.before, p.diff.after].map((side, i) => (
-                            <div
-                              key={side.label}
-                              className="flex min-w-0 flex-1 flex-col gap-da-sm rounded-md border border-border px-[14px] py-da-lg"
-                            >
-                              <span className="text-muted-foreground da-caption">{side.label}</span>
-                              <pre
-                                className={`whitespace-pre-wrap da-mono ${i === 0 ? 'text-muted-foreground' : 'text-foreground'}`}
-                              >
-                                {side.text}
-                              </pre>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <pre className="whitespace-pre-wrap rounded-md border border-border px-[14px] py-da-lg text-foreground da-mono">
-                          {JSON.stringify(p.raw_diff, null, 2)}
-                        </pre>
-                      )}
+                      <ChangeSummary summary={p.summary} diff={p.diff} />
                       {p.reason && (
                         <p className="text-foreground da-body-small">Lý do: {p.reason}</p>
                       )}
                     </section>
-                    {p.impact && <ImpactSection impact={p.impact} level={p.impact_level} />}
+                    {p.impact ? (
+                      <ImpactSection impact={p.impact} level={p.impact_level} />
+                    ) : (
+                      p.summary.preview_note && (
+                        <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
+                          <h2 className="text-foreground da-heading-3">Ảnh hưởng</h2>
+                          <p className="text-muted-foreground da-body-small">
+                            {p.summary.preview_note}
+                          </p>
+                        </section>
+                      )
+                    )}
                   </div>
                   <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:w-full max-[1279px]:border-l-0 max-[1279px]:border-t max-[1279px]:pb-da-xl">
                     <h2 className="text-foreground da-heading-3">Kiểm thử</h2>
-                    {p.checks.length === 0 && (
+                    {p.summary.checks_note && (
+                      <p className="text-foreground da-body-small">{p.summary.checks_note}</p>
+                    )}
+                    {p.checks.length === 0 && !p.summary.checks_note && (
                       <p className="text-muted-foreground da-body-small">
                         Đề xuất này chưa chạy bộ đánh giá.
                       </p>
@@ -311,6 +307,55 @@ export default function ProposalPage() {
         </AsyncRegion>
       </div>
     </div>
+  );
+}
+
+/** The change in words, then the raw diff folded away (the disclosure of AlertPage's query). */
+function ChangeSummary({ summary, diff }: { summary: Proposal['summary']; diff: unknown }) {
+  const [showDiff, setShowDiff] = useState(false);
+  return (
+    <>
+      <p className="text-foreground da-body">{summary.headline}</p>
+      {summary.fields && summary.fields.length > 0 && (
+        <table aria-label="Thay đổi" className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-border text-left text-muted-foreground da-caption">
+              <th className="w-[160px] px-da-lg py-da-md font-normal">Mục</th>
+              <th className="px-da-lg py-da-md font-normal">Hiện tại</th>
+              <th className="px-da-lg py-da-md font-normal">Đề xuất</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.fields.map((field, i) => (
+              <tr key={`${field.label}-${i}`} className="border-b border-border">
+                <td className="px-da-lg py-da-md text-muted-foreground da-body-small">
+                  {field.label}
+                </td>
+                <td className="whitespace-pre-wrap px-da-lg py-da-md text-muted-foreground da-body-small">
+                  {field.before ?? '—'}
+                </td>
+                <td className="whitespace-pre-wrap px-da-lg py-da-md text-foreground da-body-small">
+                  {field.after ?? '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <button
+        type="button"
+        aria-expanded={showDiff}
+        onClick={() => setShowDiff((v) => !v)}
+        className="self-start text-primary da-body-small hover:underline"
+      >
+        Chi tiết kỹ thuật
+      </button>
+      {showDiff && (
+        <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-subtle p-da-md text-foreground da-mono">
+          {JSON.stringify(diff, null, 2)}
+        </pre>
+      )}
+    </>
   );
 }
 
