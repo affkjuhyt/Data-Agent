@@ -51,7 +51,7 @@ RELATIVE_TOLERANCE = decimal.Decimal("0.005")
 class Asked:
     """What the answering path made of one question."""
 
-    decision: str  # proceed, clarify, unknown, refused, failed
+    decision: str  # proceed, no_data, clarify, unknown, refused, failed
     metric_code: str | None = None
     value: decimal.Decimal | None = None
     unit: str | None = None
@@ -161,6 +161,12 @@ async def ask(
             "failed", u.metric.code, query_run_id=outcome.query_run_id, error=outcome.error
         )
     names = [col["name"] for col in outcome.columns]
+    if not any(row and row[-1] is not None for row in outcome.rows):
+        # No row, or a total over an empty period (one row holding NULL): the question path says
+        # there is no data rather than answering, which is what a "refuse" item expects.
+        return Asked(
+            "no_data", u.metric.code, None, version.unit, len(outcome.rows), outcome.query_run_id
+        )
     value = None
     if len(outcome.rows) == 1 and "value" in names:
         value = _number(outcome.rows[0][names.index("value")])

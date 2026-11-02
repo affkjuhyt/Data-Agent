@@ -12,7 +12,13 @@ from typing import Any
 
 import pytest
 
-from services.worker_agent import eval_runs, metric_changes, proposals, semantic_review
+from services.worker_agent import (
+    eval_runs,
+    evaluation,
+    metric_changes,
+    proposals,
+    semantic_review,
+)
 from services.worker_agent.events import OutboxTableSource
 from services.worker_agent.main import run_once
 
@@ -202,6 +208,40 @@ async def test_a_metric_draft_is_previewed_proposed_and_certified_on_acceptance(
 
 
 @pytest.mark.req("AC-07-02-01")
+async def test_a_period_without_data_is_not_scored_as_an_answer(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The warehouse has no 2020: the compiled total comes back as one row holding NULL, which
+    # was scored as an answer, so every "no data, say so" item of DS-AW failed.
+    bank = build(seed, warehouse, monkeypatch)
+    for question in ("Dư nợ tháng 9/2020", "Dư nợ theo vùng tháng 9/2020"):
+        asked = await evaluation.ask(
+            org_id=bank.org,
+            space_id=bank.space,
+            user_id=bank.user,
+            question=question,
+            as_of=None,
+            caller_id=uuid.uuid4(),
+        )
+        assert (asked.decision, asked.metric_code) == ("no_data", "DU_NO"), question
+        assert evaluation.score({"behavior": "refuse"}, None, asked)[3] is True
+        assert evaluation.score({"metric": "DU_NO", "value": 3000}, None, asked)[4] == (
+            "not answered (no_data)"
+        )
+    # A period with data is still an answer.
+    asked = await evaluation.ask(
+        org_id=bank.org,
+        space_id=bank.space,
+        user_id=bank.user,
+        question="Dư nợ tháng 9/2026",
+        as_of=None,
+        caller_id=uuid.uuid4(),
+    )
+    assert asked.decision == "proceed" and float(asked.value or 0) == 3000
+
+
 def proposed_synonym(bank: Bank, du_no: Any, phrase: str, norm: str) -> uuid.UUID:
     synonym = bank.seed.row(
         "context.synonym",
