@@ -502,3 +502,33 @@ def test_figures_that_are_all_zero_are_no_answer() -> None:
     some = Workspace()
     some.add(title="t", columns=["Năm", "Doanh thu"], rows=[[2013, 5]], trust="certified")
     assert not engine._no_figure(some)
+
+
+def test_a_sql_that_ran_is_audited_against_the_question() -> None:
+    import types
+
+    from services.worker_agent.agentic.tools import query
+    from services.worker_agent.llm import Reply
+
+    seen: list[str] = []
+
+    class Model:
+        async def json_chat(self, role, system, user, output, **_):  # type: ignore[no-untyped-def]
+            seen.append(user)
+            return Reply(
+                output(passed=False, reason="reads the sales quota, not revenue"), "m", 9, 1
+            )
+
+    ctx = types.SimpleNamespace(question="Doanh thu năm 2013", model=Model())
+    audit = asyncio.run(
+        query._audit(
+            ctx,  # type: ignore[arg-type]
+            "tổng doanh thu 2013",
+            "dw.fact_sales_quota(amount, year)",
+            "SELECT SUM(amount) FROM dw.fact_sales_quota WHERE year = 2013",
+            ["sum"],
+            [[29507000]],
+        )
+    )
+    assert audit is not None and not audit.passed and "quota" in audit.reason
+    assert "<sql>" in seen[0] and "29507000" in seen[0] and "Doanh thu năm 2013" in seen[0]

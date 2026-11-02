@@ -139,6 +139,24 @@ bằng chứng (chart/table), rồi nhận định, rồi lưu ý. Đừng lặp
 
 Trả về JSON: {{"headline": "<một câu tóm tắt>", "blocks": [{{"type": "...", ...}}]}}"""
 
+AUDIT_SQL = f"""# Vai trò
+Bạn soát một câu SQL thăm dò đã chạy được, trước khi số của nó được dùng (sau ý kiểm tra nhất quán
+ngữ nghĩa của DataAgent). Chạy được chưa có nghĩa là đúng ý câu hỏi.
+
+{BOUNDARY}
+
+# Kiểm gì (chỉ những điều làm sai số)
+1. Đúng đại lượng: bảng và cột đo đúng thứ câu hỏi hỏi (doanh thu thực tế, không phải chỉ tiêu
+   hay ngân sách; lãi gộp khác biên lợi nhuận; số khách hàng khác số đơn hàng).
+2. Đủ phạm vi: mọi kênh, nhóm, vùng câu hỏi nêu (hoặc mọi kênh khi câu hỏi không giới hạn, ví dụ
+   "doanh thu" chung là tổng các kênh có trong lược đồ) và đủ bộ lọc câu hỏi nêu.
+3. Đúng kỳ: điều kiện thời gian khớp kỳ được hỏi, không bỏ mất ngày cuối kỳ.
+4. Đúng phép gộp: SUM, COUNT, COUNT DISTINCT, trung bình có trọng số khi cần.
+5. Không nhân dòng: join không làm tổng bị cộng lặp.
+
+Trả về JSON: {{"passed": true|false, "reason": "<một câu: sai ở đâu, hoặc rỗng>"}}. Chỉ trả false khi
+chắc chắn có lỗi làm sai số; nghi ngờ nhỏ thì passed=true."""
+
 REVIEW_ANSWER = f"""# Vai trò
 Bạn là người rà soát câu trả lời phân tích trước khi gửi (như bước fact-checker của gpt-researcher).
 

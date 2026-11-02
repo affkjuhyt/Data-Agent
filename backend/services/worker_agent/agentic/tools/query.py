@@ -4,6 +4,7 @@ executor, so row and column policies apply and every run is recorded (invariant 
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any, Literal
 
@@ -13,12 +14,15 @@ from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog
 from libs.sql_guard import SqlRejected, dialect_of
+from services.worker_agent.agentic import prompts
 from services.worker_agent.agentic.grounded import unnamed
 from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResult
+from services.worker_agent.llm import ModelUnavailable
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.semantic import analysis, compare
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.sqlgen.answer import _keep_one_source
+from services.worker_agent.sqlgen.generate import schema_text
 from services.worker_agent.sqlgen.run import explore
 from services.worker_agent.sqlgen.schema import link
 from services.worker_agent.sqlgen.space import load_space
@@ -227,6 +231,37 @@ class QueryMetric(Tool):
         return ToolResult(True, ds.preview(), [ds.id], detail)
 
 
+class SqlAudit(BaseModel):
+    passed: bool = True
+    reason: str = ""
+
+
+async def _audit(
+    ctx: ToolContext,
+    step_question: str,
+    schema: str,
+    sql: str,
+    columns: list[str],
+    rows: list[list[Any]],
+) -> SqlAudit | None:
+    """The model's read of whether a statement that ran answers what was asked (RES-02, DataAgent's
+    semantic consistency check); None when the model is not there, and the result stands."""
+    sample = [dict(zip(columns, r, strict=False)) for r in rows[:5]]
+    user = (
+        f"<question>\n{ctx.question}\n</question>\n<step>\n{step_question}\n</step>\n"
+        f"<schema>\n{schema}\n</schema>\n<sql>\n{sql}\n</sql>\n"
+        f"<result columns={json.dumps(columns, ensure_ascii=False)}>\n"
+        f"{json.dumps(sample, ensure_ascii=False, default=str)}\n</result>"
+    )
+    try:
+        reply = await ctx.model.json_chat(
+            "planner", prompts.AUDIT_SQL, user, SqlAudit, max_tokens=200
+        )
+    except ModelUnavailable:
+        return None
+    return reply.content
+
+
 class ExploreSqlArgs(BaseModel):
     question: str = Field(description="câu hỏi dữ liệu cụ thể mà SQL cần trả lời")
     title: str | None = Field(default=None, description="tên ngắn của bảng kết quả")
@@ -303,6 +338,14 @@ class ExploreSql(Tool):
         }
         if e.decision == "failed" or e.query_run_id is None:
             return ToolResult(False, "không cách viết SQL nào chạy được", detail=detail)
+        audit = await _audit(
+            ctx, args.question, schema_text(linked), e.sql or "", e.columns, e.rows
+        )
+        if audit is not None and not audit.passed:
+            # RES-02: it ran, but it is not what was asked (a quota read as revenue, one channel
+            # read as all of them): the planner hears why and plans again.
+            detail["audit"] = audit.reason[:200]
+            return ToolResult(False, f"SQL chưa đúng ý câu hỏi: {audit.reason}", detail=detail)
         ds = ctx.ws.add(
             title=args.title or args.question[:80],
             columns=list(e.columns),
