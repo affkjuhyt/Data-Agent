@@ -13,6 +13,7 @@ from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog
 from libs.sql_guard import SqlRejected, dialect_of
+from services.worker_agent.agentic.grounded import unnamed
 from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResult
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.semantic import analysis, compare
@@ -23,6 +24,7 @@ from services.worker_agent.sqlgen.schema import link
 from services.worker_agent.sqlgen.space import load_space
 from services.worker_agent.understand import analyst
 from services.worker_agent.understand.packs.base import iso_answer
+from services.worker_agent.understand.resolver import metric_words, quantity_words
 
 ROLE = "svc_qa"
 QUERYABLE = ("active", "testing")
@@ -95,6 +97,25 @@ class QueryMetric(Tool):
             return ToolResult(
                 False,
                 f"không có chỉ số {args.metric} (hoặc bạn không được xem); dùng search_catalog",
+            )
+        # A quantity the question asks that no certified metric of the catalogue names ("khách
+        # hàng" where only units sold exist): no reading of this one will answer it.
+        vocab = ctx.layer.vocabulary
+        catalogue: set[str] = set()
+        for m in analyst._visible(ctx.layer).values():
+            catalogue |= metric_words(m, vocab)
+        missing = unnamed(
+            quantity_words(
+                ctx.question, vocab, today=ctx.today, group_by=args.group_by, filters=args.filters
+            ),
+            catalogue,
+        )
+        if missing:
+            return ToolResult(
+                False,
+                f"không chỉ số chuẩn nào đo '{' '.join(missing)}' mà câu hỏi hỏi; "
+                "dùng explore_sql cho phần đó",
+                detail={"unnamed": missing},
             )
         version = ctx.layer.versions[entry.metric_id]
         period = None

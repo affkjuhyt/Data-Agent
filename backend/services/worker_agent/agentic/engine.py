@@ -37,6 +37,7 @@ from services.worker_agent.agentic import blocks as b
 from services.worker_agent.agentic import plan as p
 from services.worker_agent.agentic import prompts, verify
 from services.worker_agent.agentic.graph import END, StateGraph
+from services.worker_agent.agentic.grounded import unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, ToolContext, ToolResult
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Workspace
 from services.worker_agent.answer.verification import verify as verify_answer
@@ -456,16 +457,6 @@ def after_review(s: State) -> str:
 # ---------------------------------------------------------------- compose
 
 
-# Words that say what to do with a quantity, not which one (normalised, both languages): a "why",
-# a ranking, a trend or a comparison is the agent's to plan, not a metric to be named.
-ANALYSIS_WORDS = frozenset(
-    "co vi sao tai giam tang top cao thap nhat xu huong bien dong phan tich nguyen nhan ty trong "
-    "luy ke so sanh chenh lech tong trung binh nhieu it hon bao tri dong gop anh huong "
-    "why how trend compare increase decrease highest lowest total average share top rank change "
-    "growth drop rise".split()
-)
-
-
 def _unnamed_quantity(s: State) -> list[str]:
     """The question's quantity words no certified metric the turn read is named by (invariant 3,
     as resolver.grounding decides for one reading); empty when they all are, when the turn wrote
@@ -492,7 +483,7 @@ def _unnamed_quantity(s: State) -> list[str]:
         group_by=[g for r in readings for g in r["group_by"]],
         filters={k: v for r in readings for k, v in r["filters"].items()},
     )
-    return [w for w in words if w not in named and w not in ANALYSIS_WORDS]
+    return unnamed(words, named)
 
 
 def _facts_text(known: dict[str, verify.Fact]) -> str:

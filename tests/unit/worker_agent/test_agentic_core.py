@@ -329,3 +329,33 @@ def test_a_metric_that_does_not_measure_what_was_asked_hands_the_question_back()
     asyncio.run(engine.compose(asked_customers))
     assert asked_customers.handed_back
     assert engine._unnamed_quantity(state("Vì sao số lượng bán Internet năm 2013 giảm")) == []
+
+
+def test_query_metric_sends_a_quantity_no_metric_names_to_exploratory_sql() -> None:
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic.tools.query import QueryMetric, QueryMetricArgs
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    units = MetricEntry(uuid.uuid4(), "SO_LUONG_BAN_INTERNET", "Số lượng bán Internet", True)
+    layer = types.SimpleNamespace(
+        vocabulary=types.SimpleNamespace(
+            metrics=[units], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
+        ),
+        versions={units.metric_id: object()},
+        blocked_metric_ids=set(),
+    )
+    ctx = types.SimpleNamespace(
+        layer=layer,
+        question="Có bao nhiêu khách hàng mua qua Internet năm 2013",
+        today=datetime.date(2026, 11, 3),
+    )
+    done = asyncio.run(
+        QueryMetric().run(ctx, QueryMetricArgs(metric="SO_LUONG_BAN_INTERNET"))  # type: ignore[arg-type]
+    )
+    assert not done.ok
+    assert "explore_sql" in done.observation
+    assert done.detail["unnamed"] == ["khach", "hang", "mua"]
