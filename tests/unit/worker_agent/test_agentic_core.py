@@ -133,7 +133,7 @@ def test_the_graph_routes_on_the_state_and_always_ends() -> None:
 
 
 def test_the_sandbox_refuses_files_network_and_dunders() -> None:
-    from services.worker_agent.agentic import sandbox
+    from libs.code_sandbox import local as sandbox
 
     for code in (
         "import os",
@@ -149,7 +149,7 @@ def test_the_sandbox_refuses_files_network_and_dunders() -> None:
 
 def test_the_sandbox_runs_pandas_over_the_datasets() -> None:
     pytest.importorskip("pandas")
-    from services.worker_agent.agentic import sandbox
+    from libs.code_sandbox import local as sandbox
 
     done = asyncio.run(
         sandbox.run(
@@ -169,7 +169,7 @@ def test_the_sandbox_runs_pandas_over_the_datasets() -> None:
 
 
 def test_the_sandbox_refuses_the_ways_round_its_checks() -> None:
-    from services.worker_agent.agentic import sandbox
+    from libs.code_sandbox import local as sandbox
 
     for code in (
         "from pandas import read_csv",
@@ -191,7 +191,7 @@ def test_the_sandbox_refuses_the_ways_round_its_checks() -> None:
 
 def test_the_sandbox_runs_lazy_library_code_but_no_system_call() -> None:
     pytest.importorskip("pandas")
-    from services.worker_agent.agentic import sandbox
+    from libs.code_sandbox import local as sandbox
 
     printed = asyncio.run(
         sandbox.run(
@@ -206,7 +206,7 @@ def test_the_audit_hook_refuses_files_even_past_the_static_check(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("pandas")
-    from services.worker_agent.agentic import sandbox
+    from libs.code_sandbox import local as sandbox
 
     monkeypatch.setattr(sandbox, "check", lambda code: None)
     for code in (

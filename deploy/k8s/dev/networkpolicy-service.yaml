@@ -7,7 +7,12 @@ metadata:
   labels:
     app.kubernetes.io/part-of: dataagent
 spec:
-  podSelector: {}
+  # Every pod but the python-sandbox: NetworkPolicies only add, so this would open it too.
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: NotIn
+      values: [python-sandbox]
   policyTypes:
   - Ingress
   - Egress
@@ -15,3 +20,30 @@ spec:
   - {}
   egress:
   - {}
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-python-sandbox
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  # The analysis code's pod (services/python_sandbox): worker-agent may call it; it may call
+  # nothing, not even DNS, so code that gets past its checks still has nowhere to go.
+  podSelector:
+    matchLabels:
+      app: python-sandbox
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: worker-agent
+    ports:
+    - protocol: TCP
+      port: 8140
+  egress: []

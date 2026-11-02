@@ -39,7 +39,7 @@ non-blocking stdio.
 > [Deploying one commit exactly](#deploying-one-commit-exactly).
 
 > **On the OrbStack cluster use `make deploy-local`.** That cluster runs only the V3
-> slice (api, worker-agent, worker-ingest, worker-document, crawler, frontend, migrate, gateway,
+> slice (api, worker-agent, worker-ingest, worker-document, python-sandbox, crawler, frontend, migrate, gateway,
 > litellm, mailpit). `make deploy` plans the whole stack, Langfuse included.
 
 ## What a run does

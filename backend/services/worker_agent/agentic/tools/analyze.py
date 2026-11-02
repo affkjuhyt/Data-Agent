@@ -3,10 +3,19 @@ anomaly flags, anything pandas does. The model writes the code; the sandbox runs
 
 from __future__ import annotations
 
+import os
+
 from pydantic import BaseModel, Field
 
-from services.worker_agent.agentic import sandbox
+from libs.code_sandbox import client, local
 from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResult
+
+
+def mode() -> str:
+    """off (the default), service (the python-sandbox pod at AGENT_SANDBOX_URL: the boundary
+    model-written code needs) or local (a checked child of the worker, for a trusted install)."""
+    chosen = os.environ.get("AGENT_PYTHON_SANDBOX", "off").strip().lower()
+    return chosen if chosen in ("service", "local") else "off"
 
 
 class AnalyzeArgs(BaseModel):
@@ -37,9 +46,14 @@ class Analyze(Tool):
             i: {"columns": ctx.ws.datasets[i].columns, "rows": ctx.ws.datasets[i].rows}
             for i in inputs
         }
+        url = os.environ.get("AGENT_SANDBOX_URL", "")
         try:
-            done = await sandbox.run(args.code, frames)
-        except sandbox.CodeRejected as exc:
+            done = (
+                await client.run(url, args.code, frames)
+                if mode() == "service" and url
+                else await local.run(args.code, frames)
+            )
+        except local.CodeRejected as exc:
             return ToolResult(False, f"code bị từ chối: {exc}", detail={"error": str(exc)})
         if not done.ok:
             return ToolResult(

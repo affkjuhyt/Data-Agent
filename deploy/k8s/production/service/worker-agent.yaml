@@ -30,6 +30,10 @@ data:
   TEMPORAL_NAMESPACE: dataagent
   WORKER_AGENT_POLL_SECONDS: "0.5"
   WORKER_AGENT_BATCH: "10"
+  # The dynamic agent's analysis code runs in the python-sandbox pod (libs/code_sandbox):
+  # off leaves the `analyze` tool out, local runs it in this pod (a trusted install only).
+  AGENT_PYTHON_SANDBOX: service
+  AGENT_SANDBOX_URL: http://python-sandbox.dataagent-service.svc.cluster.local:8140
 ---
 apiVersion: apps/v1
 kind: Deployment

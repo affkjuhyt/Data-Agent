@@ -501,6 +501,26 @@ Check it (the server image has no CLI; admin-tools does):
 --image=temporalio/admin-tools:1.32.1 -- temporal operator cluster health --address temporal:8380`
 answers `SERVING`.
 
+## 10f. python-sandbox (the agent's analysis code)
+
+The dynamic agent's `analyze` tool (`worker_agent/agentic/tools/analyze.py`) has the model write
+pandas over the turn's datasets. That code runs in the `python-sandbox` pod
+(`services/python_sandbox`, `libs/code_sandbox`), never in worker-agent:
+
+- `deploy/k8s/*/service/python-sandbox.yaml`: no secret or platform ConfigMap, no service account
+  token, read-only root filesystem with an in-memory `/tmp`, user 10001, all capabilities dropped.
+- `allow-python-sandbox` (`networkpolicy-service.yaml`): ingress from worker-agent on 8140 only, no
+  egress at all (not even DNS). The dev namespace's allow-all policy excludes the pod.
+- Inside, `libs/code_sandbox/local.py` still checks the code statically and runs it in a child under
+  an audit hook with CPU, memory and time limits: inner layers, not the boundary.
+
+worker-agent's `AGENT_PYTHON_SANDBOX` is `service` (with `AGENT_SANDBOX_URL`) in both manifests;
+`off` removes the tool from the planner, `local` runs the code inside worker-agent (a trusted
+install only). When the pod is down the tool's step fails and the planner works without it.
+Check it: `kubectl -n dataagent-service exec deploy/worker-agent -- python -c "import asyncio,os;
+from libs.code_sandbox import client; print(asyncio.run(client.run(os.environ['AGENT_SANDBOX_URL'],
+'result = 1 + 1', {})))"`.
+
 ## 11. LLM and model backend
 
 The GPU services on `10.10.55.101` run outside k8s: vLLM main `:8001`

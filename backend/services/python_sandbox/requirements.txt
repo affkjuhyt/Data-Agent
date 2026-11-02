@@ -1,0 +1,3 @@
+# python-sandbox: the analysis code's libraries and nothing else (libs/code_sandbox/local.py).
+pandas==2.2.3
+numpy==2.1.3

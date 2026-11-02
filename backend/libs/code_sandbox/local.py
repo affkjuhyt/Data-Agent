@@ -5,7 +5,12 @@ temporary directory, CPU and memory limits and a wall-clock timeout.
 The code sees each dataset as a pandas DataFrame named by its id (`d1`, `d2`, …) and must leave
 its answer in `result` (a DataFrame, a Series, a dict or a number). What it prints comes back too.
 The numbers it computes are deterministic computations over figures already fetched, so they are
-traced like any other dataset cell (verify.py); the model still never states one itself.
+traced like any other dataset cell (worker_agent/agentic/verify.py); the model still never
+states one itself.
+
+This runs inside the python-sandbox service (services/python_sandbox), a pod with no network
+out, no secrets and a read-only filesystem: the checks here are the inner layers, the pod the
+boundary. A worker may still run it in place with AGENT_PYTHON_SANDBOX=local.
 """
 
 from __future__ import annotations

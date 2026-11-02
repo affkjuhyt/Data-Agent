@@ -146,6 +146,7 @@ service_workloads:
   - worker-agent
   - worker-ingest
   - worker-document
+  - python-sandbox
   - crawler
   - egress-proxy
   - temporal

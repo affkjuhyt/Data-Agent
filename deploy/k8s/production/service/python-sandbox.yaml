@@ -1,0 +1,72 @@
+# python-sandbox (services/python_sandbox): runs the dynamic agent's analysis code. Built to hold
+# nothing worth reaching: no secret, no ConfigMap of the platform, no service account token, a
+# read-only root filesystem with an in-memory /tmp, a non-root user, every capability dropped.
+# Its NetworkPolicy (allow-python-sandbox) admits worker-agent on 8140 and lets nothing out.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: python-sandbox
+  namespace: dataagent-service
+  labels: {app: python-sandbox, app.kubernetes.io/part-of: dataagent}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-sandbox
+  namespace: dataagent-service
+  labels: {app: python-sandbox, app.kubernetes.io/part-of: dataagent}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: python-sandbox}}
+  template:
+    metadata:
+      labels: {app: python-sandbox, app.kubernetes.io/part-of: dataagent}
+    spec:
+      serviceAccountName: python-sandbox
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: python-sandbox
+        image: dataagent/python-sandbox:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - {name: http, containerPort: 8140}
+        env:
+        - {name: PYTHON_SANDBOX_CONCURRENCY, value: "4"}
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 10
+        livenessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 30
+        resources:
+          requests: {cpu: 50m, memory: 128Mi}
+          limits: {cpu: "2", memory: 3Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+        - {name: tmp, mountPath: /tmp}
+      volumes:
+      - name: tmp
+        emptyDir: {medium: Memory, sizeLimit: 256Mi}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-sandbox
+  namespace: dataagent-service
+  labels: {app: python-sandbox, app.kubernetes.io/part-of: dataagent}
+spec:
+  selector: {app: python-sandbox}
+  ports:
+  - {name: http, port: 8140, targetPort: http}
