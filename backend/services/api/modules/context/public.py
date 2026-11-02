@@ -4,12 +4,11 @@ ADR-28: modules call each other through public interfaces. The inbox decides a d
 activation proposal but cannot read context.data_product; it asks here who created the product,
 because the creator accepting it is a self-approval (BR-175) even when an editor submitted it.
 
-The inbox also says what a proposal changes
-in words (inbox/describe.py, P07 "Thay đổi"), and a proposal's diff carries ids of the semantic
-layer and the document store. It asks here for their names instead of reading those schemas
-itself: svc_context reads them as the caller (RLS keeps their organisation), a knowledge page
-only to its readers (BR-163), and only within the Data Space the caller named, so an id from
-elsewhere stays unnamed. Datasets and sources are the catalog's to name (catalog/public.py).
+The inbox also says what a proposal changes in words (inbox/describe.py, P07 "Thay đổi"), and a
+proposal's diff carries ids of the semantic layer and the document store. It asks here for their
+names instead of reading those schemas itself: svc_context reads them as the caller (RLS keeps
+their organisation), a knowledge page only to its readers (BR-163), and only within the Data
+Space the caller named, so an id from elsewhere stays unnamed. Datasets and sources are the catalog's to name (catalog/public.py).
 """
 
 from __future__ import annotations
