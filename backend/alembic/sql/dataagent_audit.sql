@@ -121,6 +121,7 @@ CREATE TABLE audit.export_job (
   status text NOT NULL DEFAULT 'queued',
   requested_by uuid NOT NULL,
   approved_by uuid,
+  self_approved boolean NOT NULL DEFAULT false,
   approved_at timestamptz,
   hitl_request_id uuid,
   object_key text,
@@ -131,7 +132,7 @@ CREATE TABLE audit.export_job (
   CONSTRAINT export_job_pkey PRIMARY KEY (id),
   CHECK (format IN ('csv','jsonl')),
   CHECK (status IN ('queued','waiting_approval','running','ready','failed','expired')),
-  CHECK (approved_by IS NULL OR approved_by <> requested_by),
+  CHECK (approved_by IS NULL OR approved_by <> requested_by OR self_approved),
   CHECK (status NOT IN ('running','ready') OR (row_count IS NOT NULL AND (row_count <= 100000 OR approved_by IS NOT NULL))),
   CHECK (status <> 'ready' OR (object_key IS NOT NULL AND signature IS NOT NULL))
 );
@@ -142,6 +143,7 @@ COMMENT ON COLUMN audit.export_job.row_count IS 'Số dòng sẽ xuất, đếm 
 COMMENT ON COLUMN audit.export_job.status IS 'queued, waiting_approval, running, ready, failed, expired';
 COMMENT ON COLUMN audit.export_job.requested_by IS 'logic → org.app_user';
 COMMENT ON COLUMN audit.export_job.approved_by IS 'logic → org.app_user; người thứ hai duyệt khi row_count quá 100.000, khác requested_by (BR-138)';
+COMMENT ON COLUMN audit.export_job.self_approved IS 'API đặt true khi tổ chức bật tự duyệt và requested_by cũng là approved_by; csdl kiểm audit không đọc được org.organization nên API là người gác';
 COMMENT ON COLUMN audit.export_job.hitl_request_id IS 'logic → inbox.hitl_request khi chờ duyệt';
 COMMENT ON COLUMN audit.export_job.object_key IS 'Đường dẫn tệp trong MinIO';
 COMMENT ON COLUMN audit.export_job.signature IS 'Chữ ký số của hệ thống trên SHA-256 của tệp';

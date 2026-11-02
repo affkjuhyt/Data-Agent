@@ -441,6 +441,17 @@
      "fk": null,
      "logic_ref": null,
      "pii": false
+    },
+    {
+     "name": "allow_self_approval",
+     "type": "boolean",
+     "not_null": true,
+     "default": "false",
+     "unique": false,
+     "comment": "Tổ chức cho phép một người vừa tạo vừa duyệt (tự duyệt). Tắt: trigger org.two_people từ chối cặp người trùng nhau ở các bảng duyệt; bật: cho qua. Không đổi các dòng đã có",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
     }
    ],
    "common_columns": [
@@ -3457,7 +3468,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (NOT (kind = 'frontier' AND enabled) OR (zero_retention AND enabled_by IS NOT NULL AND approved_by IS NOT NULL AND approved_at IS NOT NULL AND approved_by <> enabled_by))"
+     "sql": "CHECK (NOT (kind = 'frontier' AND enabled) OR (zero_retention AND enabled_by IS NOT NULL AND approved_by IS NOT NULL AND approved_at IS NOT NULL))"
     },
     {
      "kind": "check",
@@ -5537,10 +5548,6 @@
     {
      "kind": "check",
      "sql": "CHECK ((certified_at IS NULL) = (certified_by IS NULL))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (certified_by IS NULL OR (created_by IS NOT NULL AND certified_by <> created_by))"
     }
    ],
    "indexes": [],
@@ -8238,10 +8245,6 @@
      "sql": "CHECK (status NOT IN ('reviewed','certified','superseded') OR (reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL))"
     },
     {
-     "kind": "check",
-     "sql": "CHECK (reviewed_by IS NULL OR reviewed_by <> created_by)"
-    },
-    {
      "kind": "fk",
      "sql": "FOREIGN KEY (page_id) REFERENCES context.knowledge_page(id)"
     },
@@ -9751,10 +9754,6 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (owner_id <> steward_id)"
-    },
-    {
-     "kind": "check",
      "sql": "CHECK (classification IN ('public','internal','confidential','restricted'))"
     },
     {
@@ -9772,10 +9771,6 @@
     {
      "kind": "check",
      "sql": "CHECK (status NOT IN ('active','suspended') OR (activated_by IS NOT NULL AND activated_at IS NOT NULL AND eval_set_id IS NOT NULL AND jsonb_array_length(sample_questions) >= 10))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (activated_by IS NULL OR activated_by <> created_by)"
     }
    ],
    "indexes": [
@@ -24721,10 +24716,6 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (approved_by IS NULL OR approved_by <> requested_by)"
-    },
-    {
-     "kind": "check",
      "sql": "CHECK (status NOT IN ('approved','scheduled','executing','executed') OR approved_by IS NOT NULL)"
     }
    ],
@@ -26270,6 +26261,17 @@
      "pii": false
     },
     {
+     "name": "self_approved",
+     "type": "boolean",
+     "not_null": true,
+     "default": "false",
+     "unique": false,
+     "comment": "API đặt true khi tổ chức bật tự duyệt và requested_by cũng là approved_by; csdl kiểm audit không đọc được org.organization nên API là người gác",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "approved_at",
      "type": "timestamptz",
      "not_null": false,
@@ -26362,7 +26364,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (approved_by IS NULL OR approved_by <> requested_by)"
+     "sql": "CHECK (approved_by IS NULL OR approved_by <> requested_by OR self_approved)"
     },
     {
      "kind": "check",
@@ -26808,10 +26810,6 @@
     {
      "kind": "check",
      "sql": "CHECK (legal_status IN ('pending','approved','rejected','expired'))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (legal_reviewed_by IS NULL OR legal_reviewed_by <> owner_id)"
     }
    ],
    "indexes": [
@@ -29467,10 +29465,6 @@
      "sql": "CHECK (status NOT IN ('published','degraded') OR (approved_by IS NOT NULL AND approved_at IS NOT NULL AND backtest_id IS NOT NULL))"
     },
     {
-     "kind": "check",
-     "sql": "CHECK (approved_by IS NULL OR approved_by <> created_by)"
-    },
-    {
      "kind": "fk",
      "sql": "FOREIGN KEY (model_id) REFERENCES forecast.forecast_model(id)"
     },
@@ -30529,10 +30523,6 @@
     {
      "kind": "check",
      "sql": "CHECK (status NOT IN ('certified','superseded') OR (certified_by IS NOT NULL AND certified_at IS NOT NULL))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (certified_by IS NULL OR certified_by <> created_by)"
     },
     {
      "kind": "check",

@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     Text,
 )
@@ -121,6 +122,11 @@ class ExportJob(Base):
         UUID(as_uuid=True),
         nullable=True,
         comment="logic → org.app_user; người thứ hai duyệt khi row_count quá 100.000, khác requested_by (BR-138)",
+    )
+    self_approved: Mapped[bool] = mapped_column(
+        Boolean,
+        server_default=sql_text("false"),
+        comment="API đặt true khi tổ chức bật tự duyệt và requested_by cũng là approved_by; csdl kiểm audit không đọc được org.organization nên API là người gác",
     )
     approved_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
