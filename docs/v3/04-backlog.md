@@ -316,7 +316,7 @@ chỉ khi số công cụ vượt mức planner đọc được hết trong prom
 | --- | --- | --- | --- | --- |
 | AGC-01 | P1 | Dừng lượt hỏi có hiệu lực ngay: node đang chạy bị huỷ (kiểm mỗi giây), bước đang chạy ghi `skipped`; mã `CANCELLED` thay cho `TOOL_UNAVAILABLE` ở cả hai đường | S | done ad79cbb7 |
 | AGC-02 | P1 | `ToolResult` mang lớp lỗi (execute / agent / forbidden / stale / budget / logic): forbidden, stale, budget không thử lại, không replan; gom thử lại về một chỗ (hiện lồng bước × executor × output × HTTP); timeout theo công cụ | M | done 5a1bbee4 |
-| AGC-03 | P1 | Câu hỏi chưa qua kiểm prompt injection (chỉ tài liệu truy hồi có `injection_suspected`); `POST /v1/questions` chưa có rate limit và chưa xử lý Idempotency-Key (Kong đã cho header đi qua) | M | todo |
+| AGC-03 | P1 | Câu hỏi có câu ra lệnh cho model (`libs/pii/injection.py`) bị từ chối 422 trước khi lưu, ở web và MCP; `POST /v1/questions` có hạn mức riêng `API_QUESTIONS_PER_MINUTE` (mặc định 10). Idempotency-Key đã có từ trước (`kernel/idempotency.py`), rate limit chung 120/phút cũng vậy | M | done 34ec18bf |
 | AGC-04 | P2 | Ngân sách token và thời gian mỗi lượt, có chặn (hiện chỉ đếm bước; token ghi nhưng không chặn) | S | todo |
 | AGC-05 | P2 | Ghi `agent_run`/`agent_step` theo từng bước thay vì cuối lượt: `/steps` trống khi đang chạy, mất trace khi pod chết | M | todo |
 | AGC-06 | P2 | OCC cho sửa kế hoạch: `PlanPatch` thêm `expected_version`, lệch thì `VERSION_CONFLICT` (bất biến 10) | S | todo |
