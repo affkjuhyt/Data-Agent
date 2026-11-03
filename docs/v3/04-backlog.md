@@ -304,6 +304,25 @@ người dùng, P2 nâng chất lượng trả lời, P3 mở rộng năng lực
 Thứ tự đề xuất: RES-02, 03, 04 (sai số của agent) → RES-22, 16 (lỗi sẵn có trong quét và nạp) → RES-05,
 07, 11, 12 → RES-17, 18, 19, 23, 24 → còn lại theo mức.
 
+### 3i. Rà soát thiết kế Agent Core (04/11/2026)
+
+Từ lượt rà một thiết kế agent core dạng planner + captain + agent registry (sơ đồ draw.io, không
+commit) đối chiếu với `worker_agent/agentic/` và đường hỏi quanh nó. Phần lớn chỗ thiết kế đó sai
+(cache câu trả lời theo hash câu hỏi, ngưỡng trên điểm RRF, trạng thái chỉ trong RAM) repo đã không
+mắc; còn lại là các việc dưới. Agent registry, tìm agent bằng ES/Qdrant/RRF và vai captain để sau,
+chỉ khi số công cụ vượt mức planner đọc được hết trong prompt.
+
+| ID | Mức | Việc | Công sức | TT |
+| --- | --- | --- | --- | --- |
+| AGC-01 | P1 | Dừng lượt hỏi có hiệu lực ngay: node đang chạy bị huỷ (kiểm mỗi giây), bước đang chạy ghi `skipped`; mã `CANCELLED` thay cho `TOOL_UNAVAILABLE` ở cả hai đường | S | done ad79cbb7 |
+| AGC-02 | P1 | `ToolResult` mang lớp lỗi (execute / agent / forbidden / stale / budget / logic): forbidden, stale, budget không thử lại, không replan; gom thử lại về một chỗ (hiện lồng bước × executor × output × HTTP); timeout theo công cụ | M | todo |
+| AGC-03 | P1 | Câu hỏi chưa qua kiểm prompt injection (chỉ tài liệu truy hồi có `injection_suspected`); `POST /v1/questions` chưa có rate limit và chưa xử lý Idempotency-Key (Kong đã cho header đi qua) | M | todo |
+| AGC-04 | P2 | Ngân sách token và thời gian mỗi lượt, có chặn (hiện chỉ đếm bước; token ghi nhưng không chặn) | S | todo |
+| AGC-05 | P2 | Ghi `agent_run`/`agent_step` theo từng bước thay vì cuối lượt: `/steps` trống khi đang chạy, mất trace khi pod chết | M | todo |
+| AGC-06 | P2 | OCC cho sửa kế hoạch: `PlanPatch` thêm `expected_version`, lệch thì `VERSION_CONFLICT` (bất biến 10) | S | todo |
+| AGC-07 | P2 | Output contract (cột, kiểu, đơn vị, shape) sinh ở bước hiểu câu hỏi; plan kiểm tĩnh theo nó và câu trả lời cuối so với nó (`CONTRACT_MISMATCH`) | L | todo |
+| AGC-08 | P3 | Rà soát câu trả lời và rà đủ dữ liệu đang dùng cùng vai model với planner: kiểm theo luật trước, model khác sau | S | todo |
+
 ## 4. Quy tắc theo dõi
 
 - Thứ Sáu hằng tuần rà cột TT; việc trễ > 2 ngày thì cắt hoặc đổi người ngay trong tuần.
