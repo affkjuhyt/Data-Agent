@@ -19,6 +19,7 @@ from fastapi import APIRouter, Body, Depends, Path, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import forecast_release as release
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import forecast as fc
 from services.api.catalogue import endpoint
@@ -184,19 +185,6 @@ async def get_version(
     return ModelVersionView.model_validate(row)
 
 
-async def _backtest(session: AsyncSession, row: fc.ModelVersion) -> fc.BacktestRun | None:
-    if row.backtest_id is not None:
-        return await session.get(fc.BacktestRun, row.backtest_id)
-    # Before the version points at one, its latest run is the one under way.
-    found: fc.BacktestRun | None = await session.scalar(
-        select(fc.BacktestRun)
-        .where(fc.BacktestRun.model_version_id == row.id)
-        .order_by(fc.BacktestRun.started_at.desc())
-        .limit(1)
-    )
-    return found
-
-
 @router.get(
     "/v1/forecast-model-versions/{id}/backtest",
     response_model=BacktestView,
@@ -209,7 +197,7 @@ async def get_backtest(
 ) -> BacktestView:
     async with transaction(ROLE, principal) as session:
         row, _ = await store.version(session, version_id, principal, data_space)
-        run = await _backtest(session, row)
+        run = await release.latest_backtest(session, row)
     if run is None:
         raise Problem(404, "not_found", "The version has no backtest yet.")
     return BacktestView.model_validate(run)
@@ -230,42 +218,10 @@ async def submit_version(
 ) -> ModelVersionView:
     async with transaction(ROLE, principal) as session:
         row, owner = await store.version(session, version_id, principal, data_space, lock=True)
-        if row.status != "draft":
-            raise Problem(409, "invalid_state", f"The version is {row.status}, not draft.")
-        if row.algorithm == "seasonal_naive":
-            # UC-15-03 E1: the baseline is answered with its label, never sent for release.
-            raise Problem(
-                422,
-                "business_rule_violated",
-                "The seasonal naive baseline is not submitted for release (BR-158).",
-            )
-        run = await _backtest(session, row)
-        if run is None or run.finished_at is None or run.mase >= 1:
-            mase = "none" if run is None else str(run.mase)
-            raise Problem(
-                422,
-                "business_rule_violated",
-                f"Release needs a finished backtest beating seasonal naive, MASE < 1; MASE is {mase} (BR-158).",
-            )
-        row.backtest_id = run.id
-        row.status = "pending_approval"
-        row.updated_by, row.updated_at = principal.user_id, store.now()
-        store.review_note(row, principal, "submit", body.note)
-        # Inbox opens the forecast_model HITL request for the metric owner (UC-15-04 trigger).
-        store.emit(
-            session,
-            principal,
-            "model_version",
-            row.id,
-            "forecast.model_version.submitted",
-            model_version_id=row.id,
-            model_id=owner.id,
-            data_space_id=owner.data_space_id,
-            hitl_kind="forecast_model",
-            assignee_id=owner.owner_id,
-            backtest_id=run.id,
-            status=row.status,
-        )
+        try:
+            await release.submit(session, row, owner, by=principal.user_id, note=body.note)
+        except release.SubmitRefused as exc:
+            raise Problem(exc.status, exc.code, str(exc)) from exc
         await session.flush()
         return ModelVersionView.model_validate(row)
 
@@ -464,7 +420,7 @@ async def retrain_model(
         horizon = rules.DEFAULT_HORIZON[owner.frequency]
         if owner.current_version_id is not None:
             current = await session.get(fc.ModelVersion, owner.current_version_id)
-            run = await _backtest(session, current) if current else None
+            run = await release.latest_backtest(session, current) if current else None
             horizon = run.horizon if run else horizon
         progress: dict[str, object] = {"purpose": "retrain", "model_id": str(owner.id)}
         if body.training_to is not None:

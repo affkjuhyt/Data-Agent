@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import Select, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs.dataagent_db import uuid7
+from libs import forecast_release as release
 from libs.dataagent_db.models import forecast as fc
 from services.api.kernel.auth import Principal
 from services.api.kernel.pagination import PageRequest, encode_page_token, invalid_page_token
@@ -24,7 +24,7 @@ ROLE = "svc_forecast"
 
 
 def now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.UTC)
+    return release.now()
 
 
 def emit(
@@ -36,26 +36,7 @@ def emit(
     **payload: Any,
 ) -> None:
     """One forecast.outbox row in the caller's transaction (D1 rule 8): ids and states only."""
-
-    def plain(value: Any) -> Any:
-        if isinstance(value, uuid.UUID):
-            return str(value)
-        if isinstance(value, datetime.date):
-            return value.isoformat()
-        if isinstance(value, list):
-            return [plain(v) for v in value]
-        return value
-
-    session.add(
-        fc.Outbox(
-            id=uuid7(),
-            org_id=principal.org_id,
-            aggregate_type=aggregate_type,
-            aggregate_id=aggregate_id,
-            event_type=event_type,
-            payload={k: plain(v) for k, v in payload.items()},
-        )
-    )
+    release.emit(session, principal.org_id, aggregate_type, aggregate_id, event_type, **payload)
 
 
 def keyset(query: Select[Any], page: PageRequest, created: Any, ident: Any) -> Select[Any]:
@@ -193,12 +174,4 @@ async def ledger_entry(
 def review_note(
     row: fc.ModelVersion, principal: Principal, action: str, text: str | None
 ) -> None:
-    """Keeps a submit/approve/reject note with the version (AC-15-04-02: the reason stays with the
-    decision). model_version has no column for it, so it goes in model_card.review."""
-    card = dict(row.model_card or {})
-    review = list(card.get("review") or [])
-    review.append(
-        {"action": action, "by": str(principal.user_id), "at": now().isoformat(), "note": text}
-    )
-    card["review"] = review
-    row.model_card = card
+    release.review_note(row, principal.user_id, action, text)

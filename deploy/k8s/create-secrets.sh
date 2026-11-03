@@ -46,7 +46,8 @@ kubectl -n dataagent-service create secret generic api-secrets \
 # svc_monitor (answer/thresholds.py, metric_changes.py); runs eval items through the QA handler
 # as svc_eval (eval_runs.py), replays runs for a pending access policy as svc_governance
 # (policy_backtests.py) and applies an accepted writeback as svc_pipeline (proposals.py), which also
-# runs pipelines (pipelines.py); closes and files periods as svc_period (periods.py), and applies
+# runs pipelines (pipelines.py); closes and files periods as svc_period (periods.py), trains forecast
+# jobs and submits their versions as svc_forecast (forecasting.py), and applies
 # source-authority and document-validity reviews as svc_conflict and svc_document (reviews.py); reads
 # the claims of an indexed document and opens the conflicts they show as svc_conflict
 # (documents/claims.py) and fills its collection's extraction schema as svc_document
@@ -67,6 +68,7 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_EVAL="${DATAAGENT_DB_URL__SVC_EVAL}" \
   --from-literal=DATAAGENT_DB_URL__SVC_PIPELINE="${DATAAGENT_DB_URL__SVC_PIPELINE}" \
   --from-literal=DATAAGENT_DB_URL__SVC_PERIOD="${DATAAGENT_DB_URL__SVC_PERIOD}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_FORECAST="${DATAAGENT_DB_URL__SVC_FORECAST}" \
   --from-literal=DATAAGENT_DB_URL__SVC_CONFLICT="${DATAAGENT_DB_URL__SVC_CONFLICT}" \
   --from-literal=DATAAGENT_DB_URL__SVC_DOCUMENT="${DATAAGENT_DB_URL__SVC_DOCUMENT}" \
   --from-literal=DATAAGENT_DB_URL__SVC_WORKSPACE="${DATAAGENT_DB_URL__SVC_WORKSPACE}" \

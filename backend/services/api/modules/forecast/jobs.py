@@ -16,6 +16,7 @@ from fastapi import APIRouter, Body, Depends, Path, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import forecast_release as release
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import forecast as fc
 from services.api.catalogue import endpoint
@@ -40,25 +41,6 @@ router = APIRouter()
 
 JobId = Annotated[uuid.UUID, Path(alias="id")]
 _NO_CANCEL = ForecastCancel()
-
-
-def _job_event(
-    session: AsyncSession, principal: Principal, row: fc.ForecastJob, previous: str | None
-) -> None:
-    store.emit(
-        session,
-        principal,
-        "forecast_job",
-        row.id,
-        "forecast.job.state_changed",
-        job_id=row.id,
-        data_space_id=row.data_space_id,
-        question_id=row.question_id,
-        purpose=(row.progress or {}).get("purpose", "forecast"),
-        previous_status=previous,
-        status=row.status,
-        model_version_id=row.model_version_id,
-    )
 
 
 def new_job(
@@ -98,7 +80,7 @@ def new_job(
         created_by=principal.user_id,
     )
     session.add(row)
-    _job_event(session, principal, row, None)
+    release.job_changed(session, row, None)
     return row
 
 
@@ -309,7 +291,7 @@ async def cancel_forecast(
         row.progress = {**(row.progress or {}), "cancelled_by": str(principal.user_id)} | (
             {"cancel_reason": body.reason.strip()} if body.reason and body.reason.strip() else {}
         )
-        _job_event(session, principal, row, previous)
+        release.job_changed(session, row, previous)
         await session.flush()
         return ForecastJobView.model_validate(row)
 
