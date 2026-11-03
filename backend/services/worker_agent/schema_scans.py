@@ -112,6 +112,8 @@ _NOT_PERSONAL_PARTS = frozenset(
         "loai",
         "nhom",
         "tien",
+        # "account_description": what a general-ledger account is ("Trade Sales"), not whose.
+        "description",
     }
 )
 # Words that make an ambiguous one a person's even beside one above ("customer_type_name").

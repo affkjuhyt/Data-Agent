@@ -33,6 +33,8 @@ pytestmark = [pytest.mark.unit]
         "ten_kh",
         "ten_nv",
         "customer_type_name",
+        # A person's word beside "account" keeps it personal, description or not.
+        "customer_account_description",
     ],
 )
 def test_a_name_that_says_personal_is_never_sampled(name: str) -> None:
@@ -50,6 +52,9 @@ def test_a_name_that_says_personal_is_never_sampled(name: str) -> None:
         "ten_san_pham",
         "loai_tai_khoan",
         "tien_thue",
+        # AdventureWorks' general-ledger accounts ("Trade Sales", "Salaries"): a description of
+        # what an account is. Its values are still checked for personal data (_redact_personal).
+        "account_description",
     ],
 )
 def test_a_name_that_does_not_is_sampled(name: str) -> None:
