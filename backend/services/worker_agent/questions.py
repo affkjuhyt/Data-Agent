@@ -1219,12 +1219,7 @@ async def _cancel(event: Event, question_id: uuid.UUID, prepared: Prepared) -> N
         question_id,
         prepared.user_id,
         prepared.plan_id,
-        Refusal.of(
-            ErrorCode.TOOL_UNAVAILABLE,
-            message="Đã dừng lượt phân tích theo yêu cầu của bạn.",
-            next_action=NextAction.RETRY,
-            detail_id=str(question_id),
-        ),
+        Refusal.of(ErrorCode.CANCELLED, detail_id=str(question_id)),
         status="failed",
     )
 

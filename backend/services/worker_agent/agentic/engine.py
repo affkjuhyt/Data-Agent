@@ -3,6 +3,7 @@
     prepare → plan → act ⟲ → review → compose → persist
                       ↘ replan ↗        (a failed step, at most MAX_REPLANS times)
                       ↘ ask → persist   (the planner or a tool asks the person back)
+    any node after prepare ↘ persist    (the asker cancelled: the running node is stopped)
 
 The planner chooses the steps and tools for this question; the executor writes each tool's
 arguments from the step and what earlier steps found; a failed step goes back to the planner with
@@ -39,7 +40,7 @@ from services.worker_agent import turn_trace
 from services.worker_agent.agentic import blocks as b
 from services.worker_agent.agentic import memory, prompts, signals, verify
 from services.worker_agent.agentic import plan as p
-from services.worker_agent.agentic.graph import END, StateGraph
+from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
 from services.worker_agent.agentic.grounded import unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, ToolContext, ToolResult
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Workspace, number
@@ -339,9 +340,6 @@ async def act(s: State) -> None:
     assert s.ctx is not None and s.plan is not None
     # A failure the planner was not asked about (replans spent) is on the step's record already.
     s.failed = None
-    if await is_cancel_requested(str(s.question_id)):
-        s.cancelled = True
-        return
     steps = p.ready(s.plan, MAX_PARALLEL)
     if not steps:
         return
@@ -986,7 +984,7 @@ async def persist(s: State) -> None:
         turn_trace.cancelled()
         await publish(str(s.question_id), "cancelled", {"question_id": str(s.question_id)})
         kind, status, text = "refusal", "failed", "Đã dừng lượt phân tích theo yêu cầu của bạn."
-        refusal = {"code": "TOOL_UNAVAILABLE", "next_action": "retry"}
+        refusal = {"code": "CANCELLED", "next_action": "retry"}
         s.composition = []
     elif s.clarify is not None:
         kind, status = "clarification", "clarifying"
@@ -1088,12 +1086,51 @@ async def persist(s: State) -> None:
 # ---------------------------------------------------------------- the graph
 
 
+# How often a running node looks for the asker's stop request (a Redis GET each time).
+CANCEL_POLL_SECONDS = 1.0
+
+
+def _cancellable(node: Node[State]) -> Node[State]:
+    """`node`, stopped as soon as the asker cancels: checked before it starts and every
+    CANCEL_POLL_SECONDS while it runs, so a long query, analysis or model call is cut off rather
+    than finished and thrown away. Steps it left running are recorded as skipped."""
+
+    async def run(s: State) -> None:
+        if await is_cancel_requested(str(s.question_id)):
+            s.cancelled = True
+            return
+        task = asyncio.ensure_future(node(s))
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=CANCEL_POLL_SECONDS)
+            if done:
+                return task.result()
+            if await is_cancel_requested(str(s.question_id)):
+                break
+        task.cancel()
+        await asyncio.wait({task})
+        if not task.cancelled() and task.exception() is not None:
+            logger.warning("question %s: node failed while cancelled", s.question_id)
+        s.cancelled = True
+        for step in s.plan.steps if s.plan else []:
+            if step.status == "running":
+                step.status = "skipped"
+
+    return run
+
+
+def _or_stop(router: Router[State]) -> Router[State]:
+    """A cancelled turn goes straight to persist, whatever the node would route to."""
+    return lambda s: "persist" if s.cancelled else router(s)
+
+
 def _graph() -> StateGraph[State]:
     g: StateGraph[State] = StateGraph()
     g.node("prepare", prepare).route("prepare", lambda s: END if s.handed_back else "plan")
-    g.node("plan", plan).route(
+    g.node("plan", _cancellable(plan)).route(
         "plan",
-        lambda s: END
+        lambda s: "persist"
+        if s.cancelled
+        else END
         if s.handed_back
         else "persist"
         if s.clarify is not None
@@ -1101,12 +1138,14 @@ def _graph() -> StateGraph[State]:
         if s.plan is not None and s.plan.mode == "answer"
         else "act",
     )
-    g.node("act", act).route("act", after_act)
-    g.node("replan", replan).route(
-        "replan", lambda s: "persist" if s.clarify is not None else "act"
+    g.node("act", _cancellable(act)).route("act", after_act)
+    g.node("replan", _cancellable(replan)).route(
+        "replan", _or_stop(lambda s: "persist" if s.clarify is not None else "act")
     )
-    g.node("review", review).route("review", after_review)
-    g.node("compose", compose).route("compose", lambda s: END if s.handed_back else "persist")
+    g.node("review", _cancellable(review)).route("review", _or_stop(after_review))
+    g.node("compose", _cancellable(compose)).route(
+        "compose", _or_stop(lambda s: END if s.handed_back else "persist")
+    )
     g.node("persist", persist).edge("persist", END)
     return g
 

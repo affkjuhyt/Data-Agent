@@ -313,7 +313,9 @@ lại planner kèm điều quan sát được (≤ 2 lần). Câu trả lời l�
 (`qa.answer.blocks`, v3_0023), phát trực tiếp qua sự kiện `block`. Model không viết số: chart,
 bảng và KPI lấy dữ liệu từ dataset, số trong văn bản phải là thẻ `{{F<n>}}` của một sự kiện có
 thật. `ASK_ENGINE=governed` quay về đường cũ; không có gateway, câu hỏi sửa chip và lượt eval có
-data scope vẫn đi đường cũ. Thiết kế: `docs/superpowers/specs/2026-11-02-dynamic-agent-design.md`;
+data scope vẫn đi đường cũ. Người hỏi bấm dừng thì node đang chạy (truy vấn, phân tích, lần gọi model) bị huỷ
+ngay trong vòng một giây, bước đang chạy ghi `skipped`; lượt bị dừng, ở cả hai đường, là refusal mã
+`CANCELLED`. Thiết kế: `docs/superpowers/specs/2026-11-02-dynamic-agent-design.md`;
 bộ nghiên cứu: `docs/research/`.
 
 ## 4. Quyết định tính năng

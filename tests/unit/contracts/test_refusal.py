@@ -47,6 +47,7 @@ SNAPSHOT = {
         "contact_steward",
     ),
     "TOOL_UNAVAILABLE": ("Công cụ cần để trả lời đang tạm thời không dùng được.", "retry"),
+    "CANCELLED": ("Đã dừng lượt phân tích theo yêu cầu của bạn.", "retry"),
 }
 
 

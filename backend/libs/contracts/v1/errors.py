@@ -35,6 +35,8 @@ class ErrorCode(StrEnum):
     CONTRACT_MISMATCH = "CONTRACT_MISMATCH"
     NO_JOIN_PATH = "NO_JOIN_PATH"
     TOOL_UNAVAILABLE = "TOOL_UNAVAILABLE"
+    # The asker stopped the turn; not a failure of anything the turn depends on.
+    CANCELLED = "CANCELLED"
 
 
 class NextAction(StrEnum):
@@ -48,7 +50,7 @@ class NextAction(StrEnum):
 # 409 for VERSION_CONFLICT is fixed by invariant 10; the rest follow HTTP meaning:
 # 404 "not there", 403 permission, 400 a valid request that cannot be answered as
 # asked, 502 a model upstream returned something unusable, 503 a dependency this
-# service needs is down. Never 422: FastAPI answers a malformed request with 422
+# service needs is down, 409 a turn the asker stopped (the state changed under it). Never 422: FastAPI answers a malformed request with 422
 # and its own body, and one status must map to one body shape for the frontend's
 # generated types.
 HTTP_STATUS: dict[ErrorCode, int] = {
@@ -65,6 +67,7 @@ HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.CONTRACT_MISMATCH: 400,
     ErrorCode.NO_JOIN_PATH: 400,
     ErrorCode.TOOL_UNAVAILABLE: 503,
+    ErrorCode.CANCELLED: 409,
 }
 
 # Shown to the person who asked. No stack, SQL or internal table name ever goes
@@ -83,6 +86,7 @@ USER_MESSAGE_VI: dict[ErrorCode, str] = {
     ErrorCode.CONTRACT_MISMATCH: "Kết quả không đúng dạng câu hỏi yêu cầu.",
     ErrorCode.NO_JOIN_PATH: "Không tìm được cách nối các bảng dữ liệu cần cho câu hỏi này.",
     ErrorCode.TOOL_UNAVAILABLE: "Công cụ cần để trả lời đang tạm thời không dùng được.",
+    ErrorCode.CANCELLED: "Đã dừng lượt phân tích theo yêu cầu của bạn.",
 }
 
 USER_MESSAGE_EN: dict[ErrorCode, str] = {
@@ -99,6 +103,7 @@ USER_MESSAGE_EN: dict[ErrorCode, str] = {
     ErrorCode.CONTRACT_MISMATCH: "The result is not in the shape the question asked for.",
     ErrorCode.NO_JOIN_PATH: "No way was found to join the tables this question needs.",
     ErrorCode.TOOL_UNAVAILABLE: "A tool needed to answer is temporarily unavailable.",
+    ErrorCode.CANCELLED: "The analysis was stopped at your request.",
 }
 
 # The sentences by language (GEN-41); a language without its own reads the Vietnamese.
@@ -125,6 +130,7 @@ NEXT_ACTION: dict[ErrorCode, NextAction] = {
     ErrorCode.CONTRACT_MISMATCH: NextAction.REPHRASE,
     ErrorCode.NO_JOIN_PATH: NextAction.CONTACT_STEWARD,
     ErrorCode.TOOL_UNAVAILABLE: NextAction.RETRY,
+    ErrorCode.CANCELLED: NextAction.RETRY,
 }
 
 

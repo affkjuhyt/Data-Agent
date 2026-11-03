@@ -629,3 +629,65 @@ def test_signals_turn_quality_freshness_and_moved_structure_into_caveats(
     assert not found.out_of_time
     assert any("chất lượng mức cao" in c for c in found.caveats)
     assert any("đổi cấu trúc" in c for c in found.caveats)
+
+
+def _cancel_state() -> Any:
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+
+    return engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        plan=_plan(
+            {"id": "s1", "tool": "query_metric", "instruction": "a", "status": "running"},
+            {"id": "s2", "tool": "query_metric", "instruction": "b", "status": "done"},
+        ),
+    )
+
+
+def test_a_cancel_stops_the_running_node_and_skips_its_steps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.worker_agent.agentic import engine
+
+    asked: list[bool] = []
+
+    async def requested(_qid: str) -> bool:
+        asked.append(True)
+        return len(asked) > 1  # not before the node starts; on its first poll
+
+    monkeypatch.setattr(engine, "is_cancel_requested", requested)
+    monkeypatch.setattr(engine, "CANCEL_POLL_SECONDS", 0.01)
+    finished: list[bool] = []
+
+    async def slow(_s: Any) -> None:
+        await asyncio.sleep(5)
+        finished.append(True)
+
+    state = _cancel_state()
+    asyncio.run(engine._cancellable(slow)(state))
+    assert state.cancelled and finished == []
+    assert [st.status for st in state.plan.steps] == ["skipped", "done"]
+    assert engine._or_stop(lambda _s: "act")(state) == "persist"
+
+
+def test_a_cancel_asked_before_a_node_starts_runs_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.worker_agent.agentic import engine
+
+    async def requested(_qid: str) -> bool:
+        return True
+
+    monkeypatch.setattr(engine, "is_cancel_requested", requested)
+    ran: list[bool] = []
+
+    async def node(_s: Any) -> None:
+        ran.append(True)
+
+    state = _cancel_state()
+    asyncio.run(engine._cancellable(node)(state))
+    assert state.cancelled and ran == []
