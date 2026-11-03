@@ -42,6 +42,16 @@ _WORKSPACE_TYPES = {
 _NORMALIZED = {"text": "string", "numeric": "decimal", "boolean": "boolean", "date": "date"}
 
 
+# The PostgreSQL types a cursor may have (RES-18): numbers, dates and timestamps.
+_CURSOR_TYPES = frozenset(
+    {"int2", "int4", "int8", "numeric", "float4", "float8", "date", "timestamp", "timestamptz"}
+)
+
+
+class SchemaDrift(ValueError):
+    """The source retyped a column the workspace table already holds: appending would mix kinds."""
+
+
 def _identifier(value: str) -> str:
     if not _IDENTIFIER.fullmatch(value):
         raise ValueError("source_object must be a table identifier")
@@ -233,6 +243,22 @@ async def _max_cursor(
     if source.kind == "postgresql":
         conn = await _pg_connect(source, org_id)
         try:
+            # RES-18: the cursor must be a column of the table and of a type that orders the way
+            # time or a sequence does, checked before anything is read.
+            kind = await conn.fetchval(
+                "SELECT t.typname FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid"
+                " WHERE a.attrelid = to_regclass($1) AND a.attname = $2"
+                " AND a.attnum > 0 AND NOT a.attisdropped",
+                f'"{schema}"."{table}"',
+                column,
+            )
+            if kind is None:
+                raise ValueError(f"cursor column {column} is not a column of {schema}.{table}")
+            if kind not in _CURSOR_TYPES:
+                raise ValueError(
+                    f"cursor column {column} is {kind}; a cursor must be a number, a date or a"
+                    " timestamp"
+                )
             row = await conn.fetchrow(
                 f'SELECT max("{column}")::text AS upto, pg_typeof(max("{column}"))::text AS kind'
                 f' FROM "{schema}"."{table}"'
@@ -252,7 +278,13 @@ async def _max_cursor(
         min(int(source.query_timeout_s or 120), 300),
     )
     value = rows[0][0] if rows and rows[0] else None
-    return (None if value is None else str(_plain(value)), "text")
+    if value is None:
+        return None, "text"
+    upto = str(_plain(value))
+    # The bound goes into the driver's SQL as a literal: a cursor of text or of anything else that
+    # is not a number or a moment is refused here, as a configuration error, before a row is read.
+    _literal(upto)
+    return upto, "text"
 
 
 async def _source_batches(
@@ -327,6 +359,36 @@ def _table_name(job: ingest.IngestionJob) -> str:
     return f"ingest_{stem}_{job.id.hex[:8]}"
 
 
+async def _workspace_columns(session: Any, table_name: str) -> dict[str, str]:
+    """The workspace table's columns and their types; empty when the table is not there yet."""
+    rows = await session.execute(
+        text(
+            # By name through the catalogue: svc_ingest has no USAGE on the workspace schema,
+            # which to_regclass would need (the table is written by a SECURITY DEFINER function).
+            "SELECT a.attname, format_type(a.atttypid, a.atttypmod) FROM pg_attribute a"
+            " JOIN pg_class c ON c.oid = a.attrelid"
+            " JOIN pg_namespace n ON n.oid = c.relnamespace"
+            " WHERE n.nspname = 'workspace' AND c.relname = :t"
+            " AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum"
+        ),
+        {"t": table_name},
+    )
+    return {str(name): str(kind) for name, kind in rows}
+
+
+def check_drift(existing: dict[str, str], columns: Columns) -> None:
+    """RES-18, after Airbyte's schema evolution: a column the source gained is added, one it dropped
+    stays (NULL from now on), and one it retyped stops the job: rows of two kinds in one column
+    would be wrong silently. The person rebuilds the table with a full run or fixes the source."""
+    retyped = [
+        f"{column['name']} {existing[column['name']]} → {column['type']}"
+        for column in columns
+        if column["name"] in existing and existing[column["name"]] != column["type"]
+    ]
+    if retyped:
+        raise SchemaDrift("source columns changed type: " + ", ".join(retyped))
+
+
 async def _materialize(
     session: Any,
     table_name: str,
@@ -385,13 +447,15 @@ def failure_kind(exc: BaseException) -> str:
     return "system"
 
 
-async def _fail(event: Event, run_id: uuid.UUID, message: str, kind: str) -> None:
+async def _fail(
+    event: Event, run_id: uuid.UUID, message: str, kind: str, *, drift: bool = False
+) -> None:
     async with scoped_session(ROLE, event.org_id, event.payload.get("principal_id")) as session:
         await session.execute(
             update(ingest.JobRun)
             .where(ingest.JobRun.id == run_id)
             .values(
-                status="failed",
+                status="schema_drift" if drift else "failed",
                 error=message,
                 failure_kind=kind,
                 finished_at=datetime.datetime.now(datetime.UTC),
@@ -400,7 +464,11 @@ async def _fail(event: Event, run_id: uuid.UUID, message: str, kind: str) -> Non
         await session.execute(
             update(ingest.IngestionJob)
             .where(ingest.IngestionJob.id == event.payload.get("job_id", event.aggregate_id))
-            .values(consecutive_failures=ingest.IngestionJob.consecutive_failures + 1)
+            .values(
+                consecutive_failures=ingest.IngestionJob.consecutive_failures + 1,
+                # A drifted job leaves the schedule (it runs only when active) until a person acts.
+                **({"status": "schema_drift"} if drift else {}),
+            )
         )
 
 
@@ -457,7 +525,11 @@ async def handle(event: Event) -> None:
                 if not nothing_new
                 else _no_batches()
             )
+            existing: dict[str, str] | None = None
             async for columns, batch in batches:
+                if existing is None and job.mode == "incremental":
+                    existing = await _workspace_columns(session, table_name)
+                    check_drift(existing, columns)
                 read += len(batch)
                 if read > MAX_ROWS:
                     raise ValueError(
@@ -524,15 +596,19 @@ async def handle(event: Event) -> None:
                     )
                 )
             # The columns as materialized, so the semantic layer knows a text month from a date.
-            # A dataset catalogued before its columns were gets them on its next run.
-            if (
-                await session.scalar(
-                    select(catalog.ColumnMeta.id)
-                    .where(catalog.ColumnMeta.dataset_id == dataset_id)
-                    .limit(1)
-                )
-                is None
-            ):
+            # A dataset catalogued before its columns were gets them on its next run, and one
+            # whose source gained a column gets that one after the others (RES-18).
+            known = set(
+                (
+                    await session.scalars(
+                        select(catalog.ColumnMeta.name).where(
+                            catalog.ColumnMeta.dataset_id == dataset_id
+                        )
+                    )
+                ).all()
+            )
+            added = [column for column in columns if column["name"] not in known]
+            if added:
                 await session.flush()
                 session.add_all(
                     catalog.ColumnMeta(
@@ -541,14 +617,14 @@ async def handle(event: Event) -> None:
                         dataset_id=dataset_id,
                         dataset_version=1,
                         name=column["name"],
-                        ordinal=ordinal,
+                        ordinal=len(known) + ordinal,
                         data_type=column["type"],
                         normalized_type=_NORMALIZED[column["type"]],
                         display_name=column["label"] if column["label"] != column["name"] else None,
                         created_by=principal_id,
                         updated_by=principal_id,
                     )
-                    for ordinal, column in enumerate(columns)
+                    for ordinal, column in enumerate(added)
                 )
     except (
         SecretUnavailable,
@@ -560,7 +636,13 @@ async def handle(event: Event) -> None:
         OSError,
         TimeoutError,
     ) as exc:
-        await _fail(event, run_id, str(exc) or type(exc).__name__, failure_kind(exc))
+        await _fail(
+            event,
+            run_id,
+            str(exc) or type(exc).__name__,
+            failure_kind(exc),
+            drift=isinstance(exc, SchemaDrift),
+        )
 
 
 HANDLERS: dict[str, Handler] = {CREATED: handle, BACKFILL: handle}

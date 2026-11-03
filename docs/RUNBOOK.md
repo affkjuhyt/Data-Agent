@@ -556,6 +556,16 @@ the rows, never ahead of them. The cursor must only grow: rows updated in place 
 modified" cursor are appended again (there is no merge on a key yet), and rows deleted at the source
 stay. CDC is not wired.
 
+Before reading, the cursor is checked (RES-18): on PostgreSQL it must be a column of the table and
+a number, a date or a timestamp; on the other drivers its maximum must be a number or an ISO moment.
+Anything else fails the run as `failure_kind = config`. When an append's source columns differ from
+the workspace table (migration v3_0030): a column the source gained is added, with NULL in earlier
+rows, and catalogued after the others. A column the source dropped stays and is NULL from then on.
+A column the source retyped (`numeric` → `text`) writes nothing: the run and the job go to
+`schema_drift`, the cursor stays where it was, and the scheduler skips the job. Fix the source, or
+rebuild the table with a full run; then pause and resume the job (a `schema_drift` job cannot be
+resumed directly).
+
 ## 10f. python-sandbox (the agent's analysis code)
 
 The dynamic agent's `analyze` tool (`worker_agent/agentic/tools/analyze.py`) has the model write

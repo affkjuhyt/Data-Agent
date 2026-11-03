@@ -9614,6 +9614,20 @@ BEGIN
     EXECUTE format('DROP TABLE IF EXISTS workspace.%I', p_table_name);
     EXECUTE format('CREATE TABLE workspace.%I (%s)', p_table_name, column_def);
     EXECUTE format('GRANT SELECT ON TABLE workspace.%I TO svc_query', p_table_name);
+  ELSE
+    -- RES-18: an append whose source gained a column adds it (earlier rows hold NULL); a column
+    -- the source dropped stays and is NULL from now on. A retyped column is refused by the caller.
+    FOR item IN SELECT column_item FROM jsonb_array_elements(p_columns) AS elements(column_item)
+    LOOP
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_attribute
+        WHERE attrelid = to_regclass(format('workspace.%I', p_table_name))
+          AND attname = item->>'name' AND attnum > 0 AND NOT attisdropped
+      ) THEN
+        EXECUTE format('ALTER TABLE workspace.%I ADD COLUMN %I %s',
+                       p_table_name, item->>'name', item->>'type');
+      END IF;
+    END LOOP;
   END IF;
   row_index := 0;
   FOR item IN SELECT row_item FROM jsonb_array_elements(p_rows) AS elements(row_item)

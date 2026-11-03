@@ -68,3 +68,20 @@ def test_a_failure_says_whether_the_person_must_act() -> None:
         == "config"
     )
     assert worker.failure_kind(asyncpg.DataError("bad value")) == "system"
+
+
+def test_a_retyped_column_is_drift_and_a_new_or_dropped_one_is_not() -> None:
+    from services.worker_ingest import worker
+
+    existing = {"id": "numeric", "amount": "numeric", "gone": "text"}
+    worker.check_drift(
+        existing,
+        [
+            {"name": "id", "label": "id", "type": "numeric"},
+            {"name": "amount", "label": "amount", "type": "numeric"},
+            {"name": "added", "label": "added", "type": "date"},
+        ],
+    )
+    with pytest.raises(worker.SchemaDrift, match="amount numeric → text"):
+        worker.check_drift(existing, [{"name": "amount", "label": "amount", "type": "text"}])
+    assert worker.failure_kind(worker.SchemaDrift("x")) == "config"

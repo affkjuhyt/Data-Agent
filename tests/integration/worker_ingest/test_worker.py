@@ -220,3 +220,107 @@ async def test_an_incremental_job_reads_only_what_is_above_its_cursor(
         )
         == 3
     )
+
+
+async def test_an_incremental_job_takes_new_columns_and_stops_on_a_retyped_one(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch, ddl_server: dict[str, str]
+) -> None:
+    """RES-18: a cursor that is not a column fails as configuration before reading; a column the
+    source gained is added to the table and the catalogue; a retyped one stops the job as drift,
+    leaving the table and the cursor as they were."""
+    source_table = f"events_{uuid.uuid4().hex[:8]}"
+    parts = urlsplit(ddl_server["dataagent"])
+    with seed.conn.cursor() as cur:
+        cur.execute(f'CREATE TABLE public."{source_table}" (id int, amount numeric)')
+        cur.execute(f'INSERT INTO public."{source_table}" VALUES (1, 10), (2, 20)')
+    org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Drift")
+    user = seed.row(
+        "org.app_user", org_id=org, external_id="kc-drift", username="drift", display_name="D"
+    )
+    space = seed.row("org.data_space", org_id=org, code="DS-DR", name="Drift", steward_id=user)
+    source = seed.row(
+        "catalog.source",
+        org_id=org,
+        data_space_id=space,
+        name="Local source",
+        kind="postgresql",
+        host=parts.hostname,
+        port=parts.port,
+        database_name=parts.path.lstrip("/"),
+        conn_options=json.dumps({"schema": "public", "sslmode": "disable"}),
+        secret_ref=f"secret/tenants/{org}/sources/local",
+        mode="ingest",
+        status="active",
+    )
+
+    def make_job(cursor: str) -> object:
+        return seed.row(
+            "ingest.ingestion_job",
+            org_id=org,
+            data_space_id=space,
+            source_id=source,
+            name=f"Events {cursor}",
+            mode="incremental",
+            cursor_column=cursor,
+            source_object=source_table,
+            status="active",
+            created_by=user,
+            updated_by=user,
+        )
+
+    async def _read(_self: worker.Reader, _org: uuid.UUID, _ref: str) -> Credentials:
+        return Credentials(str(parts.username), str(parts.password))
+
+    monkeypatch.setattr(worker.Reader, "read", _read)
+
+    async def run(job: object) -> None:
+        await worker.handle(
+            Event(
+                uuid.uuid4(),
+                org,
+                "ingestion_job.created",
+                "ingestion_job",
+                job,
+                {"job_id": str(job), "principal_id": str(user)},
+            )
+        )
+
+    missing = make_job("created_at")
+    await run(missing)
+    assert seed.one(
+        "SELECT status || ' ' || failure_kind || ' ' || error FROM ingest.job_run WHERE job_id = %s",
+        missing,
+    ).startswith("failed config cursor column created_at is not a column")
+
+    job = make_job("id")
+    await run(job)
+    table = seed.one(
+        "SELECT d.table_name FROM catalog.dataset d JOIN ingest.ingestion_job j"
+        " ON j.target_dataset_id = d.id WHERE j.id = %s",
+        job,
+    )
+    with seed.conn.cursor() as cur:
+        cur.execute(f'ALTER TABLE public."{source_table}" ADD COLUMN note text')
+        cur.execute(f"INSERT INTO public.\"{source_table}\" VALUES (3, 30, 'late')")
+    await run(job)
+    assert seed.one(f'SELECT note FROM workspace."{table}" WHERE id = 3') == "late"
+    assert seed.one(f'SELECT count(*) FROM workspace."{table}" WHERE note IS NULL') == 2
+    assert (
+        seed.one(
+            "SELECT string_agg(c.name, ',' ORDER BY c.ordinal) FROM catalog.column_meta c"
+            " JOIN ingest.ingestion_job j ON j.target_dataset_id = c.dataset_id WHERE j.id = %s",
+            job,
+        )
+        == "id,amount,note"
+    )
+
+    with seed.conn.cursor() as cur:
+        cur.execute(f'ALTER TABLE public."{source_table}" ALTER COLUMN amount TYPE text')
+        cur.execute(f"INSERT INTO public.\"{source_table}\" VALUES (4, 'forty', 'x')")
+    await run(job)
+    assert seed.one("SELECT status FROM ingest.ingestion_job WHERE id = %s", job) == "schema_drift"
+    assert seed.one("SELECT cursor_value FROM ingest.ingestion_job WHERE id = %s", job) == "3"
+    assert seed.one(
+        "SELECT error FROM ingest.job_run WHERE job_id = %s AND status = 'schema_drift'", job
+    ) == ("source columns changed type: amount numeric → text")
+    assert seed.one(f'SELECT count(*) FROM workspace."{table}"') == 3
