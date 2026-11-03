@@ -15,7 +15,7 @@ import os
 from dataclasses import asdict
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -30,7 +30,8 @@ app = FastAPI(title="ml-forecast")
 # One fit at a time: five models over a dozen cutoffs is CPU- and memory-heavy, and the pod is
 # small. Concurrent callers wait their turn (the client's timeout bounds the wait); scale with
 # replicas, not with this.
-_ONE_FIT = asyncio.Lock()
+# An asyncio semaphore: a waiter that is cancelled leaves nothing held.
+SLOTS = asyncio.BoundedSemaphore(int(os.environ.get("ML_FORECAST_CONCURRENCY", "1")))
 
 
 class PointIn(BaseModel):
@@ -50,9 +51,13 @@ async def healthz() -> dict[str, bool]:
 
 
 @app.post("/fit")
-async def run_fit(body: FitIn) -> JSONResponse:
+async def run_fit(body: FitIn, request: Request) -> JSONResponse:
     series = [Point(p.period, p.value) for p in body.series]
-    async with _ONE_FIT:
+    async with SLOTS:
+        # The client's httpx timeout is per phase (connect, write, read), not a deadline for
+        # the call, so a caller can wait here past it and leave; its fit would be wasted work.
+        if await request.is_disconnected():
+            return JSONResponse({"detail": "caller gone"}, status_code=499)
         try:
             result = await asyncio.to_thread(
                 fit, series, frequency=body.frequency, horizon=body.horizon

@@ -23,6 +23,8 @@ from .shapes import Candidate, FitResult, Forecast, Point
 REQUEST_TIMEOUT_S = 60.0
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_ITEMS = 1000
+MAX_PARAMS_DEPTH = 4
+MAX_PARAMS_KEYS = 200
 UNAVAILABLE = "Dịch vụ dự báo không phản hồi"
 
 
@@ -58,10 +60,34 @@ def _items(value: Any) -> list[Any]:
     return value
 
 
+def _reject_constant(name: str) -> Any:
+    raise ValueError(name)
+
+
+def _json_value(value: Any, depth: int, budget: list[int]) -> Any:
+    """A finite JSON scalar, or objects and lists of them: at most MAX_PARAMS_DEPTH containers deep and
+    MAX_PARAMS_KEYS keys and items in all. `params` goes into a jsonb column later."""
+    budget[0] -= 1
+    if budget[0] < 0 or (isinstance(value, dict | list) and depth > MAX_PARAMS_DEPTH):
+        raise ValueError("params")
+    if isinstance(value, dict):
+        if not all(isinstance(k, str) for k in value):
+            raise ValueError("params")
+        return {k: _json_value(v, depth + 1, budget) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_value(v, depth + 1, budget) for v in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("params")
+    if value is None or isinstance(value, str | bool | int | float):
+        return value
+    raise ValueError("params")
+
+
 def _shaped(body: Any) -> FitResult:
     """FitResult from the decoded JSON, or ValueError/TypeError/KeyError when it is not one."""
     if not isinstance(body, dict) or not isinstance(body["params"], dict):
         raise ValueError("object")
+    params = _json_value(body["params"], 1, [MAX_PARAMS_KEYS])
     return FitResult(
         chosen=_text(body["chosen"], optional=True),
         reason=_text(body["reason"], optional=True),
@@ -89,7 +115,7 @@ def _shaped(body: Any) -> FitResult:
             for p in _items(body["predictions"])
         ],
         interval_method=_text(body["interval_method"], optional=True),
-        params=body["params"],
+        params=params,
     )
 
 
@@ -119,21 +145,18 @@ async def fit_remote(
     except httpx.HTTPError as exc:
         raise TrainerUnavailable(UNAVAILABLE) from exc
     try:
-        decoded = json.loads(body)
-        if status == 422:
-            detail = decoded["detail"]
-            if isinstance(detail, str):
-                raise ValueError(detail)
-            raise TrainerUnavailable(UNAVAILABLE)
-        if status != 200:
-            raise TrainerUnavailable(UNAVAILABLE)
+        decoded = json.loads(body, parse_constant=_reject_constant)
+    except ValueError as exc:
+        raise TrainerUnavailable(UNAVAILABLE) from exc
+    if status == 422:
+        # The service's own refusal: the ValueError `fit` raised, passed on as it was.
+        detail = decoded.get("detail") if isinstance(decoded, dict) else None
+        if isinstance(detail, str):
+            raise ValueError(detail)
+        raise TrainerUnavailable(UNAVAILABLE)
+    if status != 200:
+        raise TrainerUnavailable(UNAVAILABLE)
+    try:
         return _shaped(decoded)
     except (ValueError, TypeError, KeyError) as exc:
-        # The service's own refusal is a ValueError too: it passes through untouched.
-        if (
-            status == 422
-            and isinstance(exc, ValueError)
-            and not isinstance(exc, json.JSONDecodeError)
-        ):
-            raise
         raise TrainerUnavailable(UNAVAILABLE) from exc

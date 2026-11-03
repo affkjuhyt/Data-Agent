@@ -24,7 +24,7 @@ async def fit_series(
     if url:
         return await fit_remote(url, series, frequency=frequency, horizon=horizon)
     try:
-        from .fit import fit
+        from .backtest import fit
     except ImportError as exc:
         raise TrainerUnavailable(UNAVAILABLE) from exc
     return await asyncio.to_thread(fit, series, frequency=frequency, horizon=horizon)

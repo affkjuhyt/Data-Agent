@@ -19,9 +19,7 @@ __all__ = ["Candidate", "FitResult", "Forecast", "Point", "fit"]
 
 def __getattr__(name: str) -> Any:
     if name == "fit":
-        function = importlib.import_module(".fit", __name__).fit
-        # Importing the submodule bound the package attribute `fit` to the module; the
-        # function must win, as it did when this file imported it eagerly.
-        globals()["fit"] = function
-        return function
+        # The module is `backtest`, not `fit`: a submodule of this name would, once imported,
+        # replace this attribute with itself.
+        return importlib.import_module(".backtest", __name__).fit
     raise AttributeError(name)

@@ -14,6 +14,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -164,17 +165,96 @@ def test_a_malformed_answer_from_the_service_is_refused():
         assert str(caught.value) == "Dịch vụ dự báo không phản hồi"
 
 
+def _valid_answer(**changes) -> dict:
+    answer = {
+        "chosen": None,
+        "reason": "x",
+        "candidates": [],
+        "cutoffs": [],
+        "predictions": [],
+        "interval_method": None,
+        "params": {},
+    }
+    return {**answer, **changes}
+
+
+def _remote(url: str):
+    return asyncio.run(client.fit_remote(url, _seasonal(48), frequency="month", horizon=6))
+
+
+def test_a_valid_answer_parses():
+    with _Stub(body=json.dumps(_valid_answer()).encode()) as stub:
+        assert _remote(stub.url).reason == "x"
+
+
 def test_an_oversized_answer_is_refused(monkeypatch):
-    monkeypatch.setattr(client, "MAX_RESPONSE_BYTES", 100)
-    with _Stub(body=b" " * 1000) as stub, pytest.raises(TrainerUnavailable):
-        asyncio.run(client.fit_remote(stub.url, _seasonal(48), frequency="month", horizon=6))
+    monkeypatch.setattr(client, "MAX_RESPONSE_BYTES", 1000)
+    padded = json.dumps(_valid_answer(reason="x" * 5000)).encode()
+    with _Stub(body=padded) as stub, pytest.raises(TrainerUnavailable) as caught:
+        _remote(stub.url)
+    # The cap fired, not the parser: the same body is accepted under a larger cap.
+    assert caught.value.__cause__ is None
+    monkeypatch.setattr(client, "MAX_RESPONSE_BYTES", 100_000)
+    with _Stub(body=padded) as stub:
+        assert len(_remote(stub.url).reason) == 5000
 
 
 def test_the_service_timeout_raises_trainer_unavailable(monkeypatch):
     monkeypatch.setattr(client, "REQUEST_TIMEOUT_S", 0.2)
-    with _Stub(sleep=1.0) as stub, pytest.raises(TrainerUnavailable) as caught:
-        asyncio.run(client.fit_remote(stub.url, _seasonal(48), frequency="month", horizon=6))
+    with (
+        _Stub(body=json.dumps(_valid_answer()).encode(), sleep=1.0) as stub,
+        pytest.raises(TrainerUnavailable) as caught,
+    ):
+        _remote(stub.url)
     assert str(caught.value) == "Dịch vụ dự báo không phản hồi"
+    assert isinstance(caught.value.__cause__, httpx.TimeoutException)
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_a_non_finite_number_in_the_answer_is_refused(constant):
+    body = json.dumps(_valid_answer()).replace('"reason": "x"', '"reason": 1')
+    body = body.replace('"params": {}', '"params": {"k": ' + constant + "}")
+    with _Stub(body=body.encode()) as stub, pytest.raises(TrainerUnavailable):
+        _remote(stub.url)
+
+
+def test_non_finite_constants_are_refused_even_where_a_float_is_optional():
+    answer = json.dumps(_valid_answer(candidates=[1])).replace("[1]", "[]")
+    answer = answer.replace('"reason": "x"', '"reason": null, "extra": NaN')
+    with _Stub(body=answer.encode()) as stub, pytest.raises(TrainerUnavailable):
+        _remote(stub.url)
+
+
+def _nested(depth: int):
+    value: object = 1
+    for _ in range(depth):
+        value = {"a": value}
+    return value
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"season_length": 12, "alpha": 0.5, "model": "AAA", "ok": True, "n": None},
+        {"a": {"b": {"c": [1, 2]}}},
+    ],
+)
+def test_params_of_finite_scalars_and_shallow_structures_pass(params):
+    with _Stub(body=json.dumps(_valid_answer(params=params)).encode()) as stub:
+        assert _remote(stub.url).params == params
+
+
+@pytest.mark.parametrize(
+    "params",
+    [_nested(5), {f"k{i}": 1 for i in range(250)}],
+    ids=["too deep", "too many keys"],
+)
+def test_params_out_of_bounds_are_refused(params):
+    with (
+        _Stub(body=json.dumps(_valid_answer(params=params)).encode()) as stub,
+        pytest.raises(TrainerUnavailable),
+    ):
+        _remote(stub.url)
 
 
 def test_a_server_error_is_unavailable_not_a_refused_series():
@@ -229,7 +309,12 @@ def test_fit_series_without_a_url_and_without_statsforecast_is_unavailable(monke
     real = builtins.__import__
 
     def refuse(name, globals=None, locals=None, fromlist=(), level=0):
-        if level == 1 and name == "fit" and globals and globals.get("__name__") == service.__name__:
+        if (
+            level == 1
+            and name == "backtest"
+            and globals
+            and globals.get("__name__") == service.__name__
+        ):
             raise ImportError("No module named 'statsforecast'")
         return real(name, globals, locals, fromlist, level)
 
@@ -246,7 +331,21 @@ def test_the_client_imports_without_statsforecast():
     code = (
         "import sys; sys.modules['statsforecast'] = None\n"
         "from libs.forecast_fit import client, service, Point\n"
-        "assert 'libs.forecast_fit.fit' not in sys.modules"
+        "assert 'libs.forecast_fit.backtest' not in sys.modules"
+    )
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+
+
+def test_the_package_fit_is_the_function_even_after_the_submodule_is_imported():
+    import subprocess
+    import sys
+
+    code = (
+        "import libs.forecast_fit.backtest\n"
+        "import libs.forecast_fit.service\n"
+        "from libs.forecast_fit import fit\n"
+        "assert callable(fit), fit"
     )
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
