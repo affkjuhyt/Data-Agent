@@ -1191,3 +1191,70 @@ class TestCreateSecretsHasNoDuplicateKey:
             if repeated:
                 duplicated[name.group(1)] = repeated
         assert not duplicated, f"keys given twice: {duplicated}"
+
+
+class TestTheStatelessTrainerHasNowhereToGo:
+    """ml-forecast holds no data and calls nothing, so its pod is closed on both sides: only
+    worker-agent reaches it, and no egress policy of the namespace opens it again (policies
+    add up, so an allow-all or allow-egress-to-platform that selected it would undo this)."""
+
+    TIERS = ("dev", "production")
+
+    @staticmethod
+    def _policies(tier: str) -> dict[str, dict]:
+        return {
+            d["metadata"]["name"]: d
+            for d in _docs(K8S_DIR / tier / "networkpolicy-service.yaml")
+            if d["kind"] == "NetworkPolicy"
+        }
+
+    @pytest.mark.parametrize("tier", TIERS)
+    def test_only_worker_agent_may_call_it_and_it_may_call_nothing(self, tier):
+        spec = self._policies(tier)["allow-ml-forecast"]["spec"]
+        assert spec["podSelector"] == {"matchLabels": {"app": "ml-forecast"}}
+        assert set(spec["policyTypes"]) == {"Ingress", "Egress"}
+        assert spec["egress"] == [], "not even DNS"
+        (rule,) = spec["ingress"]
+        assert rule["from"] == [{"podSelector": {"matchLabels": {"app": "worker-agent"}}}]
+        assert rule["ports"] == [{"protocol": "TCP", "port": 8150}]
+
+    @pytest.mark.parametrize("tier", TIERS)
+    def test_no_broad_policy_selects_it(self, tier):
+        broad = {"allow-all", "allow-dns", "allow-egress-to-platform"}
+        for name, policy in self._policies(tier).items():
+            if name not in broad:
+                continue
+            (expr,) = policy["spec"]["podSelector"]["matchExpressions"]
+            assert expr["operator"] == "NotIn" and "ml-forecast" in expr["values"], name
+
+    @pytest.mark.parametrize("tier", TIERS)
+    def test_the_service_and_the_workers_address_agree(self, tier):
+        docs = _docs(K8S_DIR / tier / "service" / "ml-forecast.yaml")
+        (service,) = (d for d in docs if d["kind"] == "Service")
+        assert service["spec"]["ports"][0]["port"] == 8150
+        worker = next(
+            d
+            for d in _docs(K8S_DIR / tier / "service" / "worker-agent.yaml")
+            if d["kind"] == "ConfigMap"
+        )
+        assert (
+            worker["data"]["FORECAST_SERVICE_URL"]
+            == "http://ml-forecast.dataagent-service.svc.cluster.local:8150"
+        )
+
+    @pytest.mark.parametrize("tier", TIERS)
+    def test_it_is_sized_for_one_fit_at_a_time(self, tier):
+        deployment = next(
+            d
+            for d in _docs(K8S_DIR / tier / "service" / "ml-forecast.yaml")
+            if d["kind"] == "Deployment"
+        )
+        resources = deployment["spec"]["template"]["spec"]["containers"][0]["resources"]
+        assert resources["requests"] == {"cpu": "100m", "memory": "256Mi"}
+        assert resources["limits"]["memory"] == "1Gi"
+
+    def test_the_local_deploy_lists_name_it(self):
+        makefile = (REPO_ROOT / "Makefile").read_text()
+        assert makefile.count('"ml-forecast"') == 3, "allowlist, manifests and workloads"
+        defaults = (REPO_ROOT / "deploy/ansible/roles/k8s_common/defaults/main.yml").read_text()
+        assert "  - ml-forecast\n" in defaults

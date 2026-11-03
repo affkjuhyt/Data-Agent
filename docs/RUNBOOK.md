@@ -587,6 +587,22 @@ Check it: `kubectl -n dataagent-service exec deploy/worker-agent -- python -c "i
 from libs.code_sandbox import client; print(asyncio.run(client.run(os.environ['AGENT_SANDBOX_URL'],
 'result = 1 + 1', {})))"`.
 
+## 10g. ml-forecast (the forecast trainer)
+
+Forecast fits (`libs/forecast_fit`: a rolling-origin backtest of naive, seasonal naive, ETS, Theta
+and ARIMA) run in the stateless `ml-forecast` pod (`services/ml_forecast`), not in worker-agent,
+whose image carries no statsforecast:
+
+- `deploy/k8s/*/service/ml-forecast.yaml`: no secret, ConfigMap of the platform or service account
+  token; read-only root filesystem, user 10001. Request 100m CPU and 256Mi, limit 1Gi; one fit at
+  a time (a lock in the process), so scale with replicas.
+- `allow-ml-forecast` (`networkpolicy-service.yaml`): ingress from worker-agent on 8150, no egress
+  (not even DNS); the broad allow policies exclude the pod.
+- worker-agent reads `FORECAST_SERVICE_URL`. `libs/forecast_fit/client.py` turns the service's 422
+  into the `ValueError` `fit` raised and anything else (timeout of 60 s, 5xx, a body of the wrong
+  shape or size) into `TrainerUnavailable("Dịch vụ dự báo không phản hồi")`. Unset, `fit_series`
+  fits in-process (tests and local runs; it needs statsforecast).
+
 ## 11. LLM and model backend
 
 The GPU services on `10.10.55.101` run outside k8s: vLLM main `:8001`

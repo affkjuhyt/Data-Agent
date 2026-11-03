@@ -1,0 +1,5 @@
+# ml-forecast: the server only. The fit's libraries are in libs/forecast_fit/requirements.txt,
+# which the Dockerfile installs beside this file.
+fastapi==0.115.0
+uvicorn==0.30.6
+pydantic==2.13.5

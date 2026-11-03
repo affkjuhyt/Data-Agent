@@ -11,13 +11,14 @@ from __future__ import annotations
 import datetime as dt
 import itertools
 import math
-from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 from statsforecast import StatsForecast
 from statsforecast.models import AutoARIMA, AutoETS, AutoTheta, Naive, SeasonalNaive
+
+from .shapes import Candidate, FitResult, Forecast, Point
 
 MIN_POINTS = 24
 # Shortest history a backtest window may train on; below it ETS/ARIMA fit noise.
@@ -30,45 +31,6 @@ ALGORITHMS = ("naive", "seasonal_naive", "ets", "theta", "arima")
 _SEASON = {"month": 12, "quarter": 4}
 _FREQ = {"month": "MS", "quarter": "QS"}
 _MONTHS_PER_PERIOD = {"month": 1, "quarter": 3}
-
-
-@dataclass(frozen=True)
-class Point:
-    period: dt.date
-    value: float
-
-
-@dataclass(frozen=True)
-class Forecast:
-    period: dt.date
-    point: float
-    lo80: float
-    hi80: float
-    lo95: float
-    hi95: float
-
-
-@dataclass(frozen=True)
-class Candidate:
-    algorithm: str
-    # None when a figure is not finite (undefined MASE, NaN): the result must survive
-    # json.dumps(allow_nan=False). A None MASE never counts as below 1.
-    mase: float | None
-    smape: float | None  # percent, 0..200
-    coverage80: float | None  # share of backtest actuals inside the 80% interval, 0..1
-    coverage95: float | None
-    in_sample_mase: float | None
-
-
-@dataclass(frozen=True)
-class FitResult:
-    chosen: str | None
-    reason: str | None
-    candidates: list[Candidate]
-    cutoffs: list[dt.date]
-    predictions: list[Forecast]
-    interval_method: str | None  # "model" | "conformal"; None when nothing was chosen
-    params: dict[str, Any]
 
 
 def _models(m: int) -> dict[str, Any]:

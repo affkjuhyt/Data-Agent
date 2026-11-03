@@ -30,6 +30,9 @@ data:
   # off leaves the `analyze` tool out, local runs it in this pod (a trusted install only).
   AGENT_PYTHON_SANDBOX: service
   AGENT_SANDBOX_URL: http://python-sandbox.dataagent-service.svc.cluster.local:8140
+  # Forecast fits run in the ml-forecast pod (libs/forecast_fit); unset, worker-agent fits in-process,
+  # which its image cannot (no statsforecast): the forecast is then refused as unavailable.
+  FORECAST_SERVICE_URL: http://ml-forecast.dataagent-service.svc.cluster.local:8150
   # Document answers (UC-05-04): the query is embedded by the bge-m3 TEI the chunks were embedded
   # with, and the pool is ordered by the TEI reranker.
   DOCUMENT_EMBED_URL: http://10.10.55.101:8003
