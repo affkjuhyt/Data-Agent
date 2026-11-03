@@ -309,7 +309,10 @@ Ask không còn đi theo một kế hoạch sáu bước cố định. `worker_a
 (`prepare → plan → act ⟲ → replan / review → compose → persist`) mà planner tự chọn bước và
 công cụ cho từng câu hỏi (`search_catalog`, `describe_metric`, `search_values`, `query_metric`,
 `explore_sql`, `analyze` = pandas, chạy trong pod `python-sandbox` (không mạng ra, không secret, filesystem chỉ đọc; `AGENT_PYTHON_SANDBOX=service`, mặc định của manifest), `off` bỏ công cụ, `local` chạy ngay trong worker cho bản cài tin cậy; `search_documents`, `ask_user`). Bước hỏng quay
-lại planner kèm điều quan sát được (≤ 2 lần). Câu trả lời là các block do agent tự chọn và xếp
+lại planner kèm điều quan sát được (≤ 2 lần), theo lý do hỏng (`ToolResult.failure`): tham số sai
+thì executor viết lại tại chỗ, lỗi tạm thời (timeout, mất kết nối) chạy lại một lần, cả bước
+chung ngân sách 3 lần thử và timeout của công cụ; bước người hỏi không được xem thì không replan
+(bất biến 13). Câu trả lời là các block do agent tự chọn và xếp
 (`qa.answer.blocks`, v3_0023), phát trực tiếp qua sự kiện `block`. Model không viết số: chart,
 bảng và KPI lấy dữ liệu từ dataset, số trong văn bản phải là thẻ `{{F<n>}}` của một sự kiện có
 thật. `ASK_ENGINE=governed` quay về đường cũ; không có gateway, câu hỏi sửa chip và lượt eval có

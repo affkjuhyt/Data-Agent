@@ -52,7 +52,12 @@ class Analyze(Tool):
         }
         chosen = mode()
         if chosen == "off":
-            return ToolResult(False, "phân tích bằng Python đang tắt", detail={"error": "off"})
+            return ToolResult(
+                False,
+                "phân tích bằng Python đang tắt",
+                detail={"error": "off"},
+                failure="unavailable",
+            )
         try:
             done = (
                 await client.run(os.environ["AGENT_SANDBOX_URL"], args.code, frames)
@@ -60,12 +65,18 @@ class Analyze(Tool):
                 else await local.run(args.code, frames)
             )
         except local.CodeRejected as exc:
-            return ToolResult(False, f"code bị từ chối: {exc}", detail={"error": str(exc)})
+            return ToolResult(
+                False,
+                f"code bị từ chối: {exc}",
+                detail={"error": str(exc)},
+                failure="arguments",
+            )
         if not done.ok:
             return ToolResult(
                 False,
                 f"code lỗi: {done.error}" + (f"\nstdout: {done.stdout}" if done.stdout else ""),
                 detail={"error": done.error},
+                failure="arguments",
             )
         sources = [ctx.ws.datasets[i] for i in inputs]
         units = {s.unit for s in sources if s.unit}

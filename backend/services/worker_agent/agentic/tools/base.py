@@ -12,7 +12,7 @@ import json
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel
 
@@ -57,6 +57,19 @@ class Clarify:
     options: list[str] = field(default_factory=list)
 
 
+# Why a tool failed, which decides what the engine does next (AGC-02):
+#   arguments    the arguments were wrong (a period not ISO, a cut the metric has not, code that
+#                fails): the executor writes them again with the error, in place
+#   transient    the source may come back (a timeout, a dropped connection): the same arguments
+#                run once more after a pause
+#   unavailable  the capability is off, or its source cannot be queried in place: no retry; the
+#                planner may choose another tool
+#   forbidden    the asker may not see what the step reads: no retry and no replan, so the
+#                planner never looks for another way round a permission (invariant 13)
+#   logic        anything else (nothing found, a step in the wrong order): the planner decides
+Failure = Literal["arguments", "transient", "unavailable", "forbidden", "logic"]
+
+
 @dataclass
 class ToolResult:
     ok: bool
@@ -65,6 +78,8 @@ class ToolResult:
     # What the timeline shows of the step (never SQL text nor rows).
     detail: dict[str, Any] = field(default_factory=dict)
     clarify: Clarify | None = None
+    # Read only when `ok` is False.
+    failure: Failure = "logic"
 
 
 class Tool:
@@ -72,6 +87,9 @@ class Tool:
     title: ClassVar[str]  # the bold verb on the timeline
     description: ClassVar[str]
     Args: ClassVar[type[BaseModel]]
+    # How long one run may take before the engine stops it as a transient failure; above the
+    # source's own query timeout (120 s by default), so this only catches a tool that hangs.
+    timeout_seconds: ClassVar[float] = 180.0
 
     async def run(self, ctx: ToolContext, args: BaseModel) -> ToolResult:
         raise NotImplementedError

@@ -17,6 +17,7 @@ from libs.sql_guard import SqlRejected, dialect_of
 from services.worker_agent.agentic import prompts
 from services.worker_agent.agentic.grounded import unnamed
 from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResult
+from services.worker_agent.failures import is_transient
 from services.worker_agent.llm import ModelUnavailable
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.semantic import analysis, compare
@@ -98,6 +99,13 @@ class QueryMetric(Tool):
         visible = analyst._visible(ctx.layer)
         entry = visible.get(args.metric)
         if entry is None:
+            if any(
+                m.code == args.metric and m.metric_id in ctx.layer.blocked_metric_ids
+                for m in ctx.layer.vocabulary.metrics
+            ):
+                return ToolResult(
+                    False, f"bạn không được xem chỉ số {args.metric}", failure="forbidden"
+                )
             return ToolResult(
                 False,
                 f"không có chỉ số {args.metric} (hoặc bạn không được xem); dùng search_catalog",
@@ -126,7 +134,9 @@ class QueryMetric(Tool):
         if args.period:
             found = iso_answer(args.period)
             if found is None:
-                return ToolResult(False, f"kỳ {args.period} không đúng dạng ISO")
+                return ToolResult(
+                    False, f"kỳ {args.period} không đúng dạng ISO", failure="arguments"
+                )
             period = c.Period(found.start, found.end)
         allowed = {
             d.code
@@ -138,6 +148,7 @@ class QueryMetric(Tool):
             return ToolResult(
                 False,
                 f"chỉ số {args.metric} không cho chia/lọc theo {bad}; xem describe_metric",
+                failure="arguments",
             )
         request = c.Request(
             version,
@@ -153,7 +164,9 @@ class QueryMetric(Tool):
             source = await _source_for(ctx, first.dataset_ids[0])
             if source is None or source.mode != "federated" or source.status not in QUERYABLE:
                 return ToolResult(
-                    False, "bảng của chỉ số nằm trên nguồn chưa được phép truy vấn tại chỗ"
+                    False,
+                    "bảng của chỉ số nằm trên nguồn chưa được phép truy vấn tại chỗ",
+                    failure="unavailable",
                 )
             dialect = dialect_of(source.kind)
             if args.analysis == analysis.SHARE_OF_TOTAL:
@@ -167,7 +180,14 @@ class QueryMetric(Tool):
             else:
                 compiled = c.compile_metric(request, ctx.layer.layer, dialect=dialect)
         except (c.CompileError, SqlRejected) as exc:
-            return ToolResult(False, f"không compile được: {exc}")
+            # No data for the period or no join path is the data, not the arguments: rewriting
+            # them would only compile to the same refusal.
+            data = getattr(exc, "code", "") in ("NO_DATA_FOR_PERIOD", "NO_JOIN_PATH")
+            return ToolResult(
+                False,
+                f"không compile được: {exc}",
+                failure="logic" if data else "arguments",
+            )
         outcome = await run_query(
             org_id=ctx.org_id,
             data_space_id=ctx.space_id,
@@ -194,6 +214,7 @@ class QueryMetric(Tool):
                 if outcome.status == "timeout"
                 else "truy vấn lỗi ở nguồn",
                 detail=detail,
+                failure="transient" if is_transient(outcome.status, outcome.error) else "logic",
             )
         names = {d.code: d.name for d in ctx.layer.vocabulary.dimensions}
         columns = [
@@ -272,6 +293,8 @@ class ExploreSqlArgs(BaseModel):
 class ExploreSql(Tool):
     name = "explore_sql"
     title = "Viết SQL thăm dò"
+    # Several candidate queries, each under the source's timeout, and a model audit.
+    timeout_seconds = 300.0
     description = (
         "khi không có chỉ số chuẩn phù hợp: viết SQL trên các bảng của Data Space (nhiều cách viết, "
         "bỏ phiếu kết quả); kết quả là dataset 'exploratory', kém tin cậy hơn chỉ số chuẩn"
@@ -293,7 +316,7 @@ class ExploreSql(Tool):
 
             source = questions._internal_workspace_source(ctx.space_id, ctx.org_id)
         if source.mode != "federated" or source.status not in QUERYABLE:
-            return ToolResult(False, "nguồn chưa được phép truy vấn tại chỗ")
+            return ToolResult(False, "nguồn chưa được phép truy vấn tại chỗ", failure="unavailable")
         from services.worker_agent import questions
 
         providers = questions.provider_registry()

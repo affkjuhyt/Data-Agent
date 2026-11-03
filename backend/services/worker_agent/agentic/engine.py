@@ -42,7 +42,7 @@ from services.worker_agent.agentic import memory, prompts, signals, verify
 from services.worker_agent.agentic import plan as p
 from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
 from services.worker_agent.agentic.grounded import unnamed
-from services.worker_agent.agentic.tools import TOOLS, Clarify, ToolContext, ToolResult
+from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContext, ToolResult
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Workspace, number
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
@@ -321,19 +321,23 @@ async def _arguments(s: State, step: p.PlanStep, error: str) -> Any:
         f"Schema tham số: {json.dumps(tool.schema(), ensure_ascii=False)}"
         + (f"\n\nLần trước lỗi: {error}" if error else "")
     )
-    for _ in range(2):
-        reply = await s.model.json_chat(
-            "planner", prompts.EXECUTOR, user, ExecutorReply, max_tokens=1500
-        )
-        try:
-            return tool.Args.model_validate(reply.content.args)
-        except ValidationError as exc:
-            user += f"\n\nTham số sai schema: {exc.errors()[:3]}"
-    raise ValueError("tham số không đúng schema")
+    reply = await s.model.json_chat(
+        "planner", prompts.EXECUTOR, user, ExecutorReply, max_tokens=1500
+    )
+    try:
+        return tool.Args.model_validate(reply.content.args)
+    except ValidationError as exc:
+        raise ValueError(f"tham số sai schema: {exc.errors()[:3]}") from exc
 
 
 # Steps that need nothing of each other run together, this many at most.
 MAX_PARALLEL = 3
+# A step's tries in place, shared by writing its arguments and running its tool (AGC-02): one
+# budget, where the executor's, the step's and the tool's loops used to multiply. The model
+# gateway's own retries (llm.HTTP_RETRIES, OUTPUT_RETRIES) stay below this: they repeat one call.
+STEP_ATTEMPTS = 3
+# A transient failure (a timeout, a source that dropped the connection) runs again once, after this.
+TRANSIENT_PAUSE_SECONDS = 2.0
 
 
 async def act(s: State) -> None:
@@ -353,13 +357,17 @@ async def act(s: State) -> None:
         step.status = "done" if result.ok else "failed"
         if result.clarify is not None:
             s.clarify = result.clarify
-        if not result.ok and s.failed is None:
+        # A step the asker may not read is not replanned: the planner must not look for another
+        # way to the same data (invariant 13). Steps that depend on it are skipped.
+        if not result.ok and s.failed is None and result.failure != "forbidden":
             s.failed = step
 
 
 async def _run_step(s: State, step: p.PlanStep) -> ToolResult:
-    """One step: its arguments, its tool, one local retry with the error (DataAgent retries SQL
-    and Python in place); its own context, so steps run together keep their own step id."""
+    """One step: its arguments, its tool, and the tries in place its failure allows (DataAgent
+    retries SQL and Python in place): wrong arguments are written again with the error, a
+    transient failure runs again once; every other failure goes back to the planner as it is.
+    Its own context, so steps run together keep their own step id."""
     assert s.ctx is not None
     tool = TOOLS[step.tool]
     ctx = dataclasses.replace(s.ctx, step_id=step.id)
@@ -367,27 +375,53 @@ async def _run_step(s: State, step: p.PlanStep) -> ToolResult:
     async with turn_trace.stepping(
         ACTION_OF.get(tool.name, tool.name), title=tool.title, target=step.instruction[:160]
     ) as handle:
-        error = ""
-        for _ in range(2):
-            try:
-                args = await _arguments(s, step, error)
-            except (ModelUnavailable, ValueError) as exc:
-                result = ToolResult(False, f"không viết được tham số: {exc}")
-                break
-            try:
-                result = await tool.run(ctx, args)
-            except Exception as exc:  # a tool's failure is feedback for the planner
-                logger.exception("question %s: tool %s failed", s.question_id, tool.name)
-                result = ToolResult(False, f"công cụ lỗi: {type(exc).__name__}")
+        error, rerun = "", False
+        args: Any = None
+        for _ in range(STEP_ATTEMPTS):
+            if args is None or error:
+                try:
+                    args = await _arguments(s, step, error)
+                except ModelUnavailable as exc:
+                    result = ToolResult(
+                        False, f"không viết được tham số: {exc}", failure="unavailable"
+                    )
+                    break
+                except ValueError as exc:
+                    error = str(exc)
+                    result = ToolResult(
+                        False, f"không viết được tham số: {exc}", failure="arguments"
+                    )
+                    continue
+            result = await _run_tool(s, tool, ctx, args)
             step.args = args.model_dump(mode="json") if hasattr(args, "model_dump") else step.args
-            if result.ok or tool.name not in ("analyze", "query_metric"):
+            if result.ok:
                 break
-            error = result.observation
+            if result.failure == "arguments":
+                error = result.observation
+            elif result.failure == "transient" and not rerun:
+                error, rerun = "", True
+                await asyncio.sleep(TRANSIENT_PAUSE_SECONDS)
+            else:
+                break
         assert result is not None
         handle.detail = {**result.detail, "args": _shown_args(step)}
         if not result.ok:
             handle.status, handle.summary = "failed", result.observation[:200]
     return result
+
+
+async def _run_tool(s: State, tool: Tool, ctx: ToolContext, args: Any) -> ToolResult:
+    """One run of `tool`, stopped at its timeout. A timeout is transient; a crash goes back to the
+    planner as it is, since running the same code again would crash the same way."""
+    try:
+        return await asyncio.wait_for(tool.run(ctx, args), tool.timeout_seconds)
+    except TimeoutError:
+        return ToolResult(
+            False, f"công cụ chạy quá {tool.timeout_seconds:.0f} giây", failure="transient"
+        )
+    except Exception as exc:  # a tool's failure is feedback for the planner
+        logger.exception("question %s: tool %s failed", s.question_id, tool.name)
+        return ToolResult(False, f"công cụ lỗi: {type(exc).__name__}")
 
 
 def _shown_args(step: p.PlanStep) -> dict[str, Any]:

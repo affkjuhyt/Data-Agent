@@ -11,6 +11,7 @@ same failure again would only repeat it.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -62,8 +63,21 @@ def of_compile(code: str) -> ErrorClass:
     return _COMPILE.get(code, ErrorClass.PLAN_LOGIC)
 
 
+# What a source or OpenBao says when it is down or slow, not when the query is wrong.
+_PASSING = re.compile(
+    r"Connection\w*Error|OperationalError|InterfaceError|TimeoutError|OSError|: connection"
+    r"|OpenBao login failed \(5\d\d\)|could not be read \(5\d\d\)"
+)
+
+
+def is_transient(status: str, error: str | None) -> bool:
+    """A failure that may pass by itself (a timeout, a source or OpenBao down): worth a retry.
+    A wrong query, a missing grant or a missing credential fails the same way every time."""
+    return status == "timeout" or bool(error and _PASSING.search(error))
+
+
 def of_query(*, transient: bool) -> ErrorClass:
-    """A compiled query that did not succeed: the source may come back (runs.is_transient), or it
+    """A compiled query that did not succeed: the source may come back (is_transient), or it
     fails the same way every time (a wrong query, a missing grant or credential)."""
     return ErrorClass.SOURCE_UNAVAILABLE if transient else ErrorClass.PLAN_LOGIC
 

@@ -691,3 +691,144 @@ def test_a_cancel_asked_before_a_node_starts_runs_nothing(
     state = _cancel_state()
     asyncio.run(engine._cancellable(node)(state))
     assert state.cancelled and ran == []
+
+
+# ---- AGC-02: what a failed step does next depends on why it failed
+
+
+class _Args(__import__("pydantic").BaseModel):
+    n: int = 0
+
+
+def _step_world(
+    monkeypatch: pytest.MonkeyPatch, results: list[Any], *, timeout: float = 5.0
+) -> Any:
+    """A state whose only tool answers `results` in turn, and an executor that records the error it
+    was asked to fix and writes n + 1."""
+    import datetime
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.agentic.tools import Tool, ToolContext, ToolResult
+
+    runs: list[int] = []
+    fixes: list[str] = []
+
+    class Fake(Tool):
+        name = "fake"
+        title = "Fake"
+        description = "fake"
+        Args = _Args
+        timeout_seconds = timeout
+
+        async def run(self, ctx: ToolContext, args: Any) -> ToolResult:
+            runs.append(args.n)
+            r = results[min(len(runs), len(results)) - 1]
+            if r == "hang":
+                await asyncio.sleep(10)
+            return r if isinstance(r, ToolResult) else ToolResult(True, "ok")
+
+    async def json_chat(_role: str, _system: str, user: str, *_a: Any, **_k: Any) -> Any:
+        fixes.append(user.rsplit("Lần trước lỗi: ", 1)[-1] if "Lần trước lỗi" in user else "")
+        return types.SimpleNamespace(content=engine.ExecutorReply(args={"n": len(fixes)}))
+
+    monkeypatch.setitem(engine.TOOLS, "fake", Fake())
+    monkeypatch.setattr(engine, "TRANSIENT_PAUSE_SECONDS", 0)
+    monkeypatch.setattr(engine, "_situation", lambda _s: "")
+    monkeypatch.setattr(engine, "_progress", lambda _s: "")
+    ctx = ToolContext(
+        org_id=uuid.uuid4(),
+        space_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        question_id=uuid.uuid4(),
+        question="q",
+        today=datetime.date(2026, 11, 4),
+        as_of=None,
+        purpose=None,
+        layer=types.SimpleNamespace(),  # type: ignore[arg-type]
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ws=Workspace(),
+    )
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=ctx.question_id,
+        model=types.SimpleNamespace(json_chat=json_chat),  # type: ignore[arg-type]
+        ctx=ctx,
+        plan=_plan(
+            {"id": "s1", "tool": "fake", "instruction": "a", "args": {"n": 0}},
+            {"id": "s2", "tool": "fake", "instruction": "b", "depends_on": ["s1"]},
+        ),
+    )
+    return types.SimpleNamespace(engine=engine, state=state, runs=runs, fixes=fixes)
+
+
+def _failed(failure: str) -> Any:
+    from services.worker_agent.agentic.tools import ToolResult
+
+    return ToolResult(False, f"lỗi {failure}", failure=failure)  # type: ignore[arg-type]
+
+
+def test_wrong_arguments_are_written_again_with_the_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    w = _step_world(monkeypatch, [_failed("arguments"), "ok"])
+    result = asyncio.run(w.engine._run_step(w.state, w.state.plan.steps[0]))
+    assert result.ok and w.runs == [0, 1] and w.fixes == ["lỗi arguments"]
+
+
+def test_a_transient_failure_runs_the_same_arguments_once_more(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    w = _step_world(monkeypatch, [_failed("transient")])
+    result = asyncio.run(w.engine._run_step(w.state, w.state.plan.steps[0]))
+    assert not result.ok and w.runs == [0, 0] and w.fixes == []
+
+
+def test_a_logic_or_unavailable_failure_is_not_tried_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    for kind in ("logic", "unavailable", "forbidden"):
+        w = _step_world(monkeypatch, [_failed(kind)])
+        result = asyncio.run(w.engine._run_step(w.state, w.state.plan.steps[0]))
+        assert result.failure == kind and w.runs == [0], kind
+
+
+def test_wrong_arguments_stop_at_the_step_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    w = _step_world(monkeypatch, [_failed("arguments")])
+    asyncio.run(w.engine._run_step(w.state, w.state.plan.steps[0]))
+    assert len(w.runs) == w.engine.STEP_ATTEMPTS
+
+
+def test_a_tool_past_its_timeout_is_a_transient_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    w = _step_world(monkeypatch, ["hang"], timeout=0.01)
+    result = asyncio.run(w.engine._run_step(w.state, w.state.plan.steps[0]))
+    assert result.failure == "transient" and w.runs == [0, 0]
+
+
+def test_a_forbidden_step_is_not_replanned_and_its_dependents_are_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    w = _step_world(monkeypatch, [_failed("forbidden")])
+    asyncio.run(w.engine.act(w.state))
+    assert w.state.failed is None and w.state.plan.steps[0].status == "failed"
+    assert w.engine.after_act(w.state) == "act"
+    assert p.ready(w.state.plan, 3) == [] and w.state.plan.steps[1].status == "skipped"
+
+    w = _step_world(monkeypatch, [_failed("logic")])
+    asyncio.run(w.engine.act(w.state))
+    assert w.state.failed is w.state.plan.steps[0] and w.engine.after_act(w.state) == "replan"
+
+
+def test_a_metric_the_asker_is_denied_is_a_forbidden_failure() -> None:
+    import types
+
+    from services.worker_agent.agentic.tools.query import QueryMetric, QueryMetricArgs
+
+    metric = types.SimpleNamespace(code="revenue", metric_id=1)
+    layer = types.SimpleNamespace(
+        vocabulary=types.SimpleNamespace(metrics=[metric]),
+        versions={1: object()},
+        blocked_metric_ids={1},
+    )
+    ctx = types.SimpleNamespace(layer=layer)
+    denied = asyncio.run(QueryMetric().run(ctx, QueryMetricArgs(metric="revenue")))  # type: ignore[arg-type]
+    unknown = asyncio.run(QueryMetric().run(ctx, QueryMetricArgs(metric="profit")))  # type: ignore[arg-type]
+    assert (denied.ok, denied.failure) == (False, "forbidden")
+    assert (unknown.ok, unknown.failure) == (False, "logic")

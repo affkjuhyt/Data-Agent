@@ -50,6 +50,7 @@ from services.worker_agent.audit.findings import audit
 from services.worker_agent.audit.run import AuditFailed, Target, gather, load_target
 from services.worker_agent.data_scope import DataScope
 from services.worker_agent.events import Event, Handler
+from services.worker_agent.failures import is_transient
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.questions import (
@@ -85,11 +86,6 @@ RETRY_DELAYS = (
 # AC-13-06-05: a run waiting for a person is reminded on day 1 and 3, and ends on day 7.
 REMINDERS = (datetime.timedelta(days=1), datetime.timedelta(days=3))
 WAIT_LIMIT = datetime.timedelta(days=7)
-# What a source or OpenBao says when it is down or slow, not when the query is wrong.
-_PASSING = re.compile(
-    r"Connection\w*Error|OperationalError|InterfaceError|TimeoutError|OSError|: connection"
-    r"|OpenBao login failed \(5\d\d\)|could not be read \(5\d\d\)"
-)
 ROLE = "svc_agent"
 QA_ROLE = "svc_qa"
 NOTIFY_ROLE = "svc_notify"
@@ -126,12 +122,6 @@ def wants_execution(payload: Mapping[str, Any]) -> bool:
     if status == "queued":
         return previous in (None, "failed", "paused")
     return status == "running" and previous in ("paused", "waiting_human")
-
-
-def is_transient(status: str, error: str | None) -> bool:
-    """A failure that may pass by itself (a timeout, a source or OpenBao down): worth a retry.
-    A wrong query, a missing grant or a missing credential fails the same way every time."""
-    return status == "timeout" or bool(error and _PASSING.search(error))
 
 
 def wait_timers(since: datetime.datetime) -> list[tuple[str, datetime.datetime]]:
