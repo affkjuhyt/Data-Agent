@@ -31,6 +31,7 @@ from sqlalchemy import delete, func, select, update
 from libs import pii
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import audit, document
+from libs.pii.injection import injection_suspected
 from libs.tabular import profile as ingest_profile
 from services.worker_document import validity
 from services.worker_document.indexing import Point, VectorIndex
@@ -42,7 +43,6 @@ from services.worker_document.processing import (
     context_header,
     document_chunks,
     extract_pages,
-    injection_suspected,
     layout_json,
     source_hash,
 )

@@ -30,20 +30,6 @@ _SECTION = re.compile(r"^mục\s+\d+\b", re.IGNORECASE)
 _ARTICLE = re.compile(r"^điều\s+(\d+[a-zđ]?)\b", re.IGNORECASE)
 _CLAUSE = re.compile(r"^(\d+)\.\s")
 
-# UC-05-02 E2: sentences addressed to the model rather than the reader. The passage stays indexed
-# (it may be the very rule a user asks about); the flag tells the answer step to treat it as data.
-_INJECTION = [
-    re.compile(pattern, re.IGNORECASE)
-    for pattern in (
-        r"\b(?:bỏ qua|phớt lờ|quên)\s+(?:mọi|tất cả|toàn bộ|các)?\s*(?:hướng dẫn|chỉ dẫn|lệnh|quy tắc)",
-        r"\bignore\s+(?:all\s+|any\s+)?(?:the\s+)?(?:previous|prior|above)\s+(?:instructions|prompts?|rules)",
-        r"\bdisregard\s+(?:all\s+|the\s+)?(?:previous|prior|above)\b",
-        r"\b(?:system prompt|lời nhắc hệ thống)\b",
-        r"\b(?:bạn là|you are now)\s+(?:một\s+)?(?:trợ lý|mô hình|assistant|model)\b",
-        r"\b(?:trả|xuất|gửi|in ra)\s+(?:về\s+)?toàn bộ\s+(?:dữ liệu|thông tin)",
-    )
-]
-
 
 @dataclass(frozen=True)
 class ChunkDraft:
@@ -284,10 +270,6 @@ def normalize_text(text: str) -> str:
     text = unicodedata.normalize("NFC", text)
     text = re.sub(r"[\u00ad\u200b\u200c\u200d\ufeff]", "", text)
     return text.replace("\u00a0", " ").strip()
-
-
-def injection_suspected(text: str) -> bool:
-    return any(pattern.search(text) for pattern in _INJECTION)
 
 
 def context_header(title: str | None, doc_no: str | None, section_path: str | None) -> str:

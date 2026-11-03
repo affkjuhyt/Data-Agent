@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 PER_MINUTE_ENV = "API_RATE_LIMIT_PER_MINUTE"
 DEFAULT_PER_MINUTE = 120
 WINDOW_SECONDS = 60
+# AGC-03: a question costs a planner, its tools and a reporter (several model calls, queries on the
+# warehouse), where most calls cost one read; 120 of them a minute from one person would hold the
+# model servers for everyone else.
+QUESTIONS_PER_MINUTE_ENV = "API_QUESTIONS_PER_MINUTE"
+DEFAULT_QUESTIONS_PER_MINUTE = 10
 
 
 class CounterStore(Protocol):
@@ -59,6 +64,34 @@ def counter_store_from_env() -> CounterStore | None:
 
 def per_minute() -> int:
     return int(os.environ.get(PER_MINUTE_ENV, DEFAULT_PER_MINUTE))
+
+
+def questions_per_minute() -> int:
+    return int(os.environ.get(QUESTIONS_PER_MINUTE_ENV, DEFAULT_QUESTIONS_PER_MINUTE))
+
+
+async def within_quota(request: Request, name: str, caller: str, limit: int) -> None:
+    """A route's own quota, under the per-person limit: `limit` calls of `name` a minute by
+    `caller`, in the same store and windows; over it raises 429 rate_limited with Retry-After.
+    Fails open like the middleware: no store, or a store that is down, counts nothing."""
+    store: CounterStore | None = getattr(request.app.state, "counter_store", None)
+    if store is None:
+        return
+    now = time.time()
+    window = int(now // WINDOW_SECONDS)
+    reset = WINDOW_SECONDS - int(now % WINDOW_SECONDS)
+    try:
+        count = await store.hit(f"quota:{name}:{caller}:{window}", reset + 1)
+    except Exception:  # noqa: BLE001 - a store outage must not take the api down with it
+        logger.warning("api | quota store unavailable; %s not counted", name, exc_info=True)
+        return
+    if count > limit:
+        raise Problem(
+            429,
+            "rate_limited",
+            f"More than {limit} {name} in a minute; retry after the window resets.",
+            headers={"Retry-After": str(reset)},
+        )
 
 
 async def rate_limit_middleware(

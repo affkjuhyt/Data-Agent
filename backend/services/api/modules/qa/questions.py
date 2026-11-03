@@ -12,10 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import qa
+from libs.pii.injection import overrides_instructions
 from services.api.kernel.auth import Principal
+from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.qa import scope
 
 TITLE_LENGTH = 80
+INSTRUCTION_REFUSED = (
+    "Câu hỏi có câu ra lệnh cho hệ thống (như “bỏ qua mọi hướng dẫn”) nên không được xử lý. "
+    "Hãy hỏi lại về dữ liệu."
+)
 
 
 def title_of(text: str) -> str | None:
@@ -46,7 +52,19 @@ async def insert_question(
     api_client_id: uuid.UUID | None = None,
 ) -> tuple[qa.Question, qa.Conversation]:
     """Insert the question (in a new conversation when none is given, locked by the caller when
-    it is) and its `question.received` event, in the caller's transaction."""
+    it is) and its `question.received` event, in the caller's transaction.
+
+    A question that tries to replace the model's instructions is refused here, before it is
+    stored, so no model ever reads it (AGC-03); the web route and MCP both record questions here."""
+    if overrides_instructions(text):
+        raise Problem(
+            422,
+            "validation_failed",
+            INSTRUCTION_REFUSED,
+            errors=[
+                FieldError(field="text", code="instruction_override", message=INSTRUCTION_REFUSED)
+            ],
+        )
     if conversation is None:
         conversation = qa.Conversation(
             id=uuid7(),

@@ -35,6 +35,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
+from services.api.kernel.ratelimit import questions_per_minute, within_quota
 from services.api.kernel.sse import Event, event_stream
 from services.api.kernel.sse import last_event_id as get_last_event_id
 from services.api.modules.agent import turn_steps
@@ -167,8 +168,12 @@ async def create_question(
     body: QuestionCreate,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
+    request: Request,
     response: Response,
 ) -> QuestionAccepted:
+    await within_quota(
+        request, "questions", f"{principal.org_id}:{principal.user_id}", questions_per_minute()
+    )
     async with transaction(ROLE, principal) as session:
         conversation_id = body.conversation_id
         if body.parent_question_id is not None:

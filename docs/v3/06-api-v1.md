@@ -126,6 +126,10 @@ sang cùng helper.
 Hạn mức và nhật ký (A1.8) cũng ở kernel. `kernel/ratelimit.py`: mỗi người (tổ chức + `sub` của token) tối đa
 `API_RATE_LIMIT_PER_MINUTE` lời gọi mỗi phút (mặc định 120), đếm theo cửa sổ một phút ở Redis; mọi phản hồi `/v1`
 có `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, vượt thì 429 `rate_limited` kèm `Retry-After`.
+`POST /v1/questions` còn có hạn mức riêng, chặt hơn vì mỗi câu hỏi tốn nhiều lần gọi model: `API_QUESTIONS_PER_MINUTE`
+câu mỗi phút mỗi người (mặc định 10, `ratelimit.within_quota`, AGC-03). Câu hỏi có câu ra lệnh cho model ("bỏ qua mọi
+hướng dẫn", "system prompt", `libs/pii/injection.py`) bị trả 422 `validation_failed` (lỗi trường `text`,
+`instruction_override`) trước khi lưu, ở cả web lẫn `/mcp`.
 Client gọi `/mcp` dùng hạn mức riêng của `api_client`. `kernel/access_log.py`: mọi lời gọi `/v1` thêm một dòng
 `audit.audit_log` sau khi có mã phản hồi (`action` = `api.<operation_id>`, đối tượng là `{id}` của đường dẫn,
 `outcome` ok / denied cho 401, 403, 429 / error); không ghi thân. Ghi lỗi thì chỉ ghi log ứng dụng, vì lời gọi đã

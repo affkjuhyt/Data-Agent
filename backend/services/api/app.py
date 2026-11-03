@@ -103,6 +103,8 @@ def create_app(
     app.middleware("http")(etag_middleware)
 
     counters = counter_store or counter_store_from_env()
+    # Routes with their own quota (ratelimit.within_quota) count in the same store.
+    app.state.counter_store = counters
     limit = rate_limit or per_minute()
 
     # Outside ETag and idempotency: a caller over the limit claims nothing and reads nothing.

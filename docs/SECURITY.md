@@ -28,6 +28,11 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
   (`backend/services/api/kernel/access_log.py`, A1.8); the modules that must not act unaudited
   write their own row inside the action. The V2 `data.access` Kafka pipeline went with
   platform-workers.
+- **Questions that address the model.** A question that tries to replace the model's
+  instructions ("ignore previous instructions", "system prompt", `libs/pii/injection.py`) is
+  refused with 422 before it is stored; document passages are flagged with the same patterns
+  plus "dump everything" and never reach the model unreviewed. `POST /v1/questions` has its own
+  quota (`API_QUESTIONS_PER_MINUTE`, 10 by default) under the 120-a-minute per-person limit.
 - **Multi-tenant isolation via Postgres RLS.** Tenant tables carry `tenant_id` with
   row-level-security policies; child tables without their own `tenant_id` are covered by
   FK-chain `EXISTS` policies (`enable_tenant_rls` + `rls_kb_child_tables` migrations).

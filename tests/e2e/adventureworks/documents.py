@@ -24,12 +24,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from libs.pii.injection import injection_suspected
 from services.worker_document.handler import mask_for
 from services.worker_document.processing import (
     context_header,
     document_chunks,
     extract_pages,
-    injection_suspected,
     source_hash,
 )
 
