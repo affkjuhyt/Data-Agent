@@ -1,0 +1,20 @@
+# Unit tests of libs/forecast_fit run in this suite's image; its pins live in
+# backend/libs/forecast_fit/requirements.txt (Task 2 moves them into the service image).
+statsforecast==2.1.1
+coreforecast==0.0.19
+utilsforecast==0.2.17
+statsmodels==0.15.0
+scipy==1.18.1
+patsy==1.0.3
+formulaic==1.2.2
+interface_meta==2.0.1
+narwhals==2.28.0
+packaging==26.3
+threadpoolctl==3.7.0
+tqdm==4.70.1
+cloudpickle==3.1.2
+fsspec==2026.9.0
+fugue==0.9.7
+triad==1.0.2
+adagio==0.2.6
+pyarrow==26.0.1
