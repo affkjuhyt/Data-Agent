@@ -283,6 +283,10 @@ def test_an_analysis_that_fetched_nothing_hands_the_question_back() -> None:
         ctx=types.SimpleNamespace(ws=ws),  # type: ignore[arg-type]
         plan=_plan({"id": "s1", "tool": "query_metric", "instruction": "x", "status": "failed"}),
     )
+    # AGC-11: the reason goes back to the replanner once, then the question is handed over.
+    asyncio.run(engine.compose(state))
+    assert not state.handed_back and state.feedback and state.composition == []
+    state.feedback = None
     asyncio.run(engine.compose(state))
     assert state.handed_back and state.composition == []
 
@@ -326,6 +330,7 @@ def test_a_metric_that_does_not_measure_what_was_asked_hands_the_question_back()
 
     asked_customers = state("Có bao nhiêu khách hàng mua qua Internet năm 2013")
     assert engine._unnamed_quantity(asked_customers) == ["khach", "hang", "mua"]
+    asked_customers.gate_retries = engine.MAX_GATE_RETRIES
     asyncio.run(engine.compose(asked_customers))
     assert asked_customers.handed_back
     assert engine._unnamed_quantity(state("Vì sao số lượng bán Internet năm 2013 giảm")) == []
@@ -473,6 +478,7 @@ def test_a_member_the_question_names_but_no_dataset_used_hands_the_question_back
     )
     state = _gate_state("Doanh thu Internet nhóm hàng Bikes năm 2013", total, [bikes])
     assert engine._dropped_members(state) == ["Bikes"]
+    state.gate_retries = engine.MAX_GATE_RETRIES
     asyncio.run(engine.compose(state))
     assert state.handed_back
 

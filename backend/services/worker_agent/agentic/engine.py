@@ -43,6 +43,7 @@ from services.worker_agent.agentic import plan as p
 from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
 from services.worker_agent.agentic.grounded import unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContext, ToolResult
+from services.worker_agent.agentic.tools.coverage import for_planning
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Workspace, number
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
@@ -62,6 +63,10 @@ MAX_REPLANS = 2
 MAX_REVIEWS = 1
 MAX_STEP_RUNS = 14
 HISTORY_TURNS = 5
+# How many of the metrics a question most likely reads are probed for their data range.
+COVERAGE_METRICS = 2
+# How many times compose sends a gate's reason back to the replanner before handing over.
+MAX_GATE_RETRIES = 1
 # The timeline's action for a tool whose name the governed path already uses for another step.
 ACTION_OF = {"analyze": "run_python"}
 
@@ -107,6 +112,11 @@ class State:
     signals: signals.Signals = field(default_factory=lambda: signals.Signals())
     answered: bool = False
     cancelled: bool = False
+    # Where the metrics the question most likely reads have data (AGC-10), for the planner.
+    coverage: str = ""
+    # Why compose would hand the question over (AGC-11): sent back to the replanner once first.
+    feedback: str | None = None
+    gate_retries: int = 0
 
 
 # ---------------------------------------------------------------- prepare
@@ -195,20 +205,57 @@ async def prepare(s: State) -> None:
     except Exception:
         # Memory helps; a turn never fails for it (a cluster before v3_0027, a slow read).
         logger.exception("question %s: memory not recalled", s.question_id)
+    try:
+        # A question naming a period: where the metrics it most likely reads have data, so a
+        # quarter the data never reaches is planned around, not queried and handed over (AGC-10).
+        likely = [m["metric"] for m in analyst.search_metrics(s.ctx.layer, question_text)]
+        s.coverage = await for_planning(s.ctx, likely[:COVERAGE_METRICS])
+    except Exception:
+        logger.exception("question %s: data coverage not read", s.question_id)
 
 
 # ---------------------------------------------------------------- plan
 
 
 def _catalog(s: State) -> str:
+    """Each metric with what a planner needs to read it right (AGC-09): unit, how it adds up over
+    time, what it may be cut by, and the steward's description, which holds rules the code does
+    not ("chỉ có nghĩa khi tách theo tài khoản")."""
     assert s.ctx is not None
-    visible = analyst._visible(s.ctx.layer)
-    lines = [f"{code}: {m.name}" for code, m in list(visible.items())[:60]]
+    layer = s.ctx.layer
+    visible = analyst._visible(layer)
+    names = {d.dimension_id: d.code for d in layer.vocabulary.dimensions if not d.is_time}
+    lines = []
+    for code, m in list(visible.items())[:60]:
+        version = layer.versions[m.metric_id]
+        row = layer.version_rows.get(m.metric_id)
+        about = " ".join(str(getattr(row, "description", "") or "").split())[:CATALOG_ABOUT]
+        cuts = sorted(names[i] for i in version.allowed_dimension_ids if i in names)
+        parts = [f"{code}: {m.name}"]
+        if version.unit:
+            parts.append(f"đơn vị {version.unit}")
+        parts.append(_PERIOD_WORDS.get(version.period_semantics, version.period_semantics))
+        if cuts:
+            parts.append("chia theo " + ", ".join(cuts))
+        if about:
+            parts.append(about)
+        lines.append(" | ".join(parts))
     dims = [
         f"{d.code}: {d.name}{' (thời gian)' if d.is_time else ''}"
         for d in s.ctx.layer.vocabulary.dimensions[:60]
     ]
     return "Chỉ số:\n" + ("\n".join(lines) or "(không có)") + "\nChiều:\n" + "\n".join(dims)
+
+
+# A period label in a coverage text: '2013', '2013-Q4', '2013-11', '2013-07-01'.
+_PERIOD_LABEL = re.compile(r"\b\d{4}(?:-Q[1-4]|-\d{2}(?:-\d{2})?)?\b")
+# How long a metric's description may be in the planner's catalogue.
+CATALOG_ABOUT = 200
+_PERIOD_WORDS = {
+    "sum_over_period": "cộng dồn trong kỳ",
+    "end_of_period": "số cuối kỳ, không cộng các kỳ",
+    "average_over_period": "trung bình trong kỳ",
+}
 
 
 def _tool_cards() -> str:
@@ -223,6 +270,8 @@ def _situation(s: State) -> str:
     if s.memories:
         parts.append(memory.render(s.memories))
     parts.append(f"<question>\n{s.ctx.question}\n</question>")
+    if s.coverage:
+        parts.append(f"<coverage>\n{s.coverage}\n</coverage>")
     if s.ctx.period is not None:
         p_ = s.ctx.period
         parts.append(
@@ -314,8 +363,13 @@ async def _arguments(s: State, step: p.PlanStep, error: str) -> Any:
             return tool.Args.model_validate(step.args)
         except ValidationError:
             pass
+    # A tool that reads a metric gets the catalogue, where its description says how it may be
+    # read ("chỉ có nghĩa khi tách theo tài khoản") and what it may be cut by (AGC-09).
+    catalog = (
+        f"<catalog>\n{_catalog(s)}\n</catalog>\n\n" if "metric" in tool.Args.model_fields else ""
+    )
     user = (
-        f"{_situation(s)}\n\n{_progress(s)}\n\n"
+        f"{catalog}{_situation(s)}\n\n{_progress(s)}\n\n"
         f"<step id={step.id} tool={step.tool}>\n{step.instruction}\nTham số kế hoạch: "
         f"{json.dumps(step.args, ensure_ascii=False)}\n</step>\n\n"
         f"Schema tham số: {json.dumps(tool.schema(), ensure_ascii=False)}"
@@ -448,17 +502,22 @@ def after_act(s: State) -> str:
 
 
 async def replan(s: State) -> None:
-    assert s.plan is not None and s.failed is not None
+    assert s.plan is not None and (s.failed is not None or s.feedback is not None)
     failed, s.failed = s.failed, None
+    feedback, s.feedback = s.feedback, None
     s.replans += 1
     done = [st for st in s.plan.steps if st.status == "done"]
     system = prompts.PLANNER.replace("{tools}", _tool_cards()).replace("{catalog}", _catalog(s))
-    user = f"{_situation(s)}\n\n{_progress(s)}\n\n" + prompts.REPLAN.format(
-        failed=failed.id, why=failed.observation[:500], next_id=len(s.plan.steps) + 1
-    )
-    async with turn_trace.stepping(
-        "replan", title="Điều chỉnh kế hoạch", target=failed.observation[:160]
-    ) as handle:
+    if failed is not None:
+        ask = prompts.REPLAN.format(
+            failed=failed.id, why=failed.observation[:500], next_id=len(s.plan.steps) + 1
+        )
+        why = failed.observation[:160]
+    else:
+        ask = prompts.REPLAN_CHECK.format(why=feedback, next_id=len(s.plan.steps) + 1)
+        why = str(feedback)[:160]
+    user = f"{_situation(s)}\n\n{_progress(s)}\n\n" + ask
+    async with turn_trace.stepping("replan", title="Điều chỉnh kế hoạch", target=why) as handle:
         try:
             new = await _ask_plan(s, system, user)
         except (ModelUnavailable, p.PlanInvalid):
@@ -468,10 +527,10 @@ async def replan(s: State) -> None:
         steps = [*done, *[st for st in new.steps if st.id not in kept and st.status == "pending"]]
         for st in steps[len(done) :]:
             st.depends_on = [d for d in st.depends_on if d in {x.id for x in steps}]
-        failed_view = failed.model_copy()
         s.plan = p.Plan(goal=new.goal or s.plan.goal, thought=new.thought, steps=[*steps])
-        # The failed step stays on the record, after the ones that are done.
-        s.plan.steps.insert(len(done), failed_view)
+        if failed is not None:
+            # The failed step stays on the record, after the ones that are done.
+            s.plan.steps.insert(len(done), failed.model_copy())
         handle.detail = {"steps": p.view(s.plan)}
     if new.mode == "ask":
         s.clarify = Clarify(new.clarification or "Bạn có thể nói rõ hơn?", new.options[:5])
@@ -623,6 +682,21 @@ def _facts_text(known: dict[str, verify.Fact]) -> str:
     return "\n".join(f"{{{{{k}}}}} = {f.shown} ({f.label})" for k, f in known.items())
 
 
+async def _gate(s: State, target: str, detail: dict[str, Any], feedback: str) -> None:
+    """A check compose cannot pass: the first time, its reason goes back to the replanner, which
+    may still fetch what is missing (another period, a filter, another tool); after that, the
+    question goes to the governed path as before (AGC-11)."""
+    if s.gate_retries < MAX_GATE_RETRIES:
+        s.gate_retries += 1
+        s.feedback = feedback
+        await turn_trace.record_step("recheck", target=target, detail=detail)
+        return
+    await turn_trace.record_step(
+        "handover", target=f"{target}; chuyển sang cách trả lời chuẩn.", detail=detail
+    )
+    s.handed_back = True
+
+
 async def compose(s: State) -> None:
     assert s.ctx is not None and s.plan is not None
     ws = s.ctx.ws
@@ -631,35 +705,39 @@ async def compose(s: State) -> None:
         and not ws.citations
         and not any(d.rows for d in ws.datasets.values())
     ):
-        # Nothing was fetched: rather than write that it cannot answer, hand the question to the
-        # governed path (rules, exploratory SQL, documents), which may still find the figure.
-        await turn_trace.record_step(
-            "handover",
-            target="Chưa lấy được số liệu; chuyển sang cách trả lời chuẩn.",
-            detail={"steps": p.view(s.plan)},
+        # Nothing was fetched: rather than write that it cannot answer, try once more, then hand
+        # the question to the governed path (rules, exploratory SQL, documents).
+        await _gate(
+            s,
+            "Chưa lấy được số liệu",
+            {"steps": p.view(s.plan)},
+            "chưa bước nào lấy được số liệu; xem lại mã chỉ số, chiều, kỳ (data_coverage), hoặc"
+            " dùng explore_sql",
         )
-        s.handed_back = True
         return
     dropped = _dropped_members(s)
     if dropped:
         # The question names a member ("nhóm hàng Bikes") that no dataset was filtered or cut on:
         # an answer from those rows would be for everything, not for what was asked.
-        await turn_trace.record_step(
-            "handover",
-            target=f"Chưa lọc theo {', '.join(dropped)}; chuyển sang cách trả lời chuẩn.",
-            detail={"dropped": dropped},
+        await _gate(
+            s,
+            f"Chưa lọc theo {', '.join(dropped)}",
+            {"dropped": dropped},
+            f"câu hỏi nêu {', '.join(dropped)} mà chưa dataset nào lọc hay chia theo đó; tìm giá"
+            " trị bằng search_values rồi truy vấn lại có lọc",
         )
-        s.handed_back = True
         return
     if s.plan.mode == "analyze" and _no_figure(ws):
         # Every figure fetched is empty or zero: "Doanh thu 2009 là 0" would state a figure the
-        # data does not have. The governed path looks for the periods and members that have data.
-        await turn_trace.record_step(
-            "handover",
-            target="Không có số liệu cho kỳ hoặc bộ lọc được hỏi; chuyển sang cách trả lời chuẩn.",
-            detail={"datasets": list(ws.datasets)},
+        # data does not have. Look where the data is first (data_coverage), then answer for it.
+        await _gate(
+            s,
+            "Không có số liệu cho kỳ hoặc bộ lọc được hỏi",
+            {"datasets": list(ws.datasets)},
+            "mọi số liệu lấy được đều rỗng hoặc bằng 0 cho kỳ hoặc bộ lọc được hỏi; gọi"
+            " data_coverage để biết kỳ có dữ liệu, rồi truy vấn kỳ đầy đủ gần nhất (cùng độ dài)"
+            " và kỳ để so sánh",
         )
-        s.handed_back = True
         return
     try:
         s.signals = await signals.read(s.ctx)
@@ -679,12 +757,13 @@ async def compose(s: State) -> None:
     if unnamed:
         # The metrics read do not measure what the question asks ("khách hàng" read as units
         # sold): the governed path asks back or explores SQL, as it does for a partial reading.
-        await turn_trace.record_step(
-            "handover",
-            target=f"Chỉ số đã dùng không đo '{' '.join(unnamed)}'; chuyển sang cách trả lời chuẩn.",
-            detail={"unnamed": unnamed},
+        await _gate(
+            s,
+            f"Chỉ số đã dùng không đo '{' '.join(unnamed)}'",
+            {"unnamed": unnamed},
+            f"không chỉ số nào đã đọc đo '{' '.join(unnamed)}' mà câu hỏi hỏi; tìm chỉ số khác"
+            " (search_catalog) hoặc dùng explore_sql cho phần đó",
         )
-        s.handed_back = True
         return
     known = verify.facts(ws)
     citations = "\n".join(
@@ -694,7 +773,19 @@ async def compose(s: State) -> None:
         f"{_situation(s)}\n\n{_progress(s)}\n\n<facts>\n{_facts_text(known) or '(không có)'}\n</facts>"
         + (f"\n\n<citations>\n{citations}\n</citations>" if citations else "")
     )
-    allowed = verify.allowed_numbers(s.ctx.question, ws, [c["source"] for c in ws.citations])
+    # The period labels where the data is (data_coverage, the planning probe) may be named
+    # untagged as a dataset's period cells may ("dữ liệu có từ 2010-12 đến 2013-12"); its figures
+    # may not.
+    periods = [
+        " ".join(_PERIOD_LABEL.findall(text))
+        for text in [
+            s.coverage,
+            *(st.observation for st in s.plan.steps if st.tool == "data_coverage"),
+        ]
+    ]
+    allowed = verify.allowed_numbers(
+        s.ctx.question, ws, [c["source"] for c in ws.citations] + periods
+    )
     async with turn_trace.stepping("write_answer", title="Soạn câu trả lời", target="") as handle:
         drafts: list[b.BlockDraft] = []
         errors: list[str] = []
@@ -1178,7 +1269,10 @@ def _graph() -> StateGraph[State]:
     )
     g.node("review", _cancellable(review)).route("review", _or_stop(after_review))
     g.node("compose", _cancellable(compose)).route(
-        "compose", _or_stop(lambda s: END if s.handed_back else "persist")
+        "compose",
+        _or_stop(
+            lambda s: END if s.handed_back else "replan" if s.feedback is not None else "persist"
+        ),
     )
     g.node("persist", persist).edge("persist", END)
     return g

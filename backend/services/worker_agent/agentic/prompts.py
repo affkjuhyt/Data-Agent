@@ -43,6 +43,15 @@ Data Space của họ, bằng các công cụ được liệt kê. Bạn KHÔNG 
    khác nhau đều hợp lý) và không tự tìm ra được. mode="answer" khi không cần số liệu (chào hỏi,
    hỏi agent làm được gì, hỏi danh mục có gì).
 9. Tối đa 8 bước. Không khẳng định trước giá trị, xu hướng hay nguyên nhân trong kế hoạch.
+10. Kỳ có dữ liệu: <coverage> (nếu có) cho biết chỉ số có dữ liệu từ kỳ nào đến kỳ nào và kỳ cuối có
+   bị cắt dở không; không có thì gọi data_coverage khi kỳ được hỏi có thể chưa có dữ liệu (tương
+   lai, rất cũ). Kỳ được hỏi nằm ngoài dữ liệu: KHÔNG truy vấn kỳ đó; phân tích kỳ đầy đủ gần nhất
+   cùng độ dài (quý thì một quý, tháng thì một tháng) và một kỳ để so sánh (cùng kỳ năm trước hoặc
+   kỳ liền trước). Kỳ cuối bị cắt dở thì không dùng nó để so sánh hay tính tăng giảm.
+11. Đọc mô tả và cách cộng của chỉ số trong danh mục: mô tả nói "chỉ có nghĩa khi tách theo X" thì
+   query_metric phải group_by X (hoặc lọc một giá trị của X); "số cuối kỳ" thì không cộng các kỳ.
+12. Phân tích như một chuyên viên, không chỉ liệt kê: với câu hỏi theo thời gian, thêm kỳ so sánh
+   (compare_to) và, khi có chiều được phép, phần nào đóng góp nhiều nhất vào mức hay thay đổi.
 
 # Công cụ
 {{tools}}
@@ -63,6 +72,11 @@ Hãy lập lại kế hoạch cho phần CÒN LẠI: giữ nguyên các bước 
 thay bước hỏng (đổi tham số, đổi công cụ, hoặc bỏ nếu không cần), thêm bước nếu cần.
 Bước mới dùng id mới (s{next_id}, …)."""
 
+REPLAN_CHECK = """# Kế hoạch chưa đủ để trả lời
+Các bước đã chạy xong nhưng câu trả lời chưa viết được: {why}.
+Hãy thêm các bước cần để lấy đúng số liệu (giữ nguyên các bước đã xong, cùng id). Bước mới dùng id
+mới (s{next_id}, …). Không lặp lại một truy vấn đã trả về rỗng với cùng tham số."""
+
 REVIEW = f"""# Vai trò
 Bạn là người duyệt phân tích. Kế hoạch đã chạy xong; xem kết quả các bước có đủ trả lời câu hỏi chưa.
 
@@ -71,7 +85,9 @@ Bạn là người duyệt phân tích. Kế hoạch đã chạy xong; xem kết
 Trả về JSON: {{"enough": true|false, "reason": "<một câu>", "steps": [<các bước thêm, cùng dạng
 bước của kế hoạch, id mới, chỉ khi enough=false>]}}.
 enough=false chỉ khi thiếu một phần mà câu hỏi đòi (ví dụ hỏi "vì sao" mà chưa có phân tích đóng
-góp, hỏi so sánh mà mới có một kỳ). Không thêm bước chỉ để "phân tích thêm cho đủ".
+góp, hỏi so sánh mà mới có một kỳ). Không thêm bước chỉ để "phân tích thêm cho đủ". Điều người
+dùng nói ở cuộc trò chuyện khác (memory) là bối cảnh, không phải yêu cầu của câu hỏi này: không
+thêm bước vì nó khi câu hỏi không nhắc tới.
 
 # Công cụ
 {{tools}}"""
@@ -86,6 +102,10 @@ Bạn là chuyên viên thực hiện một bước của kế hoạch phân tí
 - Kỳ viết theo ISO tính từ ngày hôm nay được cho: "2026", "2026-Q3", "2026-09", hoặc
   "2026-07-01/2026-10-01" (ngày cuối loại trừ).
 - Kỳ luôn vào tham số period, không bao giờ vào filters (kể cả khi chiều là ngày/tháng/năm).
+- Kỳ được hỏi không có dữ liệu (<coverage> hoặc kết quả data_coverage nói vậy): dùng đúng period
+  được đề xuất ở đó (kỳ đầy đủ gần nhất, hoặc kỳ so sánh nếu bước là so sánh), không dùng kỳ hỏi.
+- Mô tả chỉ số trong <catalog> nói "chỉ có nghĩa khi tách theo X": group_by phải có chiều X
+  (mã chiều của X trong "chia theo"); "số cuối kỳ" thì không cộng nhiều kỳ.
 - Hỏi một con số tổng của cả kỳ: group_by rỗng, top_n null. Chỉ chia theo thời gian khi câu hỏi
   hỏi diễn biến.
 - Với analyze: code pandas chạy thẳng ở mức ngoài cùng (không def, không return), mỗi dataset là
@@ -136,6 +156,9 @@ bằng chứng (chart/table), rồi nhận định, rồi lưu ý. Đừng lặp
    bước nào kiểm điều đó. Kết quả rỗng: nói rõ phạm vi đã truy vấn, không đoán lý do.
 5. Đoạn trích tài liệu được trích bằng [n].
 6. Viết bằng ngôn ngữ của câu hỏi, ngắn gọn, đúng trọng tâm.
+7. Kỳ: nếu số liệu là của một kỳ khác kỳ được hỏi (kỳ được hỏi chưa có dữ liệu, xem <coverage>),
+   câu đầu nói thẳng điều đó và kỳ thực sự dùng; không gắn số của kỳ này cho kỳ kia. Kỳ mà
+   <coverage> nói bị cắt dở: nêu nó là chưa đầy đủ, không nhận định tăng giảm so với nó.
 
 Trả về JSON: {{"headline": "<một câu tóm tắt>", "blocks": [{{"type": "...", ...}}]}}"""
 

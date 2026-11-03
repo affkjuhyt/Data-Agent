@@ -76,7 +76,7 @@ from services.worker_agent.query.scope import (
     can_ask_data_space,
 )
 from services.worker_agent.query.secrets import SecretReader, StaticReader, reader_from_env
-from services.worker_agent.semantic import analysis, compare
+from services.worker_agent.semantic import analysis, compare, coverage
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.sqlgen.answer import answer_by_sql, answer_verified_first
@@ -934,15 +934,8 @@ FIND_VALUE_DIMENSIONS = 6
 
 
 def _probe_time_code(layer: SpaceLayer, version: c.MetricVersion) -> str | None:
-    """The time dimension a probe cuts along: the metric's own, else one it allows, else any."""
-    times = [d for d in layer.vocabulary.dimensions if d.is_time]
-    for d in times:
-        if version.time_dimension_id is not None and d.dimension_id == version.time_dimension_id:
-            return d.code
-    for d in times:
-        if d.dimension_id in version.allowed_dimension_ids:
-            return d.code
-    return times[0].code if times else None
+    """The time dimension a probe cuts along (semantic/coverage.py, shared with the agent)."""
+    return coverage.time_code(layer, version)
 
 
 async def _explore_period(question_id: uuid.UUID, p: Prepared) -> tuple[Prepared, Any] | None:

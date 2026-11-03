@@ -46,6 +46,9 @@ class ToolContext:
     # The period the question names, read by rule (find_period): a year or a month in the
     # question is a period, never a member to look up.
     period: FoundPeriod | None = None
+    # AGC-10: a metric whose data never reaches the asked period, mapped to the latest whole period
+    # of the same length (semantic/coverage.py); query_metric reads that one instead and says so.
+    period_moves: dict[str, tuple[Any, Any]] = field(default_factory=dict)
     # Model calls made inside tools (sqlgen), for the receipt.
     models: list[dict[str, Any]] = field(default_factory=list)
     step_id: str = ""

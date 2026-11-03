@@ -20,7 +20,7 @@ from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResu
 from services.worker_agent.failures import is_transient
 from services.worker_agent.llm import ModelUnavailable
 from services.worker_agent.query.executor import QueryOutcome, run_query
-from services.worker_agent.semantic import analysis, compare
+from services.worker_agent.semantic import analysis, compare, coverage
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.sqlgen.answer import _keep_one_source
 from services.worker_agent.sqlgen.generate import schema_text
@@ -132,6 +132,7 @@ class QueryMetric(Tool):
             )
         version = ctx.layer.versions[entry.metric_id]
         period = None
+        moved: tuple[c.Period, c.Period] | None = None
         if args.period:
             found = iso_answer(args.period)
             if found is None:
@@ -139,6 +140,12 @@ class QueryMetric(Tool):
                     False, f"kỳ {args.period} không đúng dạng ISO", failure="arguments"
                 )
             period = c.Period(found.start, found.end)
+            # The planner was told the asked period has no data and still asked for it: read the
+            # latest whole period of the same length instead, and say so (AGC-10). The model
+            # proposes the period; where the data is decides.
+            move = ctx.period_moves.get(args.metric)
+            if move is not None and period.start < move[0].end and move[0].start < period.end:
+                moved, period = (period, move[1]), move[1]
         allowed = {
             d.code
             for d in ctx.layer.vocabulary.dimensions
@@ -228,8 +235,15 @@ class QueryMetric(Tool):
             for col in compiled.columns
         ]
         cut_names = ", ".join(names.get(g, g) for g in args.group_by)
+        title = args.title or (entry.name + (f" theo {cut_names}" if cut_names else ""))
+        if moved is not None:
+            title = f"{title} ({coverage.iso(moved[1])})"
+            detail["period_moved"] = {
+                "asked": coverage.iso(moved[0]),
+                "read": coverage.iso(moved[1]),
+            }
         ds = ctx.ws.add(
-            title=args.title or (entry.name + (f" theo {cut_names}" if cut_names else "")),
+            title=title,
             columns=columns,
             rows=[list(r) for r in outcome.rows],
             trust="certified" if compiled.certified else "exploratory",
@@ -248,11 +262,20 @@ class QueryMetric(Tool):
             },
         )
         detail["dataset"] = ds.id
+        said = (
+            f"Kỳ {coverage.iso(moved[0])} không có dữ liệu; đã đọc kỳ đầy đủ gần nhất"
+            f" {coverage.iso(moved[1])} thay thế.\n"
+            if moved is not None
+            else ""
+        )
         if not outcome.rows:
             return ToolResult(
-                True, f"{ds.id}: 0 dòng (không có dữ liệu cho kỳ/bộ lọc này)", [ds.id], detail
+                True,
+                f"{said}{ds.id}: 0 dòng (không có dữ liệu cho kỳ/bộ lọc này)",
+                [ds.id],
+                detail,
             )
-        return ToolResult(True, ds.preview(), [ds.id], detail)
+        return ToolResult(True, said + ds.preview(), [ds.id], detail)
 
 
 class SqlAudit(BaseModel):
