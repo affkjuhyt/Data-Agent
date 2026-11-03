@@ -51,11 +51,13 @@ class Forecast:
 @dataclass(frozen=True)
 class Candidate:
     algorithm: str
-    mase: float
-    smape: float  # percent, 0..200
-    coverage80: float  # share of backtest actuals inside the 80% interval, 0..1
-    coverage95: float
-    in_sample_mase: float
+    # None when a figure is not finite (undefined MASE, NaN): the result must survive
+    # json.dumps(allow_nan=False). A None MASE never counts as below 1.
+    mase: float | None
+    smape: float | None  # percent, 0..200
+    coverage80: float | None  # share of backtest actuals inside the 80% interval, 0..1
+    coverage95: float | None
+    in_sample_mase: float | None
 
 
 @dataclass(frozen=True)
@@ -65,7 +67,7 @@ class FitResult:
     candidates: list[Candidate]
     cutoffs: list[dt.date]
     predictions: list[Forecast]
-    interval_method: str  # "model" | "conformal"
+    interval_method: str | None  # "model" | "conformal"; None when nothing was chosen
     params: dict[str, Any]
 
 
@@ -104,6 +106,11 @@ def _next_periods(last: dt.date, frequency: str, count: int) -> list[dt.date]:
 
 def _seasonal_naive_scale(values: np.ndarray, m: int) -> float:
     return float(np.mean(np.abs(values[m:] - values[:-m])))
+
+
+def _finite(x: float) -> float | None:
+    f = float(x)
+    return f if math.isfinite(f) else None
 
 
 def _mase(errors: np.ndarray, scale: float, tolerance: float) -> float:
@@ -191,8 +198,10 @@ def fit(
     n_windows = min(MAX_CUTOFFS, n - horizon - MIN_TRAIN)
     n_windows = max(n_windows, 0)
     if n_windows < min_cutoffs:
+        largest = n - MIN_TRAIN - min_cutoffs
         raise ValueError(
-            f"Chuỗi {n} kỳ quá ngắn để kiểm định {min_cutoffs} mốc với tầm dự báo {horizon} kỳ."
+            f"Chuỗi {n} kỳ quá ngắn để kiểm định {min_cutoffs} mốc với tầm dự báo {horizon} kỳ; "
+            f"với chuỗi này, tầm dự báo tối đa là {max(largest, 0)} kỳ."
         )
 
     df = pd.DataFrame(
@@ -230,7 +239,6 @@ def fit(
         return (a, b) if np.isfinite(a).all() and np.isfinite(b).all() else None
 
     candidates: list[Candidate] = []
-    conformal_used: set[str] = set()
     for name in ALGORITHMS:
         yhat = cv[name].to_numpy(dtype=float)
         errors = y - yhat
@@ -238,7 +246,6 @@ def fit(
         for level in LEVELS:
             bounds = interval(cv, name, level)
             if bounds is None:
-                conformal_used.add(name)
                 bounds = _conformal(errors, yhat, level)
             coverage[level] = float(np.mean((y >= bounds[0]) & (y <= bounds[1])))
         fitted_y = in_sample["y"].to_numpy(dtype=float)
@@ -247,18 +254,20 @@ def fit(
         candidates.append(
             Candidate(
                 algorithm=name,
-                mase=_mase(errors, scale, tolerance),
-                smape=_smape(y, yhat),
-                coverage80=coverage[80],
-                coverage95=coverage[95],
-                in_sample_mase=_mase(fitted_y[ok] - fitted_hat[ok], scale, tolerance)
-                if ok.any()
-                else math.inf,
+                mase=_finite(_mase(errors, scale, tolerance)),
+                smape=_finite(_smape(y, yhat)),
+                coverage80=_finite(coverage[80]),
+                coverage95=_finite(coverage[95]),
+                in_sample_mase=_finite(
+                    _mase(fitted_y[ok] - fitted_hat[ok], scale, tolerance) if ok.any() else math.inf
+                ),
             )
         )
 
     eligible = [
-        c for c in candidates if scale > tolerance and c.algorithm not in BASELINES and c.mase < 1
+        c
+        for c in candidates
+        if scale > tolerance and c.algorithm not in BASELINES and c.mase is not None and c.mase < 1
     ]
     if not eligible:
         return FitResult(
@@ -270,7 +279,7 @@ def fit(
             candidates=candidates,
             cutoffs=cutoffs,
             predictions=[],
-            interval_method="model",
+            interval_method=None,
             params={},
         )
     best = min(eligible, key=lambda c: (c.mase, ALGORITHMS.index(c.algorithm)))

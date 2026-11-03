@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
+import json
 import math
 import random
 
@@ -96,3 +98,22 @@ def test_the_result_is_deterministic():
     series = _seasonal_series(36)
 
     assert fit(series, frequency="month", horizon=3) == fit(series, frequency="month", horizon=3)
+
+
+def test_every_result_survives_strict_json():
+    pattern = [10, 12, 15, 20, 18, 14, 11, 9, 13, 17, 19, 16]
+    perfect = [Point(p, float(pattern[i % 12])) for i, p in enumerate(_months(48))]
+    for series in (_seasonal_series(48), perfect):
+        result = fit(series, frequency="month", horizon=6)
+        json.dumps(dataclasses.asdict(result), allow_nan=False, default=str)
+    assert result.interval_method is None
+    assert all(
+        c.mase is None or c.mase == 0
+        for c in result.candidates
+        if c.algorithm not in {"seasonal_naive"}
+    )
+
+
+def test_a_horizon_too_long_names_the_longest_allowed():
+    with pytest.raises(ValueError, match="tối đa là 6 kỳ"):
+        fit(_seasonal_series(24), frequency="month", horizon=9)
