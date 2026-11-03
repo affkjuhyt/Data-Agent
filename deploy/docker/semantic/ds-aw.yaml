@@ -423,7 +423,6 @@ synonyms:
   - {phrase: giá trị đơn trung bình, metric: GIA_TRI_DON_TB_INTERNET}
   - {phrase: average order value, metric: GIA_TRI_DON_TB_INTERNET}
   - {phrase: aov, metric: GIA_TRI_DON_TB_INTERNET}
-  - {phrase: số lượng bán, metric: SO_LUONG_BAN_INTERNET}
   - {phrase: units sold, metric: SO_LUONG_BAN_INTERNET}
   - {phrase: hàng tồn, metric: TON_KHO}
   - {phrase: inventory, metric: TON_KHO}
