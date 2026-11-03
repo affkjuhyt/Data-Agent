@@ -41,3 +41,30 @@ def test_a_cursor_literal_is_a_number_or_a_moment_and_nothing_else() -> None:
     for hostile in ("x' OR '1'='1", "2026-09-30\\' OR 1=1 -- ", "abc", "1; DROP TABLE t"):
         with pytest.raises(ValueError, match="number, a date or a timestamp"):
             worker._literal(hostile)
+
+
+def test_a_failure_says_whether_the_person_must_act() -> None:
+    import asyncpg
+
+    from libs import source_drivers
+    from services.worker_ingest import worker
+    from services.worker_ingest.secrets import SecretUnavailable
+
+    assert worker.failure_kind(ValueError("source_object must be a table identifier")) == "config"
+    assert worker.failure_kind(SecretUnavailable("no secret")) == "config"
+    assert worker.failure_kind(asyncpg.UndefinedTableError("no table")) == "config"
+    assert worker.failure_kind(asyncpg.InvalidPasswordError("bad login")) == "config"
+    assert worker.failure_kind(asyncpg.QueryCanceledError("timeout")) == "transient"
+    assert worker.failure_kind(ConnectionRefusedError()) == "transient"
+    assert worker.failure_kind(TimeoutError()) == "transient"
+    assert (
+        worker.failure_kind(source_drivers.DriverError("mysql query failed (OperationalError)"))
+        == "transient"
+    )
+    assert (
+        worker.failure_kind(
+            source_drivers.DriverError("mysql TLS verification needs conn_options.ssl_ca")
+        )
+        == "config"
+    )
+    assert worker.failure_kind(asyncpg.DataError("bad value")) == "system"

@@ -22842,6 +22842,17 @@
       ],
       "title": "Error"
      },
+     "failure_kind": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failure Kind"
+     },
      "finished_at": {
       "anyOf": [
        {

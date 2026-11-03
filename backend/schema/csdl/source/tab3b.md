@@ -2981,8 +2981,9 @@ Một lần chạy job nạp: số dòng đọc, ghi, vào DLQ, kết quả ch�
 | started\_at | timestamptz, bắt buộc, mặc định now() |  |
 | finished\_at | timestamptz |  |
 | error | text |  |
+| failure\_kind | text | Loại lỗi khi failed (RES-19): config (người dùng phải sửa: thông tin đăng nhập, quyền, bảng hay cột không có), transient (thử lại được: hết giờ, mất kết nối, nguồn bận), system (lỗi của hệ thống) |
 
-Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (status IN ('running','succeeded','failed','schema\_drift','cancelled')); FOREIGN KEY (job\_id) REFERENCES ingest.ingestion\_job(id). Chỉ mục: (job\_id, started\_at DESC).
+Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (status IN ('running','succeeded','failed','schema\_drift','cancelled')); CHECK (failure\_kind IN ('config','transient','system')); FOREIGN KEY (job\_id) REFERENCES ingest.ingestion\_job(id). Chỉ mục: (job\_id, started\_at DESC).
 
 #### ingest.dlq\_record
 

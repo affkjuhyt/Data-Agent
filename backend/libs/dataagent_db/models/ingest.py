@@ -126,6 +126,11 @@ class JobRun(Base):
         DateTime(timezone=True), nullable=True
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_kind: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Loại lỗi khi failed (RES-19): config (người dùng phải sửa: thông tin đăng nhập, quyền, bảng hay cột không có), transient (thử lại được: hết giờ, mất kết nối, nguồn bận), system (lỗi của hệ thống)",
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )

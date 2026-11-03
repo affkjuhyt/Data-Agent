@@ -350,12 +350,52 @@ async def _materialize(
     )
 
 
-async def _fail(event: Event, run_id: uuid.UUID, message: str) -> None:
+# What the person must fix (credentials, rights, a table or column that is not there) against what
+# may pass on its own (a timeout, a dropped connection, a busy source), after Airbyte's failure
+# types (RES-19); everything else is the platform's own fault.
+_CONFIG_PG = (
+    asyncpg.InvalidPasswordError,
+    asyncpg.InvalidAuthorizationSpecificationError,
+    asyncpg.InsufficientPrivilegeError,
+    asyncpg.UndefinedTableError,
+    asyncpg.UndefinedColumnError,
+    asyncpg.InvalidCatalogNameError,
+    asyncpg.InvalidSchemaNameError,
+)
+_TRANSIENT_PG = (
+    asyncpg.QueryCanceledError,
+    asyncpg.ConnectionDoesNotExistError,
+    asyncpg.CannotConnectNowError,
+    asyncpg.TooManyConnectionsError,
+    asyncpg.AdminShutdownError,
+)
+
+
+def failure_kind(exc: BaseException) -> str:
+    """config, transient or system: whether a person must act, a later run may pass, or it is ours."""
+    if isinstance(exc, (SecretUnavailable, ValueError, *_CONFIG_PG)):
+        return "config"
+    if isinstance(exc, (*_TRANSIENT_PG, TimeoutError, ConnectionError, OSError)):
+        return "transient"
+    if isinstance(exc, source_drivers.DriverError):
+        text = str(exc)
+        return (
+            "config" if "TLS" in text or "sslmode" in text or "certificate" in text else "transient"
+        )
+    return "system"
+
+
+async def _fail(event: Event, run_id: uuid.UUID, message: str, kind: str) -> None:
     async with scoped_session(ROLE, event.org_id, event.payload.get("principal_id")) as session:
         await session.execute(
             update(ingest.JobRun)
             .where(ingest.JobRun.id == run_id)
-            .values(status="failed", error=message, finished_at=datetime.datetime.now(datetime.UTC))
+            .values(
+                status="failed",
+                error=message,
+                failure_kind=kind,
+                finished_at=datetime.datetime.now(datetime.UTC),
+            )
         )
         await session.execute(
             update(ingest.IngestionJob)
@@ -515,8 +555,12 @@ async def handle(event: Event) -> None:
         ValueError,
         asyncpg.PostgresError,
         source_drivers.DriverError,
+        # A source that cannot be reached at all raises these from the connect, not a driver
+        # error: the run was left `running` with no error before.
+        OSError,
+        TimeoutError,
     ) as exc:
-        await _fail(event, run_id, str(exc))
+        await _fail(event, run_id, str(exc) or type(exc).__name__, failure_kind(exc))
 
 
 HANDLERS: dict[str, Handler] = {CREATED: handle, BACKFILL: handle}

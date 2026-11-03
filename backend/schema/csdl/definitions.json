@@ -25250,6 +25250,17 @@
      "fk": null,
      "logic_ref": null,
      "pii": false
+    },
+    {
+     "name": "failure_kind",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Loại lỗi khi failed (RES-19): config (người dùng phải sửa: thông tin đăng nhập, quyền, bảng hay cột không có), transient (thử lại được: hết giờ, mất kết nối, nguồn bận), system (lỗi của hệ thống)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
     }
    ],
    "common_columns": [
@@ -25261,6 +25272,10 @@
     {
      "kind": "check",
      "sql": "CHECK (status IN ('running','succeeded','failed','schema_drift','cancelled'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (failure_kind IN ('config','transient','system'))"
     },
     {
      "kind": "fk",

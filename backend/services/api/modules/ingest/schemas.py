@@ -52,6 +52,8 @@ class JobRunView(BaseModel):
     started_at: datetime.datetime
     finished_at: datetime.datetime | None
     error: str | None
+    # config, transient or system on a failed run (RES-19): whether the person must fix something.
+    failure_kind: str | None = None
     created_at: datetime.datetime
 
 

@@ -5327,14 +5327,17 @@ CREATE TABLE ingest.job_run (
   started_at timestamptz NOT NULL DEFAULT now(),
   finished_at timestamptz,
   error text,
+  failure_kind text,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT job_run_pkey PRIMARY KEY (id),
-  CHECK (status IN ('running','succeeded','failed','schema_drift','cancelled'))
+  CHECK (status IN ('running','succeeded','failed','schema_drift','cancelled')),
+  CHECK (failure_kind IN ('config','transient','system'))
 );
 COMMENT ON TABLE ingest.job_run IS 'Một lần chạy job nạp: số dòng đọc, ghi, vào DLQ, kết quả chất lượng. Use case: UC-04-06, UC-04-07, UC-04-09, UC-06-07.';
 COMMENT ON COLUMN ingest.job_run.job_id IS 'FK ingestion_job';
 COMMENT ON COLUMN ingest.job_run.lag_seconds IS 'Độ trễ so với nguồn';
 COMMENT ON COLUMN ingest.job_run.status IS 'running, succeeded, failed, schema_drift, cancelled';
+COMMENT ON COLUMN ingest.job_run.failure_kind IS 'Loại lỗi khi failed (RES-19): config (người dùng phải sửa: thông tin đăng nhập, quyền, bảng hay cột không có), transient (thử lại được: hết giờ, mất kết nối, nguồn bận), system (lỗi của hệ thống)';
 
 CREATE TABLE ingest.dlq_record (
   id uuid NOT NULL,

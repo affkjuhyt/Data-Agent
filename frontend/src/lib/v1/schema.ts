@@ -14787,6 +14787,8 @@ export interface components {
             cursor_to: string | null;
             /** Error */
             error: string | null;
+            /** Failure Kind */
+            failure_kind?: string | null;
             /** Finished At */
             finished_at: string | null;
             /**
