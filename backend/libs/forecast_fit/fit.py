@@ -183,6 +183,18 @@ def _conformal(errors: np.ndarray, point: np.ndarray, level: int) -> tuple[np.nd
     return point - q, point + q
 
 
+def _nothing(reason: str, candidates: list[Candidate], cutoffs: list[dt.date]) -> FitResult:
+    return FitResult(
+        chosen=None,
+        reason=reason,
+        candidates=candidates,
+        cutoffs=cutoffs,
+        predictions=[],
+        interval_method=None,
+        params={},
+    )
+
+
 def fit(
     series: list[Point],
     *,
@@ -270,31 +282,36 @@ def fit(
         if scale > tolerance and c.algorithm not in BASELINES and c.mase is not None and c.mase < 1
     ]
     if not eligible:
-        return FitResult(
-            chosen=None,
-            reason=(
-                "Không mô hình nào tốt hơn cách dự báo đơn giản (lặp lại cùng kỳ năm trước) "
-                "khi kiểm định trên dữ liệu quá khứ, nên không tạo dự báo."
-            ),
-            candidates=candidates,
-            cutoffs=cutoffs,
-            predictions=[],
-            interval_method=None,
-            params={},
+        return _nothing(
+            "Không mô hình nào tốt hơn cách dự báo đơn giản (lặp lại cùng kỳ năm trước) "
+            "khi kiểm định trên dữ liệu quá khứ, nên không tạo dự báo.",
+            candidates,
+            cutoffs,
         )
-    best = min(eligible, key=lambda c: (c.mase, ALGORITHMS.index(c.algorithm)))
 
     future = sf.predict(h=horizon, level=list(LEVELS))
-    point = future[best.algorithm].to_numpy(dtype=float)
-    bounds_by_level: dict[int, tuple[np.ndarray, np.ndarray]] = {}
-    method = "model"
-    for level in LEVELS:
-        found = interval(future, best.algorithm, level)
-        if found is None:
-            method = "conformal"
-            cv_err = y - cv[best.algorithm].to_numpy(dtype=float)
-            found = _conformal(cv_err, point, level)
-        bounds_by_level[level] = found
+    # Best backtest first; a candidate whose forecast holds a non-finite value is skipped.
+    for best in sorted(eligible, key=lambda c: (c.mase, ALGORITHMS.index(c.algorithm))):
+        point = future[best.algorithm].to_numpy(dtype=float)
+        bounds_by_level: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        method = "model"
+        for level in LEVELS:
+            found = interval(future, best.algorithm, level)
+            if found is None:
+                method = "conformal"
+                cv_err = y - cv[best.algorithm].to_numpy(dtype=float)
+                found = _conformal(cv_err, point, level)
+            bounds_by_level[level] = found
+        if np.isfinite(point).all() and all(
+            np.isfinite(b).all() for lh in bounds_by_level.values() for b in lh
+        ):
+            break
+    else:
+        return _nothing(
+            "Mô hình tốt nhất cho ra giá trị dự báo không hợp lệ, nên không tạo dự báo.",
+            candidates,
+            cutoffs,
+        )
 
     periods = _next_periods(series[-1].period, frequency, horizon)
     predictions = []

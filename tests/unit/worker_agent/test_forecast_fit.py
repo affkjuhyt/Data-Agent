@@ -117,3 +117,42 @@ def test_every_result_survives_strict_json():
 def test_a_horizon_too_long_names_the_longest_allowed():
     with pytest.raises(ValueError, match="tối đa là 6 kỳ"):
         fit(_seasonal_series(24), frequency="month", horizon=9)
+
+
+def _predict_nan_for(monkeypatch, algorithms: set[str]):
+    from statsforecast import StatsForecast
+
+    real = StatsForecast.predict
+
+    def predict(self, *args, **kwargs):
+        out = real(self, *args, **kwargs)
+        for column in out.columns:
+            if column.split("-")[0] in algorithms:
+                out[column] = float("nan")
+        return out
+
+    monkeypatch.setattr(StatsForecast, "predict", predict)
+
+
+def test_a_candidate_forecasting_nan_is_skipped_for_the_next_best(monkeypatch):
+    series = _seasonal_series(48)
+    first = fit(series, frequency="month", horizon=6).chosen
+    _predict_nan_for(monkeypatch, {first})
+
+    result = fit(series, frequency="month", horizon=6)
+
+    assert result.chosen != first
+    if result.chosen is not None:
+        assert all(math.isfinite(f.point) for f in result.predictions)
+
+
+def test_when_every_forecast_is_invalid_nothing_is_chosen(monkeypatch):
+    _predict_nan_for(monkeypatch, {"ets", "theta", "arima"})
+
+    result = fit(_seasonal_series(48), frequency="month", horizon=6)
+
+    assert result.chosen is None
+    assert (
+        result.reason
+        == "Mô hình tốt nhất cho ra giá trị dự báo không hợp lệ, nên không tạo dự báo."
+    )
