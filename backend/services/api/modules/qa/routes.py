@@ -463,8 +463,13 @@ async def edit_question_plan(
     question_id: IdPath,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
+    request: Request,
     response: Response,
 ) -> PlanAccepted:
+    # An edited plan is answered again, at the cost of a question: it counts against the same quota.
+    await within_quota(
+        request, "questions", f"{principal.org_id}:{principal.user_id}", questions_per_minute()
+    )
     async with transaction(ROLE, principal) as session:
         question = await session.scalar(
             scope.questions_in(principal, data_space)

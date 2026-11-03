@@ -30,8 +30,10 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
   platform-workers.
 - **Questions that address the model.** A question that tries to replace the model's
   instructions ("ignore previous instructions", "system prompt", `libs/pii/injection.py`) is
-  refused with 422 before it is stored; document passages are flagged with the same patterns
-  plus "dump everything" and never reach the model unreviewed. `POST /v1/questions` has its own
+  refused with 422 before it is stored or queued (questions, MCP, private questions and their
+  attached items; text is NFKC-folded and stripped of format characters first); document passages are flagged with the same patterns
+  plus "dump everything" and never reach the model unreviewed. Asking, editing a plan and a
+  private question share their own
   quota (`API_QUESTIONS_PER_MINUTE`, 10 by default) under the 120-a-minute per-person limit.
 - **Multi-tenant isolation via Postgres RLS.** Tenant tables carry `tenant_id` with
   row-level-security policies; child tables without their own `tenant_id` are covered by

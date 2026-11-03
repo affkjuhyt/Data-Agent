@@ -46,6 +46,8 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import Problem
+from services.api.kernel.ratelimit import questions_per_minute, within_quota
+from services.api.kernel.screening import refuse_instructions
 from services.api.kernel.sse import Event, event_stream
 from services.api.kernel.sse import last_event_id as get_last_event_id
 from services.api.modules.exec.ports import (
@@ -946,6 +948,12 @@ async def ask_private_question(
     response: Response,
 ) -> Accepted:
     context = [item.text for item in body.context_items]
+    # The local model reads the question and every attached item: both are screened, and a
+    # private question counts against the same quota as any other (AGC-03).
+    refuse_instructions("text", body.text, *context)
+    await within_quota(
+        request, "questions", f"{principal.org_id}:{principal.user_id}", questions_per_minute()
+    )
     if sum(math.ceil(len(c) / CHARS_PER_TOKEN) for c in context) > CONTEXT_TOKENS:
         raise Problem(
             422, "validation_failed", "context_items exceed 4,000 tokens; attach fewer items."

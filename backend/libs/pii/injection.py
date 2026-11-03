@@ -16,6 +16,7 @@ Two strengths, because the two readers can afford different mistakes:
 from __future__ import annotations
 
 import re
+import unicodedata
 
 _OVERRIDE = [
     re.compile(pattern, re.IGNORECASE)
@@ -32,9 +33,20 @@ _DUMP = re.compile(
 )
 
 
+def _folded(text: str) -> str:
+    """The text as the patterns read it: compatibility forms folded (fullwidth letters
+    read as ASCII), format characters dropped (a zero-width space inside "bỏ\u200bqua" hides nothing),
+    every run of whitespace one space. Still a heuristic: a model reading the text as data, and the
+    permission checks on what it reads, are the defence; this only stops the plain attempts."""
+    text = unicodedata.normalize("NFKC", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    return " ".join(text.split())
+
+
 def overrides_instructions(text: str) -> bool:
-    return any(pattern.search(text) for pattern in _OVERRIDE)
+    folded = _folded(text)
+    return any(pattern.search(folded) for pattern in _OVERRIDE)
 
 
 def injection_suspected(text: str) -> bool:
-    return overrides_instructions(text) or bool(_DUMP.search(text))
+    return overrides_instructions(text) or bool(_DUMP.search(_folded(text)))

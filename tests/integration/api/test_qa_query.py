@@ -760,3 +760,18 @@ async def test_a_person_asks_at_most_their_question_quota_a_minute(
         assert int(over.headers["Retry-After"]) > 0
         # The quota is the asker's: another person still asks.
         await ask(api, world, who="reviewer")
+
+
+async def test_an_edited_plan_counts_against_the_question_quota(
+    world: World, seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("API_QUESTIONS_PER_MINUTE", "1")
+    async with api_for(world, counter_store=_Counters()) as api:
+        created = await ask(api, world)
+        plan_for(seed, world, created["id"], status="answered")
+        edited = await api.patch(
+            f"/v1/questions/{created['id']}/plan",
+            headers=as_(world, "asker"),
+            json={"chips": [{"kind": "metric", "value": "NPL_RATIO", "origin": "default"}]},
+        )
+        assert edited.status_code == 429 and edited.json()["code"] == "rate_limited"
