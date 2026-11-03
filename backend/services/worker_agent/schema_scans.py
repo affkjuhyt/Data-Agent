@@ -11,6 +11,8 @@ from __future__ import annotations
 import datetime
 import decimal
 import json
+import logging
+import os
 import re
 import uuid
 from typing import Any, cast
@@ -45,6 +47,8 @@ _PROFILED_AS_TEXT = frozenset({"boolean", "xml", "json"})
 _BINARY = frozenset({"bytea"})
 
 EVENT_TYPE = "scan_run.created"
+logger = logging.getLogger(__name__)
+
 ROLE = "svc_catalog"
 RELATIONSHIP_ROLE = "svc_context"
 
@@ -135,8 +139,6 @@ _PERSON_PARTS = frozenset(
         "ho",
     }
 )
-# Share of a column's sampled values that, holding personal data, makes the column personal.
-PERSONAL_SHARE = 0.5
 
 
 def _quote_identifier(schema: str, table: str) -> str:
@@ -176,10 +178,11 @@ def _redact_personal(
             *(category if isinstance(category, list) else []),
         ]
         values = [v.get("value") if isinstance(v, dict) else v for v in listed]
-        if pii.personal_share(values, packs) >= PERSONAL_SHARE:
+        decision = pii.column_decision(values, packs)
+        if decision.label is not None:
             # The label is a suggestion: pii_confirmed stays false until a steward says how it
-            # is masked (UC-04-04).
-            column["pii_label"] = pii.column_label(values, packs)
+            # is masked (UC-04-04). How sure a type is decides the share it needs (RES-24).
+            column["pii_label"] = decision.label
             column["top_values"] = [
                 {**v, "value": "***"} if isinstance(v, dict) else "***"
                 for v in (top if isinstance(top, list) else [])
@@ -534,6 +537,93 @@ async def _scan_source(source: catalog.Source, tables: list[str] | None) -> list
     return list(grouped.values())
 
 
+# RES-23: one aggregate scan per table for every column's counts and bounds (in groups, so a wide
+# table stays under PostgreSQL's limit on target columns), on a block sample once the catalogue
+# estimates the table past PROFILE_SAMPLE_ABOVE rows; the most frequent values of a column read
+# from the same sample, except a category column's, read whole so the value index misses none.
+PROFILE_SAMPLE_ABOVE = int(os.environ.get("PROFILE_SAMPLE_ABOVE", "200000"))
+PROFILE_SAMPLE_ROWS = int(os.environ.get("PROFILE_SAMPLE_ROWS", "100000"))
+COLUMNS_PER_SCAN = 100
+
+
+async def _profile_pg_table(
+    conn: Any, table: dict[str, object]
+) -> dict[tuple[str, str, str], dict[str, object]]:
+    schema_name, table_name = str(table["schema_name"]), str(table["table_name"])
+    table_sql = _quote_identifier(schema_name, table_name)
+    estimate = int(cast(Any, table.get("row_estimate")) or 0)
+    sampled = estimate > PROFILE_SAMPLE_ABOVE
+    source_sql = (
+        f"{table_sql} TABLESAMPLE SYSTEM ({max(0.01, PROFILE_SAMPLE_ROWS / estimate * 100):.4f})"
+        if sampled
+        else table_sql
+    )
+    columns = list(cast(list[dict[str, Any]], table["columns"]))
+    exprs: list[tuple[str, str, bool]] = []  # name, SQL, binary
+    for column in columns:
+        name = str(column["name"])
+        data_type = str(column.get("data_type", "")).lower()
+        column_sql = f'"{name.replace(chr(34), chr(34) * 2)}"'
+        if data_type in _PROFILED_AS_TEXT:
+            column_sql = f"{column_sql}::text"
+        exprs.append((name, column_sql, data_type in _BINARY))
+    stats: dict[str, Any] = {}
+    sample_rows = 0
+    for start in range(0, len(exprs), COLUMNS_PER_SCAN):
+        group = exprs[start : start + COLUMNS_PER_SCAN]
+        parts = ["count(*)::bigint AS n"]
+        for i, (_, column_sql, binary) in enumerate(group):
+            parts.append(f"count(*) FILTER (WHERE {column_sql} IS NULL)::bigint AS z{i}")
+            parts.append(f"count(DISTINCT {column_sql})::bigint AS d{i}")
+            if binary:
+                parts.append(f"NULL::text AS lo{i}, NULL::text AS hi{i}")
+            else:
+                parts.append(f"min({column_sql})::text AS lo{i}, max({column_sql})::text AS hi{i}")
+        row = await conn.fetchrow(f"SELECT {', '.join(parts)} FROM {source_sql}")
+        sample_rows = int(row["n"] or 0)
+        for i, (name, _, _) in enumerate(group):
+            stats[name] = {
+                "nulls": int(row[f"z{i}"] or 0),
+                "distinct": int(row[f"d{i}"] or 0),
+                "lo": row[f"lo{i}"],
+                "hi": row[f"hi{i}"],
+            }
+    profiles: dict[tuple[str, str, str], dict[str, object]] = {}
+    for name, column_sql, binary in exprs:
+        s = stats[name]
+        category = s["distinct"] <= MAX_CATEGORY_CARDINALITY and not binary
+        values: list[dict[str, object]] = []
+        if not _is_sensitive_column(name) and not binary:
+            top = await conn.fetch(
+                f"""
+                SELECT {column_sql}::text AS value, count(*)::bigint AS value_count
+                FROM {table_sql if category else source_sql}
+                WHERE {column_sql} IS NOT NULL
+                GROUP BY {column_sql}
+                ORDER BY value_count DESC, value
+                LIMIT {MAX_CATEGORY_CARDINALITY if category else TOP_VALUES}
+                """
+            )
+            values = [
+                {"value": _profile_value(name, r["value"]), "count": int(r["value_count"])}
+                for r in top
+            ]
+        profiles[(schema_name, table_name, name)] = {
+            "sample_rows": sample_rows,
+            "null_ratio": decimal.Decimal(str(s["nulls"] / sample_rows))
+            if sample_rows
+            else decimal.Decimal("0"),
+            # On a sampled table the distinct count is the sample's: a lower bound.
+            "distinct_est": s["distinct"],
+            "min_value": None if _is_sensitive_column(name) else s["lo"],
+            "max_value": None if _is_sensitive_column(name) else s["hi"],
+            "top_values": values[:TOP_VALUES],
+            # Every value of a category column, for the value index (GEN-23).
+            "category_values": values if category else [],
+        }
+    return profiles
+
+
 async def _profile_source(
     source: catalog.Source, tables: list[dict[str, object]]
 ) -> dict[tuple[str, str, str], dict[str, object]]:
@@ -571,63 +661,17 @@ async def _profile_source(
     try:
         await conn.execute(f"SET statement_timeout = {timeout_ms}")
         for table in tables:
-            schema_name, table_name = str(table["schema_name"]), str(table["table_name"])
-            table_sql = _quote_identifier(schema_name, table_name)
-            for column in table["columns"]:
-                name = str(column["name"])
-                column_sql = f'"{name.replace(chr(34), chr(34) * 2)}"'
-                data_type = str(column.get("data_type", "")).lower()
-                binary = data_type in _BINARY
-                if data_type in _PROFILED_AS_TEXT:
-                    column_sql = f"{column_sql}::text"
-                bounds = (
-                    "NULL::text AS min_value, NULL::text AS max_value"
-                    if binary
-                    else f"min({column_sql})::text AS min_value, max({column_sql})::text AS max_value"
+            try:
+                profiles.update(await _profile_pg_table(conn, table))
+            except asyncpg.PostgresError as exc:
+                # One table that cannot be read (rights, a timeout, a type it cannot compare)
+                # does not cost the scan the others.
+                logger.warning(
+                    "profile of %s.%s skipped (%s)",
+                    table["schema_name"],
+                    table["table_name"],
+                    type(exc).__name__,
                 )
-                stats = await conn.fetchrow(
-                    f"""
-                    SELECT count(*)::bigint AS sample_rows,
-                           count(*) FILTER (WHERE {column_sql} IS NULL)::bigint AS null_count,
-                           count(DISTINCT {column_sql})::bigint AS distinct_est,
-                           {bounds}
-                    FROM {table_sql}
-                    """
-                )
-                distinct = int(stats["distinct_est"] or 0)
-                category = distinct <= MAX_CATEGORY_CARDINALITY and not binary
-                values: list[dict[str, object]] = []
-                if not _is_sensitive_column(name) and not binary:
-                    top = await conn.fetch(
-                        f"""
-                        SELECT {column_sql}::text AS value, count(*)::bigint AS value_count
-                        FROM {table_sql}
-                        WHERE {column_sql} IS NOT NULL
-                        GROUP BY {column_sql}
-                        ORDER BY value_count DESC, value
-                        LIMIT {MAX_CATEGORY_CARDINALITY if category else TOP_VALUES}
-                        """
-                    )
-                    values = [
-                        {
-                            "value": _profile_value(name, row["value"]),
-                            "count": int(row["value_count"]),
-                        }
-                        for row in top
-                    ]
-                sample_rows = int(stats["sample_rows"] or 0)
-                profiles[(schema_name, table_name, name)] = {
-                    "sample_rows": sample_rows,
-                    "null_ratio": decimal.Decimal(str(int(stats["null_count"] or 0) / sample_rows))
-                    if sample_rows
-                    else decimal.Decimal("0"),
-                    "distinct_est": int(stats["distinct_est"] or 0),
-                    "min_value": None if _is_sensitive_column(name) else stats["min_value"],
-                    "max_value": None if _is_sensitive_column(name) else stats["max_value"],
-                    "top_values": values[:TOP_VALUES],
-                    # Every value of a category column, for the value index (GEN-23).
-                    "category_values": values if category else [],
-                }
     finally:
         await conn.close()
     return profiles

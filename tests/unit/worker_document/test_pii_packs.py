@@ -71,3 +71,19 @@ def test_a_column_is_labelled_by_what_its_values_hold() -> None:
     assert pii.column_label(["0912345678", "a@b.vn", "0987654321"]) == "phone"
     invoices = ["123456789012", "123456789013"]
     assert pii.personal_share(invoices) == 0.0 and pii.column_label(invoices) is None
+
+
+def test_a_column_needs_a_share_and_distinct_values_by_how_sure_its_type_is() -> None:
+    """RES-24: one Luhn-valid number among invoice numbers is chance, not a card column."""
+    invoices = [f"INV-{i:05d}" for i in range(40)] + ["4111111111111111"]
+    assert pii.column_decision(invoices).label is None
+    cards = ["4111111111111111", "5500000000000004", "340000000000009", "note", "x", "y"]
+    decided = pii.column_decision(cards)
+    assert decided.label == "account_no" and decided.distinct_hits == 3
+    emails = ["a@x.vn", "b@y.vn", "c", "d", "e", "f", "g", "h"]
+    assert pii.column_decision(emails).label == "email"
+    phones = ["0912345678", "0987654321", "abc", "def"]
+    assert pii.column_decision(phones).label is None  # weak: half the values, and 3 distinct
+    two_ids = ["079203001234", "001185000123"]
+    assert pii.column_decision(two_ids).label == "national_id"
+    assert pii.column_decision(["x@y.vn", "x@y.vn"]).label is None  # one distinct value

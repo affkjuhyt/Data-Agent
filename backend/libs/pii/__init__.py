@@ -279,3 +279,57 @@ def column_label(values: Iterable[object], packs: Sequence[str] = DEFAULT_PACKS)
     if not counts:
         return None
     return _LABELS.get(max(counts, key=lambda t: (counts[t], -_PRIORITY[t])), "other")
+
+
+# RES-24: how sure a match is decides how much of a column it takes. A checked value (a card that
+# passes Luhn, an IBAN mod 97, a CCCD's province and century) still occurs by chance in numbers
+# that are not personal (one random 16-digit number in ten passes Luhn), so it is never one hit:
+# a share of the column, and that many distinct values. An e-mail address is unmistakable; a phone,
+# a CMND or an IP address is weakest.
+_STRONG = frozenset({"EMAIL"})
+_CHECKED = frozenset({"CREDIT_CARD", "IBAN", "CCCD", "SSN"})
+_SHARE = {"strong": 0.2, "checked": 0.3, "weak": 0.5}
+_MIN_DISTINCT = {"strong": 2, "checked": 3, "weak": 3}
+
+
+def _strength(ptype: str) -> str:
+    return "strong" if ptype in _STRONG else "checked" if ptype in _CHECKED else "weak"
+
+
+@dataclass(frozen=True)
+class ColumnDecision:
+    """Whether a column holds personal data, from a sample of its values, and the evidence: the
+    type found most, its share of the values and how many distinct values carried it."""
+
+    label: str | None
+    pii_type: str | None
+    share: float
+    distinct_hits: int
+
+
+def column_decision(
+    values: Iterable[object], packs: Sequence[str] = DEFAULT_PACKS
+) -> ColumnDecision:
+    texts = [str(v) for v in values if v is not None and str(v).strip()]
+    if len(set(texts)) < 2:
+        return ColumnDecision(None, None, 0.0, 0)
+    hits: dict[str, set[str]] = {}
+    for t in texts:
+        for ptype in scan(t, packs=packs)["counts"]:
+            hits.setdefault(ptype, set()).add(t)
+    best: ColumnDecision | None = None
+    for ptype, carried in hits.items():
+        share = sum(1 for t in texts if t in carried) / len(texts)
+        strength = _strength(ptype)
+        # A column with fewer distinct values than the bar needs them all to carry the type.
+        enough = min(_MIN_DISTINCT[strength], len(set(texts)))
+        if share >= _SHARE[strength] and len(carried) >= enough:
+            found = ColumnDecision(
+                _LABELS.get(ptype, "other"), ptype, round(share, 4), len(carried)
+            )
+            if best is None or (found.share, -_PRIORITY[ptype]) > (
+                best.share,
+                -_PRIORITY[best.pii_type or ptype],
+            ):
+                best = found
+    return best or ColumnDecision(None, None, 0.0, 0)
