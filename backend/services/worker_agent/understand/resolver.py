@@ -15,6 +15,7 @@ query runs before the person picks (AC-01-01-02).
 from __future__ import annotations
 
 import datetime
+import itertools
 import re
 import uuid
 from collections.abc import Mapping, Sequence
@@ -167,25 +168,31 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
     }
 
     indexed = {(v.dimension_code, v.value_code): v.label for v in vocab.values}
-    hits: list[tuple[tuple[str, ...], float, int]] = []  # target, score, position
+    hits: list[tuple[tuple[str, ...], float, int, int]] = []  # target, score, start, end
     taken = text
     for phrase, target, score in _phrases(vocab):
         for m in re.finditer(rf"(?<!\w){re.escape(phrase)}(?!\w)", taken):
-            hits.append((target, score, m.start()))
+            hits.append((target, score, m.start(), m.end()))
         # Words used by a longer phrase are not matched again by a shorter one inside it.
         taken = re.sub(rf"(?<!\w){re.escape(phrase)}(?!\w)", lambda m: "#" * len(m.group(0)), taken)
 
     out = Understanding(decision="unknown", period=period)
     metric_hits: dict[str, float] = {}
-    for target, score, pos in sorted(hits, key=lambda h: h[2]):
+    named_time: str | None = None
+    for target, score, pos, end in sorted(hits, key=lambda h: h[2]):
         if target[0] == "metric" and target[1] in metrics:
             metric_hits[target[1]] = max(metric_hits.get(target[1], 0.0), score)
         elif target[0] == "dimension" and target[1] in dims:
             dim = dims[target[1]]
             # A dimension named after "theo" is a cut; named alone it adds nothing to compile.
-            if (
-                _cut_word_before(text[max(0, pos - 12) : pos]) or top_n is not None
-            ) and dim.code not in out.group_by:
+            cut = _cut_word_before(text[max(0, pos - 12) : pos]) or top_n is not None
+            after = list(itertools.takewhile(lambda w: "#" not in w, taken[end:].split()))[:2]
+            if cut and dim.is_time and after and after[0] not in _FILLER:
+                # "theo ngày giao hàng": "Ngày" is in it, but the words after it name a date the
+                # space has no dimension for (the ship date); asked, not cut by another date.
+                named_time = " ".join([text[pos:end], *after])
+                continue
+            if cut and dim.code not in out.group_by:
                 out.group_by.append(dim.code)
                 out.chips.append(Chip("dimension", dim.code, dim.name, "default", score))
         elif target[0] == "value":
@@ -223,7 +230,7 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
             )
         taken = re.sub(span, lambda m: "#" * len(m.group(0)), taken)
 
-    out.unplaced_cut = _unplaced_cut(taken)
+    out.unplaced_cut = named_time or _unplaced_cut(taken)
     leftover = " ".join(w for w in re.sub(r"#+", " ", taken).split() if len(w) > 3)
     out.unmapped = [leftover] if leftover and not metric_hits else []
     out.rest = " ".join(re.sub(r"#+", " ", taken).split())

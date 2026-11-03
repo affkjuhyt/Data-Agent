@@ -113,6 +113,20 @@ def test_week_and_fiscal_grains(text: str, grain: str) -> None:
     assert found is not None and found.grain == grain and found.rest == "doanh thu"
 
 
+def test_a_named_day_is_no_grain_and_a_time_cut_it_names_is_asked() -> None:
+    # "theo ngày giao hàng": the ship date, which DS-AW does not model, was read as "by day" on
+    # the order date (and, without the grain, as the call centre's "Ngày").
+    assert find_grain("doanh thu theo ngày giao hàng") is None
+    found = find_grain("doanh thu theo ngày tháng 12/2013")
+    assert found is not None and found.grain == "day"
+    day = DimensionEntry(uuid.uuid4(), "ngay", "Ngày", is_time=True)
+    vocab = Vocabulary(metrics=[NPL], dimensions=[day], synonyms={})
+    u = understand("Tỷ lệ nợ xấu theo ngày giao hàng tháng 12/2025", vocab, today=TODAY)
+    assert u.decision == "clarify" and u.group_by == [] and u.unplaced_cut == "ngay giao hang"
+    u = understand("Tỷ lệ nợ xấu theo ngày tháng 12/2025", vocab, today=TODAY)
+    assert u.decision == "proceed" and u.group_by == ["ngay"]
+
+
 def test_norm_strips_accents_and_d() -> None:
     assert norm("Đà Nẵng, Dư NỢ!") == "da nang du no"
 

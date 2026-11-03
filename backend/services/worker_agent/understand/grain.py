@@ -39,6 +39,11 @@ def find_grain(question: str) -> FoundGrain | None:
             m = pattern.search(text)
             if m is None:
                 continue
+            following = text[m.end() :].split()[:1]
+            if m.group("unit") == "ngay" and following and following[0] not in pack.filler:
+                # "theo ngày giao hàng" names a date (the ship date), not a cut by day: a word
+                # after "ngày" that is no time or filler word makes it a name.
+                continue
             written = words_of(question, m.group(0))
             rest = (
                 question.replace(written, " ")
