@@ -164,6 +164,10 @@ def _is_sensitive_column(column_name: str) -> bool:
     return not any(part in _NOT_PERSONAL_PARTS for part in parts)
 
 
+# Share of a column's sampled values that, holding personal data, masks the column.
+PERSONAL_SHARE = 0.5
+
+
 def _redact_personal(
     profiles: dict[tuple[str, str, str], dict[str, object]], packs: tuple[str, ...]
 ) -> None:
@@ -183,6 +187,9 @@ def _redact_personal(
             # The label is a suggestion: pii_confirmed stays false until a steward says how it
             # is masked (UC-04-04). How sure a type is decides the share it needs (RES-24).
             column["pii_label"] = decision.label
+        # Masking fails closed and does not wait for a label: half the values personal, of any
+        # mix of types, or a column of one email repeated, keeps its counts only.
+        if decision.label is not None or pii.personal_share(values, packs) >= PERSONAL_SHARE:
             column["top_values"] = [
                 {**v, "value": "***"} if isinstance(v, dict) else "***"
                 for v in (top if isinstance(top, list) else [])

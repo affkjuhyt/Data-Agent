@@ -85,3 +85,27 @@ def test_values_that_hold_personal_data_are_masked_and_labelled() -> None:
     assert ids["top_values"] == [{"value": "***", "count": 1}] * 2
     assert ids["category_values"] == [] and ids["min_value"] is None
     assert "pii_label" not in invoices and invoices["max_value"] == "123456789012"
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        # One email repeated: too few distinct values for a label, still masked.
+        ["lan@example.com", "lan@example.com", "lan@example.com"],
+        # Half the values personal, split across types none of which carries the column alone.
+        ["lan@example.com", "0912345678", "INV-0001", "INV-0002"],
+    ],
+)
+def test_masking_does_not_wait_for_a_label(values: list[str]) -> None:
+    profiles: dict[tuple[str, str, str], dict[str, object]] = {
+        ("s", "t", "c"): {
+            "top_values": [{"value": v, "count": 1} for v in values],
+            "category_values": [{"value": v, "count": 1} for v in values],
+            "min_value": "a",
+            "max_value": "z",
+        }
+    }
+    _redact_personal(profiles, ("GLOBAL", "VN"))
+    column = profiles[("s", "t", "c")]
+    assert all(v["value"] == "***" for v in column["top_values"])  # type: ignore[index, union-attr]
+    assert column["category_values"] == [] and column["min_value"] is None
