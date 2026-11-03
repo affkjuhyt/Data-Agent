@@ -832,3 +832,5 @@ def test_a_metric_the_asker_is_denied_is_a_forbidden_failure() -> None:
     unknown = asyncio.run(QueryMetric().run(ctx, QueryMetricArgs(metric="profit")))  # type: ignore[arg-type]
     assert (denied.ok, denied.failure) == (False, "forbidden")
     assert (unknown.ok, unknown.failure) == (False, "logic")
+    # The asker cannot tell a denied metric from one that does not exist.
+    assert denied.observation == unknown.observation.replace("profit", "revenue")

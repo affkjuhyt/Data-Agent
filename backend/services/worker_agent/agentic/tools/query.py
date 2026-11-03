@@ -99,16 +99,17 @@ class QueryMetric(Tool):
         visible = analyst._visible(ctx.layer)
         entry = visible.get(args.metric)
         if entry is None:
-            if any(
+            # A metric the asker is denied reads exactly like one that does not exist, since the
+            # observation reaches the timeline: naming it would tell the asker which denied
+            # metrics there are. Only the failure kind differs, so it is not replanned.
+            denied = any(
                 m.code == args.metric and m.metric_id in ctx.layer.blocked_metric_ids
                 for m in ctx.layer.vocabulary.metrics
-            ):
-                return ToolResult(
-                    False, f"bạn không được xem chỉ số {args.metric}", failure="forbidden"
-                )
+            )
             return ToolResult(
                 False,
                 f"không có chỉ số {args.metric} (hoặc bạn không được xem); dùng search_catalog",
+                failure="forbidden" if denied else "logic",
             )
         # A quantity the question asks that no certified metric of the catalogue names ("khách
         # hàng" where only units sold exist): no reading of this one will answer it.
