@@ -27,16 +27,17 @@ WHERE a.org_id = :org::uuid AND a.username = 'helios-admin'
 ON CONFLICT (id) DO UPDATE SET
     title = EXCLUDED.title, status = EXCLUDED.status, expires_at = EXCLUDED.expires_at;
 
+-- Assignee = engineer so /needs-you and /v1/inbox show content for the primary
+-- screen-audit account (inbox is filtered by assignee).
 INSERT INTO inbox.hitl_request (
     id, org_id, data_space_id, kind, risk, title, context, options,
     source_service, source_ref, assignee_id, assignee_capability, due_at, status,
     created_by, updated_by
 )
 SELECT v.id, :org::uuid, :space::uuid, v.kind, v.risk, v.title, v.context::jsonb, v.options::jsonb,
-       v.source_service, v.source_ref::uuid, a.id, v.assignee_capability,
+       v.source_service, v.source_ref::uuid, :engineer::uuid, v.assignee_capability,
        now() + v.due, 'open', :engineer::uuid, :engineer::uuid
-FROM org.app_user a
-CROSS JOIN (VALUES
+FROM (VALUES
     ('a0000000-0000-0000-0000-000000aa0c82'::uuid, 'checkpoint', 'medium',
      'Gửi kết quả biên gộp ra ngoài (seed)',
      '{"run_id": "a0000000-0000-0000-0000-000000aa0c62"}',
@@ -52,19 +53,17 @@ CROSS JOIN (VALUES
      '[{"id": "trust_dw", "label": "Tin kho"}, {"id": "trust_report", "label": "Tin báo cáo"}]',
      'conflict', NULL::uuid, 'steward', interval '3 days')
 ) AS v(id, kind, risk, title, context, options, source_service, source_ref, assignee_capability, due)
-WHERE a.org_id = :org::uuid AND a.username = 'helios-admin'
 ON CONFLICT (id) DO UPDATE SET
     title = EXCLUDED.title, status = EXCLUDED.status, due_at = EXCLUDED.due_at,
-    context = EXCLUDED.context;
+    context = EXCLUDED.context, assignee_id = EXCLUDED.assignee_id;
 
 INSERT INTO inbox.hitl_approval_step (
     id, org_id, hitl_request_id, step, approver_role, approver_id
 )
-SELECT
+VALUES (
     'a0000000-0000-0000-0000-000000aa1c04', :org::uuid,
-    'a0000000-0000-0000-0000-000000aa1c02', 1, 'approve', a.id
-FROM org.app_user a
-WHERE a.org_id = :org::uuid AND a.username = 'helios-admin'
+    'a0000000-0000-0000-0000-000000aa1c02', 1, 'approve', :engineer::uuid
+)
 ON CONFLICT (id) DO NOTHING;
 
 -- ── Glossary / knowledge / period ──
@@ -82,6 +81,9 @@ VALUES (
 )
 ON CONFLICT (id) DO UPDATE SET definition = EXCLUDED.definition, status = EXCLUDED.status;
 
+-- active pages require current_version_id (knowledge_page_check1); insert draft →
+-- version → activate in one deferred transaction.
+BEGIN;
 INSERT INTO context.knowledge_page (
     id, org_id, data_space_id, kind, subject_kind, subject_ref, slug, title,
     index_summary, tags, owner_id, status, latest_version_no, created_by, updated_by
@@ -90,10 +92,38 @@ VALUES (
     'a0000000-0000-0000-0000-000000aa1d02', :org::uuid, :space::uuid,
     'topic', 'topic', NULL, 'bien-gop-internet', 'Biên gộp Internet',
     'Định nghĩa và bẫy trung bình biên trên AdventureWorks.',
-    ARRAY['margin', 'internet'], :engineer::uuid, 'active', 0,
+    ARRAY['margin', 'internet'], :engineer::uuid, 'draft', 0,
     :engineer::uuid, :engineer::uuid
 )
-ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, status = EXCLUDED.status;
+ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, index_summary = EXCLUDED.index_summary;
+
+INSERT INTO context.knowledge_page_version (
+    id, org_id, page_id, version, origin, body, body_sha256, summary, created_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1d03', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1d02', 1, 'manual',
+    E'# Biên gộp Internet\n\n(doanh thu − giá vốn) / doanh thu trên fact_internet_sales.',
+    encode(
+        sha256(convert_to(
+            E'# Biên gộp Internet\n\n(doanh thu − giá vốn) / doanh thu trên fact_internet_sales.',
+            'UTF8'
+        )),
+        'hex'
+    ),
+    'Định nghĩa biên trên AdventureWorks.', :engineer::uuid
+)
+ON CONFLICT (id) DO NOTHING;
+
+UPDATE context.knowledge_page
+SET status = 'active',
+    current_version_id = 'a0000000-0000-0000-0000-000000aa1d03',
+    latest_version_no = GREATEST(latest_version_no, 1),
+    updated_by = :engineer::uuid,
+    updated_at = now()
+WHERE id = 'a0000000-0000-0000-0000-000000aa1d02'
+  AND (status <> 'active' OR current_version_id IS DISTINCT FROM 'a0000000-0000-0000-0000-000000aa1d03'::uuid);
+COMMIT;
 
 INSERT INTO period.period_calendar (
     id, org_id, data_space_id, period_kind, close_rule, dataset_ids,
@@ -156,8 +186,8 @@ SELECT
     '[{"name": "sales_amount", "agg": "sum"}]'::jsonb,
     '[{"name": "order_date"}]'::jsonb, '[]'::jsonb, 'draft', :engineer::uuid, :engineer::uuid
 FROM catalog.dataset d
-WHERE d.data_space_id = :space::uuid
-ORDER BY d.name
+WHERE d.data_space_id = :space::uuid AND d.deleted_at IS NULL
+ORDER BY d.table_name
 LIMIT 1
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status;
 
@@ -171,8 +201,8 @@ SELECT
     '{"sla": "T+1", "columns": ["order_date", "sales_amount"]}'::jsonb,
     :engineer::uuid, 'draft', :engineer::uuid, :engineer::uuid
 FROM catalog.dataset d
-WHERE d.data_space_id = :space::uuid
-ORDER BY d.name
+WHERE d.data_space_id = :space::uuid AND d.deleted_at IS NULL
+ORDER BY d.table_name
 LIMIT 1
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status;
 
@@ -272,7 +302,7 @@ SELECT
     'sales_amount', 'range', '{"min": 0}'::jsonb, 'medium', 'active',
     :engineer::uuid, :engineer::uuid
 FROM catalog.dataset d
-WHERE d.data_space_id = :space::uuid
-ORDER BY d.name
+WHERE d.data_space_id = :space::uuid AND d.deleted_at IS NULL
+ORDER BY d.table_name
 LIMIT 1
 ON CONFLICT (id) DO UPDATE SET params = EXCLUDED.params, status = EXCLUDED.status;

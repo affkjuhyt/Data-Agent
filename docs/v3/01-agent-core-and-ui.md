@@ -308,7 +308,10 @@ Skill chưa duyệt không bao giờ được planner chọn cho câu hỏi củ
 Ask không còn đi theo một kế hoạch sáu bước cố định. `worker_agent/agentic/` là một graph
 (`prepare → plan → act ⟲ → replan / review → compose → persist`) mà planner tự chọn bước và
 công cụ cho từng câu hỏi (`search_catalog`, `describe_metric`, `search_values`, `query_metric`,
-`explore_sql`, `analyze` = pandas, chạy trong pod `python-sandbox` (không mạng ra, không secret, filesystem chỉ đọc; `AGENT_PYTHON_SANDBOX=service`, mặc định của manifest), `off` bỏ công cụ, `local` chạy ngay trong worker cho bản cài tin cậy; `search_documents`, `ask_user`). Bước hỏng quay
+`explore_sql`, `analyze` = pandas, chạy trong pod `python-sandbox` (không mạng ra, không secret, filesystem chỉ đọc; `AGENT_PYTHON_SANDBOX=service`, mặc định của manifest), `off` bỏ công cụ, `local` chạy ngay trong worker cho bản cài tin cậy; `search_documents`, `ask_user`;
+`investigate_numbers` / `investigate_documents` = chuyên gia kiểu Claude Code subagent: transcript
+riêng, allowlist tool, trả tóm tắt về lead, dataset/citation ghi lên Workspace — dùng song song
+cho câu vừa số vừa tài liệu). Bước hỏng quay
 lại planner kèm điều quan sát được (≤ 2 lần), theo lý do hỏng (`ToolResult.failure`): tham số sai
 thì executor viết lại tại chỗ, lỗi tạm thời (timeout, mất kết nối) chạy lại một lần, cả bước
 chung ngân sách 3 lần thử và timeout của công cụ; bước người hỏi không được xem thì không replan
