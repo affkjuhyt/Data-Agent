@@ -206,6 +206,90 @@ class RetrainRequest(BaseModel):
     training_to: datetime.date | None = None
 
 
+class ForecastModelCreate(BaseModel):
+    """A series to train: a certified metric, cuts on dimensions it allows, month or quarter."""
+
+    metric_code: str = Field(min_length=1, max_length=200)
+    scope: dict[str, list[str]] = Field(default_factory=dict)
+    frequency: Literal["month", "quarter"]
+    horizon: int = Field(ge=1, le=24)
+
+    @field_validator("metric_code")
+    @classmethod
+    def _metric_code(cls, value: str) -> str:
+        return _not_blank(value)
+
+    @field_validator("scope")
+    @classmethod
+    def _scope(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        cleaned: dict[str, list[str]] = {}
+        for code, members in value.items():
+            name = code.strip()
+            if not name:
+                raise ValueError("a scope dimension code must not be blank")
+            kept = sorted({member.strip() for member in members if member.strip()})
+            if not kept:
+                raise ValueError(f"{name} needs at least one member")
+            cleaned[name] = kept
+        return dict(sorted(cleaned.items()))
+
+
+class ForecastModelCreated(ForecastModelView):
+    """The new model and the id of the training job queued with it."""
+
+    job_id: uuid.UUID
+
+
+# The studio of one job, the shape frontend/src/lib/v1/forecast.ts getForecastWorkbench reads.
+
+
+class ForecastStat(BaseModel):
+    label: str
+    value: str
+    note: str
+    tone: Literal["success", "warning", "error", "neutral", "default"]
+
+
+class ForecastVariable(BaseModel):
+    name: str
+    source: str
+    lag_text: str
+    correlation_text: str
+    future_value_text: str
+    status: Literal["used", "excluded"]
+    status_text: str
+
+
+class BacktestRow(BaseModel):
+    model: str
+    mase: float | None
+    smape_text: str
+    cover80_text: str
+    cover95_text: str
+    role: Literal["baseline", "candidate", "selected"]
+
+
+class CanCreateCard(BaseModel):
+    allowed: bool
+    reason: str | None
+
+
+class ForecastWorkbench(BaseModel):
+    job_id: uuid.UUID
+    metric_name: str
+    summary_text: str
+    series_stats: list[ForecastStat]
+    variables: list[ForecastVariable]
+    variables_note: str
+    backtest: list[BacktestRow]
+    backtest_note: str
+    version_id: uuid.UUID | None
+    forecast_model_id: uuid.UUID | None
+    next_version_label: str
+    can_create_card: CanCreateCard
+    model_id: uuid.UUID | None
+
+
 class ScenarioCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     assumptions: list[Assumption] = Field(min_length=1, max_length=50)

@@ -8,7 +8,7 @@ A violation is:
     x-use-cases differ from its A2 row: the code drifted from the spec;
   * an A2 endpoint missing from a group listed in COMPLETE_GROUPS.
 
-A2 has 458 endpoints (459 rows: POST /v1/data-products is in two groups) and
+A2 has 460 endpoints (461 rows: POST /v1/data-products is in two groups) and
 the api is built group by group, so a missing endpoint only fails once its
 group is declared complete here. Add a group to COMPLETE_GROUPS in the commit
 that serves its last endpoint; from then on dropping one is a failure.

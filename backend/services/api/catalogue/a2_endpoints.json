@@ -5066,6 +5066,19 @@
   {
    "group": "Dự báo",
    "method": "GET",
+   "path": "/v1/forecast-jobs/{id}/workbench",
+   "summary": "Xưởng của một việc dự báo: phiên bản, biến và backtest",
+   "use_cases": [
+    "15-02",
+    "15-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
    "path": "/v1/forecast-models",
    "summary": "Mô hình dự báo",
    "use_cases": [
@@ -5074,6 +5087,20 @@
    ],
    "capability": [
     "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/forecast-models",
+   "summary": "Định nghĩa mô hình dự báo trên chỉ số đã chứng nhận và xếp hàng việc huấn luyện đầu; 201",
+   "use_cases": [
+    "15-02",
+    "15-04"
+   ],
+   "capability": [
+    "prepare_data",
+    "steward"
    ]
   },
   {

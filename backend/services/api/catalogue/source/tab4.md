@@ -619,7 +619,7 @@ Dịch vụ: Acquisition service (acquire). 28 endpoint. Mọi POST ghi nhận I
 
 ### Dự báo
 
-Dịch vụ: Forecast service (forecast). 27 endpoint. Mọi POST ghi nhận Idempotency-Key (A1.5); việc dự báo và huấn luyện trả 202 (A1.6), tiến độ qua luồng SSE.
+Dịch vụ: Forecast service (forecast). 29 endpoint. Mọi POST ghi nhận Idempotency-Key (A1.5); việc dự báo và huấn luyện trả 202 (A1.6), tiến độ qua luồng SSE.
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
@@ -627,7 +627,9 @@ Dịch vụ: Forecast service (forecast). 27 endpoint. Mọi POST ghi nhận Ide
 | GET | /v1/forecasts/{id} | Việc dự báo, tiến độ, kết quả | 15-01, 15-02 | ask |
 | GET | /v1/forecasts/{id}/events | Luồng SSE tiến độ dự báo | 15-01 | ask |
 | POST | /v1/forecasts/{id}:cancel | Huỷ | 15-01 | ask |
+| GET | /v1/forecast-jobs/{id}/workbench | Xưởng của một việc dự báo: phiên bản, biến và backtest | 15-02, 15-03 | ask |
 | GET | /v1/forecast-models | Mô hình dự báo | 15-04, 15-06 | ask |
+| POST | /v1/forecast-models | Định nghĩa mô hình dự báo trên chỉ số đã chứng nhận và xếp hàng việc huấn luyện đầu; 201 | 15-02, 15-04 | prepare_data, steward |
 | GET | /v1/forecast-models/{id} | Mô hình, phiên bản đang phát hành | 15-05 | ask |
 | GET | /v1/forecast-model-versions/{id} | Phiên bản, thẻ mô hình | 15-02, 15-03, 15-04 | ask |
 | GET | /v1/forecast-model-versions/{id}/backtest | Kết quả backtest so mô hình chuẩn | 15-03, 15-04 | ask |
@@ -1197,7 +1199,9 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/forecasts/{id} | — | ForecastJob. Kèm progress, eta\_at; khi ready kèm Prediction (point, lo80, hi80, lo95, hi95), giả định, ngày dữ liệu và nhãn (đã duyệt, thử nghiệm, mô hình chuẩn) | — |
 | GET /v1/forecasts/{id}/events | — | Luồng SSE. Sự kiện progress, waiting\_human, eta\_changed, result, error, done; nối lại bằng Last-Event-ID. Kafka: forecast.job.state\_changed, forecast.job.completed | — |
 | POST /v1/forecasts/{id}:cancel | reason | ForecastJob (status = cancelled) | 409 invalid\_state (đã ready hoặc failed) |
+| GET /v1/forecast-jobs/{id}/workbench | — | ForecastWorkbench: việc, phiên bản của việc, biến và bảng backtest (seasonal naive và ứng viên) như màn xưởng đọc | — |
 | GET /v1/forecast-models | ?metric\_code, ?frequency, ?status | Danh sách ForecastModel. Kèm MASE cuốn chiếu và nhãn suy giảm | — |
+| POST /v1/forecast-models | metric\_code\*, scope, frequency\*, horizon\* | 201, ForecastModel kèm job\_id. owner\_id là người phụ trách chỉ số, status = active; việc đầu purpose = forecast, cutoff\_at = now | 403 policy\_denied (người gọi không được dùng chỉ số); 409 conflict (đã có mô hình cùng chỉ số, tần suất và phạm vi); 422 business\_rule\_violated (phạm vi có chiều chỉ số không cho) |
 | GET /v1/forecast-models/{id} | — | ForecastModel. Kèm phiên bản đang phát hành và lịch huấn luyện lại | — |
 | GET /v1/forecast-model-versions/{id} | — | ModelVersion. Kèm model\_card, features và future\_assumption từng biến | — |
 | GET /v1/forecast-model-versions/{id}/backtest | — | BacktestRun. metrics theo từng tầm so với baseline\_metrics (seasonal naive), candidates | — |
