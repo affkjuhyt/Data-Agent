@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { AccessDenied, forbiddenOf } from '../features/access/AccessDenied';
 import { Button } from './Button';
 import { Notice } from './Notice';
 import { SkeletonRows } from './SkeletonRow';
@@ -8,6 +9,8 @@ import { useDelayedFlag } from './useDelayedFlag';
  * The data states of one region, as "Mẫu tương tác" sets them: under 300 ms nothing, then a
  * skeleton; a load error is a banner with "Thử lại" inside the region while the rest of the
  * page keeps working; no data hands over to `empty`. Data already shown stays during a reload.
+ * A 403 that carries the access block (UC-11-07) shows Thiếu quyền instead of the load banner,
+ * so screens that forget forbiddenOf still match the designed refusal.
  */
 export function AsyncRegion<T>({
   state,
@@ -28,6 +31,8 @@ export function AsyncRegion<T>({
   const showSkeleton = useDelayedFlag(state.loading && state.data === undefined);
   if (state.data === undefined) {
     if (state.error) {
+      const access = forbiddenOf(state.error);
+      if (access) return <AccessDenied access={access} />;
       return (
         <Notice
           tone="error"

@@ -117,7 +117,7 @@ async def narrate(
     model = ""
     for attempt in range(2):
         try:
-            reply = await gateway.json_chat("responder", SYSTEM, prompt, Draft, max_tokens=600)
+            reply = await gateway.json_chat("responder", SYSTEM, prompt, Draft, max_tokens=2500)
         except ModelUnavailable:
             return None
         tokens += reply.tokens

@@ -192,6 +192,8 @@ LIVE_ACCOUNTS = {
     "engineer": ("E2E_USER", "helios-engineer", "E2E_PASS"),
     "admin": ("E2E_ADMIN_USER", "platform-admin", "E2E_ADMIN_PASS"),
     "tenant2_admin": ("E2E_T2_ADMIN_USER", "helios-admin", "E2E_T2_ADMIN_PASS"),
+    # Narrow DS-AW member (ask + view_aggregate) for the screen-audit harness.
+    "viewer": ("E2E_VIEWER_USER", "helios-viewer", "E2E_VIEWER_PASS"),
 }
 
 

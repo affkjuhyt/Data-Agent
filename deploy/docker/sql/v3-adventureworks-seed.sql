@@ -54,6 +54,16 @@ FROM org.app_user u
 WHERE u.org_id = :org::uuid AND u.username = 'helios-admin'
 ON CONFLICT (data_space_id, principal_type, principal_id, role_id) DO NOTHING;
 
+-- helios-viewer: narrow capabilities for the screen-audit matrix (ask + view_aggregate).
+INSERT INTO org.data_space_member (
+    id, org_id, data_space_id, principal_type, principal_id, role_id, source
+)
+SELECT 'a0000000-0000-0000-0000-000000000a05', :org::uuid, :space::uuid, 'user', u.id,
+       'a0000000-0000-0000-0000-000000000025', 'manual'
+FROM org.app_user u
+WHERE u.org_id = :org::uuid AND u.username = 'helios-viewer'
+ON CONFLICT (data_space_id, principal_type, principal_id, role_id) DO NOTHING;
+
 INSERT INTO catalog.source (
     id, org_id, data_space_id, name, kind, host, port, database_name, conn_options, secret_ref,
     mode, authority_level, scan_schemas, status, created_by, updated_by

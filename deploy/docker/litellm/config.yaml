@@ -8,11 +8,14 @@
 #   bge-reranker-v2-m3 TEI      :8004  (DOCUMENT_RERANK_URL, called by worker-agent directly)
 #
 # Services address ALIASES only — swap a backend here, no code changes.
-# `chat_template_kwargs.enable_thinking: false` — Qwen3 defaults to emitting
-# <think> blocks; every alias below feeds a JSON parser or a latency-sensitive
-# path, so thinking is off globally. Re-enable per-alias only after an eval
-# shows the quality is worth the tokens (responder/orchestrator-planner are the
-# candidates — conversation_runner already strips <think> from responder output).
+# `chat_template_kwargs.enable_thinking` is per-alias. Qwen3 defaults to
+# emitting <think>…</think>; harness-heavy / JSON-short / latency-sensitive
+# aliases keep it false (planner, text_to_sql, guardrail, …). `responder` and
+# `orchestrator-planner` turn it on: correctness over speed, no external SQL
+# checker on those paths. LiteLLMGateway strips <think> before JSON validate
+# and skips response_format for those roles so constrained decoding cannot
+# erase the reasoning. Deploy the worker image that has that strip together
+# with this config — an old gateway will choke on think-prefixed JSON.
 # No YAML anchors on purpose: litellm may mutate litellm_params per entry, and
 # an anchor would make the entries share one object.
 
@@ -40,7 +43,7 @@ model_list:
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
-          enable_thinking: false
+          enable_thinking: true
 
   - model_name: judge
     litellm_params:
@@ -72,7 +75,7 @@ model_list:
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
-          enable_thinking: false
+          enable_thinking: true
 
   # Was missing from this file although orchestrator code defaults to it
   # (ORCHESTRATOR_JUDGE_MODEL → openai/orchestrator-judge).

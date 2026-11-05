@@ -253,7 +253,7 @@ async def compose(
         return extractive(passages)
     try:
         reply = await gateway.json_chat(
-            "responder", SYSTEM, _prompt(question, as_of, passages), Claims, max_tokens=900
+            "responder", SYSTEM, _prompt(question, as_of, passages), Claims, max_tokens=4000
         )
     except ModelUnavailable:
         return extractive(passages)

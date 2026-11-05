@@ -86,6 +86,35 @@ async def test_a_busy_gateway_is_retried_and_the_answer_is_typed(server: Server)
     assert sent["response_format"]["json_schema"]["schema"]["required"] == ["sql"]
 
 
+async def test_think_blocks_are_stripped_before_json_is_validated(server: Server) -> None:
+    # Qwen3 with enable_thinking emits <think>…</think> before the JSON object.
+    # Constrained decoding is off for thinking roles so the model can reason first.
+    server.script = [
+        (
+            200,
+            "<think>\ncheck the grain, then pick the measure\n</think>\n" '{"sql": "SELECT 1"}',
+        )
+    ]
+    reply = await LiteLLMGateway(server.url, "k").json_chat(
+        "responder", "rules", "question", Draft, max_tokens=50
+    )
+    assert reply.content == Draft(sql="SELECT 1")
+    sent = server.bodies[-1]
+    assert sent["model"] == "responder"
+    assert "response_format" not in sent
+
+
+async def test_thinking_role_retries_once_after_invalid_json(server: Server) -> None:
+    server.script = [
+        (200, "<think>\n草稿\n</think>\nnot json"),
+        (200, '<think>\nok\n</think>\n{"sql": "SELECT 2"}'),
+    ]
+    reply = await LiteLLMGateway(server.url, "k").json_chat("responder", "rules", "q", Draft)
+    assert reply.content.sql == "SELECT 2"
+    assert reply.tokens == 30
+    assert "sql" in server.bodies[-1]["messages"][-1]["content"]
+
+
 async def test_an_answer_that_does_not_fit_is_asked_again_with_its_errors(server: Server) -> None:
     server.script = [(200, '{"query": "SELECT 1"}'), (200, '{"sql": "SELECT 2"}')]
     reply = await LiteLLMGateway(server.url, "k").json_chat("text_to_sql", "rules", "q", Draft)

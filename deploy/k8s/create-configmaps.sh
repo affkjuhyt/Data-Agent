@@ -48,7 +48,8 @@ if [ "${SEED_DEMO:-0}" = 1 ]; then
     --from-file=04-v3-adventureworks-seed.sql=$K/sql/v3-adventureworks-seed.sql \
     --from-file=06-v3-adventureworks-context.sql=$K/sql/v3-adventureworks-context.sql \
     --from-file=06-v3-adventureworks-documents.sql=$K/sql/v3-adventureworks-documents.sql \
-    --from-file=07-v3-agent-seed.sql=$K/sql/v3-agent-seed.sql
+    --from-file=07-v3-agent-seed.sql=$K/sql/v3-agent-seed.sql \
+    --from-file=08-v3-screen-audit-seed.sql=$K/sql/v3-screen-audit-seed.sql
   cm "$SVC" adventureworks-business-documents --from-file=$K/adventureworks-docs/business/
   cm "$SVC" adventureworks-product-documents --from-file=$K/adventureworks-docs/product/
   # Keycloak imports <realm>-users-<n>.json beside the realm, on a fresh realm only.

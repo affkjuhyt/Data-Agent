@@ -173,7 +173,7 @@ async def _read(
         part = passages[start : start + PASSAGES_PER_CALL]
         try:
             reply = await gateway.json_chat(
-                "responder", SYSTEM, _prompt(doc, part, known), Claims, max_tokens=1500
+                "responder", SYSTEM, _prompt(doc, part, known), Claims, max_tokens=4000
             )
         except ModelUnavailable as exc:
             log.warning("claims | document %s part %d not read: %s", doc.id, start, exc)

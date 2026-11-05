@@ -163,7 +163,7 @@ E2E_KEYCLOAK_URL ?= http://localhost:30110
 E2E_DATA_SPACE ?= DS-AW
 E2E_TESTS ?= tests/integration/test_v3_question_e2e.py
 E2E_FORWARD_VARS = E2E_USER E2E_PASS E2E_ADMIN_USER E2E_ADMIN_PASS E2E_T2_ADMIN_USER E2E_T2_ADMIN_PASS \
-                   E2E_DATA_SPACE E2E_TURN_TIMEOUT
+                   E2E_VIEWER_USER E2E_VIEWER_PASS E2E_DATA_SPACE E2E_TURN_TIMEOUT
 E2E_FORWARD = $(foreach v,$(E2E_FORWARD_VARS),$(if $($(v)),-e $(v)))
 
 export $(E2E_FORWARD_VARS)
@@ -177,6 +177,12 @@ e2e:  ## pytest -m e2e against the deployed V3 dev cluster (LAN NodePorts; URLs 
 	  -e LIVE_KEYCLOAK_URL=$(E2E_KEYCLOAK_URL) $(E2E_FORWARD) \
 	  dataagent-test/worker_agent:latest sh -c \
 	  "python -m pytest -q -p no:cacheprovider --no-showlocals -m e2e $(PYTEST_ARGS) $(E2E_TESTS)"
+
+# Screen audit: every ROUTE_MAP page's primary GETs as helios-engineer and helios-viewer.
+# Writes tests/screen_audit/out/screen_audit.tsv (labels: content/empty/access_*/server_error/…).
+# Needs seed_demo (incl. helios-viewer) and E2E_PASS + E2E_VIEWER_PASS. See tests/README.md.
+screen-audit:  ## probe all UI screens against the cluster; write screen_audit.tsv (does not fail on empty)
+	@$(MAKE) e2e E2E_TESTS=tests/integration/test_screen_audit_e2e.py PYTEST_ARGS="-v -s $(PYTEST_ARGS)"
 
 # AdventureWorksDW, the dataset the product is tested on (tests/e2e/adventureworks): fetched at the
 # commit pinned in sources.json, converted to PostgreSQL and loaded into its own database of the

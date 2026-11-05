@@ -1,0 +1,297 @@
+# Primary GET(s) each ROUTE_MAP screen loads. Keys are area/page (page "_" = SINGLE_SCREEN).
+# needs_id / id_from: detail screens resolve {id} from the list endpoint's first item.
+# Screens with no listable API still probe "/v1/me" so the harness records reachability.
+screens:
+  home/_:
+    primary_gets: ["/v1/me", "/v1/inbox"]
+  home/HOW_IT_WORKS:
+    primary_gets: ["/v1/me"]
+
+  needs-you/_:
+    primary_gets: ["/v1/inbox"]
+  needs-you/PROPOSAL:
+    needs_id: true
+    seed_id: a0000000-0000-0000-0000-000000aa1c01
+    primary_gets: ["/v1/proposals/{id}"]
+  needs-you/CONFLICT:
+    needs_id: true
+    seed_id: a0000000-0000-0000-0000-000000aa1c03
+    primary_gets: ["/v1/hitl-requests/{id}"]
+  needs-you/APPROVAL:
+    needs_id: true
+    seed_id: a0000000-0000-0000-0000-000000aa1c01
+    primary_gets: ["/v1/proposals/{id}"]
+
+  agents/TEAM:
+    primary_gets: ["/v1/agents"]
+  agents/BUILDER:
+    primary_gets: ["/v1/agents"]
+  agents/AGENT:
+    needs_id: true
+    id_from: "/v1/agents"
+    primary_gets: ["/v1/agents/{id}"]
+  agents/RUNS:
+    primary_gets: ["/v1/runs"]
+  agents/RUN:
+    needs_id: true
+    id_from: "/v1/runs"
+    primary_gets: ["/v1/runs/{id}"]
+  agents/EVALUATE:
+    primary_gets: ["/v1/eval-sets", "/v1/agents"]
+  agents/ORCHESTRATION:
+    primary_gets: ["/v1/agents", "/v1/runs"]
+  agents/OPERATIONS:
+    primary_gets: ["/v1/admin/agent-usage"]
+  agents/SKILLS:
+    primary_gets: ["/v1/skills"]
+  agents/SKILL_SUGGESTIONS:
+    primary_gets: ["/v1/skill-suggestions"]
+  agents/SKILL_VERSIONS:
+    primary_gets: ["/v1/skills"]
+  agents/TOOLS:
+    primary_gets: ["/v1/tools"]
+  agents/SKILL_EDITOR:
+    needs_id: true
+    id_from: "/v1/skills"
+    primary_gets: ["/v1/skills/{id}"]
+  agents/SKILL_FROM_SESSION:
+    needs_id: true
+    id_from: "/v1/workspaces"
+    primary_gets: ["/v1/workspaces/{id}"]
+  agents/SKILL_TESTS:
+    needs_id: true
+    id_from: "/v1/skills"
+    primary_gets: ["/v1/skills/{id}"]
+  agents/SKILL_RUN:
+    needs_id: true
+    id_from: "/v1/skills"
+    primary_gets: ["/v1/skills/{id}"]
+
+  analysis/_:
+    primary_gets: ["/v1/conversations", "/v1/datasets"]
+  analysis/ASK:
+    primary_gets: ["/v1/conversations"]
+  analysis/SESSIONS:
+    primary_gets: ["/v1/workspaces"]
+  analysis/REPORT:
+    needs_id: true
+    id_from: "/v1/session-reports"
+    primary_gets: ["/v1/session-reports/{id}"]
+  analysis/VAULT:
+    primary_gets: ["/v1/me"]
+  analysis/EXPLORE:
+    primary_gets: ["/v1/metrics", "/v1/entities"]
+  analysis/ARTIFACT:
+    # No list endpoint for answers; stays no_seed_id until a conversation leaves one.
+    needs_id: true
+    primary_gets: ["/v1/answers/{id}"]
+  analysis/FORECAST:
+    primary_gets: ["/v1/forecast-models"]
+  analysis/FORECAST_JOB:
+    needs_id: true
+    id_from: "/v1/forecasts"
+    primary_gets: ["/v1/forecasts/{id}"]
+  analysis/FORECAST_STUDIO:
+    primary_gets: ["/v1/forecast-models"]
+  analysis/FORECAST_MODEL:
+    needs_id: true
+    id_from: "/v1/forecast-models"
+    primary_gets: ["/v1/forecast-models/{id}"]
+  analysis/FUEL_FORECAST:
+    primary_gets: ["/v1/formula-models"]
+  analysis/FORECAST_LEDGER:
+    primary_gets: ["/v1/forecast-ledger"]
+  analysis/RECEIPT:
+    needs_id: true
+    primary_gets: ["/v1/answers/{id}"]
+  analysis/DOC_ASK:
+    primary_gets: ["/v1/documents"]
+  analysis/WATCH:
+    primary_gets: ["/v1/monitors"]
+  analysis/WATCH_NEW:
+    primary_gets: ["/v1/metrics"]
+  analysis/ALERTS:
+    primary_gets: ["/v1/monitors"]
+  analysis/JOB_MONITOR:
+    primary_gets: ["/v1/jobs"]
+  analysis/REPORTS:
+    primary_gets: ["/v1/monitors"]
+  analysis/DIGEST:
+    # UI uses GET /v1/me/digests (404 → notifications?kind=digest); PUT /v1/me/digest is prefs.
+    primary_gets: ["/v1/me/notifications?kind=digest"]
+
+  data/_:
+    primary_gets: ["/v1/sources", "/v1/datasets"]
+  data/SOURCES:
+    primary_gets: ["/v1/sources"]
+  data/SOURCE:
+    needs_id: true
+    id_from: "/v1/sources"
+    primary_gets: ["/v1/sources/{id}"]
+  data/TABLE:
+    needs_id: true
+    id_from: "/v1/datasets"
+    primary_gets: ["/v1/datasets/{id}"]
+  data/CATALOG:
+    primary_gets: ["/v1/datasets"]
+  data/CONNECT:
+    primary_gets: ["/v1/sources"]
+  data/JOBS:
+    primary_gets: ["/v1/jobs"]
+  data/UPLOAD:
+    primary_gets: ["/v1/documents"]
+  data/COLLECTIONS:
+    primary_gets: ["/v1/collections"]
+  data/COLLECTION:
+    # No GET /v1/collections/{id}: the page loads the list row + documents of that collection.
+    needs_id: true
+    id_from: "/v1/collections"
+    primary_gets: ["/v1/documents?collection_id={id}"]
+  data/CRAWL:
+    primary_gets: ["/v1/crawl-sources"]
+  data/CRAWL_NEW:
+    primary_gets: ["/v1/crawl-sources"]
+  data/CRAWL_SOURCE:
+    needs_id: true
+    seed_id: a0000000-0000-0000-0000-000000aa1d20
+    primary_gets: ["/v1/crawl-sources/{id}"]
+  data/CRAWL_DRIFT:
+    needs_id: true
+    id_from: "/v1/schema-drifts"
+    primary_gets: ["/v1/schema-drifts"]
+  data/CRAWL_RUN:
+    needs_id: true
+    id_from: "/v1/crawl-runs"
+    primary_gets: ["/v1/crawl-runs/{id}"]
+  data/CRAWL_MERGE:
+    needs_id: true
+    id_from: "/v1/consolidation-specs"
+    primary_gets: ["/v1/consolidation-specs"]
+  data/ENTITIES:
+    primary_gets: ["/v1/entities"]
+  data/METRIC_CATALOG:
+    primary_gets: ["/v1/metrics"]
+  data/GLOSSARY:
+    primary_gets: ["/v1/terms"]
+  data/CONTEXT_EVAL:
+    primary_gets: ["/v1/eval-sets"]
+  data/ANSWER_PRODUCTS:
+    needs_id: true
+    id_from: "/v1/data-products"
+    primary_gets: ["/v1/data-products/{id}"]
+  data/ERROR_BOOK:
+    needs_id: true
+    id_from: "/v1/error-book-entries"
+    primary_gets: ["/v1/error-book-entries/{id}"]
+  data/PERIOD:
+    primary_gets: ["/v1/periods"]
+  data/RETRO:
+    primary_gets: ["/v1/periods"]
+  data/COMPARE:
+    primary_gets: ["/v1/periods"]
+  data/METRIC:
+    needs_id: true
+    id_from: "/v1/metrics"
+    primary_gets: ["/v1/metrics/{id}"]
+  data/EXAMPLES:
+    primary_gets: ["/v1/examples"]
+  data/KNOWLEDGE:
+    primary_gets: ["/v1/knowledge-pages"]
+  data/AUTHORITY:
+    primary_gets: ["/v1/sources"]
+  data/RULE:
+    needs_id: true
+    id_from: "/v1/policies"
+    primary_gets: ["/v1/policies/{id}"]
+  data/KNOWLEDGE_REVIEW:
+    primary_gets: ["/v1/knowledge-findings"]
+  data/DRIFT:
+    primary_gets: ["/v1/schema-drifts"]
+  data/ERRORS:
+    primary_gets: ["/v1/quality-issues"]
+  data/JOB_NEW:
+    primary_gets: ["/v1/sources"]
+  data/EXPLORE:
+    needs_id: true
+    id_from: "/v1/datasets"
+    primary_gets: ["/v1/datasets/{id}"]
+  data/CONNECT_API:
+    primary_gets: ["/v1/sources"]
+  data/DOCUMENTS:
+    primary_gets: ["/v1/documents"]
+  data/DOCUMENT:
+    needs_id: true
+    id_from: "/v1/documents"
+    primary_gets: ["/v1/documents/{id}"]
+  data/DOC_QUALITY:
+    primary_gets: ["/v1/quality-issues"]
+  data/DOC_VALIDITY:
+    primary_gets: ["/v1/documents"]
+  data/EXTRACTION_SCHEMAS:
+    primary_gets: ["/v1/extraction-schemas"]
+  data/SQL:
+    primary_gets: ["/v1/datasets"]
+  data/PIPELINES:
+    primary_gets: ["/v1/pipelines"]
+  data/PIPELINE:
+    needs_id: true
+    seed_id: a0000000-0000-0000-0000-000000aa1d30
+    primary_gets: ["/v1/pipelines/{id}"]
+  data/PIPELINE_SAVE:
+    needs_id: true
+    seed_id: a0000000-0000-0000-0000-000000aa1d30
+    primary_gets: ["/v1/pipelines/{id}"]
+  data/DATA_MARTS:
+    primary_gets: ["/v1/marts"]
+  data/DATA_MART:
+    needs_id: true
+    seed_id: a0000000-0000-0000-0000-000000aa1d31
+    primary_gets: ["/v1/marts/{id}"]
+  data/DATA_PRODUCTS:
+    primary_gets: ["/v1/data-products"]
+  data/QUALITY:
+    primary_gets: ["/v1/quality-rules"]
+  data/WRITEBACK:
+    primary_gets: ["/v1/writebacks"]
+  data/LINEAGE:
+    primary_gets: ["/v1/datasets"]
+
+  admin/_:
+    primary_gets: ["/v1/admin/organization"]
+  admin/USERS:
+    primary_gets: ["/v1/admin/users", "/v1/admin/roles"]
+  admin/DATA_SPACES:
+    primary_gets: ["/v1/data-spaces"]
+  admin/DATA_SPACE_NEW:
+    primary_gets: ["/v1/data-spaces"]
+  admin/DATA_SPACE_SETUP:
+    needs_id: true
+    id_from: "/v1/data-spaces"
+    primary_gets: ["/v1/data-spaces/{id}/members"]
+  admin/PERMISSION_COMPARE:
+    needs_id: true
+    id_from: "/v1/data-spaces"
+    primary_gets: ["/v1/data-spaces/{id}/permissions"]
+  admin/POLICIES:
+    primary_gets: ["/v1/policies"]
+  admin/ACCESS_REQUESTS:
+    primary_gets: ["/v1/access-requests"]
+  admin/MODELS:
+    primary_gets: ["/v1/admin/models"]
+  admin/INTEGRATIONS:
+    primary_gets: ["/v1/admin/clients"]
+  admin/MONITORING:
+    primary_gets: ["/v1/admin/system/health"]
+  admin/AUDIT:
+    primary_gets: ["/v1/audit"]
+  admin/PRIVACY:
+    primary_gets: ["/v1/dsr"]
+
+  account/PROFILE:
+    primary_gets: ["/v1/me"]
+  account/NOTIFICATIONS:
+    primary_gets: ["/v1/me/notification-prefs", "/v1/me/notifications"]
+  account/CHANNEL_RULES:
+    primary_gets: ["/v1/channel-rules"]
+  account/SHORTCUTS:
+    primary_gets: ["/v1/me"]

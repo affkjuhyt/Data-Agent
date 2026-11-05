@@ -72,6 +72,7 @@ OTHER_PREFIXES: dict[str, set[tuple[str, str]]] = {
     "deploy/": {REPO_SUITE},
     "frontend/": {REPO_SUITE},
     "model/": {REPO_SUITE},
+    "tests/screen_audit/": {REPO_SUITE},
 }
 
 # Per-suite pytest flags, (kind, suite) -> extra arguments.

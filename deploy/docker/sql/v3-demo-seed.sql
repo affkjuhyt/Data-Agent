@@ -53,6 +53,39 @@ ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     is_system = EXCLUDED.is_system;
 
+-- Restricted reader for the screen-audit harness (tests/screen_audit): ask + view_aggregate
+-- only, so admin_data / exec_vault / steward screens refuse while Ask still works.
+INSERT INTO org.app_user (id, org_id, external_id, username, display_name, email, status)
+VALUES (
+    'a0000000-0000-0000-0000-000000000024',
+    'a0000000-0000-0000-0000-000000000001',
+    '5004a4c3-8a42-4a65-a30c-2cfa83267f2c',
+    'helios-viewer',
+    'Viewer Helios',
+    'helios-viewer@helios.corp',
+    'active'
+)
+ON CONFLICT (id) DO UPDATE SET
+    external_id = EXCLUDED.external_id,
+    username = EXCLUDED.username,
+    display_name = EXCLUDED.display_name,
+    email = EXCLUDED.email,
+    status = EXCLUDED.status;
+
+INSERT INTO org.role (id, org_id, code, name, capabilities, is_system)
+VALUES (
+    'a0000000-0000-0000-0000-000000000025',
+    'a0000000-0000-0000-0000-000000000001',
+    'viewer',
+    'Viewer',
+    ARRAY['ask', 'view_aggregate'],
+    true
+)
+ON CONFLICT (id) DO UPDATE SET
+    capabilities = EXCLUDED.capabilities,
+    name = EXCLUDED.name,
+    is_system = EXCLUDED.is_system;
+
 -- DS-DEMO, the Data Space this seed used to open for the engineer, and DS-BH, the synthetic pilot
 -- of v3-pilot-seed.sql, are retired: AdventureWorks (DS-AW, v3-adventureworks-seed.sql) is the one
 -- the product is tested on. A cluster seeded before keeps rows that point at them in schemas without

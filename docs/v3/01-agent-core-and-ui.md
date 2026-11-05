@@ -287,7 +287,7 @@ Skill chưa duyệt không bao giờ được planner chọn cho câu hỏi củ
 | Kiểm tra trước thực thi rẻ hơn chạy rồi sửa | AgenticData, DeepEye Validator | Bước 3 của vòng lặp |
 | Thất bại tiêu tốn 1,2–3,2× token của thành công | DataSpace | Dừng sớm theo lớp lỗi lặp, không tăng ngân sách |
 | Reflection/đa agent xuống cấp từ từ, kế hoạch tĩnh sụp trên câu khó; nhưng đắt 2–3× | FDABench | Chế độ: câu dễ → kế hoạch một lượt; câu khó/deep analysis → reflection; chọn theo confidence và độ sâu DAG |
-| Model "suy nghĩ" + harness nặng = phạt kép | FDABench | Không bật thinking cho model trong node đã có checker ngoài |
+| Model "suy nghĩ" + harness nặng = phạt kép | FDABench | Không bật thinking cho node đã có checker ngoài (`planner`, `text_to_sql`, `analyze`, …). Ngoại lệ có chủ đích: `responder` / `orchestrator-planner` bật thinking (đúng hơn nhanh); gateway strip `<think>` và không dùng `response_format` trên các alias đó |
 | Hướng dẫn chung của dataset có thể gây hại | DAB: hint ±4 điểm, có khi làm sai | Instruction trong Data Space gắn phạm vi hẹp, có eval đo trước/sau |
 
 ### 3.9 Ánh xạ vào repo

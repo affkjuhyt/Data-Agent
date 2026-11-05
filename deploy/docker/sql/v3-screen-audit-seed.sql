@@ -1,0 +1,278 @@
+-- Screen-audit fixtures for DS-AW: one (or few) rows so empty / no_seed_id screens open.
+-- Complements v3-agent-seed.sql. Idempotent. Figures and names stay on AdventureWorks themes.
+-- Ids: a0000000-…-000000aa1cNN / aa1dNN / aa1eNN.
+
+\set org '''a0000000-0000-0000-0000-000000000001'''
+\set engineer '''a0000000-0000-0000-0000-000000000022'''
+\set space '''a0000000-0000-0000-0000-000000000a01'''
+
+-- ── Cần bạn: proposal + HITL (and the checkpoint hit already pointed at aa0c82) ──
+
+INSERT INTO inbox.proposal (
+    id, org_id, data_space_id, kind, target_service, target_ref, title, diff, reason,
+    evidence, impact, impact_level, proposed_by, assignee_id, status, expires_at,
+    created_by, updated_by
+)
+SELECT
+    'a0000000-0000-0000-0000-000000aa1c01', :org::uuid, :space::uuid,
+    'metric_change', 'context', NULL,
+    'Đổi mô tả biên gộp Internet (seed)',
+    '{"from": "Biên = (doanh thu - giá vốn) / doanh thu", "to": "Biên có trọng số doanh thu theo nhóm"}'::jsonb,
+    'Khớp định nghĩa AdventureWorksDW năm 2013.',
+    '[]'::jsonb, '{"agents": 1}'::jsonb, 'medium',
+    :engineer::uuid, a.id, 'pending_review', now() + interval '20 days',
+    :engineer::uuid, :engineer::uuid
+FROM org.app_user a
+WHERE a.org_id = :org::uuid AND a.username = 'helios-admin'
+ON CONFLICT (id) DO UPDATE SET
+    title = EXCLUDED.title, status = EXCLUDED.status, expires_at = EXCLUDED.expires_at;
+
+INSERT INTO inbox.hitl_request (
+    id, org_id, data_space_id, kind, risk, title, context, options,
+    source_service, source_ref, assignee_id, assignee_capability, due_at, status,
+    created_by, updated_by
+)
+SELECT v.id, :org::uuid, :space::uuid, v.kind, v.risk, v.title, v.context::jsonb, v.options::jsonb,
+       v.source_service, v.source_ref::uuid, a.id, v.assignee_capability,
+       now() + v.due, 'open', :engineer::uuid, :engineer::uuid
+FROM org.app_user a
+CROSS JOIN (VALUES
+    ('a0000000-0000-0000-0000-000000aa0c82'::uuid, 'checkpoint', 'medium',
+     'Gửi kết quả biên gộp ra ngoài (seed)',
+     '{"run_id": "a0000000-0000-0000-0000-000000aa0c62"}',
+     '[{"id": "send", "label": "Gửi"}, {"id": "hold", "label": "Giữ lại"}]',
+     'agent', 'a0000000-0000-0000-0000-000000aa0c62'::uuid, 'approve', interval '2 days'),
+    ('a0000000-0000-0000-0000-000000aa1c02'::uuid, 'approve_proposal', 'medium',
+     'Duyệt đổi mô tả biên gộp Internet (seed)',
+     '{"proposal_id": "a0000000-0000-0000-0000-000000aa1c01"}',
+     '[]', 'inbox', 'a0000000-0000-0000-0000-000000aa1c01'::uuid, 'approve', interval '5 days'),
+    ('a0000000-0000-0000-0000-000000aa1c03'::uuid, 'conflict', 'high',
+     'Hai nguồn doanh thu Internet lệch (seed)',
+     '{"left": "fact_internet_sales", "right": "báo cáo quý", "delta_pct": 3.2}',
+     '[{"id": "trust_dw", "label": "Tin kho"}, {"id": "trust_report", "label": "Tin báo cáo"}]',
+     'conflict', NULL::uuid, 'steward', interval '3 days')
+) AS v(id, kind, risk, title, context, options, source_service, source_ref, assignee_capability, due)
+WHERE a.org_id = :org::uuid AND a.username = 'helios-admin'
+ON CONFLICT (id) DO UPDATE SET
+    title = EXCLUDED.title, status = EXCLUDED.status, due_at = EXCLUDED.due_at,
+    context = EXCLUDED.context;
+
+INSERT INTO inbox.hitl_approval_step (
+    id, org_id, hitl_request_id, step, approver_role, approver_id
+)
+SELECT
+    'a0000000-0000-0000-0000-000000aa1c04', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1c02', 1, 'approve', a.id
+FROM org.app_user a
+WHERE a.org_id = :org::uuid AND a.username = 'helios-admin'
+ON CONFLICT (id) DO NOTHING;
+
+-- ── Glossary / knowledge / period ──
+
+INSERT INTO context.glossary_term (
+    id, org_id, data_space_id, term, term_norm, definition, meanings, status,
+    created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1d01', :org::uuid, :space::uuid,
+    'Biên gộp', 'bien gop',
+    'Tỷ lệ (doanh thu − giá vốn) / doanh thu trên fact_internet_sales.',
+    '[{"label": "Internet", "note": "Theo nhóm sản phẩm"}]'::jsonb, 'active',
+    :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO UPDATE SET definition = EXCLUDED.definition, status = EXCLUDED.status;
+
+INSERT INTO context.knowledge_page (
+    id, org_id, data_space_id, kind, subject_kind, subject_ref, slug, title,
+    index_summary, tags, owner_id, status, latest_version_no, created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1d02', :org::uuid, :space::uuid,
+    'topic', 'topic', NULL, 'bien-gop-internet', 'Biên gộp Internet',
+    'Định nghĩa và bẫy trung bình biên trên AdventureWorks.',
+    ARRAY['margin', 'internet'], :engineer::uuid, 'active', 0,
+    :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, status = EXCLUDED.status;
+
+INSERT INTO period.period_calendar (
+    id, org_id, data_space_id, period_kind, close_rule, dataset_ids,
+    reconciliation_items, report_codes, status, created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1d10', :org::uuid, :space::uuid,
+    'month', 'Ngày làm việc thứ 3 của tháng sau', '{}'::uuid[],
+    '[]'::jsonb, '{}'::text[], 'active', :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO UPDATE SET close_rule = EXCLUDED.close_rule, status = EXCLUDED.status;
+
+INSERT INTO period.period_close (
+    id, org_id, data_space_id, period_calendar_id, period_label, business_date,
+    version, status, created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1d11', :org::uuid, :space::uuid,
+    'a0000000-0000-0000-0000-000000aa1d10', '2013-12', DATE '2013-12-31',
+    1, 'open', :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, period_label = EXCLUDED.period_label;
+
+-- ── Crawl / pipeline / mart / product (dataset id optional when scan not run) ──
+
+INSERT INTO acquire.crawl_source (
+    id, org_id, data_space_id, name, goal, kind, seed_urls, allowed_domains,
+    schedule_cron, legal_status, trust_level, status, owner_id, created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1d20', :org::uuid, :space::uuid,
+    'Bảng giá phụ tùng công khai (seed)',
+    'Thu giá phụ tùng xe đạp từ trang demo công khai.',
+    'web_page',
+    '["https://example.com/adventureworks/parts"]'::jsonb,
+    ARRAY['example.com'],
+    '0 6 * * *', 'pending', 0.50, 'draft', :engineer::uuid, :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status;
+
+INSERT INTO pipeline.pipeline (
+    id, org_id, data_space_id, name, owner_id, input_dataset_ids, steps, scope, status,
+    created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1d30', :org::uuid, :space::uuid,
+    'Làm sạch doanh thu Internet (seed)', :engineer::uuid, '{}'::uuid[],
+    '[{"kind": "filter", "label": "Bỏ đơn hủy", "sql": "WHERE 1=1"}]'::jsonb,
+    'data_space', 'draft', :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, steps = EXCLUDED.steps;
+
+INSERT INTO pipeline.data_mart (
+    id, org_id, data_space_id, name, fact_dataset_id, grain, measures, dimensions, relations,
+    status, created_by, updated_by
+)
+SELECT
+    'a0000000-0000-0000-0000-000000aa1d31'::uuid, :org::uuid, :space::uuid,
+    'Mart doanh thu Internet (seed)', d.id, 'ngày × sản phẩm',
+    '[{"name": "sales_amount", "agg": "sum"}]'::jsonb,
+    '[{"name": "order_date"}]'::jsonb, '[]'::jsonb, 'draft', :engineer::uuid, :engineer::uuid
+FROM catalog.dataset d
+WHERE d.data_space_id = :space::uuid
+ORDER BY d.name
+LIMIT 1
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status;
+
+INSERT INTO pipeline.data_product (
+    id, org_id, data_space_id, code, name, version, dataset_id, contract, owner_id, status,
+    created_by, updated_by
+)
+SELECT
+    'a0000000-0000-0000-0000-000000aa1d32'::uuid, :org::uuid, :space::uuid,
+    'aw-internet-sales', 'Doanh thu Internet (seed)', 1, d.id,
+    '{"sla": "T+1", "columns": ["order_date", "sales_amount"]}'::jsonb,
+    :engineer::uuid, 'draft', :engineer::uuid, :engineer::uuid
+FROM catalog.dataset d
+WHERE d.data_space_id = :space::uuid
+ORDER BY d.name
+LIMIT 1
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status;
+
+-- ── Monitor / alert / report / digest (needs an active metric when semantic-import ran) ──
+
+INSERT INTO monitor.monitor (
+    id, org_id, data_space_id, owner_id, metric_id, scope_filter, rule_kind, rule,
+    schedule_cron, notify_mode, recipients, status, created_by, updated_by
+)
+SELECT
+    'a0000000-0000-0000-0000-000000aa1e01'::uuid, :org::uuid, :space::uuid, :engineer::uuid,
+    m.id, '{}'::jsonb, 'threshold', '{"op": "<", "value": 0.40}'::jsonb,
+    '0 8 * * *', 'alert_only',
+    jsonb_build_array(jsonb_build_object('user_id', :engineer::uuid::text, 'channel', 'in_app')),
+    'active', :engineer::uuid, :engineer::uuid
+FROM context.metric m
+WHERE m.data_space_id = :space::uuid AND m.status = 'active'
+ORDER BY m.code
+LIMIT 1
+ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, rule = EXCLUDED.rule;
+
+INSERT INTO monitor.alert (
+    id, org_id, monitor_id, period_label, value, threshold_value, summary, dedup_key,
+    kind, status, created_by, updated_by
+)
+SELECT
+    'a0000000-0000-0000-0000-000000aa1e02'::uuid, :org::uuid, mon.id,
+    '2013-12', 0.382, 0.40,
+    'Biên gộp Internet tháng 12/2013 dưới ngưỡng 40%.',
+    'seed:margin:2013-12', 'metric', 'open', :engineer::uuid, :engineer::uuid
+FROM monitor.monitor mon
+WHERE mon.id = 'a0000000-0000-0000-0000-000000aa1e01'
+ON CONFLICT (id) DO UPDATE SET summary = EXCLUDED.summary, status = EXCLUDED.status;
+
+INSERT INTO monitor.report_schedule (
+    id, org_id, data_space_id, kind, owner_id, title, cron, as_of_rule, formats, status,
+    created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1e10', :org::uuid, :space::uuid, 'digest',
+    :engineer::uuid, 'Bản tin biên gộp tuần (seed)', '0 9 * * 1', 'end_of_previous_week',
+    ARRAY['html'], 'active', :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, status = EXCLUDED.status;
+
+INSERT INTO monitor.report_run (
+    id, org_id, report_schedule_id, kind, as_of, trigger, status, finished_at
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1e11', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1e10', 'digest', CURRENT_DATE, 'run_now', 'sent', now()
+)
+ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, finished_at = EXCLUDED.finished_at;
+
+INSERT INTO notify.notification (
+    id, org_id, user_id, data_space_id, kind, title, body, link, source_ref, priority, created_at
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1e12', :org::uuid, :engineer::uuid, :space::uuid,
+    'digest', 'Bản tin biên gộp tuần (seed)', '06/10 · Agent Báo cáo',
+    '/analysis/digest/a0000000-0000-0000-0000-000000aa1e11',
+    'a0000000-0000-0000-0000-000000aa1e11', 'normal', now()
+)
+ON CONFLICT (id, created_at) DO NOTHING;
+
+-- ── Access request (viewer asks for view_detail) + extraction schema on DS-AW collection ──
+
+INSERT INTO org.access_request (
+    id, org_id, requester_id, data_space_id, capability, reason, requested_until, status
+)
+SELECT
+    'a0000000-0000-0000-0000-000000aa1e20'::uuid, :org::uuid, u.id, :space::uuid,
+    'view_detail', 'Screen-audit: xem chi tiết DS-AW.',
+    (CURRENT_DATE + 30), 'pending'
+FROM org.app_user u
+WHERE u.org_id = :org::uuid AND u.username = 'helios-viewer'
+ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, reason = EXCLUDED.reason;
+
+INSERT INTO document.extraction_schema (
+    id, org_id, collection_id, version, fields, status, created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1e30', :org::uuid,
+    'a0000000-0000-0000-0000-0000d1001000', 1,
+    '[{"name": "metric_code", "type": "text", "required": true}]'::jsonb,
+    'draft', :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO UPDATE SET fields = EXCLUDED.fields, status = EXCLUDED.status;
+
+-- Quality rule when a dataset exists (QUALITY list).
+INSERT INTO ingest.quality_rule (
+    id, org_id, data_space_id, dataset_id, column_name, kind, params, severity, status,
+    created_by, updated_by
+)
+SELECT
+    'a0000000-0000-0000-0000-000000aa1e40'::uuid, :org::uuid, :space::uuid, d.id,
+    'sales_amount', 'range', '{"min": 0}'::jsonb, 'medium', 'active',
+    :engineer::uuid, :engineer::uuid
+FROM catalog.dataset d
+WHERE d.data_space_id = :space::uuid
+ORDER BY d.name
+LIMIT 1
+ON CONFLICT (id) DO UPDATE SET params = EXCLUDED.params, status = EXCLUDED.status;

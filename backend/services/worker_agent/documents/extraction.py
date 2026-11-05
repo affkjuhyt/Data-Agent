@@ -179,7 +179,7 @@ async def extract_document(
         return None
     try:
         reply = await gateway.json_chat(
-            "responder", SYSTEM, _prompt(fields, passages), Values, max_tokens=1500
+            "responder", SYSTEM, _prompt(fields, passages), Values, max_tokens=4000
         )
     except ModelUnavailable as exc:
         # Not raised: a failed handler holds back the whole claim of document.outbox. The document

@@ -796,7 +796,8 @@ async def compose(s: State) -> None:
                     prompts.REPORTER,
                     user + (f"\n\nLỗi block lần trước: {errors}" if errors else ""),
                     b.Composition,
-                    max_tokens=2500,
+                    # Thinking is on for this alias; leave room before the JSON object.
+                    max_tokens=8192,
                 )
             except ModelUnavailable:
                 break
@@ -873,7 +874,7 @@ async def _reviewed(s: State, user: str, drafts: list[b.BlockDraft]) -> list[b.B
             f"{user}\n\nBản nháp trước:\n{draft[:6000]}\n\nNgười rà soát chỉ ra, hãy sửa đúng "
             "những điểm này:\n- " + "\n- ".join(problems),
             b.Composition,
-            max_tokens=2500,
+            max_tokens=8192,
         )
     except ModelUnavailable:
         return drafts

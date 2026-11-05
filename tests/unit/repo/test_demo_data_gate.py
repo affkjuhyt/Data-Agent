@@ -21,6 +21,7 @@ DEMO_SQL = (
     "v3-adventureworks-context.sql",
     "v3-adventureworks-documents.sql",
     "v3-agent-seed.sql",
+    "v3-screen-audit-seed.sql",
 )
 # Writes one line per call; `apply -f -` reads the manifest create piped to it.
 KUBECTL = """#!/bin/sh

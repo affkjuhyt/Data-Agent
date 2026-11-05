@@ -144,11 +144,38 @@ another cluster. Credentials come from the environment, never from a file
 (`tests/conftest.py` `LIVE_ACCOUNTS`): each account's password variable is required
 — a test fails naming the one that is unset — and its username defaults to the demo
 account (`E2E_USER` helios-engineer, `E2E_ADMIN_USER` platform-admin,
-`E2E_T2_ADMIN_USER` helios-admin). The load test goes through Kong as `E2E_USER`. The demo
+`E2E_T2_ADMIN_USER` helios-admin, `E2E_VIEWER_USER` helios-viewer). The load test goes through Kong as `E2E_USER`. The demo
 accounts' passwords are the vault's `vault_demo_password_*`
 (`deploy/ansible/inventories/<env>/group_vars/all/vault.yml.example`), which the
 setup Job writes into Keycloak on a deploy with `-e apply_setup=true`; an unset
 one leaves that account's password as it is.
+
+### Screen audit (all ROUTE_MAP pages)
+
+```bash
+export E2E_PASS=… E2E_VIEWER_PASS=…   # helios-engineer + helios-viewer (vault_demo_password_*)
+make screen-audit                     # writes tests/screen_audit/out/screen_audit.tsv
+```
+
+Catalog: every page in `frontend/src/routes.tsx` `ROUTE_MAP`, with primary GETs in
+`tests/screen_audit/apis.yaml` and AccessDenied wiring scanned from the page component.
+The e2e probe logs in as engineer and viewer against DS-AW and classifies each screen:
+
+| Label | Meaning |
+| --- | --- |
+| `content` | API 200 with data |
+| `empty` | API 200 empty — missing seed, not a product bug |
+| `access_denied_ok` | 403 with `access` block and the page calls `forbiddenOf` |
+| `access_as_load_error` | 403 with `access` but the page only shows AsyncRegion load error |
+| `forbidden_plain` | 403 without an access block |
+| `server_error` | 5xx |
+| `no_seed_id` | Detail page needs an id and the list had none |
+| `hidden_rail` | Viewer refused on a rail item gated by `requires:` |
+| `not_found` | 404 (wrong mapping or resource gone) |
+
+The test does **not** fail on `empty` / `no_seed_id` / `access_as_load_error` — the TSV is
+the deliverable. Unit ratchet: `tests/unit/repo/test_screen_audit_catalog.py`. Needs
+`seed_demo` including helios-viewer on DS-AW (re-apply db-init after pulling the seed).
 
 **These tests write data.** The agent-answer test runs real turns (new
 conversations every run) and the tenant-isolation test deletes, revokes and

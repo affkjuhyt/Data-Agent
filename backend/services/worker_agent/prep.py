@@ -217,7 +217,7 @@ async def requested(event: Event) -> None:
         ensure_ascii=False,
     )
     try:
-        reply = await model.json_chat("responder", SYSTEM, prompt, PrepAnswer, max_tokens=1500)
+        reply = await model.json_chat("responder", SYSTEM, prompt, PrepAnswer, max_tokens=4000)
     except ModelUnavailable as exc:
         logger.info("worker-agent | prep agent for pipeline %s: %s", pipeline_id, exc)
         await _answer(
