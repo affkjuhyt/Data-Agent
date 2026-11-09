@@ -353,6 +353,29 @@ async def test_behaviour_policy_and_backtest(gov: Org) -> None:
         assert outside.json() == []
 
 
+async def test_a_personal_rule_is_listed_to_its_owner_only(gov: Org) -> None:
+    def rule(who: str) -> uuid.UUID:
+        return gov.seed.row(
+            "governance.behavior_policy",
+            org_id=gov.org,
+            scope="user",
+            subject_id=gov.users[who],
+            kind="auto_handle",
+            description=f"Quy tắc của {who}",
+            status="active",
+        )
+
+    mine, theirs = rule("teller"), rule("admin")
+    async with client(gov) as api:
+        listed = await api.get(
+            "/v1/policies?type=behavior&scope=user&status=active",
+            headers=gov.headers("teller", space=True),
+        )
+    assert listed.status_code == 200, listed.text
+    ids = {p["id"] for p in listed.json()}
+    assert str(mine) in ids and str(theirs) not in ids
+
+
 _NO_SELF_APPROVAL = (
     "The creator of the policy does not activate it unless the organisation allows"
     " self-approval."

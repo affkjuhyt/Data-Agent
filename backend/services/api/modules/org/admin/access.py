@@ -10,7 +10,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query
-from sqlalchemy import func, literal, select
+from sqlalchemy import func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -36,7 +36,7 @@ from services.api.modules.org.admin.schemas import (
     AccessRequestCreate,
     AccessRequestView,
 )
-from services.api.modules.org.identity import ROLE
+from services.api.modules.org.identity import ROLE, memberships
 
 router = APIRouter()
 
@@ -78,7 +78,20 @@ async def list_access_requests(
     query = select(row).where(row.org_id == principal.org_id)
     if data_space_id is not None:
         query = query.where(row.data_space_id == data_space_id)
-    if "steward" not in principal.capabilities:
+    if "steward" in principal.capabilities:
+        # Steward is granted per Data Space (identity.py): the steward sees the requests of the
+        # space they act in, or of the spaces they belong to at org level, and their own. Every
+        # space of the org put another space's requests in the queue and the rail count, and
+        # deciding one is refused there.
+        spaces = (
+            [principal.data_space_id]
+            if principal.data_space_id is not None
+            else memberships(principal.user_id).with_only_columns(org.DataSpaceMember.data_space_id)
+        )
+        query = query.where(
+            or_(row.data_space_id.in_(spaces), row.requester_id == principal.user_id)
+        )
+    else:
         query = query.where(row.requester_id == principal.user_id)
     if status is not None:
         query = query.where(row.status == status)

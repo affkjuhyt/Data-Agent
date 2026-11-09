@@ -214,7 +214,8 @@ describe('governance from the api', () => {
 
   it('reads the user’s rules and a draft rule from decisions by type, scope and status', async () => {
     const mine = await listMyRules();
-    expect(mine.items[0]).toMatchObject({ applied_this_week: 4 });
+    // override_count counts corrections, not uses: the weekly count is unknown until the api has it.
+    expect(mine.items[0]).toMatchObject({ applied_this_week: null });
     const rule = await getDecisionRule('rule-1');
     expect(rule).toMatchObject({
       title: 'Lệch dưới 2 tỷ dùng Core banking',

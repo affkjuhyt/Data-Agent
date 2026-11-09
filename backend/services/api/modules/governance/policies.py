@@ -404,7 +404,12 @@ async def list_policies(
             rows = (await session.scalars(query.order_by(ap.created_at.desc()))).all()
             return [AccessPolicyView.model_validate(r) for r in rows]
         bp = governance.BehaviorPolicy
-        listed = select(bp).where(bp.org_id == principal.org_id)
+        # A user-scoped rule is one person's own (made from their decisions, UC-07-08): it is
+        # listed to that person only. Without this, "Quy tắc của bạn" showed every colleague's.
+        listed = select(bp).where(
+            bp.org_id == principal.org_id,
+            or_(bp.scope != "user", bp.subject_id == principal.user_id),
+        )
         if space is not None:
             listed = listed.where(or_(bp.data_space_id.is_(None), bp.data_space_id == space))
         elif "admin" not in principal.capabilities:

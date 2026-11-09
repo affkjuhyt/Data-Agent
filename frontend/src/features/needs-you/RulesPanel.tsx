@@ -9,7 +9,10 @@ import type { Page } from '../../lib/v1/client';
  */
 export function RulesPanel({ rules }: { rules: V1State<Page<BehaviorPolicy>> }) {
   const items = rules.data?.items ?? [];
-  const handled = items.reduce((sum, rule) => sum + rule.applied_this_week, 0);
+  // The api does not count what a rule handled yet: without the count, the panel says how many
+  // rules there are instead of a number of handled requests it cannot know.
+  const counted = items.some((rule) => rule.applied_this_week !== null);
+  const handled = items.reduce((sum, rule) => sum + (rule.applied_this_week ?? 0), 0);
 
   return (
     <aside
@@ -19,10 +22,22 @@ export function RulesPanel({ rules }: { rules: V1State<Page<BehaviorPolicy>> }) 
       {items.length > 0 && (
         <>
           <div className="flex flex-col gap-da-xs rounded-lg border border-border px-da-lg py-da-md">
-            <span className="text-success da-metric">{handled} việc</span>
-            <span className="text-foreground da-body-small">
-              đã được tự xử lý tuần này nhờ {items.length} quy tắc bạn tạo từ quyết định trước đây.
-            </span>
+            {counted ? (
+              <>
+                <span className="text-success da-metric">{handled} việc</span>
+                <span className="text-foreground da-body-small">
+                  đã được tự xử lý tuần này nhờ {items.length} quy tắc bạn tạo từ quyết định trước
+                  đây.
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-success da-metric">{items.length} quy tắc</span>
+                <span className="text-foreground da-body-small">
+                  bạn tạo từ quyết định trước đây đang bật.
+                </span>
+              </>
+            )}
           </div>
           <h2 className="text-foreground da-heading-3">Quy tắc của bạn</h2>
           <ul className="flex flex-col gap-[14px]">
@@ -34,9 +49,11 @@ export function RulesPanel({ rules }: { rules: V1State<Page<BehaviorPolicy>> }) 
                 <span className="min-w-0 flex-1 text-foreground da-body-small">
                   {rule.description}
                 </span>
-                <span className="shrink-0 text-muted-foreground da-caption">
-                  {rule.applied_this_week} lần
-                </span>
+                {rule.applied_this_week !== null && (
+                  <span className="shrink-0 text-muted-foreground da-caption">
+                    {rule.applied_this_week} lần
+                  </span>
+                )}
               </li>
             ))}
           </ul>

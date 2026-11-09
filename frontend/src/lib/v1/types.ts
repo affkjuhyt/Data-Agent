@@ -387,7 +387,7 @@ export const readBehaviorPolicy = (raw: BehaviorPolicyWire): BehaviorPolicy => (
   description: raw.description,
   origin: raw.origin as BehaviorPolicy['origin'],
   status: raw.status as BehaviorPolicy['status'],
-  applied_this_week: raw.applied_this_week ?? raw.override_count,
+  applied_this_week: raw.applied_this_week ?? null,
 });
 
 export interface BehaviorPolicy {
@@ -398,8 +398,9 @@ export interface BehaviorPolicy {
   description: string;
   origin: 'manual' | 'hitl';
   status: 'draft' | 'active' | 'disabled' | 'expired';
-  /** PROPOSAL: how often the rule handled a request instead of asking, this week. */
-  applied_this_week: number;
+  /** PROPOSAL: how often the rule handled a request instead of asking, this week; null while the
+   *  api does not count it (override_count is how often a person corrected the rule, not this). */
+  applied_this_week: number | null;
 }
 
 /* ─── Duyệt đề xuất: inbox.proposal (GET /v1/proposals/{id}) ──────────── */

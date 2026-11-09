@@ -634,8 +634,9 @@ export interface AccessPolicy {
   rule_text: string;
   /** PROPOSAL: question used for the simulation by default. */
   sample_question: string;
-  /** PROPOSAL: how many requests the policy handled this week (the policyOff confirmation). */
-  applied_this_week: number;
+  /** PROPOSAL: how many requests the policy handled this week (the policyOff confirmation); null
+   *  while the api does not count it. */
+  applied_this_week: number | null;
   /** The last backtest (AccessPolicyDetail.latest_backtest); null in the list and until one ran. */
   last_backtest: Backtest | null;
 }
@@ -702,7 +703,7 @@ function readAccessPolicy(raw: AccessPolicyWire, spaces: Map<string, string>): A
     owner_name: raw.owner_name ?? '',
     rule_text: raw.rule_text ?? ruleTextOf(raw),
     sample_question: raw.sample_question ?? '',
-    applied_this_week: raw.applied_this_week ?? 0,
+    applied_this_week: raw.applied_this_week ?? null,
     last_backtest:
       raw.last_backtest ?? (raw.latest_backtest ? readBacktest(raw.latest_backtest) : null),
   };

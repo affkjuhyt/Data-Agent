@@ -207,8 +207,10 @@ function PolicyList() {
         }}
       >
         <span className="flex flex-col gap-da-sm">
-          {turningOff?.applied_this_week ?? 0} yêu cầu tuần này được tự xử lý nhờ quy tắc. Sau khi
-          tắt, agent sẽ hỏi lại bạn mỗi lần.
+          {typeof turningOff?.applied_this_week === 'number'
+            ? `${turningOff.applied_this_week} yêu cầu tuần này được tự xử lý nhờ quy tắc. `
+            : ''}
+          Sau khi tắt, agent sẽ hỏi lại bạn mỗi lần.
           <Textarea
             aria-label="Lý do tắt"
             placeholder="Lý do tắt (bắt buộc)"

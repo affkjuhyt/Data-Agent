@@ -1002,6 +1002,23 @@ async def test_access_requests_can_be_listed_by_requester_and_steward(world: Wor
         assert any(item["id"] == sent["id"] for item in steward.json()["items"])
 
 
+async def test_a_steward_sees_the_requests_of_the_space_they_act_in(world: World) -> None:
+    async with client(world) as api:
+        here = (await _request(api, world, "ask")).json()
+        there = (await _request(api, world, "ask", space=world.other_space)).json()
+
+        async def listed(space: uuid.UUID) -> set[str]:
+            got = await api.get(
+                "/v1/access-requests?status=pending", headers=world.headers("steward", space)
+            )
+            assert got.status_code == 200, got.text
+            return {item["id"] for item in got.json()["items"]}
+
+        in_space, in_other = await listed(world.space), await listed(world.other_space)
+    assert here["id"] in in_space and there["id"] not in in_space
+    assert there["id"] in in_other and here["id"] not in in_other
+
+
 # AC-11-07-01
 @pytest.mark.req("AC-11-07-01")
 async def test_an_approved_request_adds_a_member_for_the_requested_time(world: World) -> None:
