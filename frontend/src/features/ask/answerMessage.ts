@@ -120,7 +120,8 @@ export function fromAnswer(answer: Answer): Partial<AskMessage> {
   if (answer.kind !== 'data') return drawn;
   const figures = readFigures(answer.figures);
   const spec = readChartSpec(answer.chart_spec);
-  const run = figureRun(figures, spec);
+  const check = answer.number_check as { rows_total?: unknown } | null | undefined;
+  const run = figureRun(figures, spec, typeof check?.rows_total === 'number' ? check.rows_total : null);
   const chart = figureChart(figures, spec);
   const trust = figureTrust(figures);
   const drill = figureDrill(spec);

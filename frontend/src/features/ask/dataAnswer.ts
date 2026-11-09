@@ -60,8 +60,9 @@ const CHART_WIRE_TYPES: ReadonlySet<string> = new Set([
   'composed',
 ]);
 
-/** The labels the worker writes (questions.py STANDARD, NOT_STANDARD, OUT_OF_SCOPE; sqlgen/answer.py TRUST). */
-/** worker-agent sqlgen/verified.py TRUST_VERIFIED: a figure of a query a steward approved. */
+/** The labels the worker writes (questions.py STANDARD, NOT_STANDARD, OUT_OF_SCOPE; sqlgen/answer.py
+ *  TRUST; sqlgen/verified.py TRUST_VERIFIED, a figure of a query a steward approved; the dynamic
+ *  agent's agentic/workspace.py TRUST_LABEL). */
 const VERIFIED = 'Đã kiểm (truy vấn đã duyệt)';
 const EXPLORED = 'Khám phá (truy vấn do mô hình viết)';
 
@@ -95,7 +96,36 @@ const TRUST: Record<string, Omit<AnswerTrust, 'label'>> = {
     meaning:
       'Chỉ số không thuộc data product nào nên không có cam kết cập nhật và không có biên nhận.',
   },
+  'SQL thăm dò, chưa qua chỉ số chuẩn': {
+    level: 'EXPLORATORY',
+    tone: 'warning',
+    meaning:
+      'Số từ truy vấn SQL do agent viết trên bảng của Data Space, không qua định nghĩa chỉ số đã duyệt. Kiểm lại trước khi dùng để quyết định.',
+  },
+  'Tính thêm từ dữ liệu đã truy vấn': {
+    level: 'EXPLORATORY',
+    tone: 'warning',
+    meaning:
+      'Số do agent tính thêm bằng mã từ các kết quả đã truy vấn, không phải một định nghĩa chỉ số đã duyệt. Kiểm lại trước khi dùng để quyết định.',
+  },
+  'Theo tài liệu': {
+    level: 'DOCUMENTS',
+    tone: 'info',
+    meaning: 'Số lấy từ tài liệu, không phải từ dữ liệu đã tính.',
+  },
 };
+
+/** Weakest first, as the worker orders them (agentic/workspace.py TRUST_ORDER). */
+const WEAKEST_FIRST: AnswerTrust['level'][] = ['INSUFFICIENT', 'EXPLORATORY', 'DOCUMENTS', 'GOVERNED', 'VERIFIED'];
+
+/** A label this screen does not know is never shown as stronger than exploratory. */
+const UNKNOWN: Omit<AnswerTrust, 'label'> = {
+  level: 'EXPLORATORY',
+  tone: 'warning',
+  meaning: 'Cách tính chưa được xác định là theo chỉ số đã duyệt. Kiểm lại trước khi dùng để quyết định.',
+};
+
+const known = (label: string) => TRUST[label] ?? UNKNOWN;
 
 const MASKED = {
   masked_stale: 'Đã ẩn: dữ liệu quá hạn cập nhật',
@@ -145,7 +175,12 @@ function numberOf(f: FigureWire): number | null {
 }
 
 /** The answer's result table: one column per dimension, then the metric. */
-export function figureRun(figures: FigureWire[], spec: ChartSpecWire | null): EvidenceRun | null {
+export function figureRun(
+  figures: FigureWire[],
+  spec: ChartSpecWire | null,
+  /** the query's row count when the figures keep only its first rows (number_check.rows_total) */
+  total?: number | null,
+): EvidenceRun | null {
   if (!figures.length) return null;
   const metric = metricName(figures, spec);
   const codes = Object.keys(figures[0].dimensions);
@@ -164,13 +199,13 @@ export function figureRun(figures: FigureWire[], spec: ChartSpecWire | null): Ev
     id: figures[0].query_run_id ?? undefined,
     kind: 'sql',
     sql: '',
-    // Which path computed the numbers, from the label the worker gave them.
-    generated_by:
-      figures[0].trust === VERIFIED ? 'verified_query' : figures[0].trust === EXPLORED ? 'llm' : 'semantic_layer',
+    // Which path computed the numbers, from the weakest label the worker gave them: a label that
+    // is not the certified one never reads as the semantic layer (invariant 14).
+    generated_by: GENERATED_BY[weakestLevel(figures)] ?? 'llm',
     columns,
     column_units: unit ? { [metric]: unit } : {},
     rows,
-    row_count: rows.length,
+    row_count: typeof total === 'number' && total > rows.length ? total : rows.length,
     metric: { metric, unit: unit ?? null, dimensions: codes.map((c) => dimensionLabel(c, spec)) },
     provenance,
   };
@@ -212,13 +247,43 @@ export function figureChart(figures: FigureWire[], spec: ChartSpecWire | null): 
   };
 }
 
-/** The label the worker gave the figures; all figures of an answer carry the same one. */
+const GENERATED_BY: Partial<Record<AnswerTrust['level'], EvidenceRun['generated_by']>> = {
+  VERIFIED: 'verified_query',
+  GOVERNED: 'semantic_layer',
+};
+
+const capital = (label: string) => label.charAt(0).toUpperCase() + label.slice(1);
+
+function labelsOf(figures: FigureWire[]): string[] {
+  return [...new Set(figures.map((f) => f.trust).filter((t): t is string => !!t))];
+}
+
+function weakestLevel(figures: FigureWire[]): AnswerTrust['level'] {
+  const levels = labelsOf(figures).map((l) => known(l).level);
+  if (!levels.length) return 'EXPLORATORY';
+  return levels.reduce<AnswerTrust['level']>(
+    (a, b) => (WEAKEST_FIRST.indexOf(b) < WEAKEST_FIRST.indexOf(a) ? b : a),
+    'VERIFIED',
+  );
+}
+
+/**
+ * The answer's label: the weakest of its figures' labels, with a breakdown when they differ. The
+ * dynamic agent can mix a certified KPI with an exploratory one; reading only the first figure
+ * labelled the whole answer by it.
+ */
 export function figureTrust(figures: FigureWire[]): AnswerTrust | null {
-  const label = figures[0]?.trust;
-  const known = label ? TRUST[label] : undefined;
-  return label && known
-    ? { label: label.charAt(0).toUpperCase() + label.slice(1), ...known }
-    : null;
+  const labels = labelsOf(figures);
+  if (!labels.length) return null;
+  const weakest = labels.reduce((a, b) =>
+    WEAKEST_FIRST.indexOf(known(b).level) < WEAKEST_FIRST.indexOf(known(a).level) ? b : a,
+  );
+  const counts = labels.map((l) => [l, figures.filter((f) => f.trust === l).length] as const);
+  return {
+    label: capital(weakest),
+    ...known(weakest),
+    ...(labels.length > 1 && { breakdown: counts.map(([l, n]) => `${n} số ${l}`).join(' · ') }),
+  };
 }
 
 /** Where a picked bar of the chart can be drilled: its axis and the other cuts (UC-01-04). */

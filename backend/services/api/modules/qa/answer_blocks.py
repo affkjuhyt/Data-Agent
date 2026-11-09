@@ -97,6 +97,13 @@ def blocks_of(answer: Any) -> list[dict[str, Any]]:
     rows = _figure_rows(figures)
     if rows:
         columns = list(dict.fromkeys(key for row in rows for key in row))
+        # The figures keep the first rows of a long result (sqlgen MAX_FIGURES); the count is the
+        # query's, so the table does not pass a part off as the whole.
+        check = (
+            answer.number_check if isinstance(getattr(answer, "number_check", None), dict) else {}
+        )
+        total = check.get("rows_total")
+        row_count = total if isinstance(total, int) and total > len(rows) else len(rows)
         blocks.append(
             {
                 "type": "table",
@@ -104,7 +111,7 @@ def blocks_of(answer: Any) -> list[dict[str, Any]]:
                 "title": "Bảng dữ liệu",
                 "columns": columns,
                 "rows": rows,
-                "row_count": len(rows),
+                "row_count": row_count,
             }
         )
 

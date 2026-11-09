@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Icon, type IconName } from '../../../../design-system/Icon';
 import { formatNumber } from '../../../../lib/formatVN';
 import { MarkdownContent } from '../../components/MarkdownContent';
+import { csvFileName, downloadCsv, toCsv } from '../../exportCsv';
 import type { AnswerBlockView, ChartSpec, Citation } from '../../types';
 import { CaveatsBlock } from './CaveatsBlock';
 import { ResultCard } from './ResultCard';
@@ -17,6 +18,11 @@ import { ResultCard } from './ResultCard';
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 const arr = <T,>(v: unknown) => (Array.isArray(v) ? (v as T[]) : []);
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/** "Tải CSV" on a block downloads that block's rows: the answer's figures are only the first
+ *  table or the KPIs, so exporting them from every block gave a table's reader the KPI values. */
+const blockCsv = (ctx: Ctx, title: string, columns: string[], rows: Record<string, unknown>[]) =>
+  ctx.onExportCsv && rows.length ? () => void downloadCsv(csvFileName(title), toCsv(columns, rows)) : undefined;
 
 /** A block the agent composed carries `composed: true` (blocks.py). */
 export const isComposed = (blocks: AnswerBlockView[] | undefined) =>
@@ -129,7 +135,7 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
         rowCount={spec.data.length}
         reading={[]}
         queryRunId={arr<string>(block.query_run_ids)[0] ?? null}
-        onExportCsv={ctx.onExportCsv}
+        onExportCsv={blockCsv(ctx, spec.title || str(block.title) || 'bieu-do', [spec.x_key, ...spec.y_keys], spec.data)}
         onSaveToSession={ctx.onSaveToSession}
       />
       <TrustNote block={block} />
@@ -148,7 +154,12 @@ function TableBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
         rowCount={num(block.row_count)}
         reading={[]}
         queryRunId={arr<string>(block.query_run_ids)[0] ?? null}
-        onExportCsv={ctx.onExportCsv}
+        onExportCsv={blockCsv(
+          ctx,
+          str(block.title) || 'bang-du-lieu',
+          arr<string>(block.columns),
+          arr<Record<string, unknown>>(block.rows),
+        )}
         onSaveToSession={ctx.onSaveToSession}
       />
       <TrustNote block={block} />

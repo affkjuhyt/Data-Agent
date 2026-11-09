@@ -196,3 +196,20 @@ def test_an_answer_the_agent_composed_is_served_in_the_order_it_chose() -> None:
     )
 
     assert [block["type"] for block in blocks_of(answer)] == ["insights", "chart", "markdown"]
+
+
+def test_the_table_counts_the_query_rows_when_the_figures_keep_only_the_first() -> None:
+    answer = types.SimpleNamespace(
+        id="answer-1",
+        kind="data",
+        text="Kết quả 237 dòng.",
+        figures=[{"key": f"F{i}", "value": str(i), "dimensions": {"p": str(i)}} for i in range(50)],
+        chart_spec=None,
+        citations=[],
+        number_check={"rows_total": 237, "notes": ["Bảng và biểu đồ chỉ hiện 50 dòng đầu"]},
+    )
+
+    table = next(block for block in blocks_of(answer) if block["type"] == "table")
+
+    assert len(table["rows"]) == 50
+    assert table["row_count"] == 237

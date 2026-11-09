@@ -246,3 +246,18 @@ def test_a_statement_the_source_refused_is_diagnosed_then_rewritten() -> None:
     assert fixed.sql == "SELECT 1 FROM a.b"
     assert fixed.tokens == 3 + 5 + 7
     assert "does not exist" in asked[0] and "the city is on the branch table" in asked[1]
+
+
+def test_an_answer_says_how_much_of_the_result_its_figures_hold() -> None:
+    from services.worker_agent.sqlgen.answer import _result_check
+
+    assert _result_check(None, 3) == {}
+    assert _result_check((3, False), 3) == {"rows_total": 3, "rows_truncated": False}
+    long = _result_check((237, False), 50)
+    assert long["rows_total"] == 237
+    assert long["notes"] == [
+        "Bảng và biểu đồ chỉ hiện 50 dòng đầu trong 237 dòng; xem toàn bộ trong truy vấn."
+    ]
+    cut = _result_check((10000, True), 50)
+    assert cut["rows_truncated"] is True
+    assert cut["notes"][0].startswith("Kết quả truy vấn bị cắt ở 10000 dòng")

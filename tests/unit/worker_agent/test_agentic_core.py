@@ -840,3 +840,17 @@ def test_a_metric_the_asker_is_denied_is_a_forbidden_failure() -> None:
     assert (unknown.ok, unknown.failure) == (False, "logic")
     # The asker cannot tell a denied metric from one that does not exist.
     assert denied.observation == unknown.observation.replace("profit", "revenue")
+
+
+def test_a_series_longer_than_a_chart_holds_is_a_table_not_a_cut_chart() -> None:
+    ws = Workspace()
+    days = [[f"2013-{1 + i // 28:02d}-{1 + i % 28:02d}", str(i)] for i in range(200)]
+    ws.add(title="Doanh thu theo ngày", columns=["Ngày", "Doanh thu"], rows=days, trust="certified")
+    block = b.materialize(
+        b.BlockDraft(type="chart", dataset="d1", chart_type="line", x="Ngày", y=["Doanh thu"]),
+        ws,
+        "b1",
+    )
+    # A line of the first 120 days would end in May with nothing saying the rest is missing.
+    assert block["type"] == "table"
+    assert block["row_count"] == 200

@@ -261,18 +261,20 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
         ][:3]
         if not y:
             raise BlockError(f"dataset {ds.id} không có cột số để vẽ")
-        shown_rows = ds.rows[:MAX_CHART_POINTS]
-        x_values = [plain(r[ds.columns.index(x)]) for r in shown_rows]
-        measures = [[number(r[ds.columns.index(c)]) for r in shown_rows] for c in y]
-        fits = fitting_charts(_x_kind(x, x_values), measures, len(shown_rows))
+        # Fitted on every row, not the first MAX_CHART_POINTS: a chart of the first 120 days of a
+        # year drew a line that stopped in May with nothing saying the rest was missing.
+        x_values = [plain(r[ds.columns.index(x)]) for r in ds.rows]
+        measures = [[number(r[ds.columns.index(c)]) for r in ds.rows] for c in y]
+        fits = fitting_charts(_x_kind(x, x_values), measures, len(ds.rows))
         if not fits:
-            # No chart fits these rows (one row, too many members): they are shown as a table.
+            # No chart fits these rows (one row, too many members or points): they are shown as a
+            # table, which says how many rows there are.
             return materialize(
                 draft.model_copy(update={"type": "table", "columns": [x, *y]}), ws, block_id
             )
         chart_type = draft.chart_type if draft.chart_type in fits else fits[0]
         data = []
-        for r in ds.rows[:MAX_CHART_POINTS]:
+        for r in ds.rows:
             point: dict[str, Any] = {x: plain(r[ds.columns.index(x)])}
             for c in y:
                 point[c] = number(r[ds.columns.index(c)])

@@ -307,6 +307,7 @@ async def answer_by_sql(
         trust=TRUST,
         consensus=(e.agreeing, len(e.tried)),
         told=told,
+        result=(len(e.rows), e.truncated) if kind == "data" else None,
     )
     return True
 
@@ -503,6 +504,7 @@ async def _answer_verified(
         query_run_id=outcome.query_run_id,
         trust=verified.TRUST_VERIFIED,
         consensus=None,
+        result=(len(outcome.rows or []), bool(outcome.truncated)),
     )
     return True
 
@@ -518,6 +520,23 @@ def _bar(figures: list[Figure], columns: list[str]) -> dict[str, Any] | None:
             "y_label": figures[0].column,
         }
     return None
+
+
+def _result_check(result: tuple[int, bool] | None, shown: int) -> dict[str, Any]:
+    """How much of the query result the figures hold. Without it the table read "50 dòng" while
+    the text said 237, and the export of "the whole result" held 50 rows."""
+    if result is None:
+        return {}
+    total, truncated = result
+    notes = []
+    if truncated:
+        notes.append(f"Kết quả truy vấn bị cắt ở {total} dòng; số thật có thể nhiều hơn.")
+    if shown and total > shown:
+        notes.append(
+            f"Bảng và biểu đồ chỉ hiện {shown} dòng đầu trong {total} dòng; "
+            "xem toàn bộ trong truy vấn."
+        )
+    return {"rows_total": total, "rows_truncated": truncated, **({"notes": notes} if notes else {})}
 
 
 async def _store_answer(
@@ -537,8 +556,11 @@ async def _store_answer(
     trust: str,
     consensus: tuple[int, int] | None,
     told: Narration | None = None,
+    result: tuple[int, bool] | None = None,
 ) -> None:
-    """The answer, its plan and the question's status, then the events the stream waits for."""
+    """The answer, its plan and the question's status, then the events the stream waits for.
+    `result` is the query's row count and whether the executor cut it: the figures keep at most
+    MAX_FIGURES rows, so the table and chart say how much of the result they show."""
     answer_id = uuid7()
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         question = await session.get(qa.Question, question_id, with_for_update=True)
@@ -568,6 +590,7 @@ async def _store_answer(
                         "regenerated": told.regenerated if told else 0,
                         "sentences_dropped": told.sentences_dropped if told else 0,
                         "untraceable_final": 0,
+                        **_result_check(result, len(figures)),
                     },
                     figures=stored_figures,
                     consensus=consensus,

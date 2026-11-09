@@ -30,10 +30,16 @@ export function ExportDialog({
 }) {
   const options: Array<{ value: Format; title: string; detail: string }> = [];
   if (run && onExportXlsx) {
+    // The file holds the answer's figures (exports.ts, include_detail_rows false): the query's
+    // other rows are not in it, so the option says how many rows it has, not the query's count.
+    const inFile = run.export?.total_rows ?? run.rows.length;
+    const queried = run.row_count ?? inFile;
     options.push({
       value: 'xlsx',
-      title: 'Excel · toàn bộ kết quả',
-      detail: `${formatNumber(run.export?.total_rows ?? run.row_count ?? run.rows.length)} dòng, kèm trang Nguồn ghi cách tính và thời điểm dữ liệu`,
+      title: queried > inFile ? 'Excel · các dòng của câu trả lời' : 'Excel · toàn bộ kết quả',
+      detail: `${formatNumber(inFile)} dòng${
+        queried > inFile ? ` trong ${formatNumber(queried)} dòng của truy vấn` : ''
+      }, kèm trang Nguồn ghi cách tính và thời điểm dữ liệu`,
     });
   }
   if (run && onExportCsv && run.rows.length) {
