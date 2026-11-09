@@ -54,7 +54,7 @@ const COUNTERS: Partial<Record<AreaId, Record<string, Counter>>> = {
   analysis: {
     SESSIONS: count(listWorkspaces),
     WATCH: count(listMonitors),
-    ALERTS: count(() => listAlerts('open')),
+    ALERTS: count(() => listAlerts('unresolved')),
     REPORTS: count(listReports),
   },
   data: {

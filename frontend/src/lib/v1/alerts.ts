@@ -86,7 +86,8 @@ function readAlert(raw: AlertWire): Alert {
   };
 }
 
-export const listAlerts = async (status?: AlertStatus) => {
+/** `unresolved`: open, ack and assigned, every alert nobody closed (monitor/routes.py). */
+export const listAlerts = async (status?: AlertStatus | 'unresolved') => {
   const page = await ok<Page<AlertWire>>(
     api.GET('/v1/alerts', { params: { query: { status, page_size: 500 } } }),
   );

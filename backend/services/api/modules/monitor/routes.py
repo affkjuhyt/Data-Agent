@@ -281,6 +281,10 @@ async def backtest_monitor(
 
 # ---------------------------------------------------------------- alerts (UC-08-02)
 
+# An alert someone acknowledged or took is still alerting until it is closed: listing only "open"
+# told the alert page "mọi theo dõi đang bình thường" while the watch list said "Đang cảnh báo".
+UNRESOLVED = ("open", "ack", "assigned")
+
 
 @router.get(
     "/v1/alerts",
@@ -305,7 +309,10 @@ async def list_alerts(
             )
         ),
     ],
-    status: str | None = None,
+    status: Annotated[
+        str | None,
+        Query(description="one status, or 'unresolved': open, ack and assigned"),
+    ] = None,
     monitor_id: uuid.UUID | None = None,
     from_: Annotated[datetime.datetime | None, Query(alias="from")] = None,
     to: datetime.datetime | None = None,
@@ -316,7 +323,9 @@ async def list_alerts(
         .join(monitor.Monitor, monitor.Monitor.id == alert.monitor_id)
         .where(alert.org_id == principal.org_id, monitor.Monitor.data_space_id == data_space)
     )
-    if status:
+    if status == "unresolved":
+        query = query.where(alert.status.in_(UNRESOLVED))
+    elif status:
         query = query.where(alert.status == status)
     if monitor_id:
         query = query.where(alert.monitor_id == monitor_id)

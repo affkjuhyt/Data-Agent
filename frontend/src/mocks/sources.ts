@@ -1712,7 +1712,7 @@ export function createSourcesHandlers() {
             status: 'active',
             paused_reason: null,
             lag_seconds: 0,
-            last_run: { status: 'succeeded', rows_loaded: 0 },
+            last_run: { status: 'succeeded', rows_written: 0, started_at: new Date().toISOString() },
           },
         ]);
       return page(
@@ -1733,17 +1733,24 @@ export function createSourcesHandlers() {
             .filter((group) => group.job_id === job.id)
             .reduce((total, group) => total + Math.max(group.count, 1), 0),
           dlq_retention_days: 30,
-          status: job.status === 'error' ? 'failed' : job.status,
+          // The api's vocabulary (ingest/schemas.py JobStatus, job_run.status): no "late" or
+          // "running" job, lateness is lag beyond the freshness SLA.
+          status:
+            job.status === 'error' ? 'failing' : job.status === 'paused' ? 'paused' : 'active',
           paused_reason: job.status_reason,
           lag_seconds: job.lag_seconds,
+          freshness_sla: job.late ? 'PT1H' : null,
           last_run: {
             status:
-              job.hours.at(-1) === 'error'
-                ? 'failed'
-                : job.hours.at(-1) === 'none'
-                  ? null
-                  : 'succeeded',
-            rows_loaded: job.rows_today,
+              job.status === 'running'
+                ? 'running'
+                : job.hours.at(-1) === 'error'
+                  ? 'failed'
+                  : job.hours.at(-1) === 'none'
+                    ? null
+                    : 'succeeded',
+            rows_written: job.rows_today,
+            started_at: new Date().toISOString(),
           },
         })),
       );

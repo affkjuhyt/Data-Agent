@@ -55650,6 +55650,7 @@
     "operationId": "listAlerts",
     "parameters": [
      {
+      "description": "one status, or 'unresolved': open, ack and assigned",
       "in": "query",
       "name": "status",
       "required": false,
@@ -55662,6 +55663,7 @@
          "type": "null"
         }
        ],
+       "description": "one status, or 'unresolved': open, ack and assigned",
        "title": "Status"
       }
      },

@@ -179,7 +179,9 @@ export function createAlertHandlers() {
   return [
     http.get('*/v1/alerts', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status');
-      const items = alerts.filter((a) => !status || a.status === status);
+      const items = alerts.filter((a) =>
+        status === 'unresolved' ? a.status !== 'closed' : !status || a.status === status,
+      );
       return HttpResponse.json({ items: items.map(wire), next_page_token: '' });
     }),
     http.post('*/v1/alerts/:action', async ({ params, request }) => {

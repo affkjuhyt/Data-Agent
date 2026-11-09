@@ -127,6 +127,24 @@ async def test_only_a_closed_alert_with_a_reason_is_reopened(mon: Org) -> None:
     assert mon.events("monitor", closed) == []
 
 
+async def test_unresolved_alerts_are_every_one_nobody_closed(mon: Org) -> None:
+    monitor_id = seed_monitor(mon)
+    fired = seed_alert(mon, monitor_id)
+    acked = seed_alert(mon, monitor_id, status="ack")
+    taken = seed_alert(mon, monitor_id, status="assigned")
+    seed_alert(mon, monitor_id, status="closed", closed_at="2026-10-01T00:00:00Z")
+    async with client(mon) as api:
+        unresolved = await api.get(
+            "/v1/alerts", params={"status": "unresolved"}, headers=mon.headers("owner")
+        )
+        only_open = await api.get(
+            "/v1/alerts", params={"status": "open"}, headers=mon.headers("owner")
+        )
+    assert unresolved.status_code == 200, unresolved.text
+    assert {a["id"] for a in unresolved.json()["items"]} == {str(fired), str(acked), str(taken)}
+    assert {a["id"] for a in only_open.json()["items"]} == {str(fired)}
+
+
 # ---------------------------------------------------------------- reports
 
 

@@ -29590,6 +29590,7 @@ export interface operations {
     listAlerts: {
         parameters: {
             query?: {
+                /** @description one status, or 'unresolved': open, ack and assigned */
                 status?: string | null;
                 monitor_id?: string | null;
                 from?: string | null;

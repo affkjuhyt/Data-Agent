@@ -551,7 +551,7 @@ export const activateSource = async (id: string, body: ActivateSource) =>
 
 /* ─── Job nạp ─────────────────────────────────────────────────────────── */
 
-export type JobStatus = 'running' | 'on_time' | 'late' | 'error' | 'paused';
+export type JobStatus = 'running' | 'on_time' | 'late' | 'error' | 'paused' | 'draft';
 
 /** GET /v1/jobs ("P04 · Job nạp · Giám sát"). */
 export interface IngestionJob {
@@ -580,25 +580,55 @@ interface IngestionJobWire {
   dlq_retention_days?: number;
   dlq_pending?: number;
   lag_seconds?: number | null;
-  last_run?: { status?: string | null; rows_loaded?: number | null } | null;
+  /** ISO 8601 duration ("PT4H"), as pydantic writes a timedelta */
+  freshness_sla?: string | number | null;
+  last_run?: {
+    status?: string | null;
+    rows_written?: number | null;
+    started_at?: string | null;
+  } | null;
 }
 
 const jobMethod = (mode: string): IngestionJob['method'] =>
   mode === 'cdc' ? 'cdc' : mode === 'incremental' ? 'incremental' : 'schedule';
 
-const jobStatus = (status: string): JobStatus => {
-  if (status === 'paused') return 'paused';
-  if (status === 'failed' || status === 'error') return 'error';
-  if (status === 'running') return 'running';
+/** ingest.ingestion_job.status is draft | active | paused | failing | schema_drift; job_run.status
+ *  is running | succeeded | failed | schema_drift | cancelled. Reading only "failed" showed a
+ *  failing or drifted job as "Đúng hạn" with a green cell. */
+const FAILED_RUN = new Set(['failed', 'schema_drift']);
+
+function jobStatus(row: IngestionJobWire): JobStatus {
+  if (row.status === 'paused') return 'paused';
+  if (row.status === 'draft') return 'draft';
+  if (row.status === 'failing' || row.status === 'schema_drift') return 'error';
+  if (row.last_run?.status === 'running') return 'running';
   return 'on_time';
-};
+}
+
+/** Seconds of an ISO 8601 duration (P1DT2H30M, PT45S), or of a number of seconds. */
+export function durationSeconds(value: string | number | null | undefined): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const m = value ? /^P(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(value) : null;
+  if (!m || value === 'P' || value === 'PT') return null;
+  const [d, h, min, sec] = m.slice(1).map((v) => Number(v ?? 0));
+  return d * 86_400 + h * 3_600 + min * 60 + sec;
+}
+
+const isToday = (iso: string | null | undefined) =>
+  !!iso && new Date(iso).toDateString() === new Date().toDateString();
 
 function readJob(row: IngestionJobWire): IngestionJob {
   const lag = row.lag_seconds ?? null;
-  const status = jobStatus(row.status);
-  const runStatus = row.last_run?.status;
-  const last =
-    runStatus === 'failed' || runStatus === 'error' ? 'error' : runStatus ? 'ok' : 'none';
+  const status = jobStatus(row);
+  const run = row.last_run;
+  const last = run?.status
+    ? FAILED_RUN.has(run.status)
+      ? 'error'
+      : run.status === 'succeeded'
+        ? 'ok'
+        : 'none'
+    : 'none';
+  const sla = durationSeconds(row.freshness_sla);
   return {
     id: row.id,
     table_name: row.source_object,
@@ -606,10 +636,13 @@ function readJob(row: IngestionJobWire): IngestionJob {
     method: jobMethod(row.mode),
     hours: [...Array(23).fill('none'), last] as IngestionJob['hours'],
     lag_seconds: lag,
-    late: status === 'error' || row.status === 'late',
-    rows_today: row.last_run?.rows_loaded ?? 0,
+    // Late: behind its freshness SLA; the api has no "late" status.
+    late: status === 'error' || (sla !== null && lag !== null && lag > sla),
+    // The last run's rows, and only when that run started today.
+    rows_today: isToday(run?.started_at) ? (run?.rows_written ?? 0) : 0,
     status,
-    status_reason: row.paused_reason,
+    status_reason:
+      row.paused_reason ?? (row.status === 'schema_drift' ? 'cấu trúc nguồn thay đổi' : null),
   };
 }
 

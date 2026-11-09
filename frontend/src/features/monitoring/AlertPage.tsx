@@ -57,14 +57,14 @@ const signed = (n: number) => `+${fmt(n, 2)}`;
 
 export default function AlertPage() {
   const { routeId } = useAppState();
-  const open = useV1(['listAlerts', 'open', routeId], routeId ? null : () => listAlerts('open'));
+  const open = useV1(['listAlerts', 'unresolved', routeId], routeId ? null : () => listAlerts('unresolved'));
   const id = routeId || open.data?.items[0]?.id;
   const alert = useV1(['getAlert', id], id ? () => getAlert(id) : null);
   if (!routeId && open.data && open.data.items.length === 0)
     return (
       <div className="px-da-3xl pt-da-2xl">
         <EmptyState
-          title="Không có cảnh báo đang mở"
+          title="Không có cảnh báo chưa đóng"
           description="Mọi theo dõi đang bình thường."
         />
       </div>

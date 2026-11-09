@@ -9,7 +9,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   createSource,
   getColumnStats,
+  durationSeconds,
   getSource,
+  listJobs,
   listSourceDrifts,
   listSourceRows,
   previewTable,
@@ -286,5 +288,59 @@ describe('sources from the api', () => {
       min: '10',
       max: '1000',
     });
+  });
+
+  it('reads a job in the api vocabulary: failing and drifted are errors, late is lag past the SLA', async () => {
+    const now = new Date().toISOString();
+    const job = (extra: object) => ({
+      id: 'j',
+      name: 'Core',
+      mode: 'cdc',
+      source_object: 'dbo.T',
+      status: 'active',
+      paused_reason: null,
+      lag_seconds: 30,
+      freshness_sla: 'PT1H',
+      last_run: { status: 'succeeded', rows_written: 12, started_at: now },
+      ...extra,
+    });
+    server.use(
+      http.get('*/v1/jobs', () =>
+        HttpResponse.json({
+          items: [
+            job({ id: 'ok' }),
+            job({ id: 'failing', status: 'failing', last_run: { status: 'failed', started_at: now } }),
+            job({ id: 'drift', status: 'schema_drift', last_run: { status: 'schema_drift', started_at: now } }),
+            job({ id: 'late', lag_seconds: 7200 }),
+            job({ id: 'running', last_run: { status: 'running', started_at: now } }),
+            job({ id: 'draft', status: 'draft', last_run: null }),
+            job({ id: 'old', last_run: { status: 'succeeded', rows_written: 9, started_at: '2020-01-01T00:00:00Z' } }),
+          ],
+          next_page_token: '',
+        }),
+      ),
+    );
+    const byId = Object.fromEntries((await listJobs()).items.map((j) => [j.id, j]));
+    expect(byId.ok).toMatchObject({ status: 'on_time', late: false, rows_today: 12 });
+    expect(byId.ok.hours.at(-1)).toBe('ok');
+    expect(byId.failing).toMatchObject({ status: 'error', late: true });
+    expect(byId.failing.hours.at(-1)).toBe('error');
+    expect(byId.drift).toMatchObject({ status: 'error', status_reason: 'cấu trúc nguồn thay đổi' });
+    expect(byId.drift.hours.at(-1)).toBe('error');
+    expect(byId.late).toMatchObject({ status: 'on_time', late: true });
+    expect(byId.running.status).toBe('running');
+    expect(byId.running.hours.at(-1)).toBe('none');
+    expect(byId.draft.status).toBe('draft');
+    expect(byId.old.rows_today).toBe(0);
+  });
+
+  it('reads an ISO 8601 duration as seconds', () => {
+    expect(durationSeconds('PT4H')).toBe(14_400);
+    expect(durationSeconds('P1DT30M')).toBe(88_200);
+    expect(durationSeconds('PT45S')).toBe(45);
+    expect(durationSeconds(90)).toBe(90);
+    expect(durationSeconds(null)).toBeNull();
+    expect(durationSeconds('PT')).toBeNull();
+    expect(durationSeconds('4 hours')).toBeNull();
   });
 });

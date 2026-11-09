@@ -92,6 +92,8 @@ const STEP_LABEL: Record<string, string> = {
   removed: 'Đã gỡ',
 };
 
+const FINISHED = new Set(['ready', 'failed', 'removed']);
+
 const ddmmyyyy = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
 
 /** How far the pre-processing got: pages read, then chunks indexed, as one share. */
@@ -105,7 +107,10 @@ function readLibraryRow(raw: LibraryWire): DocumentRow {
   if (raw.display) return raw.display;
   const today = new Date().toISOString().slice(0, 10);
   const ended = raw.effective_to !== null && raw.effective_to < today;
-  const running = raw.status === 'received' || raw.status === 'processing';
+  // As GET /v1/documents?status=processing (document/routes.py): anything not yet ready, failed
+  // or removed, waiting_review included; counting received and processing only gave the tab
+  // "Đang xử lý 0" over a list of documents waiting for review.
+  const running = !FINISHED.has(raw.status);
   return {
     id: raw.id,
     title: raw.title ?? raw.file_name,

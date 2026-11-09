@@ -198,6 +198,8 @@ describe('documents from the api', () => {
               step: 'done',
               effective_to: '2020-01-01',
             },
+            // Waiting for its quality review: listed under status=processing, so counted there.
+            { ...doc, id: 'd-3', status: 'waiting_review', step: 'quality_review' },
           ],
           next_page_token: '',
         });
@@ -217,11 +219,12 @@ describe('documents from the api', () => {
       text: 'Hết hiệu lực 01/01/2020',
       ended: true,
     });
+    expect(items[2].processing?.step_text).toBe('Chờ người xem');
     expect(await getDocumentCounts()).toEqual({
-      all: 2,
+      all: 3,
       regulation: undefined,
       internal: undefined,
-      processing: 1,
+      processing: 2,
     });
     expect((await listLibrary({ category: 'regulation' })).items).toEqual([]);
   });

@@ -78,6 +78,7 @@ const JOB_STATUS: Record<JobStatus, { label: string; tone: DotTone }> = {
   late: { label: 'Trễ', tone: 'warning' },
   error: { label: 'Lỗi', tone: 'error' },
   paused: { label: 'Tạm dừng', tone: 'warning' },
+  draft: { label: 'Nháp', tone: 'idle' },
 };
 
 export function jobStatus(job: IngestionJob): { label: string; tone: DotTone } {
@@ -99,10 +100,12 @@ export function jobsSummary(jobs: IngestionJob[]): string {
   const count = (pred: (j: IngestionJob) => boolean) => jobs.filter(pred).length;
   const paused = count((j) => j.status === 'paused');
   const errors = count((j) => j.status === 'error');
-  const late = count((j) => j.late && j.status !== 'error' && j.status !== 'paused');
-  const parts = [`${jobs.length} job`, `${jobs.length - paused - errors - late} đúng hạn`];
+  const drafts = count((j) => j.status === 'draft');
+  const late = count((j) => j.late && j.status !== 'error' && j.status !== 'paused' && j.status !== 'draft');
+  const parts = [`${jobs.length} job`, `${jobs.length - paused - errors - late - drafts} đúng hạn`];
   if (late) parts.push(`${late} trễ`);
   if (errors) parts.push(`${errors} lỗi`);
   if (paused) parts.push(`${paused} tạm dừng`);
+  if (drafts) parts.push(`${drafts} nháp`);
   return parts.join(' · ');
 }
