@@ -10,6 +10,7 @@ Uploads go to an in-memory object store injected over the module's port.
 from __future__ import annotations
 
 import datetime
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, BinaryIO
@@ -683,6 +684,53 @@ async def test_upload_keeps_the_original_and_asks_the_worker_to_analyse(ds: Spac
         )
         assert macro.status_code == 201, macro.text
         assert len(ds.store.objects) == 2
+
+
+def _cp1258(text: str) -> bytes:
+    """Text as Windows-1258 writes it: â ă ê ô ơ ư đ precomposed, the tone marks combining."""
+    out: list[str] = []
+    base = -1
+    for ch in unicodedata.normalize("NFD", text):
+        if ch in "\u0302\u0306\u031b" and base >= 0:
+            out[base] = unicodedata.normalize("NFC", out[base] + ch)
+        else:
+            if not unicodedata.combining(ch):
+                base = len(out)
+            out.append(ch)
+    return "".join(out).encode("cp1258")
+
+
+VIETNAMESE_CSV = "Mã chi nhánh,Dư nợ triệu đồng\nCN01,1250.5\nCN02,980\n"
+
+
+@pytest.mark.parametrize(
+    ("raw", "encoding"),
+    [
+        # Excel's "Unicode text" and its plain "CSV" on a Vietnamese Windows: both used to be 422.
+        (VIETNAMESE_CSV.encode("utf-16"), "utf-16"),
+        (_cp1258(VIETNAMESE_CSV), "cp1258"),
+    ],
+)
+async def test_a_csv_saved_by_excel_is_read_in_its_own_encoding(
+    ds: Space, raw: bytes, encoding: str
+) -> None:
+    async with client(ds) as api:
+        made = await api.post(
+            "/v1/uploads",
+            files={"file": ("du_no.csv", raw, "text/csv")},
+            headers=ds.headers("uploader"),
+        )
+        assert made.status_code == 201, made.text
+        upload = made.json()
+        assert upload["encoding"] == encoding
+        assert [c["header"] for c in upload["column_map"]] == ["Mã chi nhánh", "Dư nợ triệu đồng"]
+
+        wrong = await api.patch(
+            f"/v1/uploads/{upload['id']}",
+            json={"encoding": "no-such-codec"},
+            headers=ds.headers("uploader"),
+        )
+        assert wrong.status_code == 422, wrong.text
 
 
 async def test_upload_refusals(ds: Space) -> None:

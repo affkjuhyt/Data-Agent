@@ -31,6 +31,61 @@ _ISO_DATE = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T].*)?")
 _NUMERIC_DATE = re.compile(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})")
 
 
+# What a spreadsheet saved as text is written in besides UTF-8: Excel's "Unicode text" (UTF-16
+# without a byte order mark too) and the Windows code page of the machine that saved it. Detection
+# is held to these: over every codec it knows, charset-normalizer reads a short Vietnamese file as
+# Urdu or Greek.
+_CODE_PAGES = (
+    "utf_16_le", "utf_16_be", "cp1258", "cp1252", "cp1250", "cp1251", "cp1253", "cp1254",
+    "cp1257", "cp874", "cp932", "cp936", "cp949", "cp950",
+)  # fmt: skip
+# Among the code pages a file reads cleanly in, the one its organisation's language writes in.
+_LANGUAGE_CODE_PAGE = {"vi": "cp1258", "th": "cp874", "ja": "cp932", "zh": "cp936", "ko": "cp949"}
+_BOMS = (
+    (b"\xef\xbb\xbf", "utf-8-sig"),
+    (b"\xff\xfe\x00\x00", "utf-32"),
+    (b"\x00\x00\xfe\xff", "utf-32"),
+    (b"\xff\xfe", "utf-16"),
+    (b"\xfe\xff", "utf-16"),
+)
+
+
+def decode_text(
+    content: bytes, encoding: str | None = None, language: str = "vi"
+) -> tuple[str, str]:
+    """The text of an uploaded text file and the encoding it was read in; ValueError when it is
+    not text in any of them. A stated `encoding` (the upload's, once found or chosen) is used as
+    is. Otherwise: a byte order mark, then UTF-8, then the likeliest code page (charset-normalizer),
+    the organisation's `language` deciding between those a short file reads cleanly in.
+
+    UTF-8 is named utf-8-sig, as uploads always were, so a byte order mark never reaches a header.
+    """
+    if encoding is None:
+        encoding = next((name for mark, name in _BOMS if content.startswith(mark)), None)
+    if encoding is None:
+        try:
+            return content.decode("utf-8"), "utf-8-sig"
+        except UnicodeDecodeError:
+            encoding = _likely_code_page(content, language)
+    try:
+        text = content.decode(encoding)
+    except (LookupError, UnicodeDecodeError) as exc:
+        raise ValueError(f"The file is not readable as {encoding}.") from exc
+    # Windows-1258 stores the tone marks as combining characters; read back composed, "Mã" is
+    # the "Mã" a person types and searches for.
+    return unicodedata.normalize("NFC", text) if encoding == "cp1258" else text, encoding
+
+
+def _likely_code_page(content: bytes, language: str) -> str:
+    from charset_normalizer import from_bytes
+
+    found = [match.encoding for match in from_bytes(content, cp_isolation=list(_CODE_PAGES))]
+    if not found:
+        raise ValueError("The file is not text in a known encoding.")
+    preferred = _LANGUAGE_CODE_PAGE.get(language)
+    return preferred if preferred in found else found[0]
+
+
 def csv_rows(
     text: str, header_row: int | None = None, *, from_header: bool = True
 ) -> list[list[str]]:

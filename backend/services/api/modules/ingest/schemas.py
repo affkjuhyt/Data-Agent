@@ -6,6 +6,7 @@ minus org_id, created_by, updated_by and deleted_at (A3 "Trả về").
 
 from __future__ import annotations
 
+import codecs
 import datetime
 import decimal
 import uuid
@@ -194,6 +195,18 @@ class UploadPatch(BaseModel):
     sheet: str | None = Field(default=None, max_length=200)
     header_row: int | None = Field(default=None, ge=0, le=1_000)
     encoding: str | None = Field(default=None, max_length=50)
+
+    @field_validator("encoding")
+    @classmethod
+    def _known_encoding(cls, value: str | None) -> str | None:
+        # A name Python has no codec for would fail every later read of the file with a 500.
+        if value is not None:
+            try:
+                codecs.lookup(value)
+            except LookupError as exc:
+                raise ValueError(f"unknown encoding {value}") from exc
+        return value
+
     decimal_sep: Literal[".", ","] | None = None
     column_map: list[dict[str, Any]] | None = Field(default=None, max_length=2_000)
     target_dataset_id: uuid.UUID | None = None

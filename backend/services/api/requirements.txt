@@ -21,3 +21,5 @@ pyyaml==6.0.3
 sqlglot==25.24.5
 # Schedules (libs/cron), shared with worker-agent, which fires them: the same pin.
 croniter==2.0.5
+# The code page of an uploaded CSV that is not UTF (libs/tabular.decode_text).
+charset-normalizer==3.5.2

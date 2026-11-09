@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import unicodedata
 
 import pytest
 
@@ -104,3 +105,58 @@ def test_the_pii_packs_follow_the_locale_unless_a_level_names_them() -> None:
     assert profile.resolve("vi-VN", {"pii_packs": ["us", "VN"]}).pii_packs == ("GLOBAL", "US", "VN")
     with pytest.raises(ValueError, match="pii_packs"):
         profile.validate({"pii_packs": ["XX"]})
+
+
+def _cp1258(text: str) -> bytes:
+    """Text as Windows-1258 writes it: â ă ê ô ơ ư đ precomposed, the tone marks combining."""
+    out: list[str] = []
+    base = -1
+    for ch in unicodedata.normalize("NFD", text):
+        if ch in "̛̂̆" and base >= 0:
+            out[base] = unicodedata.normalize("NFC", out[base] + ch)
+        else:
+            if not unicodedata.combining(ch):
+                base = len(out)
+            out.append(ch)
+    return "".join(out).encode("cp1258")
+
+
+CUSTOMERS = (
+    "Mã KH,Họ tên,Địa chỉ\nKH001,Nguyễn Văn An,Hà Nội\nKH002,Trần Thị Bích,Đà Nẵng\n"
+    "KH003,Lê Hoàng Phúc,Thành phố Hồ Chí Minh\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("raw", "encoding"),
+    [
+        (CUSTOMERS.encode("utf-8"), "utf-8-sig"),
+        (CUSTOMERS.encode("utf-8-sig"), "utf-8-sig"),
+        # Excel's "Unicode text" and "CSV UTF-16": a byte order mark, two bytes a character.
+        (CUSTOMERS.encode("utf-16"), "utf-16"),
+        (CUSTOMERS.encode("utf-16-le"), "utf_16_le"),
+        # Excel's plain "CSV" on a Vietnamese Windows.
+        (_cp1258(CUSTOMERS), "cp1258"),
+        # Short, and so ambiguous: the organisation's language decides between the code pages.
+        (_cp1258("Mã,Tên\n1,Đức\n"), "cp1258"),
+    ],
+)
+def test_a_text_file_is_read_in_the_encoding_it_was_written_in(raw: bytes, encoding: str) -> None:
+    text, found = tabular.decode_text(raw)
+    assert found == encoding
+    # Read back composed, as typed: cp1258's combining tone marks are folded in.
+    assert text.lstrip("﻿") in (CUSTOMERS, "Mã,Tên\n1,Đức\n")
+    assert text == unicodedata.normalize("NFC", text)
+
+
+def test_a_stated_encoding_is_used_as_is_and_a_wrong_one_is_said() -> None:
+    assert tabular.decode_text(_cp1258("Đức"), "cp1258") == ("Đức", "cp1258")
+    with pytest.raises(ValueError):
+        tabular.decode_text(b"\xff\xfe\x00", "utf-8")
+    with pytest.raises(ValueError):
+        tabular.decode_text(b"abc", "no-such-codec")
+
+
+def test_binary_noise_is_not_text() -> None:
+    with pytest.raises(ValueError):
+        tabular.decode_text(bytes(range(256)) * 4)

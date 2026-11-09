@@ -64,7 +64,7 @@ def _rows(
 ) -> list[list[Any]]:
     """The sheet's rows from its header row on (1-based, as the review screen counts them)."""
     if os.path.splitext(file_name)[1].lower() == ".csv":
-        return tabular.csv_rows(content.decode(encoding or "utf-8-sig"), header_row)
+        return tabular.csv_rows(tabular.decode_text(content, encoding)[0], header_row)
     rows = _sheet_rows(content, file_name, sheet)
     return rows[max((header_row or 1) - 1, 0) :]
 

@@ -24,3 +24,5 @@ temporalio==1.34.0
 # libs/code_sandbox/local.py) needs pandas; the python-sandbox service carries its own.
 pandas==2.2.3
 numpy==2.1.3
+# The code page of an uploaded CSV that is not UTF (libs/tabular.decode_text).
+charset-normalizer==3.5.2

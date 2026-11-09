@@ -861,10 +861,12 @@ def _analyse_upload(content: bytes, file_name: str, requested_sheet: str | None)
         workbook.release_resources()
         encoding = None
     elif extension == ".csv":
-        encoding = "utf-8-sig"
+        # UTF-8, UTF-16 or a Windows code page, found from the bytes and kept on the upload, which
+        # the review screen may change (PATCH encoding). Vietnamese decides between code pages a
+        # short file reads cleanly in, as the product's default locale.
         try:
-            text = content.decode(encoding)
-        except UnicodeDecodeError as exc:
+            text, encoding = tabular.decode_text(content)
+        except ValueError as exc:
             raise Problem(422, "validation_failed", "The file encoding is not readable.") from exc
         rows = tabular.csv_rows(text)
         row_count = max(0, len(rows) - 1)
@@ -1057,10 +1059,9 @@ async def preview_upload(
         ]
         workbook.release_resources()
     elif extension == ".csv":
-        encoding = row.encoding or "utf-8-sig"
         try:
-            text = content.decode(encoding)
-        except UnicodeDecodeError as exc:
+            text, _ = tabular.decode_text(content, row.encoding)
+        except ValueError as exc:
             raise Problem(422, "validation_failed", "The file encoding is not readable.") from exc
         rows = tabular.csv_rows(text, row.header_row, from_header=False)
     else:
