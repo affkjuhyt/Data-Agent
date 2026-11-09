@@ -81,6 +81,9 @@ const ExplorePage = React.lazy(() => import('./features/explore/ExplorePage'));
 const ArtifactPage = React.lazy(() => import('./features/explore/ArtifactPage'));
 const HowItWorksPage = React.lazy(() => import('./features/onboarding/HowItWorksPage'));
 const ForecastPage = React.lazy(() => import('./features/forecast/ForecastPage'));
+const CreateForecastModelPage = React.lazy(
+  () => import('./features/forecast/CreateForecastModelPage'),
+);
 const ForecastJobPage = React.lazy(() => import('./features/forecast/ForecastJobPage'));
 const ForecastStudioPage = React.lazy(() => import('./features/forecast/ForecastStudioPage'));
 const ForecastModelPage = React.lazy(() => import('./features/forecast/ForecastModelPage'));
@@ -174,6 +177,7 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     // /analysis/artifact/<id>: an answer's or notebook's artifact, full screen.
     ARTIFACT:        { render: () => <ArtifactPage /> },
     FORECAST:        { render: () => <ForecastPage /> },
+    FORECAST_MODEL_NEW: { render: () => <CreateForecastModelPage /> },
     // A forecast question answered asynchronously; it belongs to a session.
     FORECAST_JOB:    { render: () => <ForecastJobPage /> },
     FORECAST_STUDIO: { render: () => <ForecastStudioPage /> },

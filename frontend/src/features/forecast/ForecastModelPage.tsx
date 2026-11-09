@@ -5,7 +5,6 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Card } from '../../design-system/Card';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
-import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Textarea } from '../../design-system/Textarea';
@@ -19,6 +18,7 @@ import {
   type ForecastModel,
 } from '../../lib/v1/forecast';
 import { useV1 } from '../../lib/v1/useV1';
+import { NoForecastModel } from './NoForecastModel';
 import { DataTable, Stat } from './parts';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
@@ -56,17 +56,7 @@ export default function ForecastModelPage() {
       </AsyncRegion>
     );
   }
-  if (!routeId && list.data && list.data.items.length === 0) {
-    return (
-      <div className="px-da-3xl pt-da-xl">
-        <EmptyState
-          icon="chart"
-          title="Chưa có mô hình dự báo nào"
-          description="Mô hình được tạo từ Xưởng dự báo khi một mô hình thắng seasonal naive."
-        />
-      </div>
-    );
-  }
+  if (!routeId && list.data && list.data.items.length === 0) return <NoForecastModel />;
   return (
     <AsyncRegion state={model} what="mô hình dự báo">
       {(m) => <ModelBody model={m} onChanged={model.reload} />}

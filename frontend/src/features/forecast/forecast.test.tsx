@@ -74,7 +74,8 @@ describe('ForecastJobPage', () => {
 });
 
 describe('ForecastPage', () => {
-  it('opens the first forecast with its model version, cut-off and intervals', async () => {
+  it('opens a forecast with its model version, cut-off and intervals', async () => {
+    routeId = 'fc-deposit-2026-11';
     show(<ForecastPage />);
     expect(
       await screen.findByRole('heading', {

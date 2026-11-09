@@ -968,6 +968,67 @@ const modelWire = (m: ForecastModel) => ({
   display: m,
 });
 
+/** The screen forecast as ForecastDetail, with the screen under display.result. */
+function asForecastDetail(found: Forecast) {
+  return {
+    id: found.id,
+    metric_code: found.metric_name,
+    frequency: found.frequency,
+    horizon: found.points.length || 1,
+    status: 'ready',
+    cutoff_at: `${found.data_cutoff}T00:00:00+07:00`,
+    created_at: found.created_at,
+    finished_at: found.created_at,
+    eta_at: null,
+    model_version_id: null,
+    data_space_id: 'ds-nang-luong',
+    requested_by: 'u-long',
+    question_id: null,
+    agent_run_id: null,
+    notify_channels: [],
+    assumptions: [],
+    scope: {},
+    progress: {},
+    labels: found.label === 'stale' ? ['degraded'] : ['approved'],
+    predictions: [],
+    display: { result: found },
+  };
+}
+
+/** The screen job as ForecastDetail, with the screen under display.job. */
+function asJobDetail(job: ForecastJob) {
+  return {
+    id: job.id,
+    metric_code: job.metric_name,
+    frequency: 'month',
+    horizon: 3,
+    status:
+      job.status === 'done'
+        ? 'ready'
+        : job.status === 'running'
+          ? 'training'
+          : job.status === 'failed'
+            ? 'failed'
+            : job.status,
+    cutoff_at: '2026-09-30T00:00:00+07:00',
+    created_at: '2026-10-10T03:30:00+07:00',
+    finished_at: job.status === 'done' ? '2026-10-10T03:42:00+07:00' : null,
+    eta_at: '2026-10-10T03:42:00+07:00',
+    model_version_id: null,
+    predictions: [],
+    progress: {},
+    assumptions: [],
+    labels: [],
+    scope: {},
+    notify_channels: [],
+    question_id: null,
+    agent_run_id: null,
+    requested_by: 'u-1',
+    data_space_id: 'ds-nang-luong',
+    display: { job },
+  };
+}
+
 export function createForecastHandlers() {
   let currentJob = job();
   let polls = 0;
@@ -993,24 +1054,7 @@ export function createForecastHandlers() {
         stale_forecast: null,
       };
     }
-    // The screen's job, with the ForecastDetail fields the studio and the fuel screen read and
-    // what A2 does not carry under display.
-    return HttpResponse.json({
-      ...currentJob,
-      metric_code: currentJob.metric_name,
-      frequency: 'month',
-      horizon: 3,
-      cutoff_at: '2026-09-30T00:00:00+07:00',
-      model_version_id: null,
-      scope: {},
-      progress: {},
-      finished_at: null,
-      created_at: '2026-07-08T18:02:00+07:00',
-      display: {
-        workbench: bench,
-        fuel: Object.fromEntries(FUELS.map((fuel) => [fuel.key, fuelDisplay(fuel)])),
-      },
-    });
+    return HttpResponse.json(asJobDetail(currentJob));
   };
 
   const saveForecast = (next: Forecast) => {
@@ -1046,10 +1090,16 @@ export function createForecastHandlers() {
       return HttpResponse.json({ id, status: 'answered' });
     }),
 
+    // The page follows training on the event stream. This fixture finishes by polling the job.
+    http.get('*/v1/forecasts/:id/events', () =>
+      new HttpResponse('', { headers: { 'Content-Type': 'text/event-stream' } }),
+    ),
     http.get('*/v1/forecasts/:id', ({ params }) => {
       if (params.id === currentJob.id) return jobResponse();
       const found = forecasts.find((f) => f.id === params.id);
-      return found ? HttpResponse.json(found) : problem(404, 'not_found', 'Không tìm thấy dự báo.');
+      return found
+        ? HttpResponse.json(asForecastDetail(found))
+        : problem(404, 'not_found', 'Không tìm thấy dự báo.');
     }),
     http.post('*/v1/forecasts/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');

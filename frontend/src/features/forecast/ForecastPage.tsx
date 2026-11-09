@@ -5,7 +5,6 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { Card } from '../../design-system/Card';
-import { EmptyState } from '../../design-system/EmptyState';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
@@ -19,7 +18,8 @@ import {
   formatSigned,
   formatTwo,
   getForecast,
-  listForecasts,
+  getModelForecast,
+  listForecastModels,
   reloadScenario,
   runScenario,
   type Forecast,
@@ -28,6 +28,7 @@ import {
 } from '../../lib/v1/forecast';
 import { useV1 } from '../../lib/v1/useV1';
 import { cutoffShort, ForecastChart, ForecastLegend } from './ForecastChart';
+import { NoForecastModel } from './NoForecastModel';
 import { DataTable, downloadCsv, type Column } from './parts';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { parseNumber } from '../../lib/formatVN';
@@ -39,6 +40,8 @@ import { parseNumber } from '../../lib/formatVN';
  * backtest MASE and the data cut-off are always in the header; a stale forecast says so first.
  */
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+/** A sentence metric name starts the title in lowercase; a code stays as written. */
+const titleName = (name: string) => (name === name.toUpperCase() ? name : lowerFirst(name));
 
 const dateVN = (iso: string) => {
   const [year, month, day] = iso.slice(0, 10).split('-');
@@ -71,31 +74,24 @@ function csvOf(f: Forecast): string {
 
 export default function ForecastPage() {
   const { routeId } = useAppState();
-  // From the rail without an id: the first forecast of the Data Space.
-  const list = useV1(['listForecasts', routeId], routeId ? null : listForecasts);
-  const id = routeId || list.data?.items[0]?.id;
-  const forecast = useV1(['getForecast', id], id ? () => getForecast(id) : null);
+  // From the rail without an id: the first model's predictions. A job opens its own forecast.
+  const models = useV1(['listForecastModels', routeId], routeId ? null : listForecastModels);
+  const modelId = routeId ? null : models.data?.items[0]?.id;
+  const forecast = useV1(
+    ['forecast-screen', routeId, modelId],
+    routeId ? () => getForecast(routeId) : modelId ? () => getModelForecast(modelId) : null,
+  );
   // A forecast in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
-  const forbidden = forbiddenOf(forecast.error);
+  const forbidden = forbiddenOf(forecast.error) ?? (routeId ? null : forbiddenOf(models.error));
   if (forbidden) return <AccessDenied access={forbidden} />;
-  if (!routeId && list.error) {
+  if (!routeId && models.error) {
     return (
-      <AsyncRegion state={list} what="dự báo">
+      <AsyncRegion state={models} what="mô hình dự báo">
         {() => null}
       </AsyncRegion>
     );
   }
-  if (!routeId && list.data && list.data.items.length === 0) {
-    return (
-      <div className="px-da-3xl pt-da-xl">
-        <EmptyState
-          icon="chart"
-          title="Chưa có dự báo nào"
-          description="Hỏi một câu về tương lai trong Hỏi đáp; agent dự báo tạo kết quả ở đây."
-        />
-      </div>
-    );
-  }
+  if (!routeId && models.data && models.data.items.length === 0) return <NoForecastModel />;
   return (
     <AsyncRegion state={forecast} what="dự báo">
       {(f) => <ForecastBody key={f.id} forecast={f} />}
@@ -140,7 +136,7 @@ function ForecastBody({ forecast }: { forecast: Forecast }) {
       <PageHeader
         bordered
         breadcrumb={['Phân tích', 'Dự báo', f.metric_name]}
-        title={`Dự báo ${lowerFirst(f.metric_name)} · ${f.horizon_label}`}
+        title={`Dự báo ${titleName(f.metric_name)} · ${f.horizon_label}`}
         description={
           <>
             {f.model.id ? (
