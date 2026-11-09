@@ -88,6 +88,8 @@ export function useRailCounts(
   area: AreaId | undefined,
   rail: RailGroup[] | undefined,
   enabled = true,
+  /** the open Data Space: its counts, read again when it changes */
+  scope = '',
 ): Record<string, number> {
   const [counts, setCounts] = useState<Record<string, number>>({});
   // A string, so a rail rebuilt with the same items does not reload the counts.
@@ -110,6 +112,6 @@ export function useRailCounts(
     return () => {
       alive = false;
     };
-  }, [area, enabled, shown]);
+  }, [area, enabled, shown, scope]);
   return counts;
 }

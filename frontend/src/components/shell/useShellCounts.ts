@@ -15,10 +15,13 @@ interface ShellCounts {
   agents?: number;
 }
 
-export function useShellCounts(enabled = true): ShellCounts {
+/** `scope` is the open Data Space: the counts are its own, so another space's are dropped and
+ *  read again at once rather than shown until the next poll. */
+export function useShellCounts(enabled = true, scope = ''): ShellCounts {
   const [counts, setCounts] = useState<ShellCounts>({});
   useEffect(() => {
     let cancelled = false;
+    setCounts({});
     const load = async () => {
       const [inbox, running, agents] = await Promise.allSettled([
         listInbox(),
@@ -45,6 +48,6 @@ export function useShellCounts(enabled = true): ShellCounts {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [enabled]);
+  }, [enabled, scope]);
   return counts;
 }
