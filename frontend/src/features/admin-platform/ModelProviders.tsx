@@ -103,7 +103,8 @@ export function ProvidersTab({
   routing,
 }: {
   policy: V1State<AiPolicy>;
-  routing: V1State<RoutingLog>;
+  /** null when the viewer may not read the routing audit (compliance): its card is left out. */
+  routing: V1State<RoutingLog> | null;
 }) {
   const toast = useToast();
   const providers = useV1(['listProviders'], listProviders);
@@ -165,24 +166,26 @@ export function ProvidersTab({
           </AsyncRegion>
         </Card>
 
-        <Card
-          size="sm"
-          title={
-            routing.data
-              ? `Nhật ký định tuyến · ${weekLabel(routing.data.week)}`
-              : 'Nhật ký định tuyến'
-          }
-          className="min-w-0 flex-1 max-[1279px]:w-full"
-        >
-          <AsyncRegion state={routing} what="nhật ký định tuyến" skeletonRows={3}>
-            {(log) => (
-              <>
-                <RoutingKpis log={log} />
-                <RoutingTable entries={log.items} />
-              </>
-            )}
-          </AsyncRegion>
-        </Card>
+        {routing && (
+          <Card
+            size="sm"
+            title={
+              routing.data
+                ? `Nhật ký định tuyến · ${weekLabel(routing.data.week)}`
+                : 'Nhật ký định tuyến'
+            }
+            className="min-w-0 flex-1 max-[1279px]:w-full"
+          >
+            <AsyncRegion state={routing} what="nhật ký định tuyến" skeletonRows={3}>
+              {(log) => (
+                <>
+                  <RoutingKpis log={log} />
+                  <RoutingTable entries={log.items} />
+                </>
+              )}
+            </AsyncRegion>
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -500,6 +503,7 @@ function RoutingTable({ entries, full = false }: { entries: RoutingLogEntry[]; f
 
 const LOG_PAGE = 50;
 
+/** The week's routing audit; ModelsPage mounts it only for a viewer holding `compliance`. */
 export function RoutingLogTab() {
   const first = useV1(['getRoutingLog', { page_size: LOG_PAGE }], () =>
     getRoutingLog({ page_size: LOG_PAGE }),

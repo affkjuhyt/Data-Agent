@@ -1,9 +1,11 @@
 import { http, HttpResponse } from 'msw';
-import type { ErrorBookEntry } from '../lib/v1/errorBook';
+import type { ErrorBookDetailWire, ErrorBookViewWire } from '../lib/v1/errorBook';
 
 /*
- * Error Book (P07, "P07 · Error Book" 2419:15027) for the dev mock: EB-0042 fixed with its
- * regression in CI, two open entries, one fixed without regression yet, one dismissed.
+ * Error Book (P07, "P07 · Error Book" 2419:15027) for the dev mock, in the api's own shapes
+ * (ErrorBookView, ErrorBookDetail) so the screen goes through the same reader as against the api:
+ * EB-0042 fixed with its regression in CI, two open entries, one fixed without regression yet,
+ * one dismissed.
  */
 const problem = (status: number, code: string, detail: string) =>
   HttpResponse.json(
@@ -12,193 +14,200 @@ const problem = (status: number, code: string, detail: string) =>
   );
 
 const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+const SPACE = 'ds-fuel';
+const HANH = 'u-hanh';
+
+type Entry = ErrorBookDetailWire;
 
 function entry(
-  e: Partial<ErrorBookEntry> &
-    Pick<ErrorBookEntry, 'id' | 'code' | 'title' | 'status' | 'source_kind'>,
-): ErrorBookEntry {
+  e: Partial<Entry> & Pick<Entry, 'id' | 'entry_no' | 'title' | 'status' | 'source_kind'>,
+): Entry {
+  const created = e.created_at ?? daysAgo(1);
   return {
+    data_space_id: SPACE,
+    data_product_id: 'dp-fuel',
+    feedback_id: null,
+    answer_id: null,
+    receipt_id: null,
+    hitl_request_id: null,
+    replay_id: null,
+    accuracy_log_id: null,
+    forecast_detail: null,
+    lint_finding_id: null,
+    detail: {},
+    severity: 'medium',
     error_kind: null,
-    data_product_name: 'Giá xăng dầu trong nước',
-    assignee_name: 'Nguyễn Thị Hạnh',
-    created_at: daysAgo(1),
-    wrong: null,
-    right: null,
-    receipt: null,
     root_cause: null,
-    fix: null,
-    regression: null,
-    timeline: [],
-    history_text: '',
-    dismissed_reason: null,
+    assignee_id: HANH,
+    fix_kind: null,
+    fix_proposal_id: null,
+    fix_ref: null,
+    fixed_by: null,
+    fixed_at: null,
+    eval_item_id: null,
+    regression_run_id: null,
+    dismiss_reason: null,
+    duplicate_of_id: null,
+    reopened_count: 0,
+    eval_item: null,
+    latest_result: null,
+    created_at: created,
+    updated_at: created,
     ...e,
   };
 }
 
-function entriesFixture(): ErrorBookEntry[] {
+const evalItem = (id: string, entryId: string, asOf: string, at: string) => ({
+  id,
+  eval_set_id: 'es-regression',
+  category: 'regression',
+  origin: 'error_book',
+  origin_ref: entryId,
+  as_of: asOf,
+  input: {},
+  expected: {},
+  tolerance: null,
+  status: 'active',
+  created_at: at,
+  updated_at: at,
+});
+
+function entriesFixture(): Entry[] {
   return [
     entry({
       id: 'eb-0042',
-      code: 'EB-0042',
+      entry_no: 'EB-0042',
       title: 'Mức giảm E5RON92 kỳ 02/07 ghi 1.155, công bố 1.055',
       status: 'regression_added',
       source_kind: 'user_report',
+      feedback_id: 'fb-0702',
+      answer_id: 'ans-fuel-0702',
+      receipt_id: 'bn-20260702-000190',
+      replay_id: 'rp-0703',
       error_kind: 'formula',
       created_at: daysAgo(9),
-      wrong: { value: '1.155 đ/lít', note: 'biên nhận BN-20260702-000190' },
-      right: { value: '1.055 đ/lít', note: 'Bộ Công Thương công bố 02/07/2026' },
-      receipt: {
-        id: 'bn-20260702-000190',
-        code: 'BN-20260702-000190',
-        answer_id: 'ans-fuel-0702',
-        replay_text:
-          'chạy lại 03/07 ra cùng 1.155 → số tái lập, lỗi không nằm ở câu chữ của mô hình',
-      },
+      detail: { actual: '1.155 đ/lít', expected: '1.055 đ/lít', as_of: '2026-07-02' },
       root_cause:
         'Phép tính F2 lấy kỳ liền trước theo tuần lịch (18/06) thay vì kỳ điều hành gần nhất (25/06).',
-      fix: {
-        kind: 'proposal',
-        label: 'Sửa chỉ số muc_thay_doi_gia',
-        ref: 'PR-0318',
-        proposal_status: 'accepted',
-      },
-      regression: {
-        code: 'EV-EB-0042',
-        text: 'as_of 02/07/2026 · đáp án 1.055 đ/lít · câu hỏi đã che dữ liệu cá nhân',
-        ci_text: 'Lượt CI nightly 11/07 đạt',
+      fix_kind: 'metric_version',
+      fix_proposal_id: 'pr-0318',
+      fixed_by: HANH,
+      fixed_at: daysAgo(2),
+      eval_item_id: 'ev-eb-0042',
+      regression_run_id: 'run-nightly-1107',
+      eval_item: evalItem('ev-eb-0042', 'eb-0042', '2026-07-02', daysAgo(1)),
+      latest_result: {
+        id: 'er-eb-0042',
+        eval_item_id: 'ev-eb-0042',
+        actual: { value: '1.055 đ/lít' },
         passed: true,
+        value_ok: true,
+        behavior_ok: null,
+        understanding_ok: null,
+        cause: null,
+        changed_from_baseline: false,
+        reviewed_by: null,
+        created_at: daysAgo(0),
       },
-      timeline: [
-        { label: 'Mở', at: '02/07' },
-        { label: 'Đã sửa', at: '09/07' },
-        { label: 'Đã có hồi quy', at: '11/07' },
-      ],
-      history_text:
-        '02/07 Vũ Lan báo sai · 02/07 Nguyễn Thị Hạnh xác nhận · 09/07 đã sửa · 11/07 đã có hồi quy · mở lại 0 lần',
     }),
     // The two missed fuel-forecast periods the forecast ledger (P15 Sổ dự báo) links to.
     entry({
       id: 'eb-0031',
-      code: 'EB-0031',
+      entry_no: 'EB-0031',
       title: 'Giá trần E5RON92 kỳ 11/06 ngoài khoảng 95% (minh hoạ)',
       status: 'fixed',
       source_kind: 'forecast_miss',
+      accuracy_log_id: 'acc-0611',
+      forecast_detail: { period: '2026-06-11', point: 20480, lo95: 20040, hi95: 20900, actual: 20020 },
       error_kind: 'model',
       created_at: daysAgo(30),
-      wrong: { value: '20.480 đ/lít', note: 'dự báo trung vị · khoảng 95% 20.040–20.900' },
-      right: { value: '20.020 đ/lít', note: 'Bộ Công Thương công bố 11/06/2026' },
       root_cause: 'Quỹ bình ổn chi 300 đ/lít ngoài dự kiến; mô hình chưa có biến cho quyết định chi Quỹ.',
-      timeline: [
-        { label: 'Mở', at: '12/06' },
-        { label: 'Đã sửa', at: '20/06' },
-      ],
-      history_text: '12/06 Agent Dự báo ghi lệch · 20/06 thêm xác suất Quỹ vào mô hình',
+      fix_kind: 'model_config',
+      fix_ref: 'thêm xác suất Quỹ vào mô hình',
+      fixed_by: HANH,
+      fixed_at: daysAgo(22),
     }),
     entry({
       id: 'eb-0027',
-      code: 'EB-0027',
+      entry_no: 'EB-0027',
       title: 'Giá trần E5RON92 kỳ 09/04 lệch hơn 300 đ/lít (minh hoạ)',
       status: 'fixed',
       source_kind: 'forecast_miss',
+      accuracy_log_id: 'acc-0409',
+      forecast_detail: { period: '2026-04-09' },
       error_kind: 'model',
       created_at: daysAgo(90),
-      right: { value: 'theo công bố kỳ 09/04/2026', note: 'Bộ Công Thương' },
       root_cause: 'Giá thế giới tăng mạnh trong hai ngày cuối kỳ, sau lần chạy dự báo.',
-      timeline: [
-        { label: 'Mở', at: '10/04' },
-        { label: 'Đã sửa', at: '24/04' },
-      ],
-      history_text: '10/04 Agent Dự báo ghi lệch · 24/04 thêm biến giá thế giới ngày cuối kỳ',
+      fix_kind: 'model_config',
+      fix_ref: 'thêm biến giá thế giới ngày cuối kỳ',
+      fixed_by: HANH,
+      fixed_at: daysAgo(76),
     }),
     entry({
       id: 'eb-0043',
-      code: 'EB-0043',
+      entry_no: 'EB-0043',
       title: 'Giá trần RON95-III kỳ 09/07 ngoài khoảng 95% (minh hoạ)',
       status: 'open',
       source_kind: 'forecast_miss',
+      accuracy_log_id: 'acc-0709',
+      forecast_detail: { period: '2026-07-09', point: 21480, lo95: 20900, hi95: 21900, actual: 22310 },
       error_kind: 'model',
       created_at: daysAgo(1),
-      assignee_name: 'Lê Thu Hà',
-      wrong: { value: '21.480 đ/lít', note: 'dự báo trung vị · khoảng 95% 20.900–21.900' },
-      right: { value: '22.310 đ/lít', note: 'Bộ Công Thương công bố 09/07/2026' },
-      timeline: [{ label: 'Mở', at: '10/07' }],
-      history_text: '10/07 Agent Dự báo ghi lệch · giao Lê Thu Hà',
+      assignee_id: 'u-ha',
     }),
     entry({
       id: 'eb-0045',
-      code: 'EB-0045',
+      entry_no: 'EB-0045',
       title: 'Bản tin 25/06 ghi “đã cập nhật” khi dataset dừng ở kỳ 18/06',
       status: 'open',
       source_kind: 'number_check',
       error_kind: 'freshness',
       created_at: daysAgo(15),
-      timeline: [{ label: 'Mở', at: '25/06' }],
-      history_text: '25/06 Verifier bỏ câu · gộp 3 lần trong 7 ngày',
+      reopened_count: 1,
     }),
     entry({
       id: 'eb-0040',
-      code: 'EB-0040',
+      entry_no: 'EB-0040',
       title: '“Lãi suất huy động” ánh xạ sai sang kỳ hạn 12 tháng',
       status: 'fixed',
       source_kind: 'reviewer_reject',
+      hitl_request_id: 'hitl-0620',
       error_kind: 'synonym',
-      data_product_name: 'Lãi suất huy động niêm yết',
-      assignee_name: 'Trần Minh Quân',
+      data_product_id: 'dp-deposit-rate',
+      assignee_id: 'u-quan',
       created_at: daysAgo(21),
       root_cause: 'Đồng nghĩa mặc định trỏ kỳ hạn 12 tháng thay vì hỏi lại kỳ hạn.',
-      fix: {
-        kind: 'proposal',
-        label: 'Sửa đồng nghĩa “lãi suất huy động”',
-        ref: 'PR-0301',
-        proposal_status: 'accepted',
-      },
-      regression: {
-        code: 'EV-EB-0040',
-        text: 'chờ lượt CI kế tiếp',
-        ci_text: 'Chưa chạy',
-        passed: null,
-      },
-      timeline: [
-        { label: 'Mở', at: '20/06' },
-        { label: 'Đã sửa', at: '28/06' },
-      ],
-      history_text: '20/06 người duyệt bác · 28/06 đã sửa',
+      fix_kind: 'synonym',
+      fix_proposal_id: 'pr-0301',
+      fixed_by: 'u-quan',
+      fixed_at: daysAgo(13),
+      eval_item_id: 'ev-eb-0040',
+      eval_item: evalItem('ev-eb-0040', 'eb-0040', '2026-06-20', daysAgo(13)),
     }),
     entry({
       id: 'eb-0038',
-      code: 'EB-0038',
+      entry_no: 'EB-0038',
       title: 'Câu hỏi giá tại cửa hàng Petrolimex Láng Hạ',
       status: 'dismissed',
       source_kind: 'user_report',
+      feedback_id: 'fb-0611',
       error_kind: 'retrieval',
-      data_product_name: null,
+      data_product_id: null,
       created_at: daysAgo(30),
-      dismissed_reason: 'Ngoài phạm vi data product; câu trả lời đã mang nhãn không có biên nhận.',
-      timeline: [
-        { label: 'Mở', at: '11/06' },
-        { label: 'Bỏ qua', at: '12/06' },
-      ],
-      history_text: '11/06 báo sai · 12/06 bỏ qua',
+      updated_at: daysAgo(29),
+      dismiss_reason: 'Ngoài phạm vi data product; câu trả lời đã mang nhãn không có biên nhận.',
     }),
   ];
 }
 
-const summary = (e: ErrorBookEntry) => ({
-  id: e.id,
-  code: e.code,
-  title: e.title,
-  status: e.status,
-  error_kind: e.error_kind,
-  source_kind: e.source_kind,
-  data_product_name: e.data_product_name,
-  assignee_name: e.assignee_name,
-  created_at: e.created_at,
-});
+/** What the list and the writes answer: the entry without the eval item and its result. */
+const view = ({ eval_item: _item, latest_result: _result, ...e }: Entry): ErrorBookViewWire => e;
 
 export function createErrorBookHandlers() {
   let entries = entriesFixture();
-  const update = (id: string, patch: Partial<ErrorBookEntry>) => {
-    entries = entries.map((e) => (e.id === id ? { ...e, ...patch } : e));
+  const update = (id: string, patch: Partial<Entry>) => {
+    const now = new Date().toISOString();
+    entries = entries.map((e) => (e.id === id ? { ...e, ...patch, updated_at: now } : e));
     return entries.find((e) => e.id === id)!;
   };
   return [
@@ -208,7 +217,7 @@ export function createErrorBookHandlers() {
         .filter((e) => !p.get('status') || e.status === p.get('status'))
         .filter((e) => !p.get('error_kind') || e.error_kind === p.get('error_kind'))
         .filter((e) => !p.get('source_kind') || e.source_kind === p.get('source_kind'))
-        .map(summary);
+        .map(view);
       return HttpResponse.json({ items, next_page_token: '' });
     }),
     http.get('*/v1/error-book-entries/:id', ({ params }) => {
@@ -219,26 +228,22 @@ export function createErrorBookHandlers() {
       const e = entries.find((x) => x.id === params.id);
       if (!e) return problem(404, 'not_found', 'Không tìm thấy mục.');
       if (e.status === 'dismissed') return problem(409, 'conflict', 'Mục đã bỏ qua.');
-      return HttpResponse.json(update(e.id, (await request.json()) as Partial<ErrorBookEntry>));
+      return HttpResponse.json(view(update(e.id, (await request.json()) as Partial<Entry>)));
     }),
     http.post('*/v1/error-book-entries', async ({ request }) => {
-      const body = (await request.json()) as {
-        source_kind: ErrorBookEntry['source_kind'];
-        title: string;
-      };
+      const body = (await request.json()) as { source_kind: string; title: string };
       if (!body.title?.trim()) return problem(422, 'validation_failed', 'Nhập tiêu đề mục.');
       const n = 46 + entries.length;
       const created = entry({
         id: `eb-00${n}`,
-        code: `EB-00${n}`,
+        entry_no: `EB-00${n}`,
         title: body.title,
         status: 'open',
         source_kind: body.source_kind,
         created_at: new Date().toISOString(),
-        timeline: [{ label: 'Mở', at: 'hôm nay' }],
       });
       entries = [created, ...entries];
-      return HttpResponse.json(created, { status: 201 });
+      return HttpResponse.json(view(created), { status: 201 });
     }),
     http.post('*/v1/error-book-entries/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
@@ -246,6 +251,7 @@ export function createErrorBookHandlers() {
       if (!e) return problem(404, 'not_found', 'Không tìm thấy mục.');
       const body = (await request.json().catch(() => ({}))) as Record<string, string>;
       if (verb === 'mark-fixed') {
+        if (e.status !== 'open') return problem(409, 'invalid_state', `The entry is ${e.status}.`);
         if (!e.error_kind || !e.root_cause?.trim())
           return problem(
             422,
@@ -261,22 +267,16 @@ export function createErrorBookHandlers() {
             'Cần cách sửa: đề xuất đã chấp nhận hoặc tham chiếu (BR-179).',
           );
         return HttpResponse.json(
-          update(id, {
-            status: 'fixed',
-            fix: {
-              kind: body.fix_proposal_id ? 'proposal' : 'commit',
-              label: body.fix_proposal_id ?? body.fix_ref,
-              ref: body.fix_proposal_id ?? body.fix_ref,
-              proposal_status: body.fix_proposal_id ? 'accepted' : null,
-            },
-            regression: {
-              code: `EV-${e.code}`,
-              text: 'chờ lượt CI kế tiếp',
-              ci_text: 'Chưa chạy',
-              passed: null,
-            },
-            timeline: [...e.timeline, { label: 'Đã sửa', at: 'hôm nay' }],
-          }),
+          view(
+            update(id, {
+              status: 'fixed',
+              fix_kind: body.fix_kind,
+              fix_proposal_id: body.fix_proposal_id ?? null,
+              fix_ref: body.fix_ref ?? null,
+              fixed_by: HANH,
+              fixed_at: new Date().toISOString(),
+            }),
+          ),
         );
       }
       if (verb === 'dismiss') {
@@ -284,11 +284,13 @@ export function createErrorBookHandlers() {
         if (!body.reason?.trim() && !body.duplicate_of_id)
           return problem(422, 'validation_failed', 'Ghi lý do hoặc chọn mục gốc.');
         return HttpResponse.json(
-          update(id, {
-            status: 'dismissed',
-            dismissed_reason: body.reason ?? `Trùng ${body.duplicate_of_id}`,
-            timeline: [...e.timeline, { label: 'Bỏ qua', at: 'hôm nay' }],
-          }),
+          view(
+            update(id, {
+              status: 'dismissed',
+              dismiss_reason: body.reason ?? null,
+              duplicate_of_id: body.duplicate_of_id ?? null,
+            }),
+          ),
         );
       }
       return problem(404, 'not_found', 'Không có thao tác này.');

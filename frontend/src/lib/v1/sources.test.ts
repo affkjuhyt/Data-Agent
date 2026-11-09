@@ -215,6 +215,19 @@ describe('sources from the api', () => {
     expect((await listSourceDrifts()).items).toEqual([]);
   });
 
+  it('asks for each source’s drifts by source_id, the filter the api has', async () => {
+    const asked: URLSearchParams[] = [];
+    server.use(
+      http.get('*/v1/schema-drifts', ({ request }) => {
+        asked.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ items: [], next_page_token: '' });
+      }),
+    );
+    await listSourceDrifts();
+    expect(asked.map((q) => q.get('source_id'))).toEqual(rows.map((r) => r.id));
+    expect(asked.some((q) => q.has('origin'))).toBe(false);
+  });
+
   it('reads a table preview through the canonical query run', async () => {
     const run = {
       id: 'qr-1',

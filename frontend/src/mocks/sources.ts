@@ -1935,10 +1935,13 @@ export function createSourcesHandlers() {
     }),
 
     // Schema drifts of connected sources. P14's mock serves the same paths for crawled sources:
-    // answer only our ids (and the origin=source list) and fall through otherwise.
+    // answer only our ids (and the list of one of our sources) and fall through otherwise.
     http.get('*/v1/schema-drifts', ({ request }) => {
-      if (new URL(request.url).searchParams.get('origin') !== 'source') return undefined;
-      return page(drift.status === 'pending' ? [driftWire(drift)] : []);
+      const query = new URL(request.url).searchParams;
+      const sourceId = query.get('source_id');
+      if (!sources.some((s) => s.id === sourceId)) return undefined;
+      const open = query.get('resolution') !== 'open' || drift.status === 'pending';
+      return page(drift.source_id === sourceId && open ? [driftWire(drift)] : []);
     }),
     http.get('*/v1/schema-drifts/:id', ({ params }) =>
       params.id === drift.id ? HttpResponse.json(driftWire(drift)) : undefined,

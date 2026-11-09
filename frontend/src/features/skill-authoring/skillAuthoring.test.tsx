@@ -119,7 +119,7 @@ describe('SkillFromSessionPage', () => {
 });
 
 describe('SkillTestsPage', () => {
-  it('blocks review while a case fails, and applying the fix reruns the suite', async () => {
+  it('blocks review while a case fails, and sends the author to the editor for the fix', async () => {
     routeId = 'sk-region-variance';
     wrap(<SkillTestsPage />);
     expect(await screen.findByText('7/8 đạt')).toBeInTheDocument();
@@ -129,13 +129,20 @@ describe('SkillTestsPage', () => {
       'true',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Áp dụng và chạy lại' }));
-    expect(await screen.findByText('8/8 đạt')).toBeInTheDocument();
-    expect(screen.getByText('Mọi ca đều đạt')).toBeInTheDocument();
+    // A2 has no route that applies the proposed fix: the button says so instead of failing.
+    expect(screen.getByRole('button', { name: 'Áp dụng và chạy lại' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.getByText(/chưa áp dụng tự động đề xuất sửa/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Sửa trong trình soạn' }));
+    expect(navigate).toHaveBeenCalledWith('agents', 'SKILL_EDITOR', 'sk-region-variance');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Gửi duyệt' }));
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith('agents', 'SKILL_VERSIONS', 'sk-region-variance'),
+    // v2 is already under test: the api sends only a draft to its tests, so "Chạy lại" waits
+    // for a new draft from the editor instead of answering 409.
+    expect(screen.getByRole('button', { name: 'Chạy lại' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
     );
   });
 
@@ -159,6 +166,12 @@ describe('SkillTestsPage', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Thêm ca' }));
     expect(await screen.findByText('Tiền gửi, giảm')).toBeInTheDocument();
     expect(screen.getByText('8/9 đạt')).toBeInTheDocument();
+
+    // "Gửi duyệt" is POST /v1/skill-versions/{id}:publish; the note stays on the screen.
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi duyệt' }));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith('agents', 'SKILL_VERSIONS', 'sk-region-variance'),
+    );
   });
 });
 
@@ -172,9 +185,17 @@ describe('SkillRunPage', () => {
     expect(screen.getByText('1,84%')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Chạy lại' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Thêm vào phiên' }));
+    // The rerun is a POST then the run read back; the button waits for it.
+    const add = await screen.findByRole('button', { name: 'Thêm vào phiên' });
+    await waitFor(() => expect(add).not.toHaveAttribute('aria-disabled'));
+    fireEvent.click(add);
+    // A2 has no :add-to-session: the result goes into a new session made from the run.
     fireEvent.click(await screen.findByRole('button', { name: 'Mở phiên' }));
-    expect(navigate).toHaveBeenCalledWith('analysis', 'SESSIONS', 'ws-npl-sept');
+    expect(navigate).toHaveBeenCalledWith(
+      'analysis',
+      'SESSIONS',
+      expect.stringMatching(/^ws-new-/),
+    );
 
     fireEvent.click(screen.getByRole('link', { name: 'Xem cách làm' }));
     expect(navigate).toHaveBeenCalledWith('agents', 'SKILL_EDITOR', 'sk-variance');

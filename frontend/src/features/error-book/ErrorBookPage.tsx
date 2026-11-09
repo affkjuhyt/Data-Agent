@@ -83,6 +83,8 @@ export default function ErrorBookPage() {
   const id = picked ?? shown[0]?.id;
   const count = (s: EntryStatus) => items.filter((e) => e.status === s).length;
   const distinct = (values: (string | null)[]) => [...new Set(values.filter(Boolean) as string[])];
+  const products = distinct(items.map((e) => e.data_product_name));
+  const assignees = distinct(items.map((e) => e.assignee_name));
 
   const exportCsv = () => {
     const head = [
@@ -100,7 +102,7 @@ export default function ErrorBookPage() {
       e.error_kind ? KIND_LABEL[e.error_kind] : '',
       SOURCE_LABEL[e.source_kind],
       e.data_product_name ?? '',
-      e.assignee_name,
+      e.assignee_name ?? '',
       e.title,
     ]);
     const csv = [head, ...rows].map((r) => r.map(csvCell).join(',')).join('\n');
@@ -163,29 +165,31 @@ export default function ErrorBookPage() {
                 ...Object.entries(SOURCE_LABEL).map(([value, label]) => ({ value, label })),
               ]}
             />
-            <Select
-              size="sm"
-              label="Data product"
-              value={product}
-              onChange={setProduct}
-              options={[
-                { value: 'all', label: 'Data product: tất cả' },
-                ...distinct(items.map((e) => e.data_product_name)).map((v) => ({
-                  value: v,
-                  label: v,
-                })),
-              ]}
-            />
-            <Select
-              size="sm"
-              label="Người xử lý"
-              value={assignee}
-              onChange={setAssignee}
-              options={[
-                { value: 'all', label: 'Người xử lý: tất cả' },
-                ...distinct(items.map((e) => e.assignee_name)).map((v) => ({ value: v, label: v })),
-              ]}
-            />
+            {/* The api names data products and handlers by id only: no names, no filter. */}
+            {products.length > 0 && (
+              <Select
+                size="sm"
+                label="Data product"
+                value={product}
+                onChange={setProduct}
+                options={[
+                  { value: 'all', label: 'Data product: tất cả' },
+                  ...products.map((v) => ({ value: v, label: v })),
+                ]}
+              />
+            )}
+            {assignees.length > 0 && (
+              <Select
+                size="sm"
+                label="Người xử lý"
+                value={assignee}
+                onChange={setAssignee}
+                options={[
+                  { value: 'all', label: 'Người xử lý: tất cả' },
+                  ...assignees.map((v) => ({ value: v, label: v })),
+                ]}
+              />
+            )}
           </div>
           <AsyncRegion state={entries} what="Error Book" skeletonRows={5}>
             {() => (
@@ -327,7 +331,11 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
         <Badge tone={status.tone}>{status.label}</Badge>
         {entry.error_kind && <Badge tone="neutral">{KIND_LABEL[entry.error_kind]}</Badge>}
         <span className="ml-auto text-muted-foreground da-caption">
-          Người xử lý: {entry.assignee_name}
+          {entry.assignee_name
+            ? `Người xử lý: ${entry.assignee_name}`
+            : entry.assignee_id
+              ? 'Đã giao người xử lý'
+              : 'Chưa giao người xử lý'}
         </span>
       </div>
       <h2 className="text-foreground da-heading-2">{entry.title}</h2>
@@ -371,7 +379,7 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
           <>
             <dt className="text-muted-foreground">Biên nhận</dt>
             <dd className="text-foreground">
-              <span className="text-info">{entry.receipt.code}</span> · {entry.receipt.replay_text}
+              <span className="text-info">Câu trả lời sai</span> · {entry.receipt.text}
             </dd>
           </>
         )}
@@ -410,10 +418,9 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
         <dd className="text-foreground">
           {entry.fix ? (
             <span className="flex flex-wrap items-center gap-da-sm">
-              <span className="text-info">{entry.fix.label}</span>· {entry.fix.ref}
-              {entry.fix.proposal_status === 'accepted' && (
-                <Badge tone="success">Đã chấp nhận</Badge>
-              )}
+              <span className="text-info">{entry.fix.label}</span>
+              {entry.fix.ref && <>· {entry.fix.ref}</>}
+              {entry.fix.is_proposal && <Badge tone="info">Đề xuất</Badge>}
             </span>
           ) : (
             '—'
@@ -423,9 +430,7 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
         <dd className="text-foreground">
           {entry.regression ? (
             <span className="flex flex-col gap-[2px]">
-              <span>
-                {entry.regression.code} · {entry.regression.text}
-              </span>
+              <span>{entry.regression.text}</span>
               <StatusDot
                 tone={
                   entry.regression.passed
@@ -448,8 +453,12 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
             <dd className="text-foreground">{entry.dismissed_reason}</dd>
           </>
         )}
-        <dt className="text-muted-foreground">Lịch sử</dt>
-        <dd className="text-muted-foreground da-caption">{entry.history_text}</dd>
+        {entry.history_text && (
+          <>
+            <dt className="text-muted-foreground">Lịch sử</dt>
+            <dd className="text-muted-foreground da-caption">{entry.history_text}</dd>
+          </>
+        )}
       </dl>
       <div className="flex flex-wrap justify-end gap-da-sm">
         {open && (

@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, V1Error, type Page, api, ok, okAs } from './client';
+import { pathId, v1Get, v1Send, V1Error, type Page, api, ok } from './client';
 import type { components } from './schema';
 import type { SkillStatus } from './skills';
 
@@ -38,6 +38,8 @@ export interface SkillGuardrail {
 /** PROPOSAL: GET /v1/skills/{id}/definition — the working (newest) version of a skill. */
 export interface SkillDefinition {
   skill_id: string;
+  /** A2 skill_version.id of the version shown; null when the skill has none yet. */
+  version_id: string | null;
   name: string;
   version: number;
   status: SkillAuthoringStatus;
@@ -57,7 +59,28 @@ export interface SkillDefinition {
   version_count: number;
   /** The parameters "Thử nhanh" runs with, one line each as shown. */
   quick_test: { params: Record<string, string>; lines: string[] };
+  /**
+   * The shown version as the api holds it, which a save starts from: the editor shows only a
+   * step's text and tool, but the worker runs a step by its `kind` and a run needs the
+   * parameter schema. null when A2 does not serve the version's content (a draft is listed as a
+   * VersionSummary only).
+   */
+  source: VersionSource | null;
 }
+
+export interface VersionSource {
+  steps: Array<Record<string, unknown>>;
+  params_schema: unknown;
+  metric_version_ids: string[];
+  sandbox_limits: unknown;
+}
+
+const sourceOf = (version: Schemas['VersionView']): VersionSource => ({
+  steps: (Array.isArray(version.steps) ? version.steps : []) as Array<Record<string, unknown>>,
+  params_schema: version.params_schema,
+  metric_version_ids: version.metric_version_ids ?? [],
+  sandbox_limits: version.sandbox_limits,
+});
 
 export type TrialStepState = 'done' | 'error';
 
@@ -88,6 +111,7 @@ export const getSkillDefinition = async (id: string): Promise<SkillDefinition> =
   >;
   return {
     skill_id: raw.id,
+    version_id: version?.id ?? null,
     name: raw.name,
     version: version?.version ?? raw.current_version ?? 0,
     status: (version?.status ?? 'draft') as SkillAuthoringStatus,
@@ -111,6 +135,10 @@ export const getSkillDefinition = async (id: string): Promise<SkillDefinition> =
     test_count: 0,
     version_count: (raw.versions ?? []).length,
     quick_test: { params: {}, lines: [] },
+    source:
+      raw.published_version && version === raw.published_version
+        ? sourceOf(raw.published_version)
+        : null,
   } as SkillDefinition;
 };
 
@@ -136,74 +164,142 @@ export const getLatestTrial = async (id: string): Promise<SkillTrial | null> => 
     : null;
 };
 
-/** PROPOSAL: PUT /v1/skills/{id}/definition — saves the draft version in place. */
+/** A version's own fields over the definition it was edited from; the skill's facts stay. */
+function definitionOf(current: SkillDefinition, version: Schemas['VersionView']): SkillDefinition {
+  const steps = (Array.isArray(version.steps) ? version.steps : []) as Array<
+    Record<string, unknown>
+  >;
+  return {
+    ...current,
+    version_id: version.id,
+    version: version.version,
+    status: version.status as SkillAuthoringStatus,
+    steps: steps.map((step, index) => ({
+      seq: Number(step.seq ?? index + 1),
+      text: String(step.text ?? step.name ?? ''),
+      tool: typeof step.tool === 'string' ? step.tool : null,
+    })),
+    instructions: version.template_md ?? '',
+    source: sourceOf(version),
+  };
+}
+
+/**
+ * A2: PATCH /v1/skill-versions/{id} edits the draft in place; a skill whose shown version is not
+ * a draft gets a new draft version (POST /v1/skills/{id}/versions), since what was tested or
+ * published is not edited (BR-12). The answer is the saved version as the editor shows it.
+ */
 export const saveSkillDefinition = async (
-  id: string,
+  current: SkillDefinition,
   body: { instructions: string; steps: SkillStepSpec[] },
-) => {
-  try {
-    return await v1Send<SkillDefinition>('PUT', `/skills/${pathId(id)}/definition`, body);
-  } catch (error) {
-    if (!notProposal(error)) throw error;
-  }
-  const raw = await ok<Schemas['SkillDetail']>(
-    api.GET('/v1/skills/{id}', { params: { path: { id } } }),
-  );
-  const draft = (raw.versions ?? []).find((version) => version.status === 'draft');
+): Promise<SkillDefinition> => {
+  // Each step keeps what the editor does not show (its kind above all: skill_runs.py runs a
+  // step by kind, and a step saved without one fails every run); only text and tool change.
+  const before = current.source?.steps ?? [];
   const payload = {
-    steps: body.steps.map((step) => ({ seq: step.seq, text: step.text, tool: step.tool })),
+    steps: body.steps.map((step, index) => {
+      const old = before.find((s) => Number(s.seq) === step.seq) ?? before[index] ?? {};
+      return {
+        ...old,
+        seq: step.seq,
+        text: step.text,
+        ...(step.tool !== null || 'tool' in old ? { tool: step.tool } : {}),
+      };
+    }),
     template_md: body.instructions,
   };
-  if (draft) {
-    return okAs<SkillDefinition>(
-      api.PATCH('/v1/skill-versions/{id}', { params: { path: { id: draft.id } }, body: payload }),
-    );
-  }
-  return okAs<SkillDefinition>(
-    api.POST('/v1/skills/{id}/versions', {
-      params: { path: { id } },
-      body: {
-        params_schema: { type: 'object', properties: {} },
-        ...payload,
-      },
-    }),
-  );
+  const saved =
+    current.status === 'draft' && current.version_id
+      ? await ok<Schemas['VersionView']>(
+          api.PATCH('/v1/skill-versions/{id}', {
+            params: { path: { id: current.version_id } },
+            body: payload,
+          }),
+        )
+      : await ok<Schemas['VersionView']>(
+          api.POST('/v1/skills/{id}/versions', {
+            params: { path: { id: current.skill_id } },
+            body: {
+              // A new version of a published skill keeps its parameters, metrics and limits.
+              params_schema: (current.source?.params_schema ?? {
+                type: 'object',
+                properties: {},
+              }) as Record<string, unknown>,
+              metric_version_ids: current.source?.metric_version_ids ?? [],
+              ...(current.source?.sandbox_limits
+                ? { sandbox_limits: current.source.sandbox_limits as Schemas['SandboxLimits'] }
+                : {}),
+              ...payload,
+            },
+          }),
+        );
+  return definitionOf(current, saved);
 };
 
-/** PROPOSAL: POST /v1/skills/{id}:try {params} — runs the working version once. */
-export const trySkill = async (id: string, params: Record<string, string>) =>
-  v1Send<SkillTrial>('POST', `/skills/${pathId(id)}:try`, { params }).catch(async (e) => {
-    if (!notProposal(e)) throw e;
-    const raw = await ok<Schemas['SkillDetail']>(
-      api.GET('/v1/skills/{id}', { params: { path: { id } } }),
+type Accepted = Schemas['services__api__modules__skill__schemas__Accepted'];
+
+/** GET /v1/skill-runs/{id} until it finishes or about twenty seconds pass. */
+async function awaitRun(accepted: Accepted): Promise<RunWire> {
+  const read = () =>
+    ok<RunWire>(api.GET('/v1/skill-runs/{id}', { params: { path: { id: accepted.id } } }));
+  let run = await read();
+  for (let attempt = 0; attempt < 10 && !FINISHED[run.status]; attempt++) {
+    await sleep(accepted.poll_after_ms ?? 2000);
+    run = await read();
+  }
+  return run;
+}
+
+const seconds = (raw: RunWire) => {
+  if (raw.started_at && raw.finished_at)
+    return (Date.parse(raw.finished_at) - Date.parse(raw.started_at)) / 1000;
+  const steps = raw.steps ?? [];
+  return steps.length ? steps.reduce((n, s) => n + (s.duration_ms ?? 0), 0) / 1000 : null;
+};
+
+/** The trial as the editor draws it, from the run A2 recorded in mode "try". */
+function trialOf(raw: RunWire, version: number): SkillTrial {
+  const run = readRun(raw);
+  const took = seconds(raw);
+  return {
+    version,
+    duration_text: took === null ? '' : `${Math.round(took)} giây`,
+    steps: (raw.steps ?? []).map((step) => {
+      const output = (step.output ?? null) as { summary?: unknown } | null;
+      return {
+        title: step.name,
+        detail: typeof output?.summary === 'string' ? output.summary : '',
+        // skill_runs.py writes a step as "ok" or "error".
+        state: step.status === 'error' || step.status === 'failed' ? 'error' : 'done',
+      };
+    }),
+    bars: [],
+    conclusion: run.outcome?.summary ?? run.outcome?.error ?? run.decomposition?.summary ?? '',
+  };
+}
+
+/**
+ * A2: POST /v1/skill-versions/{id}:try {params} (202) runs the draft once as the author's own
+ * run, which the library does not count; the run is read back from /v1/skill-runs/{id}.
+ */
+export const trySkill = async (
+  current: SkillDefinition,
+  params: Record<string, string>,
+): Promise<SkillTrial> => {
+  if (current.status !== 'draft' || !current.version_id)
+    throw new V1Error(
+      409,
+      'invalid_state',
+      'Chỉ chạy thử được bản nháp; lưu thay đổi thành phiên bản mới rồi chạy thử.',
     );
-    const draft = (raw.versions ?? []).find((version) => version.status === 'draft');
-    if (!draft) throw e;
-    const accepted = await ok<Schemas['services__api__modules__skill__schemas__Accepted']>(
-      api.POST('/v1/skill-versions/{id}:try', {
-        params: { path: { id: draft.id } },
-        body: { params },
-      }),
-    );
-    let run = readRun(
-      await ok<RunWire>(api.GET('/v1/skill-runs/{id}', { params: { path: { id: accepted.id } } })),
-    );
-    for (let attempt = 0; attempt < 10 && run.outcome?.status === 'running'; attempt++) {
-      await sleep(accepted.poll_after_ms ?? 2000);
-      run = readRun(
-        await ok<RunWire>(
-          api.GET('/v1/skill-runs/{id}', { params: { path: { id: accepted.id } } }),
-        ),
-      );
-    }
-    return {
-      version: draft.version,
-      duration_text: '',
-      steps: [],
-      bars: [],
-      conclusion: run.outcome?.summary ?? run.outcome?.error ?? '',
-    } satisfies SkillTrial;
-  });
+  const accepted = await ok<Accepted>(
+    api.POST('/v1/skill-versions/{id}:try', {
+      params: { path: { id: current.version_id } },
+      body: { params },
+    }),
+  );
+  return trialOf(await awaitRun(accepted), current.version);
+};
 
 /* ─── Tạo kỹ năng từ phiên (UC-03-03) ─────────────────────────────────── */
 
@@ -376,6 +472,8 @@ export interface SkillTestFailure {
 /** PROPOSAL: GET /v1/skills/{id}/test-runs/latest — the suite on locked data, newest run. */
 export interface SkillTestRun {
   skill_id: string;
+  /** A2 skill_version.id of the version under test; :test and :publish name it. */
+  version_id: string | null;
   skill_name: string;
   version: number;
   status: SkillAuthoringStatus;
@@ -393,11 +491,15 @@ export const getLatestTestRun = async (id: string): Promise<SkillTestRun> => {
   const raw = await ok<Schemas['SkillDetail']>(
     api.GET('/v1/skills/{id}', { params: { path: { id } } }),
   );
+  // The version being worked on: the newest one not yet published or under review (versions come
+  // newest first). A draft saved after a tested version is the one to test next.
   const version =
-    (raw.versions ?? []).find((candidate) => candidate.eval_run_id) ?? (raw.versions ?? [])[0];
+    (raw.versions ?? []).find((candidate) => WORKING.has(candidate.status)) ??
+    (raw.versions ?? [])[0];
   if (!version) throw new V1Error(404, 'not_found', 'Kỹ năng chưa có phiên bản.');
   return {
     skill_id: raw.id,
+    version_id: version.id,
     skill_name: raw.name,
     version: version.version,
     status: version.status as SkillAuthoringStatus,
@@ -407,72 +509,72 @@ export const getLatestTestRun = async (id: string): Promise<SkillTestRun> => {
   };
 };
 
-/** PROPOSAL: POST /v1/skills/{id}:test — reruns every case on locked data. */
-export const runSkillTests = async (id: string): Promise<SkillTestRun> => {
-  try {
-    return await v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}:test`, {});
-  } catch (error) {
-    if (!notProposal(error)) throw error;
-    const raw = await ok<Schemas['SkillDetail']>(
-      api.GET('/v1/skills/{id}', { params: { path: { id } } }),
+const WORKING = new Set(['draft', 'needs_review', 'testing']);
+/** skill/routes.py: :test takes a draft or a version flagged needs_review, nothing else. */
+export const TESTABLE = new Set<string>(['draft', 'needs_review']);
+
+const versionOf = (run: SkillTestRun) => {
+  if (!run.version_id) throw new V1Error(409, 'invalid_state', 'Kỹ năng chưa có phiên bản.');
+  return run.version_id;
+};
+
+/**
+ * A2: POST /v1/skill-versions/{id}:test (202) sends the version to its eval set on locked data;
+ * the eval module scores it from the event. The suite is read again afterwards.
+ */
+export const runSkillTests = async (run: SkillTestRun): Promise<SkillTestRun> => {
+  if (!TESTABLE.has(run.status))
+    throw new V1Error(
+      409,
+      'invalid_state',
+      `v${run.version} không phải bản nháp: sửa trong trình soạn để có bản nháp mới rồi chạy kiểm định.`,
     );
-    const draft = (raw.versions ?? []).find((version) => version.status === 'draft');
-    if (!draft) throw error;
-    await ok<Schemas['services__api__modules__skill__schemas__Accepted']>(
-      api.POST('/v1/skill-versions/{id}:test', { params: { path: { id: draft.id } } }),
-    );
-    return {
-      skill_id: raw.id,
-      skill_name: raw.name,
-      version: draft.version,
-      status: 'testing' as SkillAuthoringStatus,
-      ran_at: new Date().toISOString(),
-      cases: [],
-      failures: [],
-    };
-  }
+  await ok<Accepted>(
+    api.POST('/v1/skill-versions/{id}:test', { params: { path: { id: versionOf(run) } } }),
+  );
+  return getLatestTestRun(run.skill_id);
 };
 
 /** PROPOSAL: POST /v1/skills/{id}/test-cases (A2 SkillTestCase). */
 export const addSkillTestCase = async (
-  id: string,
+  run: SkillTestRun,
   body: { name: string; period_text: string; expected: string },
 ) => {
   try {
-    return await v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}/test-cases`, body);
+    return await v1Send<SkillTestRun>('POST', `/skills/${pathId(run.skill_id)}/test-cases`, body);
   } catch (error) {
     if (!notProposal(error)) throw error;
   }
-  return runSkillTests(id);
+  // A2 has no test-case route: rerunning the suite would drop the case while saying it was added.
+  throw new V1Error(
+    409,
+    'not_supported',
+    'Ca kiểm thử chưa lưu được ở đây: ca nằm trong bộ đánh giá của kỹ năng.',
+  );
 };
 
-/** PROPOSAL: POST /v1/skills/{id}:apply-fix {case_id} — applies the proposed fix and reruns. */
-export const applySkillFix = async (id: string, caseId: string) =>
-  v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}:apply-fix`, { case_id: caseId }).catch(
-    (error) => {
-      if (!notProposal(error)) throw error;
-      return runSkillTests(id);
-    },
-  );
+/*
+ * A2 has no route that applies the agent's proposed fix (the PROPOSAL :apply-fix answered 405):
+ * the screen sends the author to the editor instead, and "Chạy lại" reruns the suite.
+ */
 
-/** Submit the current testing version through the canonical publish workflow. */
-export const submitSkill = async (id: string, notes: Record<string, string>) => {
-  try {
-    return await v1Send<{ status: SkillAuthoringStatus }>('POST', `/skills/${pathId(id)}:submit`, {
-      notes,
-    });
-  } catch (error) {
-    if (!notProposal(error)) throw error;
-    const raw = await ok<Schemas['SkillDetail']>(
-      api.GET('/v1/skills/{id}', { params: { path: { id } } }),
+/**
+ * A2: POST /v1/skill-versions/{id}:publish. A personal skill is published at once; a wider one
+ * goes to review (pending_review). The notes on failing cases have no A2 field: the screen holds
+ * them as the condition for sending, the reviewer reads the eval run.
+ */
+export const submitSkill = async (run: SkillTestRun) => {
+  // skill/routes.py: :publish takes a version that has been through its tests (testing).
+  if (run.status !== 'testing')
+    throw new V1Error(
+      409,
+      'invalid_state',
+      `v${run.version} chưa qua kiểm định nên chưa gửi duyệt được.`,
     );
-    const candidate = (raw.versions ?? []).find((version) => version.status === 'testing');
-    if (!candidate) throw error;
-    const published = await ok<Schemas['VersionView']>(
-      api.POST('/v1/skill-versions/{id}:publish', { params: { path: { id: candidate.id } } }),
-    );
-    return { status: published.status as SkillAuthoringStatus };
-  }
+  const published = await ok<Schemas['VersionView']>(
+    api.POST('/v1/skill-versions/{id}:publish', { params: { path: { id: versionOf(run) } } }),
+  );
+  return { status: published.status as SkillAuthoringStatus };
 };
 
 /* ─── Chạy kỹ năng (UC-03-01) và yếu tố bên ngoài (UC-03-02) ──────────── */
@@ -569,7 +671,9 @@ export interface SkillRun {
 type RunWire = Schemas['RunDetail'] & { display?: SkillRun };
 
 /** 404 from a PROPOSAL read: the thing is A2's, not the designed fixture's. */
-const notProposal = (e: unknown) => e instanceof V1Error && e.status === 404;
+// A PROPOSAL verb under an existing /{id} route answers 405, not 404 (Starlette matches the GET
+// route with id "…:verb"), so both mean "not served".
+const notProposal = (e: unknown) => e instanceof V1Error && (e.status === 404 || e.status === 405);
 
 /*
  * PROPOSAL: GET /v1/skills/{id}/run-form — the designed form, with the kind of view its result
@@ -722,65 +826,48 @@ export const listSkillRuns = async (id: string): Promise<Page<SkillRun>> => {
 /**
  * A2: POST /v1/skills/{id}/runs (202), under the caller's permissions, then the run read back
  * until it finishes or about twenty seconds pass; a run still queued is returned as running.
- * PROPOSAL: POST /v1/skills/{id}:run, which answers the designed result of the other kinds.
+ * Every kind runs this way: what the result is (a decomposition, a generic outcome) is read from
+ * the run itself. The kind argument is kept for callers that still pass the form's.
  */
 export const runSkill = async (
   id: string,
   params: Record<string, string>,
-  kind: SkillRunKind,
+  _kind?: SkillRunKind,
 ): Promise<SkillRun> => {
-  if (kind !== 'generic') return v1Send<SkillRun>('POST', `/skills/${pathId(id)}:run`, { params });
-  const accepted = await ok<Schemas['services__api__modules__skill__schemas__Accepted']>(
+  const accepted = await ok<Accepted>(
     api.POST('/v1/skills/{id}/runs', { params: { path: { id } }, body: { params } }),
   );
-  let run = readRun(
-    await ok<RunWire>(api.GET('/v1/skill-runs/{id}', { params: { path: { id: accepted.id } } })),
-  );
-  for (let attempt = 0; attempt < 10 && run.outcome?.status === 'running'; attempt++) {
-    await sleep(accepted.poll_after_ms ?? 2000);
-    run = readRun(
-      await ok<RunWire>(api.GET('/v1/skill-runs/{id}', { params: { path: { id: accepted.id } } })),
-    );
-  }
-  return run;
+  return readRun(await awaitRun(accepted));
 };
 
 /**
- * PROPOSAL: POST /v1/skill-runs/{id}:add-to-session — adds the result as a tile to the session
- * the run came from, or to a new session when it has none.
+ * "Thêm vào phiên": A2 has no verb on a skill run for it (the PROPOSAL :add-to-session answered
+ * 405), so the result goes into a new session made from the run (POST /v1/workspaces,
+ * created_from agent_run) as one skill_run tile.
  */
 export const addRunToSession = async (runId: string): Promise<{ session_id: string }> => {
-  try {
-    return await v1Send<{ session_id: string }>(
-      'POST',
-      `/skill-runs/${pathId(runId)}:add-to-session`,
-      {},
-    );
-  } catch (error) {
-    if (!notProposal(error)) throw error;
-    const run = await ok<Schemas['RunDetail']>(
-      api.GET('/v1/skill-runs/{id}', { params: { path: { id: runId } } }),
-    );
-    const workspace = await ok<Schemas['WorkspaceView']>(
-      api.POST('/v1/workspaces', {
-        body: {
-          title: `Kết quả kỹ năng · ${run.version}`,
-          created_from: 'agent_run',
-          created_from_ref: run.id,
-          params: (run.params ?? {}) as Record<string, unknown>,
-        },
-      }),
-    );
-    await ok<Schemas['TileView']>(
-      api.POST('/v1/workspaces/{id}/tiles', {
-        params: { path: { id: workspace.id } },
-        body: {
-          kind: 'skill_run',
-          title: `Kết quả kỹ năng v${run.version}`,
-          spec: { skill_run_id: run.id, result: run.result ?? null },
-        },
-      }),
-    );
-    return { session_id: workspace.id };
-  }
+  const run = await ok<Schemas['RunDetail']>(
+    api.GET('/v1/skill-runs/{id}', { params: { path: { id: runId } } }),
+  );
+  const workspace = await ok<Schemas['WorkspaceView']>(
+    api.POST('/v1/workspaces', {
+      body: {
+        title: `Kết quả kỹ năng · ${run.version}`,
+        created_from: 'agent_run',
+        created_from_ref: run.id,
+        params: (run.params ?? {}) as Record<string, unknown>,
+      },
+    }),
+  );
+  await ok<Schemas['TileView']>(
+    api.POST('/v1/workspaces/{id}/tiles', {
+      params: { path: { id: workspace.id } },
+      body: {
+        kind: 'skill_run',
+        title: `Kết quả kỹ năng v${run.version}`,
+        spec: { skill_run_id: run.id, result: run.result ?? null },
+      },
+    }),
+  );
+  return { session_id: workspace.id };
 };

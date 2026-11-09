@@ -14,9 +14,9 @@ import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import {
   addSkillTestCase,
-  applySkillFix,
   getLatestTestRun,
   runSkillTests,
+  TESTABLE,
   submitSkill,
   type SkillTestRun,
 } from '../../lib/v1/skillAuthoring';
@@ -26,8 +26,9 @@ import { Dialog } from '../../design-system/Dialog';
 /*
  * "P03 · Kiểm định kỹ năng" (2294:18369, UC-03-04): the skill's test cases run on locked data
  * (so a result repeats), each with what was expected and what came out. A failing case opens on
- * the right with why it failed and the fix the agent proposes; "Áp dụng và chạy lại" applies it
- * and reruns the suite. "Gửi duyệt" needs every case to pass or each failing case to carry a note
+ * the right with why it failed and the fix the agent proposes. A2 has no route that applies the
+ * fix, so "Áp dụng và chạy lại" stays disabled and the author edits the step in the editor, then
+ * reruns the suite. "Gửi duyệt" needs every case to pass or each failing case to carry a note
  * for the reviewer — the note field is not in the frame, the rule under it is.
  */
 const time = (iso: string) =>
@@ -35,7 +36,10 @@ const time = (iso: string) =>
 
 export default function SkillTestsPage() {
   const { routeId } = useAppState();
-  const run = useV1(['getLatestTestRun', routeId], routeId ? () => getLatestTestRun(routeId) : null);
+  const run = useV1(
+    ['getLatestTestRun', routeId],
+    routeId ? () => getLatestTestRun(routeId) : null,
+  );
   return (
     <AsyncRegion state={run} what="kết quả kiểm định">
       {(r) => <Tests key={r.skill_id} initial={r} />}
@@ -49,7 +53,7 @@ function Tests({ initial }: { initial: SkillTestRun }) {
   const [run, setRun] = useState(initial);
   const [selected, setSelected] = useState(() => initial.failures[0]?.case_id);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState<'test' | 'fix' | 'submit' | null>(null);
+  const [busy, setBusy] = useState<'test' | 'submit' | null>(null);
   const [error, setError] = useState<string>();
   const [adding, setAdding] = useState(false);
 
@@ -72,22 +76,27 @@ function Tests({ initial }: { initial: SkillTestRun }) {
     pageSize: 50,
   });
 
-  const act = async (verb: 'test' | 'fix' | 'submit') => {
+  const act = async (verb: 'test' | 'submit') => {
     setBusy(verb);
     setError(undefined);
     try {
       if (verb === 'submit') {
-        await submitSkill(id, notes);
+        await submitSkill(run);
         toast({ tone: 'success', message: `Đã gửi duyệt ${run.skill_name} v${run.version}` });
         navigate('agents', 'SKILL_VERSIONS', id);
         return;
       }
-      const next =
-        verb === 'test' ? await runSkillTests(id) : await applySkillFix(id, failure!.case_id);
+      const next = await runSkillTests(run);
       setRun(next);
       setSelected(next.failures[0]?.case_id);
       const ok = next.cases.filter((c) => c.passed).length;
-      toast({ tone: 'info', message: `Đã chạy lại · ${ok}/${next.cases.length} đạt` });
+      toast({
+        tone: 'info',
+        message:
+          next.status === 'testing' && next.cases.length === 0
+            ? `Đã gửi v${next.version} chạy kiểm định; kết quả hiện khi bộ đánh giá chấm xong.`
+            : `Đã chạy lại · ${ok}/${next.cases.length} đạt`,
+      });
     } catch (e) {
       setError(`Không thực hiện được: ${(e as Error).message}`);
     } finally {
@@ -95,12 +104,19 @@ function Tests({ initial }: { initial: SkillTestRun }) {
     }
   };
 
+  // skill/routes.py: only a draft (or a version flagged needs_review) is sent to its tests, and
+  // only a tested version is sent to review; the buttons say so rather than answer 409.
+  const rerunBlocker = TESTABLE.has(run.status)
+    ? null
+    : `v${run.version} đã gửi kiểm định; sửa trong trình soạn để có bản nháp mới rồi chạy lại.`;
   const submitBlocker =
     run.status === 'pending_review'
       ? 'Bản này đang chờ duyệt.'
-      : unexplained.length
-        ? `Sửa hoặc ghi chú ca lỗi “${unexplained[0].name}” trước khi gửi duyệt.`
-        : null;
+      : run.status !== 'testing'
+        ? `v${run.version} chưa qua kiểm định; chạy kiểm định trước khi gửi duyệt.`
+        : unexplained.length
+          ? `Sửa hoặc ghi chú ca lỗi “${unexplained[0].name}” trước khi gửi duyệt.`
+          : null;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -121,9 +137,19 @@ function Tests({ initial }: { initial: SkillTestRun }) {
             <Button kind="ghost" onClick={() => setAdding(true)}>
               Thêm ca kiểm thử
             </Button>
-            <Button loading={busy === 'test'} disabled={busy !== null} onClick={() => act('test')}>
-              Chạy lại
-            </Button>
+            {rerunBlocker ? (
+              <Tooltip content={rerunBlocker}>
+                <Button disabled>Chạy lại</Button>
+              </Tooltip>
+            ) : (
+              <Button
+                loading={busy === 'test'}
+                disabled={busy !== null}
+                onClick={() => act('test')}
+              >
+                Chạy lại
+              </Button>
+            )}
             {submitBlocker ? (
               <Tooltip content={submitBlocker}>
                 <Button kind="primary" disabled>
@@ -153,16 +179,32 @@ function Tests({ initial }: { initial: SkillTestRun }) {
                 <SortableTh view={cases} column="name" className="px-da-lg py-da-md font-normal">
                   Ca
                 </SortableTh>
-                <SortableTh view={cases} column="period" className="w-[110px] px-da-lg py-da-md font-normal">
+                <SortableTh
+                  view={cases}
+                  column="period"
+                  className="w-[110px] px-da-lg py-da-md font-normal"
+                >
                   Kỳ
                 </SortableTh>
-                <SortableTh view={cases} column="expected" className="w-[170px] px-da-lg py-da-md font-normal">
+                <SortableTh
+                  view={cases}
+                  column="expected"
+                  className="w-[170px] px-da-lg py-da-md font-normal"
+                >
                   Kỳ vọng
                 </SortableTh>
-                <SortableTh view={cases} column="actual" className="w-[170px] px-da-lg py-da-md font-normal">
+                <SortableTh
+                  view={cases}
+                  column="actual"
+                  className="w-[170px] px-da-lg py-da-md font-normal"
+                >
                   Thực tế
                 </SortableTh>
-                <SortableTh view={cases} column="result" className="w-[100px] px-da-lg py-da-md font-normal">
+                <SortableTh
+                  view={cases}
+                  column="result"
+                  className="w-[100px] px-da-lg py-da-md font-normal"
+                >
                   Kết quả
                 </SortableTh>
               </tr>
@@ -223,9 +265,18 @@ function Tests({ initial }: { initial: SkillTestRun }) {
               <pre className="w-full whitespace-pre-wrap rounded-sm border border-border bg-card px-da-lg py-[10px] text-foreground da-mono">
                 {failure.fix_diff.join('\n')}
               </pre>
-              <Button loading={busy === 'fix'} disabled={busy !== null} onClick={() => act('fix')}>
-                Áp dụng và chạy lại
-              </Button>
+              <div className="flex flex-wrap items-center gap-da-sm">
+                <Tooltip content="Chưa áp dụng tự động được đề xuất này.">
+                  <Button disabled>Áp dụng và chạy lại</Button>
+                </Tooltip>
+                <Button kind="ghost" onClick={() => navigate('agents', 'SKILL_EDITOR', id)}>
+                  Sửa trong trình soạn
+                </Button>
+              </div>
+              <p className="text-muted-foreground da-caption">
+                Hệ thống chưa áp dụng tự động đề xuất sửa: sửa bước trong trình soạn kỹ năng rồi bấm
+                “Chạy lại”.
+              </p>
               <div className="w-full">
                 <Field
                   label="Hoặc ghi chú cho người duyệt"
@@ -260,7 +311,7 @@ function Tests({ initial }: { initial: SkillTestRun }) {
         open={adding}
         onClose={() => setAdding(false)}
         onAdd={async (body) => {
-          const next = await addSkillTestCase(id, body);
+          const next = await addSkillTestCase(run, body);
           setRun(next);
           setAdding(false);
           toast({ tone: 'success', message: `Đã thêm ca “${body.name}”` });

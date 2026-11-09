@@ -85,7 +85,8 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
         { id: 'DATA_MARTS', label: 'Data mart' },
         { id: 'DATA_PRODUCTS', label: 'Sản phẩm dữ liệu' },
         { id: 'QUALITY', label: 'Chất lượng' },
-        { id: 'WRITEBACK', label: 'Ghi ngược' },
+        // /v1/writebacks needs writeback; without it the page and its counter only answer 403.
+        { id: 'WRITEBACK', label: 'Ghi ngược', requires: 'writeback' },
         { id: 'LINEAGE', label: 'Dòng dữ liệu' },
       ],
     },
@@ -146,8 +147,10 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
     {
       label: 'Tuân thủ',
       items: [
-        { id: 'AUDIT', label: 'Kiểm toán' },
-        { id: 'PRIVACY', label: 'Quyền riêng tư' },
+        // Separation of duties: the org admin holds `admin` only, so the audit log (audit_read)
+        // and data-subject requests (compliance) are offered to the roles that may read them.
+        { id: 'AUDIT', label: 'Kiểm toán', requires: 'audit_read' },
+        { id: 'PRIVACY', label: 'Quyền riêng tư', requires: 'compliance' },
       ],
     },
   ],

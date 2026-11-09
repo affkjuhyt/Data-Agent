@@ -302,21 +302,57 @@ describe('AccessRequestsPage', () => {
     });
   });
 
-  it('narrows to the suggested scope', async () => {
+  it('opens a request as the api sends it, without the display fields', async () => {
+    const at = '2026-10-12T08:00:00Z';
+    const view = {
+      id: 'ar-wire',
+      requester_id: 'u-someone',
+      data_space_id: 'ds-unknown',
+      capability: 'view_detail',
+      reason: 'Điều tra nợ xấu',
+      requested_until: '2026-11-11',
+      status: 'pending',
+      needs_compliance: true,
+      approver_id: null,
+      decided_at: null,
+      decision_note: null,
+      granted_scope: null,
+      member_id: null,
+      hitl_request_id: null,
+      created_at: at,
+      updated_at: at,
+    };
+    server.use(
+      http.get('*/v1/access-requests', () =>
+        HttpResponse.json({ items: [view], next_page_token: '' }),
+      ),
+      http.get('*/v1/access-requests/:id', () => HttpResponse.json(view)),
+    );
+    wrap(<AccessRequestsPage />);
+    expect(
+      await screen.findByRole('heading', { name: /Người dùng xin xem dữ liệu chi tiết/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('“Điều tra nợ xấu”')).toBeInTheDocument();
+    // Nothing says what granting would change, so the section is left out rather than empty.
+    expect(screen.queryByRole('heading', { name: 'Nếu cấp' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cấp quyền' })).toBeInTheDocument();
+  });
+
+  it('narrows to a narrower capability, in the shape the api takes', async () => {
     routeId = 'ar-0091';
     wrap(<AccessRequestsPage />);
     await screen.findByRole('heading', { name: /Lê Minh Châu/ });
     fireEvent.click(screen.getByRole('button', { name: 'Cấp hẹp hơn' }));
-    fireEvent.click(
-      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cấp hẹp hơn' }),
+    const dialog = screen.getByRole('alertdialog');
+    // ar-0091 asks for view_aggregate; the api only narrows it to ask (NARROWER in access.py).
+    expect(within(dialog).getByRole('button', { name: /Quyền được cấp/ })).toHaveTextContent(
+      'hỏi đáp',
     );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cấp hẹp hơn' }));
     await waitFor(() =>
       expect(sent).toContainEqual({
         path: '/access-requests/ar-0091:decide',
-        body: expect.objectContaining({
-          decision: 'narrow',
-          granted_scope: expect.stringContaining('Số tổng hợp'),
-        }),
+        body: expect.objectContaining({ decision: 'narrow', granted_scope: { capability: 'ask' } }),
       }),
     );
   });
@@ -353,10 +389,10 @@ describe('PoliciesPage', () => {
     expect(screen.getByText('18.420')).toBeInTheDocument();
     expect(screen.getByText('hỏi “dư nợ bán lẻ theo chi nhánh tháng 9”')).toBeInTheDocument();
     expect(screen.getByText('2.140 / 18.302')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Lưu thay đổi' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    // The api has no way to save a new version of a policy, so the rule is shown, not edited.
+    expect(rule).toHaveAttribute('readonly');
+    expect(screen.queryByRole('button', { name: 'Lưu thay đổi' })).toBeNull();
+    expect(screen.getByText(/Chưa sửa được quy tắc tại đây/)).toBeInTheDocument();
   });
 });
 
@@ -450,6 +486,14 @@ describe('PrivacyPage', () => {
         ],
       },
     });
+  });
+
+  it('offers no rejection, which the api cannot record', async () => {
+    routeId = DSR;
+    wrap(<PrivacyPage />);
+    expect(await screen.findByText('Yêu cầu xoá dữ liệu')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Xoá đã chọn' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Từ chối có lý do' })).toBeNull();
   });
 
   it('creates a request with the day it was received', async () => {

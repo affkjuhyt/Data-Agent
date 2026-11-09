@@ -634,6 +634,8 @@ export function createCrawlHandlers() {
   let run = runFixture();
   let consolidation = consolidationFixture();
   let records = recordsFixture();
+  // Suggestion runs by id, with the goal they were asked for.
+  const suggestRuns = new Map<string, string>();
   const pending = () => records.filter((x) => x.status === 'pending');
   const recount = () => {
     run = {
@@ -843,10 +845,36 @@ export function createCrawlHandlers() {
       }
       return HttpResponse.json(schemaWire(sourceId, approved));
     }),
+    // A2: 202 with the Agent Thu thập run; its last step's output is the proposal.
     http.post('*/v1/crawl-sources\\:suggest', async ({ request }) => {
       const { goal } = (await request.json()) as { goal: string };
       if (!goal?.trim()) return problem(422, 'validation_failed', 'Mô tả dữ liệu cần thu.');
-      return HttpResponse.json(SUGGESTION);
+      const id = `run-suggest-${suggestRuns.size + 1}`;
+      suggestRuns.set(id, goal);
+      return HttpResponse.json(
+        { id, status: 'queued', poll_after_ms: 1 },
+        { status: 202, headers: { Location: `/v1/runs/${id}` } },
+      );
+    }),
+    http.get('*/v1/runs/:id', ({ params }) => {
+      const goal = suggestRuns.get(String(params.id));
+      if (goal === undefined) return undefined;
+      return HttpResponse.json({
+        id: params.id,
+        status: 'succeeded',
+        title: goal,
+        error: null,
+        steps: [
+          {
+            id: `${String(params.id)}-1`,
+            seq: 1,
+            kind: 'tool',
+            name: 'Kiểm tra robots.txt và điều khoản',
+            status: 'succeeded',
+            output: SUGGESTION,
+          },
+        ],
+      });
     }),
     http.post('*/v1/crawl-sources', async ({ request }) => {
       const body = (await request.json()) as {

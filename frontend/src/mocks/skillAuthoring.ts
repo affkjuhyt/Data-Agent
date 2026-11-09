@@ -5,6 +5,7 @@ import type {
   SkillDefinition,
   SkillRun,
   SkillRunForm,
+  SkillStepSpec,
   SkillTestRun,
   SkillTrial,
 } from '../lib/v1/skillAuthoring';
@@ -23,6 +24,7 @@ const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString(
 function definitionFixture(): SkillDefinition {
   return {
     skill_id: 'sk-variance',
+    version_id: 'skv-sk-variance-4',
     name: 'Phân rã biến động',
     version: 4,
     status: 'draft',
@@ -58,6 +60,7 @@ function definitionFixture(): SkillDefinition {
       params: { metric: 'NPL_RATIO@v4', period: '2026-08 → 2026-09', dims: 'region, product' },
       lines: ['metric=NPL_RATIO@v4', 'period: 2026-08 → 2026-09', 'dims: region, product'],
     },
+    source: null,
   };
 }
 
@@ -216,6 +219,7 @@ function testRunFixture(): SkillTestRun {
   });
   return {
     skill_id: FROM_SESSION_ID,
+    version_id: `skv-${FROM_SESSION_ID}-1`,
     skill_name: 'Điều tra biến động theo vùng',
     version: 1,
     status: 'testing',
@@ -437,6 +441,87 @@ const problem = (status: number, code: string, detail: string) =>
 
 const notFound = () => problem(404, 'not_found', 'Không tìm thấy kỹ năng.');
 
+const AT = '2026-10-13T02:00:00Z';
+
+/** A2 VersionView of a version this mock holds. */
+const versionWire = (
+  d: Pick<SkillDefinition, 'skill_id' | 'version_id' | 'version'> &
+    Partial<Pick<SkillDefinition, 'steps' | 'instructions'>>,
+  status = 'draft',
+) => ({
+  id: d.version_id,
+  skill_id: d.skill_id,
+  version: d.version,
+  params_schema: { type: 'object', properties: {} },
+  steps: d.steps ?? [],
+  template_md: d.instructions ?? null,
+  metric_version_ids: [],
+  sandbox_limits: {},
+  status,
+  eval_run_id: status === 'draft' ? null : `eval-${d.skill_id}`,
+  approved_by: null,
+  approved_at: null,
+  approval_steps: 1,
+  retire_at: null,
+  created_at: AT,
+});
+
+/** A2 RunDetail of a designed run, the screen's run under display. */
+const runWire = (run: SkillRun) => ({
+  id: run.id,
+  skill_version_id: `skv-${run.skill_id}-${run.version}`,
+  data_space_id: 'ds-rui-ro-tin-dung',
+  caller_kind: 'user',
+  caller_ref: null,
+  principal_id: 'u-yen',
+  params: run.params,
+  as_of: null,
+  status: 'succeeded',
+  result: null,
+  result_ref: null,
+  started_at: run.ran_at,
+  finished_at: run.ran_at,
+  error: null,
+  created_at: run.ran_at,
+  skill_id: run.skill_id,
+  version: run.version,
+  steps: [],
+  display: run,
+});
+
+/** A2 RunDetail of a trial (mode "try"): its steps, 11 seconds, the conclusion as summary. */
+const tryRunWire = (
+  id: string,
+  tried: { skill_id: string; version: number; trial: SkillTrial },
+) => ({
+  ...runWire({
+    id,
+    skill_id: tried.skill_id,
+    version: tried.version,
+    kind: 'generic',
+    params: {},
+    ran_at: AT,
+    decomposition: null,
+    external: null,
+    outcome: null,
+  }),
+  started_at: '2026-10-13T02:00:00Z',
+  finished_at: '2026-10-13T02:00:11Z',
+  result: { summary: tried.trial.conclusion },
+  steps: tried.trial.steps.map((step, index) => ({
+    id: `${id}-${index + 1}`,
+    seq: index + 1,
+    name: step.title,
+    query_run_id: null,
+    output: { summary: step.detail },
+    // skill_runs.py writes a step as ok or error.
+    status: step.state === 'error' ? 'error' : 'ok',
+    duration_ms: null,
+    created_at: AT,
+  })),
+  display: undefined,
+});
+
 export function createSkillAuthoringHandlers() {
   const definitions = new Map([['sk-variance', definitionFixture()]]);
   const trials = new Map<string, SkillTrial>([['sk-variance', trialFixture()]]);
@@ -448,7 +533,10 @@ export function createSkillAuthoringHandlers() {
   // The editor's "Kiểm thử" opens the library skill's tests too, not only the one made from a session.
   const testRuns = new Map<string, SkillTestRun>([
     [FROM_SESSION_ID, testRunFixture()],
-    ['sk-variance', { ...testRunFixture(), skill_id: 'sk-variance' }],
+    [
+      'sk-variance',
+      { ...testRunFixture(), skill_id: 'sk-variance', version_id: 'skv-sk-variance-4' },
+    ],
   ]);
   const forms = runFormFixtures();
   const runs = new Map<string, SkillRun>([
@@ -462,32 +550,29 @@ export function createSkillAuthoringHandlers() {
     ],
   ]);
 
-  const rerun = (run: SkillTestRun, fixed = false): SkillTestRun => {
-    const cases = run.cases.map((c) =>
-      fixed && !c.passed ? { ...c, actual: c.expected, passed: true, note: null } : c,
-    );
-    return {
-      ...run,
-      ran_at: new Date().toISOString(),
-      cases,
-      failures: run.failures.filter((f) => cases.some((c) => c.id === f.case_id && !c.passed)),
-    };
-  };
+  const tries = new Map<string, { skill_id: string; version: number; trial: SkillTrial }>();
+  const accepted = (id: string) =>
+    HttpResponse.json({ id, status: 'queued', poll_after_ms: 1 }, { status: 202 });
+
+  // :test reruns the suite on locked data: the same cases, a new time.
+  const rerun = (run: SkillTestRun): SkillTestRun => ({ ...run, ran_at: new Date().toISOString() });
 
   return [
     http.get('*/v1/skills/:id/definition', ({ params }) => {
       const d = definitionOf(String(params.id));
       return d ? HttpResponse.json(d) : notFound();
     }),
-    http.put('*/v1/skills/:id/definition', async ({ params, request }) => {
-      const d = definitionOf(String(params.id));
-      if (!d) return notFound();
-      const body = (await request.json()) as Pick<SkillDefinition, 'instructions' | 'steps'>;
-      if (!body.instructions?.trim())
+    // A2 PATCH /v1/skill-versions/{id}: the draft's steps and template_md, as VersionView.
+    http.patch('*/v1/skill-versions/:id', async ({ params, request }) => {
+      const d = [...definitions.values()].find((x) => x.version_id === params.id);
+      if (!d) return undefined;
+      if (d.status !== 'draft') return problem(409, 'invalid_state', 'Chỉ sửa được bản nháp.');
+      const body = (await request.json()) as { steps?: SkillStepSpec[]; template_md?: string };
+      if (!body.template_md?.trim())
         return problem(422, 'validation_failed', 'Hướng dẫn cho agent không được để trống.');
-      const next = { ...d, instructions: body.instructions, steps: body.steps };
+      const next = { ...d, instructions: body.template_md, steps: body.steps ?? d.steps };
       definitions.set(d.skill_id, next);
-      return HttpResponse.json(next);
+      return HttpResponse.json(versionWire(next));
     }),
     http.get('*/v1/skills/:id/trials/latest', ({ params }) =>
       definitionOf(String(params.id))
@@ -535,61 +620,62 @@ export function createSkillAuthoringHandlers() {
       if (!forms[String(params.id)]) return notFound();
       return HttpResponse.json({ items: run ? [run] : [], next_page_token: '' });
     }),
-    http.post('*/v1/skills/:action', async ({ params, request }) => {
-      const [id, verb] = String(params.action).split(':');
-      // :share and the library's other verbs belong to the skills mock.
-      if (!['try', 'run', 'test', 'apply-fix', 'submit'].includes(verb)) return undefined;
-      const body = (await request.json().catch(() => ({}))) as {
-        params?: Record<string, string>;
-        case_id?: string;
-        notes?: Record<string, string>;
-      };
+    // A2 :try, :test and :publish on a version this mock holds; others fall through.
+    http.post('*/v1/skill-versions/:action', async ({ params }) => {
+      const [versionId, verb] = String(params.action).split(':');
       if (verb === 'try') {
-        const d = definitionOf(id);
-        if (!d) return notFound();
+        const d = [...definitions.values()].find((x) => x.version_id === versionId);
+        if (!d) return undefined;
+        if (d.status !== 'draft') return problem(409, 'invalid_state', 'Chỉ chạy thử bản nháp.');
         if (d.steps.length === 0)
-          return problem(409, 'conflict', 'Kỹ năng chưa có bước nào để chạy thử.');
+          return problem(409, 'invalid_state', 'Kỹ năng chưa có bước nào để chạy thử.');
         const trial = { ...trialFixture(), version: d.version };
-        trials.set(id, trial);
-        definitions.set(id, { ...d, quality_text: `v3: 96% · v${d.version}: đã chạy thử` });
-        return HttpResponse.json(trial);
+        const id = `run-try-${tries.size + 1}`;
+        tries.set(id, { skill_id: d.skill_id, version: d.version, trial });
+        trials.set(d.skill_id, trial);
+        definitions.set(d.skill_id, { ...d, quality_text: `v3: 96% · v${d.version}: đã chạy thử` });
+        return accepted(id);
       }
-      if (verb === 'run') {
-        const form = forms[id];
-        if (!form) return notFound();
-        const run =
-          form.kind === 'decomposition'
-            ? decompositionRun(body.params ?? {})
-            : externalRun(body.params ?? {});
-        runs.set(id, run);
-        return HttpResponse.json(run);
-      }
-      const run = testRuns.get(id);
-      if (!run) return notFound();
+      const run = [...testRuns.values()].find((r) => r.version_id === versionId);
+      if (!run) return undefined;
       if (verb === 'test') {
-        const next = rerun(run);
-        testRuns.set(id, next);
-        return HttpResponse.json(next);
+        // skill/routes.py: only a draft or a needs_review version is sent to testing.
+        if (run.status !== 'draft' && (run.status as string) !== 'needs_review')
+          return problem(409, 'invalid_state', `A ${run.status} version is not sent to testing.`);
+        testRuns.set(run.skill_id, { ...rerun(run), status: 'testing' });
+        return accepted(`eval-${run.skill_id}`);
       }
-      if (verb === 'apply-fix') {
-        if (!run.failures.some((f) => f.case_id === body.case_id))
-          return problem(409, 'conflict', 'Ca này không còn lỗi.');
-        const next = rerun(run, true);
-        testRuns.set(id, next);
-        return HttpResponse.json(next);
-      }
-      if (verb === 'submit') {
-        const unexplained = run.cases.filter((c) => !c.passed && !body.notes?.[c.id]?.trim());
-        if (unexplained.length)
-          return problem(
-            409,
-            'conflict',
-            `Ca “${unexplained[0].name}” lỗi chưa có ghi chú; sửa hoặc ghi chú trước khi gửi duyệt.`,
-          );
-        testRuns.set(id, { ...run, status: 'pending_review' });
-        return HttpResponse.json({ status: 'pending_review' }, { status: 202 });
+      if (verb === 'publish') {
+        if (run.status !== 'testing')
+          return problem(409, 'invalid_state', 'Phiên bản chưa qua kiểm định.');
+        testRuns.set(run.skill_id, { ...run, status: 'pending_review' });
+        return HttpResponse.json(
+          versionWire(
+            { skill_id: run.skill_id, version_id: versionId, version: run.version },
+            'pending_review',
+          ),
+        );
       }
       return undefined;
+    }),
+    // A2 POST /v1/skills/{id}/runs: the designed result rides under display on the run.
+    http.post('*/v1/skills/:id/runs', async ({ params, request }) => {
+      const id = String(params.id);
+      const form = forms[id];
+      if (!form) return undefined;
+      const body = (await request.json()) as { params?: Record<string, string> };
+      const run =
+        form.kind === 'decomposition'
+          ? decompositionRun(body.params ?? {})
+          : externalRun(body.params ?? {});
+      runs.set(id, run);
+      return accepted(run.id);
+    }),
+    http.get('*/v1/skill-runs/:id', ({ params }) => {
+      const tried = tries.get(String(params.id));
+      if (tried) return HttpResponse.json(tryRunWire(String(params.id), tried));
+      const run = [...runs.values()].find((r) => r.id === params.id);
+      return run ? HttpResponse.json(runWire(run)) : undefined;
     }),
     http.post('*/v1/skills\\:from-session', async ({ request }) => {
       const body = (await request.json()) as {
@@ -604,13 +690,28 @@ export function createSkillAuthoringHandlers() {
       testRuns.set(FROM_SESSION_ID, { ...run, skill_name: body.name.trim() });
       return HttpResponse.json({ skill_id: FROM_SESSION_ID, version: 1 }, { status: 201 });
     }),
-    http.post('*/v1/skill-runs/:action', ({ params }) => {
-      const [id, verb] = String(params.action).split(':');
-      if (verb !== 'add-to-session') return undefined;
-      const known = [...runs.values()].some((r) => r.id === id);
-      return known
-        ? HttpResponse.json({ session_id: SESSION_ID })
-        : problem(404, 'not_found', 'Không tìm thấy lượt chạy.');
+    // "Thêm vào phiên" makes a new session (sessions mock) and a skill_run tile in it; the
+    // sessions mock keeps no new workspace, so the tile is answered here.
+    http.post('*/v1/workspaces/:id/tiles', async ({ params, request }) => {
+      const body = (await request.clone().json()) as {
+        kind?: string;
+        title?: string;
+        spec?: unknown;
+      };
+      if (body.kind !== 'skill_run') return undefined;
+      const now = new Date().toISOString();
+      return HttpResponse.json(
+        {
+          id: `tile-skill-${String(params.id)}`,
+          workspace_id: params.id,
+          kind: body.kind,
+          title: body.title ?? null,
+          spec: body.spec,
+          created_at: now,
+          updated_at: now,
+        },
+        { status: 201 },
+      );
     }),
     http.get('*/v1/workspaces/:id/skill-draft', ({ params }) =>
       params.id === SESSION_ID
@@ -628,6 +729,7 @@ export function createSkillAuthoringHandlers() {
 function emptyDraft(id: string): SkillDefinition {
   return {
     skill_id: id,
+    version_id: `skv-${id}-1`,
     name: 'Kỹ năng chưa đặt tên',
     version: 1,
     status: 'draft',
@@ -644,6 +746,7 @@ function emptyDraft(id: string): SkillDefinition {
     test_count: 0,
     version_count: 1,
     quick_test: { params: {}, lines: [] },
+    source: null,
   };
 }
 

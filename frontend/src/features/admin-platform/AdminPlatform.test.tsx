@@ -21,6 +21,9 @@ import ShortcutsPage from './ShortcutsPage';
 
 const navigate = vi.fn();
 vi.mock('../../AppStateContext', () => ({ useAppState: () => ({ navigate }) }));
+// The routing audit is compliance's (/v1/admin/model-route-decisions); an org admin lacks it.
+let capabilities = ['admin', 'compliance'];
+vi.mock('../../lib/AuthProvider', () => ({ useAuth: () => ({ me: { capabilities } }) }));
 
 const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -28,6 +31,7 @@ beforeEach(() => server.use(...createHandlers()));
 afterEach(() => {
   server.resetHandlers();
   navigate.mockReset();
+  capabilities = ['admin', 'compliance'];
 });
 afterAll(() => server.close());
 
@@ -208,6 +212,24 @@ describe('ModelsPage tabs', () => {
     expect(await screen.findByText('Provider · 4')).toBeInTheDocument();
     const row = screen.getByText('Nhà cung cấp C').closest('tr')!;
     expect(within(row).getByText('0 / 5 triệu đ')).toBeInTheDocument();
+  });
+
+  it('neither offers nor loads the routing audit without compliance', async () => {
+    capabilities = ['admin'];
+    const routed: string[] = [];
+    server.use(
+      http.get('*/v1/admin/model-route-decisions', ({ request }) => {
+        routed.push(request.url);
+        return undefined;
+      }),
+    );
+    renderPage(<ModelsPage />);
+    expect(await screen.findByRole('tab', { name: 'Provider' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Nhật ký định tuyến/ })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Provider' }));
+    expect(await screen.findByText('Provider · 3')).toBeInTheDocument();
+    expect(screen.queryByText(/Nhật ký định tuyến/)).toBeNull();
+    expect(routed).toEqual([]);
   });
 
   it('shows the whole week on the routing log tab', async () => {

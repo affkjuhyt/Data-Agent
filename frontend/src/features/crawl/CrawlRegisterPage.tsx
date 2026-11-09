@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { Button } from '../../design-system/Button';
@@ -15,6 +15,7 @@ import {
   suggestCrawlSources,
   type ReviewGate,
   type SourceSuggestion,
+  type SuggestProgress,
 } from '../../lib/v1/crawl';
 import { LinkButton } from '../../components/shell/AppLink';
 
@@ -46,12 +47,22 @@ export default function CrawlRegisterPage() {
   const [gate, setGate] = useState<ReviewGate>('exceptions');
   const [busy, setBusy] = useState<'suggest' | 'save' | null>(null);
   const [error, setError] = useState<string>();
+  const [progress, setProgress] = useState<SuggestProgress>();
+  // The proposal is an agent run polled until it ends; leaving the screen stops the polling.
+  const searching = useRef<AbortController | null>(null);
+  useEffect(() => () => searching.current?.abort(), []);
 
   const suggest = async () => {
+    searching.current?.abort();
+    const controller = new AbortController();
+    searching.current = controller;
     setBusy('suggest');
     setError(undefined);
     try {
-      const result = await suggestCrawlSources(goal.trim());
+      const result = await suggestCrawlSources(goal.trim(), {
+        signal: controller.signal,
+        onProgress: setProgress,
+      });
       setSuggestion(result);
       // Every allowed source starts ticked; forbidden ones cannot be.
       setPicked(
@@ -61,9 +72,13 @@ export default function CrawlRegisterPage() {
         ]),
       );
     } catch (e) {
+      if (controller.signal.aborted) return;
       setError((e as Error).message);
     } finally {
-      setBusy(null);
+      if (!controller.signal.aborted) {
+        setBusy(null);
+        setProgress(undefined);
+      }
     }
   };
 
@@ -170,6 +185,18 @@ export default function CrawlRegisterPage() {
                 Tìm nguồn
               </Button>
             </div>
+            {progress && (
+              <p role="status" className="text-muted-foreground da-caption">
+                {progress === 'queued'
+                  ? 'Đang chờ Agent Thu thập nhận yêu cầu…'
+                  : 'Agent Thu thập đang tìm nguồn và kiểm tra robots.txt, điều khoản…'}
+              </p>
+            )}
+            {suggestion && suggestion.sources.length === 0 && !suggestion.more && (
+              <Notice tone="info">
+                Agent không tìm được nguồn phù hợp; thử mô tả mục tiêu cụ thể hơn.
+              </Notice>
+            )}
           </Card>
           {suggestion && (
             <Card

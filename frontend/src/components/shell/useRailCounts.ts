@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AreaId } from './areas';
+import type { AreaId, RailGroup } from './areas';
 import { listWorkspaces } from '../../lib/v1/api';
 import { listSkills, listSkillSuggestions, listTools } from '../../lib/v1/skills';
 import {
@@ -32,6 +32,8 @@ import { listGlossary } from '../../lib/v1/semanticLayer';
  * Loaded for the open area only, once per visit, from the list each page itself reads; the spec
  * has no totals (A1.4), so a count is the length of the first page of 500, like the overview
  * screens. A list that fails leaves its item without a number rather than a made-up 0.
+ * Only the items the viewer's rail shows are counted: a hidden one (a capability they lack) would
+ * only be refused, one 403 per visit.
  */
 type Counter = () => Promise<number>;
 const count =
@@ -82,14 +84,21 @@ const COUNTERS: Partial<Record<AreaId, Record<string, Counter>>> = {
   },
 };
 
-export function useRailCounts(area: AreaId | undefined, enabled = true): Record<string, number> {
+export function useRailCounts(
+  area: AreaId | undefined,
+  rail: RailGroup[] | undefined,
+  enabled = true,
+): Record<string, number> {
   const [counts, setCounts] = useState<Record<string, number>>({});
+  // A string, so a rail rebuilt with the same items does not reload the counts.
+  const shown = (rail ?? []).flatMap((group) => group.items.map((item) => item.id)).join(' ');
   useEffect(() => {
     const counters = area ? COUNTERS[area] : undefined;
     setCounts({});
     if (!counters || !enabled) return;
     let alive = true;
-    const entries = Object.entries(counters);
+    const visible = new Set(shown.split(' '));
+    const entries = Object.entries(counters).filter(([id]) => visible.has(id));
     void Promise.allSettled(entries.map(([, load]) => load())).then((results) => {
       if (!alive) return;
       const next: Record<string, number> = {};
@@ -101,6 +110,6 @@ export function useRailCounts(area: AreaId | undefined, enabled = true): Record<
     return () => {
       alive = false;
     };
-  }, [area, enabled]);
+  }, [area, enabled, shown]);
   return counts;
 }

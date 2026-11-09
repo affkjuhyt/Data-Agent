@@ -61,7 +61,7 @@ function Runner({ form, latest }: { form: SkillRunForm; latest: V1State<Page<Ski
     setBusy('run');
     setError(undefined);
     try {
-      setRun(await runSkill(form.skill_id, next, form.kind));
+      setRun(await runSkill(form.skill_id, next));
     } catch (e) {
       setError(`Không chạy được: ${(e as Error).message}`);
     } finally {

@@ -16,14 +16,12 @@ import {
   tableEmptyRow,
   useTableView,
 } from '../../design-system/tableView';
-import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import {
   executeDsr,
   getDsr,
   listDsr,
-  rejectDsr,
   type DsrDecision,
   type DsrItem,
   type DsrRequest,
@@ -38,6 +36,9 @@ import { dayMonth } from './format';
  * (2306:19909): where the agent found the person's data, what can be deleted and what must be
  * kept (with the legal basis), then "Xoá đã chọn" through "Xác nhận · dsr". Without one it lists
  * the requests (no Figma list frame) and opens "Hộp thoại · createDSR".
+ *
+ * The frame's "Từ chối có lý do" is not offered: the api records no rejection of a DSR (only
+ * :execute), so the button would only ever fail. It returns with a reject endpoint.
  */
 const STATUS: Record<
   DsrRequest['status'],
@@ -205,16 +206,13 @@ function DsrList() {
   );
 }
 
-type Dialog = 'execute' | 'reject' | null;
-
 function DsrDetail({ id }: { id: string }) {
   const toast = useToast();
   const dsr = useV1(['getDsr', id], () => getDsr(id));
   const [selected, setSelected] = useState<string[]>([]);
   // The legal basis of each item kept, by id: the search's own, or what the handler writes.
   const [bases, setBases] = useState<Record<string, string>>({});
-  const [dialog, setDialog] = useState<Dialog>(null);
-  const [reason, setReason] = useState('');
+  const [confirming, setConfirming] = useState(false);
   const [missing, setMissing] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
@@ -231,17 +229,12 @@ function DsrDetail({ id }: { id: string }) {
     setSending(true);
     setError(undefined);
     try {
-      if (dialog === 'reject') {
-        await rejectDsr(d.id, reason.trim());
-        toast({ tone: 'success', message: `Đã từ chối ${d.code}` });
-      } else {
-        await executeDsr(d.id, decisionsOf(d, selected, bases));
-        toast({
-          tone: 'success',
-          message: `Đã gửi ${d.code} để thực hiện. Thư trả lời chờ Pháp chế duyệt.`,
-        });
-      }
-      setDialog(null);
+      await executeDsr(d.id, decisionsOf(d, selected, bases));
+      toast({
+        tone: 'success',
+        message: `Đã gửi ${d.code} để thực hiện. Thư trả lời chờ Pháp chế duyệt.`,
+      });
+      setConfirming(false);
       dsr.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -292,16 +285,6 @@ function DsrDetail({ id }: { id: string }) {
                 actions={
                   openReq && (
                     <>
-                      <Button
-                        kind="ghost"
-                        onClick={() => {
-                          setReason('');
-                          setMissing(false);
-                          setDialog('reject');
-                        }}
-                      >
-                        Từ chối có lý do
-                      </Button>
                       <Button disabled={d.items.length === 0} onClick={() => exportList(d)}>
                         Xuất danh sách
                       </Button>
@@ -314,7 +297,7 @@ function DsrDetail({ id }: { id: string }) {
                         }
                         onClick={() => {
                           setMissing(false);
-                          setDialog('execute');
+                          setConfirming(true);
                         }}
                       >
                         {deletes ? 'Xoá đã chọn' : 'Cung cấp dữ liệu'}
@@ -360,67 +343,41 @@ function DsrDetail({ id }: { id: string }) {
                 </aside>
               </div>
               <ConfirmDialog
-                open={dialog !== null}
+                open={confirming}
                 title={
-                  dialog === 'reject'
-                    ? `Từ chối ${d.code}?`
-                    : deletes
-                      ? `Duyệt kế hoạch xoá ${d.code}?`
-                      : `Cung cấp dữ liệu cho ${d.code}?`
+                  deletes ? `Duyệt kế hoạch xoá ${d.code}?` : `Cung cấp dữ liệu cho ${d.code}?`
                 }
-                confirmLabel={dialog === 'reject' ? 'Từ chối' : 'Duyệt và thực hiện'}
+                confirmLabel="Duyệt và thực hiện"
                 loading={sending}
-                error={
-                  missing
-                    ? dialog === 'reject'
-                      ? 'Ghi lý do từ chối; khách hàng nhận lý do này.'
-                      : 'Ghi căn cứ pháp lý cho mọi nơi được giữ lại.'
-                    : undefined
-                }
-                onCancel={() => setDialog(null)}
+                error={missing ? 'Ghi căn cứ pháp lý cho mọi nơi được giữ lại.' : undefined}
+                onCancel={() => setConfirming(false)}
                 onConfirm={() => {
-                  if (dialog === 'reject' ? !reason.trim() : unexplained.length > 0) {
+                  if (unexplained.length > 0) {
                     setMissing(true);
                     return;
                   }
                   void act(d);
                 }}
               >
-                {dialog === 'reject' ? (
-                  <div className="flex flex-col gap-da-sm">
-                    <span>Yêu cầu sẽ đóng và khách hàng nhận thư nêu lý do.</span>
-                    <Textarea
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                      aria-label="Lý do từ chối (bắt buộc)"
-                      placeholder="Lý do từ chối (bắt buộc)"
-                      rows={3}
-                      className="w-full"
-                    />
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-da-sm">
-                    <span>
-                      {deletes
-                        ? `Xoá dữ liệu ở ${chosen.length} nơi (${chosen.map((i) => i.kind_label.toLowerCase()).join(', ')}). Không hoàn tác được.`
-                        : `Cung cấp dữ liệu ở ${pending.length - kept.length} nơi cho chủ thể.`}
-                    </span>
-                    {kept.map((i) => (
-                      <label key={i.id} className="flex flex-col gap-da-xs">
-                        <span className="text-foreground da-label">
-                          Giữ lại: {i.location_label}
-                        </span>
-                        <Input
-                          value={bases[i.id] ?? ''}
-                          onChange={(e) => setBases((b) => ({ ...b, [i.id]: e.target.value }))}
-                          aria-label={`Căn cứ pháp lý giữ ${i.location_label}`}
-                          placeholder="Căn cứ pháp lý (bắt buộc)"
-                          className="w-full"
-                        />
-                      </label>
-                    ))}
-                  </div>
-                )}
+                <div className="flex flex-col gap-da-sm">
+                  <span>
+                    {deletes
+                      ? `Xoá dữ liệu ở ${chosen.length} nơi (${chosen.map((i) => i.kind_label.toLowerCase()).join(', ')}). Không hoàn tác được.`
+                      : `Cung cấp dữ liệu ở ${pending.length - kept.length} nơi cho chủ thể.`}
+                  </span>
+                  {kept.map((i) => (
+                    <label key={i.id} className="flex flex-col gap-da-xs">
+                      <span className="text-foreground da-label">Giữ lại: {i.location_label}</span>
+                      <Input
+                        value={bases[i.id] ?? ''}
+                        onChange={(e) => setBases((b) => ({ ...b, [i.id]: e.target.value }))}
+                        aria-label={`Căn cứ pháp lý giữ ${i.location_label}`}
+                        placeholder="Căn cứ pháp lý (bắt buộc)"
+                        className="w-full"
+                      />
+                    </label>
+                  ))}
+                </div>
               </ConfirmDialog>
             </>
           );

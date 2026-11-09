@@ -90,6 +90,34 @@ describe('CrawlRegisterPage', () => {
   });
 });
 
+describe('CrawlRegisterPage while the agent searches', () => {
+  it('shows the run waiting, then why it failed', async () => {
+    let reads = 0;
+    server.use(
+      http.post('*/v1/crawl-sources\\:suggest', () =>
+        HttpResponse.json({ id: 'run-x', status: 'queued', poll_after_ms: 1 }, { status: 202 }),
+      ),
+      http.get('*/v1/runs/run-x', () => {
+        reads += 1;
+        return HttpResponse.json({
+          id: 'run-x',
+          status: reads < 30 ? 'running' : 'failed',
+          error: 'Không truy cập được công cụ tìm kiếm.',
+          steps: [],
+        });
+      }),
+    );
+    wrap(<CrawlRegisterPage />);
+    fireEvent.change(screen.getByLabelText('Mục tiêu thu thập'), {
+      target: { value: 'Giá thép xây dựng' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tìm nguồn' }));
+    expect(await screen.findByText(/Agent Thu thập đang tìm nguồn/)).toBeInTheDocument();
+    expect(await screen.findByText('Không truy cập được công cụ tìm kiếm.')).toBeInTheDocument();
+    expect(screen.queryByText(/Agent Thu thập đang tìm nguồn/)).toBeNull();
+  });
+});
+
 describe('CrawlSchemaPage', () => {
   it('approves the schema only after the unsure field is mapped', async () => {
     routeId = 'cs-online';

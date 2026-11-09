@@ -1249,7 +1249,6 @@ async function connectedDrifts(open: boolean): Promise<SourceDrift[]> {
             query: {
               ...ALL,
               source_id: source.id,
-              origin: 'source',
               ...(open ? { resolution: 'open' } : {}),
             },
           },

@@ -95,7 +95,7 @@ export function AppShell({
   // same bootstrap gate as the page content, otherwise the shell itself creates 400s on reload.
   const dataSpaceReady = spaceReady && dataSpace !== null;
   // Only the area whose rail is on screen; a landing page draws no rail and loads no counts.
-  const railCounts = useRailCounts(rail ? area : undefined, dataSpaceReady);
+  const railCounts = useRailCounts(rail ? area : undefined, rail, dataSpaceReady);
   const counts = useShellCounts(dataSpaceReady);
 
   useEffect(() => {

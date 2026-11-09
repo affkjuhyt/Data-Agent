@@ -1,6 +1,7 @@
 /**
- * Error Book against the v1 mock: the entries filtered by status, one entry with its numbers and
- * fix, and an open entry fixed only once it has a kind and a root cause (BR-179).
+ * Error Book against the v1 mock, which answers in the api's shapes: the entries filtered by
+ * status, one entry with its numbers and fix, and an open entry fixed only once it has a kind and
+ * a root cause (BR-179).
  */
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { setupServer } from 'msw/node';
@@ -35,8 +36,20 @@ describe('ErrorBookPage', () => {
     const entry = await screen.findByRole('region', { name: 'Mục EB-0042' });
     expect(within(entry).getByText('1.155 đ/lít')).toBeInTheDocument();
     expect(within(entry).getByText('1.055 đ/lít')).toBeInTheDocument();
-    expect(within(entry).getByText('Đã chấp nhận')).toBeInTheDocument();
-    expect(within(entry).getByText('Lượt CI nightly 11/07 đạt')).toBeInTheDocument();
+    expect(within(entry).getByText('Đề xuất')).toBeInTheDocument();
+    expect(within(entry).getByText(/^Lượt CI .* đạt$/)).toBeInTheDocument();
+    expect(within(entry).getByRole('list', { name: 'Tiến trình' })).toHaveTextContent(
+      /Mở.*Đã sửa.*Đã có hồi quy/,
+    );
+  });
+
+  it('shows a forecast miss with its forecast, interval and actual, and no handler name', async () => {
+    routeId = 'eb-0043';
+    wrap();
+    const entry = await screen.findByRole('region', { name: 'Mục EB-0043' });
+    expect(within(entry).getByText(/^dự báo · khoảng 95%/)).toBeInTheDocument();
+    expect(within(entry).getByText('Đã giao người xử lý')).toBeInTheDocument();
+    expect(within(entry).getByText('Tự tạo khi đánh dấu đã sửa')).toBeInTheDocument();
   });
 
   it('filters by status and fixes an open entry once its cause is written', async () => {

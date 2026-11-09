@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
+import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Textarea } from '../../design-system/Textarea';
@@ -13,9 +14,12 @@ import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import { formatTime } from '../../lib/formatVN';
 import {
+  CAPABILITY_ASKED,
+  NARROWER_CAPABILITIES,
   decideAccessRequest,
   getAccessRequest,
   listAccessRequests,
+  type AccessCapability,
   type AccessRequest,
   type DecideAccess,
 } from '../../lib/v1/adminAccess';
@@ -26,7 +30,9 @@ import { dayMonth, daysUntil } from './format';
  * "P11 · Yêu cầu quyền · Người duyệt" (2305:19774, UC-11-07): one pending request with what is
  * asked, why, for how long and the current scope; the agent's suggestion; "Nếu cấp" before and
  * after. On the right, the approver's queue. Without an id the first request of the queue opens.
- * Từ chối needs a reason; Cấp hẹp hơn needs the narrower scope (prefilled with the suggestion).
+ * Từ chối needs a reason; Cấp hẹp hơn picks one of the capabilities the api narrows the request to.
+ * The api's request holds ids and a capability, not the frame's sentences: what it cannot say
+ * (current scope, origin, approver, "Nếu cấp", a decision deadline) is left out, not drawn empty.
  */
 const STATUS_LABEL: Record<AccessRequest['status'], string> = {
   pending: 'Chờ duyệt',
@@ -103,12 +109,16 @@ function RequestDetail({
   const toast = useToast();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [note, setNote] = useState('');
-  const [scope, setScope] = useState('');
+  const narrower = NARROWER_CAPABILITIES[r.capability as AccessCapability] ?? [];
+  const [scope, setScope] = useState<AccessCapability | null>(null);
   const [missing, setMissing] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
   const pending = r.status === 'pending';
-  const impact = useTableView(r.impact, {
+  // AccessRequestView has no impact; readAccessRequest fills []. Guard here so a raw wire
+  // answer cannot crash useTableView on source.map.
+  const impactRows = r.impact ?? [];
+  const impact = useTableView(impactRows, {
     search: (row) => `${row.label} ${row.before} ${row.after}`,
     filters: [{ id: 'label', label: 'Thay đổi', value: (row) => row.label }],
     sorts: [
@@ -124,7 +134,7 @@ function RequestDetail({
     setSending(true);
     setError(undefined);
     try {
-      await decideAccessRequest(r.id, body);
+      await decideAccessRequest(r.id, body, r.data_space_id);
       const word = { approve: 'Đã cấp quyền', narrow: 'Đã cấp hẹp hơn', reject: 'Đã từ chối' }[body.decision];
       toast({ tone: 'success', message: `${word} · ${r.code}. Người xin đã được báo.` });
       setDialog(null);
@@ -139,7 +149,7 @@ function RequestDetail({
 
   const openDialog = (kind: Dialog) => {
     setNote('');
-    setScope(r.suggested_scope_text ?? '');
+    setScope(narrower[0] ?? null);
     setMissing(false);
     setDialog(kind);
   };
@@ -155,14 +165,20 @@ function RequestDetail({
             <StatusDot tone={pending ? 'warning' : 'neutral'}>{STATUS_LABEL[r.status]}</StatusDot>
           </span>
         }
-        description={`Gửi ${dayMonth(r.created_at)} ${formatTime(r.created_at)} ${r.origin_text} · người duyệt: ${r.approver_name} (${r.approver_role})`}
+        description={[
+          `Gửi ${dayMonth(r.created_at)} ${formatTime(r.created_at)}${r.origin_text ? ` ${r.origin_text}` : ''}`,
+          r.approver_name &&
+            `người duyệt: ${r.approver_name}${r.approver_role ? ` (${r.approver_role})` : ''}`,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         actions={
           pending && (
             <>
               <Button kind="ghost" onClick={() => openDialog('reject')}>
                 Từ chối
               </Button>
-              <Button onClick={() => openDialog('narrow')}>Cấp hẹp hơn</Button>
+              {narrower.length > 0 && <Button onClick={() => openDialog('narrow')}>Cấp hẹp hơn</Button>}
               <Button kind="primary" loading={sending && !dialog} onClick={() => decide({ decision: 'approve' })}>
                 Cấp quyền
               </Button>
@@ -184,12 +200,14 @@ function RequestDetail({
               ['Lý do', `“${r.reason}”`],
               ['Thời hạn xin', `${asked} ngày · tới ${dayMonth(r.requested_until)}`],
               ['Phạm vi hiện tại', r.current_scope_text],
-            ].map(([label, value]) => (
-              <div key={label} className="flex gap-da-xl">
-                <dt className="w-[140px] shrink-0 text-muted-foreground">{label}</dt>
-                <dd className="min-w-0 flex-1 text-foreground">{value}</dd>
-              </div>
-            ))}
+            ]
+              .filter(([, value]) => value)
+              .map(([label, value]) => (
+                <div key={label} className="flex gap-da-xl">
+                  <dt className="w-[140px] shrink-0 text-muted-foreground">{label}</dt>
+                  <dd className="min-w-0 flex-1 text-foreground">{value}</dd>
+                </div>
+              ))}
           </dl>
           {r.suggestion && (
             <>
@@ -199,33 +217,37 @@ function RequestDetail({
               </p>
             </>
           )}
-          <h2 className="text-foreground da-heading-3">Nếu cấp</h2>
-          <TableToolbar view={impact} placeholder="Tìm thay đổi…" searchLabel="Tìm thay đổi" />
-          <table className="w-full table-fixed border-collapse">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <SortableTh view={impact} column="label" className="px-da-lg py-da-md font-normal">
-                  Thay đổi
-                </SortableTh>
-                <SortableTh view={impact} column="before" className="w-[160px] px-da-lg py-da-md font-normal">
-                  Trước
-                </SortableTh>
-                <SortableTh view={impact} column="after" className="w-[220px] px-da-lg py-da-md font-normal">
-                  Sau
-                </SortableTh>
-              </tr>
-            </thead>
-            <tbody>
-              {impact.rows.map((row) => (
-                <tr key={row.label} className="border-b border-border">
-                  <td className="px-da-lg py-da-md text-foreground da-body-small">{row.label}</td>
-                  <td className="px-da-lg py-da-md text-muted-foreground da-mono">{row.before}</td>
-                  <td className="px-da-lg py-da-md text-foreground da-mono">{row.after}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <TablePager view={impact} />
+          {impactRows.length > 0 && (
+            <>
+              <h2 className="text-foreground da-heading-3">Nếu cấp</h2>
+              <TableToolbar view={impact} placeholder="Tìm thay đổi…" searchLabel="Tìm thay đổi" />
+              <table className="w-full table-fixed border-collapse">
+                <thead>
+                  <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                    <SortableTh view={impact} column="label" className="px-da-lg py-da-md font-normal">
+                      Thay đổi
+                    </SortableTh>
+                    <SortableTh view={impact} column="before" className="w-[160px] px-da-lg py-da-md font-normal">
+                      Trước
+                    </SortableTh>
+                    <SortableTh view={impact} column="after" className="w-[220px] px-da-lg py-da-md font-normal">
+                      Sau
+                    </SortableTh>
+                  </tr>
+                </thead>
+                <tbody>
+                  {impact.rows.map((row) => (
+                    <tr key={row.label} className="border-b border-border">
+                      <td className="px-da-lg py-da-md text-foreground da-body-small">{row.label}</td>
+                      <td className="px-da-lg py-da-md text-muted-foreground da-mono">{row.before}</td>
+                      <td className="px-da-lg py-da-md text-foreground da-mono">{row.after}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <TablePager view={impact} />
+            </>
+          )}
         </div>
         <aside className="flex w-[320px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:hidden">
           <h2 className="text-foreground da-heading-3">Hàng chờ của bạn</h2>
@@ -249,20 +271,19 @@ function RequestDetail({
           missing
             ? dialog === 'reject'
               ? 'Ghi lý do để người xin biết vì sao.'
-              : 'Ghi phạm vi được cấp.'
+              : 'Chọn quyền được cấp.'
             : undefined
         }
         onCancel={() => setDialog(null)}
         onConfirm={() => {
-          const value = (dialog === 'reject' ? note : scope).trim();
-          if (!value) {
+          if (dialog === 'reject' ? !note.trim() : !scope) {
             setMissing(true);
             return;
           }
           void decide(
-            dialog === 'reject'
-              ? { decision: 'reject', note: value }
-              : { decision: 'narrow', granted_scope: value, note: note.trim() || undefined },
+            dialog === 'reject' || !scope
+              ? { decision: 'reject', note: note.trim() }
+              : { decision: 'narrow', granted_scope: { capability: scope }, note: note.trim() || undefined },
           );
         }}
       >
@@ -272,11 +293,19 @@ function RequestDetail({
               ? 'Người xin nhận lý do của bạn và có thể gửi lại yêu cầu hẹp hơn.'
               : `Quyền được cấp tới ${dayMonth(r.requested_until)} rồi tự thu hồi.`}
           </span>
+          {dialog === 'narrow' && (
+            <Select<AccessCapability>
+              label="Quyền được cấp"
+              options={narrower.map((c) => ({ value: c, label: CAPABILITY_ASKED[c] }))}
+              value={scope}
+              onChange={setScope}
+            />
+          )}
           <Textarea
-            value={dialog === 'reject' ? note : scope}
-            onChange={(e) => (dialog === 'reject' ? setNote(e.target.value) : setScope(e.target.value))}
-            aria-label={dialog === 'reject' ? 'Lý do từ chối (bắt buộc)' : 'Phạm vi được cấp'}
-            placeholder={dialog === 'reject' ? 'Lý do từ chối (bắt buộc)' : 'Phạm vi được cấp'}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            aria-label={dialog === 'reject' ? 'Lý do từ chối (bắt buộc)' : 'Ghi chú cho người xin'}
+            placeholder={dialog === 'reject' ? 'Lý do từ chối (bắt buộc)' : 'Ghi chú cho người xin'}
             rows={3}
             className="w-full"
           />
@@ -287,13 +316,16 @@ function RequestDetail({
 }
 
 function QueueRow({ item, current, onOpen }: { item: AccessRequest; current: boolean; onOpen: () => void }) {
-  const days = daysUntil(item.due_at);
+  const days = item.due_at ? daysUntil(item.due_at) : null;
+  // Without a decision deadline the row says when it was sent.
   const due =
     current
       ? { tone: 'warning' as const, text: 'đang xem' }
-      : days <= 0
-        ? { tone: 'warning' as const, text: 'hạn hôm nay' }
-        : { tone: 'idle' as const, text: `${days} ngày` };
+      : days === null
+        ? { tone: 'idle' as const, text: `gửi ${dayMonth(item.created_at)}` }
+        : days <= 0
+          ? { tone: 'warning' as const, text: 'hạn hôm nay' }
+          : { tone: 'idle' as const, text: `${days} ngày` };
   return (
     <li className="border-b border-border">
       <button

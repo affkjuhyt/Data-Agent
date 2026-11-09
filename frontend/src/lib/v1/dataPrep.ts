@@ -408,16 +408,20 @@ export interface StepPreview {
   truncated: boolean;
 }
 
-export const getPipeline = async (id: string): Promise<PipelineDetail> => {
+/** The pipeline the api answers, its datasets named by table (unnamed if the list fails). */
+async function readNamed(request: Promise<{ data?: unknown }>): Promise<PipelineDetail> {
   const [raw, datasets] = await Promise.all([
-    ok<PipelineDetailWire>(api.GET('/v1/pipelines/{id}', { params: { path: { id } } })),
+    ok(request) as Promise<PipelineDetailWire>,
     ok<Page<DatasetRow>>(api.GET('/v1/datasets', { params: { query: { page_size: 500 } } })).catch(
       () => null,
     ),
   ]);
   const tables = new Map<string, string>(datasets?.items.map((d) => [d.id, tableName(d)]) ?? []);
   return readPipelineDetail(raw, tables);
-};
+}
+
+export const getPipeline = async (id: string): Promise<PipelineDetail> =>
+  readNamed(api.GET('/v1/pipelines/{id}', { params: { path: { id } } }));
 
 /**
  * A2: GET /v1/pipelines/{id}/steps/{seq}/preview names the query run previewing the step (queued
@@ -442,13 +446,12 @@ export const getStepPreview = async (id: string, seq: number): Promise<StepPrevi
 };
 
 /**
- * PROPOSAL: POST /v1/pipelines/{id}/messages — the agent answers, adds or edits steps, and
- * asks back instead of guessing on ambiguous data. Returns the pipeline as it now is.
+ * A2: POST /v1/pipelines/{id}/messages — the agent answers, adds or edits steps, and asks back
+ * instead of guessing on ambiguous data. Answers the pipeline as it now is (PipelineDetail), read
+ * like getPipeline's so the header and the steps keep their names until the next poll.
  */
 export const sendPrepMessage = async (id: string, text: string) =>
-  okAs<PipelineDetail>(
-    api.POST('/v1/pipelines/{id}/messages', { params: { path: { id } }, body: { text } }),
-  );
+  readNamed(api.POST('/v1/pipelines/{id}/messages', { params: { path: { id } }, body: { text } }));
 
 /** A2: POST /v1/pipelines/{id}:preview with no sample — every step on the full input, nothing written. */
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

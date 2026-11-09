@@ -1,10 +1,7 @@
-import { pathId, v1Get, v1Send, V1Error, type Page, api, ok } from './client';
+import { pathId, v1Send, type Page, api, ok } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
-
-/** 404 from a screen-shaped route: the deployment serves the A2 resource instead. */
-const proposalMissing = (error: unknown) => error instanceof V1Error && error.status === 404;
 
 /*
  * P15 Dự báo (UC-15-01…08) on the api's forecast group: a forecast question answered by a
@@ -366,11 +363,6 @@ const SUBMITTED = new Set(['pending_approval', 'published', 'degraded', 'retired
  * there is nothing to show but the job itself.
  */
 export async function getForecastWorkbench(jobId: string): Promise<ForecastWorkbench> {
-  try {
-    return await v1Get<ForecastWorkbench>(`/forecast-jobs/${pathId(jobId)}/workbench`);
-  } catch (error) {
-    if (!proposalMissing(error)) throw error;
-  }
   const job = await getDetail(jobId);
   const versionId = job.model_version_id;
   const [version, backtest] = versionId
@@ -639,14 +631,7 @@ export async function listForecasts(): Promise<Page<{ id: string }>> {
   );
   const ids = new Set<string>();
   for (const line of ledger.items) if (line.job_id && !productOf(line)) ids.add(line.job_id);
-  if (ids.size) return { items: [...ids].map((id) => ({ id })), next_page_token: '' };
-  const legacy = await v1Get<Page<Forecast>>('/forecasts', { page_size: 50 }).catch(() => null);
-  return legacy
-    ? {
-        items: legacy.items.map((item) => ({ id: item.id })),
-        next_page_token: legacy.next_page_token,
-      }
-    : { items: [], next_page_token: '' };
+  return { items: [...ids].map((id) => ({ id })), next_page_token: '' };
 }
 
 /** A2: GET /v1/forecasts/{id}, its model version and that version's backtest. */
@@ -1254,17 +1239,6 @@ function readFuel(
  * not name their latest run, so it is read from the ledger (the newest line of that product).
  */
 export async function listFuelPriceForecasts(): Promise<Page<{ id: string; label: string }>> {
-  try {
-    const legacy = await v1Get<Page<FuelPriceForecast>>('/fuel-price-forecasts');
-    if (legacy.items.some((item) => item.product_label)) {
-      return {
-        items: legacy.items.map((item) => ({ id: item.id, label: item.product_label })),
-        next_page_token: '',
-      };
-    }
-  } catch (error) {
-    if (!proposalMissing(error)) throw error;
-  }
   const formulas = await ok<Page<FormulaModelWire>>(
     api.GET('/v1/formula-models', { params: { query: { page_size: 20 } } }),
   );
@@ -1296,12 +1270,6 @@ export async function listFuelPriceForecasts(): Promise<Page<{ id: string; label
  * model version and the parameters in force at the period (BR-182).
  */
 export async function getFuelPriceForecast(id: string): Promise<FuelPriceForecast> {
-  try {
-    const legacy = await v1Get<FuelPriceForecast>(`/fuel-price-forecasts/${pathId(id)}`);
-    if (legacy.distribution && legacy.product_label) return legacy;
-  } catch (error) {
-    if (!proposalMissing(error)) throw error;
-  }
   const [jobId, product] = splitFuelId(id);
   const [job, distribution] = await Promise.all([
     getDetail(jobId),
@@ -1356,16 +1324,6 @@ export async function runFundScenario(
   f: FuelPriceForecast,
   level: FuelFundLevel,
 ): Promise<FuelFundScenario | null> {
-  try {
-    const next = await v1Send<FuelPriceForecast>(
-      'POST',
-      `/fuel-price-forecasts/${pathId(f.id)}:run-fund-scenario`,
-      { fund_level: level.label },
-    );
-    if (next.fund_scenario) return next.fund_scenario;
-  } catch (error) {
-    if (!proposalMissing(error)) throw error;
-  }
   const accepted = await ok<Schemas['ScenarioAccepted']>(
     api.POST('/v1/forecast-models/{id}/scenarios', {
       params: { path: { id: f.model_id } },
@@ -1625,21 +1583,8 @@ async function servedLedger(seriesId: string, periods: number): Promise<Forecast
 }
 
 /** The newest `periods` rows of the ledger; the calibration always covers the model's fixed N. */
-export const getForecastLedger = async (seriesId: string, periods?: number) => {
-  // Screen fixtures use fs- ids. A2 series ids are ledger~model~product and have no such route.
-  if (!seriesId.startsWith(LEDGER)) {
-    try {
-      const legacy = await v1Get<ForecastLedger>(
-        `/forecast-series/${pathId(seriesId)}/ledger`,
-        periods ? { periods } : undefined,
-      );
-      if (Array.isArray(legacy.rows)) return legacy;
-    } catch (error) {
-      if (!proposalMissing(error)) throw error;
-    }
-  }
-  return servedLedger(seriesId, periods ?? 20);
-};
+export const getForecastLedger = async (seriesId: string, periods?: number) =>
+  servedLedger(seriesId, periods ?? 20);
 
 /* Theo dõi lịch: the pre- and post-period bulletins of a series (UC-08-08) */
 

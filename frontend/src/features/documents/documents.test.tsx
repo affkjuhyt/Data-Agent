@@ -4,6 +4,7 @@
  * schemas and the collection dialogs.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -240,6 +241,31 @@ describe('ExtractionSchemaPage', () => {
     expect(
       await screen.findByText('Agent Tài liệu đang chạy thử v2 trên 50 tệp.'),
     ).toBeInTheDocument();
+  });
+
+  it('draws a schema as A2 sends it: no proposal, no target table, a sample the worker picks', async () => {
+    routeId = 'xs-a2';
+    server.use(
+      http.get('*/v1/extraction-schemas/xs-a2', () =>
+        HttpResponse.json({
+          id: 'xs-a2',
+          collection_id: 'col-unknown',
+          version: 1,
+          fields: [{ name: 'contract_no', type: 'text', required: true, pii: false }],
+          target_dataset_id: null,
+          join_key: null,
+          sample_accuracy: null,
+          status: 'draft',
+          created_at: '2026-11-09T02:00:00Z',
+          updated_at: '2026-11-09T02:00:00Z',
+        }),
+      ),
+    );
+    wrap(<ExtractionSchemaPage />);
+    expect(await screen.findByRole('heading', { name: 'Bộ sưu tập · v1' })).toBeInTheDocument();
+    expect(screen.getByText('contract_no', { selector: 'td' })).toBeInTheDocument();
+    expect(screen.getByText(/chưa gắn bảng đích/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Chạy thử trên tệp mẫu' })).toBeInTheDocument();
   });
 });
 

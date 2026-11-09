@@ -11,6 +11,7 @@ import {
   getDocumentPage,
   getDocumentCounts,
   getDocumentView,
+  getSchema,
   getValidity,
   investigateDocument,
   listActivity,
@@ -20,7 +21,9 @@ import {
   askDocuments,
   resolveQualityIssue,
   setSupersession,
+  testSchema,
   uploadDocuments,
+  waitForSchemaTest,
 } from './documents';
 import { getDocument, listCollections } from './sources';
 
@@ -391,5 +394,136 @@ describe('documents from the api', () => {
     const answer = await askDocuments({ question: 'Hạn mức thẻ?' });
     expect(answer.not_found).toBe(true);
     expect(answer.citations).toEqual([]);
+  });
+});
+
+describe('extraction schemas from the api (UC-05-06)', () => {
+  const view = (extra: Record<string, unknown> = {}) => ({
+    id: 'xs-1',
+    collection_id: 'c-1',
+    version: 2,
+    fields: [
+      {
+        name: 'contract_no',
+        type: 'text',
+        required: true,
+        pii: false,
+        target_column: 'contract_no',
+        description: 'Số hợp đồng',
+      },
+      { name: 'borrower', type: 'text', required: true, pii: true, target_column: null },
+      { name: 'loan_amount', type: 'number', required: false, pii: false, target_column: 'amount' },
+    ],
+    target_dataset_id: 'ds-9',
+    join_key: null,
+    sample_accuracy: { contract_no: 0.99, borrower: { accuracy: 0.9 } },
+    status: 'draft',
+    created_at: at,
+    updated_at: at,
+    ...extra,
+  });
+
+  it('reads ExtractionSchemaView: the collection by id, the output from the target dataset', async () => {
+    server.use(
+      http.get('*/v1/extraction-schemas/:id', () => HttpResponse.json(view())),
+      http.get('*/v1/datasets/:id', () =>
+        HttpResponse.json({
+          id: 'ds-9',
+          schema_name: 'extracted',
+          table_name: 'credit_file',
+          row_estimate: 18400,
+        }),
+      ),
+    );
+    const schema = await getSchema('xs-1');
+    expect(schema.collection).toEqual({ id: 'c-1', name: 'Hợp đồng tín dụng' });
+    expect(schema.status).toBe('draft');
+    expect(schema.proposal_text).toBeNull();
+    expect(schema.test_size).toBeNull();
+    expect(schema.fields).toEqual([
+      {
+        name: 'contract_no',
+        type_label: 'text',
+        description: 'Số hợp đồng',
+        required: true,
+        accuracy: 0.99,
+        accuracy_state: 'ok',
+        target_column: 'contract_no',
+      },
+      {
+        name: 'borrower',
+        type_label: 'text · PII',
+        description: '',
+        required: true,
+        accuracy: 0.9,
+        accuracy_state: 'low',
+        target_column: 'borrower',
+      },
+      {
+        name: 'loan_amount',
+        type_label: 'số',
+        description: '',
+        required: false,
+        accuracy: null,
+        accuracy_state: 'ok',
+        target_column: 'amount',
+      },
+    ]);
+    expect(schema.output).toMatchObject({
+      table: 'extracted.credit_file',
+      rows_text: '18.400 dòng',
+    });
+  });
+
+  it('has no output before a target dataset is set', async () => {
+    server.use(
+      http.get('*/v1/extraction-schemas/:id', () =>
+        HttpResponse.json(view({ target_dataset_id: null, collection_id: 'c-unknown' })),
+      ),
+    );
+    const schema = await getSchema('xs-1');
+    expect(schema.output).toBeNull();
+    expect(schema.collection).toEqual({ id: 'c-unknown', name: 'Bộ sưu tập' });
+  });
+
+  it('starts a test as a job and reads the schema again until the sample is measured', async () => {
+    let reads = 0;
+    server.use(
+      http.post('*/v1/extraction-schemas/:action', () =>
+        HttpResponse.json({ id: 'xs-1', status: 'testing' }, { status: 202 }),
+      ),
+      http.get('*/v1/extraction-schemas/:id', () => {
+        reads += 1;
+        return HttpResponse.json(
+          reads < 3
+            ? view({ status: 'testing', sample_accuracy: null, target_dataset_id: null })
+            : view({ status: 'testing', target_dataset_id: null }),
+        );
+      }),
+    );
+    expect(await testSchema('xs-1')).toEqual({ id: 'xs-1', status: 'testing' });
+    const done = await waitForSchemaTest('xs-1', { every: 1 });
+    expect(reads).toBe(3);
+    expect(done.fields[0].accuracy).toBe(0.99);
+  });
+
+  it('stops reading when the screen goes away', async () => {
+    let reads = 0;
+    server.use(
+      http.get('*/v1/extraction-schemas/:id', () => {
+        reads += 1;
+        return HttpResponse.json(
+          view({ status: 'testing', sample_accuracy: null, target_dataset_id: null }),
+        );
+      }),
+    );
+    const controller = new AbortController();
+    const pending = waitForSchemaTest('xs-1', { every: 1, signal: controller.signal });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    const after = reads;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(reads).toBe(after);
   });
 });

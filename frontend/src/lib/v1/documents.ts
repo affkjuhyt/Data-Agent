@@ -1,4 +1,5 @@
-import { pathId, v1GetBlob, v1Send, v1Upload, type Page, api, ok, okAs } from './client';
+import { pathId, v1GetBlob, v1Send, v1Upload, type Page, api, ok } from './client';
+import { formatNumber, formatPercent } from '../formatVN';
 import type { components } from './schema';
 import { listCollections, readCollectionDocument, type DocumentDetail, type Tone } from './sources';
 
@@ -847,15 +848,20 @@ export interface SchemaField {
   target_column: string;
 }
 
-/** PROPOSAL: GET /v1/extraction-schemas and /{id} (the spec has POST, :test, :activate). */
+/**
+ * The screen's schema, read from A2 ExtractionSchemaView (GET /v1/extraction-schemas and /{id}):
+ * the collection is joined by id, the output is the target dataset when one is set. What A2 does
+ * not hold (the agent's proposal text, the sample size) is null.
+ */
 export interface ExtractionSchema {
   id: Uuid;
   collection: { id: Uuid; name: string };
   version: number;
   status: 'draft' | 'testing' | 'active' | 'superseded';
-  /** "Agent Tài liệu đề xuất v2 từ 20 tệp mẫu: …" */
+  /** "Agent Tài liệu đề xuất v2 từ 20 tệp mẫu: …"; PROPOSAL, null from A2. */
   proposal_text: string | null;
   fields: SchemaField[];
+  /** null while the schema has no target dataset. */
   output: {
     table: string;
     /** "18.400 dòng · cập nhật mỗi giờ · nguồn có cấu trúc cấp 2" */
@@ -863,25 +869,180 @@ export interface ExtractionSchema {
     used_by: string;
     sample_text: string | null;
     core_diff_text: string | null;
-  };
-  /** the sample size of :test. */
-  test_size: number;
+  } | null;
+  /** the sample size of :test; null when the worker picks the sample (A2's default). */
+  test_size: number | null;
 }
 
-export const listSchemas = () =>
-  okAs<Page<ExtractionSchema>>(api.GET('/v1/extraction-schemas', { params: { query: ALL } }));
-export const getSchema = async (id: string) =>
-  okAs<ExtractionSchema>(api.GET('/v1/extraction-schemas/{id}', { params: { path: { id } } }));
+type SchemaWire = Schemas['ExtractionSchemaView'] & { display?: ExtractionSchema };
+type ExtractionFieldWire = {
+  name?: unknown;
+  type?: unknown;
+  required?: unknown;
+  pii?: unknown;
+  target_column?: unknown;
+  description?: unknown;
+};
 
-/** POST /v1/extraction-schemas/{id}:test — 202, the sample run goes on in the background. */
+/** BR-110: a required field is activated at 95% sample accuracy or more. */
+const ACTIVATION_ACCURACY = 0.95;
+const TYPE_LABEL: Record<string, string> = {
+  number: 'số',
+  numeric: 'số',
+  integer: 'số',
+  date: 'ngày',
+  category: 'danh mục',
+  table: 'bảng',
+  long_text: 'văn bản',
+};
+
+/** sample_accuracy holds a share per field name, as a number or {accuracy}. */
+const accuracyOf = (measured: Record<string, unknown>, name: string): number | null => {
+  const raw = measured[name];
+  const value = raw && typeof raw === 'object' ? (raw as { accuracy?: unknown }).accuracy : raw;
+  const n = typeof value === 'string' ? Number(value) : value;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+};
+
+const datasetOutput = (
+  dataset: Schemas['DatasetDetail'],
+  fields: SchemaField[],
+): NonNullable<ExtractionSchema['output']> => {
+  const measured = fields.flatMap((f) => (f.accuracy === null ? [] : [f.accuracy]));
+  const mean = measured.length ? measured.reduce((a, b) => a + b, 0) / measured.length : null;
+  return {
+    table: `${dataset.schema_name}.${dataset.table_name}`,
+    rows_text:
+      dataset.row_estimate === null || dataset.row_estimate === undefined
+        ? 'Chưa có dòng nào'
+        : `${formatNumber(dataset.row_estimate)} dòng`,
+    used_by: '',
+    sample_text:
+      mean === null
+        ? null
+        : `${measured.length} trường đã đo · độ chính xác TB ${formatPercent(mean)}`,
+    core_diff_text: null,
+  };
+};
+
+function readSchema(
+  raw: SchemaWire,
+  collections: Map<string, string>,
+  dataset: Schemas['DatasetDetail'] | null,
+): ExtractionSchema {
+  if (raw.display) return raw.display;
+  const measured = (
+    raw.sample_accuracy && typeof raw.sample_accuracy === 'object' ? raw.sample_accuracy : {}
+  ) as Record<string, unknown>;
+  const fields = (Array.isArray(raw.fields) ? (raw.fields as ExtractionFieldWire[]) : []).map(
+    (f) => {
+      const name = String(f.name ?? '');
+      const type = String(f.type ?? '');
+      const accuracy = accuracyOf(measured, name);
+      return {
+        name,
+        type_label: `${TYPE_LABEL[type] ?? type}${f.pii ? ' · PII' : ''}`,
+        description: typeof f.description === 'string' ? f.description : '',
+        required: f.required === true,
+        accuracy,
+        accuracy_state: accuracy !== null && accuracy < ACTIVATION_ACCURACY ? 'low' : 'ok',
+        target_column: typeof f.target_column === 'string' ? f.target_column : name,
+      } satisfies SchemaField;
+    },
+  );
+  return {
+    id: raw.id,
+    collection: {
+      id: raw.collection_id,
+      name: collections.get(raw.collection_id) ?? 'Bộ sưu tập',
+    },
+    version: raw.version,
+    status: raw.status as ExtractionSchema['status'],
+    proposal_text: null,
+    fields,
+    output: dataset ? datasetOutput(dataset, fields) : null,
+    test_size: null,
+  };
+}
+
+const collectionNames = async () =>
+  new Map<string, string>(
+    ((await listCollections().catch(() => null))?.items ?? []).map((c) => [c.id, c.name]),
+  );
+
+export const listSchemas = async (): Promise<Page<ExtractionSchema>> => {
+  const [page, names] = await Promise.all([
+    ok<Page<SchemaWire>>(api.GET('/v1/extraction-schemas', { params: { query: ALL } })),
+    collectionNames(),
+  ]);
+  return { ...page, items: page.items.map((raw) => readSchema(raw, names, null)) };
+};
+
+const readSchemaWire = (id: string, signal?: AbortSignal) =>
+  ok<SchemaWire>(api.GET('/v1/extraction-schemas/{id}', { params: { path: { id } }, signal }));
+
+/** The schema with its collection's name and, when set, its target dataset. */
+const schemaOf = async (raw: SchemaWire, names?: Map<string, string>) => {
+  const [collections, dataset] = await Promise.all([
+    names ?? collectionNames(),
+    raw.display || !raw.target_dataset_id
+      ? null
+      : ok<Schemas['DatasetDetail']>(
+          api.GET('/v1/datasets/{id}', { params: { path: { id: raw.target_dataset_id } } }),
+        ).catch(() => null),
+  ]);
+  return readSchema(raw, collections, dataset);
+};
+
+export const getSchema = async (id: string): Promise<ExtractionSchema> => {
+  const [raw, names] = await Promise.all([readSchemaWire(id), collectionNames()]);
+  return schemaOf(raw, names);
+};
+
+/**
+ * POST /v1/extraction-schemas/{id}:test — 202: the schema turns `testing` and its
+ * sample_accuracy is cleared; the sample run goes on in the background (waitForSchemaTest).
+ */
 export const testSchema = async (id: string) =>
-  okAs<ExtractionSchema>(
+  ok<Schemas['services__api__modules__document__schemas__Accepted']>(
     api.POST('/v1/extraction-schemas/{id}:test', { params: { path: { id } }, body: {} }),
   );
 
+const SCHEMA_TEST_WAIT_MS = 10 * 60_000;
+const schemaTestAborted = () => new DOMException('Đã dừng theo dõi lượt chạy thử.', 'AbortError');
+
+/**
+ * :test's Location is the schema itself: it is read again until the run has measured the
+ * sample (sample_accuracy set) or the schema left `testing`, for at most ten minutes; the last
+ * read is answered either way, so a run still going shows as testing.
+ */
+export const waitForSchemaTest = async (
+  id: string,
+  options: { signal?: AbortSignal; every?: number } = {},
+): Promise<ExtractionSchema> => {
+  const { signal, every = 3000 } = options;
+  for (let waited = 0; ; waited += every) {
+    if (signal?.aborted) throw schemaTestAborted();
+    const raw = await readSchemaWire(id, signal);
+    const done = raw.status !== 'testing' || raw.sample_accuracy != null;
+    if (done || waited >= SCHEMA_TEST_WAIT_MS) return schemaOf(raw);
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', stop);
+        resolve();
+      }, every);
+      const stop = () => {
+        clearTimeout(timer);
+        reject(schemaTestAborted());
+      };
+      signal?.addEventListener('abort', stop, { once: true });
+    });
+  }
+};
+
 /** POST /v1/extraction-schemas/{id}:activate — publish this version. */
 export const activateSchema = async (id: string) =>
-  okAs<ExtractionSchema>(
+  ok<Schemas['ExtractionSchemaView']>(
     api.POST('/v1/extraction-schemas/{id}:activate', { params: { path: { id } } }),
   );
 

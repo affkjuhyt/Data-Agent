@@ -1,4 +1,5 @@
 import { useAppState } from '../../AppStateContext';
+import { useAuth } from '../../lib/AuthProvider';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { Badge } from '../../design-system/Badge';
 import { LinkCard } from '../../design-system/LinkCard';
@@ -13,6 +14,10 @@ import { useV1 } from '../../lib/v1/useV1';
  */
 export default function AdminPage() {
   const { navigate } = useAppState();
+  const { me } = useAuth();
+  // Separation of duties: the org admin holds `admin` only, so the audit log (audit_read) and
+  // data-subject requests (compliance) are offered only to those who may open them, as on the rail.
+  const held = new Set(me?.capabilities ?? []);
   const users = useV1(['listUsers'], listUsers);
   const models = useV1(['listModels'], listModels);
 
@@ -80,26 +85,30 @@ export default function AdminPage() {
         >
           <span className="text-muted-foreground da-body-small">Teams, email, SSO, API, MCP</span>
         </LinkCard>
-        <LinkCard
-          icon="file"
-          iconSlot={40}
-          titleSize="md"
-          title="Kiểm toán"
-          onOpen={open('AUDIT')}
-        >
-          <span className="text-muted-foreground da-body-small">
-            Ai đã làm gì, khi nào, thay ai
-          </span>
-        </LinkCard>
-        <LinkCard
-          icon="eye"
-          iconSlot={40}
-          titleSize="md"
-          title="Quyền riêng tư"
-          onOpen={open('PRIVACY')}
-        >
-          <span className="text-muted-foreground da-body-small">Yêu cầu của chủ thể dữ liệu</span>
-        </LinkCard>
+        {held.has('audit_read') && (
+          <LinkCard
+            icon="file"
+            iconSlot={40}
+            titleSize="md"
+            title="Kiểm toán"
+            onOpen={open('AUDIT')}
+          >
+            <span className="text-muted-foreground da-body-small">
+              Ai đã làm gì, khi nào, thay ai
+            </span>
+          </LinkCard>
+        )}
+        {held.has('compliance') && (
+          <LinkCard
+            icon="eye"
+            iconSlot={40}
+            titleSize="md"
+            title="Quyền riêng tư"
+            onOpen={open('PRIVACY')}
+          >
+            <span className="text-muted-foreground da-body-small">Yêu cầu của chủ thể dữ liệu</span>
+          </LinkCard>
+        )}
       </div>
     </div>
   );

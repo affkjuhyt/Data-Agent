@@ -1,4 +1,4 @@
-import { type Page, api, ok, okAs } from './client';
+import { type Page, V1Error, api, ok, okAs } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -262,8 +262,9 @@ export const runCrawlSource = async (id: string) =>
 /* ─── Đăng ký nguồn (UC-14-01) ────────────────────────────────────────── */
 
 /**
- * PROPOSAL: POST /v1/crawl-sources:suggest {goal} — the agent proposes sources for a goal and
- * checks robots.txt and the terms of each before anything is saved (BR-149).
+ * A2: POST /v1/crawl-sources:suggest {goal} answers 202 with an Agent Thu thập run id: the agent
+ * proposes sources and checks robots.txt and the terms of each before anything is saved (BR-149).
+ * The proposal is the output of the run's step that lists sources (read from GET /v1/runs/{id}).
  */
 export interface SuggestedSource {
   key: string;
@@ -283,8 +284,106 @@ export interface SourceSuggestion {
   render_js_domains: number;
 }
 
-export const suggestCrawlSources = (goal: string) =>
-  okAs<SourceSuggestion>(api.POST('/v1/crawl-sources:suggest', { body: { goal } }));
+/** queued: the run is not picked up yet (it answers 404 until the worker makes it). */
+export type SuggestProgress = 'queued' | 'running';
+
+const AGENT_RUN_ENDS = new Set(['succeeded', 'failed', 'cancelled']);
+/** Searching and checking each source's terms takes minutes, not seconds. */
+const SUGGEST_WAIT_MS = 5 * 60_000;
+
+const aborted = () => new DOMException('Đã huỷ tìm nguồn.', 'AbortError');
+
+/** setTimeout that an abort ends early, rejecting with AbortError. */
+const pause = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(aborted());
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', stop);
+      resolve();
+    }, ms);
+    const stop = () => {
+      clearTimeout(timer);
+      reject(aborted());
+    };
+    signal?.addEventListener('abort', stop, { once: true });
+  });
+
+const textOf = (v: unknown) => (typeof v === 'string' ? v : '');
+const hostOf = (url: string) => {
+  try {
+    return new URL(/^[a-z]+:\/\//i.test(url) ? url : `https://${url}`).hostname;
+  } catch {
+    return '';
+  }
+};
+
+/*
+ * The agent's step output, read leniently: no worker writes it yet (the api only reserves the run),
+ * so both the designed names (label, seed_url, format_label, robots) and the plain ones (name,
+ * url, format, allowed) are taken.
+ */
+function suggestionOf(run: Schemas['RunView'], goal: string): SourceSuggestion {
+  const outputs = [...(run.steps ?? [])]
+    .sort((a, b) => b.seq - a.seq)
+    .map((step) => step.output as Record<string, unknown> | null);
+  const output = outputs.find((o) => o && Array.isArray(o.sources)) ?? {};
+  const sources = ((output.sources ?? []) as Array<Record<string, unknown>>).map((s, index) => {
+    const seed = textOf(s.seed_url) || textOf(s.url);
+    const domain = textOf(s.domain) || hostOf(seed);
+    return {
+      key: textOf(s.key) || domain || String(index),
+      label: textOf(s.label) || textOf(s.name) || domain,
+      seed_url: seed,
+      domain,
+      format_label: textOf(s.format_label) || textOf(s.format),
+      robots: s.robots === 'forbidden' || s.allowed === false ? 'forbidden' : 'allowed',
+    } satisfies SuggestedSource;
+  });
+  const more = output.more as SourceSuggestion['more'] | undefined;
+  return {
+    suggested_name: textOf(output.suggested_name) || run.title || goal,
+    sources,
+    more: more && typeof more.count === 'number' ? more : null,
+    render_js_domains: typeof output.render_js_domains === 'number' ? output.render_js_domains : 0,
+  };
+}
+
+export const suggestCrawlSources = async (
+  goal: string,
+  options: { signal?: AbortSignal; onProgress?: (state: SuggestProgress) => void } = {},
+): Promise<SourceSuggestion> => {
+  const { signal, onProgress } = options;
+  const accepted = await ok<Schemas['services__api__modules__acquire__schemas__Accepted']>(
+    api.POST('/v1/crawl-sources:suggest', { body: { goal }, signal }),
+  );
+  const every = Math.max(accepted.poll_after_ms ?? 2000, 1);
+  let state: SuggestProgress | null = null;
+  const tell = (next: SuggestProgress) => {
+    if (next !== state) onProgress?.((state = next));
+  };
+  tell('queued');
+  for (let waited = 0; waited <= SUGGEST_WAIT_MS; waited += every) {
+    if (signal?.aborted) throw aborted();
+    const run = await ok<Schemas['RunView']>(
+      api.GET('/v1/runs/{id}', { params: { path: { id: accepted.id } }, signal }),
+    ).catch((e: unknown) => {
+      if (e instanceof V1Error && e.status === 404) return null;
+      throw e;
+    });
+    if (run && AGENT_RUN_ENDS.has(run.status)) {
+      if (run.status !== 'succeeded')
+        throw new V1Error(
+          409,
+          'run_failed',
+          run.error ?? 'Agent Thu thập không đề xuất được nguồn; thử mô tả mục tiêu khác.',
+        );
+      return suggestionOf(run, goal);
+    }
+    if (run && run.status !== 'queued') tell('running');
+    await pause(every, signal);
+  }
+  throw new V1Error(504, 'timeout', 'Agent Thu thập chưa trả lời sau 5 phút; thử lại sau.');
+};
 
 /** A2: POST /v1/crawl-sources — status draft; robots.txt checked, terms captured and hashed. */
 export const createCrawlSource = (body: {

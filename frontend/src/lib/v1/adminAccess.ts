@@ -1,4 +1,4 @@
-import { pathId, V1Error, v1Send, type Page, api, ok, okAs } from './client';
+import { V1Error, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import type { AppUser, DataSpace } from './types';
 
@@ -12,7 +12,7 @@ type Schemas = components['schemas'];
  *
  * Fields marked PROPOSAL are not in the spec: the screens need a display text or a computed
  * figure the tables do not hold, and the backend is asked to add them. Endpoints marked
- * PROPOSAL are missing from A2 (the spec has PUT members but no GET, :decide but no list, …).
+ * PROPOSAL are missing from A2 (the spec has PUT members but no GET, …).
  * The api's rows are read into the screens' shapes below; what only a PROPOSAL field says is
  * derived from the row or left empty.
  */
@@ -456,39 +456,160 @@ export interface AccessRequest {
   /** PROPOSAL: the agent's recommendation, and the narrower scope it suggests. */
   suggestion: string | null;
   suggested_scope_text: string | null;
-  /** PROPOSAL: "Nếu cấp" — before/after of what the requester would see. */
+  /** PROPOSAL: "Nếu cấp" — before/after of what the requester would see; empty without it. */
   impact: { label: string; before: string; after: string }[];
-  /** PROPOSAL: decision due date, for the queue. */
-  due_at: Timestamp;
+  /** PROPOSAL: decision due date, for the queue; null when the api does not set one. */
+  due_at: Timestamp | null;
 }
 
 export interface DecideAccess {
   decision: 'approve' | 'narrow' | 'reject';
   note?: string;
-  /** granted_scope when narrowing. */
-  granted_scope?: string;
+  /** GrantedScope when narrowing: the narrower capability actually granted. */
+  granted_scope?: { capability: AccessCapability };
 }
 
-/** PROPOSAL: GET /v1/access-requests (A2 has create and :decide only). */
-export const listAccessRequests = (
+/**
+ * What a request may be narrowed to, the request's own capability left out (that is a plain
+ * approval). Mirrors NARROWER in backend/services/api/modules/org/admin/access.py, which answers
+ * 422 for anything else.
+ */
+export const NARROWER_CAPABILITIES: Record<AccessCapability, AccessCapability[]> = {
+  view_aggregate: ['ask'],
+  ask: ['view_aggregate'],
+  view_detail: ['view_aggregate', 'ask'],
+  run_agent: ['view_aggregate', 'ask'],
+};
+
+/** AccessRequestView as the api sends it, with the PROPOSAL display fields when present. */
+type AccessRequestWire = Schemas['AccessRequestView'] &
+  Partial<Omit<AccessRequest, keyof Schemas['AccessRequestView']>>;
+
+/** What is asked, in words, as the object of "xin …". */
+export const CAPABILITY_ASKED: Record<AccessCapability, string> = {
+  view_aggregate: 'xem số tổng hợp',
+  view_detail: 'xem dữ liệu chi tiết',
+  ask: 'hỏi đáp',
+  run_agent: 'chạy agent',
+};
+
+/** AR-1A2B3C: the last characters of the id, as DSR codes are made (the table has no code). */
+const accessRequestCode = (id: string) => `AR-${id.replace(/-/g, '').slice(-6).toUpperCase()}`;
+
+interface AccessRequestNames {
+  users: Map<string, string>;
+  spaces: Map<string, string>;
+}
+
+const NO_NAMES: AccessRequestNames = { users: new Map(), spaces: new Map() };
+
+/*
+ * The api keeps ids, not words: the sentences the screen shows are made from the capability and
+ * the names of the requester and the Data Space when the caller may read them. What only a
+ * PROPOSAL field could say (the impact, the agent's suggestion, a decision deadline) is left
+ * empty, and the screen leaves out what is empty.
+ */
+function readAccessRequest(raw: AccessRequestWire, names: AccessRequestNames): AccessRequest {
+  const capability = raw.capability as AccessCapability;
+  const asked = CAPABILITY_ASKED[capability] ?? raw.capability;
+  const requester = names.users.get(raw.requester_id) ?? 'Người dùng';
+  const space = names.spaces.get(raw.data_space_id);
+  return {
+    id: raw.id,
+    requester_id: raw.requester_id,
+    data_space_id: raw.data_space_id,
+    capability,
+    reason: raw.reason,
+    requested_until: raw.requested_until,
+    status: raw.status as AccessRequestStatus,
+    needs_compliance: raw.needs_compliance,
+    approver_id: raw.approver_id,
+    decided_at: raw.decided_at,
+    decision_note: raw.decision_note,
+    created_at: raw.created_at,
+    code: raw.code ?? accessRequestCode(raw.id),
+    title: raw.title ?? `${requester} xin ${asked}${space ? ` · ${space}` : ''}`,
+    queue_label: raw.queue_label ?? `${requester} · ${asked}`,
+    scope_text:
+      raw.scope_text ??
+      `${asked.charAt(0).toUpperCase()}${asked.slice(1)}${space ? ` trong Data Space ${space}` : ''}`,
+    current_scope_text: raw.current_scope_text ?? '',
+    origin_text: raw.origin_text ?? '',
+    approver_name:
+      raw.approver_name ?? (raw.approver_id ? (names.users.get(raw.approver_id) ?? '') : ''),
+    approver_role: raw.approver_role ?? '',
+    suggestion: raw.suggestion ?? null,
+    suggested_scope_text: raw.suggested_scope_text ?? null,
+    impact: raw.impact ?? [],
+    due_at: raw.due_at ?? null,
+  };
+}
+
+/** The organisation's people by id; GET /v1/admin/users needs `admin`. */
+const userNames = async () => {
+  const users = await ok(api.GET('/v1/admin/users', { params: { query: ALL } }));
+  return new Map(users.items.map((u) => [u.id, u.display_name]));
+};
+
+/*
+ * The names behind the ids. The user list needs `admin` and a steward may not hold it, so each
+ * lookup that is refused leaves its ids unnamed instead of failing the request.
+ */
+const accessRequestNames = async (): Promise<AccessRequestNames> => {
+  const [users, spaces] = await Promise.all([
+    userNames().catch(() => new Map<string, string>()),
+    listDataSpaceSummaries().catch(() => null),
+  ]);
+  return { users, spaces: new Map(spaces?.items.map((s) => [s.id, s.name]) ?? []) };
+};
+
+/** GET /v1/access-requests: the caller's own requests, or every one for a steward. */
+export const listAccessRequests = async (
   query: { status?: AccessRequestStatus; data_space_id?: string } = {},
-) =>
-  okAs<Page<AccessRequest>>(
-    api.GET('/v1/access-requests', { params: { query: { ...ALL, ...query } } }),
-  );
-/** PROPOSAL: GET /v1/access-requests/{id} */
-export const getAccessRequest = async (id: string) =>
-  okAs<AccessRequest>(api.GET('/v1/access-requests/{id}', { params: { path: { id } } }));
-export const decideAccessRequest = async (id: string, body: DecideAccess) =>
-  okAs<AccessRequest>(
-    api.POST('/v1/access-requests/{id}:decide', { params: { path: { id } }, body }),
-  );
-export const requestAccess = (body: {
+): Promise<Page<AccessRequest>> => {
+  const [page, names] = await Promise.all([
+    ok<Page<AccessRequestWire>>(
+      api.GET('/v1/access-requests', { params: { query: { ...ALL, ...query } } }),
+    ),
+    accessRequestNames(),
+  ]);
+  return { ...page, items: page.items.map((r) => readAccessRequest(r, names)) };
+};
+export const getAccessRequest = async (id: string) => {
+  const [raw, names] = await Promise.all([
+    ok<AccessRequestWire>(api.GET('/v1/access-requests/{id}', { params: { path: { id } } })),
+    accessRequestNames(),
+  ]);
+  return readAccessRequest(raw, names);
+};
+/*
+ * :decide reads the request in the Data Space of X-Data-Space, which is the switcher's and may be
+ * none ("Toàn tổ chức") or another space: the request's own goes with it.
+ */
+export const decideAccessRequest = async (id: string, body: DecideAccess, dataSpaceId?: string) => {
+  const [raw, names] = await Promise.all([
+    okAs<AccessRequestWire>(
+      api.POST('/v1/access-requests/{id}:decide', {
+        params: { path: { id } },
+        body,
+        ...(dataSpaceId ? { headers: { 'X-Data-Space': dataSpaceId } } : {}),
+      }),
+    ),
+    accessRequestNames(),
+  ]);
+  return readAccessRequest(raw, names);
+};
+/** The requester only needs the code of what was sent, so no names are looked up. */
+export const requestAccess = async (body: {
   data_space_id: Uuid;
   capability: AccessCapability;
   reason: string;
   requested_until: string;
-}) => okAs<AccessRequest>(api.POST('/v1/access-requests', { body }));
+}) =>
+  readAccessRequest(
+    await ok<AccessRequestWire>(api.POST('/v1/access-requests', { body })),
+    NO_NAMES,
+  );
 
 /* ─── Chính sách dữ liệu (UC-11-02) ─────────────────────────────────── */
 
@@ -609,9 +730,6 @@ export const getAccessPolicy = async (id: string) => {
   const names = new Map<string, string>(spaces?.items.map((s) => [s.id, s.name]) ?? []);
   return readAccessPolicy(raw as AccessPolicyWire, names);
 };
-/** PROPOSAL: PATCH saves the rule as a new version (draft until simulated). */
-export const updateAccessPolicy = async (id: string, body: { rule_text: string }) =>
-  v1Send<AccessPolicy>('PATCH', `/policies/${pathId(id)}`, body);
 /** PROPOSAL: the screen's comparison table, which the mock sends under `display`. */
 type SimulationWire = Schemas['SimulationView'] & { display?: PolicySimulation };
 
@@ -862,7 +980,6 @@ export type CreateDsr = Schemas['DsrCreate'];
 /** What happens to one found item when the request is executed (DsrDecision). */
 export type DsrDecision = Schemas['DsrDecision'];
 
-/** PROPOSAL: GET /v1/dsr (A2 has create, get and :execute). */
 const DSR_TITLE: Record<DsrKind, string> = {
   access: 'Yêu cầu truy cập dữ liệu',
   copy: 'Yêu cầu nhận bản sao dữ liệu',
@@ -913,16 +1030,14 @@ const readDsr = (
   items: 'items' in raw ? (raw.items ?? []).map(readDsrItem) : [],
 });
 
-/** The organisation's people by id, for the handler's name. */
-const userNames = async () => {
-  const users = await ok(api.GET('/v1/admin/users', { params: { query: ALL } }));
-  return new Map(users.items.map((u) => [u.id, u.display_name]));
-};
-
+/*
+ * /v1/dsr is compliance's and the user list admin's: separation of duties means a compliance
+ * officer usually lacks the second, so a refused list leaves the handler named by id.
+ */
 export const listDsr = async (): Promise<Page<DsrRequest>> => {
   const [page, names] = await Promise.all([
     ok(api.GET('/v1/dsr', { params: { query: ALL } })),
-    userNames(),
+    userNames().catch(() => new Map<string, string>()),
   ]);
   return { ...page, items: page.items.map((d) => readDsr(d, names)) };
 };
@@ -930,7 +1045,7 @@ export const listDsr = async (): Promise<Page<DsrRequest>> => {
 export const getDsr = async (id: string): Promise<DsrRequest> => {
   const [raw, names] = await Promise.all([
     ok(api.GET('/v1/dsr/{id}', { params: { path: { id } } })),
-    userNames(),
+    userNames().catch(() => new Map<string, string>()),
   ]);
   return readDsr(raw, names);
 };
@@ -944,7 +1059,3 @@ export const createDsr = async (body: CreateDsr) => {
 /** Every pending item needs its decision; retaining one needs its legal basis (UC-11-06 3a). */
 export const executeDsr = async (id: string, items: DsrDecision[]) =>
   ok(api.POST('/v1/dsr/{id}:execute', { params: { path: { id } }, body: { items } }));
-
-/** PROPOSAL: :reject with a reason (status rejected). */
-export const rejectDsr = async (id: string, reason: string) =>
-  v1Send<DsrRequest>('POST', `/dsr/${pathId(id)}:reject`, { reason });

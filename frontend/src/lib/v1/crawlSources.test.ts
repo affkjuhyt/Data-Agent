@@ -18,6 +18,7 @@ import {
   listCrawlSchemas,
   listCrawlSources,
   listRunRecords,
+  suggestCrawlSources,
 } from './crawl';
 
 const source = (id: string, extra: Record<string, unknown>) => ({
@@ -462,5 +463,133 @@ describe('crawl from the api', () => {
     ]);
     await decideEntityMatch('l-1', 'merge');
     expect(linkBody).toEqual({ status: 'confirmed' });
+  });
+});
+
+describe('suggesting sources (UC-14-01)', () => {
+  const agentRun = (status: string, extra: Record<string, unknown> = {}) => ({
+    id: 'run-s',
+    status,
+    title: 'Đề xuất nguồn',
+    error: null,
+    steps: [],
+    ...extra,
+  });
+  let reads = 0;
+  let goalBody: unknown;
+  const accepted = () =>
+    http.post('*/v1/crawl-sources\\:suggest', async ({ request }) => {
+      goalBody = await request.json();
+      reads = 0;
+      return HttpResponse.json(
+        { id: 'run-s', status: 'queued', poll_after_ms: 1 },
+        { status: 202, headers: { Location: '/v1/runs/run-s' } },
+      );
+    });
+
+  it('waits for the agent run behind the 202 and reads its proposal', async () => {
+    server.use(
+      accepted(),
+      http.get('*/v1/runs/:id', () => {
+        reads += 1;
+        // The worker makes the run under the reserved id: until then it is not found.
+        if (reads === 1)
+          return HttpResponse.json(
+            { title: 'not_found', status: 404, code: 'not_found' },
+            { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+          );
+        if (reads === 2) return HttpResponse.json(agentRun('running'));
+        return HttpResponse.json(
+          agentRun('succeeded', {
+            steps: [
+              { seq: 1, name: 'Tìm nguồn', status: 'succeeded', output: { query: 'lãi suất' } },
+              {
+                seq: 2,
+                name: 'Kiểm tra robots.txt và điều khoản',
+                status: 'succeeded',
+                output: {
+                  suggested_name: 'Lãi suất huy động',
+                  sources: [
+                    {
+                      name: 'Ngân hàng A',
+                      url: 'https://nganhanga.vn/lai-suat',
+                      format: 'Bảng HTML',
+                      robots: 'allowed',
+                    },
+                    {
+                      label: 'Ngân hàng D',
+                      seed_url: 'nganhangd.vn/lai-suat',
+                      domain: 'nganhangd.vn',
+                      allowed: false,
+                    },
+                  ],
+                  render_js_domains: 1,
+                },
+              },
+            ],
+          }),
+        );
+      }),
+    );
+    const progress: string[] = [];
+    const suggestion = await suggestCrawlSources('Lãi suất huy động các kỳ hạn', {
+      onProgress: (state) => progress.push(state),
+    });
+    expect(goalBody).toEqual({ goal: 'Lãi suất huy động các kỳ hạn' });
+    expect(progress).toEqual(['queued', 'running']);
+    expect(suggestion).toEqual({
+      suggested_name: 'Lãi suất huy động',
+      sources: [
+        {
+          key: 'nganhanga.vn',
+          label: 'Ngân hàng A',
+          seed_url: 'https://nganhanga.vn/lai-suat',
+          domain: 'nganhanga.vn',
+          format_label: 'Bảng HTML',
+          robots: 'allowed',
+        },
+        {
+          key: 'nganhangd.vn',
+          label: 'Ngân hàng D',
+          seed_url: 'nganhangd.vn/lai-suat',
+          domain: 'nganhangd.vn',
+          format_label: '',
+          robots: 'forbidden',
+        },
+      ],
+      more: null,
+      render_js_domains: 1,
+    });
+  });
+
+  it('says why when the agent run fails', async () => {
+    server.use(
+      accepted(),
+      http.get('*/v1/runs/:id', () =>
+        HttpResponse.json(agentRun('failed', { error: 'Không truy cập được công cụ tìm kiếm.' })),
+      ),
+    );
+    await expect(suggestCrawlSources('Giá thép')).rejects.toThrow(
+      'Không truy cập được công cụ tìm kiếm.',
+    );
+  });
+
+  it('stops polling when the screen goes away', async () => {
+    server.use(
+      accepted(),
+      http.get('*/v1/runs/:id', () => {
+        reads += 1;
+        return HttpResponse.json(agentRun('running'));
+      }),
+    );
+    const controller = new AbortController();
+    const pending = suggestCrawlSources('Giá thép', {
+      signal: controller.signal,
+      onProgress: (state) => state === 'running' && controller.abort(),
+    });
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    const after = reads;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(reads).toBe(after);
   });
 });

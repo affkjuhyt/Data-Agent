@@ -971,8 +971,8 @@ export function createAdminAccessHandlers() {
       const body = (await request.json()) as DecideAccess;
       if (body.decision === 'reject' && !body.note?.trim())
         return problem(422, 'validation_failed', 'Từ chối cần ghi lý do.');
-      if (body.decision === 'narrow' && !body.granted_scope?.trim())
-        return problem(422, 'validation_failed', 'Ghi phạm vi được cấp.');
+      if (body.decision === 'narrow' && !body.granted_scope?.capability)
+        return problem(422, 'validation_failed', 'narrow needs granted_scope.');
       const status = { approve: 'approved', narrow: 'narrowed', reject: 'rejected' }[
         body.decision
       ] as AccessRequest['status'];
@@ -997,16 +997,6 @@ export function createAdminAccessHandlers() {
     http.get('*/v1/policies/:id', ({ params }) => {
       const item = policies.find((p) => p.id === params.id);
       return item ? HttpResponse.json(accessView(item)) : undefined;
-    }),
-    http.patch('*/v1/policies/:id', async ({ params, request }) => {
-      const item = policies.find((p) => p.id === params.id);
-      if (!item) return undefined;
-      const body = (await request.json()) as { rule_text: string };
-      if (!body.rule_text?.trim())
-        return problem(422, 'validation_failed', 'Quy tắc không được để trống.');
-      const saved = { ...item, rule_text: body.rule_text, version: item.version + 1 };
-      policies = policies.map((p) => (p.id === item.id ? saved : p));
-      return HttpResponse.json(saved);
     }),
     http.post('*/v1/policies/:action', async ({ params, request }) => {
       const [id, verb] = verbOf(params.action);
@@ -1205,17 +1195,6 @@ export function createAdminAccessHandlers() {
         };
         dsrs = dsrs.map((d) => (d.id === id ? done : d));
         return HttpResponse.json({ id, status: 'executing', poll_after_ms: 2000 }, { status: 202 });
-      }
-      if (verb === 'reject') {
-        const body = (await request.json()) as { reason: string };
-        if (!body.reason?.trim()) return problem(422, 'validation_failed', 'Ghi lý do từ chối.');
-        const rejected: DsrWire = {
-          ...item,
-          status: 'rejected',
-          closed_at: new Date().toISOString(),
-        };
-        dsrs = dsrs.map((d) => (d.id === id ? rejected : d));
-        return HttpResponse.json(rejected);
       }
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),

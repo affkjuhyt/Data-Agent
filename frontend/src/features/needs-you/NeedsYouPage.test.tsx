@@ -122,7 +122,7 @@ describe('NeedsYouPage', () => {
     fireEvent.click(await screen.findByRole('radio', { name: 'Đã xử lý tuần này · 4' }));
     const list = await screen.findByRole('list', { name: 'Đã xử lý tuần này' });
     expect(list).toHaveTextContent('Chọn NPL_RATIO v4 cho lượt #418');
-    expect(list).toHaveTextContent('Agent đã chạy tiếp');
+    expect(list).toHaveTextContent('Đã trả lời');
     expect(list).toHaveTextContent('Tự xử lý');
   });
 });

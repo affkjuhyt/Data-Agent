@@ -15,7 +15,6 @@ import {
   getAccessPolicy,
   listAdminUsers,
   simulatePolicy,
-  updateAccessPolicy,
   type AccessPolicy,
   type Backtest,
 } from '../../lib/v1/adminAccess';
@@ -27,38 +26,24 @@ import { POLICY_KIND, POLICY_STATUS } from './policyLabels';
  * would see with and without it for a sample question (POST :simulate), and on the right the
  * backtest on the last 7 days of queries (POST :backtest). "Lịch sử" waits for a version-history
  * endpoint, so it is shown disabled with the reason.
+ *
+ * The rule is read-only: the api changes a policy only by :activate and :disable, and POST
+ * /v1/policies makes a separate draft (version 1, nothing linking it to this one), so a "save"
+ * would leave two policies on the same data. Editing waits for a versioned write.
  */
 const HISTORY_PENDING = 'Lịch sử phiên bản chưa có API.';
 
 export default function PolicyDetail({ id }: { id: string }) {
   const toast = useToast();
   const policy = useV1(['getAccessPolicy', id], () => getAccessPolicy(id));
-  // null = unedited: the textarea shows the saved rule.
-  const [rule, setRule] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [backtest, setBacktest] = useState<Backtest | null>(null);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
     if (!policy.data) return;
-    setRule(null);
     setBacktest(policy.data.last_backtest);
   }, [policy.data]);
-
-  const save = async (p: AccessPolicy) => {
-    setSaving(true);
-    setError(undefined);
-    try {
-      await updateAccessPolicy(p.id, { rule_text: rule ?? p.rule_text });
-      toast({ tone: 'success', message: `Đã lưu ${p.code} thành phiên bản mới` });
-      policy.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const rerun = async (p: AccessPolicy) => {
     setRunning(true);
@@ -99,14 +84,6 @@ export default function PolicyDetail({ id }: { id: string }) {
                   <Button loading={running} onClick={() => rerun(p)}>
                     Chạy thử lại
                   </Button>
-                  <Button
-                    kind="primary"
-                    loading={saving}
-                    disabled={rule === null || rule === p.rule_text}
-                    onClick={() => save(p)}
-                  >
-                    Lưu thay đổi
-                  </Button>
                 </>
               }
             />
@@ -120,13 +97,17 @@ export default function PolicyDetail({ id }: { id: string }) {
                 <h2 className="text-foreground da-heading-3">Quy tắc</h2>
                 <Textarea
                   aria-label="Quy tắc"
-                  value={rule ?? p.rule_text}
-                  onChange={(e) => setRule(e.target.value)}
-                  rows={Math.max(4, (rule ?? p.rule_text).split('\n').length)}
+                  value={p.rule_text}
+                  readOnly
+                  rows={Math.max(4, p.rule_text.split('\n').length)}
                   spellCheck={false}
                   className="w-full"
                   mono
                 />
+                <Notice tone="info">
+                  Chưa sửa được quy tắc tại đây: hệ thống chưa hỗ trợ lưu phiên bản mới của một
+                  chính sách. Bạn vẫn mô phỏng và chạy thử được quy tắc hiện tại.
+                </Notice>
                 <h2 className="text-foreground da-heading-3">Mô phỏng: một người sẽ thấy gì</h2>
                 <Simulation policy={p} />
               </div>

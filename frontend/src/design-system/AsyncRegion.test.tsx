@@ -49,6 +49,27 @@ describe('AsyncRegion', () => {
     expect(screen.queryByText(/Không tải được nguồn/)).not.toBeInTheDocument();
   });
 
+  it('shows Thiếu quyền for a 403 without an access block, naming the missing capability', () => {
+    const error = new V1Error(403, 'forbidden', 'Missing capability: compliance.');
+    render(
+      <ToastProvider>
+        <AsyncRegion
+          state={{ data: undefined, error, loading: false, reload: () => undefined }}
+          what="yêu cầu của chủ thể dữ liệu"
+        >
+          {() => null}
+        </AsyncRegion>
+      </ToastProvider>,
+    );
+    expect(
+      screen.getByRole('heading', { name: 'Bạn chưa có quyền xem yêu cầu của chủ thể dữ liệu' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Cần quyền Tuân thủ \(compliance\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/Không tải được/)).not.toBeInTheDocument();
+    // An org-wide role is granted by an admin, not asked for in a Data Space.
+    expect(screen.queryByRole('button', { name: 'Gửi yêu cầu' })).not.toBeInTheDocument();
+  });
+
   it('keeps the load banner for a plain error', () => {
     render(
       <ToastProvider>

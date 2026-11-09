@@ -32,6 +32,10 @@ afterAll(() => server.close());
 
 const show = (page: ReactElement) => render(<ToastProvider>{page}</ToastProvider>);
 
+// The ids the api's resources give: a fuel is its run and product, a ledger its model and product.
+const E5 = 'fj-2026-1010-03__xang';
+const E5_LEDGER = 'ledger~fm-deposit-retail~xang';
+
 describe('FuelForecastPage', () => {
   it('shows the distribution with both intervals, the model version and the Fund sentence', async () => {
     show(<FuelForecastPage />);
@@ -57,21 +61,15 @@ describe('FuelForecastPage', () => {
     const recent = await screen.findByRole('table', { name: 'Sổ 5 kỳ gần nhất' });
     expect(within(recent).getAllByRole('row')).toHaveLength(6);
     expect(within(recent).getByText('−460')).toBeInTheDocument();
-    expect(
-      screen.getByText('Độ phủ 20 kỳ: 80% → 16/20 · 95% → 19/20 · minh hoạ'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Độ phủ 20 kỳ: 80% → 16/20 · 95% → 19/20')).toBeInTheDocument();
   });
 
   it('switches fuel by tab, opens the ledger and the cited document', async () => {
     show(<FuelForecastPage />);
     fireEvent.click(await screen.findByRole('tab', { name: 'Diesel 0,05S' }));
-    expect(navigate).toHaveBeenCalledWith(
-      'analysis',
-      'FUEL_FORECAST',
-      'fpf-2026-07-09-diesel-005s',
-    );
+    expect(navigate).toHaveBeenCalledWith('analysis', 'FUEL_FORECAST', 'fj-2026-1010-03__do');
     fireEvent.click(screen.getByRole('button', { name: 'Mở sổ' }));
-    expect(navigate).toHaveBeenCalledWith('analysis', 'FORECAST_LEDGER', 'fs-ceiling-e5ron92');
+    expect(navigate).toHaveBeenCalledWith('analysis', 'FORECAST_LEDGER', E5_LEDGER);
     fireEvent.click(screen.getByRole('button', { name: 'NQ 34/2026/NQ-CP' }));
     expect(navigate).toHaveBeenCalledWith('data', 'DOCUMENT', 'doc-nq-34-2026');
   });
@@ -96,11 +94,35 @@ describe('FuelForecastPage', () => {
   });
 
   it('does not draw a forecast whose interval is missing', async () => {
-    routeId = 'fpf-2026-07-09-e5ron92';
-    const full = await getFuelPriceForecast(routeId);
+    routeId = E5;
+    // A 95% bound inside the 80% one: the interval is not a nested pair.
     server.use(
-      http.get('*/v1/fuel-price-forecasts/:id', () =>
-        HttpResponse.json({ ...full, distribution: { ...full.distribution, lo95: Number.NaN } }),
+      http.get('*/v1/forecasts/:id/distribution', () =>
+        HttpResponse.json({
+          job_id: 'fj-2026-1010-03',
+          cutoff_at: '2026-07-07T00:00:00+07:00',
+          fund_note: '',
+          items: [
+            {
+              product_code: 'xang',
+              model_version_id: 'fmv-formula-mc-v2',
+              period: '2026-07-09',
+              point: 19910,
+              lo80: 19640,
+              hi80: 20190,
+              lo95: 19700,
+              hi95: 20350,
+              quantiles: {},
+              prob_up: 0.72,
+              fund_probs: {},
+              contributions: {},
+              histogram: [],
+              baseline_value: 19730,
+              is_experimental: false,
+              ledger_entry_id: null,
+            },
+          ],
+        }),
       ),
     );
     show(<FuelForecastPage />);
@@ -118,7 +140,7 @@ describe('fuel forecast shapes', () => {
   });
 
   it('fills the 80/95% regions exactly between their bounds', async () => {
-    const f = await getFuelPriceForecast('fpf-2026-07-09-e5ron92');
+    const f = await getFuelPriceForecast(E5);
     const rows = distributionRows(f);
     const in80 = rows.filter((r) => r.in80 !== undefined).map((r) => r.price);
     expect(in80[0]).toBe(19640);
@@ -129,7 +151,7 @@ describe('fuel forecast shapes', () => {
   });
 
   it('adds the decomposition steps up to the expected ceiling', async () => {
-    const f = await getFuelPriceForecast('fpf-2026-07-09-e5ron92');
+    const f = await getFuelPriceForecast(E5);
     const rows = waterfallRows(f);
     expect(rows.map((r) => r.label)).toEqual(['19.730', '+195', '+14', '0', '−24', '19.915']);
     const quy = rows[4];
@@ -139,7 +161,7 @@ describe('fuel forecast shapes', () => {
   });
 
   it('reads the ledger chart oldest first', async () => {
-    const l = await getForecastLedger('fs-ceiling-e5ron92');
+    const l = await getForecastLedger(E5_LEDGER);
     const rows = ledgerChartRows(l.rows);
     expect(rows[0].label).toBe('19/02');
     expect(rows[rows.length - 1].label).toBe('02/07');
@@ -149,7 +171,7 @@ describe('fuel forecast shapes', () => {
 
 describe('ForecastLedgerPage', () => {
   beforeEach(() => {
-    routeId = 'fs-ceiling-e5ron92';
+    routeId = E5_LEDGER;
   });
 
   it('scores calibration over the fixed N and keeps the missed periods', async () => {
@@ -159,7 +181,6 @@ describe('ForecastLedgerPage', () => {
     expect(screen.getByText('19/20 kỳ trong khoảng')).toBeInTheDocument();
     expect(screen.getByText('134 đ/lít')).toBeInTheDocument();
     expect(screen.getByText('−38%')).toBeInTheDocument();
-    expect(screen.getByText('ngoài 95% hoặc sai > 300 đ/lít')).toBeInTheDocument();
     expect(screen.getByText('N = 20 kỳ · cố định theo mô hình')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Kỳ' }).textContent).toContain(
       'Kỳ: 20 kỳ gần nhất · 19/02 – 02/07/2026',
@@ -172,12 +193,12 @@ describe('ForecastLedgerPage', () => {
     const missed = within(screen.getByRole('table', { name: 'Sổ dự báo · mới nhất trước' }));
     expect(missed.getAllByRole('row')).toHaveLength(3);
     expect(missed.getByText('EB-0031')).toBeInTheDocument();
-    expect(missed.getByText('Quỹ chi không dự kiến 300 đ/lít')).toBeInTheDocument();
+    expect(missed.getByText('Quỹ bình ổn khác dự kiến')).toBeInTheDocument();
     expect(missed.getByText('Không / Không')).toBeInTheDocument();
   });
 
   it('shows a shorter window without changing the calibration', async () => {
-    routeId = 'fs-ceiling-e5ron92';
+    routeId = E5_LEDGER;
     show(<ForecastLedgerPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Kỳ' }));
     fireEvent.click(screen.getByRole('menuitem', { name: '10 kỳ gần nhất' }));
@@ -195,11 +216,15 @@ describe('ForecastLedgerPage', () => {
     show(<ForecastLedgerPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Mặt hàng' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Mazut' }));
-    expect(navigate).toHaveBeenCalledWith('analysis', 'FORECAST_LEDGER', 'fs-ceiling-mazut');
+    expect(navigate).toHaveBeenCalledWith(
+      'analysis',
+      'FORECAST_LEDGER',
+      'ledger~fm-deposit-retail~mazut',
+    );
   });
 
   it('says when the model is no better than the naive forecast', async () => {
-    const l = await getForecastLedger('fs-ceiling-e5ron92');
+    const l = await getForecastLedger(E5_LEDGER);
     const stats = calibrationStats({
       ...l,
       calibration: { ...l.calibration, crps_vs_naive: 0.05 },

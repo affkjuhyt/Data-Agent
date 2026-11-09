@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { http, HttpResponse } from 'msw';
+import { setupServer } from 'msw/node';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   readPipelineDetail,
+  sendPrepMessage,
   readWriteback,
   type PipelineDetailWire,
   type WritebackWire,
@@ -160,6 +163,52 @@ describe('readWriteback', () => {
         { ok: true, text: '1.240 dòng hợp lệ' },
         { ok: false, text: 'Cần rà soát tổng' },
       ],
+    });
+  });
+});
+
+describe('sendPrepMessage', () => {
+  const server = setupServer();
+  beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+  afterEach(() => server.resetHandlers());
+  afterAll(() => server.close());
+
+  it('reads the pipeline the api answers like getPipeline, inputs and steps named', async () => {
+    server.use(
+      http.post('*/v1/pipelines/pipeline-1/messages', () =>
+        HttpResponse.json({
+          id: 'pipeline-1',
+          data_space_id: 'space-1',
+          name: 'Chuẩn hoá dư nợ',
+          owner_id: 'user-1',
+          input_dataset_ids: ['dataset-1'],
+          target_dataset_id: null,
+          steps: [{ kind: 'filter', description: 'Bỏ khoản vay đã tất toán', code: 'WHERE 1=1' }],
+          scope: 'data_space',
+          status: 'draft',
+          cron: null,
+          work_calendar_id: null,
+          trigger_on_job_id: null,
+          depends_on_pipeline_ids: [],
+          no_overlap: true,
+          on_failure: 'notify',
+          created_at: '2026-10-13T00:00:00Z',
+          updated_at: '2026-10-13T00:00:00Z',
+          last_run: null,
+        }),
+      ),
+      http.get('*/v1/datasets', () =>
+        HttpResponse.json({
+          items: [{ id: 'dataset-1', schema_name: 'raw', table_name: 'loans' }],
+          next_page_token: '',
+        }),
+      ),
+    );
+    const pipeline = await sendPrepMessage('pipeline-1', 'Bỏ khoản vay đã tất toán');
+    expect(pipeline.input_table).toBe('raw.loans');
+    expect(pipeline.steps[0]).toMatchObject({
+      title: 'Bỏ khoản vay đã tất toán',
+      sql: 'WHERE 1=1',
     });
   });
 });

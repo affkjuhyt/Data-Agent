@@ -42,14 +42,28 @@ export default function SkillEditorPage() {
     ['getSkillDefinition', routeId],
     routeId ? () => getSkillDefinition(routeId) : null,
   );
+  // What was just saved stands in for the loaded definition: A2 reads back only the published
+  // version, so reloading after a save would show other content than the draft just written.
+  const [saved, setSaved] = useState<SkillDefinition>();
   return (
     <AsyncRegion state={definition} what="kỹ năng">
-      {(d) => <Editor key={`${d.skill_id}-${d.version}`} initial={d} onSaved={definition.reload} />}
+      {(d) => {
+        const shown = saved?.skill_id === d.skill_id ? saved : d;
+        return (
+          <Editor key={`${shown.skill_id}-${shown.version}`} initial={shown} onSaved={setSaved} />
+        );
+      }}
     </AsyncRegion>
   );
 }
 
-function Editor({ initial, onSaved }: { initial: SkillDefinition; onSaved: () => void }) {
+function Editor({
+  initial,
+  onSaved,
+}: {
+  initial: SkillDefinition;
+  onSaved: (saved: SkillDefinition) => void;
+}) {
   const { navigate } = useAppState();
   const toast = useToast();
   const id = initial.skill_id;
@@ -81,7 +95,7 @@ function Editor({ initial, onSaved }: { initial: SkillDefinition; onSaved: () =>
     setBusy('try');
     setError(undefined);
     try {
-      const result = await trySkill(id, initial.quick_test.params);
+      const result = await trySkill(initial, initial.quick_test.params);
       setTrial(result);
       setQuality(`v3: 96% · v${result.version}: đã chạy thử`);
       toast({
@@ -99,11 +113,11 @@ function Editor({ initial, onSaved }: { initial: SkillDefinition; onSaved: () =>
     setBusy('save');
     setError(undefined);
     try {
-      const saved = await saveSkillDefinition(id, { instructions, steps: renumber(steps) });
+      const saved = await saveSkillDefinition(initial, { instructions, steps: renumber(steps) });
       setSteps(saved.steps);
       setInstructions(saved.instructions);
-      toast({ tone: 'success', message: `Đã lưu v${initial.version} (nháp)` });
-      onSaved();
+      toast({ tone: 'success', message: `Đã lưu v${saved.version} (nháp)` });
+      onSaved(saved);
     } catch (e) {
       setError(`Không lưu được: ${(e as Error).message}`);
     } finally {

@@ -990,6 +990,28 @@ function schemasFixture(): ExtractionSchema[] {
   ];
 }
 
+/** A2 ExtractionSchemaView of a designed schema; sample_accuracy is cleared while testing. */
+const schemaWire = (s: ExtractionSchema) => ({
+  id: s.id,
+  collection_id: s.collection.id,
+  version: s.version,
+  fields: s.fields.map((f) => ({
+    name: f.name,
+    type: f.type_label,
+    required: f.required,
+    target_column: f.target_column,
+    description: f.description,
+  })),
+  target_dataset_id: null,
+  join_key: null,
+  sample_accuracy:
+    s.status === 'testing' ? null : Object.fromEntries(s.fields.map((f) => [f.name, f.accuracy])),
+  status: s.status,
+  created_at: '2026-10-08T08:00:00+07:00',
+  updated_at: '2026-10-08T08:00:00+07:00',
+  display: s,
+});
+
 /* ─── Handlers ─────────────────────────────────────────────────────────── */
 
 const AT = '2026-10-08T08:00:00+07:00';
@@ -1367,11 +1389,12 @@ export function createDocumentHandlers() {
       );
     }),
 
-    http.get('*/v1/extraction-schemas', () => page(schemas)),
+    // ExtractionSchemaView as the api sends it, the screen's schema under display.
+    http.get('*/v1/extraction-schemas', () => page(schemas.map(schemaWire))),
     http.get('*/v1/extraction-schemas/:id', ({ params }) => {
       const schema = schemas.find((s) => s.id === params.id);
       return schema
-        ? HttpResponse.json(schema)
+        ? HttpResponse.json(schemaWire(schema))
         : problem(404, 'not_found', 'Không tìm thấy lược đồ.');
     }),
     http.post('*/v1/extraction-schemas/:action', ({ params }) => {
@@ -1389,7 +1412,10 @@ export function createDocumentHandlers() {
         next = { ...schema, status: 'active', proposal_text: null };
       } else return problem(404, 'not_found', 'Không có thao tác này.');
       schemas = schemas.map((s) => (s.id === id ? next : s));
-      return HttpResponse.json(next, { status: verb === 'test' ? 202 : 200 });
+      // :test is 202 Accepted (the run goes on in the background); :activate is the schema.
+      return verb === 'test'
+        ? HttpResponse.json({ id, status: 'testing' }, { status: 202 })
+        : HttpResponse.json(schemaWire(next));
     }),
 
     // CollectionCreate: code, name, purpose and the media kinds.

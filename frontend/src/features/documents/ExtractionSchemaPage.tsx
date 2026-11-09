@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
@@ -17,6 +17,7 @@ import {
   getSchema,
   listSchemas,
   testSchema,
+  waitForSchemaTest,
   type ExtractionSchema,
   type SchemaField,
 } from '../../lib/v1/documents';
@@ -78,6 +79,21 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
   const [error, setError] = useState<string>();
   const published = schema.status === 'active' || schema.status === 'superseded';
   const v = `v${schema.version}`;
+  const sample = schema.test_size === null ? 'tệp mẫu' : `${formatNumber(schema.test_size)} tệp`;
+  const table = schema.output?.table ?? 'kết quả';
+
+  // :test is a background run: while the schema is testing it is read again until the sample is
+  // measured, then the screen reloads; leaving the screen stops the reads.
+  useEffect(() => {
+    if (schema.status !== 'testing') return;
+    const controller = new AbortController();
+    waitForSchemaTest(schema.id, { signal: controller.signal })
+      .then((next) => {
+        if (next.status !== 'testing' || next.fields.some((f) => f.accuracy !== null)) onChanged();
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [schema.id, schema.status, onChanged]);
   const fields = useTableView(schema.fields, {
     search: (f) => `${f.name} ${f.type_label} ${f.description} ${f.target_column}`,
     filters: [{ id: 'required', label: 'Bắt buộc', value: (f) => (f.required ? 'Có' : 'Không') }],
@@ -98,7 +114,7 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
       await testSchema(schema.id);
       toast({
         tone: 'success',
-        message: `Agent Tài liệu đang chạy thử ${v} trên ${formatNumber(schema.test_size)} tệp.`,
+        message: `Agent Tài liệu đang chạy thử ${v} trên ${sample}.`,
       });
       onChanged();
     } catch (e) {
@@ -141,7 +157,7 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
                   disabled={busy === 'publish' || schema.status === 'testing'}
                   onClick={() => void runTest()}
                 >
-                  Chạy thử trên {formatNumber(schema.test_size)} tệp
+                  Chạy thử trên {sample}
                 </Button>
                 {schema.status === 'testing' ? (
                   <Tooltip content="Chờ lượt chạy thử xong rồi mới xuất bản.">
@@ -170,7 +186,7 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
         )}
         {schema.status === 'testing' && (
           <StatusDot tone="info">
-            Đang chạy thử trên {formatNumber(schema.test_size)} tệp mẫu
+            Đang chạy thử trên {schema.test_size === null ? 'tệp mẫu' : `${sample} mẫu`}
           </StatusDot>
         )}
         <TableToolbar view={fields} placeholder="Tìm trường…" searchLabel="Tìm trường" />
@@ -230,22 +246,32 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
       </div>
       <SidePanel label="Kết quả có cấu trúc" width="w-[360px]">
         <h2 className="text-foreground da-heading-3">Kết quả có cấu trúc</h2>
-        <div className="flex flex-col gap-da-xs rounded-md border border-border px-da-lg py-da-md">
-          <span className="text-primary da-mono">{schema.output.table}</span>
-          <span className="text-foreground da-caption">{schema.output.rows_text}</span>
-        </div>
-        <KeyValue label="Dùng bởi" labelWidth="w-[80px]">
-          {schema.output.used_by}
-        </KeyValue>
-        {schema.output.sample_text && (
-          <KeyValue label="Mẫu thử" labelWidth="w-[80px]">
-            {schema.output.sample_text}
-          </KeyValue>
-        )}
-        {schema.output.core_diff_text && (
-          <KeyValue label="Lệch Core" labelWidth="w-[80px]">
-            {schema.output.core_diff_text}
-          </KeyValue>
+        {schema.output ? (
+          <>
+            <div className="flex flex-col gap-da-xs rounded-md border border-border px-da-lg py-da-md">
+              <span className="text-primary da-mono">{schema.output.table}</span>
+              <span className="text-foreground da-caption">{schema.output.rows_text}</span>
+            </div>
+            {schema.output.used_by && (
+              <KeyValue label="Dùng bởi" labelWidth="w-[80px]">
+                {schema.output.used_by}
+              </KeyValue>
+            )}
+            {schema.output.sample_text && (
+              <KeyValue label="Mẫu thử" labelWidth="w-[80px]">
+                {schema.output.sample_text}
+              </KeyValue>
+            )}
+            {schema.output.core_diff_text && (
+              <KeyValue label="Lệch Core" labelWidth="w-[80px]">
+                {schema.output.core_diff_text}
+              </KeyValue>
+            )}
+          </>
+        ) : (
+          <p className="text-muted-foreground da-body-small">
+            Lược đồ chưa gắn bảng đích; bảng kết quả hiện ở đây khi có.
+          </p>
         )}
       </SidePanel>
       <ConfirmDialog
@@ -258,8 +284,8 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
         onConfirm={() => void publish()}
         onCancel={() => setConfirming(false)}
       >
-        Bảng {schema.output.table} sẽ được trích lại theo {v} và dùng như một nguồn có cấu trúc để
-        agent truy vấn, đối chiếu. Phiên bản đang dùng chuyển sang bị thay thế.
+        Bảng {table} sẽ được trích lại theo {v} và dùng như một nguồn có cấu trúc để agent truy vấn,
+        đối chiếu. Phiên bản đang dùng chuyển sang bị thay thế.
       </ConfirmDialog>
     </div>
   );
