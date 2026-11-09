@@ -371,7 +371,7 @@ Dịch vụ: Inbox service (inbox), Eval service (eval). 16 endpoint.
 | GET | /v1/hitl-requests/{id} | Chi tiết yêu cầu | 07-07 | ask |
 | POST | /v1/hitl-requests/{id}:resolve | Trả lời, duyệt, từ chối, chuyển người | 07-07, 07-08 | ask |
 | GET | /v1/proposals/{id} | Đề xuất: diff, ảnh hưởng, kết quả đánh giá | 07-03 | ask |
-| POST | /v1/proposals/{id}:decide | Chấp nhận, sửa rồi chấp nhận, từ chối | 07-03, 07-13, 07-14, 16-05 | approve |
+| POST | /v1/proposals/{id}:decide | Chấp nhận, sửa rồi chấp nhận, từ chối | 07-03, 07-13, 07-14, 16-05 | approve, steward |
 | POST | /v1/eval-sets/{id}/items | Thêm mục đánh giá | 07-06 | steward |
 | PATCH | /v1/eval-items/{id} | Cập nhật đáp án eval có lý do | 07-06 | steward |
 | POST | /v1/eval-sets/{id}/runs | Chạy bộ đánh giá; 202 | 07-06 | steward |

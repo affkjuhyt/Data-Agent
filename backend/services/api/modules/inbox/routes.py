@@ -8,10 +8,12 @@ capability its approver must hold, and no one decides two steps (BR-132).
 
 Every status change writes its event to inbox.outbox in the same transaction (D1 rule 8);
 the agent runtime, channel gateway and the service that owns a proposal's object act on
-hitl.resolved and proposal.decided. A forecast model is the exception this process can
-finish itself: after the decision commits, the same approve and reject rules as
-POST /v1/forecast-model-versions/{id}:approve run here (libs.forecast_release). The worker
-applies the same event, and that second call changes nothing.
+hitl.resolved and proposal.decided. A forecast model is published in that same transaction,
+by the approve and reject rules of POST /v1/forecast-model-versions/{id}:approve
+(libs.forecast_release): a refused publish rolls the decision back. The worker applies the
+same event afterwards, and that second call changes nothing. The gate admits approve or
+steward; only approve decides every kind, and steward only the forecast_model proposal
+assigned to them (the metric owner, UC-15-04).
 """
 
 from __future__ import annotations
@@ -625,6 +627,7 @@ async def decide_proposal(
             raise Problem(
                 409, "invalid_state", f"The proposal is {row.status} and cannot be decided."
             )
+        _require_decider(principal, row)
         # Each step the caller takes on their own work writes its own audit row.
         self_steps: list[str] = []
         if two_people(
@@ -785,22 +788,32 @@ async def decide_proposal(
             )
         )
         await session.flush()
+        detail = await _proposal_detail(session, row, principal)
+        # Before this transaction commits, so a refused publish leaves the proposal pending.
+        if (
+            row.kind == "forecast_model"
+            and row.status in ("accepted", "rejected")
+            and row.target_ref is not None
+        ):
+            await _publish_forecast(principal, row.target_ref, row.data_space_id, row.status, note)
         for step in self_steps:
             await record_self_approval(
                 principal, step=step, object_kind="proposal", object_id=row.id
             )
-        detail = await _proposal_detail(session, row, principal)
-        forecast_version = (
-            row.target_ref
-            if row.kind == "forecast_model"
-            and row.status in ("accepted", "rejected")
-            and row.target_ref is not None
-            else None
-        )
-        forecast_space, forecast_status = row.data_space_id, row.status
-    if forecast_version is not None:
-        await _publish_forecast(principal, forecast_version, forecast_space, forecast_status, note)
     return detail
+
+
+def _require_decider(principal: Principal, row: inbox.Proposal) -> None:
+    """approve decides every kind. steward decides only the forecast model assigned to them."""
+    if "approve" in principal.capabilities:
+        return
+    if (
+        row.kind == "forecast_model"
+        and row.assignee_id == principal.user_id
+        and "steward" in principal.capabilities
+    ):
+        return
+    raise Problem(403, "forbidden", "Missing capability: approve.")
 
 
 async def _forecast_built_by_caller(principal: Principal, row: inbox.Proposal) -> bool:

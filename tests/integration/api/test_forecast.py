@@ -2225,15 +2225,6 @@ async def test_the_workbench_shows_the_jobs_versions_and_backtests(fx: Fx) -> No
     assert "backtest trên 6 điểm cắt" in body["summary_text"]
 
 
-def _grant_approve(fx: Fx) -> None:
-    """:decide asks for `approve`; the metric owner holds steward. This test's owner may do both."""
-    fx.run(
-        "UPDATE org.role SET capabilities = ARRAY['ask','steward','approve']::text[] "
-        "WHERE org_id = %s AND code = 'STEWARD'",
-        fx.org,
-    )
-
-
 def _forecast_proposal(fx: Fx, version: uuid.UUID, *, proposed_by: str) -> uuid.UUID:
     return fx.seed.row(
         "inbox.proposal",
@@ -2251,7 +2242,7 @@ def _forecast_proposal(fx: Fx, version: uuid.UUID, *, proposed_by: str) -> uuid.
 
 
 async def test_accepting_the_proposal_publishes_the_version(fx: Fx) -> None:
-    _grant_approve(fx)
+    """The metric owner holds steward, not approve, and that is enough for this kind."""
     october = datetime.date(2026, 10, 1)
     november = datetime.date(2026, 11, 1)
     first = fx.prediction(fx.draft, october, experimental=True)
@@ -2281,24 +2272,27 @@ async def test_accepting_the_proposal_publishes_the_version(fx: Fx) -> None:
 async def test_the_builder_approves_their_model_only_when_the_org_allows_it(
     fx: Fx, self_approvals: Any
 ) -> None:
-    _grant_approve(fx)
+    """The worker proposes as model_version.created_by. When that person is the owner, the
+    switch-off refusal is the proposer's, and the switch-on log is both steps."""
     by_owner = fx.version(fx.model, 3, created_by="owner")
     async with client(fx) as api:
         sent = await api.post(
             f"/v1/forecast-model-versions/{by_owner}:submit", headers=fx.headers("owner")
         )
         assert sent.status_code == 200, sent.text
-        proposal = _forecast_proposal(fx, by_owner, proposed_by="builder")
+        proposal = _forecast_proposal(fx, by_owner, proposed_by="owner")
         refused = await api.post(
             f"/v1/proposals/{proposal}:decide",
             json={"decision": "accept"},
             headers=fx.headers("owner"),
         )
     assert refused.status_code == 403, refused.text
-    assert refused.json()["code"] == "policy_denied"
+    assert refused.json()["code"] == "forbidden"
+    assert "cannot review their own proposal" in refused.json()["detail"]
     assert fx.one("SELECT status FROM forecast.model_version WHERE id = %s", by_owner) == (
         "pending_approval"
     )
+    assert fx.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "pending_review"
     assert self_approvals(fx.org) == []
 
     fx.seed.allow_self_approval(fx.org)
@@ -2315,4 +2309,47 @@ async def test_the_builder_approves_their_model_only_when_the_org_allows_it(
     assert fx.one(
         "SELECT current_version_id FROM forecast.forecast_model WHERE id = %s", fx.model
     ) == str(by_owner)
-    assert self_approvals(fx.org) == ["forecast_model.decide"]
+    assert self_approvals(fx.org) == ["proposal.review", "forecast_model.decide"]
+
+
+async def test_a_failed_publish_does_not_accept_the_proposal(fx: Fx) -> None:
+    """The decision and the publish are one outcome: a refused publish leaves the proposal pending."""
+    overfit = fx.version(fx.model, 4, mase="0.90", in_sample="0.30")
+    async with client(fx) as api:
+        await _submit(api, fx, overfit)
+        proposal = _forecast_proposal(fx, overfit, proposed_by="builder")
+        refused = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            json={"decision": "accept", "note": "Đạt"},
+            headers=fx.headers("owner"),
+        )
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["code"] == "business_rule_violated"
+    assert fx.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "pending_review"
+    assert fx.one("SELECT status FROM forecast.model_version WHERE id = %s", overfit) == (
+        "pending_approval"
+    )
+
+
+async def test_a_steward_cannot_decide_a_proposal_of_another_kind(fx: Fx) -> None:
+    """steward opens only a forecast_model proposal assigned to that person, not every proposal."""
+    proposal = fx.seed.row(
+        "inbox.proposal",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        kind="synonym",
+        target_service="context",
+        title="Từ đồng nghĩa",
+        proposed_by=fx.users["builder"],
+        assignee_id=fx.users["steward"],
+        status="pending_review",
+        diff=Json({}),
+    )
+    async with client(fx) as api:
+        refused = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            json={"decision": "accept"},
+            headers=fx.headers("steward"),
+        )
+    assert refused.status_code == 403, refused.text
+    assert fx.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "pending_review"

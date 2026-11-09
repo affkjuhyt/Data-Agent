@@ -654,3 +654,37 @@ def test_the_conversations_of_a_migrated_cluster_are_titled_by_their_first_quest
         == "Tỷ lệ nợ xấu của các chi nhánh miền Bắc của các chi nhánh miền Bắc của các chi…"
     )
     assert title(named) == "Đã đặt" and title(empty) is None
+
+
+def test_an_existing_cluster_gains_the_forecast_model_proposal_and_the_label_grant(admin):
+    """v3_0030 clusters predate the forecast_model kind and the experimental-label grant."""
+    _fresh(admin, "chain_forecast_model", "chain_forecast_model_audit")
+    db = _db(admin, "chain_forecast_model")
+    _alembic(db, "upgrade", "v3_0030")
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("ALTER TABLE inbox.proposal DROP CONSTRAINT IF EXISTS proposal_kind_check")
+        cur.execute(
+            "ALTER TABLE inbox.proposal ADD CONSTRAINT proposal_kind_check CHECK (kind IN ("
+            "'metric_change','synonym','relationship','example','glossary','schema_change',"
+            "'skill_publish','source_authority','writeback','document_validity','feedback_fix',"
+            "'knowledge_page','data_product'))"
+        )
+        cur.execute("REVOKE UPDATE (is_experimental) ON forecast.prediction FROM svc_forecast")
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    definition = _one(
+        db,
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+        " WHERE conrelid = 'inbox.proposal'::regclass AND conname = 'proposal_kind_check'",
+    )
+    assert "forecast_model" in definition
+    assert (
+        _one(
+            db,
+            "SELECT has_column_privilege('svc_forecast', 'forecast.prediction',"
+            " 'is_experimental', 'UPDATE')",
+        )
+        is True
+    )
