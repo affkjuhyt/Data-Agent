@@ -32,10 +32,12 @@ import uuid
 from typing import Any
 
 from sqlalchemy import delete, literal, select, update
+from sqlglot import exp
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, inbox
 from libs.dataagent_db.models import period as pd
+from libs.sql_guard import SqlRejected, dialect_of
 from services.worker_agent import self_approval, storage
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
@@ -56,8 +58,29 @@ def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
-def _ident(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
+def snapshot_sql(
+    schema: str,
+    table: str,
+    date_column: str | None,
+    *,
+    snapshot: bool,
+    day: datetime.date,
+    dialect: str,
+) -> str:
+    """The query a close reads its rows with, in the source's dialect: a snapshot table's rows of
+    the business date, a history table's up to it. Built as an expression, not text: written the
+    PostgreSQL way, "schema"."table" is two string literals in MySQL and BigQuery, and the source's
+    read-only guard parses the query in the source's own dialect."""
+    query = exp.select("*").from_(exp.table_(table, db=schema, quoted=True))
+    if date_column:
+        column = exp.column(date_column, quoted=True)
+        date = exp.cast(exp.Literal.string(day.isoformat()), exp.DataType.build("DATE"))
+        query = query.where(
+            exp.EQ(this=column, expression=date)
+            if snapshot
+            else exp.LTE(this=column, expression=date)
+        )
+    return query.sql(dialect=dialect)
 
 
 def _plain(value: Any) -> Any:
@@ -100,11 +123,18 @@ async def _rows(
     """The dataset's rows as of the business date; or why they could not be read."""
     from services.worker_agent.questions import secrets
 
-    table = f"{_ident(dataset.schema_name)}.{_ident(dataset.table_name)}"
-    where = ""
-    if dataset.business_date_col:
-        op = "=" if dataset.history_kind == "snapshot" else "<="
-        where = f" WHERE {_ident(dataset.business_date_col)} {op} DATE '{close.business_date.isoformat()}'"
+    try:
+        dialect = dialect_of(source.kind)
+    except SqlRejected as exc:
+        return str(exc)
+    sql = snapshot_sql(
+        dataset.schema_name,
+        dataset.table_name,
+        dataset.business_date_col,
+        snapshot=dataset.history_kind == "snapshot",
+        day=close.business_date,
+        dialect=dialect,
+    )
     outcome = await run_query(
         org_id=org_id,
         data_space_id=close.data_space_id,
@@ -112,7 +142,7 @@ async def _rows(
         caller_kind="period",
         caller_id=close.id,
         source=source,
-        sql=f"SELECT * FROM {table}{where}",
+        sql=sql,
         secrets=secrets(),
         limit=SNAPSHOT_ROWS,
     )
