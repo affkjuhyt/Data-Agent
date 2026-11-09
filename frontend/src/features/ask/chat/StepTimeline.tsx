@@ -26,11 +26,14 @@ export function StepTimeline({
   running,
   durationMs,
   recorded,
+  operatorWhy,
 }: {
   steps: TurnStep[];
   running: boolean;
   durationMs?: number;
   recorded: boolean;
+  /** OP-8: one-line steward view (fail / replan / handover) from plan.steps.operator. */
+  operatorWhy?: string;
 }) {
   const [open, setOpen] = useState(running);
   // Open while the turn runs; once it ends the answer is what matters, the steps fold away.
@@ -40,7 +43,7 @@ export function StepTimeline({
   if (!recorded) {
     return <p className="m-0 text-muted-foreground da-caption">Lượt này chưa ghi chi tiết các bước.</p>;
   }
-  if (!running && steps.length === 0) return null;
+  if (!running && steps.length === 0 && !operatorWhy) return null;
 
   const label = running
     ? `Đang làm… ${steps.length} bước`
@@ -60,6 +63,11 @@ export function StepTimeline({
         {label}
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} />
       </button>
+      {!running && operatorWhy && (
+        <p className="m-0 text-muted-foreground da-caption" data-testid="operator-why">
+          {operatorWhy}
+        </p>
+      )}
       {open && (
         <ol className="m-0 flex list-none flex-col gap-da-xs border-l border-border pl-da-md">
           {steps.map((step) => {

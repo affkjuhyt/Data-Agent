@@ -184,19 +184,26 @@ async def store(
     question_id: uuid.UUID,
     ops: Sequence[MemoryOp],
 ) -> int:
+    """Persist memory ops. Feedback that reaches the correction threshold opens a steward
+    proposal (OP-7) and never changes semantic objects by itself."""
     if not ops:
         return 0
+    from services.worker_agent.agentic import correction_gate
+
+    escalate: list[tuple[uuid.UUID, str, int, str]] = []
     async with scoped_session(ROLE, org_id, user_id) as session:
         t = qa.MemoryFact.__table__
         for op in ops:
+            digest = content_hash(op.content)
+            text = op.content.strip()
             stmt = insert(qa.MemoryFact).values(
                 id=uuid7(),
                 org_id=org_id,
                 data_space_id=space_id,
                 user_id=user_id,
                 kind=op.kind,
-                content=op.content.strip(),
-                content_hash=content_hash(op.content),
+                content=text,
+                content_hash=digest,
                 source_question_id=question_id,
                 created_by=user_id,
                 updated_by=user_id,
@@ -214,6 +221,26 @@ async def store(
                     },
                 )
             )
+            row = await session.scalar(
+                select(qa.MemoryFact).where(
+                    qa.MemoryFact.data_space_id == space_id,
+                    qa.MemoryFact.user_id == user_id,
+                    qa.MemoryFact.content_hash == digest,
+                )
+            )
+            if row is not None and correction_gate.should_escalate(kind=row.kind, times=row.times):
+                escalate.append((row.id, row.content, row.times, row.content_hash))
+    for fact_id, content, times, digest in escalate:
+        await correction_gate.open_feedback_fix(
+            org_id=org_id,
+            space_id=space_id,
+            user_id=user_id,
+            memory_fact_id=fact_id,
+            content=content,
+            times=times,
+            content_hash=digest,
+            question_id=question_id,
+        )
     return len(ops)
 
 

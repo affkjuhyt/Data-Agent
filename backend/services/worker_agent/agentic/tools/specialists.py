@@ -25,8 +25,8 @@ class InvestigateNumbers(Tool):
     name = "investigate_numbers"
     title = "Điều tra số liệu"
     description = (
-        "giao chuyên gia số (catalog/metric/SQL/pandas) làm một nhánh số liệu với ngữ cảnh hẹp; "
-        "dùng khi câu hỏi cần số, hoặc song song với investigate_documents khi vừa số vừa văn bản"
+        "giao chuyên gia numbers (xem thẻ whenToUse trong # Chuyên gia): catalog/metric/SQL/"
+        "pandas trong ngữ cảnh hẹp; chỉ nhận summary — không thấy transcript trong"
     )
     Args = InvestigateArgs
     # Several inner tool runs; each leaf tool already has its own timeout.
@@ -40,8 +40,8 @@ class InvestigateDocuments(Tool):
     name = "investigate_documents"
     title = "Điều tra tài liệu"
     description = (
-        "giao chuyên gia tài liệu tìm đoạn văn/công văn giải thích; "
-        "dùng khi cần dẫn nguồn văn bản, hoặc song song với investigate_numbers"
+        "giao chuyên gia documents (xem thẻ whenToUse trong # Chuyên gia): tìm đoạn văn/"
+        "công văn; chỉ nhận summary — không thấy transcript trong"
     )
     Args = InvestigateArgs
     timeout_seconds = 600.0

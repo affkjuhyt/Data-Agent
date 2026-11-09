@@ -44,7 +44,11 @@ interface ConversationListItem {
   updated_at: string;
 }
 
-export const askQuestion = (text: string, conversationId: string | null) =>
+export const askQuestion = (
+  text: string,
+  conversationId: string | null,
+  opts?: { purpose?: string | null },
+) =>
   ok<QuestionAccepted>(
     api.POST('/v1/questions', {
       body: {
@@ -52,6 +56,7 @@ export const askQuestion = (text: string, conversationId: string | null) =>
         conversation_id: conversationId,
         knowledge_mode: 'latest',
         stream: true,
+        ...(opts?.purpose ? { purpose: opts.purpose } : {}),
       } satisfies QuestionCreate,
     }),
   );

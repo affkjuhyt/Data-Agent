@@ -338,6 +338,8 @@ export interface AskMessage {
   steps?: TurnStep[];
   /** False for a turn recorded before steps were kept: the timeline says so instead. */
   stepsRecorded?: boolean;
+  /** OP-8 operator line from plan.steps.operator.why (fail / replan / handover). */
+  operatorWhy?: string;
   /** The answer as the server's blocks (GET /v1/answers/{id} blocks[]). */
   blocks?: AnswerBlockView[];
   /** The question this turn answers, kept so "Hỏi lại" can ask it again. */

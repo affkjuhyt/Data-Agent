@@ -53,6 +53,19 @@ describe('StepTimeline', () => {
     expect(screen.getByRole('button', { name: /Đang làm… 1 bước/ })).toHaveAttribute('aria-expanded', 'true');
   });
 
+  it('OP-8 shows operator.why when the turn has ended', () => {
+    render(
+      <StepTimeline
+        steps={steps}
+        running={false}
+        durationMs={2400}
+        recorded
+        operatorWhy="Có bước lỗi (s2); đã replan 1 lần."
+      />,
+    );
+    expect(screen.getByTestId('operator-why')).toHaveTextContent('Có bước lỗi (s2)');
+  });
+
   it('opens a query step to its SQL, read through the query run', async () => {
     render(<StepTimeline steps={steps} running={false} durationMs={2400} recorded />);
     fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));

@@ -38,7 +38,18 @@ class Specialist:
     title: str
     tool_names: frozenset[str]
     system: str
+    # OP-2: planner-facing card (Claude Code agent frontmatter shape, product wording).
+    when_to_use: str = ""
     max_inner_steps: int = DEFAULT_INNER_STEPS
+
+    def card(self) -> str:
+        """What the lead planner sees: whenToUse, allowlist, hard denials — never the transcript."""
+        tools = ", ".join(sorted(self.tool_names)) or "(không)"
+        when = self.when_to_use or self.title
+        return (
+            f"- {self.name} ({self.title}): whenToUse={when}; tools=[{tools}]; "
+            "disallowed=mọi công cụ ngoài danh sách, không soạn câu trả lời cuối cho người hỏi"
+        )
 
 
 NUMBERS = Specialist(
@@ -56,6 +67,10 @@ NUMBERS = Specialist(
             "analyze",
         }
     ),
+    when_to_use=(
+        "câu hỏi cần số / so sánh / xu hướng / xếp hạng trên chỉ số hoặc SQL khám phá; "
+        "hoặc nhánh số của câu hybrid (song song với documents)"
+    ),
     system=(
         "Bạn là chuyên gia số liệu trong Data Space. Chỉ dùng các công cụ số được liệt kê. "
         "Không tìm tài liệu, không viết câu trả lời cuối. Khi đủ số trên workspace, done=true "
@@ -67,12 +82,21 @@ DOCUMENTS = Specialist(
     name="documents",
     title="Chuyên gia tài liệu",
     tool_names=frozenset({"search_documents"}),
+    when_to_use=(
+        "câu hỏi cần dẫn nguồn công văn / ghi chú / chính sách; "
+        "hoặc nhánh văn bản của câu hybrid (song song với numbers)"
+    ),
     system=(
         "Bạn là chuyên gia tài liệu trong Data Space. Chỉ dùng search_documents. "
         "Không truy vấn số liệu. Khi đủ đoạn trích để dẫn nguồn, done=true và summary liệt kê "
         "các cite [n] và ý chính (không bịa nội dung ngoài đoạn đã tìm)."
     ),
 )
+
+
+def planner_cards() -> str:
+    """Cards for the lead planner prompt (investigate_* tools stay the call surface)."""
+    return "\n".join(s.card() for s in (NUMBERS, DOCUMENTS))
 
 
 def _cards(tools: dict[str, Tool], allow: frozenset[str]) -> str:

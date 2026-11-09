@@ -85,6 +85,7 @@ export function AssistantTurn({
         running={running}
         durationMs={message.durationMs}
         recorded={message.stepsRecorded !== false}
+        operatorWhy={message.operatorWhy}
       />
 
       {message.refusal ? (

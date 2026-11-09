@@ -259,11 +259,21 @@ interface PlanWire {
   steps?: unknown;
 }
 
+/** Operator summary written by worker_agent/agentic/operator_view.py (OP-8). */
+export interface OperatorSummary {
+  why: string;
+  failedStepIds: string[];
+  replans: number;
+  handedBack: boolean;
+  trusts: string[];
+}
+
 /** "Hệ thống hiểu là" from the plan's chips, an inherited chip marked as such (AC-01-04-01, 07:
  *  one chip per filter), and the decomposition the plan proposes. */
 export function readPlan(plan: PlanWire | null | undefined): {
   reading: ReadingChip[];
   proposal: DecompositionProposal | null;
+  operator: OperatorSummary | null;
 } {
   const chips = Array.isArray(plan?.chips) ? (plan.chips as Record<string, unknown>[]) : [];
   const reading = chips
@@ -274,7 +284,7 @@ export function readPlan(plan: PlanWire | null | undefined): {
       value: String(c.label ?? c.value ?? ''),
       inherited: c.source === 'inherited',
     }));
-  const ir = (plan?.steps ?? {}) as { steps?: unknown };
+  const ir = (plan?.steps ?? {}) as { steps?: unknown; operator?: unknown };
   const steps = Array.isArray(ir.steps) ? (ir.steps as Record<string, unknown>[]) : [];
   const step = steps.find((s) => s.kind === 'skill' && s.checkpoint === 'confirm');
   const args = (step?.args ?? {}) as { category?: string; params?: Record<string, unknown> };
@@ -294,5 +304,21 @@ export function readPlan(plan: PlanWire | null | undefined): {
           },
         }
       : null;
-  return { reading, proposal };
+  const raw = ir.operator && typeof ir.operator === 'object' ? (ir.operator as Record<string, unknown>) : null;
+  const why = raw && typeof raw.why === 'string' ? raw.why.trim() : '';
+  const operator: OperatorSummary | null =
+    why.length > 0
+      ? {
+          why,
+          failedStepIds: Array.isArray(raw?.failed_step_ids)
+            ? (raw!.failed_step_ids as unknown[]).filter((x): x is string => typeof x === 'string')
+            : [],
+          replans: typeof raw?.replans === 'number' ? raw.replans : 0,
+          handedBack: raw?.handed_back === true,
+          trusts: Array.isArray(raw?.trusts)
+            ? (raw!.trusts as unknown[]).filter((x): x is string => typeof x === 'string')
+            : [],
+        }
+      : null;
+  return { reading, proposal, operator };
 }

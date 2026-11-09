@@ -48,6 +48,7 @@ from services.worker_agent.answer.thresholds import judged
 from services.worker_agent.answer.thresholds import load as load_threshold
 from services.worker_agent.audit.findings import audit
 from services.worker_agent.audit.run import AuditFailed, Target, gather, load_target
+from services.worker_agent.blast_radius import needs_checkpoint as blast_needs_checkpoint
 from services.worker_agent.data_scope import DataScope
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.failures import is_transient
@@ -153,16 +154,23 @@ def retries_in_a_row(statuses: Sequence[str]) -> int:
 
 
 def needs_checkpoint(
-    level: str, *, autonomy: str, checkpoints: Sequence[str], requires_checkpoint: bool
+    level: str,
+    *,
+    autonomy: str,
+    checkpoints: Sequence[str],
+    requires_checkpoint: bool,
+    over_budget: bool = False,
 ) -> bool:
-    """Whether a tool call waits for a person (tab 5 G4.1). Sending outside always does
-    (AC-13-02-05); writing derived data does when the config names the checkpoint or the tool
-    requires one (BR-70 made the api ask for one unless the agent acts then reports)."""
-    if level == "send_external":
-        return True
-    if level != "write_derived":
-        return False
-    return requires_checkpoint or "before_write_derived" in checkpoints
+    """Whether a tool call waits for a person (tab 5 G4.1). Source of truth: blast_radius.py
+    (OP-3). Sending outside always does (AC-13-02-05); writing derived data follows BR-70 and
+    autonomy (suggest_only always pauses); write_source is forbid and raises."""
+    return blast_needs_checkpoint(
+        level,
+        autonomy=autonomy,
+        checkpoints=checkpoints,
+        requires_checkpoint=requires_checkpoint,
+        over_budget=over_budget,
+    )
 
 
 def effective_limits(limits: Mapping[str, Any]) -> Limits:

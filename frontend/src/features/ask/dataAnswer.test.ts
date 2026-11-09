@@ -223,4 +223,24 @@ describe('dataAnswer', () => {
       readPlan({ chips: [], steps: { steps: [{ kind: 'skill', checkpoint: 'none' }] } }).proposal,
     ).toBeNull();
   });
+
+  it('OP-8 reads operator.why from plan.steps.operator', () => {
+    const { operator } = readPlan({
+      chips: [],
+      steps: {
+        steps: [{ id: 's1', tool: 'query_metric', status: 'failed' }],
+        operator: {
+          why: 'Có bước lỗi (s1); đã replan 1 lần.',
+          failed_step_ids: ['s1'],
+          replans: 1,
+          handed_back: false,
+          trusts: ['certified'],
+        },
+      },
+    });
+    expect(operator?.why).toContain('s1');
+    expect(operator?.failedStepIds).toEqual(['s1']);
+    expect(operator?.replans).toBe(1);
+    expect(readPlan({ chips: [], steps: { steps: [] } }).operator).toBeNull();
+  });
 });

@@ -84,12 +84,14 @@ async function messagesFromConversation(
         const drawn = fromAnswer(answer);
         let reading: AskMessage['reading'];
         let proposal: AskMessage['proposal'];
+        let operatorWhy: string | undefined;
         let newQuestion: boolean | undefined;
         try {
           const q = await getQuestion(turn.question_id);
           const plan = readPlan(q.plan);
           reading = plan.reading.length ? plan.reading : undefined;
           proposal = plan.proposal ?? undefined;
+          operatorWhy = plan.operator?.why;
           newQuestion = q.seq > 1 && !!reading?.length && !reading.some((c) => c.inherited);
         } catch {
           /* plan optional on reopen */
@@ -111,6 +113,7 @@ async function messagesFromConversation(
           ...drawn,
           ...(reading && { reading }),
           ...(proposal && { proposal }),
+          ...(operatorWhy && { operatorWhy }),
           ...(newQuestion !== undefined && { newQuestion }),
         });
       } catch {
@@ -224,6 +227,19 @@ export function useQuestionStream() {
           const data = e.data ? (JSON.parse(e.data) as Record<string, unknown>) : {};
           if (e.event === 'activity') {
             patch(assistantId, (m) => ({ ...m, steps: applyStepEvent(m.steps ?? [], data) }));
+          } else if (e.event === 'progress' && typeof data.message === 'string') {
+            // OP-4 commentary: short human line (no tool API names). Steps stay on `activity`.
+            const title = data.message;
+            patch(assistantId, (m) => ({
+              ...m,
+              progress: {
+                agent: 'Agent Phân tích',
+                steps: [
+                  ...(m.progress?.steps.filter((s) => s.state === 'done') ?? []),
+                  { title, state: 'running' as const },
+                ],
+              },
+            }));
           } else if (e.event === 'block' && data.block && typeof data.block === 'object') {
             // The dynamic agent's answer, block by block as it composes it; the stored answer
             // replaces them when it arrives.
@@ -237,41 +253,63 @@ export function useQuestionStream() {
               ...m,
               status: 'error',
               content: 'Đã dừng lượt phân tích theo yêu cầu của bạn.',
+              progress: undefined,
             }));
           } else if (e.event === 'answer' && typeof data.answer_id === 'string') {
             if (cancelled) continue;
+            // OP-4: final is self-contained — draw headline/blocks/text before GET fills verification.
+            if (Array.isArray(data.blocks) && data.blocks.length > 0) {
+              patch(assistantId, (m) => ({
+                ...m,
+                answerId: data.answer_id as string,
+                content: typeof data.text === 'string' && data.text ? data.text : m.content,
+                blocks: data.blocks as NonNullable<AskMessage['blocks']>,
+                progress: undefined,
+              }));
+            }
             const answer = await getAnswer(data.answer_id);
             const drawn = fromAnswer(answer);
-            patch(assistantId, (m) => ({ ...m, ...drawn, answerId: answer.id }));
+            patch(assistantId, (m) => ({ ...m, ...drawn, answerId: answer.id, progress: undefined }));
             // The plan: what was understood (inherited chips marked) and a step awaiting a yes.
             getQuestion(questionId)
               .then((q) => {
-                const { reading, proposal } = readPlan(q.plan);
+                const { reading, proposal, operator } = readPlan(q.plan);
                 const inherited = reading.some((c) => c.inherited);
                 patch(assistantId, (m) => ({
                   ...m,
                   ...(reading.length && { reading }),
                   ...(proposal && { proposal }),
+                  ...(operator?.why && { operatorWhy: operator.why }),
                   newQuestion: q.seq > 1 && reading.length > 0 && !inherited,
                 }));
               })
               .catch(() => undefined);
           } else if (e.event === 'clarification' && typeof data.answer_id === 'string') {
-            // Without this the turn closed on `done` with nothing in it: the question back is an
-            // answer of kind "clarification", sent on its own event rather than `answer`.
+            // Interrupt channel (OP-4): clarify stops for the person; payload may already hold blocks.
+            if (Array.isArray(data.blocks) && data.blocks.length > 0) {
+              patch(assistantId, (m) => ({
+                ...m,
+                answerId: data.answer_id as string,
+                content: typeof data.text === 'string' && data.text ? data.text : m.content,
+                blocks: data.blocks as NonNullable<AskMessage['blocks']>,
+                progress: undefined,
+              }));
+            }
             const answer = await getAnswer(data.answer_id);
-            patch(assistantId, (m) => ({ ...m, ...fromAnswer(answer), answerId: answer.id }));
+            patch(assistantId, (m) => ({ ...m, ...fromAnswer(answer), answerId: answer.id, progress: undefined }));
           } else if (e.event === 'error') {
             patch(assistantId, (m) => ({
               ...m,
               status: 'error',
               content: m.content || 'Agent không trả lời được câu hỏi này.',
+              progress: undefined,
             }));
           } else if (e.event === 'done') {
             void readBack(assistantId, questionId, signal);
             patch(assistantId, (m) => ({
               ...m,
               status: m.status === 'error' ? 'error' : 'done',
+              progress: undefined,
               latencyMs: Date.now() - started,
               durationMs: m.startedAt ? Date.now() - Date.parse(m.startedAt) : Date.now() - started,
             }));
@@ -317,7 +355,10 @@ export function useQuestionStream() {
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const accepted = await askQuestion(q, conversationRef.current);
+        // OP-6: /report (layout report) asks for deep methodology via purpose on the question.
+        const accepted = await askQuestion(q, conversationRef.current, {
+          purpose: layout === 'report' ? 'deep' : null,
+        });
         conversationRef.current = accepted.conversation_id;
         currentQuestionRef.current = accepted.question_id;
         if (mounted.current) setConversationId(accepted.conversation_id);

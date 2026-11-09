@@ -507,6 +507,8 @@ async def decided(event: Event) -> None:
         "metric_change",
         "knowledge_page",
         "schema_change",
+        # OP-7: steward ack of a repeated Ask correction; apply changes nothing semantic.
+        "feedback_fix",
         *semantic_review.KINDS,
         *reviews.KINDS,
     )
@@ -533,6 +535,9 @@ async def decided(event: Event) -> None:
         from services.worker_agent import schema_changes
 
         outcome = await schema_changes.apply(event, proposal)
+    elif proposal["kind"] == "feedback_fix":
+        # Memory stays personal recall; synonym/metric/example stay for a separate proposal.
+        outcome = True
     else:
         outcome = await _apply_writeback(event, proposal)
     accepted = event.payload.get("status") == "accepted"

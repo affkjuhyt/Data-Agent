@@ -103,6 +103,8 @@ def test_a_narrative_entry_is_what_the_run_screen_draws() -> None:
         # BR-70: writing derived data stops for a person unless the agent acts then reports.
         ("write_derived", "propose_approve", ["before_write_derived"], False, True),
         ("write_derived", "suggest_only", [], True, True),
+        # OP-3: suggest_only always pauses before a derived write, even without a named gate.
+        ("write_derived", "suggest_only", [], False, True),
         ("write_derived", "act_then_report", [], False, False),
         ("write_derived", "propose_approve", [], False, False),
         # Sending outside always stops (AC-13-02-05), whatever the autonomy.

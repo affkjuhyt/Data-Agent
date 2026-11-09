@@ -18,6 +18,8 @@ product; `licences.md` has the matrix and what each licence allows.
 | `openmetadata-ingestion.md` | OpenMetadata's ingestion (Collate Community License: behaviour only, paraphrased, no code): query-log lineage and usage, profiler, data-quality runner and impact score, PII classification, dbt and semantic-view import, connector framework; gaps it exposed in our scans and a ranked build list |
 | `openmetadata-skipped.md` | the three parts first marked "skip", in depth: the Flowable governance workflow engine, auto-approval, Elasticsearch/OpenSearch search; adapt a declarative review policy per proposal kind and risk tier, approval thresholds and guards, search boosts and RBAC-in-query on Postgres FTS + Qdrant |
 | `openmetadata.md` | OpenMetadata's entity model (glossary, metric, data product, data contract, lineage, data quality), ingestion and governance workflows |
+| `hybrid-specialist-probe.md` | Checklist + DS-AW Ask questions to verify `investigate_numbers` ∥ `investigate_documents` after deploy; agent-eval follow-up |
+| `agent-ops-from-system-prompts.md` | Vận hành harness Ask (OP-1…8): clarify, blast-radius, present_gate, stream_contract, specialist cards, operator_view, deep_skill, correction_gate |
 
 The clones are not committed. Paths in the notes are relative to a shallow clone of each repo
 (`git clone --depth 1 <url>`), made on 2026-11-02; WrenAI's `wren-ai-service` was read from a

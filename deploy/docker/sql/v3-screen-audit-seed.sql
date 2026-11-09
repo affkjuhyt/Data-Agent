@@ -306,3 +306,255 @@ WHERE d.data_space_id = :space::uuid AND d.deleted_at IS NULL
 ORDER BY d.table_name
 LIMIT 1
 ON CONFLICT (id) DO UPDATE SET params = EXCLUDED.params, status = EXCLUDED.status;
+
+-- ── Forecast / crawl-run / context data product / report / policy / error book ──
+-- Clears the remaining easy empty + no_seed_id rows from screen-audit.
+-- Approver / steward = helios-admin (≠ engineer) for two-people checks.
+
+INSERT INTO forecast.forecast_model (
+    id, org_id, data_space_id, metric_code, scope, frequency, owner_id, status,
+    created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f01', :org::uuid, :space::uuid,
+    'DOANH_THU_INTERNET', '{}'::jsonb, 'month', :engineer::uuid, 'active',
+    :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO forecast.model_version (
+    id, org_id, model_id, version, algorithm, features, training_from, training_to,
+    n_points, n_exog, status, model_card, created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f02', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1f01', 1, 'ets',
+    '[{"name": "season", "future_assumption": "declared"}]'::jsonb,
+    DATE '2011-01-01', DATE '2013-12-01', 36, 0, 'draft',
+    '{"target": "DOANH_THU_INTERNET", "limits": "chuỗi tháng AdventureWorks"}'::jsonb,
+    :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO forecast.backtest_run (
+    id, org_id, model_version_id, frequency, cutoffs, horizon, metrics, baseline_metrics,
+    mase, in_sample_mase, started_at, finished_at
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f03', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1f02', 'month',
+    ARRAY[
+        DATE '2013-01-01', DATE '2013-02-01', DATE '2013-03-01',
+        DATE '2013-04-01', DATE '2013-05-01', DATE '2013-06-01'
+    ],
+    3, '{"h1": {"mase": 0.85}}'::jsonb, '{"h1": {"mase": 1}}'::jsonb,
+    0.85, 0.70, now() - interval '2 hours', now() - interval '1 hour'
+)
+ON CONFLICT (id) DO NOTHING;
+
+UPDATE forecast.model_version
+SET status = 'pending_approval'
+WHERE id = 'a0000000-0000-0000-0000-000000aa1f02' AND status = 'draft';
+
+UPDATE forecast.model_version v
+SET status = 'published',
+    approved_by = a.id,
+    approved_at = now(),
+    backtest_id = 'a0000000-0000-0000-0000-000000aa1f03'
+FROM org.app_user a
+WHERE v.id = 'a0000000-0000-0000-0000-000000aa1f02'
+  AND v.status = 'pending_approval'
+  AND a.org_id = :org::uuid AND a.username = 'helios-admin';
+
+UPDATE forecast.forecast_model
+SET current_version_id = 'a0000000-0000-0000-0000-000000aa1f02'
+WHERE id = 'a0000000-0000-0000-0000-000000aa1f01'
+  AND current_version_id IS DISTINCT FROM 'a0000000-0000-0000-0000-000000aa1f02'::uuid;
+
+INSERT INTO forecast.forecast_job (
+    id, org_id, data_space_id, requested_by, metric_code, scope, frequency, horizon,
+    cutoff_at, status, progress, model_version_id, finished_at, created_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f04', :org::uuid, :space::uuid, :engineer::uuid,
+    'DOANH_THU_INTERNET', '{}'::jsonb, 'month', 3,
+    now() - interval '1 day', 'ready', '{"step": "ready"}'::jsonb,
+    'a0000000-0000-0000-0000-000000aa1f02', now(), :engineer::uuid
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO forecast.prediction (
+    id, org_id, model_version_id, job_id, cutoff_at, period, point, lo80, hi80, lo95, hi95,
+    interval_method, exog_uncertainty, contributions
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f05', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1f02', 'a0000000-0000-0000-0000-000000aa1f04',
+    now() - interval '1 day', DATE '2014-01-01',
+    1000000, 900000, 1100000, 800000, 1200000,
+    'conformal', 'simulated', '{"season": 1.2}'::jsonb
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO forecast.ledger_entry (
+    id, org_id, forecast_model_id, model_version_id, prediction_id, job_id, period, scope,
+    issued_at, issued_via, baseline_value, point, quantiles, prob_up, fund_probs, contributions,
+    status, created_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f06', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1f01', 'a0000000-0000-0000-0000-000000aa1f02',
+    'a0000000-0000-0000-0000-000000aa1f05', 'a0000000-0000-0000-0000-000000aa1f04',
+    DATE '2014-01-01', '{}'::jsonb, now() - interval '2 days', 'manual',
+    950000, 1000000,
+    '{"p02_5": 800000, "p10": 900000, "p50": 1000000, "p90": 1100000, "p97_5": 1200000}'::jsonb,
+    0.65, '{}'::jsonb, '{"season": 1.2}'::jsonb, 'open', :engineer::uuid
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Formula model (fuel forecast list): separate forecast_model + formula_mc version.
+INSERT INTO forecast.forecast_model (
+    id, org_id, data_space_id, metric_code, scope, frequency, owner_id, status,
+    created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f07', :org::uuid, :space::uuid,
+    'DOANH_THU_INTERNET', '{"product": "bike"}'::jsonb, 'month', :engineer::uuid, 'active',
+    :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO forecast.model_version (
+    id, org_id, model_id, version, algorithm, features, training_from, training_to,
+    n_points, status, model_card, created_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f08', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1f07', 1, 'formula_mc', '[]'::jsonb,
+    DATE '2011-01-01', DATE '2013-12-01', 36, 'draft',
+    '{"target": "formula"}'::jsonb, :engineer::uuid
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO forecast.formula_model (
+    id, org_id, model_version_id, metric_version_id, product_code, formula, owner_id, created_by
+)
+SELECT
+    'a0000000-0000-0000-0000-000000aa1f09'::uuid, :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1f08', mv.id, 'internet_bike',
+    '{"terms": [{"code": "base", "op": "formula", "inputs": ["sales", "cost"]}]}'::jsonb,
+    :engineer::uuid, :engineer::uuid
+FROM context.metric_version mv
+JOIN context.metric m ON m.id = mv.metric_id
+WHERE m.data_space_id = :space::uuid AND m.code = 'DOANH_THU_INTERNET'
+ORDER BY mv.version DESC
+LIMIT 1
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO acquire.crawl_schema_version (
+    id, org_id, source_id, version, status, record_selector, fields, value_rules, created_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f10', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1d20', 1, 'draft',
+    'table.price-row',
+    '[{"name": "sku", "type": "text"}, {"name": "price", "type": "money", "value_constraints": {"min": 0, "max": 100000, "unit": "USD"}}]'::jsonb,
+    '[]'::jsonb, :engineer::uuid
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO acquire.crawl_run (
+    id, org_id, source_id, schema_version_id, trigger, status,
+    pages_fetched, pages_changed, records_extracted, started_at, finished_at
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f11', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1d20',
+    'a0000000-0000-0000-0000-000000aa1f10', 'manual', 'failed',
+    3, 1, 0, now() - interval '1 hour', now() - interval '50 minutes'
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO acquire.schema_drift (
+    id, org_id, source_id, run_id, from_version_id, drift_kind, severity, action, signals
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f12', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa1d20',
+    'a0000000-0000-0000-0000-000000aa1f11', 'a0000000-0000-0000-0000-000000aa1f10',
+    'structural', 'minor', 'auto_remap',
+    '{"added_fields": ["currency"]}'::jsonb
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO acquire.consolidation_spec (
+    id, org_id, data_space_id, name, entity_type, grain, source_ids,
+    owner_id, status, last_edited_by, created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f13', :org::uuid, :space::uuid,
+    'Gộp giá phụ tùng (seed)', 'product', 'sku',
+    ARRAY['a0000000-0000-0000-0000-000000aa1d20']::uuid[],
+    :engineer::uuid, 'draft', :engineer::uuid, :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- /v1/data-products reads context.data_product (not pipeline.data_product).
+INSERT INTO context.data_product (
+    id, org_id, data_space_id, code, name, description, sample_questions,
+    period_grain, period_from, owner_id, steward_id, freshness_statement, status,
+    created_by, updated_by
+)
+SELECT
+    'a0000000-0000-0000-0000-000000aa1f14'::uuid, :org::uuid, :space::uuid,
+    'aw_internet_sales', 'Doanh thu Internet (seed)',
+    'Sản phẩm ngữ nghĩa doanh thu Internet trên DS-AW cho screen-audit.',
+    '["Doanh thu Internet tháng 12/2013?", "Biên gộp theo nhóm?"]'::jsonb,
+    'month', DATE '2011-01-01', :engineer::uuid, a.id,
+    'Cập nhật sau mỗi lần nạp AdventureWorksDW.', 'draft',
+    :engineer::uuid, :engineer::uuid
+FROM org.app_user a
+WHERE a.org_id = :org::uuid AND a.username = 'helios-admin'
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description;
+
+INSERT INTO workspace.session_report (
+    id, org_id, workspace_id, version, title, body_ref, checks, status, created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f15', :org::uuid,
+    'a0000000-0000-0000-0000-000000aa0d11', 1,
+    'Báo cáo biên gộp Q4/2013 (seed)',
+    'session-reports/a0000000-0000-0000-0000-000000aa1f15/v1.md',
+    '{}'::jsonb, 'draft', :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, status = EXCLUDED.status;
+
+INSERT INTO governance.behavior_policy (
+    id, org_id, scope, data_space_id, kind, description, condition, action, status,
+    created_by, updated_by
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000aa1f16', :org::uuid, 'data_space', :space::uuid,
+    'require_approval',
+    'Duyệt trước khi xuất số liệu chi tiết DS-AW (seed).',
+    '{"when": "export_detail"}'::jsonb,
+    '{"require": "approve"}'::jsonb,
+    'draft', :engineer::uuid, :engineer::uuid
+)
+ON CONFLICT (id) DO UPDATE SET description = EXCLUDED.description, status = EXCLUDED.status;
+
+INSERT INTO eval.error_book_entry (
+    id, org_id, entry_no, data_space_id, source_kind, answer_id, title, detail, severity,
+    status, created_by
+)
+SELECT
+    'a0000000-0000-0000-0000-000000aa1f17'::uuid, :org::uuid, '', :space::uuid,
+    'number_check', a.id,
+    'Biên gộp Internet lệch so với báo cáo quý (seed)',
+    '{"expected": 0.40, "got": 0.38}'::jsonb,
+    'medium', 'open', :engineer::uuid
+FROM qa.answer a
+WHERE a.org_id = :org::uuid
+ORDER BY a.created_at
+LIMIT 1
+ON CONFLICT (id) DO NOTHING;

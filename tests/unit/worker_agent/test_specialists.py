@@ -152,3 +152,15 @@ def test_hybrid_tools_are_registered_for_the_planner() -> None:
     assert "explore_sql" not in sp.DOCUMENTS.tool_names
     assert "query_metric" in sp.NUMBERS.tool_names
     assert "search_documents" in sp.DOCUMENTS.tool_names
+
+
+def test_specialist_cards_expose_when_to_use_and_disallow_peer_tools() -> None:
+    cards = sp.planner_cards()
+    assert "whenToUse=" in cards
+    assert "numbers" in cards and "documents" in cards
+    assert "query_metric" in sp.NUMBERS.card()
+    assert "search_documents" in sp.DOCUMENTS.card()
+    assert "disallowed=" in sp.NUMBERS.card()
+    # Lead sees cards only — never an invitation to nest specialists inside each other.
+    assert "investigate_numbers" not in sp.NUMBERS.tool_names
+    assert "investigate_documents" not in sp.DOCUMENTS.tool_names

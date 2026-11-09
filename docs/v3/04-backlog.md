@@ -327,6 +327,14 @@ chỉ khi số công cụ vượt mức planner đọc được hết trong prom
 | AGC-11 | P1 | Cổng kiểm tra của bước viết câu trả lời (không lấy được số, số rỗng, bỏ sót thành viên, đại lượng không khớp) trả lý do về replanner một lần trước khi chuyển sang đường governed; dữ liệu quá hạn vẫn chuyển ngay (BR-178) | S | done 79a7d11a |
 | AGC-12 | P1 | Lớp semantic giữ quy tắc đọc thay vì lời mô tả: chiều bắt buộc của chỉ số (compile từ chối tổng gộp khi thiếu), số dư hay phát sinh theo loại tài khoản, dấu theo `dim_account.operator`, chỉ số lợi nhuận và biên lợi nhuận tài chính trong `ds-aw.yaml` | M | todo |
 | AGC-13 | P2 | Độ chi tiết thời gian câu hỏi nêu ("theo tháng") đọc bằng luật như kỳ và đưa vào tình huống; `analyze` thấy schema và dòng mẫu của dataset trước khi viết code | S | todo |
+| AGC-14 | P1 | Clarify policy tập trung (OP-1, `docs/research/agent-ops-from-system-prompts.md`): `agentic/clarify_policy.py` — executive ≤1 vòng/3 options, analyst ≤3/5; sau ngân sách → giả định, không hỏi lại; wire `engine._bind_clarify` | S | doing — code sẵn, chờ commit |
+| AGC-15 | P1 | Ma trận blast-radius → HITL (OP-3): `blast_radius.disposition` (read auto; send_external HITL; write_derived theo BR-70 + suggest_only luôn pause; write_source forbid); `runs.needs_checkpoint` uỷ quyền | S | doing — code sẵn, chờ commit |
+| AGC-16 | P1 | VERIFY trước PRESENT (OP-5): `present_gate.before_write` / `after_drafts` — thiếu số, thành viên bỏ sót, kỳ rỗng, out-of-time (BR-178), metric không đo đúng, draft sai cột không fallback table im lặng | S | doing — code sẵn, chờ commit |
+| AGC-17 | P1 | Streaming contract Ask (OP-4): `stream_contract` phân kênh commentary/interrupt/final; sự kiện `progress` (không tên tool); final mang headline+blocks+text; FE áp payload trước GET answer | S | doing — code sẵn, chờ commit |
+| AGC-18 | P2 | Specialist cards cho planner (OP-2): `when_to_use` + tools + disallowed trên `Specialist.card`; PLANNER `{specialists}`; không nested specialist | S | doing — code sẵn, chờ commit |
+| AGC-19 | P2 | Operator view Ask (OP-8): `operator_view` → `plan.steps.operator` + FE `operatorWhy` trên StepTimeline | S | doing — code sẵn, chờ commit |
+| AGC-20 | P2 | Deep analysis skill (OP-6): `deep_skill` khi `purpose=deep` (`/report`) hoặc `depth=deep`; không web search ngoài DS | S | doing — code sẵn, chờ commit |
+| AGC-21 | P1 | Correction memory steward gate (OP-7): feedback ≥3 → `feedback_fix`; decided ack, không ghi semantic | S | doing — code sẵn, chờ commit |
 
 ## 4. Quy tắc theo dõi
 

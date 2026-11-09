@@ -38,7 +38,18 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
 from services.worker_agent import turn_trace
 from services.worker_agent.agentic import blocks as b
-from services.worker_agent.agentic import memory, prompts, signals, verify
+from services.worker_agent.agentic import (
+    clarify_policy,
+    deep_skill,
+    memory,
+    operator_view,
+    present_gate,
+    prompts,
+    signals,
+    specialists,
+    stream_contract,
+    verify,
+)
 from services.worker_agent.agentic import plan as p
 from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
 from services.worker_agent.agentic.grounded import unnamed
@@ -117,6 +128,12 @@ class State:
     # Why compose would hand the question over (AGC-11): sent back to the replanner once first.
     feedback: str | None = None
     gate_retries: int = 0
+    # Clarify policy (OP-1): audience budget and how many prior clarification answers this thread
+    # already has, so a second ask becomes an assumption instead of another pause.
+    audience: clarify_policy.Audience = clarify_policy.DEFAULT_AUDIENCE
+    prior_clarify_rounds: int = 0
+    # OP-6: deep analysis skill loaded into the planner when the turn asks for it.
+    deep: bool = False
 
 
 # ---------------------------------------------------------------- prepare
@@ -166,6 +183,51 @@ async def _history(session: Any, question: qa.Question) -> str:
     return "\n".join(lines)
 
 
+async def _prior_clarify_rounds(session: Any, question: qa.Question) -> int:
+    """How many clarification answers already sit earlier in this conversation (OP-1 budget)."""
+    earlier = select(qa.Question.id).where(
+        qa.Question.conversation_id == question.conversation_id,
+        qa.Question.seq < question.seq,
+    )
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(qa.Answer)
+            .where(qa.Answer.question_id.in_(earlier), qa.Answer.kind == "clarification")
+        )
+        or 0
+    )
+
+
+def _bind_clarify(s: State, plan: p.Plan) -> p.Plan:
+    """Apply the clarify budget, then materialise Clarify on the state when still asking.
+
+    Demoting ask→analyze can expose steps the planner never validated (validate skips non-analyze
+    modes); re-check them here and fall back to answer if they do not form a DAG.
+    """
+    plan = clarify_policy.apply(plan, audience=s.audience, prior_rounds=s.prior_clarify_rounds)
+    if plan.mode == "analyze":
+        try:
+            plan = p.validate(plan, set(TOOLS))
+        except p.PlanInvalid:
+            plan = plan.model_copy(
+                update={
+                    "mode": "answer",
+                    "steps": [],
+                    "thought": clarify_policy.join_thought(
+                        plan.thought, "Không đủ bước hợp lệ sau khi bỏ hỏi làm rõ."
+                    ),
+                }
+            )
+    if plan.mode == "ask":
+        s.clarify = Clarify(
+            plan.clarification or "Bạn có thể nói rõ hơn câu hỏi?", plan.options[:5]
+        )
+    else:
+        s.clarify = None
+    return plan
+
+
 async def prepare(s: State) -> None:
     event = s.event
     async with scoped_session(ROLE, event.org_id, event.payload.get("user_id")) as session:
@@ -183,6 +245,10 @@ async def prepare(s: State) -> None:
         today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         layer = await load(session, space_id)
         s.history = await _history(session, question)
+        s.prior_clarify_rounds = await _prior_clarify_rounds(session, question)
+        raw_audience = (event.payload or {}).get("audience")
+        s.audience = "executive" if raw_audience == "executive" else clarify_policy.DEFAULT_AUDIENCE
+        s.deep = deep_skill.requested(event.payload, question.purpose)
         s.conversation_id = conversation.id
         question_text = question.text
         s.ctx = ToolContext(
@@ -262,6 +328,15 @@ def _tool_cards() -> str:
     return "\n".join(t.card() for t in TOOLS.values())
 
 
+def _planner_system(s: State) -> str:
+    base = (
+        prompts.PLANNER.replace("{tools}", _tool_cards())
+        .replace("{specialists}", specialists.planner_cards())
+        .replace("{catalog}", _catalog(s))
+    )
+    return deep_skill.inject(base, active=s.deep)
+
+
 def _situation(s: State) -> str:
     assert s.ctx is not None
     parts = [f"Hôm nay: {s.ctx.today.isoformat()}"]
@@ -321,7 +396,7 @@ async def _ask_plan(s: State, system: str, user: str) -> p.Plan:
 
 
 async def plan(s: State) -> None:
-    system = prompts.PLANNER.replace("{tools}", _tool_cards()).replace("{catalog}", _catalog(s))
+    system = _planner_system(s)
     async with turn_trace.stepping("plan", title="Lập kế hoạch", target="") as step:
         try:
             s.plan = await _ask_plan(s, system, _situation(s))
@@ -334,20 +409,26 @@ async def plan(s: State) -> None:
             )
             s.handed_back = True
             return
+        s.plan = _bind_clarify(s, s.plan)
         step.detail = {
             "goal": s.plan.goal,
             "thought": s.plan.thought,
             "mode": s.plan.mode,
             "steps": p.view(s.plan),
         }
-    if s.plan.mode == "ask":
-        s.clarify = Clarify(
-            s.plan.clarification or "Bạn có thể nói rõ hơn câu hỏi?", s.plan.options[:5]
-        )
     await publish(
         str(s.question_id),
         "plan",
         {"question_id": str(s.question_id), "goal": s.plan.goal, "steps": p.view(s.plan)},
+    )
+    await publish(
+        str(s.question_id),
+        "progress",
+        {
+            "question_id": str(s.question_id),
+            "phase": "plan",
+            "message": stream_contract.progress_message(phase="plan", goal=s.plan.goal),
+        },
     )
 
 
@@ -507,7 +588,7 @@ async def replan(s: State) -> None:
     feedback, s.feedback = s.feedback, None
     s.replans += 1
     done = [st for st in s.plan.steps if st.status == "done"]
-    system = prompts.PLANNER.replace("{tools}", _tool_cards()).replace("{catalog}", _catalog(s))
+    system = _planner_system(s)
     if failed is not None:
         ask = prompts.REPLAN.format(
             failed=failed.id, why=failed.observation[:500], next_id=len(s.plan.steps) + 1
@@ -527,13 +608,19 @@ async def replan(s: State) -> None:
         steps = [*done, *[st for st in new.steps if st.id not in kept and st.status == "pending"]]
         for st in steps[len(done) :]:
             st.depends_on = [d for d in st.depends_on if d in {x.id for x in steps}]
-        s.plan = p.Plan(goal=new.goal or s.plan.goal, thought=new.thought, steps=[*steps])
+        rebuilt = p.Plan(
+            goal=new.goal or s.plan.goal,
+            thought=new.thought,
+            mode=new.mode,
+            clarification=new.clarification,
+            options=new.options,
+            steps=[*steps],
+        )
         if failed is not None:
             # The failed step stays on the record, after the ones that are done.
-            s.plan.steps.insert(len(done), failed.model_copy())
+            rebuilt.steps.insert(len(done), failed.model_copy())
+        s.plan = _bind_clarify(s, rebuilt)
         handle.detail = {"steps": p.view(s.plan)}
-    if new.mode == "ask":
-        s.clarify = Clarify(new.clarification or "Bạn có thể nói rõ hơn?", new.options[:5])
 
 
 # Tools that only look up or read one governed figure: a plan made of them alone is a simple
@@ -662,20 +749,8 @@ def _dropped_members(s: State) -> list[str]:
     return dropped
 
 
-def _no_figure(ws: Workspace) -> bool:
-    """True when datasets came back but none holds a measure other than zero or empty. The
-    measure is each dataset's last numeric column, as _figures reads it (a year column is a
-    number too, and is no figure)."""
-    measures: list[float | None] = []
-    for d in ws.datasets.values():
-        numeric = [
-            i
-            for i in range(len(d.columns))
-            if d.rows and all(number(r[i]) is not None for r in d.rows if r[i] is not None)
-        ]
-        if numeric:
-            measures += [number(r[numeric[-1]]) for r in d.rows]
-    return bool(ws.datasets) and all(m in (None, 0) for m in measures)
+# Re-export for unit tests that asserted the old private helper (OP-5 moved it to present_gate).
+_no_figure = present_gate.no_figure
 
 
 def _facts_text(known: dict[str, verify.Fact]) -> str:
@@ -685,7 +760,12 @@ def _facts_text(known: dict[str, verify.Fact]) -> str:
 async def _gate(s: State, target: str, detail: dict[str, Any], feedback: str) -> None:
     """A check compose cannot pass: the first time, its reason goes back to the replanner, which
     may still fetch what is missing (another period, a filter, another tool); after that, the
-    question goes to the governed path as before (AGC-11)."""
+    question goes to the governed path as before (AGC-11). Empty feedback hands over immediately
+    (BR-178 out-of-time)."""
+    if not feedback:
+        await turn_trace.record_step("handover", target=target, detail=detail)
+        s.handed_back = True
+        return
     if s.gate_retries < MAX_GATE_RETRIES:
         s.gate_retries += 1
         s.feedback = feedback
@@ -700,70 +780,31 @@ async def _gate(s: State, target: str, detail: dict[str, Any], feedback: str) ->
 async def compose(s: State) -> None:
     assert s.ctx is not None and s.plan is not None
     ws = s.ctx.ws
-    if (
-        s.plan.mode == "analyze"
-        and not ws.citations
-        and not any(d.rows for d in ws.datasets.values())
-    ):
-        # Nothing was fetched: rather than write that it cannot answer, try once more, then hand
-        # the question to the governed path (rules, exploratory SQL, documents).
-        await _gate(
-            s,
-            "Chưa lấy được số liệu",
-            {"steps": p.view(s.plan)},
-            "chưa bước nào lấy được số liệu; xem lại mã chỉ số, chiều, kỳ (data_coverage), hoặc"
-            " dùng explore_sql",
-        )
-        return
-    dropped = _dropped_members(s)
-    if dropped:
-        # The question names a member ("nhóm hàng Bikes") that no dataset was filtered or cut on:
-        # an answer from those rows would be for everything, not for what was asked.
-        await _gate(
-            s,
-            f"Chưa lọc theo {', '.join(dropped)}",
-            {"dropped": dropped},
-            f"câu hỏi nêu {', '.join(dropped)} mà chưa dataset nào lọc hay chia theo đó; tìm giá"
-            " trị bằng search_values rồi truy vấn lại có lọc",
-        )
-        return
-    if s.plan.mode == "analyze" and _no_figure(ws):
-        # Every figure fetched is empty or zero: "Doanh thu 2009 là 0" would state a figure the
-        # data does not have. Look where the data is first (data_coverage), then answer for it.
-        await _gate(
-            s,
-            "Không có số liệu cho kỳ hoặc bộ lọc được hỏi",
-            {"datasets": list(ws.datasets)},
-            "mọi số liệu lấy được đều rỗng hoặc bằng 0 cho kỳ hoặc bộ lọc được hỏi; gọi"
-            " data_coverage để biết kỳ có dữ liệu, rồi truy vấn kỳ đầy đủ gần nhất (cùng độ dài)"
-            " và kỳ để so sánh",
-        )
-        return
     try:
         s.signals = await signals.read(s.ctx)
     except Exception:
         logger.exception("question %s: data signals not read", s.question_id)
-    if s.signals.out_of_time:
-        # BR-178: no figure of a table out of time is stated; the governed path masks them.
-        await turn_trace.record_step(
-            "handover",
-            target=f"Dữ liệu {', '.join(s.signals.out_of_time)} quá hạn cập nhật; chuyển sang cách"
-            " trả lời chuẩn.",
-            detail={"out_of_time": s.signals.out_of_time},
+    # Empty / out-of-time / no-figure first: they do not need the question text. Dropped members
+    # and unnamed quantities do, and some unit fixtures only stub ws.
+    hit = present_gate.before_write(
+        mode=s.plan.mode,
+        ws=ws,
+        dropped_members=[],
+        unnamed=[],
+        out_of_time=list(s.signals.out_of_time),
+        plan_steps=p.view(s.plan),
+    )
+    if hit is None:
+        hit = present_gate.before_write(
+            mode=s.plan.mode,
+            ws=ws,
+            dropped_members=_dropped_members(s),
+            unnamed=_unnamed_quantity(s),
+            out_of_time=[],
+            plan_steps=p.view(s.plan),
         )
-        s.handed_back = True
-        return
-    unnamed = _unnamed_quantity(s)
-    if unnamed:
-        # The metrics read do not measure what the question asks ("khách hàng" read as units
-        # sold): the governed path asks back or explores SQL, as it does for a partial reading.
-        await _gate(
-            s,
-            f"Chỉ số đã dùng không đo '{' '.join(unnamed)}'",
-            {"unnamed": unnamed},
-            f"không chỉ số nào đã đọc đo '{' '.join(unnamed)}' mà câu hỏi hỏi; tìm chỉ số khác"
-            " (search_catalog) hoặc dùng explore_sql cho phần đó",
-        )
+    if hit is not None:
+        await _gate(s, hit.target, hit.detail, hit.feedback)
         return
     known = verify.facts(ws)
     citations = "\n".join(
@@ -821,6 +862,17 @@ async def compose(s: State) -> None:
             await publish(
                 str(s.question_id), "block", {"question_id": str(s.question_id), "block": block}
             )
+        # OP-5: figure drafts that all miss the column contract must not fall through to a
+        # silent full-table PRESENT — replan once, then hand over.
+        contract_hit = present_gate.after_drafts(mode=s.plan.mode, drafts=drafts, made=made, ws=ws)
+        if contract_hit is not None:
+            handle.detail = {
+                "blocks": [x["type"] for x in s.composition],
+                "dropped_sentences": s.dropped_sentences,
+                "contract": contract_hit.detail,
+            }
+            await _gate(s, contract_hit.target, contract_hit.detail, contract_hit.feedback)
+            return
         if made == 0:
             # No model, or nothing it wrote held: the datasets speak for themselves.
             for ds in list(ws.datasets.values())[-3:]:
@@ -1088,22 +1140,34 @@ def _text(s: State) -> str:
 async def persist(s: State) -> None:
     assert s.ctx is not None
     ctx = s.ctx
+    datasets = {
+        ds.id: {
+            "title": ds.title,
+            "tool": ds.tool,
+            "trust": ds.trust,
+            "query_run_ids": ds.query_run_ids,
+            "metric": (ds.reading or {}).get("metric"),
+        }
+        for ds in ctx.ws.datasets.values()
+    }
     plan_steps = {
         "engine": "agentic",
-        "path": "agentic",
+        "path": "agentic" if not s.deep else "agentic_deep",
         "goal": s.plan.goal if s.plan else "",
         "thought": s.plan.thought if s.plan else "",
         "steps": p.view(s.plan) if s.plan else [],
-        "datasets": {
-            ds.id: {
-                "title": ds.title,
-                "tool": ds.tool,
-                "trust": ds.trust,
-                "query_run_ids": ds.query_run_ids,
-                "metric": (ds.reading or {}).get("metric"),
-            }
-            for ds in ctx.ws.datasets.values()
-        },
+        "datasets": datasets,
+        # OP-8: steward/analyst view without raw rows.
+        "operator": operator_view.build(
+            plan=s.plan,
+            replans=s.replans,
+            gate_retries=s.gate_retries,
+            clarify=s.clarify is not None,
+            handed_back=s.handed_back,
+            cancelled=s.cancelled,
+            dataset_trusts={i: d["trust"] for i, d in datasets.items() if d.get("trust")},
+            audience=s.audience,
+        ),
     }
     refusal: dict[str, str] | None = None
     if s.cancelled:
@@ -1203,7 +1267,24 @@ async def persist(s: State) -> None:
         if status == "answered":
             question.answered_at = func.now()
     s.answered = status == "answered"
-    payload = {"question_id": str(s.question_id), "answer_id": str(answer_id), "kind": kind}
+    trusts = sorted(
+        {
+            str(blk.get("trust_label") or blk.get("trust") or "")
+            for blk in s.composition
+            if isinstance(blk, dict)
+        }
+        - {""}
+    )
+    payload = stream_contract.final_payload(
+        question_id=str(s.question_id),
+        answer_id=str(answer_id),
+        kind=kind,
+        status=status,
+        headline=s.headline,
+        text=text,
+        blocks=list(s.composition),
+        trust_summary=" · ".join(trusts) if trusts else None,
+    )
     event = {"clarification": "clarification", "refusal": "answer"}.get(kind, "answer")
     await publish(str(s.question_id), event, payload)
     await publish(str(s.question_id), "done", {**payload, "status": status})
@@ -1289,6 +1370,15 @@ async def run(event: Event, question_id: uuid.UUID, model: Gateway | None) -> bo
         return False
     state = State(event=event, question_id=question_id, model=model)
     await publish(str(question_id), "planning", {"question_id": str(question_id)})
+    await publish(
+        str(question_id),
+        "progress",
+        {
+            "question_id": str(question_id),
+            "phase": "planning",
+            "message": stream_contract.progress_message(phase="planning"),
+        },
+    )
     try:
         await GRAPH.run(state, max_steps=64)
     except Exception:

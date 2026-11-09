@@ -75,10 +75,11 @@ screens:
     primary_gets: ["/v1/workspaces"]
   analysis/REPORT:
     needs_id: true
-    id_from: "/v1/session-reports"
+    seed_id: a0000000-0000-0000-0000-000000aa1f15
     primary_gets: ["/v1/session-reports/{id}"]
   analysis/VAULT:
-    primary_gets: ["/v1/me"]
+    # /v1/me always 200; theses require exec_vault (rail + A2).
+    primary_gets: ["/v1/exec/theses"]
   analysis/EXPLORE:
     primary_gets: ["/v1/metrics", "/v1/entities"]
   analysis/ARTIFACT:
@@ -89,13 +90,13 @@ screens:
     primary_gets: ["/v1/forecast-models"]
   analysis/FORECAST_JOB:
     needs_id: true
-    id_from: "/v1/forecasts"
+    seed_id: a0000000-0000-0000-0000-000000aa1f04
     primary_gets: ["/v1/forecasts/{id}"]
   analysis/FORECAST_STUDIO:
     primary_gets: ["/v1/forecast-models"]
   analysis/FORECAST_MODEL:
     needs_id: true
-    id_from: "/v1/forecast-models"
+    seed_id: a0000000-0000-0000-0000-000000aa1f01
     primary_gets: ["/v1/forecast-models/{id}"]
   analysis/FUEL_FORECAST:
     primary_gets: ["/v1/formula-models"]
@@ -157,15 +158,15 @@ screens:
     primary_gets: ["/v1/crawl-sources/{id}"]
   data/CRAWL_DRIFT:
     needs_id: true
-    id_from: "/v1/schema-drifts"
+    seed_id: a0000000-0000-0000-0000-000000aa1f12
     primary_gets: ["/v1/schema-drifts"]
   data/CRAWL_RUN:
     needs_id: true
-    id_from: "/v1/crawl-runs"
+    seed_id: a0000000-0000-0000-0000-000000aa1f11
     primary_gets: ["/v1/crawl-runs/{id}"]
   data/CRAWL_MERGE:
     needs_id: true
-    id_from: "/v1/consolidation-specs"
+    seed_id: a0000000-0000-0000-0000-000000aa1f13
     primary_gets: ["/v1/consolidation-specs"]
   data/ENTITIES:
     primary_gets: ["/v1/entities"]
@@ -177,11 +178,11 @@ screens:
     primary_gets: ["/v1/eval-sets"]
   data/ANSWER_PRODUCTS:
     needs_id: true
-    id_from: "/v1/data-products"
+    seed_id: a0000000-0000-0000-0000-000000aa1f14
     primary_gets: ["/v1/data-products/{id}"]
   data/ERROR_BOOK:
     needs_id: true
-    id_from: "/v1/error-book-entries"
+    seed_id: a0000000-0000-0000-0000-000000aa1f17
     primary_gets: ["/v1/error-book-entries/{id}"]
   data/PERIOD:
     primary_gets: ["/v1/periods"]
@@ -201,7 +202,7 @@ screens:
     primary_gets: ["/v1/sources"]
   data/RULE:
     needs_id: true
-    id_from: "/v1/policies"
+    seed_id: a0000000-0000-0000-0000-000000aa1f16
     primary_gets: ["/v1/policies/{id}"]
   data/KNOWLEDGE_REVIEW:
     primary_gets: ["/v1/knowledge-findings"]
