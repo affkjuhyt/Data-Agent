@@ -25,7 +25,12 @@ data:
   MAX_CLIENT_CONN: '10000'
   # Per (user,db). One replica, so this is the real ceiling: 20+5 of Postgres' 100.
   DEFAULT_POOL_SIZE: '3'
-  MIN_POOL_SIZE: '1'
+  # 0, not 1: users come from AUTH_QUERY with SCRAM secrets, so PgBouncer can log in to Postgres
+  # only with the SCRAM keys of a client that just logged in. A min_pool_size refill has none,
+  # fails ("password authentication failed for user svc_*"), and the cached failure then
+  # refuses every real client of that role for server_login_retry (15 s): the api answered
+  # 500 on whole screens after each idle spell (09/11/2026).
+  MIN_POOL_SIZE: '0'
   RESERVE_POOL_SIZE: '2'
   AUTH_TYPE: scram-sha-256
   # DB_USER sets auth_user= on the database line, never user= — the client's own
