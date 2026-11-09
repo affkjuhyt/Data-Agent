@@ -74,14 +74,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context
 from libs.dataagent_db.models import org as org_models
+from libs.sql_guard import expression_columns, has_aggregate
 from services.api.kernel.auth import Principal
 from services.api.modules.context.common import ROLE, audit, emit, normalize, now
 
 FORMAT_VERSION = 1
 _CODE = r"^[A-Za-z_][A-Za-z0-9_]{0,63}$"
 _AGGS = {"sum": "SUM", "count": "COUNT", "avg": "AVG", "min": "MIN", "max": "MAX"}
-_AGGREGATES = re.compile(r"\b(?:SUM|COUNT|AVG|MIN|MAX)\s*\(", re.IGNORECASE)
-_IDENT = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 
 
 class _Item(BaseModel):
@@ -194,7 +193,11 @@ def parse(text: str) -> SemanticFile:
 
 def measure_expression(m: MeasureDef) -> str:
     """The stored aggregate: `agg(expr)`, or `expr` as written when it aggregates already."""
-    if _AGGREGATES.search(m.expr):
+    try:
+        aggregated = has_aggregate(m.expr)
+    except ValueError as exc:
+        raise ImportProblem([f"measure {m.name}: expr không phải một biểu thức SQL"]) from exc
+    if aggregated:
         return m.expr
     if m.agg == "count_distinct":
         return f"COUNT(DISTINCT {m.expr})"
@@ -208,7 +211,7 @@ def _measure_def(row: context.SemanticMeasure) -> dict[str, Any]:
     simple = (
         re.fullmatch(rf"\s*{agg}\s*\((.+)\)\s*", row.expression, re.IGNORECASE) if agg else None
     )
-    inner = simple.group(1) if simple and not _AGGREGATES.search(simple.group(1)) else None
+    inner = simple.group(1) if simple and not _aggregates(simple.group(1)) else None
     out: dict[str, Any] = {
         "name": row.code,
         "label": row.name,
@@ -219,6 +222,14 @@ def _measure_def(row: context.SemanticMeasure) -> dict[str, Any]:
     if row.unit:
         out["unit"] = row.unit
     return out
+
+
+def _aggregates(expression: str) -> bool:
+    # A stored expression sqlglot cannot read is exported as written, not unwrapped.
+    try:
+        return has_aggregate(expression)
+    except ValueError:
+        return True
 
 
 @dataclass
@@ -453,7 +464,11 @@ def _check(file: SemanticFile, datasets: Datasets, known: set[str]) -> None:
             if table not in datasets:
                 problems.append(datasets.problem("relationships", table))
     for metric in file.metrics:
-        unknown = sorted(set(_IDENT.findall(metric.expr)) - measures)
+        try:
+            unknown = sorted(expression_columns(metric.expr) - measures)
+        except ValueError:
+            problems.append(f"metrics.{metric.name}: expr không phải một biểu thức SQL")
+            unknown = []
         if unknown:
             problems.append(
                 f"metrics.{metric.name}: expr nêu measure chưa định nghĩa {', '.join(unknown)}"

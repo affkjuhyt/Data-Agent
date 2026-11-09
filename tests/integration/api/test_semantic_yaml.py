@@ -260,6 +260,22 @@ async def test_a_name_two_datasets_share_is_refused_and_an_id_resolves(seed: See
     assert npl["time_dimension"] == "ngay"
 
 
+async def test_functions_and_literals_in_a_metric_are_not_taken_for_measures(seed: Seed) -> None:
+    space = Space(seed)
+    guarded = MODEL.replace("expr: no_xau / du_no * 100", 'expr: "no_xau / NULLIF(du_no, 0) * 100"')
+    await space.load(guarded)
+    wrong = MODEL.replace(
+        "expr: no_xau / du_no * 100",
+        'expr: "CASE WHEN du_no > 0 THEN no_xau / du_no ELSE phi END"',
+    )
+    with pytest.raises(sy.ImportProblem) as caught:
+        await space.load(wrong)
+    # Only the measure that does not exist is named, not CASE, WHEN, THEN, ELSE or END.
+    assert [p for p in caught.value.problems if "measure chưa định nghĩa" in p] == [
+        "metrics.NPL_RATIO: expr nêu measure chưa định nghĩa phi"
+    ]
+
+
 async def test_a_time_dimension_that_is_not_one_is_refused(seed: Seed) -> None:
     space = Space(seed)
     wrong = MODEL.replace(

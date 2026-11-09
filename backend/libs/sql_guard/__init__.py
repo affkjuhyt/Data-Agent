@@ -233,3 +233,27 @@ def read_only_problem(sql: str) -> str | None:
         return None
     # The engine most sources speak first: its reason is the one an author can act on.
     return reasons[0]
+
+
+def _expression(expression: str, dialect: str) -> exp.Expression:
+    """One SQL expression (a metric's or a measure's), parsed; ValueError when it is not one."""
+    try:
+        trees = [tree for tree in sqlglot.parse(expression, read=dialect) if tree is not None]
+    except (ParseError, TokenError) as exc:
+        raise ValueError(f"not a SQL expression: {exc}") from exc
+    # parse_one would keep the first of "a; b"; an expression is exactly one, and not a query.
+    if len(trees) != 1 or isinstance(trees[0], exp.Query | exp.Command):
+        raise ValueError("not a SQL expression")
+    return trees[0]
+
+
+def expression_columns(expression: str, dialect: str = "postgres") -> set[str]:
+    """The columns an expression reads: its column references, by name. Function names, keywords
+    (NULLIF, CASE … END) and the words inside its string literals are not columns, as a pattern
+    over the text would take them to be."""
+    return {column.name for column in _expression(expression, dialect).find_all(exp.Column)}
+
+
+def has_aggregate(expression: str, dialect: str = "postgres") -> bool:
+    """Whether the expression calls an aggregate (SUM, COUNT, …), not merely names one."""
+    return _expression(expression, dialect).find(exp.AggFunc) is not None

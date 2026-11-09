@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import datetime
 import decimal
-import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
+
+from libs.sql_guard import expression_columns
 
 TERMINAL_JOB = ("ready", "failed", "cancelled")
 # What a published model may be asked with: degraded models still answer, labelled (BR-160).
@@ -34,9 +35,7 @@ DEFAULT_HORIZON = {"day": 30, "week": 13, "month": 3, "quarter": 2}
 # The two inputs a price formula reads besides its parameters (D4.23 formula_model.formula).
 FORMULA_INPUTS = frozenset({"world_avg", "fx_rate"})
 
-FUND_NOTE = (
-    "Quyết định Quỹ do liên Bộ quyết; mô hình chỉ ước xác suất theo các kỳ đã qua."  # noqa: RUF001
-)
+FUND_NOTE = "Quyết định Quỹ do liên Bộ quyết; mô hình chỉ ước xác suất theo các kỳ đã qua."
 
 # Fewer scored periods than this and the calibration figures are flagged (BR-185, SCR-71).
 MIN_CALIBRATION = 10
@@ -71,8 +70,13 @@ def formula_parameters(formula: Any) -> set[str]:
 
 
 def expression_names(expression: str) -> set[str]:
-    """Identifiers of a certified metric expression: what a formula compiled from it may cite."""
-    return set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression))
+    """The columns a certified metric expression reads: what a formula compiled from it may
+    cite. Its function names, keywords and the words inside its literals are not among them; an
+    expression sqlglot cannot read lets the formula cite nothing."""
+    try:
+        return expression_columns(expression)
+    except ValueError:
+        return set()
 
 
 def forecast_is_current(periods: Iterable[datetime.date], today: datetime.date) -> bool:

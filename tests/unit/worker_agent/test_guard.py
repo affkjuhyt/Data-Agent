@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from libs.sql_guard import SqlRejected, capped, check_read_only, read_only_problem, tables_of
+from libs.sql_guard import (
+    SqlRejected,
+    capped,
+    check_read_only,
+    expression_columns,
+    has_aggregate,
+    read_only_problem,
+    tables_of,
+)
 
 pytestmark = [pytest.mark.unit]
 
@@ -173,3 +181,41 @@ def test_a_pure_name_in_some_schema_is_that_schemas_function_and_is_refused(sql:
     with pytest.raises(SqlRejected):
         check_read_only(sql, "postgres")
     assert read_only_problem(sql) is not None
+
+
+@pytest.mark.parametrize(
+    ("expression", "columns"),
+    [
+        ("no_xau / du_no * 100", {"no_xau", "du_no"}),
+        # Function names and keywords are not columns; a regex took NULLIF, CASE, WHEN for some.
+        ("revenue / NULLIF(orders, 0)", {"revenue", "orders"}),
+        ("SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END)", {"status", "amount"}),
+        # Nor are the words inside a string literal.
+        ("COUNT(DISTINCT customer) FILTER (WHERE region = 'north_sum')", {"customer", "region"}),
+        ("t.amount - t.discount", {"amount", "discount"}),
+    ],
+)
+def test_the_columns_of_an_expression_are_its_column_references(
+    expression: str, columns: set[str]
+) -> None:
+    assert expression_columns(expression) == columns
+
+
+@pytest.mark.parametrize(
+    ("expression", "aggregates"),
+    [
+        ("SUM(amount)", True),
+        ("count(DISTINCT id) / 2", True),
+        ("amount * 2", False),
+        # An aggregate's name in a literal or a column name is not a call.
+        ("CASE WHEN note = 'SUM(' THEN sum_amount END", False),
+    ],
+)
+def test_an_aggregate_is_a_call_not_a_word(expression: str, aggregates: bool) -> None:
+    assert has_aggregate(expression) is aggregates
+
+
+@pytest.mark.parametrize("expression", ["revenue /", "SELECT 1", "a; b", ""])
+def test_what_is_not_one_expression_is_said_so(expression: str) -> None:
+    with pytest.raises(ValueError):
+        expression_columns(expression)
