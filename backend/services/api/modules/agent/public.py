@@ -14,6 +14,7 @@ import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import Date, cast, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db.models import agent
 from services.api.kernel.auth import Principal
@@ -30,6 +31,9 @@ class AgentDayRuns:
     # Runs that stopped at least once for a person (a checkpoint hit, UC-13-05).
     needs_person: int
     failed: int
+    # Runs that succeeded without stopping for a person: what "Tự hoàn tất" counts. runs minus
+    # needs_person counted a failed run as done alone.
+    auto: int
     # Seconds over the runs of the day that have finished.
     duration_s_sum: float
     finished: int
@@ -82,6 +86,7 @@ async def run_usage(
             func.count(),
             func.count(stopped_for_person.c.run_id),
             func.count().filter(run.status == "failed"),
+            func.count().filter(run.status == "succeeded", stopped_for_person.c.run_id.is_(None)),
             func.coalesce(func.sum(duration), 0),
             func.count(duration),
             func.coalesce(func.sum(run.cost), 0),
@@ -106,6 +111,7 @@ async def run_usage(
             if ids
             else []
         )
+        spent = await spent_this_month(session, list(ids))
     return RunUsage(
         days=[
             AgentDayRuns(
@@ -114,9 +120,10 @@ async def run_usage(
                 runs=int(r[2]),
                 needs_person=int(r[3]),
                 failed=int(r[4]),
-                duration_s_sum=float(r[5]),
-                finished=int(r[6]),
-                cost=decimal.Decimal(r[7]),
+                auto=int(r[5]),
+                duration_s_sum=float(r[6]),
+                finished=int(r[7]),
+                cost=decimal.Decimal(r[8]),
             )
             for r in rows
         ],
@@ -128,11 +135,38 @@ async def run_usage(
                 owner_user_id=d.owner_user_id,
                 status=d.status,
                 monthly_budget=d.monthly_budget,
-                spent_this_month=d.spent_this_month,
+                spent_this_month=spent.get(d.id, decimal.Decimal(0)),
             )
             for d in defs
         ],
     )
+
+
+def month_start(now: datetime.datetime | None = None) -> datetime.datetime:
+    """The first instant of the current UTC month."""
+    now = now or datetime.datetime.now(datetime.UTC)
+    return now.astimezone(datetime.UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+async def spent_this_month(
+    session: AsyncSession, agent_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, decimal.Decimal]:
+    """What each agent's production runs of this UTC month cost, summed from agent_run.cost.
+    agent_def.spent_this_month has no writer, so every screen read a 0 (or a seed's figure) from
+    it and the "≥90% ngân sách" warning could not fire."""
+    if not agent_ids:
+        return {}
+    run = agent.AgentRun
+    rows = await session.execute(
+        select(run.agent_id, func.coalesce(func.sum(run.cost), 0))
+        .where(
+            run.agent_id.in_(agent_ids),
+            run.is_test.is_(False),
+            run.created_at >= month_start(),
+        )
+        .group_by(run.agent_id)
+    )
+    return {agent_id: decimal.Decimal(total) for agent_id, total in rows.tuples()}
 
 
 async def agents_of_runs(

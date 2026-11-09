@@ -11,6 +11,7 @@ inbox, the eval run, the new qa.plan version) are events too (D1.2).
 from __future__ import annotations
 
 import datetime
+import decimal
 import re
 import uuid
 from collections.abc import AsyncIterator, Iterable
@@ -39,6 +40,7 @@ from services.api.kernel.problems import FieldError, Problem
 from services.api.kernel.sse import Event, event_stream, last_event_id
 from services.api.modules.agent import rules
 from services.api.modules.agent.display import permission_text, runs_window, trigger_text
+from services.api.modules.agent.public import spent_this_month
 from services.api.modules.agent.schemas import (
     AgentCreate,
     AgentKind,
@@ -499,6 +501,7 @@ async def _screen_agents(session: AsyncSession, items: list[AgentSummary]) -> No
             )
         ).all()
     }
+    spent = await spent_this_month(session, ids)
     for item in items:
         current = (
             by_version.get((item.id, item.current_config_version))
@@ -516,6 +519,7 @@ async def _screen_agents(session: AsyncSession, items: list[AgentSummary]) -> No
         )
         item.runs_7d = RunsWindow.model_validate(counted) if counted else None
         item.active_deployment_id = live.get(item.id)
+        item.spent_this_month = spent.get(item.id, decimal.Decimal(0))
 
 
 async def _screen_runs(session: AsyncSession, items: list[RunSummary]) -> None:

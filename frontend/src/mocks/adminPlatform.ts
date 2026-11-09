@@ -962,6 +962,7 @@ export function createAdminPlatformHandlers() {
         day: `2026-10-${label}`,
         runs: 41,
         needs_person: 2,
+        auto: 38,
         errors: 1,
         error_rate: 0.02,
         cost: '600000',
@@ -973,6 +974,8 @@ export function createAdminPlatformHandlers() {
         totals: {
           runs: summary.runs,
           needs_person: summary.hitl_requests,
+          // Succeeded without a person (agent/public.py run_usage), not runs minus needs_person.
+          auto: Math.round(summary.runs * (summary.auto_rate ?? 0)),
           errors: summary.errors,
           error_rate: summary.error_rate,
           cost: 4200000,
@@ -984,6 +987,7 @@ export function createAdminPlatformHandlers() {
           name: a.name,
           runs: a.runs,
           needs_person: a.hitl_requests,
+          auto: Math.round(a.runs * (a.auto_rate ?? 0)),
           errors: 0,
           avg_duration_s: a.avg_duration_s,
           cost: a.cost,

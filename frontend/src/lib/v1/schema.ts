@@ -7419,6 +7419,13 @@ export interface components {
              * Format: uuid
              */
             agent_id: string;
+            /**
+             * Auto
+             * @default 0
+             */
+            auto: number;
+            /** Auto Rate */
+            auto_rate?: number | null;
             /** Avg Duration S */
             avg_duration_s?: number | null;
             /** Budget Used Ratio */
@@ -22372,6 +22379,13 @@ export interface components {
         };
         /** UsageDay */
         UsageDay: {
+            /**
+             * Auto
+             * @default 0
+             */
+            auto: number;
+            /** Auto Rate */
+            auto_rate?: number | null;
             /** Avg Duration S */
             avg_duration_s?: number | null;
             /**
@@ -22421,6 +22435,13 @@ export interface components {
         };
         /** UsageFigures */
         UsageFigures: {
+            /**
+             * Auto
+             * @default 0
+             */
+            auto: number;
+            /** Auto Rate */
+            auto_rate?: number | null;
             /** Avg Duration S */
             avg_duration_s?: number | null;
             /**

@@ -62,7 +62,8 @@ describe('AgentOperationsPage', () => {
     expect(await screen.findByText('286')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: '7 ngày' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByText('94,1%')).toBeInTheDocument();
-    expect(screen.getByText('trung vị phản hồi 6 phút')).toBeInTheDocument();
+    // The api does not measure how fast people answer: the KPI says nothing rather than a guess.
+    expect(screen.queryByText(/trung vị phản hồi/)).toBeNull();
     expect(screen.getByText('9 · 3,1%')).toBeInTheDocument();
     expect(screen.getByText('4,2 tr')).toBeInTheDocument();
     expect(screen.getByText('2 ph 10 s')).toBeInTheDocument();

@@ -234,10 +234,12 @@ const PERIOD_MS: Record<OpsPeriod, number> = {
 const BUDGET_WARNING = 0.9;
 const WEEKDAY = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 
-/** Runs done alone: neither stopped for a person nor failed (the two can overlap; never below 0). */
-const autoOf = (f: Pick<Figures, 'runs' | 'needs_person' | 'errors'>) =>
-  // A failed run can also be a human-stopped run; the usage API counts those in both columns.
-  Math.max(0, (f.runs ?? 0) - (f.needs_person ?? 0));
+/** Runs done alone: succeeded without stopping for a person, as the usage api counts them. Runs
+ *  minus needs_person counted every failed run as done alone (and drew it twice in the bars). */
+const autoOf = (f: Pick<Figures, 'runs' | 'needs_person' | 'errors'> & { auto?: number }) =>
+  typeof f.auto === 'number'
+    ? f.auto
+    : Math.max(0, (f.runs ?? 0) - (f.needs_person ?? 0) - (f.errors ?? 0));
 const rate = (part: number, whole: number) => (whole > 0 ? part / whole : null);
 
 function readUsage(
@@ -261,7 +263,8 @@ function readUsage(
     auto_rate_change_pp:
       autoRate !== null && previousAuto !== null ? (autoRate - previousAuto) * 100 : null,
     hitl_requests: t.needs_person ?? 0,
-    hitl_median_response_s: 360,
+    // The usage api does not measure how fast people answer: no number rather than a made-up one.
+    hitl_median_response_s: null,
     errors: t.errors ?? 0,
     error_rate: t.error_rate ?? null,
     cost: String(t.cost ?? 0),
@@ -317,6 +320,7 @@ function figuresOf(rows: AgentRun[]): Figures {
   const count = rows.length;
   const needs = rows.filter(needsPerson).length;
   const errors = rows.filter((run) => run.status === 'failed').length;
+  const auto = rows.filter((run) => run.status === 'succeeded' && !needsPerson(run)).length;
   const done = rows.filter((run) => run.started_at && run.finished_at);
   const duration = done.reduce(
     (sum, run) =>
@@ -328,6 +332,8 @@ function figuresOf(rows: AgentRun[]): Figures {
     runs: count,
     needs_person: needs,
     needs_person_rate: count > 0 ? needs / count : null,
+    auto,
+    auto_rate: count > 0 ? auto / count : null,
     errors,
     error_rate: count > 0 ? errors / count : null,
     avg_duration_s: done.length > 0 ? duration / done.length : null,

@@ -493,6 +493,9 @@ class UsageFigures(BaseModel):
     # Runs that stopped for a person at least once, and their share of the runs.
     needs_person: int = 0
     needs_person_rate: float | None = None
+    # Runs that succeeded without stopping for a person ("Tự hoàn tất"), and their share.
+    auto: int = 0
+    auto_rate: float | None = None
     errors: int = 0
     error_rate: float | None = None
     # Mean wall time of the runs that finished.
@@ -532,7 +535,7 @@ class AgentUsageReport(BaseModel):
 
 class _Tally:
     def __init__(self) -> None:
-        self.runs = self.needs = self.errors = self.finished = 0
+        self.runs = self.needs = self.auto = self.errors = self.finished = 0
         self.duration = 0.0
         self.cost = decimal.Decimal(0)
         self.calls = self.model_errors = self.tokens = 0
@@ -542,6 +545,8 @@ class _Tally:
             "runs": self.runs,
             "needs_person": self.needs,
             "needs_person_rate": self.needs / self.runs if self.runs else None,
+            "auto": self.auto,
+            "auto_rate": self.auto / self.runs if self.runs else None,
             "errors": self.errors,
             "error_rate": self.errors / self.runs if self.runs else None,
             "avg_duration_s": self.duration / self.finished if self.finished else None,
@@ -612,6 +617,7 @@ async def agent_usage(
         for t in tallies(r.agent_id, r.day):
             t.runs += r.runs
             t.needs += r.needs_person
+            t.auto += r.auto
             t.errors += r.failed
             t.duration += r.duration_s_sum
             t.finished += r.finished

@@ -1473,6 +1473,22 @@
       "title": "Agent Id",
       "type": "string"
      },
+     "auto": {
+      "default": 0,
+      "title": "Auto",
+      "type": "integer"
+     },
+     "auto_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Auto Rate"
+     },
      "avg_duration_s": {
       "anyOf": [
        {
@@ -43388,6 +43404,22 @@
    },
    "UsageDay": {
     "properties": {
+     "auto": {
+      "default": 0,
+      "title": "Auto",
+      "type": "integer"
+     },
+     "auto_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Auto Rate"
+     },
      "avg_duration_s": {
       "anyOf": [
        {
@@ -43478,6 +43510,22 @@
    },
    "UsageFigures": {
     "properties": {
+     "auto": {
+      "default": 0,
+      "title": "Auto",
+      "type": "integer"
+     },
+     "auto_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Auto Rate"
+     },
      "avg_duration_s": {
       "anyOf": [
        {

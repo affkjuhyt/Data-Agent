@@ -88,4 +88,25 @@ describe('summaryFromRuns', () => {
     expect(summary.issues[0]?.title).toContain('93%');
     expect(summary.budget_used_ratio).toBeCloseTo(0.93);
   });
+
+  it('counts a run as done alone only when it succeeded without a person', () => {
+    const at = '2026-10-17T10:00:00Z';
+    const summary = summaryFromRuns(
+      '7d',
+      [
+        run({ id: 'ok', status: 'succeeded', created_at: at }),
+        run({ id: 'ok2', status: 'succeeded', created_at: at }),
+        run({ id: 'asked', status: 'succeeded', created_at: at, hitl_count: 1 }),
+        run({ id: 'broke', status: 'failed', created_at: at }),
+      ],
+      [agent],
+      now,
+    );
+    // Two of four: a failed run is not done alone, and it is drawn once, as an error.
+    expect(summary.auto_rate).toBeCloseTo(0.5);
+    expect(summary.hitl_median_response_s).toBeNull();
+    const total = summary.series.reduce((sum, d) => sum + d.auto + d.human + d.error, 0);
+    expect(total).toBe(4);
+  });
 });
+

@@ -231,6 +231,8 @@ async def test_agent_usage_per_day_and_per_agent(gov: Org, seed: Seed) -> None:
         totals = body["totals"]
         assert (totals["runs"], totals["needs_person"], totals["errors"]) == (4, 1, 1)
         assert totals["needs_person_rate"] == 0.25
+        # Done alone: succeeded without a person. The failed and the running run are not.
+        assert (totals["auto"], totals["auto_rate"]) == (1, 0.25)
         assert Decimal(totals["cost"]) == Decimal("16.00")
         assert (totals["model_calls"], totals["model_errors"], totals["tokens"]) == (3, 1, 360)
         # Three finished runs: 60, 120 and 30 seconds.
@@ -245,7 +247,15 @@ async def test_agent_usage_per_day_and_per_agent(gov: Org, seed: Seed) -> None:
         assert agents[str(recon)]["name"] == "Recon"
         assert agents[str(recon)]["runs"] == 3
         assert agents[str(recon)]["error_rate"] == pytest.approx(1 / 3)
-        assert agents[str(recon)]["budget_used_ratio"] == 0.25
+        # This month's spend is summed from the production runs, not the never-written column
+        # (seeded 250.00 here); a run of yesterday is last month's on the 1st.
+        month = NOW.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        spent = sum(
+            (Decimal(c) for at, c in ((yesterday, "15.00"), (today, "1.00")) if at >= month),
+            Decimal(0),
+        )
+        assert Decimal(agents[str(recon)]["spent_this_month"]) == spent
+        assert agents[str(recon)]["budget_used_ratio"] == pytest.approx(float(spent / 1000))
         assert agents[str(report)]["budget_used_ratio"] is None
         assert [d["day"] for d in agents[str(recon)]["days"]] == [
             str(yesterday.date()),

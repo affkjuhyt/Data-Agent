@@ -218,6 +218,8 @@ async def test_list_agents_filters_and_pages(world: AgentWorld) -> None:
         by_id = {a["id"]: a for a in counted.json()["items"]}
         assert by_id[first["id"]]["active_runs"] == 1
         assert by_id[first["id"]]["waiting_runs"] == 0
+        # Spent this month is summed from production runs; a test run costs nothing here.
+        assert by_id[first["id"]]["spent_this_month"] == "0"
 
 
 # Proves AC-13-02-01, AC-13-02-04.
