@@ -156,3 +156,67 @@ def test_when_every_forecast_is_invalid_nothing_is_chosen(monkeypatch):
         result.reason
         == "Mô hình tốt nhất cho ra giá trị dự báo không hợp lệ, nên không tạo dự báo."
     )
+
+
+# model_version_guard (BR-172) refuses publish when in_sample_mase is missing or not a
+# positive numeric(8, 4), or when the stored backtest MASE is more than twice it.
+UNPUBLISHABLE = (
+    "Không mô hình nào đủ điều kiện phát hành: mô hình tốt hơn cách dự báo đơn giản "
+    "vẫn thiếu MASE trong mẫu hoặc quá khớp (MASE backtest quá 2 lần MASE trong mẫu), "
+    "nên không tạo dự báo."
+)
+
+
+def _force_scores(monkeypatch, scores: dict[str, tuple[float | None, float | None]]) -> None:
+    """Replace each candidate's MASE pair after the real backtest, and keep forecasts finite."""
+    from statsforecast import StatsForecast
+
+    import libs.forecast_fit.backtest as backtest
+
+    real_candidate = backtest.Candidate
+    real_predict = StatsForecast.predict
+
+    def candidate(*args, **kwargs):
+        made = real_candidate(*args, **kwargs)
+        forced = scores.get(made.algorithm)
+        if forced is None:
+            return made
+        return dataclasses.replace(made, mase=forced[0], in_sample_mase=forced[1])
+
+    def predict(self, *args, **kwargs):
+        return real_predict(self, *args, **kwargs).fillna(0.0)
+
+    monkeypatch.setattr(backtest, "Candidate", candidate)
+    monkeypatch.setattr(StatsForecast, "predict", predict)
+
+
+def test_a_lower_backtest_mase_the_publish_guard_would_refuse_is_not_chosen(monkeypatch):
+    # ets wins the backtest but has no in-sample MASE; theta beats seasonal naive but is
+    # more than twice as bad out of sample as in sample. arima is worse on the backtest
+    # and sits exactly on the guard's 2x line, which publish still allows.
+    _force_scores(
+        monkeypatch,
+        {"ets": (0.20, None), "theta": (0.30, 0.10), "arima": (0.40, 0.20)},
+    )
+
+    result = fit(_seasonal_series(48), frequency="month", horizon=6)
+
+    assert result.chosen == "arima"
+    assert result.reason is None
+    assert len(result.predictions) == 6
+
+
+def test_when_nothing_publishable_remains_nothing_is_chosen(monkeypatch):
+    # Every model beats seasonal naive. None can be published: missing in-sample MASE,
+    # backtest more than twice the in-sample one, and an in-sample MASE that rounds to 0
+    # on numeric(8, 4) (the column's CHECK refuses 0, so publish sees NULL).
+    _force_scores(
+        monkeypatch,
+        {"ets": (0.20, None), "theta": (0.30, 0.10), "arima": (0.40, 0.00004)},
+    )
+
+    result = fit(_seasonal_series(48), frequency="month", horizon=6)
+
+    assert result.chosen is None
+    assert result.reason == UNPUBLISHABLE
+    assert result.predictions == []

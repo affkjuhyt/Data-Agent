@@ -7,6 +7,7 @@ way POST …versions/{id}:submit does (BR-158)."""
 from __future__ import annotations
 
 import datetime as dt
+import decimal
 import json
 import math
 import uuid
@@ -579,6 +580,95 @@ async def test_a_job_whose_candidates_lose_ends_failed_without_a_version(
         == 0
     )
     assert job_events(seed, job)[-1] == ("training", "failed")
+
+
+# Same refusal the library uses when every MASE<1 candidate would fail model_version_guard.
+CANNOT_PUBLISH = (
+    "Mô hình được chọn không đủ điều kiện phát hành (thiếu MASE trong mẫu hoặc quá khớp), "
+    "nên không tạo dự báo."
+)
+
+
+def guarded(
+    series: list[Point], horizon: int, *, mase: float, in_sample: float | None
+) -> FitResult:
+    """A trainer answer that chose ets even though publish (BR-172) would refuse it."""
+    base = realistic(series, horizon)
+    candidates = [
+        Candidate("naive", 1.31, 14.2, 0.55, 0.81, 1.02),
+        Candidate("seasonal_naive", 1.0, 9.8, 0.7, 0.9, 1.0),
+        Candidate("ets", mase, 4.1, 0.83, 0.96, in_sample),
+        Candidate("theta", 0.80, 5.0, 0.8, 0.94, 0.70),
+        Candidate("arima", None, None, None, None, None),
+    ]
+    return FitResult(
+        chosen="ets",
+        reason=None,
+        candidates=candidates,
+        cutoffs=base.cutoffs,
+        predictions=base.predictions,
+        interval_method="model",
+        params=base.params,
+    )
+
+
+@pytest.mark.parametrize(
+    ("mase", "in_sample"),
+    [
+        (0.40, 0.10),  # stored backtest MASE is 4x the in-sample one
+        (0.20, 0.00004),  # rounds to 0 at numeric(8, 4), stored as NULL, publish refuses
+    ],
+)
+async def test_a_choice_the_publish_guard_would_refuse_fails_without_a_proposal(
+    seed: Seed,
+    warehouse: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    trainer: Trainer,
+    mase: float,
+    in_sample: float,
+) -> None:
+    trainer.answer = lambda series, horizon: guarded(
+        series, horizon, mase=mase, in_sample=in_sample
+    )
+    shop = build(seed, warehouse, monkeypatch)
+    job = shop.job("DOANH_THU")
+    await drain()
+
+    status, progress, version_id, finished = job_row(seed, job)
+    assert status == "failed"
+    assert progress["error"] == CANNOT_PUBLISH
+    assert version_id is None and finished is not None
+    assert versions(seed, shop, "DOANH_THU") == []
+    assert (
+        seed.one(
+            "SELECT count(*) FROM inbox.proposal WHERE org_id = %s AND kind = 'forecast_model'",
+            shop.org,
+        )
+        == 0
+    )
+    assert job_events(seed, job)[-1] == ("training", "failed")
+
+
+async def test_a_tiny_positive_in_sample_mase_is_stored(
+    seed: Seed,
+    warehouse: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    trainer: Trainer,
+) -> None:
+    """0.0001 survives numeric(8, 4). Dropping it to NULL would make publish refuse the version."""
+    trainer.answer = lambda series, horizon: guarded(series, horizon, mase=0.0002, in_sample=0.0001)
+    shop = build(seed, warehouse, monkeypatch)
+    job = shop.job("DOANH_THU")
+    await drain()
+
+    status, _, version_id, _ = job_row(seed, job)
+    assert status == "ready"
+    assert version_id is not None
+    stored = seed.one(
+        "SELECT mase, in_sample_mase FROM forecast.backtest_run WHERE model_version_id = %s",
+        version_id,
+    )
+    assert stored == (decimal.Decimal("0.0002"), decimal.Decimal("0.0001"))
 
 
 async def test_a_gap_in_a_non_additive_series_fails_the_job_naming_the_period(

@@ -14,8 +14,11 @@ question with no current forecast):
    (semantic/coverage.py) is left out and named in the card's limits. Fewer than 24 periods with
    data fail the job in words;
 3. `training`: the series goes to ml-forecast (libs/forecast_fit: FORECAST_SERVICE_URL, a bounded
-   timeout); the library backtests every candidate against seasonal naive and keeps the best.
-   Nothing better than seasonal naive fails the job with the library's reason;
+   timeout); the library backtests every candidate against seasonal naive and keeps the best
+   that would also pass publish (BR-172: positive in-sample MASE at 4 decimals, backtest MASE
+   at most twice that). Nothing better than seasonal naive, and no publishable candidate,
+   fails the job with the library's reason. A named winner the guard would still refuse
+   fails the job here too, before a version or a proposal exists;
 4. `backtesting`: one transaction writes the draft model_version (its card holds the backtest
    table, the limits and scope_policy_hash), its backtest_run, `horizon` experimental predictions,
    submits the version to the metric owner by the api's own rule (libs/forecast_release: status
@@ -56,6 +59,12 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context
 from libs.dataagent_db.models import forecast as fc
 from libs.forecast_fit import Candidate, FitResult, Point
+from libs.forecast_fit.guard import (
+    CHOSEN_UNPUBLISHABLE,
+    passes_publish_guard,
+    stored_backtest_mase,
+    stored_mase,
+)
 from libs.forecast_fit.service import TrainerUnavailable, fit_series
 from services.worker_agent import questions, storage
 from services.worker_agent.events import Event, Handler
@@ -461,11 +470,26 @@ async def _artifact(org: uuid.UUID, version_id: uuid.UUID, params: dict[str, Any
     return key
 
 
+def _publishable(fit: FitResult) -> Candidate:
+    """The named winner, when the stored backtest would pass model_version_guard."""
+    chosen = next((x for x in fit.candidates if x.algorithm == fit.chosen), None)
+    if (
+        chosen is None
+        or chosen.mase is None
+        or stored_mase(chosen.in_sample_mase) is None
+        or not passes_publish_guard(chosen.mase, chosen.in_sample_mase)
+    ):
+        raise Refused(CHOSEN_UNPUBLISHABLE)
+    return chosen
+
+
 async def _write(job: _Job, model_id: uuid.UUID, series: Series, fit: FitResult) -> None:
     """The version, its backtest and predictions, its submission and the job ready, at once."""
-    chosen = next((x for x in fit.candidates if x.algorithm == fit.chosen), None)
-    if chosen is None or chosen.mase is None or chosen.mase >= 1:
-        raise Refused(NOTHING_BEATS)
+    chosen = _publishable(fit)
+    # _publishable already required both figures; the stored in-sample MASE is positive.
+    assert chosen.mase is not None
+    sample = stored_mase(chosen.in_sample_mase)
+    assert sample is not None
     interval = INTERVALS.get(fit.interval_method or "")
     if interval is None:
         raise Refused("Kết quả dự báo không nói khoảng dự báo được tính thế nào.")
@@ -474,7 +498,6 @@ async def _write(job: _Job, model_id: uuid.UUID, series: Series, fit: FitResult)
             f"Dịch vụ dự báo trả {len(fit.predictions)} kỳ thay vì {job.horizon} kỳ đã hỏi."
         )
     baseline = next((x for x in fit.candidates if x.algorithm == "seasonal_naive"), None)
-    in_sample = chosen.in_sample_mase
     version_id = uuid7()
     artifact_key = await _artifact(job.org_id, version_id, fit.params)
     table = [{"algorithm": x.algorithm, **_figures(x)} for x in fit.candidates]
@@ -529,12 +552,8 @@ async def _write(job: _Job, model_id: uuid.UUID, series: Series, fit: FitResult)
                 horizon=job.horizon,
                 metrics={**_figures(chosen), "interval_method": interval},
                 baseline_metrics=_figures(baseline) if baseline else {"mase": 1.0},
-                mase=_decimal(round(chosen.mase, 4)),
-                in_sample_mase=(
-                    _decimal(round(in_sample, 4))
-                    if in_sample is not None and round(in_sample, 4) > 0
-                    else None
-                ),
+                mase=stored_backtest_mase(chosen.mase),
+                in_sample_mase=sample,
                 candidates=table,
                 started_at=now,
                 finished_at=now,
@@ -584,6 +603,8 @@ async def _train(org: uuid.UUID, job: _Job) -> None:
         raise Refused(str(exc)) from exc
     if fit.chosen is None:
         raise Refused(fit.reason or NOTHING_BEATS)
+    # Before backtesting, so a guard failure writes no version and opens no proposal.
+    _publishable(fit)
     if await _move(org, job.id, "training", "backtesting") is None:
         return
     await _write(job, model.id, series, fit)

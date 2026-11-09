@@ -2,7 +2,8 @@
 
 Candidates are naive, seasonal naive, ETS, Theta and ARIMA (statsforecast, Apache-2.0).
 The two baselines are measured but never chosen: a model is worth keeping only if its
-MASE, scaled by the in-sample seasonal-naive error, is below 1 across the backtest.
+MASE, scaled by the in-sample seasonal-naive error, is below 1 across the backtest,
+and the figures that would be stored would pass forecast.model_version_guard (BR-172).
 Messages that reach a user are Vietnamese; everything else is English.
 """
 
@@ -18,6 +19,7 @@ import pandas as pd
 from statsforecast import StatsForecast
 from statsforecast.models import AutoARIMA, AutoETS, AutoTheta, Naive, SeasonalNaive
 
+from .guard import UNPUBLISHABLE, passes_publish_guard
 from .shapes import Candidate, FitResult, Forecast, Point
 
 MIN_POINTS = 24
@@ -238,18 +240,25 @@ def fit(
             )
         )
 
-    eligible = [
+    # MASE < 1 is the seasonal-naive bar (BR-158). Publish also needs a positive in-sample
+    # MASE at 4 decimals and a backtest MASE no more than twice that (BR-172). A candidate
+    # that fails the second check must not win: the job would still open a proposal, and
+    # accepting it raises.
+    beating = [
         c
         for c in candidates
         if scale > tolerance and c.algorithm not in BASELINES and c.mase is not None and c.mase < 1
     ]
-    if not eligible:
+    if not beating:
         return _nothing(
             "Không mô hình nào tốt hơn cách dự báo đơn giản (lặp lại cùng kỳ năm trước) "
             "khi kiểm định trên dữ liệu quá khứ, nên không tạo dự báo.",
             candidates,
             cutoffs,
         )
+    eligible = [c for c in beating if passes_publish_guard(c.mase, c.in_sample_mase)]
+    if not eligible:
+        return _nothing(UNPUBLISHABLE, candidates, cutoffs)
 
     future = sf.predict(h=horizon, level=list(LEVELS))
     # Best backtest first; a candidate whose forecast holds a non-finite value is skipped.
