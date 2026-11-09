@@ -27,7 +27,6 @@ from libs.dataagent_db.models import context, governance
 from libs.dataagent_db.models import forecast as fc
 from libs.dataagent_db.models import org as org_models
 from services.api.catalogue import endpoint
-from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -232,22 +231,6 @@ async def submit_version(
         return ModelVersionView.model_validate(row)
 
 
-def _check_decider(row: fc.ModelVersion, owner: fc.ForecastModel, principal: Principal) -> bool:
-    """BR-158 / UC-15-04 E1: the metric owner decides, never whoever built the version, unless
-    the org allows it. True when the decider built the version (a self-approval)."""
-    built_it = two_people(
-        principal,
-        row.created_by,
-        message="Whoever built the version cannot decide on it (BR-158).",
-        code="policy_denied",
-    )
-    if owner.owner_id != principal.user_id:
-        raise Problem(
-            403, "policy_denied", "Only the metric owner decides on a forecast model (BR-158)."
-        )
-    return built_it
-
-
 @router.post(
     "/v1/forecast-model-versions/{id}:approve",
     response_model=ModelVersionView,
@@ -265,70 +248,17 @@ async def approve_version(
 ) -> ModelVersionView:
     async with transaction(ROLE, principal) as session:
         row, owner = await store.version(session, version_id, principal, data_space, lock=True)
-        if row.status != "pending_approval":
-            raise Problem(
-                409, "invalid_state", f"The version is {row.status}, not pending_approval."
-            )
-        self_approved = _check_decider(row, owner, principal)
-        if owner.status == "retired":
-            # A retired model takes no new version (12/10/2026): approving would bring it back.
-            raise Problem(409, "invalid_state", "The model is retired; it takes no new version.")
-        now = store.now()
-        previous_id = owner.current_version_id
-        if previous_id is not None and previous_id != row.id:
-            old = await session.get(fc.ModelVersion, previous_id, with_for_update=True)
-            if old is not None and old.status in rules.SERVING_VERSION:
-                old.status = "retired"
-                old.updated_by, old.updated_at = principal.user_id, now
-                store.emit(
-                    session,
-                    principal,
-                    "model_version",
-                    old.id,
-                    "forecast.model_version.retired",
-                    model_version_id=old.id,
-                    model_id=owner.id,
-                    data_space_id=owner.data_space_id,
-                    status=old.status,
-                )
-                # One published version per model (partial unique index): retire first.
-                await session.flush()
-        row.status = "published"
-        row.approved_by, row.approved_at = principal.user_id, now
-        row.updated_by, row.updated_at = principal.user_id, now
-        store.review_note(row, principal, "approve", body.note)
-        previous_model_status = owner.status
-        owner.current_version_id = row.id
-        # A newly released version serves an active model, whatever its predecessor was (BR-160).
-        owner.status = "active"
-        owner.updated_by, owner.updated_at = principal.user_id, now
-        # ml-forecast recomputes the model's forecasts and monitors on this event (UC-15-04 step 4).
-        store.emit(
-            session,
-            principal,
-            "model_version",
-            row.id,
-            "forecast.model.published",
-            model_version_id=row.id,
-            model_id=owner.id,
-            data_space_id=owner.data_space_id,
-            previous_version_id=previous_id,
-            status=row.status,
-            approved_by=principal.user_id,
-        )
-        if previous_model_status != owner.status:
-            store.emit(
+        try:
+            self_approved = await release.approve(
                 session,
-                principal,
-                "forecast_model",
-                owner.id,
-                "forecast.model.status_changed",
-                model_id=owner.id,
-                data_space_id=owner.data_space_id,
-                previous_status=previous_model_status,
-                status=owner.status,
+                row,
+                owner,
+                by=principal.user_id,
+                note=body.note,
+                allow_self=principal.self_approval,
             )
-        await session.flush()
+        except release.ApproveRefused as exc:
+            raise Problem(exc.status, exc.code, str(exc)) from exc
         if self_approved:
             await record_self_approval(
                 principal,
@@ -354,29 +284,17 @@ async def reject_version(
 ) -> ModelVersionView:
     async with transaction(ROLE, principal) as session:
         row, owner = await store.version(session, version_id, principal, data_space, lock=True)
-        if row.status != "pending_approval":
-            raise Problem(
-                409, "invalid_state", f"The version is {row.status}, not pending_approval."
+        try:
+            self_decided = await release.reject(
+                session,
+                row,
+                owner,
+                by=principal.user_id,
+                reason=body.reason,
+                allow_self=principal.self_approval,
             )
-        # Approve and reject are one decision (UC-15-04 step 3) under one set of rules.
-        self_decided = _check_decider(row, owner, principal)
-        row.status = "rejected"
-        row.updated_by, row.updated_at = principal.user_id, store.now()
-        # AC-15-04-02: the reason stays with the decision.
-        store.review_note(row, principal, "reject", body.reason)
-        store.emit(
-            session,
-            principal,
-            "model_version",
-            row.id,
-            "forecast.model_version.rejected",
-            model_version_id=row.id,
-            model_id=owner.id,
-            data_space_id=owner.data_space_id,
-            status=row.status,
-            rejected_by=principal.user_id,
-        )
-        await session.flush()
+        except release.ApproveRefused as exc:
+            raise Problem(exc.status, exc.code, str(exc)) from exc
         if self_decided:
             await record_self_approval(
                 principal,

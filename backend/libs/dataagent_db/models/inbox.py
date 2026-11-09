@@ -37,7 +37,7 @@ class Proposal(Base):
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     kind: Mapped[str] = mapped_column(
         Text,
-        comment="metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page",
+        comment="metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page, forecast_model (công bố phiên bản mô hình dự báo, UC-15-04)",
     )
     target_service: Mapped[str] = mapped_column(
         Text, comment="Dịch vụ sở hữu đối tượng, sẽ phát hành khi chấp nhận"

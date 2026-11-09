@@ -681,3 +681,65 @@ async def test_a_partial_last_month_is_left_out_of_training(
         "SELECT min(period) FROM forecast.prediction WHERE model_version_id = %s", version_id
     )
     assert first == _month(MONTHS - 1)
+
+
+async def test_a_submitted_version_opens_a_proposal_for_the_owner(
+    seed: Seed,
+    warehouse: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    trainer: Trainer,
+    store: Store,
+) -> None:
+    """forecast.model_version.submitted opens one forecast_model proposal for the metric owner."""
+    shop = build(seed, warehouse, monkeypatch)
+    job = shop.job("DOANH_THU", horizon=3)
+    await drain()
+    version_id = job_row(seed, job)[2]
+    assert version_id is not None
+
+    proposal = seed.one(
+        "SELECT id, kind, target_ref, assignee_id, title, proposed_by, status, diff "
+        "FROM inbox.proposal WHERE target_ref = %s",
+        version_id,
+    )
+    assert proposal is not None
+    pid, kind, target, assignee, title, proposed_by, status, diff = proposal  # type: ignore[misc]
+    assert kind == "forecast_model"
+    assert target == version_id
+    assert assignee == shop.owner
+    assert title == "Công bố mô hình dự báo DOANH_THU"
+    assert proposed_by == shop.analyst
+    assert status == "pending_review"
+    assert diff["metric_code"] == "DOANH_THU"
+    assert diff["metric_name"] == "DOANH_THU"
+    assert diff["scope"] == {}
+    assert diff["frequency"] == "month"
+    assert diff["algorithm"] == "ets"
+    assert diff["mase"] == pytest.approx(0.62)
+    assert diff["smape"] == pytest.approx(0.041)
+    assert diff["coverage80"] == pytest.approx(0.83)
+    assert diff["coverage95"] == pytest.approx(0.96)
+    assert diff["cutoffs"] == 6
+    assert diff["training_from"] == "2023-07-01"
+    assert diff["training_to"] == "2026-06-01"
+    assert diff["horizon"] == 3
+    assert [p["period"] for p in diff["predictions"]] == [
+        "2026-07-01",
+        "2026-08-01",
+        "2026-09-01",
+    ]
+    assert diff["predictions"][0]["point"] == pytest.approx(1400)
+    hitl = seed.one(
+        "SELECT kind, assignee_id, title FROM inbox.hitl_request WHERE source_ref = %s", pid
+    )
+    assert hitl == ("approve_proposal", shop.owner, title)
+
+    # The same event again opens nothing twice.
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE forecast.outbox SET published_at = NULL "
+            "WHERE aggregate_id = %s AND event_type = 'forecast.model_version.submitted'",
+            (str(version_id),),
+        )
+    await drain()
+    assert seed.one("SELECT count(*) FROM inbox.proposal WHERE target_ref = %s", version_id) == 1

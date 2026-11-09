@@ -8,7 +8,10 @@ capability its approver must hold, and no one decides two steps (BR-132).
 
 Every status change writes its event to inbox.outbox in the same transaction (D1 rule 8);
 the agent runtime, channel gateway and the service that owns a proposal's object act on
-hitl.resolved and proposal.decided, never on a write from here into their schema.
+hitl.resolved and proposal.decided. A forecast model is the exception this process can
+finish itself: after the decision commits, the same approve and reject rules as
+POST /v1/forecast-model-versions/{id}:approve run here (libs.forecast_release). The worker
+applies the same event, and that second call changes nothing.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request
 from sqlalchemy import Select, and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import forecast_release as release
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import eval as evaluation
 from libs.dataagent_db.models import inbox, org
@@ -695,6 +699,13 @@ async def decide_proposal(
                 code="business_rule_violated",
             ):
                 self_steps.append("proposal.second_step")
+        if (
+            row.kind == "forecast_model"
+            and body.decision in ("accept", "reject")
+            and row.target_ref is not None
+            and await _forecast_built_by_caller(principal, row)
+        ):
+            self_steps.append("forecast_model.decide")
         session.add(
             inbox.ProposalReview(
                 id=uuid7(),
@@ -770,6 +781,7 @@ async def decide_proposal(
                 step=chain_step,
                 edited=body.edited_diff is not None,
                 reviewer_id=principal.user_id,
+                **({"note": note} if row.kind == "forecast_model" else {}),
             )
         )
         await session.flush()
@@ -777,4 +789,67 @@ async def decide_proposal(
             await record_self_approval(
                 principal, step=step, object_kind="proposal", object_id=row.id
             )
-        return await _proposal_detail(session, row, principal)
+        detail = await _proposal_detail(session, row, principal)
+        forecast_version = (
+            row.target_ref
+            if row.kind == "forecast_model"
+            and row.status in ("accepted", "rejected")
+            and row.target_ref is not None
+            else None
+        )
+        forecast_space, forecast_status = row.data_space_id, row.status
+    if forecast_version is not None:
+        await _publish_forecast(principal, forecast_version, forecast_space, forecast_status, note)
+    return detail
+
+
+async def _forecast_built_by_caller(principal: Principal, row: inbox.Proposal) -> bool:
+    """True when the caller built the version. A refusal leaves the proposal pending (BR-158)."""
+    assert row.target_ref is not None
+    try:
+        async with transaction("svc_forecast", principal) as session:
+            version, model = await release.locked(
+                session, row.target_ref, principal.org_id, row.data_space_id
+            )
+            return release.may_decide(
+                version, model, by=principal.user_id, allow_self=principal.self_approval
+            )
+    except release.ApproveRefused as exc:
+        raise Problem(exc.status, exc.code, str(exc)) from exc
+
+
+async def _publish_forecast(
+    principal: Principal,
+    version_id: uuid.UUID,
+    data_space_id: uuid.UUID,
+    status: str,
+    note: str | None,
+) -> None:
+    """The decision is already recorded. Publish or reject the version by the shared rule."""
+    try:
+        async with transaction("svc_forecast", principal) as session:
+            version, model = await release.locked(
+                session, version_id, principal.org_id, data_space_id
+            )
+            if status == "accepted":
+                await release.approve(
+                    session,
+                    version,
+                    model,
+                    by=principal.user_id,
+                    note=note,
+                    allow_self=principal.self_approval,
+                    idempotent=True,
+                )
+            else:
+                await release.reject(
+                    session,
+                    version,
+                    model,
+                    by=principal.user_id,
+                    reason=note,
+                    allow_self=principal.self_approval,
+                    idempotent=True,
+                )
+    except release.ApproveRefused as exc:
+        raise Problem(exc.status, exc.code, str(exc)) from exc

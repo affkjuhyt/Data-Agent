@@ -217,7 +217,7 @@ async def sources() -> list[EventSource]:
         if schema == "period":
             types |= set(periods.HANDLERS)
         if schema == "forecast":
-            # A queued job is trained here (forecasting.py); its later states are no-ops.
+            # A queued job is trained here; a submitted version opens the owner's proposal.
             types |= set(forecasting.HANDLERS)
         if schema == "conflict":
             types |= {reviews.AUTHORITY}

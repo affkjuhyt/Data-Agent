@@ -20,6 +20,9 @@ question with no current forecast):
    table, the limits and scope_policy_hash), its backtest_run, `horizon` experimental predictions,
    submits the version to the metric owner by the api's own rule (libs/forecast_release: status
    pending_approval, forecast.model_version.submitted), and sets the job `ready`.
+   `forecast.model_version.submitted` opens one inbox proposal for that owner (kind
+   forecast_model). Accepting it publishes the version by the same `approve` the api's
+   :approve calls; a redelivered event opens nothing twice.
 
 Each status change is its own forecast.job.state_changed, written in the transaction of the
 change. A job that is no longer in the status a step expects (cancelled, or taken by a replayed
@@ -43,6 +46,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError
@@ -602,4 +606,146 @@ async def on_job(event: Event) -> None:
         await _fail(event.org_id, job_id, SYSTEM_ERROR)
 
 
-HANDLERS: dict[str, Handler] = {release.JOB_CHANGED: on_job}
+def _share(metrics: Any, key: str) -> float | None:
+    if not isinstance(metrics, dict) or metrics.get(key) is None:
+        return None
+    return float(metrics[key])
+
+
+async def _proposal_for(org: uuid.UUID, version_id: uuid.UUID) -> dict[str, Any] | None:
+    """What the owner's proposal says, or None when this version is not waiting for one."""
+    async with scoped_session(ROLE, org) as session:
+        row = await session.get(fc.ModelVersion, version_id)
+        if row is None or row.status != "pending_approval" or row.created_by is None:
+            return None
+        model = await session.get(fc.ForecastModel, row.model_id)
+        backtest = await release.latest_backtest(session, row)
+        if model is None or backtest is None:
+            return None
+        shown = await session.scalar(
+            select(context.MetricVersion.display_name)
+            .join(context.Metric, context.Metric.id == context.MetricVersion.metric_id)
+            .where(
+                context.Metric.org_id == model.org_id,
+                context.Metric.data_space_id == model.data_space_id,
+                context.Metric.code == model.metric_code,
+                context.MetricVersion.version == context.Metric.current_version,
+            )
+        )
+        name = shown or model.metric_code
+        predictions = (
+            await session.scalars(
+                select(fc.Prediction)
+                .where(
+                    fc.Prediction.model_version_id == row.id,
+                    fc.Prediction.scenario_id.is_(None),
+                )
+                .order_by(fc.Prediction.period)
+                .limit(3)
+            )
+        ).all()
+        return {
+            "data_space_id": model.data_space_id,
+            "kind": "forecast_model",
+            "target_service": "forecast",
+            "target_ref": row.id,
+            "title": f"Công bố mô hình dự báo {name}",
+            "diff": {
+                "metric_code": model.metric_code,
+                "metric_name": name,
+                "scope": dict(model.scope or {}),
+                "frequency": model.frequency,
+                "algorithm": row.algorithm,
+                "mase": float(backtest.mase),
+                "smape": _share(backtest.metrics, "smape"),
+                "coverage80": _share(backtest.metrics, "coverage80"),
+                "coverage95": _share(backtest.metrics, "coverage95"),
+                "cutoffs": len(backtest.cutoffs),
+                "training_from": row.training_from.isoformat(),
+                "training_to": row.training_to.isoformat(),
+                "horizon": backtest.horizon,
+                "predictions": [
+                    {"period": item.period.isoformat(), "point": float(item.point)}
+                    for item in predictions
+                ],
+            },
+            "proposed_by": row.created_by,
+            "eval_run_id": None,
+            "assignee_id": model.owner_id,
+        }
+
+
+async def on_submitted(event: Event) -> None:
+    """One forecast_model proposal for the metric owner. The id comes from the event, so a
+    redelivery inserts nothing."""
+    version_id = uuid.UUID(str(event.payload.get("model_version_id") or event.aggregate_id))
+    opened = await _proposal_for(event.org_id, version_id)
+    if opened is None:
+        return
+    # Imported here: proposals routes an accepted forecast_model back into this module.
+    from services.worker_agent import proposals
+
+    await proposals._open(event, **opened)
+
+
+async def apply(event: Event, proposal: dict[str, Any]) -> bool:
+    """Publish or reject the version the proposal names, by the api's own rule.
+
+    False when the version can no longer be decided, so the proposal ends apply_failed instead of
+    the event retrying. The note is the reviewer's; a second apply of an already decided version
+    changes nothing.
+    """
+    decision = event.payload.get("status")
+    target = proposal.get("target_ref")
+    if (
+        decision not in ("accepted", "rejected")
+        or target is None
+        or "reviewer_id" not in event.payload
+    ):
+        return False
+    reviewer = uuid.UUID(str(event.payload["reviewer_id"]))
+    raw_note = event.payload.get("note")
+    note = raw_note.strip() if isinstance(raw_note, str) and raw_note.strip() else None
+    from services.worker_agent import self_approval
+
+    try:
+        async with scoped_session(ROLE, event.org_id, reviewer) as session:
+            allow = await self_approval.allowed(session, event.org_id)
+            row, model = await release.locked(
+                session,
+                uuid.UUID(str(target)),
+                event.org_id,
+                uuid.UUID(str(proposal["data_space_id"])),
+            )
+            if decision == "accepted":
+                await release.approve(
+                    session,
+                    row,
+                    model,
+                    by=reviewer,
+                    note=note,
+                    allow_self=allow,
+                    idempotent=True,
+                )
+            else:
+                await release.reject(
+                    session,
+                    row,
+                    model,
+                    by=reviewer,
+                    reason=note,
+                    allow_self=allow,
+                    idempotent=True,
+                )
+    except release.ApproveRefused:
+        logger.info(
+            "forecast | proposal %s not applied: the version cannot be decided", proposal["id"]
+        )
+        return False
+    except DBAPIError:
+        logger.info("forecast | proposal %s refused by the database", proposal["id"], exc_info=True)
+        return False
+    return True
+
+
+HANDLERS: dict[str, Handler] = {release.JOB_CHANGED: on_job, release.SUBMITTED: on_submitted}

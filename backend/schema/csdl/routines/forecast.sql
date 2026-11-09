@@ -218,6 +218,8 @@ CREATE TRIGGER prediction_exog_guard
 -- D5.2: predictions are append-only. The generated grants already give svc_forecast only
 -- SELECT, INSERT on this "Bản ghi bất biến" table; the revoke states the exception explicitly.
 REVOKE UPDATE, DELETE ON forecast.prediction FROM svc_forecast;
+-- The experimental label comes off when the version is published (BR-158). Figures stay append-only.
+GRANT UPDATE (is_experimental) ON forecast.prediction TO svc_forecast;
 
 
 -- ═══ formula_model ═══

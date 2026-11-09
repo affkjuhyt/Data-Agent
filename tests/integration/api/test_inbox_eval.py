@@ -1947,3 +1947,48 @@ async def test_summary_hides_a_personal_skill_the_proposal_does_not_review(team:
     summary = await _summary(team, proposal)
     assert summary["headline"] == "Phát hành kỹ năng (không xem được), phiên bản 1."
     assert "Kỹ năng riêng" not in str(summary)
+
+
+async def test_a_forecast_model_proposal_reads_in_words(team: Team) -> None:
+    proposal = _proposal(
+        team,
+        kind="forecast_model",
+        target_service="forecast",
+        title="Công bố mô hình dự báo Doanh thu",
+        diff=Json(
+            {
+                "metric_code": "DOANH_THU",
+                "metric_name": "Doanh thu",
+                "scope": {"nhom_hang": ["Xe đạp"]},
+                "frequency": "month",
+                "algorithm": "ets",
+                "mase": 0.72,
+                "smape": 0.041,
+                "coverage80": 0.8,
+                "coverage95": 0.95,
+                "cutoffs": 8,
+                "training_from": "2023-01-01",
+                "training_to": "2026-06-01",
+                "horizon": 12,
+                "predictions": [
+                    {"period": "2026-07-01", "point": 1400},
+                    {"period": "2026-08-01", "point": 1410},
+                    {"period": "2026-09-01", "point": 1420},
+                ],
+            }
+        ),
+    )
+    summary = await _summary(team, proposal)
+    assert summary["headline"] == (
+        "Công bố mô hình dự báo Doanh thu \u00b7 Xe đạp theo tháng, ETS."
+    )
+    assert summary["fields"] == [
+        _field("Thuật toán", "ETS"),
+        _field("Sai số backtest", "MASE 0,72 so với seasonal naive"),
+        _field("Số điểm cắt", "8"),
+        _field("Độ phủ khoảng 80%/95%", "80% / 95%"),
+        _field("Dữ liệu huấn luyện", "01/01/2023 \u2013 01/06/2026"),
+        _field("Tầm dự báo", "12 tháng"),
+    ]
+    assert summary["checks_note"] == "Tốt hơn cách đoán theo mùa 28%."
+    assert summary["preview_note"] is None

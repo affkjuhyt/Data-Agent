@@ -1,12 +1,15 @@
 """The release rules of a forecast model version that the api and worker-agent share.
 
 A version is submitted for approval from two places: POST /v1/forecast-model-versions/{id}:submit
-(the api) and the end of a training job (worker-agent, forecasting.py). worker-agent may not import
-the api (.importlinter), so the rule lives here and both call it: which state a version is
-submitted from, what it needs (a finished backtest beating seasonal naive, BR-158), the note kept
-with it and the forecast.outbox event Inbox opens the owner's request on. The job's state event is here for
-the same reason: the api queues and cancels a job, worker-agent moves it through training. The DB
-still guards the life cycle itself (routines/forecast.sql model_version_guard).
+(the api) and the end of a training job (worker-agent, forecasting.py). Approving it is the same:
+POST …versions/{id}:approve and the inbox proposal's apply both call `approve` here. worker-agent
+may not import the api (.importlinter), so the rule lives here and both call it: which state a
+version is submitted from, what it needs (a finished backtest beating seasonal naive, BR-158), who
+may decide (the metric owner, never the builder unless the org allows it), the note kept with it
+and the forecast.outbox events. The job's state event is here for the same reason: the api queues
+and cancels a job, worker-agent moves it through training. The DB still guards the life cycle
+itself (routines/forecast.sql model_version_guard). Publishing takes the experimental label off
+the version's predictions; the figures stay append-only.
 """
 
 from __future__ import annotations
@@ -15,21 +18,29 @@ import datetime
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import forecast as fc
 
 __all__ = [
+    "ApproveRefused",
     "SubmitRefused",
+    "approve",
     "emit",
     "job_changed",
     "latest_backtest",
+    "locked",
+    "may_decide",
     "now",
+    "reject",
     "review_note",
     "submit",
 ]
+
+# What a model may serve with (BR-160). Duplicated from the api's rules so this lib stays free of it.
+_SERVING = ("published", "degraded")
 
 JOB_CHANGED = "forecast.job.state_changed"
 SUBMITTED = "forecast.model_version.submitted"
@@ -165,3 +176,184 @@ async def submit(
         backtest_id=run.id,
         status=row.status,
     )
+
+
+class ApproveRefused(Exception):
+    """The version may not be decided; `status` and `code` are the api's problem for it."""
+
+    def __init__(self, status: int, code: str, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.code = code
+
+
+def may_decide(
+    row: fc.ModelVersion, model: fc.ForecastModel, *, by: uuid.UUID, allow_self: bool
+) -> bool:
+    """BR-158: the metric owner decides, never whoever built the version, unless the org allows
+    it. True when the decider built the version (a self-approval)."""
+    if by == row.created_by and not allow_self:
+        raise ApproveRefused(
+            403,
+            "policy_denied",
+            "Whoever built the version cannot decide on it (BR-158).",
+        )
+    if model.owner_id != by:
+        raise ApproveRefused(
+            403, "policy_denied", "Only the metric owner decides on a forecast model (BR-158)."
+        )
+    return by == row.created_by
+
+
+async def locked(
+    session: AsyncSession, version_id: uuid.UUID, org_id: uuid.UUID, data_space_id: uuid.UUID
+) -> tuple[fc.ModelVersion, fc.ForecastModel]:
+    """The version and its model, locked, or a not-found refusal for another Data Space."""
+    found = (
+        await session.execute(
+            select(fc.ModelVersion, fc.ForecastModel)
+            .join(fc.ForecastModel, fc.ForecastModel.id == fc.ModelVersion.model_id)
+            .where(
+                fc.ModelVersion.id == version_id,
+                fc.ModelVersion.org_id == org_id,
+                fc.ForecastModel.data_space_id == data_space_id,
+            )
+            .with_for_update()
+        )
+    ).first()
+    if found is None:
+        raise ApproveRefused(404, "not_found", "Model version not found.")
+    return found[0], found[1]
+
+
+async def _clear_experimental(session: AsyncSession, version_id: uuid.UUID) -> None:
+    """A published version's forecasts are no longer experimental (BR-158). The numbers stay."""
+    await session.execute(
+        update(fc.Prediction)
+        .where(
+            fc.Prediction.model_version_id == version_id,
+            fc.Prediction.is_experimental.is_(True),
+        )
+        .values(is_experimental=False)
+    )
+
+
+async def approve(
+    session: AsyncSession,
+    row: fc.ModelVersion,
+    model: fc.ForecastModel,
+    *,
+    by: uuid.UUID,
+    note: str | None,
+    allow_self: bool,
+    idempotent: bool = False,
+) -> bool:
+    """Publish `row` and point the model at it. The caller holds both rows locked.
+
+    True when `by` built the version. `idempotent` lets a second apply of an already published
+    version succeed: the inbox writes the decision and the worker applies the event, and either
+    may arrive first.
+    """
+    if idempotent and row.status == "published" and model.current_version_id == row.id:
+        await _clear_experimental(session, row.id)
+        return row.created_by == by
+    if row.status != "pending_approval":
+        raise ApproveRefused(
+            409, "invalid_state", f"The version is {row.status}, not pending_approval."
+        )
+    self_built = may_decide(row, model, by=by, allow_self=allow_self)
+    if model.status == "retired":
+        raise ApproveRefused(409, "invalid_state", "The model is retired; it takes no new version.")
+    moment = now()
+    previous_id = model.current_version_id
+    if previous_id is not None and previous_id != row.id:
+        old = await session.get(fc.ModelVersion, previous_id, with_for_update=True)
+        if old is not None and old.status in _SERVING:
+            old.status = "retired"
+            old.updated_by, old.updated_at = by, moment
+            emit(
+                session,
+                row.org_id,
+                "model_version",
+                old.id,
+                "forecast.model_version.retired",
+                model_version_id=old.id,
+                model_id=model.id,
+                data_space_id=model.data_space_id,
+                status=old.status,
+            )
+            # One published version per model (partial unique index): retire first.
+            await session.flush()
+    row.status = "published"
+    row.approved_by, row.approved_at = by, moment
+    row.updated_by, row.updated_at = by, moment
+    review_note(row, by, "approve", note)
+    previous_model_status = model.status
+    model.current_version_id = row.id
+    model.status = "active"
+    model.updated_by, model.updated_at = by, moment
+    emit(
+        session,
+        row.org_id,
+        "model_version",
+        row.id,
+        "forecast.model.published",
+        model_version_id=row.id,
+        model_id=model.id,
+        data_space_id=model.data_space_id,
+        previous_version_id=previous_id,
+        status=row.status,
+        approved_by=by,
+    )
+    if previous_model_status != model.status:
+        emit(
+            session,
+            row.org_id,
+            "forecast_model",
+            model.id,
+            "forecast.model.status_changed",
+            model_id=model.id,
+            data_space_id=model.data_space_id,
+            previous_status=previous_model_status,
+            status=model.status,
+        )
+    await session.flush()
+    await _clear_experimental(session, row.id)
+    return self_built
+
+
+async def reject(
+    session: AsyncSession,
+    row: fc.ModelVersion,
+    model: fc.ForecastModel,
+    *,
+    by: uuid.UUID,
+    reason: str | None,
+    allow_self: bool,
+    idempotent: bool = False,
+) -> bool:
+    """Send a pending version back as rejected. True when `by` built it. The caller holds the lock."""
+    if idempotent and row.status == "rejected":
+        return row.created_by == by
+    if row.status != "pending_approval":
+        raise ApproveRefused(
+            409, "invalid_state", f"The version is {row.status}, not pending_approval."
+        )
+    self_built = may_decide(row, model, by=by, allow_self=allow_self)
+    row.status = "rejected"
+    row.updated_by, row.updated_at = by, now()
+    review_note(row, by, "reject", reason)
+    emit(
+        session,
+        row.org_id,
+        "model_version",
+        row.id,
+        "forecast.model_version.rejected",
+        model_version_id=row.id,
+        model_id=model.id,
+        data_space_id=model.data_space_id,
+        status=row.status,
+        rejected_by=by,
+    )
+    await session.flush()
+    return self_built

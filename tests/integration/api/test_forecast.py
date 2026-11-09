@@ -2223,3 +2223,96 @@ async def test_the_workbench_shows_the_jobs_versions_and_backtests(fx: Fx) -> No
     assert roles["selected"]["model"] == "ETS"
     assert roles["selected"]["mase"] == 0.72
     assert "backtest trên 6 điểm cắt" in body["summary_text"]
+
+
+def _grant_approve(fx: Fx) -> None:
+    """:decide asks for `approve`; the metric owner holds steward. This test's owner may do both."""
+    fx.run(
+        "UPDATE org.role SET capabilities = ARRAY['ask','steward','approve']::text[] "
+        "WHERE org_id = %s AND code = 'STEWARD'",
+        fx.org,
+    )
+
+
+def _forecast_proposal(fx: Fx, version: uuid.UUID, *, proposed_by: str) -> uuid.UUID:
+    return fx.seed.row(
+        "inbox.proposal",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        kind="forecast_model",
+        target_service="forecast",
+        target_ref=version,
+        title="Công bố mô hình dự báo",
+        proposed_by=fx.users[proposed_by],
+        assignee_id=fx.users["owner"],
+        status="pending_review",
+        diff=Json({}),
+    )
+
+
+async def test_accepting_the_proposal_publishes_the_version(fx: Fx) -> None:
+    _grant_approve(fx)
+    october = datetime.date(2026, 10, 1)
+    november = datetime.date(2026, 11, 1)
+    first = fx.prediction(fx.draft, october, experimental=True)
+    second = fx.prediction(fx.draft, november, point=110, experimental=True)
+    async with client(fx) as api:
+        await _submit(api, fx, fx.draft)
+        proposal = _forecast_proposal(fx, fx.draft, proposed_by="builder")
+        decided = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            json={"decision": "accept", "note": "Đạt"},
+            headers=fx.headers("owner"),
+        )
+    assert decided.status_code == 200, decided.text
+    assert fx.one("SELECT status FROM forecast.model_version WHERE id = %s", fx.draft) == (
+        "published"
+    )
+    assert fx.one(
+        "SELECT current_version_id FROM forecast.forecast_model WHERE id = %s", fx.model
+    ) == str(fx.draft)
+    assert fx.one("SELECT is_experimental FROM forecast.prediction WHERE id = %s", first) is False
+    assert fx.one("SELECT is_experimental FROM forecast.prediction WHERE id = %s", second) is False
+    assert fx.one("SELECT status FROM forecast.model_version WHERE id = %s", fx.published) == (
+        "retired"
+    )
+
+
+async def test_the_builder_approves_their_model_only_when_the_org_allows_it(
+    fx: Fx, self_approvals: Any
+) -> None:
+    _grant_approve(fx)
+    by_owner = fx.version(fx.model, 3, created_by="owner")
+    async with client(fx) as api:
+        sent = await api.post(
+            f"/v1/forecast-model-versions/{by_owner}:submit", headers=fx.headers("owner")
+        )
+        assert sent.status_code == 200, sent.text
+        proposal = _forecast_proposal(fx, by_owner, proposed_by="builder")
+        refused = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            json={"decision": "accept"},
+            headers=fx.headers("owner"),
+        )
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["code"] == "policy_denied"
+    assert fx.one("SELECT status FROM forecast.model_version WHERE id = %s", by_owner) == (
+        "pending_approval"
+    )
+    assert self_approvals(fx.org) == []
+
+    fx.seed.allow_self_approval(fx.org)
+    async with client(fx) as api:
+        approved = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            json={"decision": "accept"},
+            headers=fx.headers("owner"),
+        )
+    assert approved.status_code == 200, approved.text
+    assert fx.one("SELECT status FROM forecast.model_version WHERE id = %s", by_owner) == (
+        "published"
+    )
+    assert fx.one(
+        "SELECT current_version_id FROM forecast.forecast_model WHERE id = %s", fx.model
+    ) == str(by_owner)
+    assert self_approvals(fx.org) == ["forecast_model.decide"]

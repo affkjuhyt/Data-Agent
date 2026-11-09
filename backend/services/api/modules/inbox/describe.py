@@ -15,6 +15,7 @@ scalars: `describe` never raises, and `diff` is still sent as is beside the summ
 from __future__ import annotations
 
 import datetime
+import decimal
 import json
 import logging
 import uuid
@@ -27,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db.models import eval as evaluation
 from libs.dataagent_db.models import inbox, org
+from libs.language import number as vi_number
 from services.api.kernel.auth import Principal
 from services.api.modules.catalog.public import dataset_names, sources_in_data_space
 from services.api.modules.context.public import NameKind, names_in_data_space
@@ -653,6 +655,88 @@ async def _knowledge_page(d: dict[str, Any], ask: _Ask) -> Described:
     return headline + ".", fields
 
 
+_ALGORITHMS = {
+    "ets": "ETS",
+    "theta": "Theta",
+    "arima": "ARIMA",
+    "sarimax": "SARIMAX",
+    "seasonal_naive": "seasonal naive",
+}
+_FREQUENCIES = {"month": "tháng", "quarter": "quý"}
+
+
+def _num(value: Any) -> decimal.Decimal:
+    if isinstance(value, bool) or not isinstance(value, int | float | decimal.Decimal):
+        raise _Shape
+    return decimal.Decimal(str(value))
+
+
+def _scope_words(scope: Any) -> str:
+    """The scope's member names. An empty scope is the whole series."""
+    if not isinstance(scope, dict) or not scope:
+        return "toàn bộ"
+    words: list[str] = []
+    for value in scope.values():
+        if isinstance(value, list):
+            words.extend(str(item) for item in value if item not in (None, ""))
+        elif value not in (None, ""):
+            words.append(str(value))
+    return ", ".join(words) if words else "toàn bộ"
+
+
+def _percent(value: Any) -> str:
+    """A share (0.8) as a percent in vi, without a trailing ,0."""
+    shown = vi_number(_num(value) * 100, 1)
+    if shown.endswith(",0"):
+        shown = shown[:-2]
+    return f"{shown}%"
+
+
+def _forecast_checks(diff: dict[str, Any]) -> str | None:
+    """How far the model beats a seasonal guess: (1 - MASE), in words."""
+    try:
+        better = (decimal.Decimal(1) - _num(diff.get("mase"))) * 100
+    except _Shape:
+        return None
+    shown = vi_number(better, 1)
+    if shown.endswith(",0"):
+        shown = shown[:-2]
+    return f"Tốt hơn cách đoán theo mùa {shown}%."
+
+
+async def _forecast_model(d: dict[str, Any], _ask: _Ask) -> Described:
+    name = _str(d.get("metric_name"))
+    frequency = _FREQUENCIES.get(str(d.get("frequency")))
+    algorithm = _ALGORITHMS.get(str(d.get("algorithm")))
+    if frequency is None or algorithm is None:
+        raise _Shape
+    # The middle dot is the screen's own wording, as the relationship cardinality's dash is.
+    scope = _scope_words(d.get("scope"))
+    headline = f"Công bố mô hình dự báo {name} \u00b7 {scope} theo {frequency}, {algorithm}."
+    mase = vi_number(_num(d.get("mase")), 2)
+    train_from, train_to = _date(d.get("training_from")), _date(d.get("training_to"))
+    horizon, cutoffs = d.get("horizon"), d.get("cutoffs")
+    if (
+        train_from is None
+        or train_to is None
+        or not isinstance(horizon, int)
+        or isinstance(horizon, bool)
+        or not isinstance(cutoffs, int)
+        or isinstance(cutoffs, bool)
+    ):
+        raise _Shape
+    coverage = f"{_percent(d.get('coverage80'))} / {_percent(d.get('coverage95'))}"
+    fields = [
+        _field("Thuật toán", algorithm),
+        _field("Sai số backtest", f"MASE {mase} so với seasonal naive"),
+        _field("Số điểm cắt", cutoffs),
+        _field("Độ phủ khoảng 80%/95%", coverage),
+        _field("Dữ liệu huấn luyện", f"{train_from} \u2013 {train_to}"),
+        _field("Tầm dự báo", f"{horizon} {frequency}"),
+    ]
+    return headline, fields
+
+
 DESCRIBERS: dict[str, Callable[[dict[str, Any], _Ask], Awaitable[Described]]] = {
     "synonym": _synonym,
     "metric_change": _metric_change,
@@ -664,6 +748,7 @@ DESCRIBERS: dict[str, Callable[[dict[str, Any], _Ask], Awaitable[Described]]] = 
     "writeback": _writeback,
     "source_authority": _source_authority,
     "knowledge_page": _knowledge_page,
+    "forecast_model": _forecast_model,
 }
 
 
@@ -691,6 +776,8 @@ async def describe(
     checks_note = preview_note = None
     try:
         checks_note = _checks_note(row.diff, run, changed)
+        if row.kind == "forecast_model" and isinstance(row.diff, dict):
+            checks_note = _forecast_checks(row.diff)
         if isinstance(row.diff, dict):
             preview_note = _preview_note(row.diff)
     except Exception:  # noqa: BLE001 - a summary never fails the review page
