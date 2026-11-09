@@ -130,3 +130,25 @@ def test_a_cropped_page_measures_from_its_crop_box() -> None:
 def test_a_file_that_is_not_a_pdf_fails() -> None:
     with pytest.raises(Exception):  # noqa: B017 - the handler fails the document on any error
         extract_pages(b"%PDF-1.4 not really", "pdf")
+
+
+def test_a_huge_page_is_rendered_within_the_pixel_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A 200 x 200 inch page at 144 dpi would be 28800 x 28800 pixels.
+    monkeypatch.setattr(processing, "MAX_RENDER_PIXELS", 4_000_000)
+    huge = make_pdf(
+        [
+            {
+                "media": (0, 0, 14400, 14400),
+                "texts": [{"x": 72, "y": 14000, "size": 10, "text": BODY}],
+            }
+        ]
+    )
+    [page] = extract_pages(huge, "pdf")
+    width, height = _size(page.image or b"")
+    assert width * height <= 4_000_000
+
+
+def test_a_pdf_with_too_many_pages_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(processing, "MAX_PAGES", 2)
+    with pytest.raises(ValueError, match="more than 2 pages"):
+        extract_pages(make_pdf([{}, {}, {}]), "pdf")

@@ -9,7 +9,7 @@ import pytest
 from defusedxml import EntitiesForbidden
 from PIL import Image
 
-from services.worker_document import extractors
+from services.worker_document import extractors, processing
 from services.worker_document.processing import document_chunks, extract_pages
 from tests.unit.worker_document.pdf_samples import make_pdf
 
@@ -303,6 +303,46 @@ def test_every_frame_of_a_tiff_is_a_page(monkeypatch: pytest.MonkeyPatch) -> Non
     first, second = Image.new("RGB", (30, 20), "white"), Image.new("RGB", (30, 20), "gray")
     first.save(out, format="TIFF", save_all=True, append_images=[second])
     assert len(extract_pages(out.getvalue(), "image")) == 2
+
+
+def test_a_low_stated_resolution_does_not_blow_the_picture_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 2000 x 2000 px "at 24 dpi" would be 25000 x 25000 at 300 dpi: the render stays in budget.
+    read: list[bytes] = []
+    monkeypatch.setattr(
+        extractors, "ocr_page", lambda png, _langs: (read.append(png), ("", 0.0))[1]
+    )
+    monkeypatch.setattr(processing, "MAX_RENDER_PIXELS", 4_000_000)
+    extract_pages(_png(2000, 2000, 24), "image")
+    width, height = _size(read[0])
+    assert width * height <= 4_000_000 and width == height
+
+
+def test_a_picture_over_the_pixel_limit_is_refused_before_decoding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1_000)
+    with pytest.raises(ValueError, match="could not be opened"):
+        extract_pages(_png(40, 30), "image")
+
+
+def test_an_animation_is_read_as_its_first_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(extractors, "ocr_page", lambda _png, _langs: ("", 0.0))
+    out = io.BytesIO()
+    frames = [Image.new("RGB", (20, 20), c) for c in ("white", "gray", "black")]
+    frames[0].save(out, format="GIF", save_all=True, append_images=frames[1:])
+    assert len(extract_pages(out.getvalue(), "image")) == 1
+
+
+def test_a_tiff_with_too_many_pages_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(extractors, "ocr_page", lambda _png, _langs: ("", 0.0))
+    monkeypatch.setattr(processing, "MAX_PAGES", 2)
+    out = io.BytesIO()
+    frames = [Image.new("RGB", (20, 20), "white") for _ in range(3)]
+    frames[0].save(out, format="TIFF", save_all=True, append_images=frames[1:])
+    with pytest.raises(ValueError, match="more than 2 pages"):
+        extract_pages(out.getvalue(), "image")
 
 
 def test_a_broken_image_is_said_so() -> None:

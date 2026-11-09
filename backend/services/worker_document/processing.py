@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import logging
+import math
 import re
 import subprocess
 import unicodedata
@@ -22,6 +23,12 @@ OCR_THRESHOLD = 0.85
 OCR_DPI = 300
 # The page image kept for review and the viewer.
 PREVIEW_DPI = 144
+# What one page may be rendered to, whatever size or resolution the file states: an A2 sheet at
+# 300 dpi is about 35 M pixels. A page over it is rendered smaller, never refused, so a crafted
+# 200-inch page or a picture "at 1 dpi" cannot take the worker's memory.
+MAX_RENDER_PIXELS = 40_000_000
+# Pages of one document (PDF pages, TIFF frames): each is rendered and may be OCR'd.
+MAX_PAGES = 2_000
 OCR_TIMEOUT_S = 120
 # The languages read when no ingest profile names any (libs/tabular.profile resolves one).
 DEFAULT_OCR_LANGUAGES = ("vie", "eng")
@@ -133,6 +140,8 @@ def _pdf_pages(content: bytes, ocr_languages: Sequence[str]) -> list[ExtractedPa
     result: list[ExtractedPage] = []
     pdf = pypdfium2.PdfDocument(content)
     try:
+        if len(pdf) > MAX_PAGES:
+            raise ValueError(f"The document has more than {MAX_PAGES} pages")
         layouts = pdfminer_pages(io.BytesIO(content), laparams=LAParams())
         for index, layout in enumerate(layouts):
             if index >= len(pdf):
@@ -227,9 +236,15 @@ class _PageFrame:
         return self.layout_box((min(xs), min(ys), max(xs), max(ys)))
 
 
+def bounded_scale(width: float, height: float, scale: float) -> float:
+    """`scale`, or less when width x height so scaled would be over MAX_RENDER_PIXELS."""
+    return min(scale, math.sqrt(MAX_RENDER_PIXELS / max(width * height, 1.0)))
+
+
 def _render_png(page: pypdfium2.PdfPage, dpi: int) -> bytes:
+    width, height = page.get_size()
     # pdfium fills the page white first, so a transparent page reads as paper, not black.
-    image = page.render(scale=dpi / 72).to_pil()
+    image = page.render(scale=bounded_scale(width, height, dpi / 72)).to_pil()
     out = io.BytesIO()
     image.convert("RGB").save(out, format="PNG")
     return out.getvalue()

@@ -24,6 +24,7 @@ import email.policy
 import io
 import posixpath
 import re
+import warnings
 import zipfile
 from collections.abc import Sequence
 from email.message import EmailMessage
@@ -33,6 +34,7 @@ from xml.etree.ElementTree import Element
 from defusedxml import ElementTree
 from PIL import Image, ImageSequence
 
+from services.worker_document import processing
 from services.worker_document.processing import (
     DEFAULT_OCR_LANGUAGES,
     OCR_DPI,
@@ -487,16 +489,33 @@ def image_pages(
     if kind is None:
         raise ValueError("The file is not a PNG, JPEG, TIFF, GIF, BMP or WebP image")
     try:
-        picture = Image.open(io.BytesIO(content), formats=[PILLOW_FORMATS[kind]])
-        picture.load()
-    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        # Pillow only warns between MAX_IMAGE_PIXELS and twice that. As an error, an oversized
+        # picture is refused from its header, before anything is decoded.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            picture = Image.open(io.BytesIO(content), formats=[PILLOW_FORMATS[kind]])
+            picture.load()
+    except (
+        OSError,
+        ValueError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ) as exc:
         raise ValueError("The image could not be opened") from exc
     # A size in points as a PDF page would have (what the layout boxes are drawn in): the pixels
     # at the resolution the file states, 96 dpi when it states none.
     dpi = _image_dpi(picture)
+    frames = getattr(picture, "n_frames", 1)
+    # A TIFF's frames are a scan's pages; a GIF's or WebP's are an animation, read as one picture.
+    if kind not in MULTIPAGE:
+        frames = 1
+    elif frames > processing.MAX_PAGES:
+        raise ValueError(f"The image has more than {processing.MAX_PAGES} pages")
     result: list[ExtractedPage] = []
     with picture:
-        for frame in ImageSequence.Iterator(picture):
+        for number, frame in enumerate(ImageSequence.Iterator(picture)):
+            if number >= frames:
+                break
             rgb = frame.convert("RGB")
             width, height = rgb.width * 72 / dpi, rgb.height * 72 / dpi
             text, conf = ocr_page(_png_at(rgb, dpi, OCR_DPI), ocr_languages)
@@ -516,6 +535,7 @@ def image_pages(
     return result
 
 
+MULTIPAGE = frozenset({"tiff"})
 PILLOW_FORMATS = {
     "png": "PNG",
     "jpeg": "JPEG",
@@ -539,7 +559,7 @@ def _image_dpi(picture: Image.Image) -> float:
 def _png_at(image: Image.Image, dpi: float, target: int) -> bytes:
     """The picture resampled from its own resolution to `target` dpi, as PNG: OCR reads best near
     300 dpi, and the preview is kept at the page images' 144."""
-    scale = target / dpi
+    scale = processing.bounded_scale(image.width, image.height, target / dpi)
     if abs(scale - 1) > 0.01:
         size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
         image = image.resize(size, Image.Resampling.LANCZOS)
