@@ -29,7 +29,7 @@ const UNDO_MS = 5000;
 export default function NeedsYouPage() {
   const { navigate } = useAppState();
   const toast = useToast();
-  const inbox = useV1(['listInbox', { status: 'open' }], () => listInbox({ status: 'open' }));
+  const inbox = useV1(['listInbox', 'pending'], () => listInbox());
   const rules = useV1(['listMyRules'], listMyRules);
   const resolved = useV1(['listResolvedThisWeek'], listResolvedThisWeek);
   const [filter, setFilter] = useState<Filter>('pending');

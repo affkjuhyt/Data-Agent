@@ -24,7 +24,7 @@ export default function HowItWorksPage() {
   const metrics = useV1(['listMetrics'], listMetrics);
   const terms = useV1(['listTerms'], listTerms);
   const agents = useV1(['listAgents'], listAgents);
-  const inbox = useV1(['listInbox', { status: 'open' }], () => listInbox({ status: 'open' }));
+  const inbox = useV1(['listInbox', 'pending'], () => listInbox());
 
   const count = (n: number | undefined, text: string) =>
     n === undefined ? undefined : `${n.toLocaleString('vi-VN')} ${text}`;

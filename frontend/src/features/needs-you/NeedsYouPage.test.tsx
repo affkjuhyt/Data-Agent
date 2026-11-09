@@ -6,6 +6,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
+import { inboxFixture } from '../../mocks/fixtures';
 import { createHandlers } from '../../mocks/handlers';
 import NeedsYouPage from './NeedsYouPage';
 
@@ -79,6 +80,24 @@ describe('NeedsYouPage', () => {
     await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(4));
   });
 
+  it('shows a request reassigned to the viewer: it waits for them as an open one does', async () => {
+    const [first] = inboxFixture();
+    const reassigned = { ...first, status: 'reassigned' as const };
+    server.use(
+      // The api's pending filter (inbox PENDING) when no status is asked; "open" alone misses it.
+      http.get('*/v1/inbox', ({ request }) =>
+        new URL(request.url).searchParams.get('status')
+          ? HttpResponse.json({ items: [], next_page_token: '' })
+          : HttpResponse.json({ items: [reassigned], next_page_token: '' }),
+      ),
+      ...createHandlers(),
+    );
+    renderPage();
+    expect(
+      await screen.findByRole('heading', { name: '“Nợ xấu” nên tính theo định nghĩa nào?' }),
+    ).toBeInTheDocument();
+  });
+
   it('says nothing waits when the inbox is empty', async () => {
     server.use(http.get('*/v1/*', () => HttpResponse.json({ items: [], next_page_token: '' })));
     renderPage();
@@ -89,9 +108,9 @@ describe('NeedsYouPage', () => {
 
   it('counts what the viewer’s rules settled this week when nothing waits', async () => {
     server.use(
-      // Only the open requests are empty; the week's resolved ones still come from the mock.
+      // Only the waiting requests are empty; the week's resolved ones still come from the mock.
       http.get('*/v1/inbox', ({ request }) =>
-        new URL(request.url).searchParams.get('status') === 'open'
+        !new URL(request.url).searchParams.get('status')
           ? HttpResponse.json({ items: [], next_page_token: '' })
           : undefined,
       ),

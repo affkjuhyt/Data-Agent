@@ -21,7 +21,7 @@ export function useShellCounts(enabled = true): ShellCounts {
     let cancelled = false;
     const load = async () => {
       const [inbox, running, agents] = await Promise.allSettled([
-        listInbox({ status: 'open' }),
+        listInbox(),
         listRuns({ status: 'running' }),
         listAgents(),
       ]);

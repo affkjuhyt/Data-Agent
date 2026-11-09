@@ -30,7 +30,7 @@ const PENDING_EVIDENCE = 'Màn truy vấn bằng chứng đang được làm.';
 export default function ConflictPage() {
   const { routeId, navigate } = useAppState();
   const request = useV1(['getHitl', routeId], routeId ? () => getHitl(routeId) : null);
-  const inbox = useV1(['listInbox', { status: 'open' }], () => listInbox({ status: 'open' }));
+  const inbox = useV1(['listInbox', 'pending'], () => listInbox());
 
   const openRequest = (r: HitlRequest) => {
     const detail = detailRouteOf(r);
@@ -60,7 +60,8 @@ function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () =>
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
   const due = dueOf(request);
-  const open = request.status === 'open';
+  // A request reassigned to this person waits for them as an open one does (inbox PENDING).
+  const open = request.status === 'open' || request.status === 'reassigned';
 
   const submit = async () => {
     setSending(true);

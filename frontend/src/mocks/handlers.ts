@@ -133,8 +133,10 @@ export function createHandlers() {
     ...createHomeHandlers(),
 
     http.get('*/v1/inbox', ({ request }) => {
-      const status = new URL(request.url).searchParams.get('status') ?? 'open';
-      return page(inbox.filter((item) => item.status === status));
+      // As inbox/routes.py: without a status, every request still waiting for a person.
+      const status = new URL(request.url).searchParams.get('status');
+      const wanted = status ? [status] : ['open', 'reassigned'];
+      return page(inbox.filter((item) => wanted.includes(item.status)));
     }),
 
     http.get('*/v1/hitl-requests/:id', ({ params }) => {
