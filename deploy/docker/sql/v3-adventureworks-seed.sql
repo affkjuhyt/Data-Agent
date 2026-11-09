@@ -5,7 +5,7 @@
 -- place like a customer's warehouse: this file registers the Data Space and the source, nothing of
 -- the data. The schema scan, the semantic model (deploy/docker/semantic/ds-aw.yaml through
 -- `make semantic-import`) and the metric reviews are the product's own steps, so they are tested
--- rather than seeded.
+-- rather than seeded. Two untrained forecast definitions are registered at the end of this file.
 --
 -- The source logs in with the demo PostgreSQL credentials (OpenBao demo-postgres, app_user), which
 -- the load grants CONNECT and SELECT on adventureworks_dw only. Until the load has run, scanning the
@@ -83,3 +83,35 @@ ON CONFLICT (id) DO UPDATE SET
     host = EXCLUDED.host, port = EXCLUDED.port, database_name = EXCLUDED.database_name,
     conn_options = EXCLUDED.conn_options,
     secret_ref = EXCLUDED.secret_ref, scan_schemas = EXCLUDED.scan_schemas;
+
+-- Untrained forecast definitions (no model_version, current_version_id stays null).
+-- DOANH_THU is the company revenue metric in deploy/docker/semantic/ds-aw.yaml (label "Doanh thu"),
+-- not an English code. The second row cuts it by nhom_hang = Bikes: that dimension's code and the
+-- member english_product_category_name stores, both named in the same file (synonym "xe đạp").
+-- forecast.forecast_model has no horizon column. A retrain of a model with no version uses the
+-- monthly default, 12, one seasonal cycle (services/api/modules/forecast/rules.py).
+-- owner_id is the metric's owner once semantic-import has written it, and helios-engineer until
+-- then: db-init runs before that import, and SEMANTIC_AS for DS-AW is helios-engineer.
+-- Idempotent: a second apply inserts nothing when the series is already defined.
+INSERT INTO forecast.forecast_model (
+    id, org_id, data_space_id, metric_code, scope, frequency, owner_id, status, created_by, updated_by
+)
+SELECT
+    v.id, :org::uuid, :space::uuid, 'DOANH_THU', v.scope, 'month',
+    COALESCE(
+        (SELECT m.owner_id FROM context.metric m
+         WHERE m.org_id = :org::uuid AND m.data_space_id = :space::uuid AND m.code = 'DOANH_THU'),
+        :engineer::uuid
+    ),
+    'active', :engineer::uuid, :engineer::uuid
+FROM (VALUES
+    ('a0000000-0000-0000-0000-000000000a21'::uuid, '{}'::jsonb),
+    ('a0000000-0000-0000-0000-000000000a22'::uuid, '{"nhom_hang": ["Bikes"]}'::jsonb)
+) AS v(id, scope)
+WHERE NOT EXISTS (
+    SELECT 1 FROM forecast.forecast_model f
+    WHERE f.data_space_id = :space::uuid
+      AND f.metric_code = 'DOANH_THU'
+      AND f.frequency = 'month'
+      AND f.scope = v.scope
+);

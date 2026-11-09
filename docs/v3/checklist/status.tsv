@@ -38,7 +38,7 @@ AC-09-05-06	na	claude	Bỏ theo quyết định 01/11/2026: sản phẩm tổng 
 AC-09-05-07	na	claude	Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành
 AC-13-01-04	na	claude	Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành (agent mẫu không còn đi kèm gói ngành)
 AC-13-04-03	na	claude	Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành (không còn bộ thử mẫu của gói ngành)
-ADR-28	partial	data-agent-80	Khối api (backend/services/api) phục vụ /v1; worker-ingest, worker-agent, crawler, ml-forecast chưa có
+ADR-28	done	data-agent-80	Năm khối đều có: api phục vụ /v1; worker-ingest, worker-agent, crawler và ml-forecast (backend/services/ml_forecast, manifest deploy/k8s, worker-agent gọi FORECAST_SERVICE_URL)
 ADR-31	done	data-agent-80	libs/dataagent_db.scoped_session đặt app.org_id bằng set_config(..., true) mỗi giao dịch, tắt statement cache; test tích hợp tests/integration/api
 ADR-48	partial	data-agent-80	OpenAPI sinh từ FastAPI, cổng so với A2 (catalogue/check.py); Schemathesis chưa chạy
 BR-128	na	claude	Bỏ theo quyết định 01/11/2026: sản phẩm tổng quát, không có gói ngành

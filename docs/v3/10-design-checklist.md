@@ -15,7 +15,7 @@
 | Bảng (tab 3/3b) | 207 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 156 có mã nhắc tới | todo 188, na 7 |
 | Màn hình (SCR) | 75 | 15 có mã nhắc tới | todo 72, na 3 |
-| ADR (tab 6) | 48 | — | todo 45, partial 2, done 1 |
+| ADR (tab 6) | 48 | — | todo 45, partial 1, done 2 |
 
 ## Audit
 
@@ -417,9 +417,9 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-155 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-156 | UC-02-07, UC-10-02, UC-14-01, UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/libs/dataagent_db/models/catalog.py` +21 |
 | BR-157 | UC-15-01, UC-15-02, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +15 |
-| BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/forecast_release/__init__.py` +19 |
+| BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0031_forecast_model_proposal.py`, `backend/libs/dataagent_db/models/forecast.py` +21 |
 | BR-159 | UC-15-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-160 | UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +12 |
+| BR-160 | UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/forecast_release/__init__.py` +12 |
 | BR-161 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-162 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/exec.py` +17 |
 | BR-163 | UC-07-10, UC-07-11, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +14 |
@@ -567,7 +567,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | ADR-25 | Lệch ngầm ở nguồn thu thập: cách ly lượt và hỏi người, không tự hoàn tác, không tự quy đổi | todo |  |
 | ADR-26 | Narrator viết số bằng thẻ tham chiếu figure; Verifier đối chiếu văn bản cuối, sinh lại một lần rồi bỏ câu có số không truy được | todo |  |
 | ADR-27 | Dự báo ít dữ liệu: chọn ứng viên theo độ dài chuỗi, chặn quá khớp, MinT cho chuỗi con, mô phỏng sai số biến ngoại sinh | todo |  |
-| ADR-28 | Modular monolith với 5 khối triển khai: api (mọi module nghiệp vụ, mỗi module một schema), worker-ingest, worker-agent, crawler, ml-forec… | partial | data-agent-80 · Khối api (backend/services/api) phục vụ /v1; worker-ingest, worker-agent, crawler, ml-forecast chưa có |
+| ADR-28 | Modular monolith với 5 khối triển khai: api (mọi module nghiệp vụ, mỗi module một schema), worker-ingest, worker-agent, crawler, ml-forec… | done | data-agent-80 · Năm khối đều có: api phục vụ /v1; worker-ingest, worker-agent, crawler và ml-forecast (backend/services/ml_forecast, manifest deploy/k8s, worker-agent gọi FORECAST_SERVICE_URL) |
 | ADR-29 | Backend Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2 + asyncpg; Alembic đi tiếp từ head a2c4e6f8b0d1; REST sinh từ OpenAPI, SSE cho st… | todo |  |
 | ADR-30 | Gateway APISIX; xác thực Keycloak OIDC liên kết AD/LDAP của ngân hàng, MFA, tài khoản dịch vụ cho client MCP | todo |  |
 | ADR-31 | RLS đặt app.org_id bằng SET LOCAL trong từng giao dịch; cấm SET mức phiên | done | data-agent-80 · libs/dataagent_db.scoped_session đặt app.org_id bằng set_config(..., true) mỗi giao dịch, tắt statement cache; test tích hợp tests/integration/api |
