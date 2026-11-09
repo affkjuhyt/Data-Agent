@@ -67,7 +67,8 @@ export default function AdminPage() {
         >
           {models.data && (
             <span className="text-muted-foreground da-body-small">
-              {models.data.items.length} loại tác vụ · chạy nội bộ
+              {/* a task has a row per route (primary, a testing candidate): count the tasks */}
+              {new Set(models.data.items.map((m) => m.task)).size} loại tác vụ · chạy nội bộ
             </span>
           )}
           {worse && (

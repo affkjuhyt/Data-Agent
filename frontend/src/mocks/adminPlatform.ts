@@ -1009,7 +1009,7 @@ export function createAdminPlatformHandlers() {
         id: `trial-${models.length + 1}`,
         task: body.task || 'Chưa định tuyến',
         model_name: body.name,
-        status: 'evaluating',
+        status: 'testing',
         placement: null,
         fallback_name: null,
         latency_p95_ms: 0,
@@ -1036,7 +1036,7 @@ export function createAdminPlatformHandlers() {
           id: `trial-${models.length + 1}`,
           task,
           model_name: body.model_name,
-          status: 'evaluating' as const,
+          status: 'testing' as const,
           placement: null,
           fallback_name: null,
           latency_p95_ms: null,
@@ -1046,7 +1046,7 @@ export function createAdminPlatformHandlers() {
           eval_suite_name: null,
         }),
         model_name: body.model_name,
-        status: isRollback ? 'active' : 'evaluating',
+        status: isRollback ? 'active' : 'testing',
       };
       models = current
         ? models.map((m) => (m.task === task || m.task === taskLabel[task] ? updated : m))

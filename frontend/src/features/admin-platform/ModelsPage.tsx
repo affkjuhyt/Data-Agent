@@ -282,7 +282,7 @@ function ModelRoutesTable({
   const items = state.data?.items ?? [];
   const view = useTableView(items, {
     search: (route) =>
-      `${route.task} ${route.model_name} ${route.placement ?? ''} ${route.status === 'evaluating' ? 'đang đánh giá' : ''} ${route.fallback_name ?? ''} ${route.latency_p95_ms ? formatLatency(route.latency_p95_ms, true) : ''} ${pct(route.eval_score)}`,
+      `${route.task} ${route.model_name} ${route.placement ?? ''} ${route.status === 'testing' ? 'đang đánh giá' : ''} ${route.fallback_name ?? ''} ${route.latency_p95_ms ? formatLatency(route.latency_p95_ms, true) : ''} ${pct(route.eval_score)}`,
     filters: [{ id: 'model', label: 'Mô hình', value: (route) => route.model_name }],
     sorts: [
       { id: 'task', value: (route) => route.task },
@@ -338,7 +338,8 @@ function ModelRoutesTable({
                   <td className="py-da-md text-foreground da-mono">
                     {route.model_name}
                     {route.placement && ` · ${route.placement}`}
-                    {route.status === 'evaluating' && (
+                    {/* governance.model_config status: draft | testing | active | retired */}
+                    {route.status === 'testing' && (
                       <span className="text-muted-foreground"> · đang đánh giá</span>
                     )}
                   </td>
