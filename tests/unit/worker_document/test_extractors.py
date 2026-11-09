@@ -327,6 +327,19 @@ def test_a_picture_over_the_pixel_limit_is_refused_before_decoding(
         extract_pages(_png(40, 30), "image")
 
 
+def test_a_later_frame_over_the_pixel_limit_is_refused_before_decoding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The header checked at open is the first frame's; a TIFF's next frame may be far larger.
+    monkeypatch.setattr(extractors, "ocr_page", lambda _png, _langs: ("", 0.0))
+    out = io.BytesIO()
+    small, large = Image.new("RGB", (20, 20), "white"), Image.new("RGB", (60, 60), "white")
+    small.save(out, format="TIFF", save_all=True, append_images=[large])
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1_000)
+    with pytest.raises(ValueError, match="over the pixel limit"):
+        extract_pages(out.getvalue(), "image")
+
+
 def test_an_animation_is_read_as_its_first_frame(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(extractors, "ocr_page", lambda _png, _langs: ("", 0.0))
     out = io.BytesIO()

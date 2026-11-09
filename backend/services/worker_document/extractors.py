@@ -516,6 +516,10 @@ def image_pages(
         for number, frame in enumerate(ImageSequence.Iterator(picture)):
             if number >= frames:
                 break
+            # The check at open read the first frame's header; each later frame is held to the
+            # same limit before it is decoded.
+            if frame.width * frame.height > (Image.MAX_IMAGE_PIXELS or 0):
+                raise ValueError(f"Page {number + 1} of the image is over the pixel limit")
             rgb = frame.convert("RGB")
             width, height = rgb.width * 72 / dpi, rgb.height * 72 / dpi
             text, conf = ocr_page(_png_at(rgb, dpi, OCR_DPI), ocr_languages)
