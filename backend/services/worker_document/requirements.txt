@@ -2,7 +2,11 @@ sqlalchemy[asyncio]==2.0.35
 asyncpg==0.30.0
 aioboto3
 pydantic==2.9.2
-pymupdf==1.26.5
+# PDF text layout (pdfminer.six, MIT), page rendering and embedded images (pypdfium2,
+# Apache-2.0/BSD-3), image files (Pillow, MIT-CMU). They replace PyMuPDF, which is AGPL-3.0.
+pdfminer.six==20260107
+pypdfium2==5.14.0
+pillow==13.0.0
 httpx==0.27.2
 # word/document.xml of an uploaded .docx is parsed without entity expansion.
 defusedxml==0.7.1

@@ -30,11 +30,13 @@ from email.message import EmailMessage
 from html.parser import HTMLParser
 from xml.etree.ElementTree import Element
 
-import pymupdf
 from defusedxml import ElementTree
+from PIL import Image, ImageSequence
 
 from services.worker_document.processing import (
     DEFAULT_OCR_LANGUAGES,
+    OCR_DPI,
+    PREVIEW_DPI,
     ExtractedImage,
     ExtractedPage,
     LayoutBlock,
@@ -57,8 +59,9 @@ PICTURE_TYPES = {
     "tif": "tiff",
     "tiff": "tiff",
 }
-# What an upload marked as an image must start with, and the reader pymupdf is held to: without
-# it pymupdf guesses, and an "image" that is really a PDF, XPS or EPUB is parsed as one.
+# What an upload marked as an image must start with, and the one reader Pillow is held to:
+# without it Pillow tries every format it knows, and an "image" that is something else (a PDF,
+# an EPS handed to Ghostscript) is parsed as one.
 IMAGE_MAGIC = (
     (b"\x89PNG\r\n\x1a\n", "png"),
     (b"\xff\xd8\xff", "jpeg"),
@@ -484,31 +487,62 @@ def image_pages(
     if kind is None:
         raise ValueError("The file is not a PNG, JPEG, TIFF, GIF, BMP or WebP image")
     try:
-        picture = pymupdf.open(stream=content, filetype=kind)
-    except (RuntimeError, ValueError) as exc:
+        picture = Image.open(io.BytesIO(content), formats=[PILLOW_FORMATS[kind]])
+        picture.load()
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
         raise ValueError("The image could not be opened") from exc
+    # A size in points as a PDF page would have (what the layout boxes are drawn in): the pixels
+    # at the resolution the file states, 96 dpi when it states none.
+    dpi = _image_dpi(picture)
     result: list[ExtractedPage] = []
     with picture:
-        for frame in picture:
-            png = frame.get_pixmap(dpi=144, alpha=False).tobytes("png")
-            text, conf = ocr_page(
-                frame.get_pixmap(dpi=300, alpha=False).tobytes("png"), ocr_languages
-            )
-            blocks = (
-                [LayoutBlock("paragraph", text, (0, 0, frame.rect.width, frame.rect.height))]
-                if text
-                else []
-            )
+        for frame in ImageSequence.Iterator(picture):
+            rgb = frame.convert("RGB")
+            width, height = rgb.width * 72 / dpi, rgb.height * 72 / dpi
+            text, conf = ocr_page(_png_at(rgb, dpi, OCR_DPI), ocr_languages)
+            blocks = [LayoutBlock("paragraph", text, (0, 0, width, height))] if text else []
             result.append(
                 ExtractedPage(
                     normalize_text(text),
-                    png,
+                    _png_at(rgb, dpi, PREVIEW_DPI),
                     False,
                     conf,
                     blocks,
                     [],
-                    frame.rect.width,
-                    frame.rect.height,
+                    width,
+                    height,
                 )
             )
     return result
+
+
+PILLOW_FORMATS = {
+    "png": "PNG",
+    "jpeg": "JPEG",
+    "tiff": "TIFF",
+    "gif": "GIF",
+    "bmp": "BMP",
+    "webp": "WEBP",
+}
+
+
+def _image_dpi(picture: Image.Image) -> float:
+    stated = picture.info.get("dpi")
+    try:
+        horizontal = float(stated[0]) if stated else 0.0
+    except (TypeError, ValueError, IndexError):
+        horizontal = 0.0
+    # A file that says 1 dpi (some scanners write it) would blow the page up 300 times.
+    return horizontal if 24 <= horizontal <= 2400 else 96.0
+
+
+def _png_at(image: Image.Image, dpi: float, target: int) -> bytes:
+    """The picture resampled from its own resolution to `target` dpi, as PNG: OCR reads best near
+    300 dpi, and the preview is kept at the page images' 144."""
+    scale = target / dpi
+    if abs(scale - 1) > 0.01:
+        size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+        image = image.resize(size, Image.Resampling.LANCZOS)
+    out = io.BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue()

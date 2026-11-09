@@ -5,12 +5,13 @@ from __future__ import annotations
 import io
 import zipfile
 
-import pymupdf
 import pytest
 from defusedxml import EntitiesForbidden
+from PIL import Image
 
 from services.worker_document import extractors
 from services.worker_document.processing import document_chunks, extract_pages
+from tests.unit.worker_document.pdf_samples import make_pdf
 
 pytestmark = pytest.mark.unit
 
@@ -176,10 +177,8 @@ def test_docx_pictures_outside_word_or_of_odd_types_are_dropped() -> None:
 
 
 def test_an_image_upload_that_is_really_a_pdf_is_refused() -> None:
-    doc = pymupdf.open()
-    doc.new_page()
     with pytest.raises(ValueError, match="not a PNG"):
-        extract_pages(doc.tobytes(), "image")
+        extract_pages(make_pdf([{}]), "image")
 
 
 def test_a_docx_with_entities_is_refused_not_expanded() -> None:
@@ -253,12 +252,62 @@ def test_an_image_is_one_ocr_page_read_in_its_collections_languages(
         return "Kỳ hạn 12 tháng", 0.91
 
     monkeypatch.setattr(extractors, "ocr_page", fake)
-    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 20), 0)
-    pix.clear_with(255)
-    page = extract_pages(pix.tobytes("png"), "image", ocr_languages=("jpn", "eng"))[0]
+    page = extract_pages(_png(40, 20), "image", ocr_languages=("jpn", "eng"))[0]
     assert (page.text, page.ocr_conf, page.text_layer) == ("Kỳ hạn 12 tháng", 0.91, False)
     assert page.image is not None and page.image.startswith(b"\x89PNG")
     assert asked == [("jpn", "eng")]
+
+
+def _png(width: int, height: int, dpi: int | None = None, color: str = "white") -> bytes:
+    out = io.BytesIO()
+    Image.new("RGB", (width, height), color).save(
+        out, format="PNG", **({"dpi": (dpi, dpi)} if dpi else {})
+    )
+    return out.getvalue()
+
+
+def _size(png: bytes) -> tuple[int, int]:
+    return Image.open(io.BytesIO(png)).size
+
+
+@pytest.mark.parametrize(
+    ("dpi", "points", "preview", "ocr"),
+    [
+        # No resolution stated: 96 dpi, as PyMuPDF assumed before (the page sizes kept).
+        (None, (300.0, 150.0), (600, 300), (1250, 625)),
+        # 300 dpi already: OCR reads the pixels as they are.
+        (300, (96.0, 48.0), (192, 96), (400, 200)),
+    ],
+)
+def test_an_image_page_is_sized_from_its_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    dpi: int | None,
+    points: tuple[float, float],
+    preview: tuple[int, int],
+    ocr: tuple[int, int],
+) -> None:
+    read: list[bytes] = []
+    monkeypatch.setattr(
+        extractors, "ocr_page", lambda png, _langs: (read.append(png), ("", 0.0))[1]
+    )
+    page = extract_pages(_png(400, 200, dpi), "image")[0]
+    # PNG stores pixels per metre, so 300 dpi comes back as 299.9994.
+    assert (page.width, page.height) == pytest.approx(points, abs=0.01)
+    assert _size(page.image or b"") == preview
+    assert _size(read[0]) == ocr
+
+
+def test_every_frame_of_a_tiff_is_a_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(extractors, "ocr_page", lambda _png, _langs: ("", 0.0))
+    out = io.BytesIO()
+    first, second = Image.new("RGB", (30, 20), "white"), Image.new("RGB", (30, 20), "gray")
+    first.save(out, format="TIFF", save_all=True, append_images=[second])
+    assert len(extract_pages(out.getvalue(), "image")) == 2
+
+
+def test_a_broken_image_is_said_so() -> None:
+    with pytest.raises(ValueError, match="could not be opened"):
+        extract_pages(b"\x89PNG\r\n\x1a\n" + b"\0" * 40, "image")
 
 
 def test_ocr_reads_only_the_language_packs_the_image_has(monkeypatch: pytest.MonkeyPatch) -> None:

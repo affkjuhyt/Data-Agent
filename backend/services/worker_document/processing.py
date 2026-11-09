@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import io
 import json
 import logging
 import re
@@ -11,12 +12,16 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from statistics import median
 
-import pymupdf
+import pypdfium2
+from pdfminer.high_level import extract_pages as pdfminer_pages
+from pdfminer.layout import LAParams, LTChar, LTPage, LTTextBox, LTTextLine
 
 MAX_CHUNK_CHARS = 4_000
 # BR-19: a page read by OCR below this confidence is not used until a person reviews it.
 OCR_THRESHOLD = 0.85
 OCR_DPI = 300
+# The page image kept for review and the viewer.
+PREVIEW_DPI = 144
 OCR_TIMEOUT_S = 120
 # The languages read when no ingest profile names any (libs/tabular.profile resolves one).
 DEFAULT_OCR_LANGUAGES = ("vie", "eng")
@@ -101,61 +106,7 @@ def extract_pages(
     separate quality path and must not pretend an image was successfully indexed as text.
     """
     if media == "pdf":
-        result: list[ExtractedPage] = []
-        with pymupdf.open(stream=content, filetype="pdf") as pdf:
-            for page in pdf:
-                text = page.get_text("text", sort=True).strip()
-                text_layer = len(text) >= 20
-                ocr_conf = None
-                blocks: list[LayoutBlock] = []
-                images: list[ExtractedImage] = []
-                if not text_layer:
-                    text, ocr_conf = ocr_page(
-                        page.get_pixmap(dpi=OCR_DPI, alpha=False).tobytes("png"), ocr_languages
-                    )
-                    if text:
-                        blocks.append(
-                            LayoutBlock(
-                                "paragraph", text, (0, 0, page.rect.width, page.rect.height)
-                            )
-                        )
-                else:
-                    blocks = _native_layout(page)
-                    for image_info in page.get_images(full=True):
-                        xref = image_info[0]
-                        try:
-                            extracted = pdf.extract_image(xref)
-                            rects = page.get_image_rects(xref)
-                        except (KeyError, RuntimeError, ValueError):
-                            continue
-                        for rect in rects:
-                            images.append(
-                                ExtractedImage(
-                                    extracted["image"],
-                                    extracted.get("ext", "bin"),
-                                    (rect.x0, rect.y0, rect.x1, rect.y1),
-                                )
-                            )
-                            blocks.append(
-                                LayoutBlock("picture", "", (rect.x0, rect.y0, rect.x1, rect.y1))
-                            )
-                    text = _layout_text(blocks)
-                if not text_layer:
-                    text = _join_wrapped_lines(text)
-                image = page.get_pixmap(dpi=144, alpha=False).tobytes("png")
-                result.append(
-                    ExtractedPage(
-                        normalize_text(text),
-                        image,
-                        text_layer,
-                        ocr_conf,
-                        blocks,
-                        images,
-                        page.rect.width,
-                        page.rect.height,
-                    )
-                )
-        return result
+        return _pdf_pages(content, ocr_languages)
     # extractors builds on this module's page types, hence the import here rather than at the top.
     from services.worker_document import extractors
 
@@ -170,6 +121,141 @@ def extract_pages(
     if media == "audio":
         raise ValueError("Recordings are not transcribed yet")
     raise ValueError(f"No text extractor is configured for media={media}")
+
+
+def _pdf_pages(content: bytes, ocr_languages: Sequence[str]) -> list[ExtractedPage]:
+    """A PDF's pages: the text layer's blocks from pdfminer.six (lines, boxes and font sizes, from
+    which headings are judged), the page image and its embedded pictures from pdfium. A page whose
+    text layer holds almost nothing is a scan: it is read by OCR from the 300 dpi rendering.
+
+    Both libraries are permissive (MIT; Apache-2.0/BSD-3). PyMuPDF, which this replaced, is AGPL.
+    """
+    result: list[ExtractedPage] = []
+    pdf = pypdfium2.PdfDocument(content)
+    try:
+        layouts = pdfminer_pages(io.BytesIO(content), laparams=LAParams())
+        for index, layout in enumerate(layouts):
+            if index >= len(pdf):
+                break
+            page = pdf[index]
+            try:
+                result.append(_pdf_page(pdf, page, layout, ocr_languages))
+            finally:
+                page.close()
+    finally:
+        pdf.close()
+    return result
+
+
+def _pdf_page(
+    pdf: pypdfium2.PdfDocument,
+    page: pypdfium2.PdfPage,
+    layout: LTPage,
+    ocr_languages: Sequence[str],
+) -> ExtractedPage:
+    width, height = page.get_size()
+    frame = _PageFrame(page, layout)
+    blocks = _native_layout(layout, frame)
+    text = "\n".join(block.text for block in blocks).strip()
+    text_layer = len(text) >= 20
+    ocr_conf = None
+    images: list[ExtractedImage] = []
+    if not text_layer:
+        text, ocr_conf = ocr_page(_render_png(page, OCR_DPI), ocr_languages)
+        blocks = [LayoutBlock("paragraph", text, (0, 0, width, height))] if text else []
+        text = _join_wrapped_lines(text)
+    else:
+        for picture in page.get_objects(filter=[pypdfium2.raw.FPDF_PAGEOBJ_IMAGE]):
+            embedded = _embedded_image(picture, frame)
+            if embedded is not None:
+                images.append(embedded)
+                blocks.append(LayoutBlock("picture", "", embedded.box))
+        text = _layout_text(blocks)
+    return ExtractedPage(
+        normalize_text(text),
+        _render_png(page, PREVIEW_DPI),
+        text_layer,
+        ocr_conf,
+        blocks,
+        images,
+        width,
+        height,
+    )
+
+
+class _PageFrame:
+    """From PDF coordinates (origin bottom left) to the page's own (origin top left of the area a
+    viewer shows), as the boxes of the layout and the page image are drawn.
+
+    pdfminer lays a page out in its media box, turned by /Rotate (the matrix of its
+    PDFPageInterpreter.process_page); pdfium reports a picture's bounds in the unturned user
+    space. Both go through that matrix, then are flipped and moved to the crop box, so a box sits
+    on its text on a cropped or turned page too.
+    """
+
+    def __init__(self, page: pypdfium2.PdfPage, layout: LTPage) -> None:
+        x0, y0, x1, y1 = page.get_mediabox()
+        rotation = page.get_rotation() % 360
+        self._ctm = {
+            90: (0.0, -1.0, 1.0, 0.0, -y0, x1),
+            180: (-1.0, 0.0, 0.0, -1.0, x1, y1),
+            270: (0.0, 1.0, -1.0, 0.0, y1, -x0),
+        }.get(rotation, (1.0, 0.0, 0.0, 1.0, -x0, -y0))
+        self._top = layout.y1
+        # The crop box's offset inside the media box; a turned page is read uncropped.
+        crop_left, _, _, crop_top = page.get_cropbox()
+        self._dx: float = crop_left - x0 if rotation == 0 else 0.0
+        self._dy: float = y1 - crop_top if rotation == 0 else 0.0
+
+    def layout_box(
+        self, bbox: tuple[float, float, float, float]
+    ) -> tuple[float, float, float, float]:
+        """A pdfminer box, already in the turned media frame."""
+        x0, y0, x1, y1 = bbox
+        return (x0 - self._dx, self._top - y1 - self._dy, x1 - self._dx, self._top - y0 - self._dy)
+
+    def user_box(
+        self, bounds: tuple[float, float, float, float]
+    ) -> tuple[float, float, float, float]:
+        """A pdfium box (left, bottom, right, top) in user space."""
+        a, b, c, d, e, f = self._ctm
+        left, bottom, right, top = bounds
+        xs, ys = [], []
+        for x, y in ((left, bottom), (right, top)):
+            xs.append(a * x + c * y + e)
+            ys.append(b * x + d * y + f)
+        return self.layout_box((min(xs), min(ys), max(xs), max(ys)))
+
+
+def _render_png(page: pypdfium2.PdfPage, dpi: int) -> bytes:
+    # pdfium fills the page white first, so a transparent page reads as paper, not black.
+    image = page.render(scale=dpi / 72).to_pil()
+    out = io.BytesIO()
+    image.convert("RGB").save(out, format="PNG")
+    return out.getvalue()
+
+
+def _embedded_image(picture: pypdfium2.PdfImage, frame: _PageFrame) -> ExtractedImage | None:
+    """A picture of the page as its own file: JPEG and JPEG 2000 as stored, anything else
+    decoded and written as PNG. One pdfium cannot decode is left out, not failed."""
+    out = io.BytesIO()
+    try:
+        picture.extract(out, fb_format="png")
+    except (pypdfium2.PdfiumError, OSError, ValueError):
+        log.warning("an embedded image could not be extracted", exc_info=True)
+        return None
+    data = out.getvalue()
+    if not data:
+        return None
+    return ExtractedImage(data, _image_extension(data), frame.user_box(picture.get_bounds()))
+
+
+def _image_extension(data: bytes) -> str:
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if data.startswith(b"\x00\x00\x00\x0cjP  ") or data.startswith(b"\xff\x4f\xff\x51"):
+        return "jpx"
+    return "png"
 
 
 def page_hash(text: str) -> str:
@@ -422,43 +508,42 @@ def _pack(groups: list[list[_Paragraph]], unit: _Unit, limit: int) -> list[Chunk
     return drafts
 
 
-def _native_layout(page: pymupdf.Page) -> list[LayoutBlock]:
-    raw = page.get_text("dict", sort=True)
-    sizes = [
-        float(span["size"])
-        for block in raw.get("blocks", [])
-        if block.get("type") == 0
-        for line in block.get("lines", [])
-        for span in line.get("spans", [])
-        if span.get("text", "").strip()
-    ]
+def _native_layout(layout: LTPage, frame: _PageFrame) -> list[LayoutBlock]:
+    """The text blocks of a page in reading order (top to bottom, then left to right), each a
+    heading or a paragraph judged on its font size against the page's body size."""
+    boxes = [element for element in layout if isinstance(element, LTTextBox)]
+    sizes = [size for box in boxes for size in _char_sizes(box)]
     body_size = median(sizes) if sizes else 10.0
     blocks: list[LayoutBlock] = []
-    for block in raw.get("blocks", []):
-        if block.get("type") != 0:
-            continue
-        lines = block.get("lines", [])
+    for box in boxes:
         text = "\n".join(
-            "".join(span.get("text", "") for span in line.get("spans", [])).strip()
-            for line in lines
+            line.get_text().strip() for line in box if isinstance(line, LTTextLine)
         ).strip()
         if not text:
             continue
-        spans = [
-            span for line in lines for span in line.get("spans", []) if span.get("text", "").strip()
-        ]
-        size = median([float(span["size"]) for span in spans]) if spans else body_size
+        own = _char_sizes(box)
+        size = median(own) if own else body_size
         heading = _looks_like_heading(text, size, body_size)
-        bbox = tuple(float(value) for value in block["bbox"])
         blocks.append(
             LayoutBlock(
                 "heading" if heading else "paragraph",
                 text,
-                bbox,
+                frame.layout_box(box.bbox),
                 _heading_level(text, size, body_size) if heading else None,
             )
         )
+    blocks.sort(key=lambda block: (round(block.box[1], 1), block.box[0]))
     return blocks
+
+
+def _char_sizes(box: LTTextBox) -> list[float]:
+    return [
+        float(char.size)
+        for line in box
+        if isinstance(line, LTTextLine)
+        for char in line
+        if isinstance(char, LTChar) and char.get_text().strip()
+    ]
 
 
 def _clean_block_text(text: str) -> str:

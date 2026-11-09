@@ -13,7 +13,7 @@ replaced document) is declared here. Regenerate after editing a file or the pipe
     make adventureworks-documents     # writes deploy/docker/sql/v3-adventureworks-documents.sql
 
 tests/unit/worker_document/test_adventureworks_documents.py fails when the seed is stale.
-Runs in the worker-document image (pymupdf, defusedxml).
+Runs in the worker-document image (pdfminer.six, pypdfium2, Pillow, defusedxml).
 """
 
 from __future__ import annotations
