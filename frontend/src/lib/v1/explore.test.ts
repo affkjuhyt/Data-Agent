@@ -109,6 +109,42 @@ describe('readExploreResult', () => {
     // No A3 field carries these: they stay empty rather than invented.
     expect(result.next_steps).toEqual([]);
     expect(result.reconciliation_text).toBeNull();
+    expect(result.partial_text).toBeNull();
+  });
+
+  it('keeps the second dimension with several metrics, and says what it could not draw', () => {
+    const two = {
+      ...model,
+      metrics: [
+        ...model.metrics,
+        { ...model.metrics[0], id: 'm-loans', label: 'Dư nợ', code: 'LOANS' },
+      ],
+    };
+    const result = readExploreResult(
+      run,
+      {
+        columns: ['metric', 'vung', 'quy', 'value'].map((name) => ({ name, type: null })),
+        rows: [
+          ['NPL_RATIO', 'Bắc', 'Q2', '1.5'],
+          ['NPL_RATIO', 'Bắc', 'Q3', '2.0'],
+          ['LOANS', 'Bắc', 'Q2', 100],
+          ['LOANS', 'Bắc', 'Q3', 120],
+        ],
+        truncated: true,
+        next_page_token: '',
+      },
+      { metric_ids: ['m-npl', 'm-loans'], dimension_ids: ['d-region', 'd-quarter'], filters: [] },
+      two,
+    );
+    // Each bar is a metric in a quarter: no quarter is dropped for whichever came first.
+    expect(result.series.map((s) => s.label)).toEqual([
+      'Nợ xấu (%) · Q2',
+      'Nợ xấu (%) · Q3',
+      'Dư nợ · Q2',
+      'Dư nợ · Q3',
+    ]);
+    expect(result.rows[0].values).toEqual([1.5, 2, 100, 120]);
+    expect(result.partial_text).toBe('Kết quả được lưu 4 dòng đầu trong 4 dòng');
   });
 });
 

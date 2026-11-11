@@ -58,6 +58,7 @@ export function ResultChart({
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-foreground da-heading-3">{result.title}</h2>
           <p className="truncate text-muted-foreground da-caption">{result.subtitle_text}</p>
+          {result.partial_text && <p className="text-warning da-caption">{result.partial_text}.</p>}
         </div>
         <Segmented<ChartKind>
           label="Kiểu biểu đồ"
@@ -208,59 +209,70 @@ export function ValueTable({ result, bare = false }: { result: ExploreResult; ba
   });
   return (
     <div className="flex flex-col gap-da-md">
-    <TableToolbar view={view} placeholder="Tìm dòng…" searchLabel="Tìm trong bảng giá trị" />
-    <table
-      className={cn(
-        'w-full border-separate border-spacing-0 overflow-hidden',
-        !bare && 'rounded-lg border border-border bg-card',
-      )}
-    >
-      <thead>
-        <tr className="bg-subtle text-left text-muted-foreground da-label">
-          <SortableTh view={view} column="label" className="px-da-lg py-da-sm font-medium">
-            {result.category_label}
-          </SortableTh>
-          {result.series.map((s) => (
-            <SortableTh key={s.key} view={view} column={s.key} className="w-[110px] px-da-lg py-da-sm font-medium">
-              {s.label}
+      <TableToolbar view={view} placeholder="Tìm dòng…" searchLabel="Tìm trong bảng giá trị" />
+      <table
+        className={cn(
+          'w-full border-separate border-spacing-0 overflow-hidden',
+          !bare && 'rounded-lg border border-border bg-card',
+        )}
+      >
+        <thead>
+          <tr className="bg-subtle text-left text-muted-foreground da-label">
+            <SortableTh view={view} column="label" className="px-da-lg py-da-sm font-medium">
+              {result.category_label}
             </SortableTh>
-          ))}
-          {hasDelta && (
-            <SortableTh view={view} column="delta" className="w-[110px] px-da-lg py-da-sm font-medium">
-              Thay đổi
-            </SortableTh>
-          )}
-        </tr>
-      </thead>
-      <tbody>
-        {view.rows.map((row) => (
-          <tr key={row.key}>
-            <td className="border-t border-border px-da-lg py-da-sm text-foreground da-body-small">
-              {row.label}
-            </td>
-            {row.values.map((x, i) => (
-              <td
-                key={result.series[i]?.key ?? i}
-                className="border-t border-border px-da-lg py-da-sm text-foreground da-mono"
+            {result.series.map((s) => (
+              <SortableTh
+                key={s.key}
+                view={view}
+                column={s.key}
+                className="w-[110px] px-da-lg py-da-sm font-medium"
               >
-                {formatValue(x, result.unit)}
-              </td>
+                {s.label}
+              </SortableTh>
             ))}
             {hasDelta && (
-              <td
-                className={cn(
-                  'border-t border-border px-da-lg py-da-sm da-mono',
-                  result.increase_is_bad && (row.delta ?? 0) > 0 ? 'text-error' : 'text-foreground',
-                )}
+              <SortableTh
+                view={view}
+                column="delta"
+                className="w-[110px] px-da-lg py-da-sm font-medium"
               >
-                {formatDelta(row.delta, result.unit)}
-              </td>
+                Thay đổi
+              </SortableTh>
             )}
           </tr>
-        ))}
-      </tbody>
-    </table>
-    <TablePager view={view} />
+        </thead>
+        <tbody>
+          {view.rows.map((row) => (
+            <tr key={row.key}>
+              <td className="border-t border-border px-da-lg py-da-sm text-foreground da-body-small">
+                {row.label}
+              </td>
+              {row.values.map((x, i) => (
+                <td
+                  key={result.series[i]?.key ?? i}
+                  className="border-t border-border px-da-lg py-da-sm text-foreground da-mono"
+                >
+                  {formatValue(x, result.unit)}
+                </td>
+              ))}
+              {hasDelta && (
+                <td
+                  className={cn(
+                    'border-t border-border px-da-lg py-da-sm da-mono',
+                    result.increase_is_bad && (row.delta ?? 0) > 0
+                      ? 'text-error'
+                      : 'text-foreground',
+                  )}
+                >
+                  {formatDelta(row.delta, result.unit)}
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
     </div>
   );
 }

@@ -92,7 +92,7 @@ export function readQueryRows(raw: QueryRowsWire): QueryRows {
   };
 }
 
-export const getQueryRows = async (queryRunId: string, pageSize = 500) =>
+export const getQueryRows = async (queryRunId: string, pageSize = 500, cursor?: string) =>
   readQueryRows(
     await ok<QueryRowsWire>(
       api.GET('/v1/query-runs/{id}/rows', {
@@ -100,11 +100,24 @@ export const getQueryRows = async (queryRunId: string, pageSize = 500) =>
           path: { id: queryRunId },
           query: {
             page_size: pageSize,
+            ...(cursor ? { cursor } : {}),
           },
         },
       }),
     ),
   );
+
+/** Every stored row of a run, page after page: a chart over the first page drew an unordered
+ *  part of the result (a UNION without ORDER BY) with nothing saying so. */
+export const getAllQueryRows = async (queryRunId: string) => {
+  let page = await getQueryRows(queryRunId);
+  const rows = [...page.rows];
+  while (page.next_page_token) {
+    page = await getQueryRows(queryRunId, 500, page.next_page_token);
+    rows.push(...page.rows);
+  }
+  return { ...page, rows };
+};
 
 /** The SQL as written and as run after the policy rewrite (audited by the api). */
 export const getQuerySql = async (queryRunId: string) =>
@@ -285,6 +298,8 @@ export interface ExploreResult {
   next_steps: NextStep[];
   /** PROPOSAL: no A3 field says the figures match a filed report; always null. */
   reconciliation_text: string | null;
+  /** What the chart does not show: a result cut where it was stored, a cut not drawn. */
+  partial_text: string | null;
   data_space_id: string;
 }
 
@@ -298,7 +313,9 @@ const numberOf = (value: unknown): number | null => {
 /**
  * The compiler's result is long: a `metric` column (the metric code), the dimensions asked for
  * by their code, then `value`. The first dimension is the category; a second one, with a single
- * metric, becomes the series (Q2 and Q3 side by side); with several metrics they are the series.
+ * metric, becomes the series (Q2 and Q3 side by side); with several metrics they are the series,
+ * one per metric and member of the second dimension (it was dropped, and each bar showed
+ * whichever month came first).
  */
 export function readExploreResult(
   run: QueryRunWire,
@@ -316,21 +333,36 @@ export function readExploreResult(
     .filter((m): m is ExploreMetric => m !== undefined);
   const metricByCode = new Map(chosen.map((m) => [m.code, m]));
   const categoryAt = dimAt[0] ?? -1;
-  const seriesAt = chosen.length > 1 ? metricAt : (dimAt[1] ?? -1);
+  const several = chosen.length > 1;
+  const memberAt = dimAt[1] ?? -1;
+  const seriesAt = several ? metricAt : memberAt;
+  const SEP = ' · ';
 
   const seriesKeys: string[] = [];
   const categories = new Map<string, Map<string, number | null>>();
+  let dropped = false;
   for (const row of data.rows) {
     const category = categoryAt >= 0 ? String(row[categoryAt] ?? '—') : 'Tổng';
-    const series = seriesAt >= 0 ? String(row[seriesAt] ?? '—') : (chosen[0]?.code ?? 'value');
+    const series =
+      seriesAt < 0
+        ? (chosen[0]?.code ?? 'value')
+        : several && memberAt >= 0
+          ? `${String(row[metricAt] ?? '—')}${SEP}${String(row[memberAt] ?? '—')}`
+          : String(row[seriesAt] ?? '—');
     if (!seriesKeys.includes(series)) seriesKeys.push(series);
     const values = categories.get(category) ?? new Map<string, number | null>();
-    // A third dimension is not drawn: the first value of a category and series is kept.
+    // A third dimension is not drawn: the first value of a category and series is kept, and the
+    // chart says so.
     if (!values.has(series)) values.set(series, numberOf(row[valueAt]));
+    else dropped = true;
     categories.set(category, values);
   }
-  const seriesLabel = (key: string) =>
-    chosen.length > 1 ? (metricByCode.get(key)?.label ?? key) : key;
+  const seriesLabel = (key: string) => {
+    if (!several) return key;
+    const [code, member] = key.split(SEP);
+    const name = metricByCode.get(code)?.label ?? code;
+    return member === undefined ? name : `${name}${SEP}${member}`;
+  };
   const series = seriesKeys.map((key) => ({
     key,
     label: seriesAt >= 0 ? seriesLabel(key) : (chosen[0]?.label ?? key),
@@ -375,6 +407,15 @@ export function readExploreResult(
       : null,
     next_steps: [],
     reconciliation_text: null,
+    partial_text:
+      [
+        data.truncated
+          ? `Kết quả được lưu ${data.rows.length} dòng đầu trong ${run.row_count ?? 'nhiều'} dòng`
+          : null,
+        dropped ? 'Chiều thứ ba không được vẽ: mỗi ô lấy giá trị đầu tiên' : null,
+      ]
+        .filter(Boolean)
+        .join('. ') || null,
     data_space_id: run.data_space_id,
   };
 }
@@ -397,7 +438,7 @@ export async function runExploreQuery(
     }),
   );
   const run = await awaitQueryRun(accepted);
-  return readExploreResult(run, await getQueryRows(run.id), input, model);
+  return readExploreResult(run, await getAllQueryRows(run.id), input, model);
 }
 
 /** The rows behind the chart, as the table under "Xem dòng kết quả". */
