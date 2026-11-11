@@ -10,16 +10,18 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import ipaddress
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, BinaryIO
 
 import pytest
+from botocore.exceptions import BotoCoreError
 
 from services.worker_agent import questions
 from services.worker_agent.documents import sync
 from services.worker_agent.events import Event
-from services.worker_agent.query.secrets import StaticReader
+from services.worker_agent.query.secrets import Credentials, StaticReader
 
 from .conftest import Seed
 
@@ -389,3 +391,60 @@ async def test_an_endpoint_inside_the_platform_is_refused(monkeypatch: pytest.Mo
             await sync.check_endpoint(endpoint)
     # An on-premises store on the bank's own network is the usual case and is allowed.
     await sync.check_endpoint("http://10.20.0.5:9000")
+
+
+class Answers:
+    """Stands in for DNS at connect time: what each name resolves to now."""
+
+    def __init__(self, names: dict[str, list[str]]) -> None:
+        self.names = names
+        self.asked: list[str] = []
+
+    async def resolve(self, host: str, port: int = 0, family: int = 0) -> list[dict[str, Any]]:
+        self.asked.append(host)
+        return [
+            {"hostname": host, "host": a, "port": port, "family": 0, "proto": 0, "flags": 0}
+            for a in self.names[host]
+        ]
+
+    async def close(self) -> None:
+        return None
+
+
+async def test_the_address_connected_to_is_the_one_checked() -> None:
+    # A name that passed check_endpoint and resolves somewhere else when the client connects (DNS
+    # rebinding) gets no connection: the check runs on the answer the connection uses.
+    dns = Answers({"store.ngan-hang.vn": ["10.20.0.5"]})
+    resolver = sync.CheckedResolver(inner=dns)
+    assert [r["host"] for r in await resolver.resolve("store.ngan-hang.vn", 9000)] == ["10.20.0.5"]
+    for inside in ("127.0.0.1", "169.254.169.254", "::1", "10.43.0.10", "10.42.3.7"):
+        dns.names["store.ngan-hang.vn"] = ["10.20.0.5", inside]
+        with pytest.raises(OSError):
+            await resolver.resolve("store.ngan-hang.vn", 9000)
+    # The platform's own MinIO, by address, is refused at connect time too.
+    dns.names["store.ngan-hang.vn"] = ["10.20.0.9"]
+    with pytest.raises(OSError):
+        await sync.CheckedResolver(inner=dns, platform=frozenset({"10.20.0.9"})).resolve(
+            "store.ngan-hang.vn", 9000
+        )
+
+
+async def test_the_source_client_resolves_through_the_check() -> None:
+    dns = Answers({"store.test": ["127.0.0.1"]})
+    bucket = sync.S3Bucket(
+        sync.Location("http://store.test:9", "kho", ""),
+        Credentials("AKIA-DOC", "s3cret", {}),
+        resolver=sync.CheckedResolver(inner=dns),
+    )
+    with pytest.raises(BotoCoreError):
+        await bucket.objects(10)
+    assert set(dns.asked) == {"store.test"}
+
+
+async def test_the_clusters_networks_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    for endpoint in ("http://10.43.0.10:9000", "http://10.42.0.5:9000"):
+        with pytest.raises(sync.SourceRefused):
+            await sync.check_endpoint(endpoint)
+    monkeypatch.setattr(sync, "REFUSED_NETWORKS", (ipaddress.ip_network("10.20.0.0/16"),))
+    with pytest.raises(sync.SourceRefused):
+        await sync.check_endpoint("http://10.20.0.5:9000")

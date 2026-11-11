@@ -57,6 +57,26 @@ class RequestRefused(ValueError):
     """The request may not be tried as it is; the message says why, in the screen's language."""
 
 
+_KEY_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def rest_key_prefix(org_id: object, data_space_id: object) -> str:
+    """Where a Data Space's REST keys live in OpenBao. The key is sent as a header to a host the
+    person types, so it is an allowlist: a secret anywhere else of the organisation (a database
+    account, a model provider's key, an account no source uses yet) is never one. The api's
+    AppRole cannot write here (dataagent-api-policy); keys are put by whoever runs OpenBao.
+    worker-agent's rest_tries.py repeats the check before it reads the key."""
+    return f"secret/tenants/{org_id}/rest/{data_space_id}/"
+
+
+def check_rest_key(ref: str, org_id: object, data_space_id: object) -> str:
+    prefix = rest_key_prefix(org_id, data_space_id)
+    rest = ref[len(prefix) :] if isinstance(ref, str) and ref.startswith(prefix) else ""
+    if not rest or not all(_KEY_SEGMENT.fullmatch(s) for s in rest.split("/")):
+        raise RequestRefused(f"secret_ref phải là khoá REST của Data Space này, dưới {prefix}.")
+    return ref
+
+
 def checked_request(request: dict[str, Any]) -> dict[str, Any]:
     """What the worker is given of the form's request: https URL, query, typed headers without a
     credential, the auth kind and the secret_ref; anything else it holds is dropped."""

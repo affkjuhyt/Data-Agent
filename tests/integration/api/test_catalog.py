@@ -263,7 +263,7 @@ def _try_body(o: Org, **request: Any) -> dict[str, Any]:
             "url": "https://api.example.test/v1/cards",
             "query": "page=1",
             "auth": "bearer",
-            "secret_ref": f"secret/tenants/{o.org}/rest/cards",
+            "secret_ref": f"secret/tenants/{o.org}/rest/{o.space}/cards",
             "headers": [{"name": "Accept", "value": "application/json"}],
             **request,
         }
@@ -294,7 +294,7 @@ async def test_rest_try_answers_the_workers_real_call_and_keeps_nothing(o: Org) 
         "url": "https://api.example.test/v1/cards",
         "query": "page=1",
         "auth": "bearer",
-        "secret_ref": f"secret/tenants/{o.org}/rest/cards",
+        "secret_ref": f"secret/tenants/{o.org}/rest/{o.space}/cards",
         "headers": [{"name": "Accept", "value": "application/json"}],
         "records_path": None,
     }
@@ -302,21 +302,26 @@ async def test_rest_try_answers_the_workers_real_call_and_keeps_nothing(o: Org) 
 
 
 async def test_rest_try_refuses_secrets_in_the_request_and_foreign_accounts(o: Org) -> None:
+    # A key in use elsewhere, and one in use nowhere: neither is a REST key of this Data Space.
     _source_row(o, secret_ref=f"secret/tenants/{o.org}/core-db")
     rest = {"kind": "rest_api", "mode": "ingest"}
-    _source_row(o, o.other, **rest, secret_ref=f"secret/tenants/{o.org}/rest/other")
     _source_row(o, **rest, secret_ref=f"secret/tenants/{o.org}/rest/cards")
     tries = FakeTries({"ok": RESULT})
     bad = [
         _try_body(o, url="http://api.example.test/v1/cards"),
         _try_body(o, headers=[{"name": "Authorization", "value": "Bearer do-not-send"}]),
         _try_body(o, headers=[{"name": "Cookie", "value": "session=1"}]),
-        _try_body(o, secret_ref=f"secret/tenants/{uuid.uuid4()}/rest/cards"),
-        _try_body(o, secret_ref=f"secret/tenants/{o.org}/../providers/x"),
+        _try_body(o, secret_ref=f"secret/tenants/{uuid.uuid4()}/rest/{o.space}/cards"),
+        _try_body(o, secret_ref=f"secret/tenants/{o.org}/rest/{o.space}/../../providers/x"),
         # A database account is never sent to an HTTP host as a token…
         _try_body(o, secret_ref=f"secret/tenants/{o.org}/core-db"),
+        # …nor a secret no source uses (a model provider's key, an account not registered yet)…
+        _try_body(o, secret_ref=f"secret/tenants/{o.org}/providers/openai"),
+        # …nor a REST key outside this Data Space's prefix, even one a REST source names…
+        _try_body(o, secret_ref=f"secret/tenants/{o.org}/rest/cards"),
         # …nor another Data Space's REST key.
-        _try_body(o, secret_ref=f"secret/tenants/{o.org}/rest/other"),
+        _try_body(o, secret_ref=f"secret/tenants/{o.org}/rest/{o.other}/cards"),
+        _try_body(o, secret_ref=f"secret/tenants/{o.org}/rest/{o.space}"),
         _try_body(o, auth="basic"),
     ]
     async with _try_client(o, tries) as api:
@@ -333,8 +338,25 @@ async def test_rest_try_refuses_secrets_in_the_request_and_foreign_accounts(o: O
     assert [a.status_code for a in answers] == [422] * len(bad), [a.text for a in answers]
     assert "do-not-send" not in "".join(a.text for a in answers)
     assert denied.status_code == 403
-    # The REST source of this Data Space may be tried with its own key.
+    # A key under this Data Space's REST prefix may be tried, before its source exists.
     assert allowed.status_code == 200 and len(tries.jobs) == 1
+
+
+async def test_a_rest_source_keeps_only_a_key_of_its_data_space(o: Org) -> None:
+    source = _source_row(o, kind="rest_api", mode="ingest", secret_ref="")
+    body = _try_body(o)
+    async with client(o) as api:
+        kept = await api.put(
+            f"/v1/sources/{source}/api-config", headers=o.headers("admin"), json=body
+        )
+        other = await api.put(
+            f"/v1/sources/{source}/api-config",
+            headers=o.headers("admin"),
+            json=_try_body(o, secret_ref=f"secret/tenants/{o.org}/providers/openai"),
+        )
+    assert kept.status_code == 200, kept.text
+    # Saved, it would be sent by every run of the source: the same rule as the try.
+    assert other.status_code == 422, other.text
 
 
 async def test_rest_try_says_why_when_the_worker_could_not_call(o: Org) -> None:

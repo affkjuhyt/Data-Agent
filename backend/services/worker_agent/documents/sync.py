@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from typing import IO, Any, Protocol
 from urllib.parse import urlsplit
 
+from aiohttp.abc import AbstractResolver, ResolveResult
+from aiohttp.resolver import DefaultResolver
 from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy import select
 
@@ -159,12 +161,28 @@ def parse_location(text: str) -> Location:
     return Location(endpoint, bucket, "".join(f"{s}/" for s in segments))
 
 
+# The cluster's own pod and service networks (k3s defaults; DOCUMENT_SYNC_REFUSED_NETWORKS when
+# the cluster uses others): an address there is a workload of the platform, not a store.
+REFUSED_NETWORKS = tuple(
+    ipaddress.ip_network(n.strip())
+    for n in os.environ.get("DOCUMENT_SYNC_REFUSED_NETWORKS", "10.42.0.0/16,10.43.0.0/16").split(
+        ","
+    )
+    if n.strip()
+)
+
+
 def _refused_address(address: str) -> bool:
     ip = ipaddress.ip_address(address)
     # Private ranges stay allowed: an on-premises MinIO on the bank's network is the usual store.
     # Loopback and link-local (the cloud metadata endpoint) would turn the sync into a way in.
     return (
-        ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved
+        ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_unspecified
+        or ip.is_reserved
+        or any(ip in network for network in REFUSED_NETWORKS)
     )
 
 
@@ -199,11 +217,51 @@ async def check_endpoint(endpoint: str | None) -> None:
             raise SourceRefused("the endpoint is the platform's own store")
 
 
+async def _platform_addresses() -> frozenset[str]:
+    platform = urlsplit(os.environ.get("MINIO_URL", "").strip())
+    if not platform.hostname:
+        return frozenset()
+    port = platform.port or (443 if platform.scheme == "https" else 80)
+    return frozenset(await _addresses(platform.hostname, port))
+
+
+class CheckedResolver(AbstractResolver):
+    """The source client's DNS: the same rule as check_endpoint, on the answer the connection then
+    uses. check_endpoint resolving a name and the client resolving it again would leave a window
+    (DNS rebinding: public for the check, 127.0.0.1 for the connection); here there is one
+    answer, checked and connected to. The URL keeps the host name, so Host, SigV4 and TLS
+    (SNI and certificate) are unchanged. An address literal never reaches a resolver; it is
+    checked by check_endpoint and cannot change."""
+
+    def __init__(self, inner: Any = None, platform: frozenset[str] | None = None) -> None:
+        self._inner = inner if inner is not None else DefaultResolver()
+        self._platform = platform
+
+    async def resolve(
+        self, host: str, port: int = 0, family: socket.AddressFamily = socket.AF_INET
+    ) -> list[ResolveResult]:
+        answers = await self._inner.resolve(host, port, family)
+        if self._platform is None:
+            self._platform = await _platform_addresses()
+        found = {str(a["host"]) for a in answers}
+        if not found or any(_refused_address(a) for a in found) or found & self._platform:
+            raise OSError(f"{host} resolves inside the platform; not connected")
+        return list(answers)
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+
 def _s3_client(
-    endpoint: str | None, access_key: str | None, secret_key: str | None, **extra: Any
+    endpoint: str | None,
+    access_key: str | None,
+    secret_key: str | None,
+    *,
+    resolver: AbstractResolver | None = None,
+    **extra: Any,
 ) -> Any:
     import aioboto3
-    from botocore.config import Config
+    from aiobotocore.config import AioConfig
 
     return aioboto3.Session().client(
         "s3",
@@ -211,25 +269,36 @@ def _s3_client(
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
         region_name=extra.get("region") or "us-east-1",
-        config=Config(
+        config=AioConfig(
             signature_version="s3v4",
             # MinIO and most on-premises stores serve buckets by path, not by host name.
             s3={"addressing_style": "path"} if endpoint else {},
             connect_timeout=10,
             read_timeout=60,
             retries={"max_attempts": 3, "mode": "standard"},
+            connector_args={"resolver": resolver} if resolver is not None else None,
         ),
     )
 
 
 class S3Bucket:
-    def __init__(self, location: Location, credentials: Credentials) -> None:
+    def __init__(
+        self,
+        location: Location,
+        credentials: Credentials,
+        *,
+        resolver: AbstractResolver | None = None,
+    ) -> None:
         self._location = location
         self._credentials = credentials
+        self._resolver = resolver
 
     def _client(self) -> Any:
         c = self._credentials
-        return _s3_client(self._location.endpoint, c.user, c.password, **c.extra)
+        extra = {k: v for k, v in c.extra.items() if k == "region"}
+        # A resolver per client: aiohttp closes it with the client's connector.
+        resolver = self._resolver or CheckedResolver()
+        return _s3_client(self._location.endpoint, c.user, c.password, resolver=resolver, **extra)
 
     async def objects(self, limit: int) -> tuple[list[SourceObject], bool]:
         found: list[SourceObject] = []

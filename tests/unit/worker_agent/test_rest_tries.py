@@ -17,7 +17,9 @@ from services.worker_agent.query.secrets import StaticReader
 pytestmark = [pytest.mark.unit]
 
 ORG = uuid.uuid4()
-REF = f"secret/tenants/{ORG}/rest/cards"
+SPACE = uuid.uuid4()
+KEYS = f"secret/tenants/{ORG}/rest/{SPACE}"
+REF = f"{KEYS}/cards"
 PUBLIC = "93.184.216.34"
 
 
@@ -25,7 +27,7 @@ def job(**request: Any) -> dict[str, Any]:
     return {
         "id": str(uuid.uuid4()),
         "org_id": str(ORG),
-        "data_space_id": str(uuid.uuid4()),
+        "data_space_id": str(SPACE),
         "requested_by": str(uuid.uuid4()),
         "request": {
             "url": "https://api.the-bank.vn/v1/cards",
@@ -60,12 +62,16 @@ def world(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
         StaticReader(
             {
                 REF: {"token": "tok-123"},
-                f"secret/tenants/{ORG}/rest/key": {"api_key": "key-9", "header": "X-Bank-Key"},
-                f"secret/tenants/{ORG}/rest/oauth": {
-                    "user": "client-1",
-                    "password": "shh",
+                f"{KEYS}/key": {"api_key": "key-9", "header": "X-Bank-Key"},
+                f"{KEYS}/oauth": {
+                    "client_id": "client-1",
+                    "client_secret": "shh",
                     "token_url": "https://auth.the-bank.vn/oauth/token",
                 },
+                # A database account and a model provider's key, readable by the worker's role.
+                f"{KEYS}/account": {"user": "app_user", "password": "db-pass"},
+                f"secret/tenants/{ORG}/providers/openai": {"api_key": "sk-provider"},
+                f"secret/tenants/{ORG}/rest/{uuid.uuid4()}/cards": {"token": "other-space"},
             }
         ),
     )
@@ -130,13 +136,9 @@ async def test_the_call_is_pinned_to_the_checked_address_with_the_key(
 async def test_an_api_key_and_an_oauth_client_are_read_from_the_secret(
     world: list[httpx.Request],
 ) -> None:
-    keyed = await rest_tries.try_request(
-        job(auth="api_key", secret_ref=f"secret/tenants/{ORG}/rest/key")
-    )
+    keyed = await rest_tries.try_request(job(auth="api_key", secret_ref=f"{KEYS}/key"))
     assert keyed["ok"]["status"] == 200 and world[-1].headers["X-Bank-Key"] == "key-9"
-    oauth = await rest_tries.try_request(
-        job(auth="oauth2_client", secret_ref=f"secret/tenants/{ORG}/rest/oauth")
-    )
+    oauth = await rest_tries.try_request(job(auth="oauth2_client", secret_ref=f"{KEYS}/oauth"))
     assert oauth["ok"]["status"] == 200
     token, call = world[-2], world[-1]
     assert token.url.host == PUBLIC and token.headers["Host"] == "auth.the-bank.vn"
@@ -179,11 +181,30 @@ async def test_a_secret_outside_the_organisation_or_missing_is_refused(
     world: list[httpx.Request],
 ) -> None:
     foreign = await rest_tries.try_request(job(secret_ref=f"secret/tenants/{uuid.uuid4()}/k"))
-    missing = await rest_tries.try_request(job(secret_ref=f"secret/tenants/{ORG}/rest/none"))
+    missing = await rest_tries.try_request(job(secret_ref=f"{KEYS}/none"))
     assert "refused" in foreign and "refused" in missing and world == []
+    # The worker's role reads more than REST keys, so it holds the job to the same allowlist as
+    # the api: a key of the organisation outside this Data Space's REST prefix is never sent.
+    for ref in (
+        f"secret/tenants/{ORG}/providers/openai",
+        f"secret/tenants/{ORG}/rest/{uuid.uuid4()}/cards",
+        f"secret/tenants/{ORG}/rest/cards",
+        KEYS,
+    ):
+        for auth in ("bearer", "api_key"):
+            answer = await rest_tries.try_request(job(secret_ref=ref, auth=auth))
+            assert "refused" in answer, (ref, answer)
+    assert world == []
     # A credential header that reached the worker anyway is not sent.
     await rest_tries.try_request(job(headers=[{"name": "Cookie", "value": "s=1"}]))
     assert "Cookie" not in world[-1].headers
+
+
+async def test_a_password_is_never_sent_as_a_token_or_key(world: list[httpx.Request]) -> None:
+    for auth in ("bearer", "api_key", "oauth2_client"):
+        answer = await rest_tries.try_request(job(auth=auth, secret_ref=f"{KEYS}/account"))
+        assert "refused" in answer, (auth, answer)
+    assert world == []
 
 
 async def test_an_unreachable_api_is_a_failure_said_without_detail(

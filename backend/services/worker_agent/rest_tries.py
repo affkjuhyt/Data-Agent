@@ -68,6 +68,7 @@ CREDENTIAL_HEADERS = frozenset(
         "transfer-encoding",
     }
 )
+_KEY_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
 _HEADER_NAME = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]{1,100}")
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}([T ][0-9:.]+(Z|[+-]\d{2}:?\d{2})?)?")
 
@@ -170,8 +171,8 @@ async def _send(
 
 async def _oauth_token(fields: dict[str, str]) -> str:
     token_url = fields.get("token_url", "")
-    client_id = fields.get("user") or fields.get("client_id")
-    client_secret = fields.get("password") or fields.get("client_secret")
+    # Its own fields only: a source account's user and password are not a client's credentials.
+    client_id, client_secret = fields.get("client_id"), fields.get("client_secret")
     if not token_url or not client_id or not client_secret:
         raise Refused("Bí mật OAuth cần token_url, client_id và client_secret.")
     form = {"grant_type": "client_credentials"}
@@ -193,18 +194,35 @@ async def _oauth_token(fields: dict[str, str]) -> str:
     return token
 
 
-async def _auth_headers(org_id: Any, auth: str, secret_ref: str) -> dict[str, str]:
+def check_rest_key(ref: str, org_id: Any, data_space_id: Any) -> None:
+    """The api's allowlist again (catalog/rest_try.py check_rest_key): this worker's AppRole
+    reads every secret of the organisation, so a job naming a database account or a model
+    provider's key must not reach OpenBao, whatever put it on the queue."""
+    try:
+        prefix = f"secret/tenants/{uuid.UUID(str(org_id))}/rest/{uuid.UUID(str(data_space_id))}/"
+    except ValueError as exc:
+        raise Refused("Yêu cầu gọi thử không nêu Data Space.") from exc
+    rest = ref[len(prefix) :] if ref.startswith(prefix) else ""
+    if not rest or not all(_KEY_SEGMENT.fullmatch(s) for s in rest.split("/")):
+        raise Refused(f"secret_ref phải là khoá REST của Data Space này, dưới {prefix}.")
+
+
+async def _auth_headers(
+    org_id: Any, data_space_id: Any, auth: str, secret_ref: str
+) -> dict[str, str]:
+    check_rest_key(secret_ref, org_id, data_space_id)
     try:
         fields = await questions.secrets().fields(org_id, secret_ref)
     except SecretUnavailable as exc:
         raise Refused("Không đọc được bí mật của secret_ref trong OpenBao.") from exc
     if auth == "bearer":
-        token = fields.get("token") or fields.get("api_key") or fields.get("password")
+        # Never `password`: a source account's password would leave as a bearer token.
+        token = fields.get("token") or fields.get("api_key")
         if not token:
             raise Refused("Bí mật không có token.")
         return {"Authorization": f"Bearer {token}"}
     if auth == "api_key":
-        key = fields.get("api_key") or fields.get("value") or fields.get("password")
+        key = fields.get("api_key") or fields.get("token")
         header = fields.get("header") or "X-API-Key"
         if not key or not _HEADER_NAME.fullmatch(header):
             raise Refused("Bí mật không có api_key (và header hợp lệ nếu có).")
@@ -303,7 +321,10 @@ async def try_request(job: dict[str, Any]) -> dict[str, Any]:
         started = time.monotonic()
         async with asyncio.timeout(TIMEOUT_SECONDS):
             auth = await _auth_headers(
-                job["org_id"], str(request.get("auth")), str(request.get("secret_ref") or "")
+                job["org_id"],
+                job.get("data_space_id"),
+                str(request.get("auth")),
+                str(request.get("secret_ref") or ""),
             )
             status, body, cut = await _send("GET", url, {**headers, **auth})
         duration_ms = int((time.monotonic() - started) * 1000)

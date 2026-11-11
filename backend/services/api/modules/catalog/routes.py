@@ -46,6 +46,7 @@ from services.api.modules.catalog.rest_try import (
     RequestRefused,
     RestTries,
     TriesBusy,
+    check_rest_key,
     checked_request,
     rest_tries,
 )
@@ -213,28 +214,11 @@ async def try_rest_connector(
         request = checked_request(body.request)
     except RequestRefused as exc:
         raise Problem(422, "validation_failed", str(exc)) from exc
-    ref = _checked_ref(request["secret_ref"], principal, "request")
-    async with transaction(ROLE, principal) as session:
-        # The key is sent to a host the caller types: it may not be a database account (it would
-        # leave as a bearer token), nor a key another Data Space's source uses.
-        users = (
-            await session.execute(
-                select(catalog.Source.kind, catalog.Source.data_space_id).where(
-                    catalog.Source.org_id == principal.org_id,
-                    catalog.Source.deleted_at.is_(None),
-                    or_(
-                        catalog.Source.secret_ref == ref,
-                        catalog.Source.writeback_secret_ref == ref,
-                    ),
-                )
-            )
-        ).all()
-    if any(kind != "rest_api" or source_space != space for kind, source_space in users):
-        raise Problem(
-            422,
-            "validation_failed",
-            "secret_ref này là tài khoản của một nguồn khác; chọn khoá của REST API.",
-        )
+    try:
+        # The key goes to a host the caller types: only a REST key of this Data Space may.
+        check_rest_key(request["secret_ref"], principal.org_id, space)
+    except RequestRefused as exc:
+        raise Problem(422, "validation_failed", str(exc)) from exc
     if tries is None:
         raise Problem(503, "source_unavailable", "Chưa cấu hình Redis cho lần gọi thử.")
     job = {
@@ -504,6 +488,13 @@ async def put_source_api_config(
         row = await _source(session, principal, space, source_id, lock=True)
         if row.kind != "rest_api":
             raise Problem(422, "business_rule_violated", "The source is not a REST API source.")
+        ref = body.request.get("secret_ref")
+        if ref:
+            # Every run of the source sends this key, as the try does: the same rule.
+            try:
+                check_rest_key(ref, principal.org_id, row.data_space_id)
+            except RequestRefused as exc:
+                raise Problem(422, "validation_failed", str(exc)) from exc
         options = dict(row.conn_options) if isinstance(row.conn_options, dict) else {}
         options["api"] = {"request": body.request, "mapping": body.mapping}
         row.conn_options = options
