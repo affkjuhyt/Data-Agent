@@ -58,15 +58,17 @@ const SCOPE_LABEL: Record<string, string> = {
 };
 
 /*
- * The skill's status from its versions when the detail has them (a version waiting for review,
- * none published yet), else from the row: replaced is deprecated, no version a draft.
+ * The skill's status from its versions: the detail lists them, a library row says which one waits
+ * for review and whether one is under test (SkillView). Replaced is deprecated, no version a draft.
  */
 function statusOf(raw: SkillWire): { status: SkillStatus; pending: string | null } {
   const versions = 'versions' in raw ? (raw.versions ?? []) : [];
-  const pending = versions.find((v) => v.status === 'pending_review') ?? null;
+  const pending =
+    versions.find((v) => v.status === 'pending_review')?.id ?? raw.pending_version_id ?? null;
+  const testing = versions.some((v) => v.status === 'testing') || raw.has_testing_version;
   if (raw.replaced_by_skill_id) return { status: 'deprecated', pending: null };
-  if (pending) return { status: 'pending_review', pending: pending.id };
-  if (versions.some((v) => v.status === 'testing')) return { status: 'testing', pending: null };
+  if (pending) return { status: 'pending_review', pending };
+  if (testing) return { status: 'testing', pending: null };
   if (raw.current_version === null) return { status: 'draft', pending: null };
   return { status: 'certified', pending: null };
 }
@@ -95,7 +97,7 @@ function readSkill(raw: SkillWire, names: Map<string, string>): Skill {
     scope_label: SCOPE_LABEL[raw.scope] ?? raw.scope,
     owner,
     created_by: owner,
-    step_count: Array.isArray(steps) ? steps.length : 0,
+    step_count: Array.isArray(steps) ? steps.length : (raw.step_count ?? 0),
     agent_count: 0,
     runs_30d: raw.run_count_30d || null,
     pass_rate_pct: null,

@@ -477,7 +477,8 @@ export interface SkillTestRun {
   skill_name: string;
   version: number;
   status: SkillAuthoringStatus;
-  ran_at: string;
+  /** null until the version's suite has run */
+  ran_at: string | null;
   cases: SkillTestCase[];
   failures: SkillTestFailure[];
 }
@@ -497,17 +498,55 @@ export const getLatestTestRun = async (id: string): Promise<SkillTestRun> => {
     (raw.versions ?? []).find((candidate) => WORKING.has(candidate.status)) ??
     (raw.versions ?? [])[0];
   if (!version) throw new V1Error(404, 'not_found', 'Kỹ năng chưa có phiên bản.');
+  // The suite's result is the version's eval run (skill_version.eval_run_id): its results, read
+  // against the set's items. Without it the page showed "0/0 đạt" in green after a failing run.
+  const scored = version.eval_run_id ? await evalCases(version.eval_run_id) : null;
   return {
     skill_id: raw.id,
     version_id: version.id,
     skill_name: raw.name,
     version: version.version,
     status: version.status as SkillAuthoringStatus,
-    ran_at: version.created_at,
-    cases: [],
+    ran_at: scored?.ran_at ?? null,
+    cases: scored?.cases ?? [],
     failures: [],
   };
 };
+
+/** A result's actual value in a line: a string or number as is, an object by its main field. */
+const shown = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (typeof value === 'object') {
+    const v = value as Record<string, unknown>;
+    for (const key of ['answer', 'value', 'text']) {
+      if (typeof v[key] === 'string' || typeof v[key] === 'number') return String(v[key]);
+    }
+  }
+  return JSON.stringify(value);
+};
+
+/** The version's eval run: one case per result. A2 has no read of a set's items, so a case is
+ *  named by its place and shows what the run produced, whether it passed and why not. */
+async function evalCases(
+  runId: string,
+): Promise<{ ran_at: string | null; cases: SkillTestCase[] }> {
+  const run = await ok<Schemas['EvalRunDetail']>(
+    api.GET('/v1/eval-runs/{id}', { params: { path: { id: runId } } }),
+  );
+  return {
+    ran_at: run.finished_at ?? run.started_at,
+    cases: (run.results ?? []).map((result, i) => ({
+      id: result.eval_item_id,
+      name: `Ca ${i + 1}`,
+      period_text: '',
+      expected: '',
+      actual: shown(result.actual),
+      passed: result.passed,
+      note: result.cause,
+    })),
+  };
+}
 
 const WORKING = new Set(['draft', 'needs_review', 'testing']);
 /** skill/routes.py: :test takes a draft or a version flagged needs_review, nothing else. */

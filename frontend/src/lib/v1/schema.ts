@@ -21100,6 +21100,11 @@ export interface components {
             /** Description */
             description: string | null;
             /**
+             * Has Testing Version
+             * @default false
+             */
+            has_testing_version: boolean;
+            /**
              * Id
              * Format: uuid
              */
@@ -21115,6 +21120,8 @@ export interface components {
              * Format: uuid
              */
             owner_id: string;
+            /** Pending Version Id */
+            pending_version_id?: string | null;
             published_version?: components["schemas"]["VersionView"] | null;
             /** Replaced By Skill Id */
             replaced_by_skill_id: string | null;
@@ -21122,6 +21129,11 @@ export interface components {
             run_count_30d: number;
             /** Scope */
             scope: string;
+            /**
+             * Step Count
+             * @default 0
+             */
+            step_count: number;
             /**
              * Updated At
              * Format: date-time
@@ -21148,6 +21160,11 @@ export interface components {
             /** Description */
             description: string | null;
             /**
+             * Has Testing Version
+             * @default false
+             */
+            has_testing_version: boolean;
+            /**
              * Id
              * Format: uuid
              */
@@ -21163,12 +21180,19 @@ export interface components {
              * Format: uuid
              */
             owner_id: string;
+            /** Pending Version Id */
+            pending_version_id?: string | null;
             /** Replaced By Skill Id */
             replaced_by_skill_id: string | null;
             /** Run Count 30D */
             run_count_30d: number;
             /** Scope */
             scope: string;
+            /**
+             * Step Count
+             * @default 0
+             */
+            step_count: number;
             /**
              * Updated At
              * Format: date-time

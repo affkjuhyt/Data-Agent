@@ -110,7 +110,23 @@ let bodies: unknown[] = [];
 const record = (request: Request) =>
   calls.push(`${request.method} ${new URL(request.url).pathname}`);
 
+const evalRun = {
+  id: 'eval-1',
+  eval_set_id: 'set-1',
+  status: 'completed',
+  started_at: '2026-10-12T08:00:00Z',
+  finished_at: '2026-10-12T08:05:00Z',
+  item_count: 2,
+  passed: 1,
+  failed: 1,
+  results: [
+    { eval_item_id: 'it-1', passed: true, actual: { value: 12 }, cause: null },
+    { eval_item_id: 'it-2', passed: false, actual: '7', cause: 'Lệch 5 so với kỳ vọng' },
+  ],
+};
+
 const server = setupServer(
+  http.get('*/v1/eval-runs/:id', () => HttpResponse.json(evalRun)),
   // How the api answers the PROPOSAL paths: a verb on an id is 405, the sub-path 404.
   http.post('*/v1/skills/:action', ({ request, params }) =>
     String(params.action).includes(':') ? (record(request), methodNotAllowed()) : undefined,
@@ -292,6 +308,21 @@ describe('skill authoring through A2', () => {
     ];
     const run = await getLatestTestRun('sk-1');
     expect(run).toMatchObject({ version_id: 'skv-5', version: 5, status: 'draft' });
+  });
+
+  it("reads the suite's result from the version's eval run, and none before it ran", async () => {
+    versions = [
+      { id: 'skv-4', version: 4, status: 'testing', eval_run_id: 'eval-1', created_at: at },
+    ];
+    const tested = await getLatestTestRun('sk-1');
+    expect(tested.ran_at).toBe('2026-10-12T08:05:00Z');
+    expect(tested.cases.map((c) => [c.name, c.actual, c.passed, c.note])).toEqual([
+      ['Ca 1', '12', true, null],
+      ['Ca 2', '7', false, 'Lệch 5 so với kỳ vọng'],
+    ]);
+    versions = [{ id: 'skv-5', version: 5, status: 'draft', eval_run_id: null, created_at: at }];
+    const fresh = await getLatestTestRun('sk-1');
+    expect(fresh).toMatchObject({ ran_at: null, cases: [] });
   });
 
   it('says a new test case is not saved instead of rerunning the suite without it', async () => {

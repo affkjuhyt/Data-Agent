@@ -309,6 +309,43 @@ async def test_author_creates_a_skill_and_the_library_shows_it(sk: Org) -> None:
         assert no_ask_detail.status_code == 403
 
 
+async def test_a_library_row_counts_recent_runs_and_shows_a_version_waiting(sk: Org) -> None:
+    async with client(sk) as api:
+        made = await _skill(api, sk, "dem-luot", scope="data_space")
+        version = await _version(api, sk, made["id"])
+        sk.seed.conn.cursor().execute(
+            "UPDATE skill.skill_version SET status = 'pending_review' WHERE id = %s",
+            (version["id"],),
+        )
+        now = _now()
+        for kind, mode, at in (
+            ("user", "run", now),
+            ("tile", "run", now - datetime.timedelta(days=3)),
+            # Not the library's runs: an eval's, a try, one older than 30 days.
+            ("eval", "run", now),
+            ("user", "try", now),
+            ("user", "run", now - datetime.timedelta(days=40)),
+        ):
+            sk.seed.row(
+                "skill.skill_run",
+                org_id=sk.org,
+                skill_version_id=uuid.UUID(version["id"]),
+                data_space_id=sk.space,
+                caller_kind=kind,
+                principal_id=sk.users["author"],
+                params=Json({}),
+                mode=mode,
+                created_at=at,
+            )
+        listed = await api.get("/v1/skills", headers=sk.headers("author"))
+        detail = await api.get(f"/v1/skills/{made['id']}", headers=sk.headers("author"))
+    row = next(s for s in listed.json()["items"] if s["id"] == made["id"])
+    assert row["run_count_30d"] == 2
+    assert row["pending_version_id"] == version["id"]
+    assert row["has_testing_version"] is False
+    assert detail.json()["run_count_30d"] == 2
+
+
 async def test_scope_decides_who_sees_a_skill(sk: Org) -> None:
     async with client(sk) as api:
         personal = await _skill(api, sk, "rieng")

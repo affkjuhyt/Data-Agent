@@ -39881,6 +39881,11 @@
       ],
       "title": "Description"
      },
+     "has_testing_version": {
+      "default": false,
+      "title": "Has Testing Version",
+      "type": "boolean"
+     },
      "id": {
       "format": "uuid",
       "title": "Id",
@@ -39911,6 +39916,18 @@
       "title": "Owner Id",
       "type": "string"
      },
+     "pending_version_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Pending Version Id"
+     },
      "published_version": {
       "anyOf": [
        {
@@ -39940,6 +39957,11 @@
      "scope": {
       "title": "Scope",
       "type": "string"
+     },
+     "step_count": {
+      "default": 0,
+      "title": "Step Count",
+      "type": "integer"
      },
      "updated_at": {
       "format": "date-time",
@@ -40023,6 +40045,11 @@
       ],
       "title": "Description"
      },
+     "has_testing_version": {
+      "default": false,
+      "title": "Has Testing Version",
+      "type": "boolean"
+     },
      "id": {
       "format": "uuid",
       "title": "Id",
@@ -40053,6 +40080,18 @@
       "title": "Owner Id",
       "type": "string"
      },
+     "pending_version_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Pending Version Id"
+     },
      "replaced_by_skill_id": {
       "anyOf": [
        {
@@ -40072,6 +40111,11 @@
      "scope": {
       "title": "Scope",
       "type": "string"
+     },
+     "step_count": {
+      "default": 0,
+      "title": "Step Count",
+      "type": "integer"
      },
      "updated_at": {
       "format": "date-time",

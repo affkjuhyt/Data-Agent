@@ -58,9 +58,16 @@ class SkillView(BaseModel):
     origin_ref: uuid.UUID | None
     current_version: int | None
     replaced_by_skill_id: uuid.UUID | None
+    # Runs of the last 30 days (skill_run, mode run, not eval), counted when listed: the stored
+    # column has no writer.
     run_count_30d: int
     created_at: datetime.datetime
     updated_at: datetime.datetime
+    # What the library row shows of the versions without reading each skill: one waiting for
+    # review, one under test, and the steps of the published version.
+    pending_version_id: uuid.UUID | None = None
+    has_testing_version: bool = False
+    step_count: int = 0
 
 
 class VersionCreate(BaseModel):

@@ -126,12 +126,20 @@ function Tests({ initial }: { initial: SkillTestRun }) {
         title={
           <span className="inline-flex items-center gap-[10px]">
             Kiểm định · {run.skill_name} v{run.version}
-            <StatusDot tone={failing.length ? 'warning' : 'success'}>
-              {passed}/{run.cases.length} đạt
-            </StatusDot>
+            {run.cases.length === 0 ? (
+              <StatusDot tone="idle">chưa chạy</StatusDot>
+            ) : (
+              <StatusDot tone={failing.length ? 'warning' : 'success'}>
+                {passed}/{run.cases.length} đạt
+              </StatusDot>
+            )}
           </span>
         }
-        description={`Chạy ${run.cases.length} ca kiểm thử trên dữ liệu đã chốt · ${passed} đạt · lần chạy ${time(run.ran_at)}`}
+        description={
+          run.ran_at
+            ? `Chạy ${run.cases.length} ca kiểm thử trên dữ liệu đã chốt · ${passed} đạt · lần chạy ${time(run.ran_at)}`
+            : 'Phiên bản này chưa chạy kiểm định trên dữ liệu đã chốt.'
+        }
         actions={
           <>
             <Button kind="ghost" onClick={() => setAdding(true)}>

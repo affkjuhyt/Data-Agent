@@ -214,7 +214,10 @@ async def list_skills(
         exists().where(v.skill_id == s.id),
         not_(exists().where(live.skill_id == s.id, live.status != "retired")),
     )
-    query = select(s).where(_visible(principal, data_space), not_(retired))
+    runs_30d = _runs_30d(s)
+    query = select(s, runs_30d.label("runs_30d")).where(
+        _visible(principal, data_space), not_(retired)
+    )
     if category:
         query = query.where(s.category == category)
     if scope:
@@ -234,15 +237,66 @@ async def list_skills(
             "code": s.code,
             "name": s.name,
             "category": s.category,
-            "run_count_30d": s.run_count_30d,
+            "run_count_30d": runs_30d,
         },
         tiebreak=s.id,
         order=order,
         page=page,
     )
     async with transaction(ROLE, principal) as session:
-        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
-    return Page(items=[SkillView.model_validate(r) for r in rows], next_page_token=token)
+        found = (await session.execute(query)).tuples().all()
+        for row, runs in found:
+            # Read-only from here: the counted runs replace the column on the detached row, which
+            # the page token also reads.
+            session.expunge(row)
+            row.run_count_30d = int(runs)
+        rows, token = next_page([row for row, _ in found], order=order, page=page)
+        items = [SkillView.model_validate(r) for r in rows]
+        await _version_facts(session, items)
+    return Page(items=items, next_page_token=token)
+
+
+def _runs_30d(s: Any) -> Any:
+    """Runs of the skill in the last 30 days, its own (mode run) and not an eval's."""
+    sv, run = aliased(skill.SkillVersion), skill.SkillRun
+    return (
+        select(func.count(run.id))
+        .join(sv, sv.id == run.skill_version_id)
+        .where(
+            sv.skill_id == s.id,
+            run.mode == "run",
+            run.caller_kind != "eval",
+            run.created_at >= func.now() - datetime.timedelta(days=30),
+        )
+        .correlate(s)
+        .scalar_subquery()
+    )
+
+
+async def _version_facts(session: AsyncSession, items: list[SkillView]) -> None:
+    """The version waiting for review, whether one is under test, and the published steps:
+    without them the library could only show Nháp, Đã chứng nhận or Đã ngừng, and the rail's
+    "versions to review" count was always 0."""
+    if not items:
+        return
+    v = skill.SkillVersion
+    versions = (
+        await session.execute(
+            select(v.skill_id, v.id, v.version, v.status, v.steps).where(
+                v.skill_id.in_([i.id for i in items])
+            )
+        )
+    ).all()
+    by_skill: dict[uuid.UUID, list[Any]] = {}
+    for row in versions:
+        by_skill.setdefault(row.skill_id, []).append(row)
+    for item in items:
+        mine = by_skill.get(item.id, [])
+        pending = [r for r in mine if r.status == "pending_review"]
+        item.pending_version_id = max(pending, key=lambda r: r.version).id if pending else None
+        item.has_testing_version = any(r.status == "testing" for r in mine)
+        current = next((r for r in mine if r.version == item.current_version), None)
+        item.step_count = len(current.steps) if current and isinstance(current.steps, list) else 0
 
 
 @router.post(
@@ -313,9 +367,16 @@ async def get_skill(
                 )
             ).all()
         )
+        runs = int(
+            await session.scalar(select(_runs_30d(skill.Skill)).where(skill.Skill.id == row.id))
+            or 0
+        )
+        view = SkillView.model_validate(row)
+        view.run_count_30d = runs
+        await _version_facts(session, [view])
     published = next((v for v in versions if v.status in RUNNABLE), None)
     return SkillDetail(
-        **SkillView.model_validate(row).model_dump(),
+        **view.model_dump(),
         published_version=VersionView.model_validate(published) if published else None,
         versions=[VersionSummary.model_validate(v) for v in versions],
     )
