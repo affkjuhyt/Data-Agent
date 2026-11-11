@@ -6,10 +6,14 @@ eval set (eval.eval_set subject_type skill, subject_id the skill), each active i
 skill run of the version (caller_kind eval, through skill_runs, so the numbers come from the same
 Query engine path as any run), scored against what the item expects, and the bar is applied as
 for an agent version (agent_evals.py): at least the set's `min_items` items and a pass rate of at
-least its `pass_threshold`.
+least its `pass_threshold`. A case runs with the owner's rights, so only the cases the owner
+wrote and last changed run (_owned); the others are named in the notification, not scored. The
+run's figures sit in eval_result.actual with answered_as the owner, which the eval api shows to
+the owner alone; anyone else reads the scores and a cause that holds no value.
 
 At the bar, `skill_version.eval_run_id` is the run (a testing version stays `testing`, ready for
-:publish; a needs_review one is published again, its label gone). Below it, a testing version goes
+:publish; a needs_review one is published again, its label gone, but only when the run also
+meets :publish's own bar, BR-12's three passing cases beyond a personal skill). Below it, a testing version goes
 back to draft (AC-03-04-01) and a needs_review one keeps running with its label (UC-03-04 1a).
 Either way the owner is told, and skill.outbox gets `skill_version.tested`.
 
@@ -50,6 +54,10 @@ EVENT_TYPE = "skill_version.eval_requested"
 SKILL_ROLE = "svc_skill"
 EVAL_ROLE = eval_runs.ROLE
 NO_SET = "Kỹ năng chưa có bộ đánh giá"
+# BR-12, as :publish holds it (api skill/routes.py MIN_PASSING_CASES): a skill shared beyond its
+# author needs three passing cases. A set this worker makes asks as many, and a needs_review
+# version is published again from here only past it.
+MIN_PASSING_CASES = 3
 # BR-95 (AC-03-04-04): an amount 0.005 % off passes, 0.02 % off fails; a count off by one fails
 # for any count under 10 000.
 RELATIVE_TOLERANCE = decimal.Decimal("0.0001")
@@ -65,6 +73,7 @@ class _Version:
     steps: list[Any]
     owner: uuid.UUID
     space: uuid.UUID | None
+    scope: str
 
 
 async def evaluate_skill(event: Event) -> None:
@@ -85,6 +94,7 @@ async def evaluate_skill(event: Event) -> None:
             list(version.steps or []),
             row.owner_id,
             row.data_space_id,
+            row.scope,
         )
 
     reason = await _made(event, run_id, about)
@@ -128,8 +138,7 @@ async def _made(event: Event, run_id: uuid.UUID, about: _Version) -> str | None:
                 subject_type="skill",
                 subject_id=about.skill_id,
                 name=f"Ca kiểm thử · {about.name}",
-                # BR-12's three passing cases are :publish's check, by scope; the set asks one.
-                min_items=1,
+                min_items=MIN_PASSING_CASES,
                 created_by=about.owner,
                 updated_by=about.owner,
             )
@@ -145,12 +154,16 @@ async def _made(event: Event, run_id: uuid.UUID, about: _Version) -> str | None:
                 await session.scalar(
                     select(func.count())
                     .select_from(ev.EvalItem)
-                    .where(ev.EvalItem.eval_set_id == eval_set.id, ev.EvalItem.status == "active")
+                    .where(
+                        ev.EvalItem.eval_set_id == eval_set.id,
+                        ev.EvalItem.status == "active",
+                        _owned(about.owner),
+                    )
                 )
                 or 0
             )
             if count == 0:
-                reason = "Bộ đánh giá của kỹ năng chưa có ca kiểm thử nào."
+                reason = "Bộ đánh giá của kỹ năng chưa có ca kiểm thử nào của chủ kỹ năng."
             elif about.space is None:
                 # A skill run belongs to a Data Space (skill_run.data_space_id).
                 reason = "Kỹ năng không thuộc Data Space nào nên chưa chạy được ca kiểm thử."
@@ -184,6 +197,14 @@ async def _end_failed(org_id: uuid.UUID, owner: uuid.UUID, run_id: uuid.UUID) ->
         run = await session.get(ev.EvalRun, run_id, with_for_update=True)
         if run is not None and run.status == "running":
             run.status, run.finished_at = "failed", _now()
+
+
+def _owned(owner: uuid.UUID) -> Any:
+    """Cases the skill's owner wrote and last changed. A case runs with the owner's rights, so one
+    someone else wrote (or edited) would read the owner's data on their behalf: it is not run."""
+    return (ev.EvalItem.created_by == owner) & (
+        func.coalesce(ev.EvalItem.updated_by, ev.EvalItem.created_by) == owner
+    )
 
 
 def _params(item: ev.EvalItem) -> dict[str, Any]:
@@ -233,7 +254,9 @@ async def _score(event: Event, run_id: uuid.UUID, about: _Version) -> None:
                 await session.scalars(
                     select(ev.EvalItem)
                     .where(
-                        ev.EvalItem.eval_set_id == run.eval_set_id, ev.EvalItem.status == "active"
+                        ev.EvalItem.eval_set_id == run.eval_set_id,
+                        ev.EvalItem.status == "active",
+                        _owned(about.owner),
                     )
                     .order_by(ev.EvalItem.id)
                 )
@@ -415,6 +438,22 @@ async def _gate(event: Event, run_id: uuid.UUID, about: _Version, reason: str | 
             if run.status == "completed"
             else reason or "Lần kiểm định không chạy xong."
         )
+        skipped = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(ev.EvalItem)
+                .where(
+                    ev.EvalItem.eval_set_id == eval_set.id,
+                    ev.EvalItem.status == "active",
+                    ~_owned(about.owner),
+                )
+            )
+            or 0
+        )
+    if skipped:
+        why += f" {skipped} ca do người khác viết hoặc sửa không chạy: chủ kỹ năng cần tự viết lại."
+    # Back to `published` only past :publish's own bar (BR-12); the set's may be lower.
+    publishable = at_the_bar and (about.scope == "personal" or run.passed >= MIN_PASSING_CASES)
 
     async with scoped_session(SKILL_ROLE, event.org_id) as session:
         version = await session.get(skill.SkillVersion, about.id, with_for_update=True)
@@ -424,8 +463,9 @@ async def _gate(event: Event, run_id: uuid.UUID, about: _Version, reason: str | 
         if at_the_bar and previous in ("testing", "needs_review"):
             if version.eval_run_id == run_id and previous == "testing":
                 return  # a redelivery: applied already
-            version.eval_run_id = run_id
-            version.status = "testing" if previous == "testing" else "published"
+            if previous == "testing" or publishable:
+                version.eval_run_id = run_id
+                version.status = "testing" if previous == "testing" else "published"
         elif not at_the_bar and previous == "testing":
             version.status = "draft"
         elif not at_the_bar and previous == "needs_review":
@@ -450,26 +490,34 @@ async def _gate(event: Event, run_id: uuid.UUID, about: _Version, reason: str | 
                 },
             )
         )
+    done = at_the_bar and (previous == "testing" or publishable)
     await _tell(
         event.org_id,
         about.owner,
         [about.owner],
-        kind="task_done" if at_the_bar else "alert",
+        kind="task_done" if done else "alert",
         title=(
             f"Phiên bản {about.number} của {about.name} đạt kiểm định"
-            if at_the_bar
+            if done
             else f"Phiên bản {about.number} của {about.name} chưa đạt kiểm định"
         ),
-        body=why + _next_step(at_the_bar, previous),
+        body=why + _next_step(at_the_bar, previous, publishable),
         link=f"/agents/skills/{about.skill_id}",
         data_space_id=about.space,
         source_ref=run_id,
     )
 
 
-def _next_step(at_the_bar: bool, previous: str) -> str:
+def _next_step(at_the_bar: bool, previous: str, publishable: bool) -> str:
     if previous == "needs_review":
-        return " Phiên bản chạy lại bình thường." if at_the_bar else " Phiên bản vẫn chạy, có nhãn."
+        if publishable:
+            return " Phiên bản chạy lại bình thường."
+        if at_the_bar:
+            return (
+                " Phiên bản vẫn chạy, có nhãn: phát hành lại cần ít nhất "
+                f"{MIN_PASSING_CASES} ca đạt (BR-12)."
+            )
+        return " Phiên bản vẫn chạy, có nhãn."
     return " Có thể gửi phát hành." if at_the_bar else " Phiên bản đã về nháp."
 
 

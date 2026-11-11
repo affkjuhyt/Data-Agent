@@ -7,12 +7,19 @@ the target's key, and the request becomes `previewed` with diff_summary {inserts
 deletes, unchanged, key, sample}; :submit then refuses any delete (BR-113). What cannot be
 compared ends the request `failed`, diff_summary {"error": why} in Vietnamese.
 
+The derived table is read only when the platform materialised it for this dataset in the
+request's Data Space (materialised_here); any other dataset row fails with one generic reason.
+Before either table is read, the requester's access is bound as the query executor binds it
+(_governed): a table they may not read, or see only part of under a row policy or row scope,
+refuses the preview, and every column a column or mask policy keeps from them is left out of the
+sample, as is every column labelled personal data (catalog column_meta.pii_label); the api
+strips the latter again when it answers.
+
 Both reads are read-only: the target through the source's read account (secret_ref, never the
 writeback account) in the drivers' read-only transaction (query.executor.driver_for), the derived
-table in the Data Space workspace as the executor reads it (svc_query, READ ONLY). Each read is
-capped at MAX_ROWS and the source's query timeout: a larger table fails the preview rather than
-diffing part of it. The sample leaves out every column labelled personal data (catalog
-column_meta.pii_label) of either table; the api strips them again when it answers.
+table in the Data Space workspace as the executor reads it (svc_query as the requester, READ
+ONLY). Each read is capped at MAX_ROWS and the source's query timeout: a larger table fails the
+preview rather than diffing part of it.
 
 Executing the writeback (staging, totals check, the swap into the target, the snapshot for undo)
 is not done anywhere yet: an approved request stays `approved`.
@@ -24,6 +31,7 @@ import asyncio
 import datetime
 import decimal
 import logging
+import re
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -35,11 +43,11 @@ from sqlglot import exp
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import pipeline as pl
-from libs.sql_guard import check_read_only, dialect_of
+from libs.sql_guard import SqlRejected, check_read_only, dialect_of
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import ROLE as QUERY_ROLE
-from services.worker_agent.query.executor import _plain, driver_for
-from services.worker_agent.query.scope import default_schema
+from services.worker_agent.query.executor import _plain, bound_sql, driver_for
+from services.worker_agent.query.scope import active_row_scopes, default_schema, rewrite_row_scopes
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +59,12 @@ MAX_ROWS = 50_000
 SAMPLE_ROWS = 5
 TIMEOUT_S = 120
 _NUMERIC = {"integer", "decimal"}
+# A person asks for a writeback (BR-25): the policies that apply are a person's (scope.actor_of).
+CALLER_KIND = "ad_hoc"
+NOT_MATERIALISED = (
+    "Chỉ xem trước được từ bảng dẫn xuất mà nền tảng đã tạo trong Data Space này "
+    "(kết quả pipeline hoặc bảng dẫn xuất đã lưu)."
+)
 
 
 class PreviewFailed(Exception):
@@ -107,9 +121,12 @@ async def _diff(org_id: uuid.UUID, requester: uuid.UUID, request_id: uuid.UUID) 
     async with scoped_session(ROLE, org_id, requester) as session:
         row = await session.get(pl.WritebackRequest, request_id)
         assert row is not None
+        space = row.data_space_id
         target_source = await session.scalar(
             select(catalog.Source).where(
-                catalog.Source.id == row.source_id, catalog.Source.deleted_at.is_(None)
+                catalog.Source.id == row.source_id,
+                catalog.Source.data_space_id == space,
+                catalog.Source.deleted_at.is_(None),
             )
         )
         if target_source is None:
@@ -119,15 +136,10 @@ async def _diff(org_id: uuid.UUID, requester: uuid.UUID, request_id: uuid.UUID) 
                 catalog.Dataset.id == row.from_dataset_id, catalog.Dataset.deleted_at.is_(None)
             )
         )
-        if derived is None:
-            raise PreviewFailed("Bảng dẫn xuất không còn.")
-        derived_source = (
-            await session.get(catalog.Source, derived.source_id) if derived.source_id else None
-        )
-        if derived.source_id is not None and derived_source is None:
-            raise PreviewFailed("Nguồn của bảng dẫn xuất không còn.")
+        if derived is None or not materialised_here(derived, space):
+            raise PreviewFailed(NOT_MATERIALISED)
         target = await _target_dataset(session, target_source, row.target_table)
-        if target is None:
+        if target is None or target.data_space_id != space:
             raise PreviewFailed(
                 f"Bảng đích {row.target_table} chưa có trong danh mục của nguồn; "
                 "quét lại nguồn rồi tạo lại yêu cầu."
@@ -141,28 +153,26 @@ async def _diff(org_id: uuid.UUID, requester: uuid.UUID, request_id: uuid.UUID) 
             f"Bảng đích {row.target_table} chưa có khoá chính trong danh mục; "
             "không so được từng dòng."
         )
-    if derived.schema_name == "workspace" and derived_source is None:
-        source: catalog.Source | None = None
-    else:
-        source = derived_source
-    new = await _read(
-        org_id, requester, Table(source, derived.schema_name, derived.table_name), None
-    )
+    new_table = Table(None, derived.schema_name, derived.table_name)
+    old_table = Table(target_source, target.schema_name, target.table_name)
+    # Both tables as the requester may read them, before a row of either is read.
+    hidden = pii | await _governed(org_id, requester, space, new_table)
+    hidden |= await _governed(org_id, requester, space, old_table)
+    new = await _read(org_id, requester, new_table, None)
     by_lower = {c.name.lower(): c for c in target_columns}
     extra = [name for name in new[0] if name.lower() not in by_lower]
     if extra:
-        raise PreviewFailed(f"Bảng dẫn xuất có cột không có ở bảng đích: {', '.join(extra)}.")
+        shown = [name for name in extra if name.lower() not in hidden]
+        raise PreviewFailed(
+            "Bảng dẫn xuất có cột không có ở bảng đích"
+            + (f": {', '.join(shown)}." if shown else ".")
+        )
     missing_key = [k for k in key if k.lower() not in {n.lower() for n in new[0]}]
     if missing_key:
         raise PreviewFailed(f"Bảng dẫn xuất thiếu cột khoá {', '.join(missing_key)}.")
     # The target's own spelling of each column the derived table writes.
     compared = [by_lower[name.lower()].name for name in new[0]]
-    old = await _read(
-        org_id,
-        requester,
-        Table(target_source, target.schema_name, target.table_name),
-        compared,
-    )
+    old = await _read(org_id, requester, old_table, compared)
     numeric = {c.name for c in target_columns if c.normalized_type in _NUMERIC}
     diff = compare(
         key,
@@ -170,15 +180,73 @@ async def _diff(org_id: uuid.UUID, requester: uuid.UUID, request_id: uuid.UUID) 
         [dict(zip(compared, r, strict=True)) for r in new[1]],
         [dict(zip(compared, r, strict=True)) for r in old[1]],
         numeric=numeric,
-        hidden=pii,
+        hidden=hidden,
     )
     return {
         "inserts": diff.inserts,
         "updates": diff.updates,
         "deletes": diff.deletes,
         "unchanged": diff.unchanged,
-        "key": [k for k in key if k.lower() not in pii],
+        "key": [k for k in key if k.lower() not in hidden],
         "sample": diff.sample,
+    }
+
+
+def materialised_here(dataset: catalog.Dataset, space: uuid.UUID) -> bool:
+    """The derived table the platform built for this very dataset, in this Data Space. A dataset
+    row names any schema.table (POST /v1/derived-tables takes the name from its body), so the
+    name alone is never trusted: pipelines and saved derived tables (pipelines.physical_name,
+    derived.py) write workspace.p_<stem>_<the dataset's own id>, which no other row can claim."""
+    return (
+        dataset.origin == "derived"
+        and dataset.data_space_id == space
+        and dataset.source_id is None
+        and dataset.schema_name == "workspace"
+        and bool(dataset.enabled)
+        and re.fullmatch(rf"p_[a-z0-9_]{{1,28}}_{dataset.id.hex}", dataset.table_name) is not None
+    )
+
+
+async def _governed(
+    org_id: uuid.UUID, requester: uuid.UUID, space: uuid.UUID, table: Table
+) -> set[str]:
+    """The requester's access to `table`, through the query executor's own scope and policy
+    binding (executor.bound_sql): a table they may not read refuses the preview, and so does one
+    a row policy or a row scope shows them only part of (the rest would read as deletes). Returns
+    the lower-case columns a column or mask policy keeps from them, left out of the sample."""
+    from services.worker_agent.questions import _internal_workspace_source
+
+    source = table.source or _internal_workspace_source(space, org_id)
+    dialect = dialect_of(source.kind)
+    plain = _select(table, None, dialect)
+    async with scoped_session(QUERY_ROLE, org_id, requester) as session:
+        try:
+            bound = await bound_sql(
+                session,
+                sql=plain,
+                source=source,
+                data_space_id=space,
+                principal_id=requester,
+                caller_kind=CALLER_KIND,
+            )
+            scopes = await active_row_scopes(session, data_space_id=space, principal_id=requester)
+        except SqlRejected as exc:
+            logger.info(
+                "writeback preview: %s is out of the requester's reach: %s", table.name, exc
+            )
+            raise PreviewFailed(f"Bạn không được đọc bảng {table.name}.") from exc
+    if any(p.kind == "row" for p in bound.policies) or (
+        rewrite_row_scopes(plain, dialect=dialect, scopes=scopes) != plain
+    ):
+        raise PreviewFailed(
+            f"Bạn chỉ thấy một phần bảng {table.name} (chính sách giới hạn dòng); "
+            "xem trước cần đọc được cả bảng."
+        )
+    return {
+        str(c).lower()
+        for p in bound.policies
+        if p.kind in ("column", "mask")
+        for c in p.columns or []
     }
 
 

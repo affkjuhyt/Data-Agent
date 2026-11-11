@@ -63,7 +63,12 @@ def skill_version(
 
 
 def eval_set(
-    bank: Bank, skill: uuid.UUID, cases: list[dict[str, Any]], *, min_items: int
+    bank: Bank,
+    skill: uuid.UUID,
+    cases: list[dict[str, Any]],
+    *,
+    min_items: int,
+    author: uuid.UUID | None = None,
 ) -> uuid.UUID:
     made = bank.seed.row(
         "eval.eval_set",
@@ -82,6 +87,8 @@ def eval_set(
             eval_set_id=made,
             input=json.dumps({"params": PARAMS}),
             expected=json.dumps(expected),
+            created_by=author or bank.user,
+            updated_by=author or bank.user,
         )
     return made
 
@@ -207,6 +214,16 @@ async def test_without_an_eval_set_the_run_fails_saying_so(
         "JOIN eval.eval_set s ON s.id = r.eval_set_id WHERE r.id = %s",
         run,
     ) == ("skill", str(skill), str(bank.space))
+    # The set it makes holds the bar :publish holds (BR-12), not a lower one.
+    assert (
+        seed.one(
+            "SELECT s.min_items FROM eval.eval_run r JOIN eval.eval_set s ON s.id = r.eval_set_id "
+            "WHERE r.id = %s",
+            run,
+        )
+        == skill_evals.MIN_PASSING_CASES
+        == 3
+    )
     ((_, kind, body),) = told(seed, run)
     assert kind == "alert" and body.startswith("Kỹ năng chưa có bộ đánh giá")
 
@@ -231,10 +248,61 @@ async def test_a_needs_review_version_that_passes_is_published_again(
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
     skill, version = skill_version(bank, status="needs_review")
-    eval_set(bank, skill, [RIGHT], min_items=1)
+    eval_set(bank, skill, [RIGHT, RIGHT, RIGHT], min_items=1)
     run = request_test(bank, skill, version, "needs_review")
     await drain()
     assert version_state(seed, version) == ("published", str(run))
+
+
+async def test_a_needs_review_version_below_br_12_is_not_published_by_the_worker(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The set's own bar (one case) is met, :publish's is not: a data_space skill needs three
+    # passing cases (BR-12), so the version keeps its label rather than going out on one.
+    bank = build(seed, warehouse, monkeypatch)
+    skill, version = skill_version(bank, status="needs_review")
+    eval_set(bank, skill, [RIGHT], min_items=1)
+    before = version_state(seed, version)
+    run = request_test(bank, skill, version, "needs_review")
+    await drain()
+    assert run_state(seed, run) == ("completed", 1, 1, 0)
+    assert version_state(seed, version) == before
+    ((_, kind, body),) = told(seed, run)
+    assert kind == "alert" and "ít nhất 3 ca đạt" in body
+
+
+async def test_only_the_owners_cases_run_with_the_owners_rights(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A case written, or last edited, by someone else would read the owner's data for them.
+    bank = build(seed, warehouse, monkeypatch)
+    other = seed.row(
+        "org.app_user", org_id=bank.org, external_id="kc-x", username="x", display_name="X"
+    )
+    skill, version = skill_version(bank)
+    made = eval_set(bank, skill, [RIGHT], min_items=1)
+    eval_set_items(bank, made, [RIGHT], created_by=other, updated_by=other)
+    eval_set_items(bank, made, [WRONG], created_by=bank.user, updated_by=other)
+    run = request_test(bank, skill, version, "draft")
+    await drain()
+    assert run_state(seed, run) == ("completed", 1, 1, 0)
+    assert seed.one("SELECT count(*) FROM skill.skill_run WHERE caller_ref = %s", run) == 1
+    ((_, _, body),) = told(seed, run)
+    assert "2 ca do người khác viết hoặc sửa không chạy" in body
+
+
+def eval_set_items(
+    bank: Bank, made: uuid.UUID, cases: list[dict[str, Any]], **authors: uuid.UUID
+) -> None:
+    for expected in cases:
+        bank.seed.row(
+            "eval.eval_item",
+            org_id=bank.org,
+            eval_set_id=made,
+            input=json.dumps({"params": PARAMS}),
+            expected=json.dumps(expected),
+            **authors,
+        )
 
 
 async def test_a_needs_review_version_that_fails_keeps_running_with_its_label(
