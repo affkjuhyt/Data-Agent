@@ -125,10 +125,12 @@ class QueryMetric(Tool):
             catalogue,
         )
         if missing:
+            # RES-04: do not send the planner to invent the quantity with explore_sql.
             return ToolResult(
                 False,
                 f"không chỉ số chuẩn nào đo '{' '.join(missing)}' mà câu hỏi hỏi; "
-                "dùng explore_sql cho phần đó",
+                "không tự tính bằng SQL thăm dò — tìm chỉ số khác (search_catalog) hoặc "
+                "nói rõ không trả lời được",
                 detail={"unnamed": missing},
             )
         version = ctx.layer.versions[entry.metric_id]
@@ -321,12 +323,31 @@ class ExploreSql(Tool):
     # Several candidate queries, each under the source's timeout, and a model audit.
     timeout_seconds = 300.0
     description = (
-        "khi không có chỉ số chuẩn phù hợp: viết SQL trên các bảng của Data Space (nhiều cách viết, "
-        "bỏ phiếu kết quả); kết quả là dataset 'exploratory', kém tin cậy hơn chỉ số chuẩn"
+        "khi danh mục đã có chỉ số khớp ý hỏi nhưng cần SQL thăm dò: viết SQL trên các bảng của "
+        "Data Space (nhiều cách viết, bỏ phiếu kết quả); kết quả 'exploratory'. Cấm tự tính chỉ "
+        "số không có trong danh mục"
     )
     Args = ExploreSqlArgs
 
     async def run(self, ctx: ToolContext, args: ExploreSqlArgs) -> ToolResult:  # type: ignore[override]
+        # RES-04: refuse before writing SQL when no metric in the space names the quantity
+        # (churn, made-up rates). Catalogued quantities may still be explored.
+        vocab = ctx.layer.vocabulary
+        catalogue: set[str] = set()
+        for m in vocab.metrics:
+            catalogue |= metric_words(m, vocab)
+        missing = unnamed(
+            quantity_words(args.question or ctx.question, vocab, today=ctx.today),
+            catalogue,
+        )
+        if missing:
+            return ToolResult(
+                False,
+                f"không chỉ số nào trong danh mục đo '{' '.join(missing)}' mà câu hỏi hỏi; "
+                "không tự tính bằng SQL thăm dò — tìm chỉ số (search_catalog) hoặc nói rõ "
+                "không trả lời được",
+                detail={"unnamed": missing},
+            )
         async with scoped_session(ROLE, ctx.org_id, ctx.user_id) as session:
             space = await load_space(session, ctx.space_id, ctx.user_id)
             linked = link(args.question, space.schema)
@@ -414,9 +435,7 @@ class ExploreSql(Tool):
                 detail["audit"] = audit.reason[:200]
                 if attempt == 0:
                     continue
-                return ToolResult(
-                    False, f"SQL chưa đúng ý câu hỏi: {audit.reason}", detail=detail
-                )
+                return ToolResult(False, f"SQL chưa đúng ý câu hỏi: {audit.reason}", detail=detail)
             ds = ctx.ws.add(
                 title=args.title or args.question[:80],
                 columns=list(e.columns),

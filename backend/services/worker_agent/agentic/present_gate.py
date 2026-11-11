@@ -102,8 +102,9 @@ def before_write(
             target=f"Chỉ số đã dùng không đo '{joined}'",
             detail={"unnamed": unnamed},
             feedback=(
-                f"không chỉ số nào đã đọc đo '{joined}' mà câu hỏi hỏi; tìm chỉ số khác"
-                " (search_catalog) hoặc dùng explore_sql cho phần đó"
+                f"không chỉ số nào trong danh mục đo '{joined}' mà câu hỏi hỏi; tìm chỉ số khác"
+                " (search_catalog) hoặc chuyển sang cách trả lời chuẩn — không tự tính bằng"
+                " SQL thăm dò"
             ),
         )
     return None

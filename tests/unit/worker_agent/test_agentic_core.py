@@ -336,7 +336,7 @@ def test_a_metric_that_does_not_measure_what_was_asked_hands_the_question_back()
     assert engine._unnamed_quantity(state("Vì sao số lượng bán Internet năm 2013 giảm")) == []
 
 
-def test_query_metric_sends_a_quantity_no_metric_names_to_exploratory_sql() -> None:
+def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql() -> None:
     import datetime
     import types
     import uuid
@@ -362,8 +362,123 @@ def test_query_metric_sends_a_quantity_no_metric_names_to_exploratory_sql() -> N
         QueryMetric().run(ctx, QueryMetricArgs(metric="SO_LUONG_BAN_INTERNET"))  # type: ignore[arg-type]
     )
     assert not done.ok
-    assert "explore_sql" in done.observation
+    assert "explore_sql" not in done.observation
+    assert "không tự tính" in done.observation
     assert done.detail["unnamed"] == ["khach", "hang", "mua"]
+
+
+def test_explore_sql_refuses_a_quantity_no_metric_in_the_catalogue_names() -> None:
+    """RES-04: churn / invented KPIs must not be computed by exploratory SQL."""
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic.tools.query import ExploreSql, ExploreSqlArgs
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    units = MetricEntry(uuid.uuid4(), "SO_LUONG_BAN_INTERNET", "Số lượng bán Internet", True)
+    ctx = types.SimpleNamespace(
+        layer=types.SimpleNamespace(
+            vocabulary=types.SimpleNamespace(
+                metrics=[units], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
+            )
+        ),
+        question="Tỷ lệ rời bỏ khách hàng năm 2013",
+        today=datetime.date(2026, 11, 3),
+        org_id=uuid.uuid4(),
+        space_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        question_id=uuid.uuid4(),
+        ws=Workspace(),
+        refused_sql=[],
+        models=[],
+        step_id="s1",
+    )
+    done = asyncio.run(
+        ExploreSql().run(ctx, ExploreSqlArgs(question="Tỷ lệ rời bỏ khách hàng năm 2013"))  # type: ignore[arg-type]
+    )
+    assert not done.ok
+    assert "không tự tính" in done.observation
+    assert done.detail["unnamed"]
+
+
+def test_explore_sql_answer_for_an_uncatalogued_quantity_hands_the_question_back() -> None:
+    """Compose still catches an exploratory dataset that invented a quantity (RES-04)."""
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    units = MetricEntry(uuid.uuid4(), "SO_LUONG_BAN_INTERNET", "Số lượng bán Internet", True)
+    vocab = types.SimpleNamespace(
+        metrics=[units], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
+    )
+    ws = Workspace()
+    ws.add(
+        title="Churn",
+        columns=["ty_le_roi_bo"],
+        rows=[[0.12]],
+        trust="exploratory",
+        tool="explore_sql",
+        sql="SELECT 0.12",
+    )
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+            ws=ws,
+            question="Tỷ lệ rời bỏ khách hàng năm 2013",
+            today=datetime.date(2026, 11, 3),
+            layer=types.SimpleNamespace(vocabulary=vocab),
+        ),
+        plan=_plan({"id": "s1", "tool": "explore_sql", "instruction": "x", "status": "done"}),
+    )
+    assert engine._unnamed_quantity(state)
+    state.gate_retries = engine.MAX_GATE_RETRIES
+    asyncio.run(engine.compose(state))
+    assert state.handed_back
+
+
+def test_explore_sql_for_a_catalogued_quantity_is_not_an_unnamed_gate() -> None:
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    revenue = MetricEntry(uuid.uuid4(), "DOANH_THU_INTERNET", "Doanh thu Internet", True)
+    vocab = types.SimpleNamespace(
+        metrics=[revenue], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
+    )
+    ws = Workspace()
+    ws.add(
+        title="Doanh thu",
+        columns=["doanh_thu"],
+        rows=[[15359502.36]],
+        trust="exploratory",
+        tool="explore_sql",
+        sql="SELECT SUM(x) FROM f",
+    )
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+            ws=ws,
+            question="Doanh thu Internet năm 2013",
+            today=datetime.date(2026, 11, 3),
+            layer=types.SimpleNamespace(vocabulary=vocab),
+        ),
+        plan=_plan({"id": "s1", "tool": "explore_sql", "instruction": "x", "status": "done"}),
+    )
+    assert engine._unnamed_quantity(state) == []
 
 
 def test_caveats_carry_the_sql_vote_and_leave_out_a_failed_computation() -> None:
@@ -731,6 +846,10 @@ def test_explore_sql_bans_audited_sql_on_the_shared_context(
         "services.worker_agent.agentic.tools.query.schema_text", lambda _l: "schema"
     )
 
+    from libs import clock
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    revenue = MetricEntry(uuid.uuid4(), "DOANH_THU", "Doanh thu", True)
     shared: list[str] = []
     ctx = ToolContext(
         org_id=uuid.uuid4(),
@@ -741,7 +860,15 @@ def test_explore_sql_bans_audited_sql_on_the_shared_context(
         today=datetime.date(2026, 11, 5),
         as_of=None,
         purpose=None,
-        layer=types.SimpleNamespace(),  # type: ignore[arg-type]
+        layer=types.SimpleNamespace(  # type: ignore[arg-type]
+            vocabulary=types.SimpleNamespace(
+                metrics=[revenue],
+                synonyms={},
+                dimensions=[],
+                values=[],
+                calendar=clock.DEFAULT,
+            )
+        ),
         model=Model(),  # type: ignore[arg-type]
         ws=Workspace(),
         refused_sql=shared,

@@ -27,8 +27,8 @@ Data Space của họ, bằng các công cụ được liệt kê. Bạn KHÔNG 
 2. Ưu tiên chỉ số chuẩn: đối chiếu <catalog> trước. Tên gần với một mã trong danh mục
    (ví dụ "Internet Sales" / "doanh thu Internet" → DOANH_THU_INTERNET) thì query_metric (hoặc
    investigate_numbers với goal chỉ rõ mã đó). search_catalog chỉ khi không khớp được mã.
-   CẤM explore_sql khi đã có chỉ số chuẩn phù hợp trong catalog — explore_sql chỉ khi catalog
-   không có chỉ số nào khớp ý hỏi.
+   CẤM explore_sql khi đã có chỉ số chuẩn phù hợp trong catalog. explore_sql chỉ khi danh mục
+   đã có chỉ số khớp ý hỏi nhưng cần SQL thăm dò (kiểm / cắt khác) — không để bịa chỉ số mới.
 3. Khi danh sách công cụ có analyze (pandas): dùng nó cho phép tính trên kết quả đã có (tăng
    trưởng, chênh lệch, xếp hạng, đóng góp vào thay đổi, tương quan, bất thường), không dùng chỉ để
    định dạng. Khi không có: so kỳ bằng compare_to, tỷ trọng / luỹ kế bằng analysis, xếp hạng bằng
@@ -36,8 +36,9 @@ Data Space của họ, bằng các công cụ được liệt kê. Bạn KHÔNG 
 4. "Vì sao" / nguyên nhân / biến động trên chỉ số đã có: query_metric với compare_to (và/hoặc
    explain_change sau khi đã có dataset). Không gọi explain_change khi chưa có bước số thành công.
 5. Năm, quý, tháng, ngày trong câu hỏi là KỲ (period của query_metric), không phải giá trị:
-   không dùng search_values cho chúng. Câu hỏi đếm hoặc đo một thứ không có chỉ số chuẩn nào
-   (ví dụ số khách hàng khi danh mục không có chỉ số đó) thì dùng explore_sql.
+   không dùng search_values cho chúng. Câu hỏi đếm hoặc đo một thứ không có chỉ số nào trong
+   danh mục (ví dụ tỷ lệ rời bỏ khi không có chỉ số đó): nói rõ không trả lời được / chuyển
+   đường chuẩn — CẤM explore_sql tự tính chỉ số mới.
 6. HYBRID (vừa số vừa văn bản / công văn / ghi chú): ĐÚNG HAI bước lead, song song:
    {{"id":"s1","tool":"investigate_numbers","depends_on":[],"args":{{"goal":"…mã chỉ số + kỳ…"}}}},
    {{"id":"s2","tool":"investigate_documents","depends_on":[],"args":{{"goal":"…chủ đề tài liệu…"}}}}.

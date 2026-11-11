@@ -683,32 +683,43 @@ def after_review(s: State) -> str:
 # ---------------------------------------------------------------- compose
 
 
+def _catalogue_words(vocab: Any) -> set[str]:
+    """Every word a metric in the space's catalogue names (code, display name, synonyms)."""
+    named: set[str] = set()
+    for m in vocab.metrics:
+        named |= metric_words(m, vocab)
+    return named
+
+
 def _unnamed_quantity(s: State) -> list[str]:
-    """The question's quantity words no certified metric the turn read is named by (invariant 3,
-    as resolver.grounding decides for one reading); empty when they all are, when the turn wrote
-    its own SQL for the question, or when it read no certified metric."""
+    """The question's quantity words no certified metric covers (invariant 3 / RES-04).
+
+    When the turn read certified metrics, those readings must name the quantity. When it answered
+    with explore_sql, the space's catalogue must still name the quantity — exploratory SQL must
+    not invent a KPI the warehouse does not define (churn, made-up rates).
+    """
     assert s.ctx is not None and s.plan is not None
     if s.plan.mode != "analyze":
         return []
     datasets = list(s.ctx.ws.datasets.values())
-    if any(d.tool == "explore_sql" for d in datasets):
-        return []
+    vocab = s.ctx.layer.vocabulary
     readings = [d.reading for d in datasets if d.reading]
+    words = quantity_words(
+        s.ctx.question,
+        vocab,
+        today=s.ctx.today,
+        group_by=[g for r in readings for g in r.get("group_by", [])],
+        filters={k: v for r in readings for k, v in (r.get("filters") or {}).items()},
+    )
+    if any(d.tool == "explore_sql" for d in datasets):
+        return unnamed(words, _catalogue_words(vocab))
     if not readings:
         return []
-    vocab = s.ctx.layer.vocabulary
     by_code = {m.code: m for m in vocab.metrics}
     named: set[str] = set()
     for r in readings:
         if r["metric"] in by_code:
             named |= metric_words(by_code[r["metric"]], vocab)
-    words = quantity_words(
-        s.ctx.question,
-        vocab,
-        today=s.ctx.today,
-        group_by=[g for r in readings for g in r["group_by"]],
-        filters={k: v for r in readings for k, v in r["filters"].items()},
-    )
     return unnamed(words, named)
 
 
