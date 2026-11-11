@@ -19,6 +19,7 @@ COPY backend/libs/language/ ./libs/language/
 COPY backend/libs/openbao/ ./libs/openbao/
 COPY backend/libs/vectors/ ./libs/vectors/
 COPY backend/libs/forecast_release/ ./libs/forecast_release/
+COPY backend/libs/mart_model/ ./libs/mart_model/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/api/ ./services/api/
 USER app

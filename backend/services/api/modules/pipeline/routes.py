@@ -45,6 +45,7 @@ from services.api.modules.audit import record_self_approval
 from services.api.modules.catalog.public import upcoming_runs
 from services.api.modules.ingest.public import job_name, jobs_feeding
 from services.api.modules.pipeline import rules
+from services.api.modules.pipeline.marts_load import shape_mart
 from services.api.modules.pipeline.schemas import (
     Accepted,
     DataMartView,
@@ -1176,6 +1177,13 @@ async def create_mart(
         await require_datasets(
             session, principal, data_space, [body.fact_dataset_id], "fact_dataset_id"
         )
+        dimensions, suggested, relations = await shape_mart(
+            session,
+            data_space=data_space,
+            fact_dataset_id=body.fact_dataset_id,
+            dimensions=body.dimensions,
+            relations=body.relations,
+        )
         stamp = now()
         mart = pl.DataMart(
             id=uuid7(),
@@ -1185,12 +1193,12 @@ async def create_mart(
             fact_dataset_id=body.fact_dataset_id,
             grain=body.grain,
             measures=body.measures,
-            dimensions=body.dimensions,
-            relations=body.relations,
+            dimensions=dimensions,
+            relations=relations,
             checks=body.checks,
-            # Nothing proposes dimensions from the fact table's relations yet; the column stays
-            # null until something does, and the author picks from it into dimensions.
-            suggested_dimensions=None,
+            # Active context.relationship rows of the fact fill dimensions (when the body
+            # omitted them) or suggested_dimensions (edges not yet accepted).
+            suggested_dimensions=suggested,
             # UC-06-06 step 2: the worker checks the relations; until then nothing publishes.
             relation_check_passed=False,
             status="draft",
@@ -1210,6 +1218,8 @@ async def create_mart(
             data_space_id=data_space,
             fact_dataset_id=body.fact_dataset_id,
             status=mart.status,
+            relation_check_requested=True,
+            created_by=principal.user_id,
         )
         await session.flush()
         return DataMartView.model_validate(mart)
@@ -1309,6 +1319,19 @@ async def update_mart(
         for field in ("dimensions", "measures", "relations"):
             if field in changes:
                 setattr(mart, field, changes[field])
+        if "dimensions" in changes:
+            # Drop suggestions the author just accepted (by name).
+            accepted = {
+                str(d.get("name", "")).lower()
+                for d in (mart.dimensions or [])
+                if isinstance(d, dict)
+            }
+            remaining = [
+                s
+                for s in (mart.suggested_dimensions or [])
+                if isinstance(s, dict) and str(s.get("name", "")).lower() not in accepted
+            ]
+            mart.suggested_dimensions = remaining or None
         previous = mart.status
         recheck = bool({"dimensions", "measures", "relations"} & changes.keys())
         if recheck:
@@ -1331,6 +1354,7 @@ async def update_mart(
             previous_status=previous,
             changed=sorted(changes),
             relation_check_requested=recheck,
+            updated_by=principal.user_id,
         )
         await session.flush()
         return DataMartView.model_validate(mart)

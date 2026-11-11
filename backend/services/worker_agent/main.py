@@ -37,6 +37,7 @@ from services.worker_agent import (
     forecasting,
     hitl,
     liked,
+    marts,
     metric_changes,
     monitor_backtests,
     periods,
@@ -142,6 +143,7 @@ HANDLERS: dict[str, Handler] = {
     **reviews.HANDLERS,
     **pipelines.HANDLERS,
     **prep.HANDLERS,
+    **marts.HANDLERS,
     **quality.HANDLERS,
     **periods.HANDLERS,
     **forecasting.HANDLERS,
@@ -203,6 +205,7 @@ async def sources() -> list[EventSource]:
             types |= set(skill_evals.HANDLERS)
         if schema == "pipeline":
             types |= {proposals.WRITEBACK} | set(pipelines.HANDLERS) | set(prep.HANDLERS)
+            types |= set(marts.HANDLERS)
             # A writeback's preview diff (writeback_diffs.py, UC-06-04 step 2).
             types |= set(writeback_diffs.HANDLERS)
         if schema == "ingest":

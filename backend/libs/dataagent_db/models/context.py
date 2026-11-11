@@ -21,9 +21,7 @@ from sqlalchemy import (
     SmallInteger,
     Text,
 )
-from sqlalchemy import (
-    text as sql_text,
-)
+from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -62,7 +60,9 @@ class SemanticEntity(Base):
     __tablename__ = "semantic_entity"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), comment="logic → org.data_space"
@@ -80,11 +80,15 @@ class SemanticEntity(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class SemanticDimension(Base):
@@ -93,11 +97,15 @@ class SemanticDimension(Base):
     __tablename__ = "semantic_dimension"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     entity_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("context.semantic_entity.id"), comment="FK semantic_entity"
+        UUID(as_uuid=True),
+        ForeignKey("context.semantic_entity.id"),
+        comment="FK semantic_entity",
     )
     code: Mapped[str] = mapped_column(Text)
     name: Mapped[str] = mapped_column(Text)
@@ -117,11 +125,15 @@ class SemanticDimension(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class SemanticMeasure(Base):
@@ -130,11 +142,15 @@ class SemanticMeasure(Base):
     __tablename__ = "semantic_measure"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     entity_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("context.semantic_entity.id"), comment="FK semantic_entity"
+        UUID(as_uuid=True),
+        ForeignKey("context.semantic_entity.id"),
+        comment="FK semantic_entity",
     )
     code: Mapped[str] = mapped_column(Text)
     name: Mapped[str] = mapped_column(Text)
@@ -151,11 +167,15 @@ class SemanticMeasure(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class Metric(Base):
@@ -164,18 +184,25 @@ class Metric(Base):
     __tablename__ = "metric"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     code: Mapped[str] = mapped_column(Text, comment="Ví dụ NPL_RATIO")
     owner_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), comment="Chủ sở hữu duyệt mọi thay đổi; logic → org.app_user"
+        UUID(as_uuid=True),
+        comment="Chủ sở hữu duyệt mọi thay đổi; logic → org.app_user",
     )
     consumer_group: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="Người dùng chính, nhận thông báo khi đổi phiên bản"
+        Text,
+        nullable=True,
+        comment="Người dùng chính, nhận thông báo khi đổi phiên bản",
     )
     canonical_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, comment="Nguồn chuẩn; logic → catalog.dataset"
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="Nguồn chuẩn; logic → catalog.dataset",
     )
     current_version: Mapped[int | None] = mapped_column(
         Integer, nullable=True, comment="Phiên bản đang dùng"
@@ -191,11 +218,15 @@ class Metric(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class MetricVersion(Base):
@@ -204,7 +235,9 @@ class MetricVersion(Base):
     __tablename__ = "metric_version"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     metric_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("context.metric.id"), comment="FK metric"
@@ -214,7 +247,9 @@ class MetricVersion(Base):
     description: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Định nghĩa bằng lời"
     )
-    expression: Mapped[str] = mapped_column(Text, comment="Công thức trên độ đo, có bộ lọc")
+    expression: Mapped[str] = mapped_column(
+        Text, comment="Công thức trên độ đo, có bộ lọc"
+    )
     filters: Mapped[Any] = mapped_column(
         JSONB, server_default=sql_text("'[]'"), comment="Bộ lọc mặc định"
     )
@@ -257,7 +292,9 @@ class MetricVersion(Base):
         server_default=sql_text("'draft'"),
         comment="draft, testing, pending_review, certified, superseded, broken",
     )
-    certified_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    certified_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     certified_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -281,7 +318,9 @@ class Relationship(Base):
     __tablename__ = "relationship"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     from_dataset_id: Mapped[uuid.UUID] = mapped_column(
@@ -290,9 +329,13 @@ class Relationship(Base):
     from_columns: Mapped[list[str]] = mapped_column(ARRAY(Text))
     to_dataset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     to_columns: Mapped[list[str]] = mapped_column(ARRAY(Text))
-    cardinality: Mapped[str] = mapped_column(Text, comment="one_to_one, many_to_one, one_to_many")
+    cardinality: Mapped[str] = mapped_column(
+        Text, comment="one_to_one, many_to_one, one_to_many"
+    )
     origin: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'declared'"), comment="declared, inferred, manual"
+        Text,
+        server_default=sql_text("'declared'"),
+        comment="declared, inferred, manual",
     )
     overlap_ratio: Mapped[decimal.Decimal | None] = mapped_column(
         Numeric(5, 4), nullable=True, comment="Độ trùng giá trị khi suy ra"
@@ -305,11 +348,15 @@ class Relationship(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class Synonym(Base):
@@ -318,11 +365,15 @@ class Synonym(Base):
     __tablename__ = "synonym"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     phrase: Mapped[str] = mapped_column(Text, comment="Cụm từ người dùng hay nói")
-    phrase_norm: Mapped[str] = mapped_column(Text, comment="Đã bỏ dấu, chữ thường, dùng để khớp")
+    phrase_norm: Mapped[str] = mapped_column(
+        Text, comment="Đã bỏ dấu, chữ thường, dùng để khớp"
+    )
     target_kind: Mapped[str] = mapped_column(
         Text, comment="metric, dimension, measure, entity, value, column"
     )
@@ -341,11 +392,15 @@ class Synonym(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class ValueIndex(Base):
@@ -354,7 +409,9 @@ class ValueIndex(Base):
     __tablename__ = "value_index"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     dimension_id: Mapped[uuid.UUID] = mapped_column(
@@ -377,7 +434,9 @@ class ExampleQuery(Base):
     __tablename__ = "example_query"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     question: Mapped[str] = mapped_column(Text)
@@ -386,10 +445,14 @@ class ExampleQuery(Base):
         ARRAY(UUID(as_uuid=True)), server_default=sql_text("'{}'")
     )
     qdrant_point_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, comment="Điểm vector trong collection example_queries"
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="Điểm vector trong collection example_queries",
     )
     origin: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'manual'"), comment="manual, agent_suggested, feedback"
+        Text,
+        server_default=sql_text("'manual'"),
+        comment="manual, agent_suggested, feedback",
     )
     last_verified_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -407,11 +470,15 @@ class ExampleQuery(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class GlossaryTerm(Base):
@@ -420,7 +487,9 @@ class GlossaryTerm(Base):
     __tablename__ = "glossary_term"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     term: Mapped[str] = mapped_column(Text, comment="Ví dụ nợ xấu")
@@ -436,16 +505,22 @@ class GlossaryTerm(Base):
     )
     legal_basis: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'pending_review'"), comment="pending_review, active, retired"
+        Text,
+        server_default=sql_text("'pending_review'"),
+        comment="pending_review, active, retired",
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class UnmappedPhrase(Base):
@@ -454,7 +529,9 @@ class UnmappedPhrase(Base):
     __tablename__ = "unmapped_phrase"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     phrase_norm: Mapped[str] = mapped_column(Text)
@@ -484,10 +561,14 @@ class UserTermPref(Base):
     __tablename__ = "user_term_pref"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), comment="logic → org.app_user")
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), comment="logic → org.app_user"
+    )
     glossary_term_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("context.glossary_term.id", ondelete="CASCADE"),
@@ -497,11 +578,15 @@ class UserTermPref(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class KnowledgePage(Base):
@@ -510,7 +595,9 @@ class KnowledgePage(Base):
     __tablename__ = "knowledge_page"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), comment="logic → org.data_space; Data Space chủ của trang"
@@ -534,19 +621,27 @@ class KnowledgePage(Base):
         server_default=sql_text("''"),
         comment="Một dòng tối đa 300 ký tự cho mục lục planner đọc trước",
     )
-    tags: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=sql_text("'{}'"))
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=sql_text("'{}'")
+    )
     owner_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), comment="logic → org.app_user; người phụ trách trang"
     )
     status: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'draft'"), comment="draft, active, stale, retired"
+        Text,
+        server_default=sql_text("'draft'"),
+        comment="draft, active, stale, retired",
     )
     stale_reason: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="Loại phát hiện làm trang cần xem lại; bắt buộc khi stale"
+        Text,
+        nullable=True,
+        comment="Loại phát hiện làm trang cần xem lại; bắt buộc khi stale",
     )
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("context.knowledge_page_version.id", deferrable=True, initially="DEFERRED"),
+        ForeignKey(
+            "context.knowledge_page_version.id", deferrable=True, initially="DEFERRED"
+        ),
         nullable=True,
         comment="FK knowledge_page_version đang phục vụ (reviewed hoặc certified)",
     )
@@ -587,17 +682,23 @@ class KnowledgePage(Base):
         DateTime(timezone=True), nullable=True
     )
     last_read_at: Mapped[datetime.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, comment="Lần đọc gần nhất; dùng rà trang mồ côi"
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Lần đọc gần nhất; dùng rà trang mồ côi",
     )
     read_count_30d: Mapped[int] = mapped_column(Integer, server_default=sql_text("0"))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class KnowledgePageVersion(Base):
@@ -606,12 +707,18 @@ class KnowledgePageVersion(Base):
     __tablename__ = "knowledge_page_version"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     page_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("context.knowledge_page.id"), comment="FK knowledge_page"
+        UUID(as_uuid=True),
+        ForeignKey("context.knowledge_page.id"),
+        comment="FK knowledge_page",
     )
-    version: Mapped[int] = mapped_column(Integer, comment="Tăng dần theo trang, trigger điền")
+    version: Mapped[int] = mapped_column(
+        Integer, comment="Tăng dần theo trang, trigger điền"
+    )
     parent_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("context.knowledge_page_version.id"),
@@ -623,12 +730,16 @@ class KnowledgePageVersion(Base):
         server_default=sql_text("'draft'"),
         comment="draft, pending_review, reviewed, certified, rejected, superseded",
     )
-    origin: Mapped[str] = mapped_column(Text, comment="ingest, lint_fix, saveback, manual")
+    origin: Mapped[str] = mapped_column(
+        Text, comment="ingest, lint_fix, saveback, manual"
+    )
     body: Mapped[str] = mapped_column(
         Text,
         comment="Mẫu thân trang Markdown với {{claim:..}}, {{metric:..}}, {{agg:..}}, [[slug]]; tối đa 20.000 ký tự; không có số viết tay (BR-162)",
     )
-    body_sha256: Mapped[str] = mapped_column(Text, comment="Mã băm thân trang, trigger tính")
+    body_sha256: Mapped[str] = mapped_column(
+        Text, comment="Mã băm thân trang, trigger tính"
+    )
     summary: Mapped[str] = mapped_column(
         Text, server_default=sql_text("''"), comment="Tóm tắt thay đổi cho người duyệt"
     )
@@ -653,7 +764,9 @@ class KnowledgePageVersion(Base):
         comment="logic → qa.answer; bắt buộc khi origin = saveback",
     )
     proposal_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, comment="logic → inbox.proposal (kind knowledge_page)"
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="logic → inbox.proposal (kind knowledge_page)",
     )
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -674,7 +787,9 @@ class KnowledgePageVersion(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class KnowledgeSourceLink(Base):
@@ -683,7 +798,9 @@ class KnowledgeSourceLink(Base):
     __tablename__ = "knowledge_source_link"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     page_version_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -697,14 +814,18 @@ class KnowledgeSourceLink(Base):
     source_ref: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), comment="logic → bảng nguồn theo source_kind"
     )
-    source_label: Mapped[str] = mapped_column(Text, comment="Tên hiển thị trong trích dẫn")
+    source_label: Mapped[str] = mapped_column(
+        Text, comment="Tên hiển thị trong trích dẫn"
+    )
     dataset_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
         comment="logic → catalog.dataset_version; bắt buộc khi external",
     )
     external: Mapped[bool] = mapped_column(
-        Boolean, server_default=sql_text("false"), comment="Nguồn ngoài (BR-156, BR-165)"
+        Boolean,
+        server_default=sql_text("false"),
+        comment="Nguồn ngoài (BR-156, BR-165)",
     )
     content_sha256: Mapped[str] = mapped_column(
         Text,
@@ -719,7 +840,9 @@ class KnowledgeSourceLink(Base):
         server_default=sql_text("'internal'"),
         comment="public, internal, confidential, restricted",
     )
-    pii_column_refs: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=sql_text("'{}'"))
+    pii_column_refs: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=sql_text("'{}'")
+    )
     policy_updated_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -734,7 +857,9 @@ class KnowledgeClaim(Base):
     __tablename__ = "knowledge_claim"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     page_version_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -748,12 +873,16 @@ class KnowledgeClaim(Base):
         Text, comment="Câu khẳng định; số chỉ ở dạng chỗ giữ số (BR-162)"
     )
     subject_key: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="Ví dụ NHB; cùng attribute, period dùng rà mâu thuẫn"
+        Text,
+        nullable=True,
+        comment="Ví dụ NHB; cùng attribute, period dùng rà mâu thuẫn",
     )
     attribute: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Ví dụ lai_suat_huy_dong_12t"
     )
-    period: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Ví dụ 2026-W41")
+    period: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Ví dụ 2026-W41"
+    )
     source_link_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("context.knowledge_source_link.id"),
@@ -779,7 +908,9 @@ class KnowledgeFigure(Base):
     __tablename__ = "knowledge_figure"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     page_version_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -794,16 +925,22 @@ class KnowledgeFigure(Base):
         Text, nullable=True, comment="logic → context.metric; bắt buộc khi metric"
     )
     aggregate_code: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="Mã bảng tổng hợp của dataset hợp nhất; bắt buộc khi aggregate"
+        Text,
+        nullable=True,
+        comment="Mã bảng tổng hợp của dataset hợp nhất; bắt buộc khi aggregate",
     )
     dataset_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, comment="logic → catalog.dataset (origin consolidated)"
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="logic → catalog.dataset (origin consolidated)",
     )
     params: Mapped[Any] = mapped_column(
         JSONB, server_default=sql_text("'{}'"), comment="period, chiều, bộ lọc"
     )
     display_format: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'auto'"), comment="auto, percent_2, amount_billion, count"
+        Text,
+        server_default=sql_text("'auto'"),
+        comment="auto, percent_2, amount_billion, count",
     )
     source_link_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -821,7 +958,9 @@ class KnowledgeLink(Base):
     __tablename__ = "knowledge_link"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     from_version_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -829,10 +968,14 @@ class KnowledgeLink(Base):
         comment="FK knowledge_page_version chứa liên kết",
     )
     from_page_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("context.knowledge_page.id"), comment="FK knowledge_page"
+        UUID(as_uuid=True),
+        ForeignKey("context.knowledge_page.id"),
+        comment="FK knowledge_page",
     )
     to_page_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("context.knowledge_page.id"), comment="FK knowledge_page"
+        UUID(as_uuid=True),
+        ForeignKey("context.knowledge_page.id"),
+        comment="FK knowledge_page",
     )
     link_kind: Mapped[str] = mapped_column(
         Text,
@@ -850,18 +993,24 @@ class KnowledgeRun(Base):
     __tablename__ = "knowledge_run"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), comment="logic → org.data_space"
     )
     kind: Mapped[str] = mapped_column(Text, comment="ingest, lint")
-    trigger: Mapped[str] = mapped_column(Text, comment="event, schedule, manual, saveback")
+    trigger: Mapped[str] = mapped_column(
+        Text, comment="event, schedule, manual, saveback"
+    )
     trigger_event: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Ví dụ acquire.dataset.published"
     )
     source_kind: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source_ref: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    source_ref: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     status: Mapped[str] = mapped_column(
         Text,
         server_default=sql_text("'queued'"),
@@ -874,11 +1023,15 @@ class KnowledgeRun(Base):
     )
     sources_seen: Mapped[int] = mapped_column(Integer, server_default=sql_text("0"))
     sources_skipped_unchanged: Mapped[int] = mapped_column(
-        Integer, server_default=sql_text("0"), comment="Nguồn bỏ qua vì mã băm không đổi"
+        Integer,
+        server_default=sql_text("0"),
+        comment="Nguồn bỏ qua vì mã băm không đổi",
     )
     pages_analyzed: Mapped[int] = mapped_column(Integer, server_default=sql_text("0"))
     pages_changed: Mapped[int] = mapped_column(
-        Integer, server_default=sql_text("0"), comment="Trigger đếm; không vượt page_limit"
+        Integer,
+        server_default=sql_text("0"),
+        comment="Trigger đếm; không vượt page_limit",
     )
     pages_deferred: Mapped[int] = mapped_column(
         Integer, server_default=sql_text("0"), comment="Trang dời sang lượt sau"
@@ -902,7 +1055,9 @@ class KnowledgeRun(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class KnowledgeLintFinding(Base):
@@ -911,10 +1066,14 @@ class KnowledgeLintFinding(Base):
     __tablename__ = "knowledge_lint_finding"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     run_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("context.knowledge_run.id"), comment="FK knowledge_run"
+        UUID(as_uuid=True),
+        ForeignKey("context.knowledge_run.id"),
+        comment="FK knowledge_run",
     )
     data_space_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), comment="logic → org.data_space"
@@ -940,10 +1099,14 @@ class KnowledgeLintFinding(Base):
         Text, comment="Mã băm loại và đối tượng; không báo lặp"
     )
     detail: Mapped[Any] = mapped_column(
-        JSONB, server_default=sql_text("'{}'"), comment="Khẳng định, số, nguồn liên quan"
+        JSONB,
+        server_default=sql_text("'{}'"),
+        comment="Khẳng định, số, nguồn liên quan",
     )
     status: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'open'"), comment="open, actioned, resolved, dismissed"
+        Text,
+        server_default=sql_text("'open'"),
+        comment="open, actioned, resolved, dismissed",
     )
     action: Mapped[str | None] = mapped_column(
         Text,
@@ -987,7 +1150,9 @@ class DataProduct(Base):
     __tablename__ = "data_product"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), comment="logic → org.data_space"
@@ -1077,11 +1242,15 @@ class DataProduct(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class DataProductMember(Base):
@@ -1090,7 +1259,9 @@ class DataProductMember(Base):
     __tablename__ = "data_product_member"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_product_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -1098,7 +1269,8 @@ class DataProductMember(Base):
         comment="FK data_product",
     )
     member_kind: Mapped[str] = mapped_column(
-        Text, comment="dataset, metric, knowledge_page, document_collection, shared_product"
+        Text,
+        comment="dataset, metric, knowledge_page, document_collection, shared_product",
     )
     member_ref: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -1124,14 +1296,18 @@ class DataProductMember(Base):
         nullable=True,
         comment="logic → monitor.external_calendar.code cùng data_space_id (UNIQUE (data_space_id, code)); mã lịch sự kiện ngoài do P08 quản lý (ví dụ fuel_price_regulation, lịch điều hành giá xăng dầu); có thì hạn lấy theo lịch này, sla_cron chỉ cho giờ trong ngày",
     )
-    sla_timezone: Mapped[str] = mapped_column(Text, server_default=sql_text("'Asia/Ho_Chi_Minh'"))
+    sla_timezone: Mapped[str] = mapped_column(
+        Text, server_default=sql_text("'Asia/Ho_Chi_Minh'")
+    )
     sla_work_calendar_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
         comment="logic → org.work_calendar; hạn rơi vào ngày nghỉ thì dời sang ngày làm việc kế tiếp",
     )
     sla_max_age: Mapped[datetime.timedelta | None] = mapped_column(
-        Interval, nullable=True, comment="Với max_age: tuổi dữ liệu tối đa, ví dụ 1 day cho tỷ giá"
+        Interval,
+        nullable=True,
+        comment="Với max_age: tuổi dữ liệu tối đa, ví dụ 1 day cho tỷ giá",
     )
     sla_grace: Mapped[datetime.timedelta] = mapped_column(
         Interval,
@@ -1149,7 +1325,9 @@ class DataProductMember(Base):
         comment="Ngày dữ liệu mới nhất đã có trong dataset; Connector hoặc Ingestion service cập nhật sau mỗi lượt nạp",
     )
     last_loaded_at: Mapped[datetime.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, comment="Thời điểm lượt nạp gần nhất xong"
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Thời điểm lượt nạp gần nhất xong",
     )
     expected_as_of: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -1160,7 +1338,9 @@ class DataProductMember(Base):
         DateTime(timezone=True), nullable=True, comment="Hạn kế tiếp tính từ lịch"
     )
     freshness_state: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'unknown'"), comment="unknown, fresh, overdue, missing"
+        Text,
+        server_default=sql_text("'unknown'"),
+        comment="unknown, fresh, overdue, missing",
     )
     last_checked_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -1178,11 +1358,15 @@ class DataProductMember(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
 
 class Outbox(Base):
@@ -1191,7 +1375,9 @@ class Outbox(Base):
     __tablename__ = "outbox"
     __table_args__ = ({"schema": "context"},)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     aggregate_type: Mapped[str] = mapped_column(Text)
     aggregate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))

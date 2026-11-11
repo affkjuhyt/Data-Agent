@@ -83,13 +83,20 @@ export function readDataMart(raw: DataMartWire, datasets: Map<string, string>): 
     typeof value === 'object' && value !== null
       ? (value as Record<string, unknown>)
       : { name: fallback };
-  const fact = tableOf(null, datasets.get(raw.fact_dataset_id) ?? raw.fact_dataset_id);
+  const factName = datasets.get(raw.fact_dataset_id) ?? raw.fact_dataset_id;
+  const measureLines = measures.flatMap((value) => {
+    const row = tableOf(value, '');
+    const name = textOf(row.name, '');
+    return name ? [row.agg ? `${name} (${String(row.agg)})` : name] : [];
+  });
   const dimensionRows = [...dimensions, ...proposed].map((value, index) => {
     const row = tableOf(value, `dimension_${index + 1}`);
     const name = textOf(row.name ?? row.label, `dimension_${index + 1}`);
+    const key = textOf(row.key, '');
+    const cols = linesOf(row.columns ?? row.fields);
     return {
       name,
-      lines: linesOf(row.columns ?? row.fields),
+      lines: cols.length ? cols : key ? [key] : [],
       suggested: index >= dimensions.length,
     };
   });
@@ -97,17 +104,22 @@ export function readDataMart(raw: DataMartWire, datasets: Map<string, string>): 
     .replace(/\W+/g, '_')
     .replace(/^_+|_+$/g, '')
     .toLowerCase();
+  const accepted = dimensionRows.filter((d) => !d.suggested);
   return {
     id: raw.id,
     name: raw.name,
-    summary_text: `${raw.grain} · ${measures.length} độ đo · ${dimensionRows.length} chiều`,
-    fact: { name: textOf(fact.name, raw.fact_dataset_id), lines: [raw.grain] },
-    dimensions: dimensionRows.filter((d) => !d.suggested),
+    summary_text: `${raw.grain} · ${measures.length} độ đo · ${accepted.length} chiều`,
+    fact: {
+      name: factName,
+      lines: [raw.grain, ...measureLines].filter(Boolean),
+    },
+    // Keep suggested dims on the canvas (dashed); the dialog still reads mart.suggestion.
+    dimensions: dimensionRows,
     product_draft: {
       name: productName || 'data_product',
       version: '1',
       version_text: 'v1',
-      contract_text: `${measures.length} độ đo · ${dimensionRows.length} chiều`,
+      contract_text: `${measures.length} độ đo · ${accepted.length} chiều`,
       freshness_text: 'Cập nhật theo pipeline',
       quality_text: raw.relation_check_passed ? 'Đã kiểm tra liên kết' : 'Chưa kiểm tra liên kết',
       consumers_text: 'Chưa có người dùng',
@@ -117,9 +129,12 @@ export function readDataMart(raw: DataMartWire, datasets: Map<string, string>): 
       ? {
           dimensions: proposed.map((value, index) => {
             const row = tableOf(value, `dimension_${index + 1}`);
+            const name = textOf(row.name, `dimension_${index + 1}`);
+            const label = textOf(row.label, name);
+            const key = textOf(row.key, '');
             return {
-              key: textOf(row.name, `dimension_${index + 1}`),
-              label: textOf(row.label, ''),
+              key: name,
+              label: key ? `${label} · ${key}` : label,
             };
           }),
           measures: [],
@@ -160,6 +175,34 @@ export async function getMart(id: string) {
   return readDataMart(mart, tablesFor(datasets));
 }
 
+/** A2: POST /v1/marts — empty dimensions bootstrap from the fact's active relationships. */
+export async function createMart(body: {
+  name: string;
+  fact_dataset_id: string;
+  grain: string;
+  measures?: { name: string; agg?: string }[];
+}) {
+  const [raw, datasets] = await Promise.all([
+    ok<DataMartWire>(
+      api.POST('/v1/marts', {
+        body: {
+          name: body.name,
+          fact_dataset_id: body.fact_dataset_id,
+          grain: body.grain,
+          measures: body.measures ?? [{ name: 'sales_amount', agg: 'sum' }],
+          dimensions: [],
+          relations: [],
+          checks: [],
+        },
+      }),
+    ),
+    ok<Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']>>(
+      api.GET('/v1/datasets', { params: { query: { page_size: 500 } } }),
+    ).catch(() => null),
+  ]);
+  return readDataMart(raw, tablesFor(datasets));
+}
+
 /** Accept the selected agent suggestions through the canonical mart PATCH contract. */
 export async function applyMartSuggestion(
   id: string,
@@ -171,17 +214,30 @@ export async function applyMartSuggestion(
       api.GET('/v1/datasets', { params: { query: { page_size: 500 } } }),
     ).catch(() => null),
   ]);
-  const selectedDimensions = body.dimensions.map((name) => ({ name }));
+  const proposed = Array.isArray(mart.suggested_dimensions) ? mart.suggested_dimensions : [];
+  const picked = proposed.filter((value) => {
+    if (typeof value !== 'object' || value === null) return false;
+    const name = String((value as { name?: string }).name ?? '');
+    return body.dimensions.includes(name);
+  }) as Record<string, unknown>[];
   const selectedMeasures = body.measures.map((name) => ({ name }));
+  const nextRelations = [
+    ...(Array.isArray(mart.relations) ? mart.relations : []),
+    ...picked.map((row) => {
+      const key = String(row.key ?? '');
+      const table = String(row.name ?? '');
+      const cols = Array.isArray(row.columns) ? row.columns.map(String) : [];
+      const toCol = cols[1] ?? cols[0] ?? 'id';
+      return { from: key, to: `${table}.${toCol}` };
+    }),
+  ];
   const updated = await ok<DataMartWire>(
     api.PATCH('/v1/marts/{id}', {
       params: { path: { id } },
       body: {
-        dimensions: [
-          ...(Array.isArray(mart.dimensions) ? mart.dimensions : []),
-          ...selectedDimensions,
-        ],
+        dimensions: [...(Array.isArray(mart.dimensions) ? mart.dimensions : []), ...picked],
         measures: [...(Array.isArray(mart.measures) ? mart.measures : []), ...selectedMeasures],
+        relations: nextRelations,
       },
     }),
   );
@@ -284,6 +340,12 @@ export const createDataProduct = async (body: {
         layer: 'published',
         data_mart_id: body.mart_id,
         owner_id: me.id,
+        contract: {
+          columns: [
+            { name: 'grain', type: 'text' },
+            { name: 'measure', type: 'numeric' },
+          ],
+        },
       } satisfies components['schemas']['DataProductCreate'],
     }),
   );

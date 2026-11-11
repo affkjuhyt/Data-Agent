@@ -24,7 +24,10 @@ describe('readDataMart', () => {
     );
 
     expect(mart.name).toBe('credit_risk');
-    expect(mart.fact).toEqual({ name: 'mart.credit_risk_fact', lines: ['one loan per day'] });
+    expect(mart.fact).toEqual({
+      name: 'mart.credit_risk_fact',
+      lines: ['one loan per day', 'outstanding_amt', 'overdue_amt'],
+    });
     expect(mart.dimensions).toEqual([
       { name: 'branch', lines: ['branch_id', 'branch_name'], suggested: false },
     ]);

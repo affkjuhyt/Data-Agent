@@ -16,6 +16,7 @@ import {
 } from '../../lib/v1/dataProducts';
 import { useV1 } from '../../lib/v1/useV1';
 import { SuggestMartDialog } from './SuggestMartDialog';
+import { CreateMartDialog } from './CreateMartDialog';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { LinkButton } from '../../components/shell/AppLink';
 
@@ -27,9 +28,10 @@ import { LinkButton } from '../../components/shell/AppLink';
  * quality rules, which are what a mart is checked against on every refresh.
  */
 export default function DataMartPage() {
-  const { routeId } = useAppState();
+  const { routeId, navigate } = useAppState();
   const marts = useV1(['listMarts', routeId], routeId ? null : listMarts);
   const id = routeId ?? marts.data?.items[0]?.id;
+  const [creating, setCreating] = useState(false);
 
   if (!id) {
     return (
@@ -42,12 +44,26 @@ export default function DataMartPage() {
             <EmptyState
               icon="database"
               title="Chưa có data mart"
-              description="Data mart được tạo từ các bảng đã chuẩn bị bằng pipeline."
+              description="Tạo từ bảng sự kiện trong catalog; chiều lấy từ các liên kết đã duyệt."
+              action={
+                <Button kind="primary" onClick={() => setCreating(true)}>
+                  Tạo data mart
+                </Button>
+              }
             />
           }
         >
           {() => null}
         </AsyncRegion>
+        <CreateMartDialog
+          open={creating}
+          onClose={() => setCreating(false)}
+          onCreated={(next) => {
+            setCreating(false);
+            marts.reload();
+            navigate('data', 'DATA_MARTS', next);
+          }}
+        />
       </div>
     );
   }

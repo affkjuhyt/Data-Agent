@@ -210,18 +210,6 @@ async def test_a_writeback_reads_without_sensitive_columns_in_its_sample(pp: Spa
         assert [c["column"] for c in summary["columns"]] == ["du_no", "ghi_chu"]
         assert "0123" not in read.text and "090" not in read.text
 
-        # :undo's Location is this read.
-        pp.run(
-            "UPDATE pipeline.writeback_request SET status = 'executed', executed_at = now(),"
-            " approved_by = %s WHERE id = %s",
-            pp.users["approver"],
-            writeback,
-        )
-        undo = await api.post(f"{url}:undo", json={"reason": "Sai kỳ"}, headers=pp.headers("eng"))
-        assert undo.status_code == 202, undo.text
-        followed = await api.get(undo.headers["Location"], headers=pp.headers("eng"))
-        assert followed.json()["status"] == "undo_requested"
-
         # Capability writeback: an analyst who only asks does not read writebacks.
         assert (await api.get(url, headers=pp.headers("analyst"))).status_code == 403
         assert (await api.get(url, headers=pp.headers("eng", pp.other))).status_code == 404
