@@ -1151,6 +1151,8 @@ function previewOf(table: SourceTable, sourceName: string, filters: ExploreFilte
     source_name: sourceName,
     row_count: table.row_count ?? 0,
     matched_rows: filters.length === 0 ? (table.row_count ?? 0) : rows.length,
+    row_count_capped: false,
+    matched_capped: filters.length > 0 && rows.length >= 50,
     snapshot_text: 'snapshot 30/09 v3',
     columns: LD_LOANS_PREVIEW_COLUMNS,
     rows,

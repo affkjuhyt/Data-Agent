@@ -608,7 +608,11 @@ function jobStatus(row: IngestionJobWire): JobStatus {
 /** Seconds of an ISO 8601 duration (P1DT2H30M, PT45S), or of a number of seconds. */
 export function durationSeconds(value: string | number | null | undefined): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  const m = value ? /^P(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(value) : null;
+  const m = value
+    ? /^P(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(
+        value,
+      )
+    : null;
   if (!m || value === 'P' || value === 'PT') return null;
   const [d, h, min, sec] = m.slice(1).map((v) => Number(v ?? 0));
   return d * 86_400 + h * 3_600 + min * 60 + sec;
@@ -1647,6 +1651,8 @@ export type ExploreFilter = {
 
 export type CellValue = string | number | null;
 
+const PREVIEW_ROWS = 50;
+
 /** Preview rows; the catalog action is kept as a compatibility path over query-runs. */
 export interface TablePreview {
   id: Uuid;
@@ -1654,6 +1660,9 @@ export interface TablePreview {
   source_name: string;
   row_count: number;
   matched_rows: number;
+  /** The run read PREVIEW_ROWS rows and stopped: a count from it is "at least", not the total. */
+  row_count_capped: boolean;
+  matched_capped: boolean;
   /** "snapshot 30/09 v3" */
   snapshot_text: string;
   columns: { name: string; type_label: string; numeric: boolean; masked: boolean }[];
@@ -1678,14 +1687,16 @@ export const previewTable = async (id: string, filters: ExploreFilter[]): Promis
         body: {
           dataset_id: id,
           filters,
-          limit: 50,
+          limit: PREVIEW_ROWS,
         },
       }),
     ),
   ]);
   const finished = await awaitQueryRun(run);
-  const result = await getQueryRows(finished.id, 50);
+  const result = await getQueryRows(finished.id, PREVIEW_ROWS);
   const rows = result.rows as CellValue[][];
+  // row_count of a run is the rows it returned after its limit (query/executor.py).
+  const read = finished.row_count ?? rows.length;
   const seen = new Map<string, number>();
   const duplicates: number[] = [];
   let pair: [number, number] | null = null;
@@ -1717,11 +1728,11 @@ export const previewTable = async (id: string, filters: ExploreFilter[]): Promis
     name: dataset.display_name ?? dataset.table_name,
     source_name: source?.name ?? 'Nguồn dữ liệu',
     row_count: dataset.row_estimate ?? finished.row_count ?? result.rows.length,
-    // Without a filter every row matches; with one, the run counts them (at most the rows read).
-    matched_rows:
-      filters.length === 0
-        ? (dataset.row_estimate ?? finished.row_count ?? rows.length)
-        : (finished.row_count ?? rows.length),
+    row_count_capped: dataset.row_estimate == null && read >= PREVIEW_ROWS,
+    // Without a filter every row matches; with one, the run counts what it read, which stops at
+    // PREVIEW_ROWS: "50 dòng khớp" for a filter matching 12,000 rows is "at least 50".
+    matched_rows: filters.length === 0 ? (dataset.row_estimate ?? read) : read,
+    matched_capped: (filters.length > 0 || dataset.row_estimate == null) && read >= PREVIEW_ROWS,
     snapshot_text: 'Kết quả truy vấn mới nhất',
     columns,
     rows,

@@ -25,6 +25,8 @@ export interface SqlResult {
   /** Cells as the warehouse returns them; masked columns already carry the mask. */
   rows: (string | number | null)[][];
   row_count: number;
+  /** The statement returned its whole limit: there may be more rows than row_count. */
+  capped: boolean;
   duration_ms: number;
   /** PROPOSAL: "Rủi ro tín dụng" — the Data Space whose permissions applied. */
   permission_scope: string;
@@ -115,6 +117,8 @@ export const runSql = async (sql: string, limit = 500): Promise<SqlResult> => {
     columns: rows.columns.map((column) => column.name),
     rows: rows.rows as SqlResult['rows'],
     row_count: finished.row_count ?? rows.rows.length,
+    // row_count is what the run returned after the limit (query/executor.py), never more.
+    capped: (finished.row_count ?? rows.rows.length) >= limit,
     duration_ms: finished.duration_ms ?? 0,
     permission_scope: policy.permission_scope ?? 'Data Space hiện tại',
     masked_columns: policy.masked_columns ?? [],

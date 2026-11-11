@@ -188,7 +188,7 @@ export default function SqlPage() {
       );
       toast({
         tone: 'success',
-        message: `Truy vấn xong · ${res.row_count} dòng · ${seconds(res.duration_ms)} giây`,
+        message: `Truy vấn xong · ${res.capped ? `${res.row_count} dòng đầu (giới hạn)` : `${res.row_count} dòng`} · ${seconds(res.duration_ms)} giây`,
       });
     } catch (e) {
       setError((e as Error).message);
@@ -298,7 +298,10 @@ export default function SqlPage() {
           <div className="flex min-h-0 flex-1 flex-col gap-da-md overflow-y-auto">
             <div className="flex flex-wrap items-center gap-da-md">
               <StatusDot tone="success">
-                {result.row_count} dòng · {seconds(result.duration_ms)} s
+                {result.capped
+                  ? `${result.row_count} dòng đầu, có thể còn nữa`
+                  : `${result.row_count} dòng`}{' '}
+                · {seconds(result.duration_ms)} s
               </StatusDot>
               <p className="text-muted-foreground da-caption">
                 Quyền: {result.permission_scope}

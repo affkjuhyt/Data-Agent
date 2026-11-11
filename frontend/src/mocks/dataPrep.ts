@@ -426,6 +426,7 @@ const SQL_RESULT: SqlResult = {
     ['Tây Nguyên', 'Tiêu dùng', '0,0201'],
   ],
   row_count: 20,
+  capped: false,
   duration_ms: 800,
   permission_scope: 'Rủi ro tín dụng',
   masked_columns: ['customer_id'],

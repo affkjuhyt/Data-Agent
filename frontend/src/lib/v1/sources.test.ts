@@ -269,8 +269,14 @@ describe('sources from the api', () => {
     ).resolves.toMatchObject({
       name: 'Loan',
       matched_rows: 1,
+      matched_capped: false,
       rows: [[100]],
     });
+    // A run that read its whole limit says "at least": its row_count is what it returned.
+    run.row_count = 50;
+    await expect(
+      previewTable('d-1', [{ column: 'balance', op: 'gte', value: '0' }]),
+    ).resolves.toMatchObject({ matched_rows: 50, matched_capped: true });
   });
 
   it('derives column statistics from the dataset profile when the stats route is absent', async () => {

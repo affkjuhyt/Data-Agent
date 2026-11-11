@@ -133,7 +133,7 @@ function ExploreView({
       <div className="flex min-w-0 flex-1 flex-col gap-da-md px-da-xl py-da-lg">
         <PageHeader
           breadcrumb={['Khám phá dữ liệu', preview.source_name, preview.name]}
-          title={`${preview.name} · ${formatNumber(preview.row_count)} dòng`}
+          title={`${preview.name} · ${preview.row_count_capped ? 'từ ' : ''}${formatNumber(preview.row_count)} dòng`}
           actions={
             <>
               <LinkButton area="analysis" page="ASK" kind="ghost" icon="agent">
@@ -179,7 +179,12 @@ function ExploreView({
           </button>
           <span className="flex-1" />
           <span className="text-muted-foreground da-caption">
-            {formatNumber(preview.matched_rows)} dòng khớp · {preview.snapshot_text}
+            {preview.matched_capped ? 'Từ ' : ''}
+            {formatNumber(preview.matched_rows)} dòng khớp
+            {preview.matched_capped
+              ? ` (hiện ${formatNumber(preview.rows.length)} dòng đầu)`
+              : ''}{' '}
+            · {preview.snapshot_text}
           </span>
         </div>
         {preview.rows.length === 0 ? (
