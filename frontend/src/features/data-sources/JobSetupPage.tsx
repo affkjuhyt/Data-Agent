@@ -31,7 +31,7 @@ import { LinkButton } from '../../components/shell/AppLink';
  * table that can get a job, with a picker when there are several (not in Figma, which shows one).
  */
 const METHOD_HELP: Record<JobMethod, string> = {
-  cdc: 'Đọc nhật ký thay đổi của nguồn, gần như tức thời; cần nguồn bật CDC.',
+  cdc: 'Poll theo cột con trỏ mỗi phút (không phải nhật ký CDC). Cần chọn cột con trỏ.',
   schedule: 'Mỗi lần chạy đọc lại toàn bảng theo lịch.',
   incremental: 'Mỗi lần chạy chỉ lấy các dòng có giá trị con trỏ lớn hơn lần trước.',
   continuous: 'Đọc liên tục từ luồng sự kiện.',
@@ -146,9 +146,9 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
     setDryRun(null);
   };
 
-  const incremental = job.method === 'incremental';
+  const needsCursor = job.method === 'incremental' || job.method === 'cdc';
   const cursor = candidate.cursor_columns.find((c) => c.name === job.cursor_column);
-  const ready = !incremental || Boolean(job.cursor_column);
+  const ready = !needsCursor || Boolean(job.cursor_column);
   const canDryRun = true;
 
   const run = useV1Mutation(() => dryRunJob(job, candidate), {
@@ -224,11 +224,10 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
                 { value: 'cdc', label: 'Liên tục (CDC)' },
                 { value: 'schedule', label: 'Theo lịch' },
                 { value: 'incremental', label: 'Tăng dần' },
-                { value: 'new_files', label: 'Tệp mới' },
               ]}
             />
             <p className="text-muted-foreground da-caption">{METHOD_HELP[job.method]}</p>
-            {incremental && (
+            {needsCursor && (
               <Row>
                 <Field labelTone="muted" label="Cột con trỏ" hint={cursor?.hint ?? undefined}>
                   <Select

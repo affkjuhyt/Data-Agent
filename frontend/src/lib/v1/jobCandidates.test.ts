@@ -102,6 +102,9 @@ describe('job candidates from the api', () => {
         cursor_column: 'updated_at',
         schedule_cron: '0 * * * *',
         freshness_sla: 'PT4H',
+        retry_policy: 'backoff_3',
+        on_schema_change: 'accept_new_columns',
+        on_invalid_record: 'quarantine_30d',
         dlq_retention_days: 30,
       },
     });

@@ -32,7 +32,7 @@ describe('AnalysisPage', () => {
       http.get('*/v1/workspaces', () => HttpResponse.json({ items: [], next_page_token: '' })),
     );
     render(<AnalysisPage />);
-    expect(await screen.findByText('Chưa có dashboard hay phiên nào')).toBeInTheDocument();
+    expect(await screen.findByText('Chưa có phiên nào')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('link', { name: 'Mở Khám phá' }));
     expect(navigate).toHaveBeenCalledWith('analysis', 'EXPLORE');
   });

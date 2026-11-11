@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import asyncpg
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 
 from libs import source_drivers, tabular
 from libs.dataagent_db import scoped_session
@@ -28,8 +28,11 @@ from services.worker_ingest.secrets import Reader, SecretUnavailable
 
 CREATED = "ingestion_job.created"
 BACKFILL = "job_run.backfill_requested"
+SAMPLE = "ingestion_job.sample_requested"
+REPLAY = "dlq_record.replay_requested"
 ROLE = "svc_ingest"
 CATALOG_ROLE = "svc_catalog"
+SAMPLE_ROWS = 1_000
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # Source types the workspace keeps (da_materialize_upload takes text, numeric, boolean, date);
 # anything else lands as text. Timestamps too: the function has no timestamp column yet.
@@ -119,11 +122,13 @@ def _fits(kind: str, value: Any) -> bool:
 @dataclass(frozen=True)
 class Window:
     """An incremental run's slice of the source (RES-17): the cursor column, above the value the
-    last run reached (none on the first run), up to the maximum sampled when this run started."""
+    last run reached (none on the first run), up to the maximum sampled when this run started.
+    Backfill sets inclusive_lower so [from, to] keeps the from day."""
 
     column: str
     after: str | None
     upto: str
+    inclusive_lower: bool = False
 
 
 _NUMBER = re.compile(r"-?\d+(\.\d+)?")
@@ -151,11 +156,10 @@ def _driver_where(kind: str, window: Window | None) -> str:
         return ""
     column = _QUOTED[kind].split(".")[0].format(schema=_identifier(window.column))
     upto = f"{column} <= {_literal(window.upto)}"
-    return (
-        f" WHERE {column} > {_literal(window.after)} AND {upto}"
-        if window.after
-        else f" WHERE {upto}"
-    )
+    if window.after is None:
+        return f" WHERE {upto}"
+    lower = ">=" if window.inclusive_lower else ">"
+    return f" WHERE {column} {lower} {_literal(window.after)} AND {upto}"
 
 
 async def _driver_batches(
@@ -312,8 +316,9 @@ async def _source_batches(
         if window.after is None:
             where, params = f' WHERE "{column}" <= $1::text::{cursor_type}', [window.upto]
         else:
+            lower = ">=" if window.inclusive_lower else ">"
             where = (
-                f' WHERE "{column}" > $1::text::{cursor_type}'
+                f' WHERE "{column}" {lower} $1::text::{cursor_type}'
                 f' AND "{column}" <= $2::text::{cursor_type}'
             )
             params = [window.after, window.upto]
@@ -396,8 +401,23 @@ async def _materialize(
     rows: list[list[Any]],
     *,
     replace: bool,
+    merge_keys: list[str] | None = None,
 ) -> None:
     typed = [{"name": column["name"], "type": column["type"]} for column in columns]
+    if merge_keys and not replace:
+        await session.execute(
+            text(
+                "SELECT public.da_materialize_upsert(:table_name, CAST(:columns AS jsonb),"
+                " CAST(:rows AS jsonb), CAST(:keys AS text[]))"
+            ),
+            {
+                "table_name": table_name,
+                "columns": json.dumps(typed),
+                "rows": json.dumps(rows),
+                "keys": merge_keys,
+            },
+        )
+        return
     await session.execute(
         text(
             "SELECT public.da_materialize_upload(:table_name, CAST(:columns AS jsonb),"
@@ -410,6 +430,19 @@ async def _materialize(
             "replace": replace,
         },
     )
+
+
+def _cap_skip_today(upto: str, skip_today: bool) -> str:
+    """RES-17: when skip_today, do not read the current UTC calendar day for date/timestamp cursors."""
+    if not skip_today:
+        return upto
+    today = datetime.datetime.now(datetime.UTC).date().isoformat()
+    if not (upto.startswith(today) or (len(upto) >= 10 and upto[:10] >= today)):
+        return upto
+    yesterday = (
+        datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=1)
+    ).isoformat()
+    return yesterday if len(upto) <= 10 else yesterday + upto[10:]
 
 
 # What the person must fix (credentials, rights, a table or column that is not there) against what
@@ -482,6 +515,8 @@ async def handle(event: Event) -> None:
         if event.event_type == BACKFILL
         else uuid.uuid4()
     )
+    is_backfill = event.event_type == BACKFILL
+    rebuild_full = bool(event.payload.get("rebuild_full"))
     try:
         if event.event_type == CREATED:
             async with scoped_session(ROLE, event.org_id, principal_id) as session:
@@ -490,6 +525,7 @@ async def handle(event: Event) -> None:
             job = await session.scalar(
                 select(ingest.IngestionJob).where(ingest.IngestionJob.id == job_id)
             )
+            run_row = await session.scalar(select(ingest.JobRun).where(ingest.JobRun.id == run_id))
             source = (
                 await session.scalar(
                     select(catalog.Source).where(catalog.Source.id == job.source_id)
@@ -499,51 +535,104 @@ async def handle(event: Event) -> None:
             )
             if job is None or source is None:
                 raise ValueError("ingestion job or source not found")
-            if job.mode not in ("full", "incremental"):
-                raise ValueError("CDC ingestion is not wired yet")
+            if job.status == "paused" and not rebuild_full:
+                raise ValueError("ingestion job is paused")
+            if job.mode not in ("full", "incremental", "cdc"):
+                raise ValueError(f"ingestion mode {job.mode} is not wired")
+            # Poll-CDC (mode=cdc) shares the incremental cursor window; Temporal fires it densely.
+            cursor_mode = job.mode in ("incremental", "cdc") and not rebuild_full
+            mode_full = job.mode == "full" or rebuild_full
             dataset_id = job.target_dataset_id or uuid.uuid4()
             table_name = _table_name(job)
             window: Window | None = None
             cursor_type = "text"
-            if job.mode == "incremental":
+            advance_cursor = False
+            if is_backfill and run_row and (run_row.cursor_from or run_row.cursor_to):
                 if not job.cursor_column:
-                    raise ValueError("an incremental job needs cursor_column")
+                    raise ValueError("a dated backfill needs cursor_column on the job")
+                _, cursor_type = await _max_cursor(
+                    source, job.source_object, job.cursor_column, event.org_id
+                )
+                window = Window(
+                    job.cursor_column,
+                    run_row.cursor_from,
+                    run_row.cursor_to or run_row.cursor_from or "",
+                    inclusive_lower=True,
+                )
+                if not window.upto:
+                    raise ValueError("backfill needs cursor_to")
+            elif cursor_mode:
+                if not job.cursor_column:
+                    raise ValueError(f"a {job.mode} job needs cursor_column")
                 upto, cursor_type = await _max_cursor(
                     source, job.source_object, job.cursor_column, event.org_id
                 )
+                if upto is not None:
+                    upto = _cap_skip_today(upto, bool(getattr(job, "skip_today", False)))
                 if upto is not None and upto != job.cursor_value:
                     window = Window(job.cursor_column, job.cursor_value, upto)
-            # Full: the first batch replaces the table, the others append to it. Incremental: every
-            # batch appends (the table is made on the first run). All in this session's
-            # transaction, the cursor reached too: a run that fails half way leaves the previous
-            # copy and the previous cursor as they were (state never ahead of the data).
+                    advance_cursor = True
+            # Full: the first batch replaces the table, the others append to it. Incremental/CDC:
+            # every batch appends (or upserts when merge_key_columns is set).
             columns: Columns = []
             read = 0
-            nothing_new = job.mode == "incremental" and window is None
+            nothing_new = cursor_mode and window is None and not mode_full
             batches = (
                 _source_batches(source, job.source_object, event.org_id, window, cursor_type)
                 if not nothing_new
                 else _no_batches()
             )
             existing: dict[str, str] | None = None
+            merge_keys = list(job.merge_key_columns or []) or None
+            on_schema = getattr(job, "on_schema_change", "accept_new_columns") or "accept_new_columns"
             async for columns, batch in batches:
-                if existing is None and job.mode == "incremental":
+                if existing is None and cursor_mode:
                     existing = await _workspace_columns(session, table_name)
+                    # Retype always stops as schema_drift; additive columns follow on_schema_change.
                     check_drift(existing, columns)
+                    if on_schema == "pause_and_ask" and existing:
+                        gained = [c["name"] for c in columns if c["name"] not in existing]
+                        if gained:
+                            await session.execute(
+                                update(ingest.IngestionJob)
+                                .where(ingest.IngestionJob.id == job.id)
+                                .values(
+                                    status="paused",
+                                    paused_reason="schema change: new columns",
+                                )
+                            )
+                            raise ValueError("paused for schema change: " + ", ".join(gained))
                 read += len(batch)
                 if read > MAX_ROWS:
                     raise ValueError(
                         f"the source table has more than {MAX_ROWS} rows; ingest it incrementally"
                     )
-                if batch or job.mode == "full":
-                    await _materialize(
+                if batch or mode_full:
+                    good, dlq_n = await _filter_batch(
                         session,
-                        table_name,
+                        event.org_id,
+                        job,
+                        run_id,
                         columns,
                         batch,
-                        replace=job.mode == "full" and read == len(batch),
+                        getattr(job, "on_invalid_record", "quarantine_30d") or "quarantine_30d",
                     )
-            if window is not None:
+                    if dlq_n:
+                        await session.execute(
+                            update(ingest.JobRun)
+                            .where(ingest.JobRun.id == run_id)
+                            .values(rows_dlq=ingest.JobRun.rows_dlq + dlq_n)
+                        )
+                    if good or mode_full:
+                        await _materialize(
+                            session,
+                            table_name,
+                            columns,
+                            good,
+                            replace=mode_full and read == len(batch),
+                            merge_keys=None if mode_full else merge_keys,
+                        )
+            if advance_cursor and window is not None:
                 await session.execute(
                     update(ingest.IngestionJob)
                     .where(ingest.IngestionJob.id == job.id)
@@ -576,14 +665,16 @@ async def handle(event: Event) -> None:
             # An incremental run with nothing new before any table was made: nothing to catalogue.
             return
         async with scoped_session(CATALOG_ROLE, event.org_id, principal_id) as session:
-            if await session.get(catalog.Dataset, dataset_id) is None:
+            dataset = await session.get(catalog.Dataset, dataset_id)
+            if dataset is None:
                 session.add(
                     catalog.Dataset(
                         id=dataset_id,
                         org_id=event.org_id,
-                        source_id=None,
+                        # AUD-07: provenance — origin=source iff source_id is set (CHECK).
+                        source_id=job.source_id,
                         data_space_id=job.data_space_id,
-                        origin="derived",
+                        origin="source",
                         schema_name="workspace",
                         table_name=table_name,
                         display_name=job.name,
@@ -595,9 +686,34 @@ async def handle(event: Event) -> None:
                         updated_by=principal_id,
                     )
                 )
-            # The columns as materialized, so the semantic layer knows a text month from a date.
-            # A dataset catalogued before its columns were gets them on its next run, and one
-            # whose source gained a column gets that one after the others (RES-18).
+                version_no = 1
+                session.add(
+                    catalog.DatasetVersion(
+                        id=uuid.uuid4(),
+                        org_id=event.org_id,
+                        dataset_id=dataset_id,
+                        version=version_no,
+                        schema_hash=_schema_hash(columns),
+                        diff={"added": [c["name"] for c in columns]},
+                        change_kind="initial",
+                        valid_from=datetime.datetime.now(datetime.UTC),
+                        created_by=principal_id,
+                    )
+                )
+            else:
+                if dataset.source_id is None:
+                    dataset.source_id = job.source_id
+                    dataset.origin = "source"
+                dataset.row_estimate = read
+                dataset.updated_by = principal_id
+                version_no = (
+                    await session.scalar(
+                        select(func.max(catalog.DatasetVersion.version)).where(
+                            catalog.DatasetVersion.dataset_id == dataset_id
+                        )
+                    )
+                    or 1
+                )
             known = set(
                 (
                     await session.scalars(
@@ -609,13 +725,28 @@ async def handle(event: Event) -> None:
             )
             added = [column for column in columns if column["name"] not in known]
             if added:
+                if known:
+                    version_no = int(version_no) + 1
+                    session.add(
+                        catalog.DatasetVersion(
+                            id=uuid.uuid4(),
+                            org_id=event.org_id,
+                            dataset_id=dataset_id,
+                            version=version_no,
+                            schema_hash=_schema_hash(columns),
+                            diff={"added": [c["name"] for c in added]},
+                            change_kind="additive",
+                            valid_from=datetime.datetime.now(datetime.UTC),
+                            created_by=principal_id,
+                        )
+                    )
                 await session.flush()
                 session.add_all(
                     catalog.ColumnMeta(
                         id=uuid.uuid4(),
                         org_id=event.org_id,
                         dataset_id=dataset_id,
-                        dataset_version=1,
+                        dataset_version=version_no,
                         name=column["name"],
                         ordinal=len(known) + ordinal,
                         data_type=column["type"],
@@ -643,6 +774,191 @@ async def handle(event: Event) -> None:
             failure_kind(exc),
             drift=isinstance(exc, SchemaDrift),
         )
+        # RES-19: re-queue a transient failure when the job asks for retries.
+        if failure_kind(exc) == "transient" and not isinstance(exc, SchemaDrift):
+            await _maybe_retry(event, job_id, principal_id)
 
 
-HANDLERS: dict[str, Handler] = {CREATED: handle, BACKFILL: handle}
+async def _filter_batch(
+    session: Any,
+    org_id: uuid.UUID,
+    job: ingest.IngestionJob,
+    run_id: uuid.UUID,
+    columns: Columns,
+    batch: list[list[Any]],
+    policy: str,
+) -> tuple[list[list[Any]], int]:
+    """Drop or quarantine rows that do not fit column types; stop the run when policy is stop."""
+    from services.worker_ingest import dlq as dlq_store
+
+    good: list[list[Any]] = []
+    quarantined = 0
+    for row in batch:
+        bad = None
+        for column, value in zip(columns, row, strict=True):
+            if not _fits(column["type"], value):
+                bad = f"column {column['label']} value does not fit {column['type']}"
+                break
+        if bad is None:
+            good.append(row)
+            continue
+        if policy == "stop":
+            raise ValueError(bad)
+        if policy == "skip_and_log":
+            continue
+        # quarantine_30d (default)
+        payload = {c["name"]: v for c, v in zip(columns, row, strict=True)}
+        ref = await dlq_store.store_payload(org_id, job.id, payload)
+        session.add(
+            ingest.DlqRecord(
+                id=uuid.uuid4(),
+                org_id=org_id,
+                job_id=job.id,
+                job_run_id=run_id,
+                payload_ref=ref,
+                error_kind="type_error",
+                error=bad,
+            )
+        )
+        quarantined += 1
+    return good, quarantined
+
+
+def _schema_hash(columns: Columns) -> str:
+    payload = json.dumps(
+        [(c["name"], c["type"]) for c in sorted(columns, key=lambda c: c["name"])],
+        separators=(",", ":"),
+    )
+    return str(abs(hash(payload)))
+
+
+async def _maybe_retry(event: Event, job_id: uuid.UUID, principal_id: Any) -> None:
+    async with scoped_session(ROLE, event.org_id, principal_id) as session:
+        job = await session.scalar(
+            select(ingest.IngestionJob).where(ingest.IngestionJob.id == job_id)
+        )
+        if job is None:
+            return
+        policy = getattr(job, "retry_policy", "backoff_3") or "backoff_3"
+        if policy == "none":
+            return
+        failures = int(job.consecutive_failures or 0)
+        if policy == "once" and failures > 1:
+            return
+        if policy == "backoff_3" and failures > 3:
+            await session.execute(
+                update(ingest.IngestionJob)
+                .where(ingest.IngestionJob.id == job.id)
+                .values(status="failing")
+            )
+            return
+        run = ingest.JobRun(id=uuid.uuid4(), org_id=event.org_id, job_id=job.id)
+        session.add(run)
+        await session.flush()
+        session.add(
+            ingest.Outbox(
+                id=uuid.uuid4(),
+                org_id=event.org_id,
+                aggregate_type="job_run",
+                aggregate_id=run.id,
+                event_type=BACKFILL,
+                payload={
+                    "job_id": str(job.id),
+                    "job_run_id": str(run.id),
+                    "principal_id": str(principal_id),
+                    "retry_of": str(event.event_id),
+                },
+            )
+        )
+
+
+async def handle_sample(event: Event) -> None:
+    principal_id = event.payload.get("principal_id")
+    sample_id = uuid.UUID(str(event.payload.get("sample_id", event.aggregate_id)))
+    if principal_id is None:
+        raise ValueError("sample event has no principal_id")
+    async with scoped_session(ROLE, event.org_id, principal_id) as session:
+        sample = await session.scalar(
+            select(ingest.JobSample).where(ingest.JobSample.id == sample_id)
+        )
+        source = (
+            await session.scalar(
+                select(catalog.Source).where(catalog.Source.id == sample.source_id)
+            )
+            if sample
+            else None
+        )
+        if sample is None or source is None:
+            return
+        try:
+            rows_out: list[dict[str, Any]] = []
+            errors: list[dict[str, Any]] = []
+            read = 0
+            async for columns, batch in _source_batches(
+                source, sample.source_object, event.org_id, None, "text"
+            ):
+                names = [c["name"] for c in columns]
+                for row in batch:
+                    read += 1
+                    if read > SAMPLE_ROWS:
+                        break
+                    rows_out.append(dict(zip(names, row, strict=True)))
+                if read >= SAMPLE_ROWS:
+                    break
+            sample.sample = rows_out
+            sample.errors = errors
+            sample.status = "succeeded"
+            sample.note = f"Sampled {len(rows_out)} rows from the source (cap {SAMPLE_ROWS})."
+            sample.finished_at = datetime.datetime.now(datetime.UTC)
+        except Exception as exc:  # noqa: BLE001 — surface any sample failure to the poller
+            sample.status = "failed"
+            sample.error = str(exc) or type(exc).__name__
+            sample.finished_at = datetime.datetime.now(datetime.UTC)
+
+
+async def handle_replay(event: Event) -> None:
+    principal_id = event.payload.get("principal_id")
+    record_id = uuid.UUID(str(event.payload.get("dlq_record_id", event.aggregate_id)))
+    if principal_id is None:
+        raise ValueError("replay event has no principal_id")
+    async with scoped_session(ROLE, event.org_id, principal_id) as session:
+        record = await session.scalar(
+            select(ingest.DlqRecord).where(ingest.DlqRecord.id == record_id)
+        )
+        job = (
+            await session.scalar(
+                select(ingest.IngestionJob).where(ingest.IngestionJob.id == record.job_id)
+            )
+            if record
+            else None
+        )
+        if record is None or job is None or record.status != "pending":
+            return
+        try:
+            # Payload is a JSON object list of values aligned to the workspace table columns.
+            from services.worker_ingest.dlq import load_payload
+
+            columns, row = await load_payload(record.payload_ref)
+            await _materialize(
+                session,
+                _table_name(job),
+                columns,
+                [row],
+                replace=False,
+                merge_keys=list(job.merge_key_columns or []) or None,
+            )
+            record.status = "replayed"
+            record.replay_count = int(record.replay_count or 0) + 1
+        except Exception as exc:  # noqa: BLE001
+            record.replay_count = int(record.replay_count or 0) + 1
+            record.error = (record.error or "") + f"; replay failed: {exc}"
+            if record.replay_count >= 3:
+                record.status = "locked"
+
+
+HANDLERS: dict[str, Handler] = {
+    CREATED: handle,
+    BACKFILL: handle,
+    SAMPLE: handle_sample,
+    REPLAY: handle_replay,
+}

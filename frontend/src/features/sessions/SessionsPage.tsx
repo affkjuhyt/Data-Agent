@@ -1,11 +1,15 @@
+import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Badge } from '../../design-system/Badge';
+import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { StatusDot } from '../../design-system/StatusDot';
+import { useToast } from '../../design-system/Toast';
 import { formatElapsed } from '../../lib/formatVN';
 import { listWorkspaces } from '../../lib/v1/api';
+import { createBlankWorkspace } from '../../lib/v1/sessions';
 import type { Workspace } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 import { NotebookPage } from './NotebookPage';
@@ -16,6 +20,8 @@ import { LinkButton } from '../../components/shell/AppLink';
  * "v3.1 · Phân tích" (2155:16027) lists the recent ones; /analysis/sessions/<workspace id> opens
  * one as a notebook ("P02 · Phiên · Notebook", 2297:18612). Its report under review is its own
  * page, /analysis/report/<report id> (ReportReviewPage), so Cần bạn can link to it.
+ *
+ * "Hỏi mới" opens Ask (conversation). "Notebook mới" POSTs a blank workspace — not the same thing.
  */
 const FROM_LABEL: Record<Workspace['created_from'], string> = {
   blank: 'Notebook',
@@ -31,7 +37,21 @@ export default function SessionsPage() {
 
 function SessionList() {
   const { navigate } = useAppState();
+  const toast = useToast();
   const workspaces = useV1(['listWorkspaces'], listWorkspaces);
+  const [creating, setCreating] = useState(false);
+
+  const newNotebook = async () => {
+    setCreating(true);
+    try {
+      const ws = await createBlankWorkspace('Notebook mới');
+      navigate('analysis', 'SESSIONS', ws.id);
+    } catch (e) {
+      toast({ tone: 'error', message: (e as Error).message });
+    } finally {
+      setCreating(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-da-xl px-da-3xl py-da-xl">
@@ -39,9 +59,14 @@ function SessionList() {
         title="Phiên làm việc"
         description="Notebook của bạn và đồng nghiệp, cùng các agent đang làm trong đó."
         actions={
-          <LinkButton area="analysis" page="ASK" kind="primary">
-            Phiên mới
-          </LinkButton>
+          <>
+            <LinkButton area="analysis" page="ASK">
+              Hỏi mới
+            </LinkButton>
+            <Button kind="primary" loading={creating} onClick={newNotebook}>
+              Notebook mới
+            </Button>
+          </>
         }
       />
       <AsyncRegion
@@ -51,11 +76,16 @@ function SessionList() {
         empty={
           <EmptyState
             title="Chưa có phiên nào"
-            description="Một phiên bắt đầu từ câu hỏi, từ mẫu hoặc từ lượt chạy của agent."
+            description="Mở notebook trống, hoặc hỏi một câu rồi lưu câu trả lời vào phiên."
             action={
-              <LinkButton area="analysis" page="ASK" kind="primary">
-                Phiên mới
-              </LinkButton>
+              <div className="flex gap-da-sm">
+                <Button kind="primary" loading={creating} onClick={newNotebook}>
+                  Notebook mới
+                </Button>
+                <LinkButton area="analysis" page="ASK">
+                  Hỏi mới
+                </LinkButton>
+              </div>
             }
           />
         }
@@ -98,10 +128,11 @@ function SessionList() {
 }
 
 function SessionState({ ws }: { ws: Workspace }) {
-  if (ws.agent_state === 'waiting_you') return <StatusDot tone="warning">Agent chờ bạn</StatusDot>;
-  if (ws.agent_state === 'running') return <StatusDot tone="info">Agent đang chạy</StatusDot>;
-  const ago = ws.last_refreshed_at
-    ? (Date.now() - new Date(ws.last_refreshed_at).getTime()) / 1000
-    : null;
-  return ago !== null ? <Badge>Cập nhật {formatElapsed(ago)} trước</Badge> : null;
+  if (ws.agent_state === 'waiting_you') return <Badge tone="warning">Chờ bạn</Badge>;
+  if (ws.agent_state === 'running') return <StatusDot tone="info" label="Agent đang chạy" />;
+  return (
+    <span className="shrink-0 text-muted-foreground da-caption">
+      {formatElapsed(ws.updated_at)}
+    </span>
+  );
 }

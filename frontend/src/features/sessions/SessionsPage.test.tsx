@@ -42,6 +42,23 @@ describe('SessionsPage', () => {
     expect(await screen.findByRole('heading', { name: 'Chưa có phiên nào' })).toBeInTheDocument();
   });
 
+  it('creates a blank notebook instead of opening Ask', async () => {
+    renderWithToast(<SessionsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Notebook mới' }));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith('analysis', 'SESSIONS', expect.stringMatching(/^ws-new-/)),
+    );
+  });
+
+  it('opens the Ask conversation when the notebook came from one', async () => {
+    routeId = 'ws-reconcile-sept';
+    renderWithToast(<SessionsPage />);
+    expect(await screen.findByRole('link', { name: 'Dạng hội thoại' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/analysis/ask/conv-reconcile-sept'),
+    );
+  });
+
   it('shows the notebook, re-runs the stale tiles and accepts the agent proposal', async () => {
     routeId = 'ws-npl-sept';
     renderWithToast(<SessionsPage />);

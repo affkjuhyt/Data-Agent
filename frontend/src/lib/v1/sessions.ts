@@ -1,6 +1,6 @@
 import { pathId, v1Send, V1Error, type Page, api, ok } from './client';
 import type { components } from './schema';
-import { readWorkspace, type Workspace } from './types';
+import { readWorkspace, type Workspace, type WorkspaceWire } from './types';
 
 /*
  * Phiên làm việc (P02, UC-02-01…07): one workspace as a notebook of tiles, its comments and
@@ -229,6 +229,16 @@ type SessionReportDocument = components['schemas']['ReportDocumentView'];
 export const getWorkspace = async (id: string) =>
   readWorkspaceDetail(
     await ok<WorkspaceDetailWire>(api.GET('/v1/workspaces/{id}', { params: { path: { id } } })),
+  );
+
+/** Empty notebook (UC-02-01): not a conversation — Ask stays the place to ask first. */
+export const createBlankWorkspace = async (title: string) =>
+  readWorkspace(
+    await ok<WorkspaceWire>(
+      api.POST('/v1/workspaces', {
+        body: { title, created_from: 'blank' },
+      }),
+    ),
   );
 
 /**

@@ -537,6 +537,7 @@ function jobsFixture(): IngestionJob[] {
       late: false,
       rows_today: 1_280_000,
       status: 'running',
+      job_status: 'active',
       status_reason: null,
     },
     {
@@ -549,6 +550,7 @@ function jobsFixture(): IngestionJob[] {
       late: false,
       rows_today: 412_000,
       status: 'on_time',
+      job_status: 'active',
       status_reason: null,
     },
     {
@@ -561,6 +563,7 @@ function jobsFixture(): IngestionJob[] {
       late: true,
       rows_today: 0,
       status: 'paused',
+      job_status: 'schema_drift',
       status_reason: 'cấu trúc đổi',
     },
     {
@@ -573,6 +576,7 @@ function jobsFixture(): IngestionJob[] {
       late: true,
       rows_today: 0,
       status: 'error',
+      job_status: 'failing',
       status_reason: 'đăng nhập',
     },
     {
@@ -585,6 +589,7 @@ function jobsFixture(): IngestionJob[] {
       late: false,
       rows_today: 9_400_000,
       status: 'running',
+      job_status: 'active',
       status_reason: null,
     },
     {
@@ -597,6 +602,7 @@ function jobsFixture(): IngestionJob[] {
       late: false,
       rows_today: 184,
       status: 'on_time',
+      job_status: 'active',
       status_reason: null,
     },
   ];
@@ -1836,6 +1842,7 @@ export function createSourcesHandlers() {
       const updated: IngestionJob = {
         ...job,
         status,
+        job_status: status === 'paused' ? 'paused' : 'active',
         status_reason: status === 'paused' ? 'bạn tạm dừng' : null,
       };
       jobs = jobs.map((j) => (j.id === id ? updated : j));
@@ -2017,14 +2024,13 @@ export function createSourcesHandlers() {
         schedule_cron?: string;
         source_object?: string;
       };
-      if (body.mode === 'incremental' && !body.cursor_column)
-        return problem(422, 'validation_failed', 'Nạp tăng dần cần một cột con trỏ.');
+      if ((body.mode === 'incremental' || body.mode === 'cdc') && !body.cursor_column)
+        return problem(422, 'validation_failed', 'Nạp tăng dần/CDC cần một cột con trỏ.');
       if (new URL(request.url).searchParams.get('dry_run') === 'true')
-        return HttpResponse.json({
-          sample: Array.from({ length: 1000 }, () => ({})),
-          errors: [{}, {}, {}],
-          note: 'đạt',
-        });
+        return HttpResponse.json(
+          { id: 'sample-1', status: 'running', poll_after_ms: 10 },
+          { status: 202 },
+        );
       return HttpResponse.json(
         {
           id: `job-new-${jobs.length + 1}`,
@@ -2035,6 +2041,17 @@ export function createSourcesHandlers() {
         { status: 201 },
       );
     }),
+    http.get('*/v1/job-samples/:id', () =>
+      HttpResponse.json({
+        id: 'sample-1',
+        status: 'succeeded',
+        dry_run: true,
+        sample: Array.from({ length: 1000 }, () => ({})),
+        errors: [{}, {}, {}],
+        note: 'đạt',
+        poll_after_ms: 0,
+      }),
+    ),
     http.post('*/v1/ingestion-jobs\\:dry-run', async ({ request }) => {
       const body = (await request.json()) as NewJob;
       const candidate = candidates.find((c) => c.dataset_id === body.dataset_id);
@@ -2080,6 +2097,7 @@ export function createSourcesHandlers() {
         late: false,
         rows_today: 0,
         status: 'on_time',
+        job_status: 'active',
         status_reason: 'chờ lần chạy đầu',
       };
       jobs = [created, ...jobs];

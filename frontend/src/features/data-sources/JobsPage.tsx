@@ -14,7 +14,13 @@ import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
-import { controlJob, listJobs, type IngestionJob } from '../../lib/v1/sources';
+import {
+  backfillJob,
+  controlJob,
+  listJobs,
+  resolveJobDrift,
+  type IngestionJob,
+} from '../../lib/v1/sources';
 import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import {
   formatLag,
@@ -30,8 +36,8 @@ import { LinkButton } from '../../components/shell/AppLink';
 /*
  * "P04 · Job nạp · Giám sát" (2281:16917, UC-04-09): every ingestion job with a 24-hour strip
  * (one cell per hour: success, error, no run), lag, rows loaded today and status. "Tạo job" opens
- * Job nạp · Thiết lập; "Chạy bù" has no flow in Figma yet; a row's "…" runs today's data again,
- * pauses (with the reason BR-106 asks for) or resumes it.
+ * Job nạp · Thiết lập; "Chạy bù" asks for a date range without moving the job cursor;
+ * a row's "…" runs today's data again, pauses (BR-106) or resumes it.
  */
 const CELL: Record<IngestionJob['hours'][number], string> = {
   ok: 'bg-success opacity-55',
@@ -62,6 +68,14 @@ export default function JobsPage() {
   const [pausing, setPausing] = useState<IngestionJob | null>(null);
   const [reason, setReason] = useState('');
   const [pauseError, setPauseError] = useState<string>();
+  const [backfilling, setBackfilling] = useState<IngestionJob | null>(null);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const [fromDay, setFromDay] = useState(() => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - 7);
+    return iso(d);
+  });
+  const [toDay, setToDay] = useState(() => iso(new Date()));
 
   const control = useV1Mutation(
     ({ job, verb, why }: { job: IngestionJob; verb: 'run' | 'pause' | 'resume'; why?: string }) =>
@@ -78,6 +92,30 @@ export default function JobsPage() {
           tone: 'error',
           message: `Không thực hiện được với ${job.table_name}. ${e.message}`,
         }),
+    },
+  );
+  const backfill = useV1Mutation(
+    ({ job, from, to }: { job: IngestionJob; from: string; to: string }) =>
+      backfillJob(job.id, from, to),
+    {
+      invalidates: [['listJobs']],
+      onSuccess: (_, { job }) => {
+        toast({ tone: 'success', message: `Đã xếp chạy bù ${job.table_name}.` });
+        setBackfilling(null);
+      },
+      onError: (e, { job }) =>
+        toast({ tone: 'error', message: `Không chạy bù ${job.table_name}. ${e.message}` }),
+    },
+  );
+  const resolveDrift = useV1Mutation(
+    ({ job, action }: { job: IngestionJob; action: 'rebuild_full' | 'accept_additive' | 'pause' }) =>
+      resolveJobDrift(job.id, action),
+    {
+      invalidates: [['listJobs']],
+      onSuccess: (_, { job }) =>
+        toast({ tone: 'success', message: `Đã xử lý lệch cấu trúc ${job.table_name}.` }),
+      onError: (e, { job }) =>
+        toast({ tone: 'error', message: `Không xử lý lệch ${job.table_name}. ${e.message}` }),
     },
   );
   const act = (job: IngestionJob, verb: 'run' | 'resume') => control.run({ job, verb });
@@ -97,8 +135,13 @@ export default function JobsPage() {
         description={jobs.data ? jobsSummary(items) : undefined}
         actions={
           <>
-            <Tooltip content="Chạy bù theo khoảng thời gian đang được làm.">
-              <Button disabled>Chạy bù</Button>
+            <Tooltip content="Nạp lại một khoảng ngày; không đẩy con trỏ job.">
+              <Button
+                disabled={items.length === 0 || backfill.pending}
+                onClick={() => setBackfilling(items.find((j) => j.status !== 'paused') ?? items[0])}
+              >
+                Chạy bù
+              </Button>
             </Tooltip>
             <LinkButton area="data" page="JOB_NEW" kind="primary">
               Tạo job
@@ -257,7 +300,28 @@ export default function JobsPage() {
                               icon: 'play',
                               onSelect: () => act(job, 'run'),
                             },
-                            job.status === 'paused'
+                            {
+                              label: 'Chạy bù…',
+                              icon: 'refresh',
+                              onSelect: () => setBackfilling(job),
+                            },
+                            ...(job.job_status === 'schema_drift'
+                              ? [
+                                  {
+                                    label: 'Chấp nhận cột mới',
+                                    icon: 'check' as const,
+                                    onSelect: () =>
+                                      resolveDrift.run({ job, action: 'accept_additive' }),
+                                  },
+                                  {
+                                    label: 'Nạp lại toàn bảng',
+                                    icon: 'refresh' as const,
+                                    onSelect: () =>
+                                      resolveDrift.run({ job, action: 'rebuild_full' }),
+                                  },
+                                ]
+                              : []),
+                            job.job_status === 'paused'
                               ? {
                                   label: 'Tiếp tục',
                                   icon: 'play',
@@ -315,6 +379,38 @@ export default function JobsPage() {
                 value={reason}
                 placeholder="Ví dụ: nguồn đang bảo trì"
                 onChange={(e) => setReason(e.target.value)}
+              />
+            </Field>
+          </div>
+        </ConfirmDialog>
+        <ConfirmDialog
+          open={backfilling !== null}
+          size="md"
+          tone="primary"
+          title={`Chạy bù ${backfilling?.table_name ?? ''}?`}
+          confirmLabel="Chạy bù"
+          onConfirm={() => {
+            if (!backfilling) return;
+            backfill.run({ job: backfilling, from: fromDay, to: toDay });
+          }}
+          onCancel={() => setBackfilling(null)}
+        >
+          <div className="flex flex-col gap-da-md">
+            <p>Nạp lại khoảng ngày từ nguồn; con trỏ incremental/CDC của job không đổi.</p>
+            <Field label="Từ ngày">
+              <Input
+                type="date"
+                className="w-full"
+                value={fromDay}
+                onChange={(e) => setFromDay(e.target.value)}
+              />
+            </Field>
+            <Field label="Đến ngày">
+              <Input
+                type="date"
+                className="w-full"
+                value={toDay}
+                onChange={(e) => setToDay(e.target.value)}
               />
             </Field>
           </div>

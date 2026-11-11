@@ -74,6 +74,20 @@ describe('ForecastJobPage', () => {
 });
 
 describe('ForecastPage', () => {
+  it('lists models on the rail hub before opening a forecast', async () => {
+    show(<ForecastPage />);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dự báo' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Xem dự báo' }));
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: /Dự báo số dư huy động bán lẻ/,
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '← Tất cả mô hình' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dự báo' })).toBeInTheDocument();
+  });
+
   it('opens a forecast with its model version, cut-off and intervals', async () => {
     routeId = 'fc-deposit-2026-11';
     show(<ForecastPage />);

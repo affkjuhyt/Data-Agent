@@ -42,13 +42,14 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.kernel.problems import Problem, not_available
+from services.api.kernel.problems import Problem
 from services.api.modules.ingest.schemas import (
     Accepted,
     Acknowledge,
     Backfill,
     DatasetView,
     DlqRecordView,
+    DriftResolve,
     FileUploadView,
     IngestionJobDryRun,
     IngestionJobSummary,
@@ -66,6 +67,9 @@ from services.api.modules.ingest.schemas import (
     UploadPatch,
     UploadPreview,
 )
+
+# Table ingest: only these kinds have a worker_ingest path (Slice 6).
+INGESTABLE_KINDS = frozenset({"postgresql", "mysql", "sqlserver", "clickhouse"})
 from services.api.modules.ingest.storage import BUCKET, ObjectStore, object_store
 
 router = APIRouter()
@@ -192,16 +196,24 @@ def _job_view(row: ingest.IngestionJob) -> IngestionJobView:
     return IngestionJobView.model_validate(row, from_attributes=True)
 
 
-DRY_RUN_NOTE = (
-    "Configuration checked and nothing recorded. The 1,000-row trial on the source is run by "
-    "worker-ingest, which holds the source connection; the api cannot read the source, so no "
-    "sample or row errors are returned here."
-)
+def _apply_job_policies(row: ingest.IngestionJob, body: JobCreate | JobPatch) -> None:
+    if getattr(body, "retry_policy", None) is not None:
+        row.retry_policy = body.retry_policy  # type: ignore[assignment]
+    if getattr(body, "on_schema_change", None) is not None:
+        row.on_schema_change = body.on_schema_change  # type: ignore[assignment]
+    if getattr(body, "on_invalid_record", None) is not None:
+        row.on_invalid_record = body.on_invalid_record  # type: ignore[assignment]
+        if body.on_invalid_record == "quarantine_30d" and body.dlq_retention_days is None:
+            row.dlq_retention_days = 30
+    if getattr(body, "skip_today", None) is not None:
+        row.skip_today = bool(body.skip_today)
+    if getattr(body, "merge_key_columns", None) is not None:
+        row.merge_key_columns = list(body.merge_key_columns or []) or None
 
 
 @router.post(
     "/v1/sources/{id}/jobs",
-    response_model=IngestionJobView | IngestionJobDryRun,
+    response_model=IngestionJobView | Accepted,
     status_code=201,
     **endpoint("POST", "/v1/sources/{id}/jobs", operation_id="createIngestionJob"),
 )
@@ -212,9 +224,12 @@ async def create_job(
     data_space: CurrentDataSpace,
     response: Response,
     dry_run: Annotated[
-        bool, Query(description="Check the job as create would, record nothing (200)")
+        bool,
+        Query(
+            description="Sample up to 1,000 source rows via worker-ingest; returns 202 Accepted"
+        ),
     ] = False,
-) -> IngestionJobView | IngestionJobDryRun:
+) -> IngestionJobView | Accepted:
     async with transaction(ROLE, principal) as session:
         source = await session.scalar(
             select(catalog.Source).where(
@@ -232,10 +247,53 @@ async def create_job(
             raise Problem(
                 422, "business_rule_violated", "The source is queried in place, not ingested."
             )
+        if source.kind not in INGESTABLE_KINDS:
+            raise Problem(
+                422,
+                "business_rule_violated",
+                f"Source kind {source.kind} cannot be loaded as a table job.",
+            )
         if body.target_dataset_id is not None and not await _dataset(
             session, body.target_dataset_id, principal, data_space
         ):
             raise Problem(422, "validation_failed", "target_dataset_id is not a dataset here.")
+        # Poll-CDC is incremental on a dense Temporal schedule (not log CDC): default every minute.
+        schedule_cron = body.schedule_cron
+        if body.mode == "cdc" and not (schedule_cron or "").strip():
+            schedule_cron = "*/1 * * * *"
+        if dry_run:
+            # No job row: worker-ingest samples the source and fills ingest.job_sample.
+            sample_id = uuid7()
+            session.add(
+                ingest.JobSample(
+                    id=sample_id,
+                    org_id=principal.org_id,
+                    data_space_id=data_space,
+                    source_id=source.id,
+                    principal_id=principal.user_id,
+                    name=body.name,
+                    mode=body.mode,
+                    source_object=body.source_object,
+                    cursor_column=body.cursor_column,
+                    status="running",
+                )
+            )
+            session.add(
+                _event(
+                    principal,
+                    "job_sample",
+                    sample_id,
+                    "ingestion_job.sample_requested",
+                    sample_id=sample_id,
+                    source_id=source.id,
+                    principal_id=principal.user_id,
+                    mode=body.mode,
+                    source_object=body.source_object,
+                    cursor_column=body.cursor_column,
+                )
+            )
+            response.status_code = 202
+            return Accepted(id=sample_id, status="running", poll_after_ms=POLL_AFTER_MS)
         row = ingest.IngestionJob(
             id=uuid7(),
             org_id=principal.org_id,
@@ -246,7 +304,7 @@ async def create_job(
             source_object=body.source_object,
             target_dataset_id=body.target_dataset_id,
             cursor_column=body.cursor_column,
-            schedule_cron=body.schedule_cron,
+            schedule_cron=schedule_cron,
             # BR-56: the job inherits the source's freshness deadline unless it sets its own.
             freshness_sla=body.freshness_sla or source.freshness_sla,
             created_by=principal.user_id,
@@ -254,17 +312,7 @@ async def create_job(
         )
         if body.dlq_retention_days is not None:
             row.dlq_retention_days = body.dlq_retention_days
-        if dry_run:
-            # The same insert as a create, so the table's own checks and defaults apply too, in
-            # a savepoint that is rolled back: no row, no event (A3 ?dry_run).
-            savepoint = await session.begin_nested()
-            session.add(row)
-            await session.flush()
-            await session.refresh(row)
-            would_be = _job_view(row)
-            await savepoint.rollback()
-            response.status_code = 200
-            return IngestionJobDryRun(**would_be.model_dump(), note=DRY_RUN_NOTE)
+        _apply_job_policies(row, body)
         session.add(row)
         await session.flush()
         await session.refresh(row)
@@ -283,6 +331,34 @@ async def create_job(
             )
         )
         return _job_view(row)
+
+
+@router.get(
+    "/v1/job-samples/{id}",
+    response_model=IngestionJobDryRun,
+    **endpoint("GET", "/v1/job-samples/{id}", operation_id="getIngestionJobSample"),
+)
+async def get_job_sample(
+    sample_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> IngestionJobDryRun:
+    async with transaction(ROLE, principal) as session:
+        row = await session.scalar(
+            select(ingest.JobSample).where(
+                ingest.JobSample.id == sample_id,
+                ingest.JobSample.org_id == principal.org_id,
+                ingest.JobSample.data_space_id == data_space,
+            )
+        )
+        if row is None:
+            raise Problem(404, "not_found", "Job sample not found.")
+        return IngestionJobDryRun(
+            id=row.id,
+            status=row.status,
+            sample=list(row.sample or []),
+            errors=list(row.errors or []),
+            note=row.note or row.error,
+            poll_after_ms=POLL_AFTER_MS if row.status == "running" else 0,
+        )
 
 
 @router.post(
@@ -492,6 +568,68 @@ async def resume_job(
 
 
 @router.post(
+    "/v1/jobs/{id}:resolve-drift",
+    response_model=IngestionJobView,
+    **endpoint("POST", "/v1/jobs/{id}:resolve-drift", operation_id="resolveIngestionJobDrift"),
+)
+async def resolve_job_drift(
+    body: DriftResolve,
+    job_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> IngestionJobView:
+    """Clear schema_drift after the person accepts additive change, pauses, or asks a full rebuild."""
+    async with transaction(ROLE, principal) as session:
+        row = await _job(session, job_id, principal, data_space, lock=True)
+        if row.status != "schema_drift":
+            raise Problem(409, "invalid_state", f"The job is {row.status}.")
+        now = _now()
+        if body.action == "pause":
+            row.status = "paused"
+            row.paused_reason = "schema drift resolved: paused"
+            row.paused_at = now
+        else:
+            row.status = "active"
+            row.paused_reason = None
+            row.paused_at = None
+            row.consecutive_failures = 0
+        row.updated_by, row.updated_at = principal.user_id, now
+        session.add(
+            _event(
+                principal,
+                "ingestion_job",
+                row.id,
+                "ingestion_job.drift_resolved",
+                job_id=row.id,
+                source_id=row.source_id,
+                data_space_id=data_space,
+                action=body.action,
+                status=row.status,
+                principal_id=principal.user_id,
+            )
+        )
+        if body.action == "rebuild_full":
+            run = ingest.JobRun(id=uuid7(), org_id=principal.org_id, job_id=row.id)
+            session.add(run)
+            await session.flush()
+            session.add(
+                _event(
+                    principal,
+                    "job_run",
+                    run.id,
+                    "job_run.backfill_requested",
+                    job_id=row.id,
+                    job_run_id=run.id,
+                    principal_id=principal.user_id,
+                    rebuild_full=True,
+                )
+            )
+        await session.flush()
+        await session.refresh(row)
+        return _job_view(row)
+
+
+@router.post(
     "/v1/jobs/{id}:backfill",
     response_model=Accepted,
     status_code=202,
@@ -669,17 +807,26 @@ async def replay_dlq(
     record_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace
 ) -> Accepted:
     async with transaction(ROLE, principal) as session:
-        record, _ = await _dlq_record(session, record_id, principal, data_space)
+        record, job = await _dlq_record(session, record_id, principal, data_space)
         if record.status == "locked":
             # UC-04-07 E1: locked after three failed replays; A3 answers 409.
             raise Problem(409, "invalid_state", "The record is locked after three failed replays.")
         if record.status != "pending":
             raise Problem(409, "invalid_state", f"The record is already {record.status}.")
-    # No worker replays a single record with the job's current mapping: refused, nothing asked.
-    raise not_available(
-        "Chưa có bộ nạp lại từng bản ghi lỗi theo ánh xạ hiện tại của job, nên chưa nạp lại được "
-        "bản ghi này."
-    )
+        session.add(
+            _event(
+                principal,
+                "dlq_record",
+                record.id,
+                "dlq_record.replay_requested",
+                dlq_record_id=record.id,
+                job_id=job.id,
+                job_run_id=record.job_run_id,
+                principal_id=principal.user_id,
+                payload_ref=record.payload_ref,
+            )
+        )
+        return Accepted(id=record.id, status="pending", poll_after_ms=POLL_AFTER_MS)
 
 
 @router.post(

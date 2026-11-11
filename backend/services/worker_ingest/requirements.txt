@@ -9,3 +9,5 @@ cryptography==50.0.2
 hvac==2.4.0
 # A locale's number marks as CLDR writes them (libs/language.marks, via libs/tabular).
 babel==2.18.0
+# DLQ payloads in MinIO (same stack as worker-agent uploads).
+aioboto3==13.2.0

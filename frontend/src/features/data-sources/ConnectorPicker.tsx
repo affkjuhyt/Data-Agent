@@ -89,10 +89,14 @@ function ConnectorIcon({ code, size = 40 }: { code: string; size?: 32 | 40 }) {
   );
 }
 
+/** Connectors with no connect/upload screen for table or file ingest yet (Slice 6). */
+const TABLE_INGEST_UNSUPPORTED = new Set(['kafka_cdc', 'sftp', 'sharepoint', 'object_store']);
+
 /** Where a connector card leads, or null when it has no set-up screen yet. */
 function targetOf(connector: Connector): { page: string; id?: string } | null {
   // The live catalogue uses SourceCreate's canonical values (`file`, `rest_api`).
   // Keep the old aliases so cached fixtures or an older gateway remain navigable.
+  if (TABLE_INGEST_UNSUPPORTED.has(connector.code)) return null;
   if (connector.code === 'file' || connector.code === 'csv') return { page: 'UPLOAD' };
   if (connector.code === 'rest_api' || connector.code === 'rest') return { page: 'CONNECT_API' };
   if (connector.form) return { page: 'CONNECT', id: connector.code };
@@ -210,8 +214,15 @@ function ConnectorCard({
     'flex h-full w-full items-center gap-da-lg rounded-lg border border-border bg-card p-da-md text-left';
   if (!target)
     return (
-      <Tooltip content="Connector này chưa có màn thiết lập." className="flex h-full">
-        <div className={card}>{body}</div>
+      <Tooltip
+        content={
+          TABLE_INGEST_UNSUPPORTED.has(connector.code)
+            ? 'Chưa hỗ trợ nạp bảng từ connector này.'
+            : 'Connector này chưa có màn thiết lập.'
+        }
+        className="flex h-full"
+      >
+        <div className={cn(card, 'opacity-60')}>{body}</div>
       </Tooltip>
     );
   return (

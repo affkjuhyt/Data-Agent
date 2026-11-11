@@ -35,11 +35,10 @@ import { LinkButton } from '../../components/shell/AppLink';
  * working and the session parameters; a band when a source refreshed and tiles must re-run
  * (UC-02-02); the tiles, numbered, an agent's proposal drawn dashed until a person accepts it
  * (UC-02-06); on the right, on --background, the comments and tasks of the chosen tile (UC-02-05).
- * "Dạng hội thoại" (the same session as a conversation) is a later screen; UC-02-04 (turn into a
- * scheduled report) lives in P08.
+ * "Dạng hội thoại" opens Ask on the conversation that created the workspace when
+ * created_from=conversation; blank notebooks have no thread. UC-02-04 (turn into a scheduled
+ * report) lives in P08.
  */
-const PENDING = 'Màn này đang được làm.';
-
 const KIND_LABEL: Record<WorkspaceTile['kind'], string> = {
   text: 'Văn bản',
   sql: 'SQL',
@@ -142,11 +141,17 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
           .join(' · ')}
         actions={
           <>
-            <Tooltip content={PENDING}>
-              <Button kind="ghost" disabled>
+            {ws.created_from === 'conversation' && ws.created_from_ref ? (
+              <LinkButton area="analysis" page="ASK" id={ws.created_from_ref} kind="ghost">
                 Dạng hội thoại
-              </Button>
-            </Tooltip>
+              </LinkButton>
+            ) : (
+              <Tooltip content="Notebook này không gắn hội thoại Ask.">
+                <Button kind="ghost" disabled>
+                  Dạng hội thoại
+                </Button>
+              </Tooltip>
+            )}
             {/* "v3.1 · Chi tiết · Biến phiên thành agent" (2070:3837): a session that repeats becomes an agent. */}
             <Button kind="ghost" icon="agent" onClick={() => setToAgent(true)}>
               Biến thành agent

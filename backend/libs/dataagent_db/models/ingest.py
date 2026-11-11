@@ -22,7 +22,7 @@ from sqlalchemy import (
 from sqlalchemy import (
     text as sql_text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..base import Base, uuid7
@@ -30,6 +30,7 @@ from ..base import Base, uuid7
 __all__ = [
     "IngestionJob",
     "JobRun",
+    "JobSample",
     "DlqRecord",
     "FileUpload",
     "QualityRule",
@@ -69,6 +70,25 @@ class IngestionJob(Base):
     dlq_retention_days: Mapped[int] = mapped_column(
         Integer, server_default=sql_text("30"), comment="BR-57"
     )
+    retry_policy: Mapped[str] = mapped_column(
+        Text, server_default=sql_text("'backoff_3'"), comment="backoff_3, once, none (RES-19)"
+    )
+    on_schema_change: Mapped[str] = mapped_column(
+        Text,
+        server_default=sql_text("'accept_new_columns'"),
+        comment="accept_new_columns, pause_and_ask, continue_and_notify",
+    )
+    on_invalid_record: Mapped[str] = mapped_column(
+        Text,
+        server_default=sql_text("'quarantine_30d'"),
+        comment="quarantine_30d, skip_and_log, stop",
+    )
+    skip_today: Mapped[bool] = mapped_column(
+        Boolean, server_default=sql_text("false"), comment="RES-17: exclude current UTC day"
+    )
+    merge_key_columns: Mapped[list[str] | None] = mapped_column(
+        ARRAY(Text), nullable=True, comment="RES-17 upsert keys for incremental/CDC"
+    )
     status: Mapped[str] = mapped_column(
         Text,
         server_default=sql_text("'active'"),
@@ -92,6 +112,34 @@ class IngestionJob(Base):
         DateTime(timezone=True), server_default=sql_text("now()")
     )
     updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
+class JobSample(Base):
+    """Dry-run sample of a prospective job: worker-ingest fills sample/errors; no job row."""
+
+    __tablename__ = "job_sample"
+    __table_args__ = ({"schema": "ingest"},)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    principal_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    name: Mapped[str] = mapped_column(Text)
+    mode: Mapped[str] = mapped_column(Text)
+    source_object: Mapped[str] = mapped_column(Text)
+    cursor_column: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(Text, server_default=sql_text("'running'"))
+    sample: Mapped[Any] = mapped_column(JSONB, server_default=sql_text("'[]'"))
+    errors: Mapped[Any] = mapped_column(JSONB, server_default=sql_text("'[]'"))
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=sql_text("now()")
+    )
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class JobRun(Base):

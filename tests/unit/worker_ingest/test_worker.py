@@ -26,7 +26,23 @@ def test_materialized_table_name_is_stable_and_scoped_to_job() -> None:
 
 
 def test_worker_consumes_only_events_it_can_materialize() -> None:
-    assert set(HANDLERS) == {"ingestion_job.created", "job_run.backfill_requested"}
+    assert set(HANDLERS) == {
+        "ingestion_job.created",
+        "job_run.backfill_requested",
+        "ingestion_job.sample_requested",
+        "dlq_record.replay_requested",
+    }
+
+
+def test_poll_cdc_is_accepted_beside_full_and_incremental() -> None:
+    """Regression: mode=cdc must not raise the old 'CDC ingestion is not wired yet'."""
+    from pathlib import Path
+
+    from services.worker_ingest import worker
+
+    text = Path(worker.__file__).read_text(encoding="utf-8")
+    assert 'job.mode not in ("full", "incremental", "cdc")' in text
+    assert "CDC ingestion is not wired yet" not in text
 
 
 def test_a_cursor_literal_is_a_number_or_a_moment_and_nothing_else() -> None:

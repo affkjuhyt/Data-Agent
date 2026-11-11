@@ -631,6 +631,7 @@ export function workspacesFixture(): WorkspaceWire[] {
       status: 'active',
       updated_at: minutesFromNow(-5),
       ...workspaceColumns,
+      created_from_ref: 'conv-reconcile-sept',
       participants: { people: 1, agents: 1 },
       agent_state: 'running',
     },

@@ -555,7 +555,12 @@ cursor <= that maximum`, so rows written meanwhile wait for the next run; every 
 `ingestion_job.cursor_value` (with `job_run.cursor_from/to`) is written in the same transaction as
 the rows, never ahead of them. The cursor must only grow: rows updated in place under a "last
 modified" cursor are appended again (there is no merge on a key yet), and rows deleted at the source
-stay. CDC is not wired.
+stay. Poll-CDC (`mode = cdc`) is the same cursor window on a dense schedule (default `*/1 * * * *`
+UTC when create omits `schedule_cron`); it is not log-based CDC and still needs `cursor_column`.
+`POST …/jobs?dry_run=true` returns 202 and `ingest.job_sample` (poll `GET /v1/job-samples/{id}`)
+instead of inventing an empty sample in the api. A dated backfill sets `job_run.cursor_from/to`
+and does not advance `ingestion_job.cursor_value`. DLQ rows are written on type-fit failures when
+`on_invalid_record = quarantine_30d`; `POST /v1/dlq/{id}:replay` emits `dlq_record.replay_requested`.
 
 Before reading, the cursor is checked (RES-18): on PostgreSQL it must be a column of the table and
 a number, a date or a timestamp; on the other drivers its maximum must be a number or an ISO moment.

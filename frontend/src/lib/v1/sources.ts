@@ -1,5 +1,5 @@
 import { listDataSpaces } from './api';
-import { pathId, V1Error, v1Send, v1Upload, type Page, api, ok, okAs } from './client';
+import { pathId, V1Error, v1Get, v1Send, v1Upload, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import { awaitQueryRun, getQueryRows } from './explore';
 import { readDataset, readSource, type DatasetWire, type Source, type SourceWire } from './types';
@@ -566,6 +566,8 @@ export interface IngestionJob {
   late: boolean;
   rows_today: number;
   status: JobStatus;
+  /** ingest.ingestion_job.status as stored (active, paused, schema_drift, …). */
+  job_status?: string;
   /** "cấu trúc đổi", "đăng nhập" — the short reason after the status. */
   status_reason: string | null;
 }
@@ -645,6 +647,7 @@ function readJob(row: IngestionJobWire): IngestionJob {
     // The last run's rows, and only when that run started today.
     rows_today: isToday(run?.started_at) ? (run?.rows_written ?? 0) : 0,
     status,
+    job_status: row.status,
     status_reason:
       row.paused_reason ?? (row.status === 'schema_drift' ? 'cấu trúc nguồn thay đổi' : null),
   };
@@ -1452,13 +1455,12 @@ export interface DryRunResult {
 }
 
 /**
- * A3 exposes dry-run as the real source-job create with `?dry_run=true`. Candidates without a
- * source id cannot be submitted because the source account and policy are part of the contract.
+ * Dry-run asks worker-ingest for up to 1,000 source rows (202 + poll GET /v1/job-samples/{id}).
  */
 export const dryRunJob = async (body: NewJob, candidate: JobCandidate): Promise<DryRunResult> => {
   if (!candidate.source_id)
     throw new V1Error(422, 'source_required', 'Cần chọn bảng thuộc một nguồn dữ liệu.');
-  const raw = await okAs<components['schemas']['IngestionJobDryRun']>(
+  const accepted = await okAs<{ id: string; status: string; poll_after_ms?: number }>(
     api.POST('/v1/sources/{id}/jobs', {
       params: { path: { id: candidate.source_id }, query: { dry_run: true } },
       body: {
@@ -1466,19 +1468,38 @@ export const dryRunJob = async (body: NewJob, candidate: JobCandidate): Promise<
         mode: JOB_MODE[body.method] ?? 'full',
         source_object: candidate.source_object,
         target_dataset_id: body.dataset_id,
-        cursor_column: body.method === 'incremental' ? body.cursor_column : null,
-        schedule_cron: SCHEDULE_CRON[body.schedule],
+        cursor_column:
+          body.method === 'incremental' || body.method === 'cdc' ? body.cursor_column : null,
+        schedule_cron: body.method === 'cdc' ? '*/1 * * * *' : SCHEDULE_CRON[body.schedule],
         freshness_sla: `PT${body.freshness_sla_hours}H`,
+        retry_policy: body.retry,
+        on_schema_change: body.on_schema_change,
+        on_invalid_record: body.on_invalid_record,
         ...(body.on_invalid_record === 'quarantine_30d' ? { dlq_retention_days: 30 } : {}),
       },
     }),
   );
+  let raw: {
+    status: string;
+    sample?: Record<string, unknown>[];
+    errors?: unknown[];
+    note?: string | null;
+  } = { status: accepted.status };
+  for (let attempt = 0; attempt < 30; attempt++) {
+    await sleep(accepted.poll_after_ms ?? 2000);
+    raw = await v1Get(`/job-samples/${pathId(accepted.id)}`);
+    if (raw.status !== 'running') break;
+  }
+  if (raw.status === 'running')
+    throw new V1Error(504, 'timeout', 'Chạy thử chưa có kết quả, hãy thử lại sau.');
+  if (raw.status === 'failed')
+    throw new V1Error(422, 'sample_failed', raw.note ?? 'Không đọc được mẫu từ nguồn.');
   return {
     rows_read: (raw.sample ?? []).length,
     checks: [
       {
-        title: body.method === 'incremental' ? 'Đọc được theo con trỏ' : 'Đọc được từ nguồn',
-        result: raw.note,
+        title: body.method === 'incremental' || body.method === 'cdc' ? 'Đọc được theo con trỏ' : 'Đọc được từ nguồn',
+        result: raw.note ?? `${(raw.sample ?? []).length} dòng mẫu`,
         ok: true,
       },
       ...(raw.errors?.length
@@ -1499,35 +1520,57 @@ const SCHEDULE_CRON: Record<NewJob['schedule'], string> = {
   hourly: '0 * * * *',
   daily_night: '0 1 * * *',
 };
+/** Poll-CDC: dense Temporal tick (UTC), same cursor window as incremental — not log CDC. */
+const CDC_SCHEDULE_CRON = '*/1 * * * *';
 const JOB_MODE: Partial<Record<JobMethod, 'full' | 'incremental' | 'cdc'>> = {
   incremental: 'incremental',
   cdc: 'cdc',
 };
 
+const cursorModes = (method: JobMethod) => method === 'incremental' || method === 'cdc';
+
 /**
- * A candidate read from A2 gets its job with POST /v1/sources/{id}/jobs (JobCreate): the schedule
- * as cron, the freshness SLA as a duration, the error queue's retention. Retry, schema changes and
- * the other invalid-record choices are compatibility-only (JobCreate has no field for them).
- * Jobs run with the source's read-only account.
+ * A candidate gets its job with POST /v1/sources/{id}/jobs (JobCreate), including run policies.
  */
 export const createJob = (body: NewJob, candidate: JobCandidate) => {
   if (!candidate.source_id)
     throw new V1Error(422, 'source_required', 'Cần chọn bảng thuộc một nguồn dữ liệu.');
+  const mode = JOB_MODE[body.method] ?? 'full';
   return okAs<components['schemas']['IngestionJobSummary']>(
     api.POST('/v1/sources/{id}/jobs', {
       params: { path: { id: candidate.source_id } },
       body: {
         name: candidate.table_name,
-        mode: JOB_MODE[body.method] ?? 'full',
+        mode,
         source_object: candidate.source_object,
-        cursor_column: body.method === 'incremental' ? body.cursor_column : null,
-        schedule_cron: SCHEDULE_CRON[body.schedule],
+        cursor_column: cursorModes(body.method) ? body.cursor_column : null,
+        schedule_cron: mode === 'cdc' ? CDC_SCHEDULE_CRON : SCHEDULE_CRON[body.schedule],
         freshness_sla: `PT${body.freshness_sla_hours}H`,
+        retry_policy: body.retry,
+        on_schema_change: body.on_schema_change,
+        on_invalid_record: body.on_invalid_record,
         ...(body.on_invalid_record === 'quarantine_30d' ? { dlq_retention_days: 30 } : {}),
       },
     }),
   );
 };
+
+/** Backfill a closed date range; the job cursor is not advanced. */
+export const backfillJob = (id: string, from: string, to: string) =>
+  ok(
+    api.POST('/v1/jobs/{id}:backfill', {
+      params: { path: { id } },
+      body: { from, to },
+    }),
+  );
+
+export const resolveJobDrift = (
+  id: string,
+  action: 'rebuild_full' | 'accept_additive' | 'pause',
+) =>
+  okAs<components['schemas']['IngestionJobSummary']>(
+    v1Send('POST', `/jobs/${pathId(id)}:resolve-drift`, { action }),
+  );
 
 /* ─── Bản ghi lỗi (UC-04-07) ──────────────────────────────────────────── */
 

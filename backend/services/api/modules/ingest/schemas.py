@@ -71,6 +71,11 @@ class IngestionJobView(BaseModel):
     schedule_cron: str | None
     freshness_sla: datetime.timedelta | None
     dlq_retention_days: int
+    retry_policy: str = "backoff_3"
+    on_schema_change: str = "accept_new_columns"
+    on_invalid_record: str = "quarantine_30d"
+    skip_today: bool = False
+    merge_key_columns: list[str] | None = None
     status: str
     paused_reason: str | None
     paused_at: datetime.datetime | None
@@ -79,16 +84,16 @@ class IngestionJobView(BaseModel):
     updated_at: datetime.datetime
 
 
-class IngestionJobDryRun(IngestionJobView):
-    """POST /v1/sources/{id}/jobs?dry_run=true: the job as it would be created, not recorded.
+class IngestionJobDryRun(BaseModel):
+    """GET /v1/job-samples/{id}: worker-filled sample after dry_run Accepted."""
 
-    A3 also asks for a sample of 1,000 rows and its errors. Reading the source is worker-ingest's:
-    the api holds no connection to it, so sample and errors stay empty and `note` says so."""
-
+    id: uuid.UUID
+    status: str
     dry_run: Literal[True] = True
     sample: list[dict[str, Any]] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
-    note: str
+    note: str | None = None
+    poll_after_ms: int = 1_000
 
 
 class IngestionJobSummary(IngestionJobView):
@@ -97,6 +102,11 @@ class IngestionJobSummary(IngestionJobView):
     last_run: JobRunView | None = None
     lag_seconds: int | None = None
     dlq_pending: int = 0
+
+
+RetryPolicy = Literal["backoff_3", "once", "none"]
+OnSchemaChange = Literal["accept_new_columns", "pause_and_ask", "continue_and_notify"]
+OnInvalidRecord = Literal["quarantine_30d", "skip_and_log", "stop"]
 
 
 class JobCreate(BaseModel):
@@ -108,14 +118,21 @@ class JobCreate(BaseModel):
     schedule_cron: str | None = Field(default=None, max_length=100)
     freshness_sla: datetime.timedelta | None = None
     dlq_retention_days: int | None = Field(default=None, ge=1, le=365)
+    retry_policy: RetryPolicy | None = None
+    on_schema_change: OnSchemaChange | None = None
+    on_invalid_record: OnInvalidRecord | None = None
+    skip_today: bool | None = None
+    merge_key_columns: list[str] | None = None
 
     _name = field_validator("name", "source_object")(_required_text)
 
     @model_validator(mode="after")
-    def _incremental_needs_a_cursor(self) -> JobCreate:
+    def _cursor_modes_need_a_cursor(self) -> JobCreate:
         # A3: 422 validation_failed when an incremental job has no cursor column.
-        if self.mode == "incremental" and not (self.cursor_column or "").strip():
-            raise ValueError("an incremental job needs cursor_column")
+        # Poll-CDC (mode=cdc) is the same cursor window as incremental, on a dense schedule —
+        # not log-based CDC — so it needs cursor_column too.
+        if self.mode in ("incremental", "cdc") and not (self.cursor_column or "").strip():
+            raise ValueError(f"a {self.mode} job needs cursor_column")
         return self
 
 
@@ -124,6 +141,15 @@ class JobPatch(BaseModel):
     schedule_cron: str | None = Field(default=None, max_length=100)
     freshness_sla: datetime.timedelta | None = None
     dlq_retention_days: int | None = Field(default=None, ge=1, le=365)
+    retry_policy: RetryPolicy | None = None
+    on_schema_change: OnSchemaChange | None = None
+    on_invalid_record: OnInvalidRecord | None = None
+    skip_today: bool | None = None
+    merge_key_columns: list[str] | None = None
+
+
+class DriftResolve(BaseModel):
+    action: Literal["rebuild_full", "accept_additive", "pause"]
 
 
 class Reason(BaseModel):

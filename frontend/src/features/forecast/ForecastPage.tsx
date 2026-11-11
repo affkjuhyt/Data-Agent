@@ -23,6 +23,7 @@ import {
   reloadScenario,
   runScenario,
   type Forecast,
+  type ForecastModel,
   type ForecastPoint,
   type ForecastScenario,
 } from '../../lib/v1/forecast';
@@ -31,6 +32,7 @@ import { cutoffShort, ForecastChart, ForecastLegend } from './ForecastChart';
 import { NoForecastModel } from './NoForecastModel';
 import { DataTable, downloadCsv, type Column } from './parts';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { LinkButton } from '../../components/shell/AppLink';
 import { parseNumber } from '../../lib/formatVN';
 
 /*
@@ -74,32 +76,91 @@ function csvOf(f: Forecast): string {
 
 export default function ForecastPage() {
   const { routeId } = useAppState();
-  // From the rail without an id: the first model's predictions. A job opens its own forecast.
+  // Rail with no id: hub of models (consumer + steward entry). A forecast id opens the result.
   const models = useV1(['listForecastModels', routeId], routeId ? null : listForecastModels);
-  const modelId = routeId ? null : models.data?.items[0]?.id;
+  const [modelId, setModelId] = useState<string | null>(null);
   const forecast = useV1(
     ['forecast-screen', routeId, modelId],
     routeId ? () => getForecast(routeId) : modelId ? () => getModelForecast(modelId) : null,
   );
-  // A forecast in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(forecast.error) ?? (routeId ? null : forbiddenOf(models.error));
   if (forbidden) return <AccessDenied access={forbidden} />;
-  if (!routeId && models.error) {
-    return (
-      <AsyncRegion state={models} what="mô hình dự báo">
-        {() => null}
-      </AsyncRegion>
-    );
+  if (!routeId) {
+    if (models.error) {
+      return (
+        <AsyncRegion state={models} what="mô hình dự báo">
+          {() => null}
+        </AsyncRegion>
+      );
+    }
+    if (models.data && models.data.items.length === 0) return <NoForecastModel />;
+    if (!modelId) {
+      return (
+        <AsyncRegion state={models} what="mô hình dự báo">
+          {(page) => <ForecastHub models={page.items} onOpenForecast={setModelId} />}
+        </AsyncRegion>
+      );
+    }
   }
-  if (!routeId && models.data && models.data.items.length === 0) return <NoForecastModel />;
   return (
     <AsyncRegion state={forecast} what="dự báo">
-      {(f) => <ForecastBody key={f.id} forecast={f} />}
+      {(f) => (
+        <ForecastBody
+          key={f.id}
+          forecast={f}
+          onBackToHub={routeId ? undefined : () => setModelId(null)}
+        />
+      )}
     </AsyncRegion>
   );
 }
 
-function ForecastBody({ forecast }: { forecast: Forecast }) {
+function ForecastHub({
+  models,
+  onOpenForecast,
+}: {
+  models: ForecastModel[];
+  onOpenForecast: (modelId: string) => void;
+}) {
+  const { navigate } = useAppState();
+  return (
+    <div className="flex flex-col gap-da-xl px-da-3xl py-da-xl">
+      <PageHeader
+        title="Dự báo"
+        description="Xem kết quả đã duyệt hoặc mở thẻ mô hình để theo dõi và duyệt phiên bản."
+        actions={
+          <LinkButton area="analysis" page="FORECAST_MODEL_NEW" kind="primary">
+            Tạo mô hình dự báo
+          </LinkButton>
+        }
+      />
+      <ul className="flex flex-col rounded-lg border border-border bg-card px-da-xl">
+        {models.map((m) => (
+          <li key={m.id} className="flex items-center gap-da-md border-b border-border py-da-md last:border-b-0">
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-foreground da-body-strong">{m.metric_name}</span>
+              <span className="text-muted-foreground da-caption">
+                {[m.frequency_label, m.status_text].filter(Boolean).join(' · ')}
+              </span>
+            </span>
+            <Button onClick={() => navigate('analysis', 'FORECAST_MODEL', m.id)}>Thẻ mô hình</Button>
+            <Button kind="primary" onClick={() => onOpenForecast(m.id)}>
+              Xem dự báo
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ForecastBody({
+  forecast,
+  onBackToHub,
+}: {
+  forecast: Forecast;
+  onBackToHub?: () => void;
+}) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [adding, setAdding] = useState(false);
@@ -139,6 +200,14 @@ function ForecastBody({ forecast }: { forecast: Forecast }) {
         title={`Dự báo ${titleName(f.metric_name)} · ${f.horizon_label}`}
         description={
           <>
+            {onBackToHub && (
+              <>
+                <button type="button" className="text-primary hover:underline" onClick={onBackToHub}>
+                  ← Tất cả mô hình
+                </button>
+                {' · '}
+              </>
+            )}
             {f.model.id ? (
               <button
                 type="button"

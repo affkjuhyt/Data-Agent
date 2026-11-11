@@ -2,13 +2,11 @@ import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Badge } from '../../design-system/Badge';
-import { Button } from '../../design-system/Button';
 import { Card } from '../../design-system/Card';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { LinkCard } from '../../design-system/LinkCard';
 import { StatusDot } from '../../design-system/StatusDot';
-import { Tooltip } from '../../design-system/Tooltip';
 import { formatElapsed } from '../../lib/formatVN';
 import { listDatasets, listWorkspaces } from '../../lib/v1/api';
 import type { Workspace } from '../../lib/v1/types';
@@ -22,10 +20,9 @@ import { LinkButton } from '../../components/shell/AppLink';
  * "v3.1 · Phân tích" (2155:16027, UC-01-01, UC-02-01): where analysis starts. 16×32 padding,
  * 20px gap: header with actions, the question bar, four ways to start, recent sessions, and the
  * certified datasets. With no session yet the recent list gives way to "v3.1 · Phân tích · Trống"
- * (2165:17070), which points to Khám phá.
+ * (2165:17070), which points to Khám phá. Primary CTA is Hỏi mới (Ask); notebooks live under
+ * Phiên làm việc — there is no separate Dashboard surface until R2.
  */
-const PENDING = 'Màn này đang được làm.';
-
 const FROM_LABEL: Record<Workspace['created_from'], string> = {
   blank: 'Notebook',
   conversation: 'Hội thoại',
@@ -48,14 +45,14 @@ export default function AnalysisPage() {
     <div className="flex flex-col gap-[20px] px-da-3xl py-da-xl">
       <PageHeader
         title="Phân tích"
-        description="Hỏi, khám phá, làm notebook và dashboard trên cùng các chỉ số đã chứng nhận."
+        description="Hỏi, khám phá và làm notebook trên cùng các chỉ số đã chứng nhận."
         actions={
           <>
-            <Tooltip content={PENDING}>
-              <Button disabled>Dashboard mới</Button>
-            </Tooltip>
+            <LinkButton area="analysis" page="SESSIONS">
+              Phiên làm việc
+            </LinkButton>
             <LinkButton area="analysis" page="ASK" kind="primary">
-              Phiên mới
+              Hỏi mới
             </LinkButton>
           </>
         }
@@ -113,7 +110,7 @@ export default function AnalysisPage() {
       {workspaces.data && workspaces.data.items.length === 0 ? (
         <EmptyState
           icon="chart"
-          title="Chưa có dashboard hay phiên nào"
+          title="Chưa có phiên nào"
           description="Hỏi một câu ở ô phía trên, hoặc mở Khám phá để kéo thả chỉ số đầu tiên."
           className="rounded-lg border border-border bg-card"
           action={
@@ -135,7 +132,7 @@ export default function AnalysisPage() {
             isEmpty={(page) => page.items.length === 0}
             empty={
               <p className="text-muted-foreground da-body-small">
-                Chưa có phiên nào. Bấm “Phiên mới” để bắt đầu.
+                Chưa có phiên nào. Bấm “Hỏi mới” hoặc mở Phiên làm việc để tạo notebook.
               </p>
             }
           >
@@ -145,7 +142,7 @@ export default function AnalysisPage() {
                   <li key={ws.id}>
                     <button
                       type="button"
-                      onClick={() => navigate('analysis', 'SESSIONS')}
+                      onClick={() => navigate('analysis', 'SESSIONS', ws.id)}
                       className="flex w-full items-center gap-da-md border-b border-border py-da-sm text-left hover:bg-subtle"
                     >
                       <span className="flex min-w-0 flex-1 flex-col">

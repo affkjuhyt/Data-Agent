@@ -426,25 +426,36 @@ export function createSessionHandlers() {
       const body = (await request.json()) as components['schemas']['WorkspaceCreate'];
       const params = (body.params ?? {}) as Record<string, string>;
       const now = new Date().toISOString();
-      return HttpResponse.json(
+      const id = params.alert_id ? `ws-alert-${params.alert_id}` : `ws-new-${workspaces.length}`;
+      const view = {
+        id,
+        data_space_id: 'ds-rui-ro-tin-dung',
+        owner_id: 'user-me',
+        title: body.title,
+        description: body.description ?? null,
+        params,
+        template_of_skill_id: null,
+        created_from: body.created_from ?? 'blank',
+        created_from_ref: body.created_from_ref ?? null,
+        tile_count: 0,
+        last_refreshed_at: null,
+        status: 'active',
+        created_at: now,
+        updated_at: now,
+      } satisfies components['schemas']['WorkspaceView'];
+      // Notebook opens the detail right after create; keep it in the in-memory store.
+      workspaces = [
+        ...workspaces,
         {
-          id: params.alert_id ? `ws-alert-${params.alert_id}` : `ws-new-${workspaces.length}`,
-          data_space_id: 'ds-rui-ro-tin-dung',
-          owner_id: 'user-me',
-          title: body.title,
-          description: body.description ?? null,
-          params,
-          template_of_skill_id: null,
-          created_from: body.created_from ?? 'blank',
-          created_from_ref: body.created_from_ref ?? null,
-          tile_count: 0,
-          last_refreshed_at: null,
-          status: 'active',
-          created_at: now,
-          updated_at: now,
-        } satisfies components['schemas']['WorkspaceView'],
-        { status: 201 },
-      );
+          ...view,
+          permission: 'owner',
+          participants: [],
+          working: [],
+          refresh: null,
+          tiles: [],
+        },
+      ];
+      return HttpResponse.json(view, { status: 201 });
     }),
 
     http.get('*/v1/workspaces/:id', ({ params }) => {

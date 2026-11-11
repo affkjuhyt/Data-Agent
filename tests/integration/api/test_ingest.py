@@ -264,6 +264,22 @@ async def test_engineer_creates_a_job_on_an_ingest_source(ds: Space) -> None:
         assert own_sla.json()["freshness_sla"] == "PT30M"
         assert own_sla.json()["dlq_retention_days"] == 7
 
+        # Poll-CDC defaults to a one-minute cron when schedule_cron is omitted.
+        cdc = await api.post(
+            url,
+            json={
+                **JOB,
+                "name": "Poll CDC rates",
+                "mode": "cdc",
+                "cursor_column": "updated_since",
+            },
+            headers=ds.headers("engineer"),
+        )
+        assert cdc.status_code == 201, cdc.text
+        assert cdc.json()["mode"] == "cdc"
+        assert cdc.json()["schedule_cron"] == "*/1 * * * *"
+        assert cdc.json()["cursor_column"] == "updated_since"
+
 
 async def test_job_creation_refusals(ds: Space) -> None:
     url = f"/v1/sources/{ds.source}/jobs"
@@ -274,6 +290,12 @@ async def test_job_creation_refusals(ds: Space) -> None:
         )
         assert no_cursor.status_code == 422
         assert no_cursor.json()["code"] == "validation_failed"
+        # Poll-CDC needs a cursor too (same window as incremental).
+        no_cdc_cursor = await api.post(
+            url, json={**JOB, "mode": "cdc"}, headers=ds.headers("engineer")
+        )
+        assert no_cdc_cursor.status_code == 422
+        assert no_cdc_cursor.json()["code"] == "validation_failed"
         # Invariant 15: a federated source is queried in place, never loaded.
         federated = await api.post(
             f"/v1/sources/{ds.federated}/jobs", json=JOB, headers=ds.headers("engineer")
@@ -554,11 +576,13 @@ async def test_dlq_lists_and_replays_a_pending_record_but_not_a_locked_one(ds: S
         hidden = await api.get(f"/v1/jobs/{job}/dlq", headers=ds.headers("engineer", ds.other))
         assert hidden.status_code == 404
 
-        # No worker replays a single record yet: refused, nothing asked, the record as it was.
-        refused = await api.post(f"/v1/dlq/{pending}:replay", headers=ds.headers("engineer"))
-        assert refused.status_code == 501, refused.text
-        assert refused.json()["code"] == "not_available" and refused.json()["detail"]
-        assert ds.events(pending) == []
+        # Replay asks worker-ingest via outbox; the record stays pending until the worker finishes.
+        accepted = await api.post(f"/v1/dlq/{pending}:replay", headers=ds.headers("engineer"))
+        assert accepted.status_code == 202, accepted.text
+        assert accepted.json()["id"] == str(pending)
+        [(kind, payload)] = ds.events(pending)
+        assert kind == "dlq_record.replay_requested"
+        assert payload["dlq_record_id"] == str(pending)
         assert ds.one("SELECT status FROM ingest.dlq_record WHERE id = %s", pending) == "pending"
 
         # A3: locked after three failed replays is 409; a replayed record is done.

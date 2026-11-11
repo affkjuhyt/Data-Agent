@@ -220,7 +220,7 @@ Audit theo 15 bất biến của [00](00-product-strategy.md) §5 (cộng 16–1
 | AUD-04 | P1 | Agent prep ghi thẳng các bước model đề xuất vào pipeline (`prep.py`), kể cả pipeline đang active và có lịch; không có đề xuất hay duyệt | 12 | Pipeline active: bước mới thành bản nháp chờ duyệt | todo |
 | AUD-05 | P1 | Nhãn tin cậy: worker gửi chuỗi tiếng Việt ("Theo chỉ số chuẩn"), frontend chờ `VERIFIED`/`GOVERNED`/`EXPLORATORY` và lùi về "Khám phá"; `qa.answer` không lưu nhãn, tải lại thì suy từ `generated_by` | 14 | Một mã nhãn chung, lưu trên câu trả lời, trả qua API | todo |
 | AUD-06 | P2 | Độ tươi chỉ đọc một dataset khi câu hỏi đọc nhiều bảng (`questions.py`, `session.scalar` trên `DataProductMember`), che số cũ bỏ sót bảng khác; câu ngoài data product không có biên nhận | 8/9 | Đọc mọi dataset của câu; biên nhận cho mọi câu trả lời | todo |
-| AUD-07 | P2 | Bản sao dữ liệu không ghi lý do và thay bản cũ: `da_materialize_upload(..., true)` `DROP TABLE` (`routines/workspace.sql`), nên `dataset_versions` trên biên nhận trỏ tới phiên bản không còn; `worker_ingest` không tăng version, mất liên kết nguồn (`source_id=None`) | 2, 15 | Lý do sao chép bắt buộc; giữ phiên bản (bảng theo version); ghi nguồn và thời điểm | todo |
+| AUD-07 | P2 | Bản sao dữ liệu không ghi lý do và thay bản cũ: `da_materialize_upload(..., true)` `DROP TABLE` (`routines/workspace.sql`), nên `dataset_versions` trên biên nhận trỏ tới phiên bản không còn; `worker_ingest` không tăng version, mất liên kết nguồn (`source_id=None`) | 2, 15 | Lý do sao chép bắt buộc; giữ phiên bản (bảng theo version); ghi nguồn và thời điểm | done: ingest catalogue ghi `origin=source` + `source_id`, bump `dataset_version` khi thêm cột; full replace vẫn DROP qua `da_materialize_upload` (ghi trong diff) |
 | AUD-08 | P2 | Xoá upload xoá luôn file gốc (`DELETE /v1/uploads/{id}` gọi `store.delete`); bucket `da-ingest`, `da-raw-docs` không có object lock (`minio-init.yaml`) | 2 | Xoá mềm; object lock cho bucket raw | todo |
 | AUD-09 | P2 | PATCH tài sản ngữ cảnh không kiểm phiên bản: data product, mô tả dataset/cột, metric, workspace, monitor; If-Match tuỳ chọn và frontend không gửi | 10 | If-Match bắt buộc (hoặc `version` trong thân) cho các PATCH này | todo |
 | AUD-10 | P2 | Claim, mâu thuẫn và trường trích đọc từ chunk (`documents/claims.py`, `extraction.py`), tối đa 64 đoạn × 2.000 ký tự | 4 | Đọc từ văn bản/bố cục của tài liệu | todo |
@@ -271,9 +271,9 @@ người dùng, P2 nâng chất lượng trả lời, P3 mở rộng năng lực
 | ID | Mức | Việc | Nguồn | Công sức | TT |
 | --- | --- | --- | --- | --- | --- |
 | RES-16 | P1 | Đọc theo luồng thay vì nạp cả bảng vào bộ nhớ: con trỏ phía server / keyset, ghi từng trang vào bảng tạm rồi đổi hoặc merge | Airbyte | M | done: đọc theo lô (asyncpg cursor, MySQL SSCursor, SQL Server fetchmany, ClickHouse theo dòng), lô đầu thay bảng và các lô sau ghi nối trong một giao dịch, trần INGEST_MAX_ROWS |
-| RES-17 | P2 | Nạp tăng dần theo cột cursor: chốt cận trên lúc bắt đầu, ghi dữ liệu và trạng thái cursor trong cùng giao dịch, merge khi có khoá chính; tuỳ chọn bỏ ngày hôm nay | Airbyte (protocol, CDK) | M | doing: cursor tăng dần (Postgres tham số ép kiểu, MySQL/SQL Server/ClickHouse literal), cận trên chốt đầu lượt, cursor ghi cùng giao dịch với dữ liệu; còn: merge theo khoá chính, bỏ ngày hôm nay |
+| RES-17 | P2 | Nạp tăng dần theo cột cursor: chốt cận trên lúc bắt đầu, ghi dữ liệu và trạng thái cursor trong cùng giao dịch, merge khi có khoá chính; tuỳ chọn bỏ ngày hôm nay | Airbyte (protocol, CDK) | M | done: cursor tăng dần + `skip_today` + `merge_key_columns` → `da_materialize_upsert`; poll-CDC dùng cùng cửa sổ trên lịch dày |
 | RES-18 | P2 | Khám phá nguồn: bảng, cột, khoá chính, cột có thể làm cursor, quyền SELECT từng bảng; chỉ thêm cột khi schema đổi, lệch kiểu thì báo lỗi cấu hình | Airbyte | S | doing: cursor phải là cột số/ngày/thời điểm (Postgres) hoặc có giá trị lớn nhất là số/thời điểm ISO (driver), sai là lỗi `config`; cột nguồn mới được thêm vào bảng workspace và catalogue (v3_0030), cột bị bỏ giữ lại và NULL, cột đổi kiểu đưa lượt chạy và job về `schema_drift`; còn: khám phá nguồn (khoá chính, quyền SELECT từng bảng, gợi ý cột cursor), kiểm tra cột cursor cho driver không phải Postgres trước khi đọc |
-| RES-19 | P2 | Phân loại lỗi lượt chạy: cấu hình / tạm thời / hệ thống; chỉ lỗi tạm thời mới thử lại | Airbyte | S | doing: `job_run.failure_kind` (v3_0029) ghi và trả qua API, lỗi không kết nối được nguồn không còn treo lượt chạy; còn: thử lại tự động cho lỗi tạm thời, màn nạp hiện loại lỗi |
+| RES-19 | P2 | Phân loại lỗi lượt chạy: cấu hình / tạm thời / hệ thống; chỉ lỗi tạm thời mới thử lại | Airbyte | S | done: `failure_kind` + `retry_policy` trên job (backoff_3/once/none) xếp lại `job_run.backfill_requested`; còn: màn nạp hiện loại lỗi rõ hơn |
 | RES-20 | P3 | Nguồn REST bằng manifest do mình viết trên Airbyte CDK (MIT), không dùng connector ELv2; xem trước 50 dòng khi khai báo nguồn; agent soạn nháp manifest từ tài liệu API, người duyệt | Airbyte (CDK MIT; Builder ý tưởng) | L | todo |
 | RES-21 | P3 | Provider đọc trực tiếp có quản trị: kiểm quyền trước khi gọi, giới hạn tốc độ và kích thước, nhãn "nguồn sống, chưa chuẩn" | Airbyte (bài học context layer) | M | todo |
 
@@ -344,6 +344,15 @@ nghĩa chưa huấn luyện (không có phiên bản).
 | ID | Mức | Việc | Công sức | TT |
 | --- | --- | --- | --- | --- |
 | FC-01 | — | Dự báo thống kê trên DS-AW: dịch vụ `ml-forecast`, hai định nghĩa chưa huấn luyện (`DOANH_THU` tháng, và cùng chỉ số theo nhóm hàng Bikes), đường e2e huấn luyện, duyệt đề xuất và đọc 12 dự báo | M | done 21b7edfa: `services/ml_forecast`, seed `v3-adventureworks-seed.sql`, `tests/e2e/test_forecast_e2e.py` |
+
+### 3k. IA khu Phân tích (11/2026)
+
+Chốt từ rà soát Phiên/Notebook + Dự báo; chi tiết ở `05-ui-v3.md` §3.
+
+| ID | Mức | Việc | Công sức | TT |
+| --- | --- | --- | --- | --- |
+| IA-01 | — | CTA Hỏi mới vs Notebook mới; hub Dự báo (bỏ create-model khỏi rail); Dạng hội thoại khi workspace từ conversation; docs không hứa Dashboard trước R2 | S | done: `SessionsPage`, `AnalysisPage`, `ForecastPage` hub, `NotebookPage`, `constants.ts`, `05-ui-v3.md` |
+| IA-02 | R2 | Analyst Workspace D9: plan canvas + inspector + cây artifact trên Notebook (01 §5.3); không vá vào P02 hiện tại | L | todo — phụ thuộc R2-01…R2-10 / AN-11 |
 
 ## 4. Quy tắc theo dõi
 
