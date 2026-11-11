@@ -9,6 +9,7 @@ import { ToastProvider } from './design-system/Toast';
 import { SkeletonRows } from './design-system/SkeletonRow';
 import { useDelayedFlag } from './design-system/useDelayedFlag';
 import { ROUTE_MAP, SINGLE_SCREEN } from './routes';
+import { PageBoundary } from './design-system/ErrorBoundaries';
 import { firstPageOf } from './constants';
 
 /* Under 300 ms nothing shows (no flash); after that a skeleton in the page's place. */
@@ -50,7 +51,12 @@ function AppContent() {
         </div>
       );
     }
-    return <React.Suspense fallback={<RouteLoading />}>{entry.render()}</React.Suspense>;
+    // A page that throws while rendering shows its own failure; the shell stays (ErrorBoundaries).
+    return (
+      <PageBoundary resetKeys={[area, page]}>
+        <React.Suspense fallback={<RouteLoading />}>{entry.render()}</React.Suspense>
+      </PageBoundary>
+    );
   };
 
   return (

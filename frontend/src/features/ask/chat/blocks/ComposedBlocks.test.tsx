@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AnswerBlockView } from '../../types';
 import { ComposedBlocks, isComposed } from './ComposedBlocks';
 
@@ -45,5 +45,23 @@ describe('ComposedBlocks', () => {
     expect(group).toHaveTextContent('Đường');
     fireEvent.click(screen.getByRole('button', { name: 'Cột' }));
     expect(screen.getByRole('button', { name: 'Cột' })).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+describe('ComposedBlocks: a block that cannot be drawn', () => {
+  it('leaves the rest of the answer readable', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    render(
+      <ComposedBlocks
+        blocks={[
+          // A composed chart without y_keys: drawing its series throws.
+          { type: 'chart', composed: true, spec: { chart_type: 'composed', data: [{ x: 1 }] } },
+          { type: 'markdown', composed: true, content: 'Doanh thu quý 3 tăng 12%.' },
+        ] as never}
+      />,
+    );
+    expect(screen.getByText('Không hiển thị được phần này của câu trả lời.')).toBeInTheDocument();
+    expect(screen.getByText('Doanh thu quý 3 tăng 12%.')).toBeInTheDocument();
+    vi.restoreAllMocks();
   });
 });

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { BlockBoundary } from '../../../../design-system/ErrorBoundaries';
 import { Icon, type IconName } from '../../../../design-system/Icon';
 import { formatNumber } from '../../../../lib/formatVN';
 import { MarkdownContent } from '../../components/MarkdownContent';
@@ -264,19 +265,29 @@ const RENDERERS: Record<string, (block: Block, ctx: Ctx) => ReactNode> = {
   follow_ups: () => null,
 };
 
+/** One block, drawn as its own component: a renderer that throws does so inside BlockBoundary,
+ *  not in ComposedBlocks, so the other blocks of the answer stay. */
+function ComposedBlock({ block, index, ctx }: { block: Block; index: number; ctx: Ctx }) {
+  const type = str(block.type);
+  const render = RENDERERS[type];
+  const node = render ? render(block, ctx) : <Unknown block={block} />;
+  if (node === null) return null;
+  return (
+    <div key={str(block.id) || `${type}-${index}`} data-testid="answer-block" data-type={type}>
+      {node}
+    </div>
+  );
+}
+
 export function ComposedBlocks({ blocks, ...ctx }: { blocks: AnswerBlockView[] } & Ctx) {
   return (
     <div className="flex flex-col gap-da-lg">
       {blocks.map((raw, i) => {
         const block = raw as Block;
-        const type = str(block.type);
-        const render = RENDERERS[type];
-        const node = render ? render(block, ctx) : <Unknown block={block} />;
-        if (node === null) return null;
         return (
-          <div key={str(block.id) || `${type}-${i}`} data-testid="answer-block" data-type={type}>
-            {node}
-          </div>
+          <BlockBoundary key={str(block.id) || `${str(block.type)}-${i}`}>
+            <ComposedBlock block={block} index={i} ctx={ctx} />
+          </BlockBoundary>
         );
       })}
     </div>

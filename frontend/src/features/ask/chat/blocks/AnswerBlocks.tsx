@@ -8,6 +8,7 @@ import { ComposedBlocks, isComposed } from './ComposedBlocks';
 import { MetricCards, type MetricBlock } from './MetricCards';
 import { ResultCard } from './ResultCard';
 import { SqlBlock } from './SqlBlock';
+import { BlockBoundary } from '../../../../design-system/ErrorBoundaries';
 
 /*
  * An answer drawn block by block, in the order the server gives (GET /v1/answers/{id} blocks[]),
@@ -121,7 +122,8 @@ export function AnswerBlocks({
     <div className="flex flex-col gap-da-lg">
       {parts.map((part) => (
         <div key={part.key} data-testid="answer-block" data-type={part.type}>
-          {part.node}
+          {/* One block that cannot be drawn leaves the rest of the answer readable. */}
+          <BlockBoundary>{part.node}</BlockBoundary>
         </div>
       ))}
     </div>
