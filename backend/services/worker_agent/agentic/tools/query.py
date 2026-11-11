@@ -23,6 +23,7 @@ from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.semantic import analysis, compare, coverage
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.sqlgen.answer import _keep_one_source
+from services.worker_agent.sqlgen.check import fingerprint
 from services.worker_agent.sqlgen.generate import schema_text
 from services.worker_agent.sqlgen.run import explore
 from services.worker_agent.sqlgen.schema import link
@@ -369,49 +370,71 @@ class ExploreSql(Tool):
                 error=envelope.error,
             )
 
-        e = await explore(
-            ctx.model,
-            args.question,
-            linked,
-            dialect_of(source.kind),
-            space.schema.examples,
-            run_sql,
-        )
-        for name in e.models:
-            ctx.models.append({"task": "text_to_sql", "model_name": name, "tokens": e.tokens})
-        detail = {
-            "source": source.name,
-            "candidates": len(e.tried),
-            "agreeing": e.agreeing,
-            "query_run_id": str(e.query_run_id) if e.query_run_id else None,
-        }
-        if e.decision == "failed" or e.query_run_id is None:
-            return ToolResult(False, "không cách viết SQL nào chạy được", detail=detail)
-        audit = await _audit(
-            ctx, args.question, schema_text(linked), e.sql or "", e.columns, e.rows
-        )
-        if audit is not None and not audit.passed:
-            # RES-02: it ran, but it is not what was asked (a quota read as revenue, one channel
-            # read as all of them): the planner hears why and plans again.
-            detail["audit"] = audit.reason[:200]
-            return ToolResult(False, f"SQL chưa đúng ý câu hỏi: {audit.reason}", detail=detail)
-        ds = ctx.ws.add(
-            title=args.title or args.question[:80],
-            columns=list(e.columns),
-            rows=[list(r) for r in e.rows],
-            trust="exploratory",
-            consensus=(e.agreeing, len(e.tried)),
-            sql=e.sql,
-            agreement_clear=e.decision == "answer",
-            query_run_ids=[str(e.query_run_id)],
-            step_id=ctx.step_id,
-            tool=self.name,
-            truncated=bool(e.truncated),
-        )
-        detail["dataset"] = ds.id
-        note = (
-            f" (chỉ {e.agreeing}/{len(e.tried)} cách viết cho cùng kết quả: cần nói rõ là chưa chắc)"
-            if e.decision == "ask"
-            else ""
-        )
-        return ToolResult(True, ds.preview() + note, [ds.id], detail)
+        dialect = dialect_of(source.kind)
+        # One semantic-audit miss → ban that SQL and try explore once more this step (RES-02);
+        # a second miss goes back to the planner with the ban kept on the turn.
+        last_reason = ""
+        for attempt in range(2):
+            e = await explore(
+                ctx.model,
+                args.question,
+                linked,
+                dialect,
+                space.schema.examples,
+                run_sql,
+                refuse=tuple(ctx.refused_sql),
+            )
+            for name in e.models:
+                ctx.models.append({"task": "text_to_sql", "model_name": name, "tokens": e.tokens})
+            detail = {
+                "source": source.name,
+                "candidates": len(e.tried),
+                "agreeing": e.agreeing,
+                "query_run_id": str(e.query_run_id) if e.query_run_id else None,
+                "refused": len(ctx.refused_sql),
+            }
+            if e.decision == "failed" or e.query_run_id is None:
+                if last_reason:
+                    return ToolResult(
+                        False,
+                        f"SQL chưa đúng ý câu hỏi: {last_reason}",
+                        detail={**detail, "audit": last_reason[:200]},
+                    )
+                return ToolResult(False, "không cách viết SQL nào chạy được", detail=detail)
+            audit = await _audit(
+                ctx, args.question, schema_text(linked), e.sql or "", e.columns, e.rows
+            )
+            if audit is not None and not audit.passed:
+                # Quota read as revenue, one channel as all of them, …
+                last_reason = audit.reason
+                if e.sql:
+                    mark = fingerprint(e.sql, dialect)
+                    if mark and mark not in ctx.refused_sql:
+                        ctx.refused_sql.append(mark)
+                detail["audit"] = audit.reason[:200]
+                if attempt == 0:
+                    continue
+                return ToolResult(
+                    False, f"SQL chưa đúng ý câu hỏi: {audit.reason}", detail=detail
+                )
+            ds = ctx.ws.add(
+                title=args.title or args.question[:80],
+                columns=list(e.columns),
+                rows=[list(r) for r in e.rows],
+                trust="exploratory",
+                consensus=(e.agreeing, len(e.tried)),
+                sql=e.sql,
+                agreement_clear=e.decision == "answer",
+                query_run_ids=[str(e.query_run_id)],
+                step_id=ctx.step_id,
+                tool=self.name,
+                truncated=bool(e.truncated),
+            )
+            detail["dataset"] = ds.id
+            note = (
+                f" (chỉ {e.agreeing}/{len(e.tried)} cách viết cho cùng kết quả: cần nói rõ là chưa chắc)"
+                if e.decision == "ask"
+                else ""
+            )
+            return ToolResult(True, ds.preview() + note, [ds.id], detail)
+        return ToolResult(False, "không cách viết SQL nào chạy được")

@@ -540,6 +540,198 @@ def test_a_sql_that_ran_is_audited_against_the_question() -> None:
     assert "<sql>" in seen[0] and "29507000" in seen[0] and "Doanh thu năm 2013" in seen[0]
 
 
+def test_explore_skips_sql_the_audit_already_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """RES-02: a statement audited as the wrong quantity must not run again."""
+    import uuid
+    from collections.abc import Sequence
+
+    from services.worker_agent.query.executor import QueryOutcome
+    from services.worker_agent.sqlgen import run as sql_run
+    from services.worker_agent.sqlgen.check import fingerprint
+    from services.worker_agent.sqlgen.generate import Candidate
+    from services.worker_agent.sqlgen.schema import Col, Linked, Tbl
+
+    bad = "SELECT SUM(amount) FROM dw.fact_sales_quota WHERE year = 2013"
+    good = "SELECT SUM(sales_amount) FROM dw.fact_internet_sales WHERE year = 2013"
+    tables = [
+        Tbl(
+            dataset_id=uuid.uuid4(),
+            schema="dw",
+            name="fact_sales_quota",
+            label="quota",
+            columns=(Col("amount", "amount", "decimal"), Col("year", "year", "integer")),
+        ),
+        Tbl(
+            dataset_id=uuid.uuid4(),
+            schema="dw",
+            name="fact_internet_sales",
+            label="sales",
+            columns=(
+                Col("sales_amount", "sales", "decimal"),
+                Col("year", "year", "integer"),
+            ),
+        ),
+    ]
+    linked = Linked(tables=tables, fks=[], values=[])
+    ran: list[str] = []
+
+    async def fake_candidates(*_a, refuse: Sequence[str] = (), **_k):  # type: ignore[no-untyped-def]
+        assert fingerprint(bad, "postgres") in {fingerprint(s, "postgres") for s in refuse}
+        return [
+            Candidate("skeleton", bad),
+            Candidate("examples", good),
+            Candidate("divide", bad),
+            Candidate("skeleton", good),
+            Candidate("examples", bad),
+            Candidate("divide", good),
+        ]
+
+    async def run_sql(sql: str) -> QueryOutcome:
+        ran.append(sql)
+        return QueryOutcome(
+            query_run_id=uuid.uuid4(),
+            status="succeeded",
+            columns=[{"name": "sum"}],
+            rows=[[1]],
+            truncated=False,
+            sql=sql,
+            error=None,
+        )
+
+    monkeypatch.setattr(sql_run, "candidates", fake_candidates)
+    monkeypatch.setattr(sql_run, "problems", lambda *_a, **_k: [])
+    found = asyncio.run(
+        sql_run.explore(
+            gateway=None,  # type: ignore[arg-type]
+            question="Doanh thu năm 2013",
+            linked=linked,
+            dialect="postgres",
+            examples=[],
+            run_sql=run_sql,
+            refuse=(fingerprint(bad, "postgres"),),
+        )
+    )
+    assert found.decision != "failed" and found.sql is not None
+    assert fingerprint(found.sql, "postgres") == fingerprint(good, "postgres")
+    assert all(fingerprint(s, "postgres") != fingerprint(bad, "postgres") for s in ran)
+    assert any(t.get("status") == "rejected" for t in found.tried)
+
+
+def test_explore_sql_bans_audited_sql_on_the_shared_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After an audit miss, the fingerprint stays on ToolContext for the next explore / replan."""
+    import datetime
+    import types
+    import uuid
+
+    from services.worker_agent.agentic.tools.base import ToolContext
+    from services.worker_agent.agentic.tools.query import ExploreSql, ExploreSqlArgs
+    from services.worker_agent.agentic.workspace import Workspace
+    from services.worker_agent.llm import Reply
+    from services.worker_agent.sqlgen.check import fingerprint
+    from services.worker_agent.sqlgen.run import Exploration
+
+    bad_sql = "SELECT SUM(amount) FROM dw.fact_sales_quota WHERE year = 2013"
+    calls = {"n": 0}
+
+    class Model:
+        async def json_chat(self, role, system, user, output, **_):  # type: ignore[no-untyped-def]
+            return Reply(
+                output(passed=False, reason="reads the sales quota, not revenue"), "m", 3, 1
+            )
+
+    async def fake_explore(*_a, refuse=(), **_k):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        assert fingerprint(bad_sql, "postgres") in {
+            fingerprint(s, "postgres") for s in refuse
+        } or calls["n"] == 1
+        return Exploration(
+            decision="answer",
+            confidence=1.0,
+            agreeing=6,
+            sql=bad_sql,
+            columns=["sum"],
+            rows=[[29507000]],
+            query_run_id=uuid.uuid4(),
+            tried=[{"method": "skeleton", "sql": bad_sql, "status": "ran"}],
+            tokens=1,
+            models=["m"],
+        )
+
+    monkeypatch.setattr(
+        "services.worker_agent.agentic.tools.query.explore", fake_explore
+    )
+
+    async def fake_load_space(*_a, **_k):
+        return types.SimpleNamespace(
+            schema=types.SimpleNamespace(examples=[]),
+            source_of={},
+        )
+
+    monkeypatch.setattr(
+        "services.worker_agent.agentic.tools.query.load_space", fake_load_space
+    )
+    monkeypatch.setattr(
+        "services.worker_agent.agentic.tools.query.link",
+        lambda *_a, **_k: types.SimpleNamespace(
+            tables=[types.SimpleNamespace(qualified="dw.t")],
+        ),
+    )
+    monkeypatch.setattr(
+        "services.worker_agent.agentic.tools.query._keep_one_source",
+        lambda linked, _src: (linked, uuid.uuid4()),
+    )
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def get(self, *_a, **_k):
+            return types.SimpleNamespace(
+                id=uuid.uuid4(),
+                name="aw",
+                kind="postgresql",
+                mode="federated",
+                status="active",
+            )
+
+        def expunge(self, _):
+            return None
+
+    monkeypatch.setattr(
+        "services.worker_agent.agentic.tools.query.scoped_session",
+        lambda *_a, **_k: _Session(),
+    )
+    monkeypatch.setattr(
+        "services.worker_agent.agentic.tools.query.schema_text", lambda _l: "schema"
+    )
+
+    shared: list[str] = []
+    ctx = ToolContext(
+        org_id=uuid.uuid4(),
+        space_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        question_id=uuid.uuid4(),
+        question="Doanh thu năm 2013",
+        today=datetime.date(2026, 11, 5),
+        as_of=None,
+        purpose=None,
+        layer=types.SimpleNamespace(),  # type: ignore[arg-type]
+        model=Model(),  # type: ignore[arg-type]
+        ws=Workspace(),
+        refused_sql=shared,
+    )
+    result = asyncio.run(ExploreSql().run(ctx, ExploreSqlArgs(question="doanh thu 2013")))
+    assert not result.ok
+    assert "quota" in result.observation
+    assert shared and fingerprint(bad_sql, "postgres") in shared
+    assert calls["n"] == 2
+
+
 def test_a_lookup_and_one_governed_query_is_a_simple_question() -> None:
     import types
     import uuid

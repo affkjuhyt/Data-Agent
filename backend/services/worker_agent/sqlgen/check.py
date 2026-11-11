@@ -25,6 +25,17 @@ _TYPES = {
 }
 
 
+def fingerprint(sql: str, dialect: str = "postgres") -> str:
+    """A stable form of a statement so a later explore cannot rewrite the same refused SQL (RES-02)."""
+    text = (sql or "").strip().rstrip(";")
+    if not text:
+        return ""
+    try:
+        return sqlglot.parse_one(text, read=dialect).sql(dialect=dialect)
+    except ParseError:
+        return " ".join(text.lower().split())
+
+
 def problems(sql: str, linked: Linked, dialect: str) -> list[str]:
     try:
         tree = sqlglot.parse_one(sql, read=dialect)

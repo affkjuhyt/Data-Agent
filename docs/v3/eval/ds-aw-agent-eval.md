@@ -46,3 +46,15 @@ questions skip the two reviews; memories are read only when the turn says someth
 Still wrong: "Doanh thu năm 2013" (4 057 065, one cut of the total); "Doanh thu nhóm hàng
 Components" handed over and the governed path found no figure. "Lãi gộp Internet" has the right
 total but also the breakdown it showed as figures, so the scorer counts it a miss.
+
+## RES-02 (SQL audit + ban rewrite)
+
+After the explore_sql semantic audit and `refused_sql` ban (fingerprint + one in-step retry), re-run:
+
+```bash
+make agent-eval AGENT_EVAL_ORG=… AGENT_EVAL_AS=… AGENT_EVAL_ARGS="--engines agentic --limit 20"
+```
+
+Watch for kind-1 misses from the baseline (quota as revenue, gross profit as margin, unfiltered
+channel). A refused SQL must not win again in the same turn; the timeline step detail shows
+`audit` and `refused`.

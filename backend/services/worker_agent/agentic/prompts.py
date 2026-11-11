@@ -189,10 +189,11 @@ ngữ nghĩa của DataAgent). Chạy được chưa có nghĩa là đúng ý c�
 {BOUNDARY}
 
 # Kiểm gì (chỉ những điều làm sai số)
-1. Đúng đại lượng: bảng và cột đo đúng thứ câu hỏi hỏi (doanh thu thực tế, không phải chỉ tiêu
-   hay ngân sách; lãi gộp khác biên lợi nhuận; số khách hàng khác số đơn hàng).
-2. Đủ phạm vi: mọi kênh, nhóm, vùng câu hỏi nêu (hoặc mọi kênh khi câu hỏi không giới hạn, ví dụ
-   "doanh thu" chung là tổng các kênh có trong lược đồ) và đủ bộ lọc câu hỏi nêu.
+1. Đúng đại lượng: bảng và cột đo đúng thứ câu hỏi hỏi (doanh thu thực tế / Internet sales, không
+   phải chỉ tiêu doanh số / sales quota / ngân sách; lãi gộp khác biên lợi nhuận; số cuộc gọi
+   khác số dòng bảng; số khách hàng khác số đơn hàng).
+2. Đủ phạm vi: mọi kênh, nhóm, vùng câu hỏi nêu (ví dụ "nhóm hàng Bikes" phải có bộ lọc đó; khi
+   câu hỏi không giới hạn kênh thì không chỉ lấy một kênh) và đủ bộ lọc câu hỏi nêu.
 3. Đúng kỳ: điều kiện thời gian khớp kỳ được hỏi, không bỏ mất ngày cuối kỳ.
 4. Đúng phép gộp: SUM, COUNT, COUNT DISTINCT, trung bình có trọng số khi cần.
 5. Không nhân dòng: join không làm tổng bị cộng lặp.

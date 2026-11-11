@@ -12,7 +12,7 @@ from typing import Any
 
 from services.worker_agent.llm import Gateway
 from services.worker_agent.query.executor import QueryOutcome
-from services.worker_agent.sqlgen.check import problems
+from services.worker_agent.sqlgen.check import fingerprint, problems
 from services.worker_agent.sqlgen.generate import (
     METHODS,
     Candidate,
@@ -48,8 +48,12 @@ async def explore(
     examples: list[tuple[str, str]],
     run_sql: Callable[[str], Awaitable[QueryOutcome]],
     methods: Sequence[str] = METHODS,
+    refuse: Sequence[str] = (),
 ) -> Exploration:
-    written = await candidates(gateway, question, linked, dialect, examples, methods)
+    banned = {fingerprint(s, dialect) for s in refuse if s}
+    written = await candidates(
+        gateway, question, linked, dialect, examples, methods, refuse=tuple(refuse)
+    )
 
     async def checked(c: Candidate) -> tuple[Candidate, list[str]]:
         if c.sql is None:
@@ -74,11 +78,28 @@ async def explore(
                 {"method": c.method, "sql": c.sql, "problems": found, "status": "rejected"}
             )
             continue
+        # RES-02: a statement the semantic audit already refused must not run or win again.
+        if fingerprint(c.sql, dialect) in banned:
+            results.append(None)
+            outcomes.append(None)
+            tried.append(
+                {
+                    "method": c.method,
+                    "sql": c.sql,
+                    "problems": ["SQL đã bị từ chối vì không đúng ý câu hỏi; viết cách khác."],
+                    "status": "rejected",
+                }
+            )
+            continue
         out = await run_sql(c.sql)
         if not out.ok and out.status == "failed" and out.error:
             # The source refused it: diagnosed and rewritten once, checked again, run again.
             fixed = await diagnose_and_repair(gateway, question, linked, dialect, c, out.error)
-            if fixed.sql and not problems(fixed.sql, linked, dialect):
+            if (
+                fixed.sql
+                and not problems(fixed.sql, linked, dialect)
+                and fingerprint(fixed.sql, dialect) not in banned
+            ):
                 retried = await run_sql(fixed.sql)
                 if retried.ok:
                     c, out = fixed, retried

@@ -123,10 +123,18 @@ async def candidates(
     dialect: str,
     examples: list[tuple[str, str]],
     methods: Sequence[str] = METHODS,
+    refuse: Sequence[str] = (),
 ) -> list[Candidate]:
     """Six candidates, three ways twice, asked together. `methods` narrows the ways, for the
-    ablation of the N-version (sqlgen/ablation.py)."""
+    ablation of the N-version (sqlgen/ablation.py). `refuse` are statements already audited as
+    answering the wrong quantity or scope (RES-02): the model must not write them again."""
     user = f"{schema_text(linked)}\n\nQuestion: {question}"
+    if refuse:
+        listed = "\n".join(f"- {s}" for s in list(refuse)[:6])
+        user += (
+            "\n\nDo not write any of these refused statements again (they measured the wrong "
+            f"quantity, channel, filter or period):\n{listed}"
+        )
     return list(
         await asyncio.gather(
             *(

@@ -7,7 +7,7 @@ import uuid
 
 import pytest
 
-from services.worker_agent.sqlgen.check import problems
+from services.worker_agent.sqlgen.check import fingerprint, problems
 from services.worker_agent.sqlgen.schema import Col, Fk, Schema, Tbl, link
 from services.worker_agent.sqlgen.vote import signature, vote
 
@@ -80,6 +80,15 @@ def test_a_candidate_that_reads_only_the_linked_tables_passes() -> None:
         "JOIN workspace.branch AS b ON b.code = l.branch_code GROUP BY b.city"
     )
     assert problems(sql, CHECKED, "postgres") == []
+
+
+def test_sql_fingerprints_match_across_whitespace() -> None:
+    a = "SELECT SUM(amount) FROM dw.fact_sales_quota WHERE year = 2013"
+    b = "select   sum(amount)  from  dw.fact_sales_quota where year=2013 ;"
+    assert fingerprint(a, "postgres") == fingerprint(b, "postgres")
+    assert fingerprint(a, "postgres") != fingerprint(
+        "SELECT SUM(sales_amount) FROM dw.fact_internet_sales WHERE year = 2013", "postgres"
+    )
 
 
 @pytest.mark.parametrize(

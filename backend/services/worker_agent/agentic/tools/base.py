@@ -52,6 +52,9 @@ class ToolContext:
     # Model calls made inside tools (sqlgen), for the receipt.
     models: list[dict[str, Any]] = field(default_factory=list)
     step_id: str = ""
+    # Fingerprints of explore_sql statements the semantic audit already refused this turn (RES-02).
+    # Shared across dataclasses.replace copies so a replan cannot rewrite the same SQL.
+    refused_sql: list[str] = field(default_factory=list)
 
 
 @dataclass
