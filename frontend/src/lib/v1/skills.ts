@@ -216,27 +216,37 @@ const VERSION_TEXT: Record<SkillVersionStatus, string> = {
 
 /**
  * A2 has no GET /v1/skills/{id}/versions: the skill's detail carries its versions, newest first.
- * The change note and the eval counts are PROPOSAL.
+ * The eval counts are each version's eval run (completed ones; '–' before); the change note is
+ * PROPOSAL.
  */
 export const listSkillVersions = async (skillId: string): Promise<Page<SkillVersion>> => {
   const raw = await ok<Schemas['SkillDetail'] & { display_versions?: SkillVersion[] }>(
     api.GET('/v1/skills/{id}', { params: { path: { id: skillId } } }),
   );
   if (raw.display_versions) return { items: raw.display_versions, next_page_token: '' };
-  const items = [...(raw.versions ?? [])]
-    .sort((a, b) => b.version - a.version)
-    .map((v): SkillVersion => {
-      const status = VERSION_STATUS[v.status] ?? 'draft';
-      return {
-        id: v.id,
-        version: v.version,
-        change_text: '',
-        eval_passed: 0,
-        eval_total: 0,
-        status,
-        status_text: VERSION_TEXT[status],
-      };
-    });
+  const versions = [...(raw.versions ?? [])].sort((a, b) => b.version - a.version);
+  const runs = await Promise.all(
+    versions.map((v) =>
+      v.eval_run_id
+        ? ok<Schemas['EvalRunDetail']>(
+            api.GET('/v1/eval-runs/{id}', { params: { path: { id: v.eval_run_id } } }),
+          ).catch(() => null)
+        : null,
+    ),
+  );
+  const items = versions.map((v, i): SkillVersion => {
+    const status = VERSION_STATUS[v.status] ?? 'draft';
+    const run = runs[i]?.status === 'completed' ? runs[i] : null;
+    return {
+      id: v.id,
+      version: v.version,
+      change_text: '',
+      eval_passed: run?.passed ?? 0,
+      eval_total: run?.item_count ?? 0,
+      status,
+      status_text: VERSION_TEXT[status],
+    };
+  });
   return { items, next_page_token: '' };
 };
 
