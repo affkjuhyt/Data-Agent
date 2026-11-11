@@ -268,14 +268,32 @@ function readPipeline(raw: PipelineWire, tables: Map<string, string>): Pipeline 
   return raw.display ? { ...base, ...raw.display, id: raw.id } : base;
 }
 
-const readPipelineSteps = (raw: PipelineDetailWire): PipelineStep[] =>
-  (Array.isArray(raw.steps) ? raw.steps : []).flatMap((value, index) => {
+/** The rows after each step of the last run (worker-agent pipelines.py totals_check.step_rows)
+ *  and the input it read; nothing writes counts into the pipeline's steps themselves. */
+function measuredRows(run: PipelineDetailWire['last_run']): { input: number; after: number[] } {
+  const check = run?.totals_check as { step_rows?: unknown } | null | undefined;
+  const after = Array.isArray(check?.step_rows)
+    ? check.step_rows.filter((n): n is number => typeof n === 'number')
+    : [];
+  // A run measured before step_rows were kept says nothing per step.
+  return { input: after.length ? (run?.rows_in ?? after[0]) : 0, after };
+}
+
+const readPipelineSteps = (raw: PipelineDetailWire): PipelineStep[] => {
+  const measured = measuredRows(raw.last_run ?? null);
+  return (Array.isArray(raw.steps) ? raw.steps : []).flatMap((value, index) => {
     if (typeof value !== 'object' || value === null) return [];
     const step = value as Record<string, unknown>;
     const title = typeof step.description === 'string' ? step.description : `Bước ${index + 1}`;
     const sql = typeof step.code === 'string' ? step.code : '';
-    const rowsIn = typeof step.rows_in === 'number' ? step.rows_in : 0;
-    const rowsOut = typeof step.rows_out === 'number' ? step.rows_out : 0;
+    const rowsIn =
+      typeof step.rows_in === 'number'
+        ? step.rows_in
+        : index === 0
+          ? measured.input
+          : (measured.after[index - 1] ?? 0);
+    const rowsOut =
+      typeof step.rows_out === 'number' ? step.rows_out : (measured.after[index] ?? 0);
     return [
       {
         seq: index + 1,
@@ -293,6 +311,7 @@ const readPipelineSteps = (raw: PipelineDetailWire): PipelineStep[] =>
       },
     ];
   });
+};
 
 /** Adapt A3's PipelineDetail to the richer presentation shape used by the pipeline screens. */
 export function readPipelineDetail(

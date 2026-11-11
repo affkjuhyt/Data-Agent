@@ -280,7 +280,13 @@ async def _measure(ctx: dict[str, Any], event: Event, sample: str | None) -> dic
         "rows_in": rows_in,
         "rows_out": counts[-1],
         "rows_dropped": dropped,
-        "totals_check": {"matched": all(c["matched"] for c in columns), "columns": columns},
+        # step_rows: the rows after each step, counted here anyway; kept with the run (no column
+        # of its own) so the pipeline page shows each step's in and out instead of 0 → 0.
+        "totals_check": {
+            "matched": all(c["matched"] for c in columns),
+            "columns": columns,
+            "step_rows": counts,
+        },
     }
 
 

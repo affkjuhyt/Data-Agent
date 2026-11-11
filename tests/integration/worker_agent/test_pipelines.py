@@ -104,6 +104,8 @@ async def test_a_run_counts_rows_and_records_what_a_filter_drops(
         {"step": 2, "kind": "filter", "rows": 1, "condition": "product_code = 'NOI_BO'"}
     ]
     assert totals["matched"] is True
+    # The rows after each step, for the pipeline page's in and out columns.
+    assert totals["step_rows"] == [7, 6]
 
 
 async def test_a_preview_reads_a_sample_and_a_test_run_the_whole_input(
