@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 13 UC đủ tiêu chí bắt buộc | todo 13, partial 89, done 8, na 5 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 336 có test nhắc mã AC | todo 739, na 39 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 335 có test nhắc mã AC | todo 739, na 39 |
 | Endpoint A2 (tab 4) | 460 (A2 ghi 461 dòng; POST /v1/data-products ở hai nhóm) | 460 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 207 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 156 có mã nhắc tới | todo 188, na 7 |
@@ -266,18 +266,18 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-04 | UC-01-01 | todo |  |
 | BR-05 | UC-01-03 | todo |  |
 | BR-06 | UC-02-01 | todo | `backend/services/api/modules/workspace/routes.py` |
-| BR-07 | UC-02-02, UC-02-03 | todo | `backend/services/api/modules/qa/query.py`, `backend/services/api/modules/workspace/routes.py`, `backend/services/api/modules/workspace/schemas.py` +3 |
+| BR-07 | UC-02-02, UC-02-03 | todo | `backend/services/api/modules/qa/query.py`, `backend/services/api/modules/workspace/routes.py`, `backend/services/api/modules/workspace/schemas.py` +4 |
 | BR-08 | UC-03-01 | todo | `backend/services/api/modules/skill/schemas.py`, `frontend/src/lib/v1/openapi.json`, `frontend/src/lib/v1/schema.ts` |
 | BR-09 | UC-03-01 | todo |  |
 | BR-10 | UC-03-01 | todo |  |
 | BR-11 | UC-03-02 | todo |  |
-| BR-12 | UC-03-05 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/skill/routes.py`, `backend/services/api/modules/skill/rules.py` +1 |
+| BR-12 | UC-03-05 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/skill/routes.py`, `backend/services/api/modules/skill/rules.py` +2 |
 | BR-13 | UC-03-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-14 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +12 |
 | BR-15 | UC-04-02 | todo |  |
 | BR-16 | UC-04-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-17 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-18 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-18 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/libs/vectors/__init__.py` +8 |
 | BR-19 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-20 | UC-05-04 | todo | `backend/services/worker_agent/documents/answer.py`, `backend/services/worker_agent/documents/retrieve.py` |
 | BR-21 | UC-05-04 | todo |  |
@@ -291,7 +291,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-29 | UC-07-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/inbox.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-30 | UC-07-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/conflict.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-31 | UC-07-04 | todo | `backend/services/api/modules/conflict/routes.py`, `tests/integration/api/test_conflict.py` |
-| BR-32 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +10 |
+| BR-32 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-33 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-34 | UC-08-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-35 | UC-08-03 | todo | `backend/services/worker_agent/channels/cards.py`, `backend/services/worker_agent/report_runs.py`, `backend/services/worker_agent/session_reports.py` +1 |
@@ -329,7 +329,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-67 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py`, `backend/services/worker_agent/channels/cards.py`, `backend/services/worker_agent/channels/gateway.py` +4 |
 | BR-68 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py`, `backend/services/worker_agent/channels/cards.py`, `backend/services/worker_agent/channels/gateway.py` +1 |
 | BR-69 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-70 | UC-13-02 | todo | `backend/alembic/seed/tool_def.json`, `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py` +10 |
+| BR-70 | UC-13-02 | todo | `backend/alembic/seed/tool_def.json`, `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py` +11 |
 | BR-71 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-72 | UC-13-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-73 | UC-13-04 | todo |  |
@@ -369,7 +369,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-107 | UC-05-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-108 | UC-05-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-109 | UC-05-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-110 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-110 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-111 | UC-06-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/pipeline.py` +14 |
 | BR-112 | UC-06-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-113 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +5 |
@@ -409,18 +409,18 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-147 | UC-13-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/libs/dataagent_db/models/org.py` +11 |
 | BR-148 | UC-13-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-149 | UC-14-01, UC-14-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +13 |
-| BR-150 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +15 |
-| BR-151 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +11 |
+| BR-150 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +16 |
+| BR-151 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-152 | UC-14-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +11 |
 | BR-153 | UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +11 |
 | BR-154 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-155 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-156 | UC-02-07, UC-10-02, UC-14-01, UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/libs/dataagent_db/models/catalog.py` +21 |
 | BR-157 | UC-15-01, UC-15-02, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +15 |
-| BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0031_forecast_model_proposal.py`, `backend/libs/dataagent_db/models/forecast.py` +21 |
+| BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0031_forecast_model_proposal.py`, `backend/libs/dataagent_db/models/forecast.py` +23 |
 | BR-159 | UC-15-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-160 | UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/forecast_release/__init__.py` +12 |
-| BR-161 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +8 |
+| BR-161 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-162 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/exec.py` +17 |
 | BR-163 | UC-07-10, UC-07-11, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +14 |
 | BR-164 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +9 |
@@ -431,21 +431,21 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-170 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +11 |
 | BR-171 | UC-01-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/forecast_fit/backtest.py` +12 |
 | BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +15 |
 | BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +19 |
 | BR-176 | UC-01-01, UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +6 |
-| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +24 |
+| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +25 |
 | BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +14 |
 | BR-181 | UC-01-07, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/qa.py` +9 |
 | BR-182 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-183 | UC-08-08, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/dataagent_db/models/monitor.py` +8 |
+| BR-183 | UC-08-08, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/dataagent_db/models/monitor.py` +9 |
 | BR-184 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-185 | UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +13 |
-| BR-186 | UC-07-14, UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/libs/dataagent_db/models/forecast.py` +5 |
+| BR-186 | UC-07-14, UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/libs/dataagent_db/models/forecast.py` +6 |
 | BR-187 | UC-08-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-188 | UC-16-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-189 | UC-16-01, UC-16-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +17 |
@@ -2089,7 +2089,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-15-08 Sổ dự báo và tự chấm · 4/10</summary>
+<details><summary>UC-15-08 Sổ dự báo và tự chấm · 3/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
@@ -2099,7 +2099,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | AC-15-08-04 | Quy tắc | Cho ngưỡng miss mặc định 300 đ/lít / Khi một kỳ có giá công bố ngoài khoảng 95% hoặc sai tuyệt đối 350 đ/lít / Thì miss = true, phát forecast.ledger.missed, Error Book có mục forecast_miss kèm phần lệch chính trong 15… | API, CSDL | todo |  |
 | AC-15-08-05 | Quy tắc | Cho ledger_entry đã chấm / Khi ghi miss = false cho giá ngoài 95%, đổi error_book_entry_id đã ghi, hoặc đưa dòng về open / Thì CSDL từ chối từng trường hợp | CSDL | todo | `tests/integration/migrate/test_acquire_forecast.py` |
 | AC-15-08-06 | Quy tắc | Cho ledger_entry của kỳ 09/7 / Khi ghi dòng sau thời điểm kỳ, sửa trung vị sau khi ghi, hoặc xoá dòng / Thì CSDL từ chối cả 3 (xoá báo permission denied) | CSDL | todo | `tests/integration/api/test_forecast.py` |
-| AC-15-08-07 | Thay thế | Cho Bộ đính chính bản tin kỳ 02/7 và dataset có phiên bản mới / Khi AC03 bấm Chấm lại / Thì có bản chấm mới theo phiên bản mới và bản chấm cũ còn trong lịch sử | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
+| AC-15-08-07 | Thay thế | Cho Bộ đính chính bản tin kỳ 02/7 và dataset có phiên bản mới / Khi AC03 bấm Chấm lại / Thì có bản chấm mới theo phiên bản mới và bản chấm cũ còn trong lịch sử | API, CSDL | todo |  |
 | AC-15-08-08 | Thay thế | Cho sổ có 20 kỳ của 5 mặt hàng / Khi lọc E5RON92, chỉ kỳ miss rồi mở một dòng / Thì bảng chỉ còn dòng E5RON92 có miss, xếp mới nhất trước, và ngăn chi tiết có bản tin đã gửi cùng kết quả | E2E | todo |  |
 | AC-15-08-09 | Ngoại lệ | Cho kỳ 09/7 bị huỷ và kỳ 02/7 đã có giá công bố / Khi chuyển dòng sang void / Thì dòng kỳ 09/7 void kèm lý do, dòng kỳ 02/7 bị từ chối | API, CSDL | todo |  |
 | AC-15-08-10 | Ngoại lệ | Cho kỳ 09/7 quá post_wait_max chưa có bản tin / Khi hết thời gian chờ / Thì dòng vẫn open, người phụ trách nhận báo và SCR-71 hiện “chưa có kết quả kỳ 09/07/2026” | API, E2E | todo |  |
