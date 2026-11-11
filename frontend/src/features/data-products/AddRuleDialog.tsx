@@ -12,6 +12,7 @@ import {
 } from '../../lib/v1/dataProducts';
 import { useV1 } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
+import { parseNumber } from '../../lib/formatVN';
 
 /*
  * "Thêm quy tắc" of "P06 · Quy tắc chất lượng". The design has no dialog for it, so the fields are
@@ -57,7 +58,7 @@ export function AddRuleDialog({
       setError('Chọn bảng và nhập cột.');
       return;
     }
-    const bounds = { min: Number(min.replace(',', '.')), max: Number(max.replace(',', '.')) };
+    const bounds = { min: parseNumber(min) ?? NaN, max: parseNumber(max) ?? NaN };
     if (
       kind === 'range' &&
       (!min.trim() || !max.trim() || isNaN(bounds.min) || isNaN(bounds.max))

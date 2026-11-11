@@ -18,7 +18,7 @@ import {
 } from '../../design-system/tableView';
 import { Toggle } from '../../design-system/Toggle';
 import { useToast } from '../../design-system/Toast';
-import { formatDate, formatNumber } from '../../lib/formatVN';
+import { formatDate, formatNumber, parseNumber } from '../../lib/formatVN';
 import {
   addProvider,
   getRoutingLog,
@@ -586,7 +586,7 @@ export function AddProviderDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
-  const budgetMillions = Number(budget.replace(',', '.'));
+  const budgetMillions = parseNumber(budget) ?? NaN;
   const budgetOk = kind === 'local' || (budget.trim() !== '' && budgetMillions > 0);
 
   const submit = async () => {

@@ -13,6 +13,7 @@ import {
   formatRelative,
   formatTime,
   isNumericColumn,
+  parseNumber,
   setNumberLocale,
   toDate,
   toNumber,
@@ -204,5 +205,40 @@ describe('formatMoneyShort', () => {
     expect(formatMoneyShort('1200000')).toBe('1,2 triệu đ');
     expect(formatMoneyShort(3_500_000_000)).toBe('3,5 tỷ đ');
     expect(formatMoneyShort(8000)).toBe('8.000 đ');
+  });
+});
+
+describe('parseNumber', () => {
+  it('reads what a person types in Vietnamese: grouping dots, a decimal comma', () => {
+    // A dot followed by groups of three digits groups them: "1.000" is a thousand, not one.
+    expect(parseNumber('1.000')).toBe(1000);
+    expect(parseNumber('12.500.000')).toBe(12500000);
+    expect(parseNumber('1.234,5')).toBe(1234.5);
+    expect(parseNumber('0,25')).toBe(0.25);
+    expect(parseNumber('-3,5')).toBe(-3.5);
+    expect(parseNumber('1 000 000')).toBe(1000000);
+  });
+
+  it('takes a dot not followed by groups of three as the decimal point it was typed as', () => {
+    expect(parseNumber('1.5')).toBe(1.5);
+    expect(parseNumber('0.25')).toBe(0.25);
+  });
+
+  it('says what is not a number', () => {
+    expect(parseNumber('')).toBeNull();
+    expect(parseNumber('abc')).toBeNull();
+    expect(parseNumber('1,2,3')).toBeNull();
+    expect(parseNumber('1.2.3')).toBeNull();
+  });
+
+  it('follows the organisation’s marks', () => {
+    try {
+      setNumberLocale('en-US');
+      expect(parseNumber('1,000')).toBe(1000);
+      expect(parseNumber('1,234.5')).toBe(1234.5);
+      expect(parseNumber('1,5')).toBe(1.5);
+    } finally {
+      setNumberLocale(null);
+    }
   });
 });

@@ -30,6 +30,7 @@ import { useV1 } from '../../lib/v1/useV1';
 import { cutoffShort, ForecastChart, ForecastLegend } from './ForecastChart';
 import { DataTable, downloadCsv, type Column } from './parts';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { parseNumber } from '../../lib/formatVN';
 
 /*
  * "P15 · Kết quả dự báo & kịch bản" (2391:15164, UC-15-01, UC-15-05): history, forecast and its
@@ -310,7 +311,7 @@ function ScenarioCard({
   const [busy, setBusy] = useState<'run' | 'reload' | null>(null);
   const [error, setError] = useState<string>();
 
-  const amount = value.trim() === '' ? null : Number(value.replace(',', '.'));
+  const amount = value.trim() === '' ? null : parseNumber(value);
   const needsValue = change !== 'giữ nguyên';
   const fromLabel = forecast.points.find((p) => p.period === from)?.label ?? '';
   const defaultName = feature

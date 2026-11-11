@@ -10,7 +10,7 @@ import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
-import { formatDate, formatNumber } from '../../lib/formatVN';
+import { formatDate, formatNumber, parseNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
 import { listAnswerProducts } from '../../lib/v1/answerProducts';
 import {
@@ -339,7 +339,7 @@ function Composer({
   const [error, setError] = useState<string>();
 
   const picked = targets.data?.find((t) => t.value === target);
-  const value = Number(threshold.replace(/\./g, '').replace(',', '.'));
+  const value = parseNumber(threshold) ?? NaN;
   const dueAt = due ? new Date(due) : null;
   const tooSoon = !dueAt || dueAt.getTime() - Date.now() < 86_400_000;
   const ready =

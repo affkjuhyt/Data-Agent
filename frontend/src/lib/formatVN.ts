@@ -75,6 +75,45 @@ export function toNumber(value: Numeric): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** "1.000" read with `mark` as the grouping: 1-3 digits, then groups of exactly three. */
+const groupedBy = (digits: string, mark: string) =>
+  new RegExp(`^\\d{1,3}(?:\\${mark}\\d{3})*$`).test(digits);
+
+/**
+ * A number as a person types it, read with the organisation's marks; null when it is not one.
+ * Both "." and "," present: the last is the decimal mark. One of them only: the locale's decimal
+ * mark is decimal; the locale's grouping mark groups when every group after it has three digits
+ * ("1.000", "12.500.000" in vi-VN), and is otherwise the decimal point typed out of habit
+ * ("1.5"). A strict locale parser (@internationalized/number) reads "1.5" as 15 in vi-VN, so a
+ * budget typed that way would be ten times over: this rule mirrors libs/tabular's instead.
+ */
+export function parseNumber(text: string): number | null {
+  const typed = text.trim().replace(/[\s  ]/g, '');
+  const match = /^([-+]?)([\d.,]+)$/.exec(typed);
+  if (!match || !/\d/.test(match[2])) return null;
+  const [, sign, body] = match;
+  let plain: string | null = null;
+  if (body.includes('.') && body.includes(',')) {
+    const decimal = body.lastIndexOf('.') > body.lastIndexOf(',') ? '.' : ',';
+    const [whole, fraction, ...rest] = body.split(decimal);
+    const group = decimal === '.' ? ',' : '.';
+    if (!rest.length && /^\d+$/.test(fraction) && groupedBy(whole, group))
+      plain = `${whole.split(group).join('')}.${fraction}`;
+  } else if (body.includes('.') || body.includes(',')) {
+    const mark = body.includes('.') ? '.' : ',';
+    const parts = body.split(mark);
+    const groups = groupedBy(body, mark);
+    if (parts.length > 2) plain = groups ? parts.join('') : null;
+    else if (mark !== DECIMAL && GROUP === mark && groups) plain = parts.join('');
+    else if (/^\d*$/.test(parts[0]) && /^\d+$/.test(parts[1])) plain = `${parts[0] || '0'}.${parts[1]}`;
+  } else {
+    plain = body;
+  }
+  if (plain === null) return null;
+  const n = Number(`${sign}${plain}`);
+  return Number.isFinite(n) ? n : null;
+}
+
 function groupInteger(digits: string): string {
   let out = '';
   for (let i = 0; i < digits.length; i++) {

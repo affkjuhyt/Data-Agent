@@ -20,6 +20,7 @@ import {
 } from '../../lib/v1/monitors';
 import { useV1 } from '../../lib/v1/useV1';
 import { LinkButton } from '../../components/shell/AppLink';
+import { parseNumber } from '../../lib/formatVN';
 
 /*
  * "P08 · Theo dõi · Tạo theo dõi" (2270:16233, UC-08-01): metric and how to split it, the rule, who
@@ -60,7 +61,8 @@ const SENSITIVITY = opt([
   ['high', 'cao'],
 ]);
 
-const parse = (s: string) => Number(s.replace(',', '.'));
+// A number as typed, "1.000" a thousand (formatVN.parseNumber); NaN when it is not one.
+const parse = (s: string) => parseNumber(s) ?? NaN;
 const valid = (s: string) => s.trim() !== '' && Number.isFinite(parse(s));
 
 export default function WatchCreatePage() {
