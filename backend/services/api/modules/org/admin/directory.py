@@ -38,7 +38,7 @@ from services.api.modules.org.admin.schemas import (
     PermissionRoleView,
     UserGroupView,
 )
-from services.api.modules.org.identity import ROLE
+from services.api.modules.org.identity import ROLE, still_valid
 
 router = APIRouter()
 
@@ -270,7 +270,11 @@ async def get_data_space_permissions(
             (
                 await session.execute(
                     select(org.DataSpaceMember.role_id, func.count(org.DataSpaceMember.id))
-                    .where(org.DataSpaceMember.data_space_id == space_id)
+                    # An expired membership grants nothing (identity.memberships): not counted.
+                    .where(
+                        org.DataSpaceMember.data_space_id == space_id,
+                        still_valid(org.DataSpaceMember.valid_until),
+                    )
                     .group_by(org.DataSpaceMember.role_id)
                 )
             )

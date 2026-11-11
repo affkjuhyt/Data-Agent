@@ -119,6 +119,16 @@ async def test_directory_sync_and_invitation_are_queued(world: World) -> None:
 
 async def test_the_permission_matrix_counts_the_members_of_each_role(world: World) -> None:
     url = f"/v1/data-spaces/{world.space}/permissions"
+    # An expired membership grants nothing: it is not one more analyst.
+    world.seed.row(
+        "org.data_space_member",
+        org_id=world.org,
+        data_space_id=world.space,
+        principal_type="user",
+        principal_id=world.users["helper"],
+        role_id=world.roles["analyst"],
+        valid_until="2020-01-01T00:00:00Z",
+    )
     async with client(world) as api:
         matrix = await api.get(url, headers=world.headers("steward", world.space))
         # Another Data Space in the path than in X-Data-Space answers as if it did not exist.

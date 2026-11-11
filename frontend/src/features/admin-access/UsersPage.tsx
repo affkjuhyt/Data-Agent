@@ -38,7 +38,10 @@ export default function UsersPage() {
   const [inviting, setInviting] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
-  const people = users.data?.items.filter((u) => u.kind === 'person') ?? [];
+  // A disabled or departed account (directory sync, org.app_user.status) is listed, marked, but
+  // not counted among the organisation's people.
+  const people =
+    users.data?.items.filter((u) => u.kind === 'person' && u.status === 'active') ?? [];
   const lastSync = people.reduce<string | null>(
     (latest, u) =>
       u.last_synced_at && (!latest || u.last_synced_at > latest) ? u.last_synced_at : latest,
@@ -128,7 +131,14 @@ function UsersTable({ users }: { users: AdminUser[] }) {
   const view = useTableView(users, {
     search: (u) =>
       `${u.display_name} ${u.group_label} ${u.role_name} ${u.data_space_text} ${u.row_scope_text} ${dayMonth(u.valid_until)}`,
-    filters: [{ id: 'role', label: 'Vai trò', value: (u) => u.role_name }],
+    filters: [
+      { id: 'role', label: 'Vai trò', value: (u) => u.role_name },
+      {
+        id: 'status',
+        label: 'Trạng thái',
+        value: (u) => (u.status === 'active' ? 'Đang dùng' : 'Không còn dùng'),
+      },
+    ],
     sorts: [
       { id: 'name', value: (u) => u.display_name },
       { id: 'role', value: (u) => u.role_name },
@@ -182,7 +192,15 @@ function UsersTable({ users }: { users: AdminUser[] }) {
             <tr key={u.id} className="border-b border-border align-middle">
               <td className="px-da-lg py-da-md">
                 <div className="flex min-w-0 flex-col gap-[2px]">
-                  <span className="truncate text-foreground da-body-strong">{u.display_name}</span>
+                  <span className="truncate text-foreground da-body-strong">
+                    {u.display_name}
+                    {u.status !== 'active' && (
+                      <span className="text-muted-foreground da-caption">
+                        {' '}
+                        · {u.status === 'left' ? 'đã nghỉ' : 'đã vô hiệu hoá'}
+                      </span>
+                    )}
+                  </span>
                   <span className="truncate text-muted-foreground da-mono">{u.group_label}</span>
                 </div>
               </td>

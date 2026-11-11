@@ -21,8 +21,10 @@ export default function AdminPage() {
   const users = useV1(['listUsers'], listUsers);
   const models = useV1(['listModels'], listModels);
 
-  const people = users.data?.items.filter((u) => u.kind === 'person').length;
-  const agents = users.data?.items.filter((u) => u.kind === 'agent').length;
+  // Only accounts in use: a disabled or departed one stays listed in Người & quyền, not counted.
+  const active = users.data?.items.filter((u) => u.status === 'active');
+  const people = active?.filter((u) => u.kind === 'person').length;
+  const agents = active?.filter((u) => u.kind === 'agent').length;
   const worse = models.data?.items.find((m) => (m.latest_eval_delta ?? 0) < 0);
 
   const open = (section: string) => () => navigate('admin', section);

@@ -289,7 +289,8 @@ function membersFixture(spaceId: string = DS_RISK): MemberWire[] {
     ),
     m('u-minh-tam', 'Lê Minh Tâm', 'role-viewer', 'Người xem', null, {
       source: 'access_request',
-      valid_until: new Date(new Date().getFullYear(), 9, 30, 23, 59).toISOString(),
+      // Next year's 30/10: still valid whenever the tests run.
+      valid_until: new Date(new Date().getFullYear() + 1, 9, 30, 23, 59).toISOString(),
     }),
     m('agent-doi-soat', 'Agent Đối soát', 'role-agent', 'Agent (theo chủ sở hữu)', null, {
       principal_type: 'agent',

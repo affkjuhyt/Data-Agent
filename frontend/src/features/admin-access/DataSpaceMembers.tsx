@@ -259,7 +259,8 @@ function MemberRow({ member }: { member: DataSpaceMember }) {
   const detail = [
     member.role_name,
     member.valid_until
-      ? `Hết hạn ${dayMonth(member.valid_until)}`
+      ? // A past date is a membership that grants nothing any more, not one about to end.
+        `${new Date(member.valid_until) < new Date() ? 'Đã hết hạn' : 'Hết hạn'} ${dayMonth(member.valid_until)}`
       : (member.row_scope_text ?? 'Toàn bộ'),
     member.access_note,
   ]
