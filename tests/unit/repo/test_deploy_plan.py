@@ -107,7 +107,7 @@ class TestRealImages:
         assert plan.paths_touching(["backend/alembic/versions/x.py"], inputs)
         # V3 migrations apply generated SQL directly; the image copies no libs.
         assert not plan.paths_touching(
-            ["backend/services/api/main.py", "backend/libs/shared/freshness.py"], inputs
+            ["backend/services/api/main.py", "backend/libs/tabular/__init__.py"], inputs
         )
 
     def test_images_that_never_copy_libs_ignore_a_libs_change(self):

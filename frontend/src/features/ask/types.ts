@@ -57,7 +57,7 @@ export interface MetricProvenance {
   owner?: string | null;
 }
 
-/** backend/libs/shared/freshness.TableGovernance.to_dict() */
+/** A table's governance as V2's libs/shared/freshness wrote it (TableGovernance.to_dict). */
 interface TableGovernance {
   table: string;
   owner?: string | null;
@@ -70,7 +70,7 @@ interface TableGovernance {
   last_crawled_at?: string | null;
 }
 
-/** backend/libs/shared/freshness.Provenance.to_dict() — how CURRENT the data is. */
+/** How CURRENT the data is, as V2's libs/shared/freshness wrote it (Provenance.to_dict). */
 export interface DataProvenance {
   status: 'fresh' | 'stale' | 'unknown' | string;
   as_of?: string | null;
@@ -135,7 +135,7 @@ export interface ResultSet {
   citation_index?: number | null;
 }
 
-/** backend/libs/shared/aggregation_check.AggregationReport.to_dict() */
+/** V2's libs/shared/aggregation_check report (AggregationReport.to_dict). */
 export interface AggregationReport {
   findings: Array<{ kind: string; detail: string; expression?: string }>;
   structurally_safe: boolean;
