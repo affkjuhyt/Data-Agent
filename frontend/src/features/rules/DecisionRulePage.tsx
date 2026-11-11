@@ -19,7 +19,7 @@ import {
   listDraftRules,
   type DecisionRule,
 } from '../../lib/v1/rules';
-import { useV1 } from '../../lib/v1/useV1';
+import { invalidateV1, useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P07 · Quy tắc từ quyết định" (2302:19305, UC-07-08): a rule drafted from a decision in Cần
@@ -58,46 +58,48 @@ export default function DecisionRulePage() {
   }
   return (
     <AsyncRegion state={rule} what="quy tắc">
-      {(r) => <RuleBody rule={r} onChanged={rule.reload} />}
+      {(r) => <RuleBody rule={r} />}
     </AsyncRegion>
   );
 }
 
-function RuleBody({ rule, onChanged }: { rule: DecisionRule; onChanged: () => void }) {
+function RuleBody({ rule }: { rule: DecisionRule }) {
   const { navigate } = useAppState();
   const toast = useToast();
-  const [busy, setBusy] = useState<'backtest' | 'activate' | 'discard' | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [reason, setReason] = useState('');
   const [reasonMissing, setReasonMissing] = useState(false);
-  const [error, setError] = useState<string>();
   const status = STATUS[rule.status];
   const draft = rule.status === 'draft';
 
-  const act = async (verb: 'backtest' | 'activate' | 'discard') => {
-    setBusy(verb);
-    setError(undefined);
-    try {
-      if (verb === 'backtest') {
-        await backtestDecisionRule(rule.id, rule.backtest?.window_days ?? 30);
-        toast({ tone: 'info', message: 'Đang chạy thử lại; kết quả hiện khi xong.' });
-      } else if (verb === 'activate') {
-        await activateDecisionRule(rule.id);
-        toast({ tone: 'success', message: 'Đã bật quy tắc' });
-      } else {
-        await discardDecisionRule(rule.id, reason.trim());
-        toast({ tone: 'success', message: 'Đã bỏ bản nháp quy tắc' });
-        navigate('needs-you');
-        return;
-      }
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-      setConfirmDiscard(false);
-    }
-  };
+  const action = useV1Mutation(
+    (verb: 'backtest' | 'activate' | 'discard'): Promise<unknown> =>
+      verb === 'backtest'
+        ? backtestDecisionRule(rule.id, rule.backtest?.window_days ?? 30)
+        : verb === 'activate'
+          ? activateDecisionRule(rule.id)
+          : discardDecisionRule(rule.id, reason.trim()),
+    {
+      onSuccess: (_, verb) => {
+        setConfirmDiscard(false);
+        if (verb === 'discard') {
+          toast({ tone: 'success', message: 'Đã bỏ bản nháp quy tắc' });
+          navigate('needs-you');
+          return;
+        }
+        toast(
+          verb === 'backtest'
+            ? { tone: 'info', message: 'Đang chạy thử lại; kết quả hiện khi xong.' }
+            : { tone: 'success', message: 'Đã bật quy tắc' },
+        );
+        invalidateV1([['getDecisionRule']]);
+      },
+      onError: () => setConfirmDiscard(false),
+    },
+  );
+  const act = (verb: 'backtest' | 'activate' | 'discard') => action.run(verb);
+  const busy = action.pending ? (action.variables ?? null) : null;
+  const error = action.error?.message;
 
   return (
     <div className="flex min-h-full flex-col">

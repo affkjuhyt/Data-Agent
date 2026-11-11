@@ -12,7 +12,7 @@ import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design
 import { useToast } from '../../design-system/Toast';
 import { decideProposal, getProposal, listInbox } from '../../lib/v1/api';
 import type { DecideProposal, Proposal, ProposalImpact } from '../../lib/v1/types';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { decisionKindOf } from './decision';
 import { LinkButton } from '../../components/shell/AppLink';
 
@@ -45,31 +45,30 @@ export default function ProposalPage() {
   const inbox = useV1(['listInbox', 'pending'], () => listInbox());
   const [dialog, setDialog] = useState<Dialog>(null);
   const [note, setNote] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
   const [noteMissing, setNoteMissing] = useState(false);
   const [reviewedRegressions, setReviewedRegressions] = useState(false);
 
-  const decide = async (p: Proposal, body: DecideProposal) => {
-    setSending(true);
-    setError(undefined);
-    try {
-      await decideProposal(p.id, body);
-      const word = {
-        accept: 'Đã chấp nhận',
-        accept_with_edit: 'Đã chấp nhận',
-        reject: 'Đã từ chối',
-        request_changes: 'Đã yêu cầu sửa',
-      }[body.decision];
-      toast({ tone: 'success', message: `${word} ${p.code ?? p.title}` });
-      navigate('needs-you');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-      setDialog(null);
-    }
-  };
+  const decision = useV1Mutation(
+    ({ p, body }: { p: Proposal; body: DecideProposal }) => decideProposal(p.id, body),
+    {
+      onSuccess: (_, { p, body }) => {
+        const word = {
+          accept: 'Đã chấp nhận',
+          accept_with_edit: 'Đã chấp nhận',
+          reject: 'Đã từ chối',
+          request_changes: 'Đã yêu cầu sửa',
+        }[body.decision];
+        toast({ tone: 'success', message: `${word} ${p.code ?? p.title}` });
+        navigate('needs-you');
+        setDialog(null);
+      },
+      // The dialog closes either way; a failure shows under the header.
+      onError: () => setDialog(null),
+    },
+  );
+  const decide = (p: Proposal, body: DecideProposal) => decision.run({ p, body });
+  const sending = decision.pending;
+  const error = decision.error?.message;
 
   const items = inbox.data?.items ?? [];
   const countOf = (kind: string) => items.filter((r) => decisionKindOf(r) === kind).length;
@@ -276,7 +275,7 @@ export default function ProposalPage() {
                       return;
                     }
                     setNoteMissing(false);
-                    void decide(p, { decision: dialog!.decision, note: note.trim() || undefined });
+                    decide(p, { decision: dialog!.decision, note: note.trim() || undefined });
                   }}
                 >
                   <div className="flex flex-col gap-da-sm">

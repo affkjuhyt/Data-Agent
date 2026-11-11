@@ -5,7 +5,7 @@ import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
 import { listSchemas, uploadDocuments, type PiiPolicy } from '../../lib/v1/documents';
 import { listCollections } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
@@ -45,15 +45,29 @@ export function UploadDocumentsDialog({
   const [collection, setCollection] = useState<string | null>(collectionId ?? null);
   const [schema, setSchema] = useState<string>(NO_SCHEMA);
   const [pii, setPii] = useState<PiiPolicy>('mask');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  // Nothing picked is caught here; the server's answer lands in the mutation.
+  const [invalid, setInvalid] = useState<string>();
+  const upload = useV1Mutation(
+    ({ collection_id }: { collection_id: string }) =>
+      uploadDocuments({
+        collection_id,
+        schema_id: schema === NO_SCHEMA ? null : schema,
+        pii,
+        files,
+      }),
+    {
+      invalidates: [['getDocumentCounts'], ['listLibrary'], ['listUploads']],
+      onSuccess: (result) => onUploaded(result),
+    },
+  );
 
   useEffect(() => {
     if (!open) return;
     setFiles([]);
     setCollection(collectionId ?? null);
     setPii('mask');
-    setError(undefined);
+    setInvalid(undefined);
+    upload.reset();
   }, [open, collectionId]);
 
   const collectionSchemas = (schemas.data?.items ?? []).filter(
@@ -77,24 +91,11 @@ export function UploadDocumentsDialog({
     pick(e.dataTransfer.files);
   };
 
-  const submit = async () => {
-    if (files.length === 0) return setError('Chọn ít nhất một tệp.');
-    if (!collection) return setError('Chọn bộ sưu tập.');
-    setBusy(true);
-    setError(undefined);
-    try {
-      const result = await uploadDocuments({
-        collection_id: collection,
-        schema_id: schema === NO_SCHEMA ? null : schema,
-        pii,
-        files,
-      });
-      onUploaded(result);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+  const submit = () => {
+    if (files.length === 0) return setInvalid('Chọn ít nhất một tệp.');
+    if (!collection) return setInvalid('Chọn bộ sưu tập.');
+    setInvalid(undefined);
+    upload.run({ collection_id: collection });
   };
 
   const total = files.reduce((n, f) => n + f.size, 0);
@@ -105,10 +106,10 @@ export function UploadDocumentsDialog({
       title="Nạp tệp vào bộ sưu tập"
       description="Tệp đi qua pipeline: nhận dạng, trích trường, lập chỉ mục, che dữ liệu cá nhân."
       submitLabel="Nạp"
-      submitting={busy}
-      error={error}
+      submitting={upload.pending}
+      error={invalid ?? upload.error?.message}
       onClose={onClose}
-      onSubmit={() => void submit()}
+      onSubmit={submit}
     >
       <div className="flex flex-col gap-da-xs">
         <span className="text-muted-foreground da-label">Tệp</span>

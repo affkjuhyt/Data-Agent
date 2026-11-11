@@ -156,8 +156,6 @@ export default function DataSpaceMembers({ id }: { id: string }) {
         onAdded={(who) => {
           setAdding(false);
           toast({ tone: 'success', message: `Đã thêm ${who} vào ${name ?? 'Data Space'}` });
-          members.reload();
-          space.reload();
         }}
       />
     </div>

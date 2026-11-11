@@ -15,7 +15,7 @@ import {
   type ColumnProfile,
   type TableProfile,
 } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { LinkButton } from '../../components/shell/AppLink';
 
@@ -47,15 +47,13 @@ function ProfileView({ profile }: { profile: TableProfile }) {
   const [tab, setTab] = useState<Tab>('profile');
   const [queued, setQueued] = useState(false);
 
-  const reprofile = async () => {
-    try {
-      await reprofileTable(profile);
+  const reprofile = useV1Mutation(() => reprofileTable(profile), {
+    onSuccess: () => {
       setQueued(true);
       toast({ tone: 'success', message: `Đã xếp lịch lập hồ sơ lại ${profile.name}.` });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không lập hồ sơ lại được. ${(e as Error).message}` });
-    }
-  };
+    },
+    onError: (e) => toast({ tone: 'error', message: `Không lập hồ sơ lại được. ${e.message}` }),
+  });
 
   const facts = [
     `${formatNumber(profile.row_count)} dòng`,
@@ -73,7 +71,7 @@ function ProfileView({ profile }: { profile: TableProfile }) {
         description={facts.join(' · ')}
         actions={
           <>
-            <Button kind="ghost" onClick={() => void reprofile()} disabled={queued}>
+            <Button kind="ghost" onClick={() => reprofile.run()} disabled={queued}>
               Lập hồ sơ lại
             </Button>
             <LinkButton area="analysis" page="ASK">

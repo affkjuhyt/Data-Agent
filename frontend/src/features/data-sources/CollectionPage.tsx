@@ -20,7 +20,7 @@ import {
   type DocumentDetail,
   type StepState,
 } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { LinkButton } from '../../components/shell/AppLink';
 
@@ -74,7 +74,6 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const documents = useV1(['listDocuments', collection.id], () => listDocuments(collection.id));
   const [selected, setSelected] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
   const view = useTableView(documents.data?.items ?? [], {
     search: (doc) => `${doc.title} ${doc.type_text} ${doc.validity?.text ?? ''} ${doc.status.text}`,
     filters: [{ id: 'kind', label: 'Loại', value: (doc) => doc.type_text.split(' · ')[0] }],
@@ -88,19 +87,14 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
     pageSize: 50,
   });
 
-  const upload = async (file: File | undefined) => {
-    if (!file) return;
-    setUploading(true);
-    try {
-      await addDocument(collection.id, file);
-      toast({ tone: 'success', message: `Đã nhận ${file.name}. Agent đang tiền xử lý.` });
-      documents.reload();
-    } catch (e) {
-      toast({ tone: 'error', message: `Không tải lên được ${file.name}. ${(e as Error).message}` });
-    } finally {
-      setUploading(false);
-    }
-  };
+  const upload = useV1Mutation((file: File) => addDocument(collection.id, file), {
+    invalidates: [['listDocuments', collection.id]],
+    onSuccess: (_, file) =>
+      toast({ tone: 'success', message: `Đã nhận ${file.name}. Agent đang tiền xử lý.` }),
+    onError: (e, file) =>
+      toast({ tone: 'error', message: `Không tải lên được ${file.name}. ${e.message}` }),
+  });
+  const uploading = upload.pending;
 
   const facts = [
     `${formatNumber(collection.document_count)} tài liệu`,
@@ -127,7 +121,8 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
                 className="sr-only"
                 aria-label="Chọn tài liệu để tải lên"
                 onChange={(e) => {
-                  void upload(e.target.files?.[0]);
+                  const file = e.target.files?.[0];
+                  if (file) upload.run(file);
                   e.target.value = '';
                 }}
               />

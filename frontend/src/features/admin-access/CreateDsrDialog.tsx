@@ -3,6 +3,7 @@ import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { createDsr, type DsrKind } from '../../lib/v1/adminAccess';
+import { useV1Mutation } from '../../lib/v1/useV1';
 import { addDays, dayMonth, isoDay } from './format';
 import { Dialog } from '../../design-system/Dialog';
 import { DateField } from '../../design-system/DateField';
@@ -40,8 +41,19 @@ export function CreateDsrDialog({
   const [subject, setSubject] = useState('');
   const [received, setReceived] = useState(isoDay(new Date()));
   const [deadline, setDeadline] = useState('30');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
+  const [invalid, setInvalid] = useState<string>();
+  const create = useV1Mutation(
+    () => {
+      const receivedAt = new Date(`${received}T00:00:00`);
+      return createDsr({
+        request_kind: kind,
+        subject_identifier: subject.trim(),
+        received_at: receivedAt.toISOString(),
+        due_at: addDays(Number(deadline), receivedAt).toISOString(),
+      });
+    },
+    { onSuccess: onCreated },
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -49,30 +61,18 @@ export function CreateDsrDialog({
     setSubject('');
     setReceived(isoDay(new Date()));
     setDeadline('30');
-    setError(undefined);
+    setInvalid(undefined);
+    create.reset();
   }, [open]);
 
-  const submit = async () => {
+  const submit = () => {
     if (!subject.trim()) {
-      setError('Nhập định danh đã xác minh của chủ thể (CCCD hoặc mã khách hàng).');
+      create.reset();
+      setInvalid('Nhập định danh đã xác minh của chủ thể (CCCD hoặc mã khách hàng).');
       return;
     }
-    setSending(true);
-    setError(undefined);
-    try {
-      const receivedAt = new Date(`${received}T00:00:00`);
-      const created = await createDsr({
-        request_kind: kind,
-        subject_identifier: subject.trim(),
-        received_at: receivedAt.toISOString(),
-        due_at: addDays(Number(deadline), receivedAt).toISOString(),
-      });
-      onCreated(created);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
+    setInvalid(undefined);
+    create.run();
   };
 
   return (
@@ -81,8 +81,8 @@ export function CreateDsrDialog({
       title="Tạo yêu cầu của chủ thể dữ liệu"
       description="Agent sẽ tìm dữ liệu ở mọi nơi; thao tác xoá luôn cần duyệt."
       submitLabel="Tạo yêu cầu"
-      submitting={sending}
-      error={error}
+      submitting={create.pending}
+      error={invalid ?? create.error?.message}
       onSubmit={submit}
       onClose={onClose}
     >

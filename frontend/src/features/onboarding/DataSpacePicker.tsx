@@ -12,7 +12,7 @@ import {
   type DataSpaceChoice,
   type MyDataSpaces,
 } from '../../lib/v1/explore';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { BrandBar } from './BrandBar';
 
 /*
@@ -121,24 +121,25 @@ function Choices({
     }
   };
 
-  const ask = async (space: DataSpaceChoice) => {
-    const until = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
-    try {
-      await requestAccess({
+  const ask = useV1Mutation(
+    (space: DataSpaceChoice) =>
+      requestAccess({
         data_space_id: space.id,
         capability: 'view_aggregate',
         reason: `Xin quyền vào Data Space ${space.name}.`,
-        requested_until: until,
-      });
-      setRequested((prev) => new Set(prev).add(space.id));
-      toast({
-        tone: 'success',
-        message: `Đã gửi yêu cầu tới ${space.owner_name ?? 'người phụ trách'}.`,
-      });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không gửi được yêu cầu: ${(e as Error).message}` });
-    }
-  };
+        requested_until: new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10),
+      }),
+    {
+      onSuccess: (_, space) => {
+        setRequested((prev) => new Set(prev).add(space.id));
+        toast({
+          tone: 'success',
+          message: `Đã gửi yêu cầu tới ${space.owner_name ?? 'người phụ trách'}.`,
+        });
+      },
+      onError: (e) => toast({ tone: 'error', message: `Không gửi được yêu cầu: ${e.message}` }),
+    },
+  );
 
   return (
     <>
@@ -179,7 +180,7 @@ function Choices({
               <Button
                 kind="ghost"
                 disabled={requested.has(space.id)}
-                onClick={() => void ask(space)}
+                onClick={() => ask.run(space)}
                 aria-label={`Yêu cầu quyền vào ${space.name}`}
               >
                 {requested.has(space.id) ? 'Đã gửi yêu cầu' : 'Yêu cầu quyền'}

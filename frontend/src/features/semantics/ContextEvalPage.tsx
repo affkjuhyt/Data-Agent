@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
@@ -15,7 +14,7 @@ import {
   runContextEval,
   type ContextEval,
 } from '../../lib/v1/semanticLayer';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { LinkButton } from '../../components/shell/AppLink';
 
 /*
@@ -47,7 +46,6 @@ export default function ContextEvalPage() {
 function EvalBody({ evaluation }: { evaluation: ContextEval }) {
   const { navigate } = useAppState();
   const toast = useToast();
-  const [busy, setBusy] = useState(false);
   const runs = useTableView(evaluation.runs, {
     search: (r) => `${r.label} ${r.change} ${r.correct} ${RESULT[r.result].label}`,
     filters: [{ id: 'result', label: 'Kết quả', value: (r) => RESULT[r.result].label }],
@@ -71,20 +69,9 @@ function EvalBody({ evaluation }: { evaluation: ContextEval }) {
     ],
     pageSize: 50,
   });
-  const [error, setError] = useState<string>();
-
-  const rerun = async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await runContextEval(evaluation.id);
-      toast({ tone: 'info', message: 'Đang chạy lại toàn bộ bộ câu hỏi chuẩn' });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const rerun = useV1Mutation(runContextEval, {
+    onSuccess: () => toast({ tone: 'info', message: 'Đang chạy lại toàn bộ bộ câu hỏi chuẩn' }),
+  });
 
   return (
     <div className="flex min-h-full flex-col gap-da-md px-da-xl pb-da-2xl pt-da-lg">
@@ -97,12 +84,12 @@ function EvalBody({ evaluation }: { evaluation: ContextEval }) {
         title="Đánh giá lớp ngữ cảnh"
         description="Bộ câu hỏi chuẩn chạy lại mỗi khi chỉ số, thuật ngữ hay ánh xạ thay đổi. Thay đổi làm giảm số câu đúng không được phát hành."
         actions={
-          <Button loading={busy} onClick={rerun}>
+          <Button loading={rerun.pending} onClick={() => rerun.run(evaluation.id)}>
             Chạy lại toàn bộ
           </Button>
         }
       />
-      {error && <Notice tone="error">Không chạy được: {error}</Notice>}
+      {rerun.error && <Notice tone="error">Không chạy được: {rerun.error.message}</Notice>}
       <dl className="grid grid-cols-4 gap-da-md max-[1023px]:grid-cols-2">
         {evaluation.kpis.map((k) => (
           <div

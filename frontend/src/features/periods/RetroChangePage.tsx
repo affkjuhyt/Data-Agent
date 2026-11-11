@@ -16,7 +16,7 @@ import {
   listOpenRetroChanges,
   type RetroChange,
 } from '../../lib/v1/periods';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P10 · Thay đổi hồi tố" (2304:19466, UC-10-04): data of a locked period changed at the source.
@@ -54,17 +54,17 @@ export default function RetroChangePage() {
   }
   return (
     <AsyncRegion state={change} what="thay đổi hồi tố">
-      {(c) => <RetroBody change={c} onChanged={change.reload} />}
+      {(c) => <RetroBody change={c} />}
     </AsyncRegion>
   );
 }
 
-function RetroBody({ change, onChanged }: { change: RetroChange; onChanged: () => void }) {
+function RetroBody({ change }: { change: RetroChange }) {
   const toast = useToast();
   const [deciding, setDeciding] = useState<Decision | null>(null);
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  // A missing reason is caught here, before the write; the write's own failure is the mutation's.
+  const [invalid, setInvalid] = useState<string>();
   const status = STATUS[change.status];
   const open = change.status === 'open';
   const sources = useTableView(change.source_changes, {
@@ -97,30 +97,32 @@ function RetroBody({ change, onChanged }: { change: RetroChange; onChanged: () =
     pageSize: 50,
   });
 
-  const decide = async () => {
+  const record = useV1Mutation(
+    (decision: Decision) => decideRetroChange(change.id, { decision, decision_note: note.trim() }),
+    {
+      invalidates: [['getRetroChange']],
+      onSuccess: (_, decision) => {
+        toast({
+          tone: 'success',
+          message:
+            decision === 'new_version'
+              ? `Đã tạo bản điều chỉnh ${change.next_version_label}`
+              : 'Đã ghi nhận: không điều chỉnh',
+        });
+        setDeciding(null);
+      },
+    },
+  );
+  const error = invalid ?? record.error?.message;
+
+  const decide = () => {
     if (!deciding) return;
     if (!note.trim()) {
-      setError('Nhập lý do trước khi ghi nhận.');
+      setInvalid('Nhập lý do trước khi ghi nhận.');
       return;
     }
-    setBusy(true);
-    setError(undefined);
-    try {
-      await decideRetroChange(change.id, { decision: deciding, decision_note: note.trim() });
-      toast({
-        tone: 'success',
-        message:
-          deciding === 'new_version'
-            ? `Đã tạo bản điều chỉnh ${change.next_version_label}`
-            : 'Đã ghi nhận: không điều chỉnh',
-      });
-      setDeciding(null);
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    setInvalid(undefined);
+    record.run(deciding);
   };
 
   return (
@@ -251,11 +253,12 @@ function RetroBody({ change, onChanged }: { change: RetroChange; onChanged: () =
         confirmLabel={deciding === 'new_version' ? 'Tạo bản điều chỉnh' : 'Ghi nhận'}
         cancelLabel="Quay lại"
         tone="primary"
-        loading={busy}
+        loading={record.pending}
         error={error}
         onCancel={() => {
           setDeciding(null);
-          setError(undefined);
+          setInvalid(undefined);
+          record.reset();
         }}
         onConfirm={decide}
       >

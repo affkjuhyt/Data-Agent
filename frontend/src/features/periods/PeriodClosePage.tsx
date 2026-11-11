@@ -16,7 +16,7 @@ import {
   type PeriodClose,
   type PeriodSummary,
 } from '../../lib/v1/periods';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P10 · Kỳ chốt · Chốt kỳ" (2304:19277, UC-10-02, UC-10-03): the periods on the left (260px),
@@ -58,20 +58,10 @@ export default function PeriodClosePage() {
   const current = routeId || (items.find((p) => p.status === 'closing') ?? items[0])?.id;
   const period = useV1(['getPeriod', current], current ? () => getPeriod(current) : null);
 
-  const reload = () => {
-    period.reload();
-    periods.reload();
-  };
-
   return (
     <AsyncRegion state={period} what="kỳ chốt">
       {(p) => (
-        <PeriodBody
-          period={p}
-          periods={items}
-          onSelect={(id) => navigate('data', 'PERIOD', id)}
-          onChanged={reload}
-        />
+        <PeriodBody period={p} periods={items} onSelect={(id) => navigate('data', 'PERIOD', id)} />
       )}
     </AsyncRegion>
   );
@@ -81,35 +71,23 @@ function PeriodBody({
   period,
   periods,
   onSelect,
-  onChanged,
 }: {
   period: PeriodClose;
   periods: PeriodSummary[];
   onSelect: (id: string) => void;
-  onChanged: () => void;
 }) {
   const toast = useToast();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
   const closing = period.status === 'closing';
   const current = period.steps.findIndex((s) => s.state !== 'done');
   const status = closing
     ? `${PERIOD_STATUS.closing.label} · bước ${current + 1}/${period.steps.length}`
     : periodLabel(period);
 
-  const start = async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await startPeriodClose(period.id);
-      toast({ tone: 'success', message: `Đang chốt kỳ ${period.code}` });
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const start = useV1Mutation(() => startPeriodClose(period.id), {
+    invalidates: [['getPeriod'], ['listPeriods']],
+    onSuccess: () => toast({ tone: 'success', message: `Đang chốt kỳ ${period.code}` }),
+  });
+  const error = start.error?.message;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -125,7 +103,7 @@ function PeriodBody({
         description={period.context_text}
         actions={
           period.can_start_close && (
-            <Button kind="primary" loading={busy} onClick={() => void start()}>
+            <Button kind="primary" loading={start.pending} onClick={() => start.run()}>
               Chốt kỳ
             </Button>
           )
@@ -175,7 +153,7 @@ function PeriodBody({
 
         <ol className="flex min-w-0 flex-1 flex-col px-da-3xl pt-da-lg">
           {period.steps.map((step, i) => (
-            <Step key={step.title} n={i + 1} step={step} onAnswered={onChanged} />
+            <Step key={step.title} n={i + 1} step={step} />
           ))}
         </ol>
 
@@ -201,7 +179,7 @@ function PeriodBody({
   );
 }
 
-function Step({ n, step, onAnswered }: { n: number; step: CloseStep; onAnswered: () => void }) {
+function Step({ n, step }: { n: number; step: CloseStep }) {
   const look = STEP_STATUS[step.state];
   return (
     <li className="flex items-start gap-[14px] border-b border-border py-[14px]">
@@ -209,7 +187,7 @@ function Step({ n, step, onAnswered }: { n: number; step: CloseStep; onAnswered:
       <div className="flex min-w-0 flex-1 flex-col gap-da-xs">
         <p className="text-foreground da-body-strong">{step.title}</p>
         {step.detail && <p className="text-muted-foreground da-body-small">{step.detail}</p>}
-        {step.issue && <Issue issue={step.issue} onAnswered={onAnswered} />}
+        {step.issue && <Issue issue={step.issue} />}
       </div>
       <span className="w-[110px] shrink-0">
         <StatusDot tone={look.tone}>{look.label}</StatusDot>
@@ -218,32 +196,21 @@ function Step({ n, step, onAnswered }: { n: number; step: CloseStep; onAnswered:
   );
 }
 
-function Issue({
-  issue,
-  onAnswered,
-}: {
-  issue: NonNullable<CloseStep['issue']>;
-  onAnswered: () => void;
-}) {
+function Issue({ issue }: { issue: NonNullable<CloseStep['issue']> }) {
   const toast = useToast();
   const [noteFor, setNoteFor] = useState<string>();
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-
-  const answer = async (option: string, withNote?: string) => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await resolveHitl(issue.hitl_id, { decision: 'answer', option, note: withNote });
-      toast({ tone: 'success', message: 'Đã ghi nhận quyết định đối soát' });
-      onAnswered();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const resolve = useV1Mutation(
+    (vars: { option: string; note?: string }) =>
+      resolveHitl(issue.hitl_id, { decision: 'answer', ...vars }),
+    {
+      invalidates: [['getPeriod'], ['listPeriods']],
+      onSuccess: () => toast({ tone: 'success', message: 'Đã ghi nhận quyết định đối soát' }),
+    },
+  );
+  const answer = (option: string, withNote?: string) => resolve.run({ option, note: withNote });
+  const busy = resolve.pending;
+  const error = resolve.error?.message;
 
   return (
     <div className="flex flex-col gap-da-sm rounded-sm bg-warning-subtle px-da-lg py-[10px]">

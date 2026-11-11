@@ -31,7 +31,7 @@ import {
   type RoutingLog,
   type RoutingLogEntry,
 } from '../../lib/v1/adminPlatform';
-import { useV1, type V1State } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation, type V1State } from '../../lib/v1/useV1';
 import { formatHour, formatLatency, pct } from './format';
 
 type StatusTone = ComponentProps<typeof StatusDot>['tone'];
@@ -108,29 +108,25 @@ export function ProvidersTab({
 }) {
   const toast = useToast();
   const providers = useV1(['listProviders'], listProviders);
-  const [testing, setTesting] = useState<string>();
-
-  const callOnce = async (provider: AiProvider) => {
-    setTesting(provider.id);
-    try {
-      const result = await testProvider(provider.id, provider.model_name);
-      toast(
-        result.ok
-          ? {
-              tone: 'success',
-              message: `${provider.name} trả lời sau ${formatLatency(result.latency_ms)}.`,
-            }
-          : {
-              tone: 'error',
-              message: `${provider.name} không trả lời: ${result.detail ?? 'lỗi không rõ'}`,
-            },
-      );
-    } catch (e) {
-      toast({ tone: 'error', message: (e as Error).message });
-    } finally {
-      setTesting(undefined);
-    }
-  };
+  const test = useV1Mutation(
+    (provider: AiProvider) => testProvider(provider.id, provider.model_name),
+    {
+      onSuccess: (result, provider) =>
+        toast(
+          result.ok
+            ? {
+                tone: 'success',
+                message: `${provider.name} trả lời sau ${formatLatency(result.latency_ms)}.`,
+              }
+            : {
+                tone: 'error',
+                message: `${provider.name} không trả lời: ${result.detail ?? 'lỗi không rõ'}`,
+              },
+        ),
+      onError: (e) => toast({ tone: 'error', message: e.message }),
+    },
+  );
+  const testing = test.pending ? test.variables?.id : undefined;
 
   return (
     <div className="flex flex-col gap-da-xl px-da-3xl pt-da-xl pb-da-3xl">
@@ -145,7 +141,7 @@ export function ProvidersTab({
           isEmpty={(p) => p.items.length === 0}
           empty={<p className="text-muted-foreground da-body-small">Chưa có provider nào.</p>}
         >
-          {(p) => <ProviderTable items={p.items} testing={testing} onTest={callOnce} />}
+          {(p) => <ProviderTable items={p.items} testing={testing} onTest={test.run} />}
         </AsyncRegion>
       </Card>
 
@@ -156,13 +152,7 @@ export function ProvidersTab({
           className="w-[520px] shrink-0 max-[1279px]:w-full"
         >
           <AsyncRegion state={policy} what="luật định tuyến" skeletonRows={4}>
-            {(data) => (
-              <RoutingRules
-                policy={data}
-                providers={providers.data?.items}
-                onSaved={policy.reload}
-              />
-            )}
+            {(data) => <RoutingRules policy={data} providers={providers.data?.items} />}
           </AsyncRegion>
         </Card>
 
@@ -194,42 +184,32 @@ export function ProvidersTab({
 function RoutingRules({
   policy,
   providers,
-  onSaved,
 }: {
   policy: AiPolicy;
   providers: AiProvider[] | undefined;
-  onSaved: () => void;
 }) {
   const toast = useToast();
   const [target, setTarget] = useState<boolean | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
+  const save = useV1Mutation(
+    (next: boolean) => saveAiPolicy({ ...policy, frontier_allowed: next }),
+    {
+      invalidates: [['getAiPolicy']],
+      onSuccess: (_, next) => {
+        toast({
+          tone: 'success',
+          message: next
+            ? 'Đã cho phép frontier trong tổ chức.'
+            : 'Đã tắt frontier; mọi lời gọi chạy tại chỗ.',
+        });
+        setTarget(null);
+      },
+    },
+  );
   const approved = (providers ?? []).filter(
     (p) => p.kind === 'frontier' && p.ac06_status === 'approved',
   );
   // Turning frontier on needs an AC06-approved frontier provider; turning it off never waits.
   const locked = !policy.frontier_allowed && approved.length === 0;
-
-  const save = async () => {
-    if (target === null) return;
-    setSaving(true);
-    setError(undefined);
-    try {
-      await saveAiPolicy({ ...policy, frontier_allowed: target });
-      toast({
-        tone: 'success',
-        message: target
-          ? 'Đã cho phép frontier trong tổ chức.'
-          : 'Đã tắt frontier; mọi lời gọi chạy tại chỗ.',
-      });
-      setTarget(null);
-      onSaved();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   return (
     <>
@@ -239,7 +219,7 @@ function RoutingRules({
           disabled={locked}
           label="Cho phép frontier trong tổ chức"
           onChange={(next) => {
-            setError(undefined);
+            save.reset();
             setTarget(next);
           }}
         />
@@ -271,9 +251,9 @@ function RoutingRules({
         tone="primary"
         title={target ? 'Cho phép frontier trong tổ chức?' : 'Tắt frontier trong tổ chức?'}
         confirmLabel={target ? 'Bật frontier' : 'Tắt frontier'}
-        loading={saving}
-        error={error}
-        onConfirm={save}
+        loading={save.pending}
+        error={save.error?.message}
+        onConfirm={() => target !== null && save.run(target)}
         onCancel={() => setTarget(null)}
       >
         {target
@@ -583,30 +563,22 @@ export function AddProviderDialog({
   const [endpoint, setEndpoint] = useState('');
   const [region, setRegion] = useState('');
   const [budget, setBudget] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
 
   const budgetMillions = parseNumber(budget) ?? NaN;
   const budgetOk = kind === 'local' || (budget.trim() !== '' && budgetMillions > 0);
 
-  const submit = async () => {
-    setSaving(true);
-    setError(undefined);
-    try {
-      const provider = await addProvider({
+  const add = useV1Mutation(
+    () =>
+      addProvider({
         name: name.trim(),
         kind,
         model_name: model.trim(),
         endpoint: endpoint.trim(),
         region: region.trim(),
         month_budget_vnd: kind === 'local' ? null : Math.round(budgetMillions * 1e6),
-      });
-      onAdded(provider);
-    } catch (e) {
-      setError((e as Error).message);
-      setSaving(false);
-    }
-  };
+      }),
+    { invalidates: [['listProviders']], onSuccess: onAdded },
+  );
 
   return (
     <Dialog
@@ -615,10 +587,10 @@ export function AddProviderDialog({
       title="Thêm provider"
       description="Provider frontier chỉ được định tuyến sau khi AC06 duyệt và chỉ nhận ngữ cảnh nhãn Công khai."
       submitLabel="Thêm provider"
-      submitting={saving}
+      submitting={add.pending}
       canSubmit={Boolean(name.trim() && model.trim() && endpoint.trim() && budgetOk)}
-      error={error}
-      onSubmit={submit}
+      error={add.error?.message}
+      onSubmit={() => add.run()}
       onClose={onClose}
     >
       <Field label="Tên">

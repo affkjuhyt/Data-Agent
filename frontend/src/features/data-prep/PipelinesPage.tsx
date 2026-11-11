@@ -19,7 +19,7 @@ import {
   type Pipeline,
   type PipelineStatus,
 } from '../../lib/v1/dataPrep';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 import { ScheduleDialog } from './ScheduleDialog';
 
@@ -75,14 +75,10 @@ export default function PipelinesPage() {
     pageSize: 50,
   });
 
-  const runNow = async (p: Pipeline) => {
-    try {
-      await runPipeline(p.id);
-      toast({ tone: 'info', message: `Đang chạy ${p.name}` });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không chạy được: ${(e as Error).message}` });
-    }
-  };
+  const runNow = useV1Mutation((p: Pipeline) => runPipeline(p.id), {
+    onSuccess: (_, p) => toast({ tone: 'info', message: `Đang chạy ${p.name}` }),
+    onError: (e) => toast({ tone: 'error', message: `Không chạy được: ${e.message}` }),
+  });
 
   return (
     <div className="flex min-h-full flex-col">
@@ -183,7 +179,7 @@ export default function PipelinesPage() {
                             icon: 'external-link',
                             onSelect: () => navigate('data', 'PIPELINE', p.id),
                           },
-                          { label: 'Chạy ngay', icon: 'play', onSelect: () => void runNow(p) },
+                          { label: 'Chạy ngay', icon: 'play', onSelect: () => runNow.run(p) },
                           {
                             label: 'Lịch chạy…',
                             icon: 'calendar',
@@ -217,7 +213,6 @@ export default function PipelinesPage() {
         onSaved={(text) => {
           setScheduling(null);
           toast({ tone: 'success', message: `Đã lên lịch · ${text}` });
-          pipelines.reload();
         }}
       />
       <NewPipelineDialog
@@ -243,23 +238,22 @@ function NewPipelineDialog({
 }) {
   const [name, setName] = useState('');
   const [input, setInput] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  // A missing name or input is caught here; the server's answer lands in the mutation.
+  const [invalid, setInvalid] = useState<string>();
+  const createNew = useV1Mutation(
+    () => createPipeline({ name: name.trim(), input_table: input.trim() }),
+    { onSuccess: (p) => onCreated(p) },
+  );
+  const busy = createNew.pending;
+  const error = invalid ?? createNew.error?.message;
 
-  const create = async () => {
+  const create = () => {
     if (!name.trim() || !input.trim()) {
-      setError('Đặt tên và chọn bảng đầu vào.');
+      setInvalid('Đặt tên và chọn bảng đầu vào.');
       return;
     }
-    setBusy(true);
-    setError(undefined);
-    try {
-      onCreated(await createPipeline({ name: name.trim(), input_table: input.trim() }));
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    setInvalid(undefined);
+    createNew.run();
   };
 
   return (

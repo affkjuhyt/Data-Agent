@@ -18,7 +18,7 @@ import {
   type MonitorOptions,
   type RuleKind,
 } from '../../lib/v1/monitors';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { LinkButton } from '../../components/shell/AppLink';
 import { parseNumber } from '../../lib/formatVN';
 
@@ -93,8 +93,6 @@ function WatchForm({ options }: { options: MonitorOptions }) {
   const [who, setWho] = useState(options.recipients[0]?.value ?? '');
   const [channels, setChannels] = useState(options.channels[0]?.value ?? '');
   const [withAnalysis, setWithAnalysis] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
 
   const metric = options.metrics.find((m) => m.id === metricId);
   const unit = shape.data?.unit ?? '';
@@ -139,22 +137,22 @@ function WatchForm({ options }: { options: MonitorOptions }) {
       ? 'Nhập giá trị cho điều kiện.'
       : null;
 
-  const create = async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await createMonitor(draft);
+  const create = useV1Mutation(() => createMonitor(draft), {
+    onSuccess: () => {
       toast({ tone: 'success', message: `Đã tạo theo dõi ${metric?.name ?? ''}` });
       navigate('analysis', 'WATCH');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+    },
+  });
+  const busy = create.pending;
+  const error = create.error?.message;
 
   const createButton = (
-    <Button kind="primary" loading={busy} disabled={busy || blocker !== null} onClick={create}>
+    <Button
+      kind="primary"
+      loading={busy}
+      disabled={busy || blocker !== null}
+      onClick={() => create.run()}
+    >
       Tạo theo dõi
     </Button>
   );

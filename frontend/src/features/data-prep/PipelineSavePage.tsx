@@ -19,7 +19,7 @@ import {
   type ScheduleMode,
   type WriteMode,
 } from '../../lib/v1/dataPrep';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P06 · Lưu thành bảng & lịch chạy" (2288:17996, UC-06-02, UC-06-03): the pipeline's output
@@ -67,8 +67,8 @@ export default function PipelineSavePage() {
   const [cron, setCron] = useState(CRONS[0].value);
   const [retries, setRetries] = useState('2');
   const [notify, setNotify] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  // An empty table name is caught here; the server's answer lands in the mutation.
+  const [invalid, setInvalid] = useState<string>();
 
   useEffect(() => {
     const d: OutputDraft | undefined = draft.data;
@@ -82,18 +82,11 @@ export default function PipelineSavePage() {
 
   const name = pipeline.data?.name ?? '…';
 
-  const save = async () => {
-    if (!routeId || !space) return;
-    if (!table.trim()) {
-      setError('Đặt tên bảng trước khi lưu.');
-      return;
-    }
-    setBusy(true);
-    setError(undefined);
-    try {
-      const result = await publishPipeline(routeId, {
+  const publish = useV1Mutation(
+    ({ id, spaceId }: { id: string; spaceId: string }) =>
+      publishPipeline(id, {
         table_name: table.trim(),
-        data_space_id: space,
+        data_space_id: spaceId,
         write_mode: writeMode,
         schedule: {
           mode,
@@ -102,23 +95,34 @@ export default function PipelineSavePage() {
           retries: Number(retries),
           notify,
         },
-      });
-      toast({
-        tone: 'success',
-        message: `Đã tạo bảng ${result.table.name}`,
-        action: { label: 'Mở', onClick: () => navigate('data', 'TABLE', result.table.id) },
-      });
-      toast({
-        tone: 'success',
-        message: `Đã lên lịch · ${result.schedule_text}`,
-        action: { label: 'Xem', onClick: () => navigate('data', 'PIPELINES') },
-      });
-      navigate('data', 'PIPELINES');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
+      }),
+    {
+      onSuccess: (result) => {
+        toast({
+          tone: 'success',
+          message: `Đã tạo bảng ${result.table.name}`,
+          action: { label: 'Mở', onClick: () => navigate('data', 'TABLE', result.table.id) },
+        });
+        toast({
+          tone: 'success',
+          message: `Đã lên lịch · ${result.schedule_text}`,
+          action: { label: 'Xem', onClick: () => navigate('data', 'PIPELINES') },
+        });
+        navigate('data', 'PIPELINES');
+      },
+    },
+  );
+  const busy = publish.pending;
+  const error = invalid ?? publish.error?.message;
+
+  const save = () => {
+    if (!routeId || !space) return;
+    if (!table.trim()) {
+      setInvalid('Đặt tên bảng trước khi lưu.');
+      return;
     }
+    setInvalid(undefined);
+    publish.run({ id: routeId, spaceId: space });
   };
 
   return (

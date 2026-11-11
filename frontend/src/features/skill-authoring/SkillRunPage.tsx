@@ -18,7 +18,7 @@ import {
   type SkillRunForm,
 } from '../../lib/v1/skillAuthoring';
 import type { Page } from '../../lib/v1/client';
-import { useV1, type V1State } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation, type V1State } from '../../lib/v1/useV1';
 import { ExternalFactorsView } from './ExternalFactorsView';
 import { Waterfall } from './Waterfall';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
@@ -53,38 +53,36 @@ function Runner({ form, latest }: { form: SkillRunForm; latest: V1State<Page<Ski
     Object.fromEntries(form.params.map((p) => [p.key, p.value])),
   );
   const [run, setRun] = useState<SkillRun | null>();
-  const [busy, setBusy] = useState<'run' | 'add' | null>(null);
-  const [error, setError] = useState<string>();
   const current = run === undefined ? latest.data?.items[0] : run;
 
-  const rerun = async (next = params) => {
-    setBusy('run');
-    setError(undefined);
-    try {
-      setRun(await runSkill(form.skill_id, next));
-    } catch (e) {
-      setError(`Không chạy được: ${(e as Error).message}`);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const addToSession = async () => {
-    if (!current) return;
-    setBusy('add');
-    setError(undefined);
-    try {
-      const { session_id } = await addRunToSession(current.id);
+  const running = useV1Mutation((next: Record<string, string>) => runSkill(form.skill_id, next), {
+    onSuccess: (result) => setRun(result),
+  });
+  const adding = useV1Mutation((runId: string) => addRunToSession(runId), {
+    onSuccess: ({ session_id }) =>
       toast({
         tone: 'success',
         message: 'Đã thêm kết quả vào phiên',
         action: { label: 'Mở phiên', onClick: () => navigate('analysis', 'SESSIONS', session_id) },
-      });
-    } catch (e) {
-      setError(`Không thêm vào phiên được: ${(e as Error).message}`);
-    } finally {
-      setBusy(null);
-    }
+      }),
+  });
+  // One error line for both actions: starting one clears the other's.
+  const busy = running.pending ? 'run' : adding.pending ? 'add' : null;
+  const error = running.error
+    ? `Không chạy được: ${running.error.message}`
+    : adding.error
+      ? `Không thêm vào phiên được: ${adding.error.message}`
+      : undefined;
+
+  const rerun = (next = params) => {
+    adding.reset();
+    running.run(next);
+  };
+
+  const addToSession = () => {
+    if (!current) return;
+    running.reset();
+    adding.run(current.id);
   };
 
   const certified = form.status === 'certified';
@@ -111,7 +109,7 @@ function Runner({ form, latest }: { form: SkillRunForm; latest: V1State<Page<Ski
         onChangeMetric={(metric) => {
           const next = { ...params, metric };
           setParams(next);
-          void rerun(next);
+          rerun(next);
         }}
         addButton={addButton('primary')}
       />

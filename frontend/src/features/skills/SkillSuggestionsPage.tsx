@@ -11,7 +11,7 @@ import {
   listSkillSuggestions,
   type SkillSuggestion,
 } from '../../lib/v1/skills';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P03 · Đề xuất từ agent & chia sẻ" (2294:18728, UC-03-07): step chains the agent saw repeated
@@ -48,7 +48,7 @@ export default function SkillSuggestionsPage() {
           {(page) => (
             <ul className="flex flex-col">
               {page.items.map((s) => (
-                <SuggestionRow key={s.id} suggestion={s} onDismissed={suggestions.reload} />
+                <SuggestionRow key={s.id} suggestion={s} />
               ))}
             </ul>
           )}
@@ -66,34 +66,25 @@ export default function SkillSuggestionsPage() {
   );
 }
 
-function SuggestionRow({
-  suggestion,
-  onDismissed,
-}: {
-  suggestion: SkillSuggestion;
-  onDismissed: () => void;
-}) {
+function SuggestionRow({ suggestion }: { suggestion: SkillSuggestion }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [showOccurrences, setShowOccurrences] = useState(false);
-  const [busy, setBusy] = useState(false);
+  // A dismissed row stays busy until the refetched list drops it.
+  const [dismissed, setDismissed] = useState(false);
   const seed = suggestion.session_ids[0];
 
-  const dismiss = () => {
-    setBusy(true);
-    dismissSkillSuggestion(suggestion.id)
-      .then(() => {
-        toast({
-          tone: 'success',
-          message: `Đã bỏ qua. Agent không đề xuất lại “${suggestion.title}” trong 90 ngày.`,
-        });
-        onDismissed();
-      })
-      .catch((e: Error) => {
-        setBusy(false);
-        toast({ tone: 'error', message: `Không bỏ qua được: ${e.message}` });
+  const dismiss = useV1Mutation(() => dismissSkillSuggestion(suggestion.id), {
+    invalidates: [['listSkillSuggestions']],
+    onSuccess: () => {
+      setDismissed(true);
+      toast({
+        tone: 'success',
+        message: `Đã bỏ qua. Agent không đề xuất lại “${suggestion.title}” trong 90 ngày.`,
       });
-  };
+    },
+    onError: (e) => toast({ tone: 'error', message: `Không bỏ qua được: ${e.message}` }),
+  });
 
   return (
     <li className="flex flex-col gap-da-md border-b border-border py-da-xl">
@@ -107,7 +98,7 @@ function SuggestionRow({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-da-md">
-          <Button kind="ghost" loading={busy} onClick={dismiss}>
+          <Button kind="ghost" loading={dismiss.pending || dismissed} onClick={() => dismiss.run()}>
             Bỏ qua
           </Button>
           <Button

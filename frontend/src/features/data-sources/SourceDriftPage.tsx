@@ -17,7 +17,7 @@ import {
   type ColumnChange,
   type SourceDrift,
 } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P04 · Lệch cấu trúc · Duyệt thay đổi" (2281:17287, UC-04-03): a connected source changed its
@@ -35,7 +35,7 @@ function DriftById({ id }: { id: string }) {
   const drift = useV1(['getSourceDrift', id], () => getSourceDrift(id));
   return (
     <AsyncRegion state={drift} what="thay đổi cấu trúc" skeletonRows={8}>
-      {(data) => <DriftView drift={data} onChanged={drift.reload} />}
+      {(data) => <DriftView drift={data} />}
     </AsyncRegion>
   );
 }
@@ -60,7 +60,7 @@ function FirstOpenDrift() {
         </div>
       }
     >
-      {(page) => <DriftView drift={page.items[0]} onChanged={drifts.reload} />}
+      {(page) => <DriftView drift={page.items[0]} />}
     </AsyncRegion>
   );
 }
@@ -85,11 +85,9 @@ function driftStatus(drift: SourceDrift): { label: string; tone: StatusTone } {
   return { label: 'Chờ duyệt', tone: 'warning' };
 }
 
-function DriftView({ drift, onChanged }: { drift: SourceDrift; onChanged: () => void }) {
+function DriftView({ drift }: { drift: SourceDrift }) {
   const toast = useToast();
-  const [busy, setBusy] = useState<'accept' | 'reject' | null>(null);
   const [confirmReject, setConfirmReject] = useState(false);
-  const [rejectError, setRejectError] = useState<string>();
   const status = driftStatus(drift);
   const pending = drift.status === 'pending';
   const changesView = useTableView(drift.changes, {
@@ -138,29 +136,31 @@ function DriftView({ drift, onChanged }: { drift: SourceDrift; onChanged: () => 
     pageSize: 50,
   });
 
-  const resolve = async (resolution: 'accept' | 'reject') => {
-    setBusy(resolution);
-    try {
-      const next = await resolveSourceDrift(drift.id, { resolution });
-      setConfirmReject(false);
-      toast({
-        tone: 'success',
-        message:
-          resolution === 'reject'
-            ? `Đã từ chối. Job ${drift.table_name} chạy tiếp với cấu trúc cũ.`
-            : next.status === 'accepted'
-              ? `Đã chấp nhận. Job ${drift.table_name} nạp tiếp và nạp lại bản ghi đang giữ.`
-              : `Đã ghi duyệt của bạn. Cần thêm ${next.approvals_required - next.approvals.length} người duyệt.`,
-      });
-      onChanged();
-    } catch (e) {
-      const message = (e as Error).message;
-      if (resolution === 'reject') setRejectError(message);
-      else toast({ tone: 'error', message: `Không chấp nhận được. ${message}` });
-    } finally {
-      setBusy(null);
-    }
-  };
+  const resolve = useV1Mutation(
+    (resolution: 'accept' | 'reject') => resolveSourceDrift(drift.id, { resolution }),
+    {
+      invalidates: [['getSourceDrift'], ['listSourceDrifts']],
+      onSuccess: (next, resolution) => {
+        setConfirmReject(false);
+        toast({
+          tone: 'success',
+          message:
+            resolution === 'reject'
+              ? `Đã từ chối. Job ${drift.table_name} chạy tiếp với cấu trúc cũ.`
+              : next.status === 'accepted'
+                ? `Đã chấp nhận. Job ${drift.table_name} nạp tiếp và nạp lại bản ghi đang giữ.`
+                : `Đã ghi duyệt của bạn. Cần thêm ${next.approvals_required - next.approvals.length} người duyệt.`,
+        });
+      },
+      onError: (e, resolution) => {
+        if (resolution === 'accept')
+          toast({ tone: 'error', message: `Không chấp nhận được. ${e.message}` });
+      },
+    },
+  );
+  const busy = resolve.pending ? (resolve.variables ?? null) : null;
+  // A failed rejection shows in its dialog; a failed acceptance toasts.
+  const rejectError = resolve.variables === 'reject' ? resolve.error?.message : undefined;
 
   const facts = [
     `Phát hiện ${drift.detected_text}`,
@@ -189,7 +189,7 @@ function DriftView({ drift, onChanged }: { drift: SourceDrift; onChanged: () => 
                 kind="ghost"
                 disabled={busy !== null}
                 onClick={() => {
-                  setRejectError(undefined);
+                  resolve.reset();
                   setConfirmReject(true);
                 }}
               >
@@ -202,7 +202,7 @@ function DriftView({ drift, onChanged }: { drift: SourceDrift; onChanged: () => 
                 kind="primary"
                 loading={busy === 'accept'}
                 disabled={busy !== null}
-                onClick={() => void resolve('accept')}
+                onClick={() => resolve.run('accept')}
               >
                 Chấp nhận và nạp tiếp
               </Button>
@@ -356,7 +356,7 @@ function DriftView({ drift, onChanged }: { drift: SourceDrift; onChanged: () => 
         confirmLabel="Từ chối, giữ cấu trúc cũ"
         loading={busy === 'reject'}
         error={rejectError}
-        onConfirm={() => void resolve('reject')}
+        onConfirm={() => resolve.run('reject')}
         onCancel={() => setConfirmReject(false)}
       >
         {drift.if_rejected_text}

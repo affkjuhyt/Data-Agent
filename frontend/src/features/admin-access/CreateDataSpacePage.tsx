@@ -17,7 +17,7 @@ import {
   listGroups,
   type DefaultPolicy,
 } from '../../lib/v1/adminAccess';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "v3.1 · Quản trị · Tạo Data Space" (2232:15011, UC-11-08): four numbered sections in cards
@@ -65,21 +65,14 @@ export default function CreateDataSpacePage() {
     show_filed_and_current: true,
     allow_external_channels: false,
   });
-  const [sending, setSending] = useState<'draft' | 'onboarding' | null>(null);
-  const [error, setError] = useState<string>();
+  const [invalid, setInvalid] = useState<string>();
 
   const toggle = (list: string[], id: string) =>
     list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 
-  const submit = async (status: 'draft' | 'onboarding') => {
-    if (!name.trim() || !stewardId) {
-      setError('Nhập tên và chọn người phụ trách dữ liệu.');
-      return;
-    }
-    setSending(status);
-    setError(undefined);
-    try {
-      const created = await createDataSpace({
+  const create = useV1Mutation(
+    ({ status, stewardId }: { status: 'draft' | 'onboarding'; stewardId: string }) =>
+      createDataSpace({
         name: name.trim(),
         description: description.trim() || undefined,
         steward_id: stewardId,
@@ -87,17 +80,28 @@ export default function CreateDataSpacePage() {
         source_ids: sourceIds,
         group_ids: groupIds,
         status,
-      });
-      toast({
-        tone: 'success',
-        message: status === 'draft' ? `Đã lưu nháp ${created.name}` : `Đã tạo ${created.name}`,
-      });
-      navigate('admin', 'DATA_SPACES', created.id);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(null);
+      }),
+    {
+      onSuccess: (created, { status }) => {
+        toast({
+          tone: 'success',
+          message: status === 'draft' ? `Đã lưu nháp ${created.name}` : `Đã tạo ${created.name}`,
+        });
+        navigate('admin', 'DATA_SPACES', created.id);
+      },
+    },
+  );
+  const sending = create.pending ? (create.variables?.status ?? null) : null;
+  const error = invalid ?? create.error?.message;
+
+  const submit = (status: 'draft' | 'onboarding') => {
+    if (!name.trim() || !stewardId) {
+      create.reset();
+      setInvalid('Nhập tên và chọn người phụ trách dữ liệu.');
+      return;
     }
+    setInvalid(undefined);
+    create.run({ status, stewardId });
   };
 
   const people = (users.data?.items ?? []).filter((u) => u.kind === 'person');

@@ -17,7 +17,7 @@ import {
   verifyExample,
   type ExampleQuery,
 } from '../../lib/v1/examples';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P07 · Câu hỏi mẫu & đồng nghĩa" (2301:19194, UC-07-02): the example questions the agent
@@ -189,44 +189,32 @@ export default function ExamplesPage() {
             )}
           </AsyncRegion>
         </div>
-        {selected && (
-          <ExampleDetail key={selected.id} example={selected} onChanged={examples.reload} />
-        )}
+        {selected && <ExampleDetail key={selected.id} example={selected} />}
       </div>
       {adding && (
-        <AddExampleDialog
-          onClose={() => setAdding(false)}
-          onAdded={() => {
-            setAdding(false);
-            examples.reload();
-          }}
-        />
+        <AddExampleDialog onClose={() => setAdding(false)} onAdded={() => setAdding(false)} />
       )}
     </div>
   );
 }
 
-function ExampleDetail({ example, onChanged }: { example: ExampleQuery; onChanged: () => void }) {
+function ExampleDetail({ example }: { example: ExampleQuery }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [sql, setSql] = useState(example.sql);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-
-  const run = async (action: () => Promise<unknown>, message: string) => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await action();
-      toast({ tone: 'success', message });
-      setEditing(false);
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const change = useV1Mutation(
+    ({ action }: { action: () => Promise<unknown>; message: string }) => action(),
+    {
+      invalidates: [['listExamples']],
+      onSuccess: (_, { message }) => {
+        toast({ tone: 'success', message });
+        setEditing(false);
+      },
+    },
+  );
+  const run = (action: () => Promise<unknown>, message: string) => change.run({ action, message });
+  const busy = change.pending;
+  const error = change.error?.message;
 
   return (
     <aside
@@ -296,25 +284,23 @@ function AddExampleDialog({ onClose, onAdded }: { onClose: () => void; onAdded: 
   const toast = useToast();
   const [question, setQuestion] = useState('');
   const [sql, setSql] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-
-  const add = async () => {
-    if (!question.trim() || !sql.trim()) {
-      setError('Nhập câu hỏi và SQL trả lời đúng.');
-      return;
-    }
-    setBusy(true);
-    setError(undefined);
-    try {
-      await addExample({ question: question.trim(), sql: sql.trim() });
+  const [invalid, setInvalid] = useState<string>();
+  const create = useV1Mutation(() => addExample({ question: question.trim(), sql: sql.trim() }), {
+    invalidates: [['listExamples']],
+    onSuccess: () => {
       toast({ tone: 'success', message: 'Đã thêm câu hỏi mẫu' });
       onAdded();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
+    },
+  });
+
+  const add = () => {
+    if (!question.trim() || !sql.trim()) {
+      create.reset();
+      setInvalid('Nhập câu hỏi và SQL trả lời đúng.');
+      return;
     }
+    setInvalid(undefined);
+    create.run();
   };
 
   return (
@@ -323,8 +309,8 @@ function AddExampleDialog({ onClose, onAdded }: { onClose: () => void; onAdded: 
       title="Thêm câu hỏi mẫu"
       confirmLabel="Thêm"
       tone="primary"
-      loading={busy}
-      error={error}
+      loading={create.pending}
+      error={invalid ?? create.error?.message}
       onCancel={onClose}
       onConfirm={add}
     >

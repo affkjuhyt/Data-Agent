@@ -12,7 +12,7 @@ import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import { getSchemaDrift, resolveSchemaDrift, type SchemaDrift } from '../../lib/v1/crawl';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { LinkButton } from '../../components/shell/AppLink';
 
 /*
@@ -36,18 +36,17 @@ export default function CrawlDriftPage() {
   const drift = useV1(['getSchemaDrift', routeId], routeId ? () => getSchemaDrift(routeId) : null);
   return (
     <AsyncRegion state={drift} what="sự cố đổi cấu trúc">
-      {(d) => <DriftBody drift={d} onChanged={drift.reload} />}
+      {(d) => <DriftBody drift={d} />}
     </AsyncRegion>
   );
 }
 
-function DriftBody({ drift, onChanged }: { drift: SchemaDrift; onChanged: () => void }) {
+function DriftBody({ drift }: { drift: SchemaDrift }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [confirmRevert, setConfirmRevert] = useState(false);
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState<'approve' | 'revert' | null>(null);
-  const [error, setError] = useState<string>();
+  const [invalid, setInvalid] = useState<string>();
   const open = drift.resolution === null;
   const proposed = drift.proposed_version;
   const signalText = (s: SchemaDrift['signals'][number]) =>
@@ -76,34 +75,42 @@ function DriftBody({ drift, onChanged }: { drift: SchemaDrift; onChanged: () => 
     pageSize: 50,
   });
 
-  const resolve = async (resolution: 'approved_new' | 'reverted') => {
-    if (resolution === 'reverted' && !reason.trim()) {
-      setError('Ghi lý do hoàn tác.');
-      return;
-    }
-    setBusy(resolution === 'reverted' ? 'revert' : 'approve');
-    setError(undefined);
-    try {
-      await resolveSchemaDrift(drift.id, {
+  const resolution = useV1Mutation(
+    (resolution: 'approved_new' | 'reverted') =>
+      resolveSchemaDrift(drift.id, {
         resolution,
         proposed_version_id: resolution === 'approved_new' ? proposed?.id : undefined,
         note: resolution === 'reverted' ? reason.trim() : undefined,
-      });
-      toast({
-        tone: 'success',
-        message:
-          resolution === 'reverted'
-            ? `Đang hoàn tác về v${drift.active_version.version}; trích lại từ bản gốc`
-            : `Đã duyệt v${proposed?.version}; nguồn chạy tiếp`,
-      });
-      setConfirmRevert(false);
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
+      }),
+    {
+      invalidates: [['getSchemaDrift']],
+      onSuccess: (_, resolution) => {
+        toast({
+          tone: 'success',
+          message:
+            resolution === 'reverted'
+              ? `Đang hoàn tác về v${drift.active_version.version}; trích lại từ bản gốc`
+              : `Đã duyệt v${proposed?.version}; nguồn chạy tiếp`,
+        });
+        setConfirmRevert(false);
+      },
+    },
+  );
+  const resolve = (next: 'approved_new' | 'reverted') => {
+    if (next === 'reverted' && !reason.trim()) {
+      resolution.reset();
+      setInvalid('Ghi lý do hoàn tác.');
+      return;
     }
+    setInvalid(undefined);
+    resolution.run(next);
   };
+  const busy = resolution.pending
+    ? resolution.variables === 'reverted'
+      ? 'revert'
+      : 'approve'
+    : null;
+  const error = invalid ?? resolution.error?.message;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -341,7 +348,8 @@ function DriftBody({ drift, onChanged }: { drift: SchemaDrift; onChanged: () => 
         error={confirmRevert ? error : undefined}
         onCancel={() => {
           setConfirmRevert(false);
-          setError(undefined);
+          setInvalid(undefined);
+          resolution.reset();
         }}
         onConfirm={() => resolve('reverted')}
       >

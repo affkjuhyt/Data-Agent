@@ -25,7 +25,7 @@ import {
   type ReviewGate,
   type ReviewReason,
 } from '../../lib/v1/crawl';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P14 · Duyệt dữ liệu thu thập" (2390:14372, UC-14-04): the records of one run that need a
@@ -62,51 +62,32 @@ export default function CrawlReviewPage() {
   const { routeId } = useAppState();
   const run = useV1(['getCrawlRun', routeId], routeId ? () => getCrawlRun(routeId) : null);
   const records = useV1(['listRunRecords', routeId], routeId ? () => listRunRecords(routeId) : null);
-  const reload = () => {
-    run.reload();
-    records.reload();
-  };
   return (
     <AsyncRegion state={run} what="lượt thu">
-      {(r) => <ReviewBody run={r} records={records.data?.items ?? []} onChanged={reload} />}
+      {(r) => <ReviewBody run={r} records={records.data?.items ?? []} />}
     </AsyncRegion>
   );
 }
 
-function ReviewBody({
-  run,
-  records,
-  onChanged,
-}: {
-  run: CrawlRun;
-  records: ExtractedRecord[];
-  onChanged: () => void;
-}) {
+// A review decision changes both the run's counters and its records.
+const RUN_CHANGED = [['getCrawlRun'], ['listRunRecords']];
+
+function ReviewBody({ run, records }: { run: CrawlRun; records: ExtractedRecord[] }) {
   const toast = useToast();
   const [filter, setFilter] = useState<'all' | ReviewReason>('all');
   const [selectedId, setSelectedId] = useState<string>();
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [publishing, setPublishing] = useState(false);
-  const [error, setError] = useState<string>();
   const published = run.status === 'published';
 
   const shown = records.filter((r) => filter === 'all' || r.reasons.includes(filter));
   const selected = shown.find((r) => r.id === selectedId) ?? shown[0];
   const count = (reason: ReviewReason) => records.filter((r) => r.reasons.includes(reason)).length;
 
-  const publish = async () => {
-    setPublishing(true);
-    setError(undefined);
-    try {
-      await publishCrawlRun(run.id);
-      toast({ tone: 'success', message: `Đã phát hành ${run.label}; hợp nhất bắt đầu chạy` });
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setPublishing(false);
-    }
-  };
+  const publish = useV1Mutation(publishCrawlRun, {
+    invalidates: RUN_CHANGED,
+    onSuccess: () =>
+      toast({ tone: 'success', message: `Đã phát hành ${run.label}; hợp nhất bắt đầu chạy` }),
+  });
 
   return (
     <div className="flex min-h-full flex-col">
@@ -135,7 +116,11 @@ function ReviewBody({
                   </Button>
                 </Tooltip>
               ) : (
-                <Button kind="primary" loading={publishing} onClick={publish}>
+                <Button
+                  kind="primary"
+                  loading={publish.pending}
+                  onClick={() => publish.run(run.id)}
+                >
                   Phát hành lượt
                 </Button>
               )}
@@ -193,14 +178,11 @@ function ReviewBody({
           ))}
         </nav>
         <div className="flex min-w-0 flex-1 flex-col gap-da-xl max-[1279px]:w-full">
-          {error && <Notice tone="error">Không phát hành được: {error}</Notice>}
+          {publish.error && (
+            <Notice tone="error">Không phát hành được: {publish.error.message}</Notice>
+          )}
           {selected && !published && (
-            <RecordCard
-              key={selected.id}
-              record={selected}
-              runLabel={run.label}
-              onDone={onChanged}
-            />
+            <RecordCard key={selected.id} record={selected} runLabel={run.label} />
           )}
           <section className="flex flex-col gap-da-lg rounded-md border border-border bg-card p-da-xl">
             <h2 className="text-foreground da-heading-3">Độ chính xác của lượt</h2>
@@ -249,7 +231,6 @@ function ReviewBody({
           onDone={(n) => {
             toast({ tone: 'success', message: `Đã duyệt ${n} bản ghi` });
             setBulkOpen(false);
-            onChanged();
           }}
         />
       )}
@@ -257,15 +238,7 @@ function ReviewBody({
   );
 }
 
-function RecordCard({
-  record,
-  runLabel,
-  onDone,
-}: {
-  record: ExtractedRecord;
-  runLabel: string;
-  onDone: () => void;
-}) {
+function RecordCard({ record, runLabel }: { record: ExtractedRecord; runLabel: string }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(
@@ -273,8 +246,7 @@ function RecordCard({
   );
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const [invalid, setInvalid] = useState<string>();
   const extracted = useTableView(record.values, {
     search: (row) => `${row.field} ${row.value}`,
     filters: [{ id: 'field', label: 'Trường', value: (row) => row.field }],
@@ -286,39 +258,49 @@ function RecordCard({
     pageSize: 50,
   });
 
-  const decide = async (
+  const review = useV1Mutation(
+    ({
+      decision,
+      corrected,
+    }: {
+      decision: 'confirm' | 'correct' | 'reject';
+      corrected?: Record<string, string>;
+    }) =>
+      reviewRecord(record.id, {
+        decision,
+        corrected_values: corrected,
+        reason: decision === 'reject' ? reason.trim() : undefined,
+      }),
+    {
+      invalidates: RUN_CHANGED,
+      onSuccess: (_, { decision }) => {
+        toast({
+          tone: 'success',
+          message:
+            decision === 'reject'
+              ? `Đã bỏ ${record.title}`
+              : decision === 'correct'
+                ? `Đã sửa ${record.title}`
+                : `Đã xác nhận ${record.title}`,
+        });
+        setRejecting(false);
+      },
+    },
+  );
+  const decide = (
     decision: 'confirm' | 'correct' | 'reject',
     corrected?: Record<string, string>,
   ) => {
     if (decision === 'reject' && !reason.trim()) {
-      setError('Ghi lý do bỏ bản ghi.');
+      review.reset();
+      setInvalid('Ghi lý do bỏ bản ghi.');
       return;
     }
-    setBusy(true);
-    setError(undefined);
-    try {
-      await reviewRecord(record.id, {
-        decision,
-        corrected_values: corrected,
-        reason: decision === 'reject' ? reason.trim() : undefined,
-      });
-      toast({
-        tone: 'success',
-        message:
-          decision === 'reject'
-            ? `Đã bỏ ${record.title}`
-            : decision === 'correct'
-              ? `Đã sửa ${record.title}`
-              : `Đã xác nhận ${record.title}`,
-      });
-      setRejecting(false);
-      onDone();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    setInvalid(undefined);
+    review.run({ decision, corrected });
   };
+  const busy = review.pending;
+  const error = invalid ?? review.error?.message;
 
   return (
     <section
@@ -439,7 +421,8 @@ function RecordCard({
         error={rejecting ? error : undefined}
         onCancel={() => {
           setRejecting(false);
-          setError(undefined);
+          setInvalid(undefined);
+          review.reset();
         }}
         onConfirm={() => decide('reject')}
       >
@@ -471,29 +454,26 @@ function BulkDialog({
   const [reasonKind, setReasonKind] = useState<ReviewReason | null>(reasons[0] ?? null);
   const [decision, setDecision] = useState<'confirm' | 'reject'>('confirm');
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-
-  const submit = async () => {
-    if (!reasonKind || !note.trim()) {
-      setError('Chọn lý do lọc và ghi lý do quyết định.');
-      return;
-    }
-    setBusy(true);
-    setError(undefined);
-    try {
-      const { updated } = await bulkReviewRecords({
+  const [invalid, setInvalid] = useState<string>();
+  const bulk = useV1Mutation(
+    (reasonKind: ReviewReason) =>
+      bulkReviewRecords({
         run_id: run.id,
         review_reasons: [reasonKind],
         decision,
         reason: note.trim(),
-      });
-      onDone(updated);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
+      }),
+    { invalidates: RUN_CHANGED, onSuccess: ({ updated }) => onDone(updated) },
+  );
+
+  const submit = () => {
+    if (!reasonKind || !note.trim()) {
+      bulk.reset();
+      setInvalid('Chọn lý do lọc và ghi lý do quyết định.');
+      return;
     }
+    setInvalid(undefined);
+    bulk.run(reasonKind);
   };
 
   return (
@@ -504,8 +484,8 @@ function BulkDialog({
       cancelLabel="Huỷ"
       tone="primary"
       size="md"
-      loading={busy}
-      error={error}
+      loading={bulk.pending}
+      error={invalid ?? bulk.error?.message}
       onCancel={onClose}
       onConfirm={submit}
     >

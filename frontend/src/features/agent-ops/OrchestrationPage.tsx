@@ -15,7 +15,7 @@ import {
   type DelegatedTask,
   type Orchestration,
 } from '../../lib/v1/agentOps';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { taskStatus } from './format';
 
 /*
@@ -37,28 +37,23 @@ export default function OrchestrationPage() {
       : findOrchestration().then((id) => (id ? getOrchestration(id) : null)),
   );
   const [current, setCurrent] = useState<Orchestration | null>();
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
-
   useEffect(() => setCurrent(undefined), [routeId]);
   const state = { ...loaded, data: current !== undefined ? current : loaded.data };
 
-  const control = async (o: Orchestration, verb: 'pause' | 'resume') => {
-    setSending(true);
-    setError(undefined);
-    try {
-      const next = await controlOrchestration(o.id, verb);
-      setCurrent(next);
-      toast({
-        tone: 'success',
-        message: verb === 'pause' ? `Đã tạm dừng cả nhóm ${o.code}` : `Cả nhóm ${o.code} chạy tiếp`,
-      });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
-  };
+  const control = useV1Mutation(
+    ({ o, verb }: { o: Orchestration; verb: 'pause' | 'resume' }) =>
+      controlOrchestration(o.id, verb),
+    {
+      onSuccess: (next, { o, verb }) => {
+        setCurrent(next);
+        toast({
+          tone: 'success',
+          message:
+            verb === 'pause' ? `Đã tạm dừng cả nhóm ${o.code}` : `Cả nhóm ${o.code} chạy tiếp`,
+        });
+      },
+    },
+  );
 
   return (
     <div className="flex min-h-full flex-col">
@@ -81,10 +76,10 @@ export default function OrchestrationPage() {
           o && (
             <OrchestrationView
               orchestration={o}
-              sending={sending}
-              error={error}
-              onPause={() => control(o, 'pause')}
-              onResume={() => control(o, 'resume')}
+              sending={control.pending}
+              error={control.error?.message}
+              onPause={() => control.run({ o, verb: 'pause' })}
+              onResume={() => control.run({ o, verb: 'resume' })}
               onRuns={() => navigate('agents', 'RUNS')}
             />
           )

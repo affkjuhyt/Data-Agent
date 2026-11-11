@@ -21,7 +21,7 @@ import {
   type ReportSchedule,
   type ReportSection,
 } from '../../lib/v1/reports';
-import { useV1 } from '../../lib/v1/useV1';
+import { invalidateV1, useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P08 · Báo cáo định kỳ · Thiết lập" (2271:16289, UC-08-03, UC-02-04, UC-02-07): one scheduled
@@ -53,6 +53,8 @@ const runLook = (r: ReportSchedule['recent_runs'][number]) =>
           ? { label: 'Lỗi', tone: 'error' as const }
           : { label: 'Đang chạy', tone: 'info' as const };
 
+type Action = 'save' | 'pause' | 'resume' | 'test' | 'run';
+
 export default function ReportSetupPage() {
   const { routeId } = useAppState();
   const list = useV1(['listReports', routeId], routeId ? null : listReports);
@@ -60,42 +62,37 @@ export default function ReportSetupPage() {
   const report = useV1(['getReport', id], id ? () => getReport(id) : null);
   return (
     <AsyncRegion state={report} what="báo cáo định kỳ">
-      {(r) => <ReportBody key={r.id} report={r} onChanged={report.reload} />}
+      {(r) => <ReportBody key={r.id} report={r} />}
     </AsyncRegion>
   );
 }
 
-function ReportBody({ report, onChanged }: { report: ReportSchedule; onChanged: () => void }) {
+function ReportBody({ report }: { report: ReportSchedule }) {
   const toast = useToast();
   const [sections, setSections] = useState<ReportSection[]>(report.sections ?? []);
   const [confirmRun, setConfirmRun] = useState(false);
   const [check, setCheck] = useState(report.require_publish_check);
   const [dragging, setDragging] = useState<string>();
-  const [busy, setBusy] = useState<'save' | 'pause' | 'resume' | 'test' | 'run' | null>(null);
-  const [error, setError] = useState<string>();
   const dirty =
     JSON.stringify(sections) !== JSON.stringify(report.sections ?? []) ||
     check !== report.require_publish_check;
   const status = STATUS[report.status];
 
-  const act = async (
-    key: NonNullable<typeof busy>,
-    call: () => Promise<unknown>,
-    message: string,
-  ) => {
-    setBusy(key);
-    setError(undefined);
-    try {
-      await call();
-      toast({ tone: 'success', message });
-      if (key !== 'test') onChanged();
-      if (key === 'run') setConfirmRun(false);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const action = useV1Mutation(
+    ({ call }: { key: Action; call: () => Promise<unknown>; message: string }) => call(),
+    {
+      onSuccess: (_, { key, message }) => {
+        toast({ tone: 'success', message });
+        // A test send changes nothing on the schedule.
+        if (key !== 'test') invalidateV1([['getReport']]);
+        if (key === 'run') setConfirmRun(false);
+      },
+    },
+  );
+  const act = (key: Action, call: () => Promise<unknown>, message: string) =>
+    action.run({ key, call, message });
+  const busy = action.pending ? (action.variables?.key ?? null) : null;
+  const error = action.error?.message;
 
   const move = (key: string, to: number) =>
     setSections((all) => {

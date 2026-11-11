@@ -16,7 +16,7 @@ import { cn } from '../../lib/utils';
 import { formatDateTime, formatTime } from '../../lib/formatVN';
 import { decideProposal, listUsers, resolveHitl } from '../../lib/v1/api';
 import { getCollaboration, type Collaboration } from '../../lib/v1/collaboration';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "v3.1 · Cộng tác · Duyệt nhiều người" (2084:7085, UC-07-03): a proposal several people review in
@@ -46,52 +46,36 @@ export default function ApprovalChainPage() {
     );
   return (
     <AsyncRegion state={collaboration} what="luồng duyệt">
-      {(c) => (
-        <ChainBody
-          collaboration={c}
-          open={c.status === 'pending_review'}
-          onChanged={collaboration.reload}
-        />
-      )}
+      {(c) => <ChainBody collaboration={c} open={c.status === 'pending_review'} />}
     </AsyncRegion>
   );
 }
 
-function ChainBody({
-  collaboration,
-  open,
-  onChanged,
-}: {
-  collaboration: Collaboration;
-  open: boolean;
-  onChanged: () => void;
-}) {
+function ChainBody({ collaboration, open }: { collaboration: Collaboration; open: boolean }) {
   const toast = useToast();
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [note, setNote] = useState('');
   const [assignee, setAssignee] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string>();
   const users = useV1(['listUsers', dialog === 'reassign'], dialog === 'reassign' ? listUsers : null);
 
-  const act = async (key: string, call: () => Promise<unknown>, message: string) => {
-    setBusy(key);
-    setError(undefined);
-    try {
-      await call();
-      toast({ tone: 'success', message });
-      setDialog(null);
-      setNote('');
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const action = useV1Mutation(
+    ({ call }: { key: string; call: () => Promise<unknown>; message: string }) => call(),
+    {
+      invalidates: [['getCollaboration']],
+      onSuccess: (_, { message }) => {
+        toast({ tone: 'success', message });
+        setDialog(null);
+        setNote('');
+      },
+    },
+  );
+  const act = (key: string, call: () => Promise<unknown>, message: string) =>
+    action.run({ key, call, message });
+  const busy = action.pending ? (action.variables?.key ?? null) : null;
+  const error = action.error?.message;
 
   const openDialog = (d: DialogKind) => {
-    setError(undefined);
+    action.reset();
     setNote('');
     setDialog(d);
   };

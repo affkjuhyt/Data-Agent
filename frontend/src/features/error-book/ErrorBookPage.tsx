@@ -32,7 +32,7 @@ import {
   type FixKind,
   type SourceKind,
 } from '../../lib/v1/errorBook';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { LinkButton } from '../../components/shell/AppLink';
 
 /*
@@ -210,7 +210,7 @@ export default function ErrorBookPage() {
           </AsyncRegion>
         </div>
         <div className="min-w-0 flex-1 max-[1279px]:w-full">
-          {id && <EntryView key={id} id={id} onChanged={entries.reload} />}
+          {id && <EntryView key={id} id={id} />}
         </div>
       </div>
       <CreateDialog
@@ -218,7 +218,6 @@ export default function ErrorBookPage() {
         onClose={() => setCreating(false)}
         onCreated={(created) => {
           setCreating(false);
-          entries.reload();
           setPicked(created.id);
           toast({ tone: 'success', message: `Đã tạo ${created.code}` });
         }}
@@ -273,25 +272,16 @@ function EntryCard({
   );
 }
 
-function EntryView({ id, onChanged }: { id: string; onChanged: () => void }) {
+function EntryView({ id }: { id: string }) {
   const entry = useV1(['getErrorBookEntry', id], () => getErrorBookEntry(id));
   return (
     <AsyncRegion state={entry} what="mục Error Book">
-      {(e) => (
-        <EntryBody
-          key={`${e.id}-${e.status}`}
-          entry={e}
-          onChanged={() => {
-            entry.reload();
-            onChanged();
-          }}
-        />
-      )}
+      {(e) => <EntryBody key={`${e.id}-${e.status}`} entry={e} />}
     </AsyncRegion>
   );
 }
 
-function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () => void }) {
+function EntryBody({ entry }: { entry: ErrorBookEntry }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [kind, setKind] = useState<ErrorKind | null>(entry.error_kind);
@@ -300,26 +290,24 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
   const [fixRef, setFixRef] = useState('');
   const [fixKind, setFixKind] = useState<FixKind | ''>('');
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string>();
   const open = entry.status === 'open';
   const dirty = kind !== entry.error_kind || cause !== (entry.root_cause ?? '');
   const status = STATUS[entry.status];
 
-  const act = async (key: string, call: () => Promise<unknown>, message: string) => {
-    setBusy(key);
-    setError(undefined);
-    try {
-      await call();
-      toast({ tone: 'success', message });
-      setDialog(null);
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const action = useV1Mutation(
+    ({ call }: { key: string; call: () => Promise<unknown>; message: string }) => call(),
+    {
+      invalidates: [['getErrorBookEntry'], ['listErrorBookEntries']],
+      onSuccess: (_, { message }) => {
+        toast({ tone: 'success', message });
+        setDialog(null);
+      },
+    },
+  );
+  const act = (key: string, call: () => Promise<unknown>, message: string) =>
+    action.run({ key, call, message });
+  const busy = action.pending ? (action.variables?.key ?? null) : null;
+  const error = action.error?.message;
 
   return (
     <section
@@ -580,8 +568,17 @@ function CreateDialog({
 }) {
   const [source, setSource] = useState<SourceKind | null>(null);
   const [title, setTitle] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const create = useV1Mutation(
+    (source: SourceKind) => createErrorBookEntry({ source_kind: source, title: title.trim() }),
+    {
+      invalidates: [['listErrorBookEntries']],
+      onSuccess: (created) => {
+        onCreated(created);
+        setTitle('');
+        setSource(null);
+      },
+    },
+  );
   return (
     <Dialog
       open={open}
@@ -589,24 +586,11 @@ function CreateDialog({
       title="Tạo mục Error Book"
       description="Mỗi lỗi đã xác nhận tạo đúng một mục; cùng nguồn đã có mục thì mở mục có sẵn (BR-179)."
       submitLabel="Tạo mục"
-      submitting={busy}
+      submitting={create.pending}
       canSubmit={source !== null && title.trim() !== ''}
-      error={error}
+      error={create.error?.message}
       onClose={onClose}
-      onSubmit={async () => {
-        if (!source) return;
-        setBusy(true);
-        setError(undefined);
-        try {
-          onCreated(await createErrorBookEntry({ source_kind: source, title: title.trim() }));
-          setTitle('');
-          setSource(null);
-        } catch (e) {
-          setError((e as Error).message);
-        } finally {
-          setBusy(false);
-        }
-      }}
+      onSubmit={() => source && create.run(source)}
     >
       <div className="flex flex-col gap-da-md">
         <Select<SourceKind>

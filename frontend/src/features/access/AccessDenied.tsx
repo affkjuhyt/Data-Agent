@@ -5,8 +5,9 @@ import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
-import { requestAccess, type AccessRequest } from '../../lib/v1/adminAccess';
+import { requestAccess } from '../../lib/v1/adminAccess';
 import { V1Error, type ForbiddenAccess } from '../../lib/v1/client';
+import { useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "v3.1 · Trạng thái · Thiếu quyền" (2076:5267, UC-11-07): what a page shows in place of data the
@@ -82,32 +83,28 @@ export function AccessDenied({ access }: { access: ForbiddenAccess }) {
   const [capability, setCapability] = useState(access.options[0]?.capability ?? null);
   const [term, setTerm] = useState('30');
   const [reason, setReason] = useState(access.reason_hint);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const [sent, setSent] = useState<AccessRequest>();
+  // A missing reason is caught here, before the request.
+  const [invalid, setInvalid] = useState<string>();
+  const request = useV1Mutation((requested: NonNullable<typeof capability>) =>
+    requestAccess({
+      data_space_id: access.data_space_id,
+      capability: requested,
+      reason: reason.trim(),
+      requested_until: isoDateIn(Number(term)),
+    }),
+  );
+  const busy = request.pending;
+  const error = invalid ?? request.error?.message;
+  const sent = request.data;
 
-  const send = async () => {
+  const send = () => {
     if (!capability) return;
     if (!reason.trim()) {
-      setError('Ghi lý do xin quyền.');
+      setInvalid('Ghi lý do xin quyền.');
       return;
     }
-    setBusy(true);
-    setError(undefined);
-    try {
-      setSent(
-        await requestAccess({
-          data_space_id: access.data_space_id,
-          capability,
-          reason: reason.trim(),
-          requested_until: isoDateIn(Number(term)),
-        }),
-      );
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    setInvalid(undefined);
+    request.run(capability);
   };
 
   return (

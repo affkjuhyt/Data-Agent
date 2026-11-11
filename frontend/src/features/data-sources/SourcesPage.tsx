@@ -7,7 +7,7 @@ import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { listSourceRows, testSource, type SourceRow } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { ConnectorPicker } from './ConnectorPicker';
 import {
   dataSpacesText,
@@ -60,9 +60,9 @@ export default function SourcesPage() {
     ],
   });
 
-  const check = async (source: SourceRow) => {
-    try {
-      const result = await testSource(source.id);
+  const check = useV1Mutation((source: SourceRow) => testSource(source.id), {
+    invalidates: [['listSourceRows']],
+    onSuccess: (result, source) => {
       const failed = result.checks.filter((c) => !c.ok);
       toast(
         failed.length === 0
@@ -72,14 +72,13 @@ export default function SourcesPage() {
             }
           : { tone: 'error', message: `${source.name}: ${failed[0].title} — không đạt.` },
       );
-      sources.reload();
-    } catch (e) {
+    },
+    onError: (e, source) =>
       toast({
         tone: 'error',
-        message: `Không kiểm tra được ${source.name}. ${(e as Error).message}`,
-      });
-    }
-  };
+        message: `Không kiểm tra được ${source.name}. ${e.message}`,
+      }),
+  });
 
   if (sources.data && items.length === 0) return <ConnectorPicker />;
 
@@ -224,7 +223,7 @@ export default function SourcesPage() {
                           {
                             label: 'Kiểm tra kết nối',
                             icon: 'refresh',
-                            onSelect: () => void check(source),
+                            onSelect: () => check.run(source),
                           },
                           ...(source.drift_id
                             ? [

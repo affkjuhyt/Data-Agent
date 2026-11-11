@@ -21,7 +21,7 @@ import {
   type ExtractionSchema,
   type SchemaField,
 } from '../../lib/v1/documents';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { HEAD_ROW, KeyValue, ROW, SidePanel } from './parts';
 
 /*
@@ -74,9 +74,7 @@ function SchemaLoader({ id }: { id: string }) {
 
 function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged: () => void }) {
   const toast = useToast();
-  const [busy, setBusy] = useState<'test' | 'publish' | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string>();
   const published = schema.status === 'active' || schema.status === 'superseded';
   const v = `v${schema.version}`;
   const sample = schema.test_size === null ? 'tệp mẫu' : `${formatNumber(schema.test_size)} tệp`;
@@ -108,36 +106,24 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
     pageSize: 50,
   });
 
-  const runTest = async () => {
-    setBusy('test');
-    try {
-      await testSchema(schema.id);
+  const runTest = useV1Mutation(() => testSchema(schema.id), {
+    invalidates: [['getSchema', schema.id]],
+    onSuccess: () =>
       toast({
         tone: 'success',
         message: `Agent Tài liệu đang chạy thử ${v} trên ${sample}.`,
-      });
-      onChanged();
-    } catch (e) {
-      toast({ tone: 'error', message: `Không chạy thử được. ${(e as Error).message}` });
-    } finally {
-      setBusy(null);
-    }
-  };
+      }),
+    onError: (e) => toast({ tone: 'error', message: `Không chạy thử được. ${e.message}` }),
+  });
 
-  const publish = async () => {
-    setBusy('publish');
-    setError(undefined);
-    try {
-      await activateSchema(schema.id);
+  const publish = useV1Mutation(() => activateSchema(schema.id), {
+    invalidates: [['getSchema', schema.id]],
+    onSuccess: () => {
       setConfirming(false);
       toast({ tone: 'success', message: `Đã xuất bản ${schema.collection.name} · ${v}.` });
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
+    },
+  });
+  const busy = runTest.pending ? 'test' : publish.pending ? 'publish' : null;
 
   return (
     <div className="flex min-h-full">
@@ -155,7 +141,7 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
                   icon="play"
                   loading={busy === 'test'}
                   disabled={busy === 'publish' || schema.status === 'testing'}
-                  onClick={() => void runTest()}
+                  onClick={() => runTest.run()}
                 >
                   Chạy thử trên {sample}
                 </Button>
@@ -280,8 +266,8 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
         confirmLabel="Xuất bản"
         tone="primary"
         loading={busy === 'publish'}
-        error={error}
-        onConfirm={() => void publish()}
+        error={publish.error?.message}
+        onConfirm={() => publish.run()}
         onCancel={() => setConfirming(false)}
       >
         Bảng {table} sẽ được trích lại theo {v} và dùng như một nguồn có cấu trúc để agent truy vấn,

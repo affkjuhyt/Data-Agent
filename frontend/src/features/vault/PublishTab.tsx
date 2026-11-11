@@ -20,7 +20,7 @@ import {
   type HandoverReason,
   type Vault,
 } from '../../lib/v1/exec';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { passkeyWrap } from '../../lib/vault/session';
 import { conditionTitle, type Comparator, type OpenThesis } from './content';
 import { useVault, type Frame } from './VaultPage';
@@ -44,6 +44,13 @@ const subjectOf = (t: OpenThesis) => {
   const what = c.scope_label ?? c.metric_label;
   return `${what.charAt(0).toUpperCase()}${what.slice(1)}${c.period_label ? ` kỳ ${c.period_label}` : ''}`;
 };
+
+interface Publishing {
+  thesis: OpenThesis;
+  c: NonNullable<NonNullable<OpenThesis['content']>['condition']>;
+  space: { id: string; name: string };
+  signer: string;
+}
 
 export function PublishTab({ frame }: { frame: Frame }) {
   const { theses, selected } = useVault();
@@ -71,7 +78,7 @@ function PublishForm({
   thesis: OpenThesis | undefined;
   publishable: OpenThesis[];
 }) {
-  const { theses, select } = useVault();
+  const { select } = useVault();
   const { user } = useAppState();
   const toast = useToast();
   const targets = useV1(['listPublishTargets'], () => listPublishTargets());
@@ -89,8 +96,6 @@ function PublishForm({
   const [showConfidence, setShowConfidence] = useState(false);
   const [showRationale, setShowRationale] = useState(false);
   const [target, setTarget] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
   const [sent, setSent] = useState<string>();
 
   const space = targets.data?.find((t) => t.id === (target ?? targets.data?.[0]?.id));
@@ -107,15 +112,12 @@ function PublishForm({
     setStatement(defaults(thesis).statement);
     setShowConfidence(false);
     setShowRationale(false);
-    setError(undefined);
+    publish.reset();
   };
 
-  const send = async () => {
-    if (!thesis || !c || !space || !signer) return;
-    setSending(true);
-    setError(undefined);
-    try {
-      await publishThesis(thesis.id, {
+  const publish = useV1Mutation(
+    ({ thesis, c, space, signer }: Publishing) =>
+      publishThesis(thesis.id, {
         title: title.trim(),
         statement_public: statement.trim(),
         target_data_space_id: space.id,
@@ -132,16 +134,19 @@ function PublishForm({
         comparator: c.comparator,
         threshold: c.threshold,
         unit: c.unit,
-      });
-      // A3 answers 202 with the publication's id; the target's steward reviews it.
-      setSent(`người phụ trách ${space.name}`);
-      theses.reload();
-      toast({ tone: 'success', message: `Đã gửi người phụ trách ${space.name} duyệt` });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSending(false);
-    }
+      }),
+    {
+      invalidates: [['VaultPage.openTheses']],
+      onSuccess: (_, { space }) => {
+        // A3 answers 202 with the publication's id; the target's steward reviews it.
+        setSent(`người phụ trách ${space.name}`);
+        toast({ tone: 'success', message: `Đã gửi người phụ trách ${space.name} duyệt` });
+      },
+    },
+  );
+  const send = () => {
+    if (!thesis || !c || !space || !signer) return;
+    publish.run({ thesis, c, space, signer });
   };
 
   const pending = Boolean(sent || thesis?.publication_id);
@@ -159,7 +164,7 @@ function PublishForm({
       actions: (
         <>
           <Button onClick={reset}>Huỷ</Button>
-          <Button kind="primary" loading={sending} disabled={!canSend} onClick={send}>
+          <Button kind="primary" loading={publish.pending} disabled={!canSend} onClick={send}>
             Gửi duyệt công bố
           </Button>
         </>
@@ -308,7 +313,7 @@ function PublishForm({
                 tự đổi nhãn “Đã kiểm chứng: đúng/sai”
               </p>
             )}
-            {error && <Notice tone="error">{error}</Notice>}
+            {publish.error && <Notice tone="error">{publish.error.message}</Notice>}
           </>
         )}
       </section>
@@ -352,31 +357,26 @@ function LeaveCard() {
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState<HandoverReason | null>(null);
   const [successor, setSuccessor] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
 
-  const confirm = async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await requestHandover({
+  const handover = useV1Mutation(
+    (reason: HandoverReason) =>
+      requestHandover({
         kind,
-        reason: reason as HandoverReason,
+        reason,
         ...(kind === 'selective_handover' && successor.trim()
           ? { successor_id: successor.trim() }
           : {}),
-      });
-      setAsking(false);
-      toast({
-        tone: 'success',
-        message: kind === 'seal' ? 'Đã niêm phong kho' : 'Đã gửi yêu cầu rời vị trí',
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+      }),
+    {
+      onSuccess: () => {
+        setAsking(false);
+        toast({
+          tone: 'success',
+          message: kind === 'seal' ? 'Đã niêm phong kho' : 'Đã gửi yêu cầu rời vị trí',
+        });
+      },
+    },
+  );
 
   return (
     <section
@@ -412,9 +412,9 @@ function LeaveCard() {
           kind === 'shred' ? 'Huỷ khoá' : kind === 'seal' ? 'Niêm phong' : 'Gửi yêu cầu'
         }
         tone={kind === 'shred' ? 'danger' : 'primary'}
-        loading={busy}
-        error={error}
-        onConfirm={() => reason && void confirm()}
+        loading={handover.pending}
+        error={handover.error?.message}
+        onConfirm={() => reason && handover.run(reason)}
         onCancel={() => setAsking(false)}
       >
         <div className="flex flex-col gap-da-lg">
@@ -441,31 +441,28 @@ function LeaveCard() {
 }
 
 function KeyWrapsCard() {
-  const { vault, session, reloadVault } = useVault();
+  const { vault, session } = useVault();
   const { user } = useAppState();
   const toast = useToast();
-  const [adding, setAdding] = useState(false);
   const wraps = vault.key_wraps;
   const offline = wraps.filter((w) => isOffline(w.kind)).length;
   const short = wraps.length < 2 || offline < 1;
 
-  const add = async () => {
-    setAdding(true);
-    try {
-      const wrap = await passkeyWrap(
-        session,
-        { id: vault.owner_id, name: user.name },
-        `Passkey · ${navigator.platform || 'thiết bị này'}`,
-      );
-      await addKeyWrap(wrap);
-      reloadVault();
-      toast({ tone: 'success', message: 'Đã thêm passkey' });
-    } catch (e) {
-      toast({ tone: 'error', message: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setAdding(false);
-    }
-  };
+  const add = useV1Mutation(
+    async () =>
+      addKeyWrap(
+        await passkeyWrap(
+          session,
+          { id: vault.owner_id, name: user.name },
+          `Passkey · ${navigator.platform || 'thiết bị này'}`,
+        ),
+      ),
+    {
+      invalidates: [['getVault']],
+      onSuccess: () => toast({ tone: 'success', message: 'Đã thêm passkey' }),
+      onError: (e) => toast({ tone: 'error', message: e.message }),
+    },
+  );
 
   return (
     <section
@@ -474,7 +471,7 @@ function KeyWrapsCard() {
     >
       <div className="flex items-center gap-da-md">
         <h2 className="flex-1 text-foreground da-heading-3">Khoá bọc · {wraps.length}</h2>
-        <Button loading={adding} onClick={add}>
+        <Button loading={add.pending} onClick={() => add.run()}>
           Thêm khoá
         </Button>
       </div>

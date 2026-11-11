@@ -16,7 +16,7 @@ import {
   getSessionSkillDraft,
   type SessionSkillDraft,
 } from '../../lib/v1/skillAuthoring';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { LinkButton } from '../../components/shell/AppLink';
 
 /*
@@ -44,8 +44,24 @@ function FromSession({ draft }: { draft: SessionSkillDraft }) {
   );
   const [name, setName] = useState(draft.name);
   const [description, setDescription] = useState(draft.description);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  // A missing name or no kept cell is caught here, before anything is sent.
+  const [invalid, setInvalid] = useState<string>();
+  const create = useV1Mutation(
+    () =>
+      createSkillFromSession({
+        session_id: draft.session_id,
+        kept_cells: [...kept].sort((a, b) => a - b),
+        name: name.trim(),
+        description: description.trim(),
+      }),
+    {
+      onSuccess: (created) => {
+        toast({ tone: 'success', message: `Đã lưu bản nháp v${created.version}; đang kiểm định` });
+        navigate('agents', 'SKILL_TESTS', created.skill_id);
+      },
+    },
+  );
+  const error = invalid ?? (create.error && `Không lưu được: ${create.error.message}`);
 
   const toggle = (seq: number, on: boolean) =>
     setKept((prev) => {
@@ -55,24 +71,11 @@ function FromSession({ draft }: { draft: SessionSkillDraft }) {
       return next;
     });
 
-  const save = async () => {
-    if (!name.trim()) return setError('Đặt tên cho kỹ năng trước khi lưu.');
-    if (kept.size === 0) return setError('Giữ lại ít nhất một ô của phiên.');
-    setBusy(true);
-    setError(undefined);
-    try {
-      const created = await createSkillFromSession({
-        session_id: draft.session_id,
-        kept_cells: [...kept].sort((a, b) => a - b),
-        name: name.trim(),
-        description: description.trim(),
-      });
-      toast({ tone: 'success', message: `Đã lưu bản nháp v${created.version}; đang kiểm định` });
-      navigate('agents', 'SKILL_TESTS', created.skill_id);
-    } catch (e) {
-      setError(`Không lưu được: ${(e as Error).message}`);
-      setBusy(false);
-    }
+  const save = () => {
+    if (!name.trim()) return setInvalid('Đặt tên cho kỹ năng trước khi lưu.');
+    if (kept.size === 0) return setInvalid('Giữ lại ít nhất một ô của phiên.');
+    setInvalid(undefined);
+    create.run();
   };
 
   return (
@@ -86,7 +89,7 @@ function FromSession({ draft }: { draft: SessionSkillDraft }) {
             <LinkButton area="analysis" page="SESSIONS" id={draft.session_id} kind="ghost">
               Huỷ
             </LinkButton>
-            <Button kind="primary" loading={busy} onClick={save}>
+            <Button kind="primary" loading={create.pending} onClick={save}>
               Lưu bản nháp và kiểm định
             </Button>
           </>

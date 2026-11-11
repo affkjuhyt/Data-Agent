@@ -9,7 +9,7 @@ import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { createSkill, listSkills, type Skill, type SkillScope } from '../../lib/v1/skills';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { SKILL_TONE, runsText } from './labels';
 import { ShareSkillDialog } from './ShareSkillDialog';
 import { Segmented } from '../../design-system/Segmented';
@@ -35,7 +35,6 @@ export default function SkillLibraryPage() {
   const toast = useToast();
   const skills = useV1(['listSkills'], () => listSkills());
   const [filter, setFilter] = useState<Filter>('all');
-  const [creating, setCreating] = useState(false);
   const [sharing, setSharing] = useState<Skill | null>(null);
   const items = skills.data?.items ?? [];
   const count = (f: Filter) => items.filter((s) => f === 'all' || s.scope === f).length;
@@ -55,13 +54,10 @@ export default function SkillLibraryPage() {
     pageSize: 50,
   });
 
-  const create = () => {
-    setCreating(true);
-    createSkill({ name: 'Kỹ năng chưa đặt tên' })
-      .then((skill) => navigate('agents', 'SKILL_EDITOR', skill.id))
-      .catch((e: Error) => toast({ tone: 'error', message: `Không tạo được: ${e.message}` }))
-      .finally(() => setCreating(false));
-  };
+  const create = useV1Mutation(() => createSkill({ name: 'Kỹ năng chưa đặt tên' }), {
+    onSuccess: (skill) => navigate('agents', 'SKILL_EDITOR', skill.id),
+    onError: (e) => toast({ tone: 'error', message: `Không tạo được: ${e.message}` }),
+  });
 
   return (
     <div className="flex flex-col">
@@ -75,7 +71,7 @@ export default function SkillLibraryPage() {
             <LinkButton area="analysis" page="SESSIONS">
               Tạo từ phiên
             </LinkButton>
-            <Button kind="primary" loading={creating} onClick={create}>
+            <Button kind="primary" loading={create.pending} onClick={() => create.run()}>
               Kỹ năng mới
             </Button>
           </>

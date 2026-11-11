@@ -15,7 +15,7 @@ import { cn } from '../../lib/utils';
 import { isLocked, lockAgent, unlockAgent } from '../../lib/v1/agentControl';
 import { controlRun, listAgents, listRuns } from '../../lib/v1/api';
 import type { AgentDef, AgentRun, RunStatus } from '../../lib/v1/types';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { agentStatus, nowOf, sevenDaysText } from './agentStatus';
 import { LinkButton } from '../../components/shell/AppLink';
 
@@ -75,28 +75,26 @@ export default function AgentTeamPage() {
   });
   const [pausing, setPausing] = useState<{ agent: AgentDef; run: AgentRun } | null>(null);
   const [locking, setLocking] = useState<AgentDef | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const act = useV1Mutation(
+    ({ action }: { action: () => Promise<unknown>; message: string }) => action(),
+    {
+      invalidates: [['listAgents']],
+      onSuccess: (_, { message }) => {
+        setPausing(null);
+        setLocking(null);
+        toast({ tone: 'success', message });
+      },
+    },
+  );
+  const busy = act.pending;
+  const error = act.error?.message;
 
   const close = () => {
     setPausing(null);
     setLocking(null);
-    setError(undefined);
+    act.reset();
   };
-  const run = async (action: () => Promise<unknown>, message: string) => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await action();
-      close();
-      agents.reload();
-      toast({ tone: 'success', message });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const run = (action: () => Promise<unknown>, message: string) => act.run({ action, message });
   const askPause = (agent: AgentDef) =>
     runningRunOf(agent.id)
       .then((r) =>

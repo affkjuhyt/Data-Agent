@@ -19,7 +19,7 @@ import {
   type PipelineStep,
   type StepPreview,
 } from '../../lib/v1/dataPrep';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { LinkButton } from '../../components/shell/AppLink';
 
@@ -47,9 +47,6 @@ export default function PipelinePage() {
   const [pipeline, setPipeline] = useState<PipelineDetail>();
   const [selected, setSelected] = useState<number>();
   const [showSql, setShowSql] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [error, setError] = useState<string>();
 
   useEffect(() => {
     setPipeline(loaded.data);
@@ -84,35 +81,27 @@ export default function PipelinePage() {
     pipeline && previewSeq !== undefined ? () => getStepPreview(pipeline.id, previewSeq) : null,
   );
 
-  const send = async (text: string) => {
-    if (!pipeline) return;
-    setSending(true);
-    setError(undefined);
-    try {
-      setPipeline(await sendPrepMessage(pipeline.id, text));
-      setSelected(undefined);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
-  };
+  const send = useV1Mutation(
+    ({ id, text }: { id: string; text: string }) => sendPrepMessage(id, text),
+    {
+      onSuccess: (next) => {
+        setPipeline(next);
+        setSelected(undefined);
+      },
+    },
+  );
+  const sending = send.pending;
+  const error = send.error?.message;
 
-  const testRun = async () => {
-    if (!pipeline) return;
-    setTesting(true);
-    try {
-      const r = await testRunPipeline(pipeline.id);
+  const testRun = useV1Mutation((id: string) => testRunPipeline(id), {
+    onSuccess: (r) =>
       toast({
         tone: 'success',
         message: `Chạy thử xong · ${formatNumber(r.rows_out)} dòng ra · ${formatNumber(r.excluded_rows)} dòng vào bảng ngoại lệ`,
-      });
-    } catch (e) {
-      toast({ tone: 'error', message: `Chạy thử lỗi: ${(e as Error).message}` });
-    } finally {
-      setTesting(false);
-    }
-  };
+      }),
+    onError: (e) => toast({ tone: 'error', message: `Chạy thử lỗi: ${e.message}` }),
+  });
+  const testing = testRun.pending;
 
   // A loaded in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(loaded.error);
@@ -148,7 +137,11 @@ export default function PipelinePage() {
             <Button kind="ghost" aria-pressed={showSql} onClick={() => setShowSql(!showSql)}>
               {showSql ? 'Ẩn SQL' : 'Xem SQL'}
             </Button>
-            <Button loading={testing} disabled={!pipeline || steps.length === 0} onClick={testRun}>
+            <Button
+              loading={testing}
+              disabled={!pipeline || steps.length === 0}
+              onClick={() => pipeline && testRun.run(pipeline.id)}
+            >
               Chạy thử toàn bộ
             </Button>
             <Button
@@ -193,7 +186,7 @@ export default function PipelinePage() {
                 <Composer
                   placeholder="Mô tả bước tiếp theo…"
                   sending={sending || waiting}
-                  onSubmit={(text) => void send(text)}
+                  onSubmit={(text) => pipeline && send.run({ id: pipeline.id, text })}
                 />
               </section>
               <section className="flex min-w-0 flex-1 flex-col gap-da-lg px-da-2xl pb-da-2xl pt-da-xl">

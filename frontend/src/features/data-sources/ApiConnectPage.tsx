@@ -24,7 +24,7 @@ import {
   type ApiRequest,
   type ApiSourceConfig,
 } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "v3.1 · Dữ liệu · Kết nối API" (2083:6509, UC-04-01 for the REST connector): four steps —
@@ -34,6 +34,7 @@ import { useV1 } from '../../lib/v1/useV1';
  * shows its health on the right, with a backfill of the gap the source reported.
  */
 type Step = 'endpoint' | 'auth' | 'paging' | 'mapping';
+type BackfillGap = NonNullable<NonNullable<ApiSourceConfig['health']>['gap']>;
 
 const STEPS: { value: Step; label: string }[] = [
   { value: 'endpoint', label: 'Endpoint' },
@@ -138,7 +139,6 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
     null,
   );
   const [step, setStep] = useState<Step>(config ? 'mapping' : 'endpoint');
-  const [busy, setBusy] = useState<'try' | 'save' | 'backfill' | null>(null);
 
   const set = (patch: Partial<ApiRequest>) => setRequest((r) => ({ ...r, ...patch }));
   const full: ApiRequest = { ...request, headers: parseHeaders(headers) };
@@ -152,53 +152,53 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
   const canTry = done.endpoint && done.auth;
   const canSave = STEPS.every((s) => done[s.value]);
 
-  const callTry = async () => {
-    setBusy('try');
-    try {
-      const result = await tryApiRequest(full);
+  const callTry = useV1Mutation(() => tryApiRequest(full), {
+    onSuccess: (result) => {
       setResponse({ status: result.status, ms: result.duration_ms, body: result.body });
       // Keep columns the user already renamed; add fields the response newly shows.
       setMapping((current) =>
         result.mapping.map((m) => current.find((c) => c.path === m.path) ?? m),
       );
       setStep('mapping');
-    } catch (e) {
-      toast({ tone: 'error', message: `Gọi thử không được. ${(e as Error).message}` });
-    } finally {
-      setBusy(null);
-    }
-  };
+    },
+    onError: (e) => toast({ tone: 'error', message: `Gọi thử không được. ${e.message}` }),
+  });
 
-  const save = async () => {
-    setBusy('save');
-    try {
+  const save = useV1Mutation(
+    async (): Promise<{ id: string; message: string }> => {
       if (config) {
         await saveApiConfig(config.source_id, { request: full, mapping });
-        toast({ tone: 'success', message: `Đã lưu ${name}. Lịch chạy giữ nguyên.` });
-        navigate('data', 'SOURCE', config.source_id);
-      } else {
-        const source = await createApiSource({ name: name.trim(), request: full, mapping });
-        toast({ tone: 'success', message: `Đã kết nối ${source.name} và lên lịch chạy.` });
-        navigate('data', 'SOURCE', source.id);
+        return { id: config.source_id, message: `Đã lưu ${name}. Lịch chạy giữ nguyên.` };
       }
-    } catch (e) {
-      toast({ tone: 'error', message: `Không lưu được. ${(e as Error).message}` });
-      setBusy(null);
-    }
-  };
+      const source = await createApiSource({ name: name.trim(), request: full, mapping });
+      return { id: source.id, message: `Đã kết nối ${source.name} và lên lịch chạy.` };
+    },
+    {
+      onSuccess: ({ id, message }) => {
+        toast({ tone: 'success', message });
+        navigate('data', 'SOURCE', id);
+      },
+      onError: (e) => toast({ tone: 'error', message: `Không lưu được. ${e.message}` }),
+    },
+  );
 
-  const backfill = async (gap: NonNullable<NonNullable<ApiSourceConfig['health']>['gap']>) => {
-    if (!config) return;
-    setBusy('backfill');
-    try {
-      await backfillSource(config.source_id, { from: gap.from, to: gap.to });
-      toast({ tone: 'success', message: `Đã xếp lịch chạy bù ${gap.label}.` });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không chạy bù được. ${(e as Error).message}` });
-    } finally {
-      setBusy(null);
-    }
-  };
+  const backfill = useV1Mutation(
+    ({ sourceId, gap }: { sourceId: string; gap: BackfillGap }) =>
+      backfillSource(sourceId, { from: gap.from, to: gap.to }),
+    {
+      onSuccess: (_, { gap }) =>
+        toast({ tone: 'success', message: `Đã xếp lịch chạy bù ${gap.label}.` }),
+      onError: (e) => toast({ tone: 'error', message: `Không chạy bù được. ${e.message}` }),
+    },
+  );
+
+  const busy = callTry.pending
+    ? 'try'
+    : save.pending
+      ? 'save'
+      : backfill.pending
+        ? 'backfill'
+        : null;
 
   const health = config?.health ?? null;
 
@@ -214,7 +214,7 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
                 icon="play"
                 loading={busy === 'try'}
                 disabled={!canTry || busy !== null}
-                onClick={() => void callTry()}
+                onClick={() => callTry.run()}
               >
                 Gọi thử
               </Button>
@@ -222,7 +222,7 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
                 kind="primary"
                 loading={busy === 'save'}
                 disabled={!canSave || busy !== null}
-                onClick={() => void save()}
+                onClick={() => save.run()}
               >
                 Lưu &amp; lên lịch
               </Button>
@@ -495,7 +495,9 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
                 className="self-start"
                 loading={busy === 'backfill'}
                 disabled={busy !== null}
-                onClick={() => void backfill(health.gap!)}
+                onClick={() =>
+                  config && backfill.run({ sourceId: config.source_id, gap: health.gap! })
+                }
               >
                 Chạy bù {health.gap.label}
               </Button>

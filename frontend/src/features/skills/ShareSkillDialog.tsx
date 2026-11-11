@@ -5,7 +5,7 @@ import { Select } from '../../design-system/Select';
 import { useToast } from '../../design-system/Toast';
 import { listDataSpaces } from '../../lib/v1/api';
 import { shareSkill, type Skill } from '../../lib/v1/skills';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * UC-03-07 "Chia sẻ cho Data Space khác": a certified skill to one Data Space or the whole
@@ -18,12 +18,32 @@ export function ShareSkillDialog({ skill, onClose }: { skill: Skill | null; onCl
   const toast = useToast();
   const spaces = useV1(['listDataSpaces', skill?.id], skill ? listDataSpaces : null);
   const [target, setTarget] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  // No target picked is caught here, before anything is sent.
+  const [invalid, setInvalid] = useState<string>();
+  const share = useV1Mutation(
+    ({ skill, to }: { skill: Skill; to: string }) =>
+      shareSkill(skill.id, to === ORGANIZATION ? null : to),
+    {
+      onSuccess: (result, { skill }) => {
+        toast({
+          tone: 'success',
+          message:
+            result.status === 'pending_admin'
+              ? `Đã gửi quản trị viên duyệt chia sẻ ${skill.name}`
+              : `Đã chia sẻ ${skill.name}`,
+        });
+        onClose();
+      },
+    },
+  );
+  const clearError = () => {
+    setInvalid(undefined);
+    share.reset();
+  };
 
   useEffect(() => {
     setTarget(null);
-    setError(undefined);
+    clearError();
   }, [skill?.id]);
 
   const options = [
@@ -36,23 +56,10 @@ export function ShareSkillDialog({ skill, onClose }: { skill: Skill | null; onCl
   const confirm = () => {
     if (!skill) return;
     if (!target) {
-      setError('Chọn nơi chia sẻ.');
+      setInvalid('Chọn nơi chia sẻ.');
       return;
     }
-    setBusy(true);
-    shareSkill(skill.id, target === ORGANIZATION ? null : target)
-      .then((result) => {
-        toast({
-          tone: 'success',
-          message:
-            result.status === 'pending_admin'
-              ? `Đã gửi quản trị viên duyệt chia sẻ ${skill.name}`
-              : `Đã chia sẻ ${skill.name}`,
-        });
-        onClose();
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setBusy(false));
+    share.run({ skill, to: target });
   };
 
   return (
@@ -62,8 +69,8 @@ export function ShareSkillDialog({ skill, onClose }: { skill: Skill | null; onCl
       tone="primary"
       title={`Chia sẻ ${skill?.name ?? 'kỹ năng'}`}
       confirmLabel="Chia sẻ"
-      loading={busy}
-      error={error}
+      loading={share.pending}
+      error={invalid ?? share.error?.message}
       onConfirm={confirm}
       onCancel={onClose}
     >
@@ -79,7 +86,7 @@ export function ShareSkillDialog({ skill, onClose }: { skill: Skill | null; onCl
             value={target}
             onChange={(value) => {
               setTarget(value);
-              setError(undefined);
+              clearError();
             }}
           />
         </Field>

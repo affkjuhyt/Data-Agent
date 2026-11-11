@@ -16,7 +16,7 @@ import {
 } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { disablePolicy, listAccessPolicies, type AccessPolicy } from '../../lib/v1/adminAccess';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import PolicyDetail from './PolicyDetail';
 import { POLICY_KIND, POLICY_STATUS } from './policyLabels';
 
@@ -35,9 +35,8 @@ function PolicyList() {
   const toast = useToast();
   const policies = useV1(['listAccessPolicies'], listAccessPolicies);
   const [turningOff, setTurningOff] = useState<AccessPolicy | null>(null);
-  const [sending, setSending] = useState(false);
   const [reason, setReason] = useState('');
-  const [error, setError] = useState<string>();
+  const [invalid, setInvalid] = useState<string>();
 
   const items = policies.data?.items ?? [];
   const active = items.filter((p) => p.status === 'active').length;
@@ -54,21 +53,14 @@ function PolicyList() {
     pageSize: 50,
   });
 
-  const turnOff = async (p: AccessPolicy) => {
-    setSending(true);
-    setError(undefined);
-    try {
-      await disablePolicy(p.id, reason.trim());
+  const turnOff = useV1Mutation((p: AccessPolicy) => disablePolicy(p.id, reason.trim()), {
+    invalidates: [['listAccessPolicies']],
+    onSuccess: (_, p) => {
       toast({ tone: 'success', message: `Đã tắt ${p.code}` });
       setTurningOff(null);
       setReason('');
-      policies.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
-  };
+    },
+  });
 
   return (
     <div className="flex flex-col">
@@ -194,16 +186,22 @@ function PolicyList() {
         open={turningOff !== null}
         title="Tắt chính sách này?"
         confirmLabel="Tắt chính sách"
-        loading={sending}
-        error={error}
+        loading={turnOff.pending}
+        error={invalid ?? turnOff.error?.message}
         onCancel={() => {
           setTurningOff(null);
-          setError(undefined);
+          setInvalid(undefined);
+          turnOff.reset();
           setReason('');
         }}
         onConfirm={() => {
-          if (!reason.trim()) setError('Ghi lý do tắt chính sách.');
-          else if (turningOff) void turnOff(turningOff);
+          if (!reason.trim()) {
+            turnOff.reset();
+            setInvalid('Ghi lý do tắt chính sách.');
+          } else if (turningOff) {
+            setInvalid(undefined);
+            turnOff.run(turningOff);
+          }
         }}
       >
         <span className="flex flex-col gap-da-sm">

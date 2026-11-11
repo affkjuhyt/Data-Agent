@@ -46,7 +46,6 @@ const IDLE_MS = 15 * 60_000;
 
 interface VaultContextValue {
   vault: Vault;
-  reloadVault: () => void;
   session: VaultSession;
   theses: V1State<OpenThesis[]>;
   /** The thesis the evidence and publish tabs are about. */
@@ -156,7 +155,7 @@ export default function VaultPage() {
 
   if (!session || !vault.data) {
     const header = { breadcrumb: ['Kho riêng'], title: 'Kho riêng' };
-    if (missing) return frame(header, <SetupPanel onCreated={vault.reload} />);
+    if (missing) return frame(header, <SetupPanel />);
     return frame(
       header,
       <AsyncRegion state={vault} what="kho riêng">
@@ -167,7 +166,6 @@ export default function VaultPage() {
 
   const context: VaultContextValue = {
     vault: vault.data,
-    reloadVault: vault.reload,
     session,
     theses,
     selected,

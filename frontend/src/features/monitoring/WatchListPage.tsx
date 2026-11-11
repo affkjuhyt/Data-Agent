@@ -19,7 +19,7 @@ import {
   type MonitorState,
   type RuleKind,
 } from '../../lib/v1/monitors';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { whenText } from './whenText';
 import { LinkButton } from '../../components/shell/AppLink';
 
@@ -96,14 +96,14 @@ export default function WatchListPage() {
       />
       <div className="px-da-3xl pb-da-2xl pt-da-xl">
         <AsyncRegion state={monitors} what="theo dõi" skeletonRows={6}>
-          {() => <WatchList items={items} onChanged={monitors.reload} />}
+          {() => <WatchList items={items} />}
         </AsyncRegion>
       </div>
     </div>
   );
 }
 
-function WatchList({ items, onChanged }: { items: Monitor[]; onChanged: () => void }) {
+function WatchList({ items }: { items: Monitor[] }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [filters, setFilters] = useState<Filters>({
@@ -111,7 +111,6 @@ function WatchList({ items, onChanged }: { items: Monitor[]; onChanged: () => vo
     owner: new Set(),
     kind: new Set(),
   });
-  const [error, setError] = useState<string>();
 
   const ordered = [...items].sort((a, b) =>
     (b.last_fired_at ?? '').localeCompare(a.last_fired_at ?? ''),
@@ -148,19 +147,16 @@ function WatchList({ items, onChanged }: { items: Monitor[]; onChanged: () => vo
     ),
   ];
 
-  const mute = async (m: Monitor, on: boolean) => {
-    setError(undefined);
-    try {
-      await muteMonitor(m.id, on);
+  const muting = useV1Mutation(({ m, on }: { m: Monitor; on: boolean }) => muteMonitor(m.id, on), {
+    invalidates: [['listMonitors']],
+    onSuccess: (_, { m, on }) =>
       toast({
         tone: 'success',
         message: on ? `Đã tạm dừng ${m.name}` : `Đã bật lại ${m.name}`,
-      });
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
+      }),
+  });
+  const mute = (m: Monitor, on: boolean) => muting.run({ m, on });
+  const error = muting.error?.message;
 
   return (
     <div className="flex items-start gap-da-xl max-[1023px]:flex-col">

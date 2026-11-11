@@ -9,7 +9,7 @@ import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber, formatTime } from '../../lib/formatVN';
 import { getSource, testSource, type SourceDetail } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { dataSpacesText, freshnessText, modeLabel, sourceTone } from './sourceFormat';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { LinkButton } from '../../components/shell/AppLink';
@@ -28,17 +28,17 @@ export default function SourceDetailPage() {
   if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={source} what="nguồn" skeletonRows={6}>
-      {(data) => <SourceView source={data} reload={source.reload} />}
+      {(data) => <SourceView source={data} />}
     </AsyncRegion>
   );
 }
 
-function SourceView({ source, reload }: { source: SourceDetail; reload: () => void }) {
+function SourceView({ source }: { source: SourceDetail }) {
   const { navigate } = useAppState();
   const toast = useToast();
-  const check = async () => {
-    try {
-      const result = await testSource(source.id);
+  const check = useV1Mutation(() => testSource(source.id), {
+    invalidates: [['getSource']],
+    onSuccess: (result) => {
       const failed = result.checks.filter((c) => !c.ok);
       toast(
         failed.length === 0
@@ -48,11 +48,9 @@ function SourceView({ source, reload }: { source: SourceDetail; reload: () => vo
             }
           : { tone: 'error', message: `${failed[0].title} — không đạt. ${failed[0].detail}` },
       );
-      reload();
-    } catch (e) {
-      toast({ tone: 'error', message: `Không kiểm tra được kết nối. ${(e as Error).message}` });
-    }
-  };
+    },
+    onError: (e) => toast({ tone: 'error', message: `Không kiểm tra được kết nối. ${e.message}` }),
+  });
   const tone = sourceTone(source);
   const view = useTableView(source.tables, {
     search: (table) =>
@@ -85,7 +83,7 @@ function SourceView({ source, reload }: { source: SourceDetail; reload: () => vo
                 Sửa kết nối API
               </LinkButton>
             )}
-            <Button onClick={() => void check()}>Kiểm tra kết nối</Button>
+            <Button onClick={() => check.run()}>Kiểm tra kết nối</Button>
             {source.drift_id && (
               <LinkButton area="data" page="DRIFT" id={source.drift_id!} kind="primary">
                 Duyệt thay đổi cấu trúc

@@ -32,7 +32,7 @@ import {
 } from '../../lib/v1/alerts';
 import { listUsers } from '../../lib/v1/api';
 import { muteMonitor } from '../../lib/v1/monitors';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { whenText } from './whenText';
 
 /*
@@ -71,20 +71,21 @@ export default function AlertPage() {
     );
   return (
     <AsyncRegion state={alert} what="cảnh báo">
-      {(a) => <AlertBody key={a.id} alert={a} onChanged={alert.reload} />}
+      {(a) => <AlertBody key={a.id} alert={a} />}
     </AsyncRegion>
   );
 }
 
-function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }) {
+function AlertBody({ alert }: { alert: Alert }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [note, setNote] = useState('');
   const [assignee, setAssignee] = useState<string | null>(null);
   const [showSql, setShowSql] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string>();
+  // What is missing before a write (a note, a person) is caught here; a failed write is the
+  // mutation's error.
+  const [invalid, setInvalid] = useState<string>();
   const users = useV1(['listUsers', dialog === 'assign'], dialog === 'assign' ? listUsers : null);
   const closed = alert.status === 'closed';
   const status =
@@ -92,25 +93,41 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
       ? { label: 'Đã đóng · báo nhầm', tone: 'idle' as const }
       : STATUS[alert.status];
 
-  const act = async (key: string, call: () => Promise<unknown>, message: string) => {
-    setBusy(key);
-    setError(undefined);
-    try {
-      await call();
-      toast({ tone: 'success', message });
-      setDialog(null);
-      setNote('');
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
+  const action = useV1Mutation(
+    ({ call }: { key: string; call: () => Promise<unknown>; message: string }) => call(),
+    {
+      invalidates: [['getAlert']],
+      onSuccess: (_, { message }) => {
+        toast({ tone: 'success', message });
+        setDialog(null);
+        setNote('');
+      },
+    },
+  );
+  const investigation = useV1Mutation(() => investigateAlert(alert), {
+    onSuccess: ({ workspace_id }) => navigate('analysis', 'SESSIONS', workspace_id),
+  });
+  const busy = action.pending
+    ? (action.variables?.key ?? null)
+    : investigation.pending
+      ? 'investigate'
+      : null;
+  const error = invalid ?? action.error?.message ?? investigation.error?.message;
+  // One message at a time, as when the page kept a single error.
+  const clearErrors = () => {
+    setInvalid(undefined);
+    action.reset();
+    investigation.reset();
+  };
+
+  const act = (key: string, call: () => Promise<unknown>, message: string) => {
+    clearErrors();
+    action.run({ key, call, message });
   };
 
   const close = (kind: 'resolved' | 'false_positive') => {
     if ((kind === 'false_positive' || alert.occurrences > 2) && !note.trim()) {
-      setError(
+      setInvalid(
         kind === 'false_positive'
           ? 'Ghi vì sao đây là báo nhầm; agent học từ ghi chú này.'
           : 'Cảnh báo lặp hơn 2 lần cần ghi chú khi đóng (BR-124).',
@@ -124,16 +141,9 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
     );
   };
 
-  const investigate = async () => {
-    setBusy('investigate');
-    setError(undefined);
-    try {
-      const { workspace_id } = await investigateAlert(alert);
-      navigate('analysis', 'SESSIONS', workspace_id);
-    } catch (e) {
-      setError((e as Error).message);
-      setBusy(null);
-    }
+  const investigate = () => {
+    clearErrors();
+    investigation.run();
   };
 
   // A2 pauses a monitor until it is resumed from the list; there is no end date.
@@ -146,7 +156,7 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
   };
 
   const dialogOpen = (d: Dialog) => {
-    setError(undefined);
+    clearErrors();
     setNote('');
     setDialog(d);
   };
@@ -325,7 +335,7 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
         onConfirm={() => {
           const user = users.data?.items.find((u) => u.id === assignee);
           if (!user) {
-            setError('Chọn người nhận.');
+            setInvalid('Chọn người nhận.');
             return;
           }
           act(
@@ -364,7 +374,7 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
           if (dialog === 'reopen') {
             // A2 :reopen requires the reason; it is kept with the alert's history.
             if (!note.trim()) {
-              setError('Ghi vì sao mở lại.');
+              setInvalid('Ghi vì sao mở lại.');
               return;
             }
             act('reopen', () => reopenAlert(alert.id, note.trim()), `Đã mở lại ${alert.code}`);

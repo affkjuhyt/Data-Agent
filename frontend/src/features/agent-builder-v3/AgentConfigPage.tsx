@@ -27,7 +27,7 @@ import {
   type Checkpoint,
   type TriggerKind,
 } from '../../lib/v1/agentBuilder';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { agentStatus } from '../agents/agentStatus';
 import { runStatus } from '../agents/runStatus';
 import { MemoryTab } from './MemoryTab';
@@ -80,11 +80,7 @@ export default function AgentConfigPage() {
     <AsyncRegion state={agent} what="agent">
       {(detail) =>
         detail.config ? (
-          <AgentBody
-            key={detail.config.id}
-            agent={{ ...detail, config: detail.config }}
-            onSaved={agent.reload}
-          />
+          <AgentBody key={detail.config.id} agent={{ ...detail, config: detail.config }} />
         ) : (
           <EmptyState
             title={`${detail.name} chưa có cấu hình`}
@@ -96,13 +92,7 @@ export default function AgentConfigPage() {
   );
 }
 
-function AgentBody({
-  agent,
-  onSaved,
-}: {
-  agent: AgentDetail & { config: AgentConfig };
-  onSaved: () => void;
-}) {
+function AgentBody({ agent }: { agent: AgentDetail & { config: AgentConfig } }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('config');
@@ -110,8 +100,6 @@ function AgentBody({
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>(agent.config.checkpoints);
   const [triggers, setTriggers] = useState<AgentTrigger[]>(agent.triggers);
   const [addingMemory, setAddingMemory] = useState(false);
-  const [busy, setBusy] = useState<'save' | 'activate' | null>(null);
-  const [error, setError] = useState<string>();
   const test = useTestRun();
 
   const configDirty =
@@ -136,40 +124,41 @@ function AgentBody({
   };
   const status = agent.status === 'draft' ? { label: 'Nháp', tone: 'idle' as const } : agentStatus(agent);
 
-  const save = async () => {
-    setBusy('save');
-    setError(undefined);
-    try {
+  const saveEdits = useV1Mutation(
+    async () => {
       if (triggersDirty) await putTriggers(agent.id, triggers);
       if (configDirty) {
         const { goal, denied_actions, tools } = agent.config;
         await saveConfig(agent.id, { goal, autonomy, checkpoints, denied_actions, tools });
       }
-      toast({
-        tone: 'success',
-        message: configDirty ? `Đã lưu phiên bản v${nextVersion}` : 'Đã lưu trigger',
-      });
-      onSaved();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
+    },
+    {
+      invalidates: [['getAgent']],
+      onSuccess: () =>
+        toast({
+          tone: 'success',
+          message: configDirty ? `Đã lưu phiên bản v${nextVersion}` : 'Đã lưu trigger',
+        }),
+    },
+  );
+  const activation = useV1Mutation(
+    (configVersion: number) => activateAgent(agent.id, configVersion),
+    {
+      onSuccess: () => {
+        toast({ tone: 'success', message: 'Đã gửi yêu cầu kích hoạt cho chủ sở hữu dữ liệu' });
+        test.close();
+      },
+      onError: () => test.close(),
+    },
+  );
+  const error = activation.error?.message ?? saveEdits.error?.message;
+  const save = () => {
+    // Saving starts over: an earlier activation failure is not this save's.
+    activation.reset();
+    saveEdits.run();
   };
-
-  const activate = async () => {
-    if (!test.run) return;
-    setBusy('activate');
-    try {
-      await activateAgent(agent.id, test.run.config_version);
-      toast({ tone: 'success', message: 'Đã gửi yêu cầu kích hoạt cho chủ sở hữu dữ liệu' });
-      test.close();
-    } catch (e) {
-      setError((e as Error).message);
-      test.close();
-    } finally {
-      setBusy(null);
-    }
+  const activate = () => {
+    if (test.run) activation.run(test.run.config_version);
   };
 
   const tabLabel = TABS.find((t) => t.value === tab)!.label;
@@ -185,7 +174,7 @@ function AgentBody({
           Chạy thử
         </Button>
         <Tooltip content={configDirty || triggersDirty ? 'Phiên bản mới phải qua bộ đánh giá trước khi chạy thật.' : 'Chưa có thay đổi.'}>
-          <Button kind="primary" disabled={!configDirty && !triggersDirty} loading={busy === 'save'} onClick={save}>
+          <Button kind="primary" disabled={!configDirty && !triggersDirty} loading={saveEdits.pending} onClick={save}>
             {configDirty || !triggersDirty ? `Lưu thành phiên bản v${nextVersion}` : 'Lưu trigger'}
           </Button>
         </Tooltip>
@@ -309,7 +298,7 @@ function AgentBody({
         <TestRunDrawer
           run={test.run}
           error={error ?? test.error}
-          activating={busy === 'activate'}
+          activating={activation.pending}
           onActivate={activate}
           onEdit={() => {
             test.close();

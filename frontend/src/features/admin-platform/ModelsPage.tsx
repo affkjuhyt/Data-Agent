@@ -31,7 +31,7 @@ import {
   type ModelRoute,
 } from '../../lib/v1/adminPlatform';
 import type { Page } from '../../lib/v1/client';
-import { useV1, type V1State } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation, type V1State } from '../../lib/v1/useV1';
 import { formatHour, formatLatency, pct } from './format';
 import { Dialog } from '../../design-system/Dialog';
 import { AddProviderDialog, ProvidersTab, RoutingLogTab } from './ModelProviders';
@@ -78,43 +78,27 @@ export default function ModelsPage() {
     ['getRoutingLog', { page_size: 3 }],
     auditsRouting ? () => getRoutingLog({ page_size: 3 }) : null,
   );
-  const [providersVersion, setProvidersVersion] = useState(0);
   const [adding, setAdding] = useState(false);
   const [addingProvider, setAddingProvider] = useState(false);
   const [rollback, setRollback] = useState<ModelRoute | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
 
-  const evaluate = async () => {
-    setBusy(true);
-    try {
-      await runModelEvals();
-      toast({ tone: 'success', message: 'Đã bắt đầu chạy bộ đánh giá cho mọi tác vụ.' });
-    } catch (e) {
-      toast({ tone: 'error', message: (e as Error).message });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const evaluate = useV1Mutation(runModelEvals, {
+    onSuccess: () =>
+      toast({ tone: 'success', message: 'Đã bắt đầu chạy bộ đánh giá cho mọi tác vụ.' }),
+    onError: (e) => toast({ tone: 'error', message: e.message }),
+  });
 
-  const confirmRollback = async () => {
-    if (!rollback) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      await rollbackModel(rollback);
+  const rollBack = useV1Mutation(rollbackModel, {
+    invalidates: [['listModelRoutes']],
+    onSuccess: (_, route) => {
       toast({
         tone: 'success',
-        message: `“${rollback.task}” đã quay lại ${rollback.previous?.model_name}.`,
+        message: `“${route.task}” đã quay lại ${route.previous?.model_name}.`,
       });
       setRollback(null);
-      routes.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+    },
+  });
+  const busy = evaluate.pending || rollBack.pending;
 
   const tabs = (Object.keys(TAB_LABELS) as ModelsTab[])
     .filter((value) => value !== 'routing' || auditsRouting)
@@ -136,7 +120,7 @@ export default function ModelsPage() {
         actions={
           tab === 'tasks' ? (
             <>
-              <Button onClick={evaluate} disabled={busy}>
+              <Button onClick={() => evaluate.run()} disabled={busy}>
                 Chạy bộ đánh giá
               </Button>
               <Button kind="primary" onClick={() => setAdding(true)}>
@@ -166,7 +150,7 @@ export default function ModelsPage() {
             <ModelRoutesTable
               state={routes}
               onRollback={(route) => {
-                setError(undefined);
+                rollBack.reset();
                 setRollback(route);
               }}
             />
@@ -216,11 +200,7 @@ export default function ModelsPage() {
       )}
 
       {tab === 'providers' && (
-        <ProvidersTab
-          key={providersVersion}
-          policy={policy}
-          routing={auditsRouting ? routing : null}
-        />
+        <ProvidersTab policy={policy} routing={auditsRouting ? routing : null} />
       )}
 
       {tab === 'routing' && auditsRouting && <RoutingLogTab />}
@@ -234,7 +214,6 @@ export default function ModelsPage() {
               tone: 'success',
               message: `Đã thêm ${route.model_name}; bộ đánh giá đang chạy trước khi định tuyến.`,
             });
-            routes.reload();
           }}
         />
       )}
@@ -251,7 +230,6 @@ export default function ModelsPage() {
                   ? `Đã thêm ${provider.name}; chỉ được định tuyến sau khi AC06 duyệt.`
                   : `Đã thêm ${provider.name}.`,
             });
-            setProvidersVersion((v) => v + 1);
           }}
         />
       )}
@@ -262,8 +240,8 @@ export default function ModelsPage() {
         title={`Quay lại ${rollback?.previous?.model_name ?? ''}?`}
         confirmLabel="Quay lại"
         loading={busy}
-        error={error}
-        onConfirm={confirmRollback}
+        error={rollBack.error?.message}
+        onConfirm={() => rollback && rollBack.run(rollback)}
         onCancel={() => setRollback(null)}
       >
         {rollback?.previous && <RollbackConsequence route={rollback} />}
@@ -454,25 +432,16 @@ function AddModelDialog({
   const [endpoint, setEndpoint] = useState('');
   const [tasks, setTasks] = useState('');
   const [limit, setLimit] = useState('60');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
-
-  const submit = async () => {
-    setSaving(true);
-    setError(undefined);
-    try {
-      const route = await addModel({
+  const add = useV1Mutation(
+    () =>
+      addModel({
         name: name.trim(),
         endpoint: endpoint.trim(),
         task: tasks.trim(),
         rate_limit_per_min: Number(limit),
-      });
-      onAdded(route);
-    } catch (e) {
-      setError((e as Error).message);
-      setSaving(false);
-    }
-  };
+      }),
+    { invalidates: [['listModelRoutes']], onSuccess: onAdded },
+  );
 
   return (
     <Dialog
@@ -481,10 +450,10 @@ function AddModelDialog({
       title="Thêm mô hình"
       description="Mô hình chạy nội bộ; sẽ chạy bộ đánh giá trước khi được định tuyến."
       submitLabel="Thêm & đánh giá"
-      submitting={saving}
+      submitting={add.pending}
       canSubmit={Boolean(name.trim() && endpoint.trim())}
-      error={error}
-      onSubmit={submit}
+      error={add.error?.message}
+      onSubmit={() => add.run()}
       onClose={onClose}
     >
       <Field label="Tên">

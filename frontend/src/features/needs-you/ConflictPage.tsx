@@ -11,7 +11,7 @@ import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import { getHitl, listInbox, resolveHitl } from '../../lib/v1/api';
 import type { ConflictContext, HitlRequest } from '../../lib/v1/types';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { RequestList } from './RequestList';
 import { detailRouteOf, dueOf } from './decision';
 
@@ -57,29 +57,24 @@ function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () =>
     () => request.options.find((o) => o.is_default)?.id ?? request.options[0]?.id ?? '',
   );
   const [remember, setRemember] = useState(Boolean(ctx.rule_suggestion));
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
   const due = dueOf(request);
   // A request reassigned to this person waits for them as an open one does (inbox PENDING).
   const open = request.status === 'open' || request.status === 'reassigned';
 
-  const submit = async () => {
-    setSending(true);
-    setError(undefined);
-    try {
-      await resolveHitl(request.id, { decision: 'answer', option, remember_as_rule: remember });
-      const label = request.options.find((o) => o.id === option)?.label ?? 'phương án';
-      toast({
-        tone: 'success',
-        message: `Đã chọn: ${label}${remember ? ' · đã lưu thành quy tắc' : ''}`,
-      });
-      onDone();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
-  };
+  const send = useV1Mutation(
+    () => resolveHitl(request.id, { decision: 'answer', option, remember_as_rule: remember }),
+    {
+      onSuccess: () => {
+        const label = request.options.find((o) => o.id === option)?.label ?? 'phương án';
+        toast({
+          tone: 'success',
+          message: `Đã chọn: ${label}${remember ? ' · đã lưu thành quy tắc' : ''}`,
+        });
+        onDone();
+      },
+    },
+  );
+  const error = send.error?.message;
 
   return (
     <>
@@ -179,7 +174,12 @@ function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () =>
 
         {open && (
           <div className="flex gap-da-md">
-            <Button kind="primary" loading={sending} disabled={!option} onClick={submit}>
+            <Button
+              kind="primary"
+              loading={send.pending}
+              disabled={!option}
+              onClick={() => send.run()}
+            >
               Chọn phương án
             </Button>
             <Tooltip content={PENDING_REASSIGN}>

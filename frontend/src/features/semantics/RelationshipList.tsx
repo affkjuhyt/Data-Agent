@@ -5,6 +5,7 @@ import { Notice } from '../../design-system/Notice';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { type EntityRelationshipRow, retireRelationship } from '../../lib/v1/semanticLayer';
+import { useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * The joins of the selected entity, one row each, and the way to take back an active one: an
@@ -16,23 +17,16 @@ export function RelationshipList({ rows }: { rows: EntityRelationshipRow[] }) {
   const toast = useToast();
   const [open, setOpen] = useState<string | null>(null);
   const [reason, setReason] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
-
-  const send = async (row: EntityRelationshipRow) => {
-    setSending(true);
-    setError(undefined);
-    try {
-      await retireRelationship(row.id, reason.trim());
-      toast({ tone: 'success', message: `Đã gửi đề xuất gỡ ${row.text}` });
-      setOpen(null);
-      setReason('');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
-  };
+  const retire = useV1Mutation(
+    (row: EntityRelationshipRow) => retireRelationship(row.id, reason.trim()),
+    {
+      onSuccess: (_, row) => {
+        toast({ tone: 'success', message: `Đã gửi đề xuất gỡ ${row.text}` });
+        setOpen(null);
+        setReason('');
+      },
+    },
+  );
 
   if (rows.length === 0) return null;
   return (
@@ -51,7 +45,7 @@ export function RelationshipList({ rows }: { rows: EntityRelationshipRow[] }) {
                   onClick={() => {
                     setOpen(row.id);
                     setReason('');
-                    setError(undefined);
+                    retire.reset();
                   }}
                 >
                   Gỡ
@@ -67,12 +61,14 @@ export function RelationshipList({ rows }: { rows: EntityRelationshipRow[] }) {
                   onChange={(e) => setReason(e.target.value)}
                   rows={2}
                 />
-                {error && <Notice tone="error">Không gửi được: {error}</Notice>}
+                {retire.error && (
+                  <Notice tone="error">Không gửi được: {retire.error.message}</Notice>
+                )}
                 <div className="flex gap-da-sm">
                   <Button
                     size="sm"
-                    disabled={sending || reason.trim().length === 0}
-                    onClick={() => send(row)}
+                    disabled={retire.pending || reason.trim().length === 0}
+                    onClick={() => retire.run(row)}
                   >
                     Gửi đề xuất gỡ
                   </Button>

@@ -28,7 +28,7 @@ import {
   type AuditQuery,
   type SecurityEvent,
 } from '../../lib/v1/adminAccess';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { dayMonth, isoDay } from './format';
 import { DateField } from '../../design-system/DateField';
 
@@ -63,8 +63,6 @@ export default function AuditPage() {
   const [action, setAction] = useState('');
   const [outcome, setOutcome] = useState<Outcome>('all');
   const [date, setDate] = useState(isoDay(new Date()));
-  const [exporting, setExporting] = useState(false);
-  const [verifying, setVerifying] = useState(false);
   const [exportId, setExportId] = useState<{ id: string; poll_after_ms: number } | null>(null);
 
   useEffect(() => {
@@ -78,22 +76,13 @@ export default function AuditPage() {
     date: date || undefined,
   };
 
-  const runExport = async () => {
-    setExporting(true);
-    try {
-      const res = await exportAudit(query);
-      setExportId({ id: res.id, poll_after_ms: res.poll_after_ms ?? 2000 });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không xuất được: ${(e as Error).message}` });
-    } finally {
-      setExporting(false);
-    }
-  };
+  const runExport = useV1Mutation(exportAudit, {
+    onSuccess: (res) => setExportId({ id: res.id, poll_after_ms: res.poll_after_ms ?? 2000 }),
+    onError: (e) => toast({ tone: 'error', message: `Không xuất được: ${e.message}` }),
+  });
 
-  const runVerify = async () => {
-    setVerifying(true);
-    try {
-      const res = await verifyAuditChain();
+  const runVerify = useV1Mutation(verifyAuditChain, {
+    onSuccess: (res) =>
       toast(
         res.ok
           ? {
@@ -104,13 +93,9 @@ export default function AuditPage() {
               tone: 'error',
               message: `Chuỗi băm đứt ở dòng #${res.broken_at_seq}; đã ghi một sự kiện bảo mật.`,
             },
-      );
-    } catch (e) {
-      toast({ tone: 'error', message: `Không kiểm được: ${(e as Error).message}` });
-    } finally {
-      setVerifying(false);
-    }
-  };
+      ),
+    onError: (e) => toast({ tone: 'error', message: `Không kiểm được: ${e.message}` }),
+  });
 
   return (
     <div className="flex flex-col">
@@ -121,10 +106,10 @@ export default function AuditPage() {
         description="Chỉ đọc · không ai sửa hay xoá được · giữ 7 năm · mỗi dòng ký số nối tiếp dòng trước"
         actions={
           <>
-            <Button kind="secondary" loading={verifying} onClick={runVerify}>
+            <Button kind="secondary" loading={runVerify.pending} onClick={() => runVerify.run()}>
               Kiểm chuỗi băm
             </Button>
-            <Button loading={exporting} onClick={runExport}>
+            <Button loading={runExport.pending} onClick={() => runExport.run(query)}>
               Xuất cho kiểm toán
             </Button>
           </>

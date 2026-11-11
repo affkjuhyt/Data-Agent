@@ -15,7 +15,7 @@ import {
   certifyDatasetVersion,
   type ConsolidationRun,
 } from '../../lib/v1/crawl';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P14 · Hợp nhất dữ liệu" (2390:14727, UC-14-05): one consolidation run of a crawled dataset.
@@ -37,15 +37,13 @@ export default function CrawlConsolidationPage() {
   );
   return (
     <AsyncRegion state={run} what="lượt hợp nhất">
-      {(r) => <ConsolidationBody run={r} onChanged={run.reload} />}
+      {(r) => <ConsolidationBody run={r} />}
     </AsyncRegion>
   );
 }
 
-function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChanged: () => void }) {
+function ConsolidationBody({ run }: { run: ConsolidationRun }) {
   const toast = useToast();
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string>();
   const pendingMatches = run.entity_matches.filter((m) => !m.decision);
   const openConflicts = run.conflicts.filter((c) => c.open);
   const published = run.status === 'published';
@@ -58,19 +56,17 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
   const named = version === null ? 'dataset' : `dataset v${version}`;
   const [certified, setCertified] = useState(false);
 
-  const act = async (key: string, call: () => Promise<unknown>, message: string) => {
-    setBusy(key);
-    setError(undefined);
-    try {
-      await call();
-      toast({ tone: 'success', message });
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const action = useV1Mutation(
+    ({ call }: { key: string; call: () => Promise<unknown>; message: string }) => call(),
+    {
+      invalidates: [['getConsolidationRun']],
+      onSuccess: (_, { message }) => toast({ tone: 'success', message }),
+    },
+  );
+  const act = (key: string, call: () => Promise<unknown>, message: string) =>
+    action.run({ key, call, message });
+  const busy = action.pending ? (action.variables?.key ?? null) : null;
+  const error = action.error?.message;
 
   const certifyButton = versionId && (
     <Button

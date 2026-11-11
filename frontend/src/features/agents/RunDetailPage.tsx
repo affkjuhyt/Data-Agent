@@ -13,7 +13,7 @@ import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
 import { controlRun, getRun } from '../../lib/v1/api';
 import type { AgentRun } from '../../lib/v1/types';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { ChartRenderer } from '../ask/components/ChartRenderer';
 import { FailedRun } from './FailedRun';
 import { PlanEditDrawer } from './PlanEditDrawer';
@@ -58,36 +58,24 @@ export default function RunDetailPage() {
         r.status === 'failed' ? (
           <FailedRun run={r} onRetried={(id) => navigate('agents', 'RUN', id)} />
         ) : (
-          <RunBody run={r} view={view} onView={setView} onChanged={run.reload} />
+          <RunBody run={r} view={view} onView={setView} />
         )
       }
     </AsyncRegion>
   );
 }
 
-function RunBody({
-  run,
-  view,
-  onView,
-  onChanged,
-}: {
-  run: AgentRun;
-  view: View;
-  onView: (v: View) => void;
-  onChanged: () => void;
-}) {
+function RunBody({ run, view, onView }: { run: AgentRun; view: View; onView: (v: View) => void }) {
   const toast = useToast();
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmPause, setConfirmPause] = useState(false);
   const [editingPlan, setEditingPlan] = useState(false);
   const stopped = run.status === 'paused' || run.status === 'waiting_human';
   const canEditPlan = stopped && (run.plan ?? []).some((s) => s.state !== 'done');
-  const [busy, setBusy] = useState<'pause' | 'resume' | 'cancel' | null>(null);
   const [picked, setPicked] = useState<number>();
   const steps = run.steps ?? [];
   const spanSeq = picked ?? defaultSpan(steps);
   const span = steps.find((s) => s.seq === spanSeq);
-  const [error, setError] = useState<string>();
   const status = runStatus(run);
   const open = LIVE.includes(run.status) || run.status === 'paused';
   const minutes = run.started_at
@@ -101,28 +89,32 @@ function RunBody({
       )
     : null;
 
-  const act = async (verb: 'pause' | 'resume' | 'cancel') => {
-    setBusy(verb);
-    setError(undefined);
-    try {
-      await controlRun(run.id, verb, verb === 'cancel' ? 'Người dùng huỷ' : undefined);
-      toast({
-        tone: 'success',
-        message: {
-          pause: `Đã tạm dừng ${run.code}`,
-          resume: `${run.agent_name} chạy tiếp`,
-          cancel: `Đã huỷ ${run.code}`,
-        }[verb],
-      });
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-      setConfirmCancel(false);
-      setConfirmPause(false);
-    }
+  const closeConfirms = () => {
+    setConfirmCancel(false);
+    setConfirmPause(false);
   };
+  const control = useV1Mutation(
+    (verb: 'pause' | 'resume' | 'cancel') =>
+      controlRun(run.id, verb, verb === 'cancel' ? 'Người dùng huỷ' : undefined),
+    {
+      invalidates: [['getRun']],
+      onSuccess: (_, verb) => {
+        toast({
+          tone: 'success',
+          message: {
+            pause: `Đã tạm dừng ${run.code}`,
+            resume: `${run.agent_name} chạy tiếp`,
+            cancel: `Đã huỷ ${run.code}`,
+          }[verb],
+        });
+        closeConfirms();
+      },
+      onError: closeConfirms,
+    },
+  );
+  const busy = control.pending ? control.variables : null;
+  const error = control.error?.message;
+  const act = (verb: 'pause' | 'resume' | 'cancel') => control.run(verb);
 
   return (
     <div className="flex min-h-full flex-col">
@@ -222,7 +214,6 @@ function RunBody({
               tone: 'success',
               message: `Đã lưu kế hoạch phiên bản ${version}; ${run.agent_name} chạy tiếp`,
             });
-            onChanged();
           }}
         />
       )}

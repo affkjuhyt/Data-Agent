@@ -9,6 +9,7 @@ import { Dialog } from '../../../design-system/Dialog';
 import { Input } from '../../../design-system/Input';
 import { Radio } from '../../../design-system/Radio';
 import { reportAnswer, type AnswerReportKind, type Feedback } from '../../../lib/v1/answerReports';
+import { useV1Mutation } from '../../../lib/v1/useV1';
 
 const KINDS: Array<{ value: AnswerReportKind; label: string }> = [
   { value: 'misread_question', label: 'Hiểu sai câu hỏi (chỉ số, phạm vi, kỳ)' },
@@ -37,34 +38,32 @@ export function ReportDialog({
   const [kind, setKind] = useState<AnswerReportKind>('wrong_number');
   const [correction, setCorrection] = useState('');
   const [toSteward, setToSteward] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const report = useV1Mutation(
+    (answerId: string) =>
+      submitReport(answerId, {
+        kind,
+        correction: correction.trim() || undefined,
+        sendToSteward: toSteward,
+      }),
+    {
+      onSuccess: (feedback) => {
+        onReported(feedback);
+        onClose();
+      },
+    },
+  );
 
   useEffect(() => {
     if (!open) return;
     setKind('wrong_number');
     setCorrection('');
     setToSteward(true);
-    setError(null);
+    report.reset();
   }, [open]);
 
-  const submit = async () => {
-    if (!target || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const feedback = await submitReport(target.answerId, {
-        kind,
-        correction: correction.trim() || undefined,
-        sendToSteward: toSteward,
-      });
-      onReported(feedback);
-      onClose();
-    } catch (e) {
-      setError(e instanceof Error ? `Chưa gửi được: ${e.message}` : 'Chưa gửi được báo sai.');
-    } finally {
-      setBusy(false);
-    }
+  const submit = () => {
+    if (!target || report.pending) return;
+    report.run(target.answerId);
   };
 
   const excerpt = target
@@ -76,10 +75,10 @@ export function ReportDialog({
       open={open}
       title="Báo câu trả lời sai"
       onClose={onClose}
-      onSubmit={() => void submit()}
+      onSubmit={submit}
       submitLabel="Gửi báo sai"
-      submitting={busy}
-      error={error ?? undefined}
+      submitting={report.pending}
+      error={report.error && `Chưa gửi được: ${report.error.message}`}
     >
       {excerpt && (
         <blockquote className="m-0 rounded-sm bg-subtle p-[10px] text-muted-foreground da-caption">“{excerpt}”</blockquote>

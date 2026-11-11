@@ -18,7 +18,7 @@ import {
   setSupersession,
   type DocumentValidity,
 } from '../../lib/v1/documents';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 import { HEAD_ROW, ROW, SidePanel } from './parts';
 import { DateField } from '../../design-system/DateField';
@@ -57,33 +57,29 @@ function ValidityLoader({ id }: { id: string }) {
   const validity = useV1(['getValidity', id], () => getValidity(id));
   return (
     <AsyncRegion state={validity} what="hiệu lực văn bản" skeletonRows={6}>
-      {(v) => <ValidityView key={v.document_id} v={v} onChanged={validity.reload} />}
+      {(v) => <ValidityView key={v.document_id} v={v} />}
     </AsyncRegion>
   );
 }
 
-function ValidityView({ v, onChanged }: { v: DocumentValidity; onChanged: () => void }) {
+function ValidityView({ v }: { v: DocumentValidity }) {
   const { navigate } = useAppState();
   const toast = useToast();
-  const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
 
-  const confirm = async () => {
-    if (!v.pending) return;
-    setBusy(true);
-    try {
-      await setSupersession(v.document_id, {
-        superseded_by: v.pending.superseded_by,
-        valid_to: v.pending.valid_to,
-      });
-      toast({ tone: 'success', message: `Đã xác nhận ${v.title} bị thay thế.` });
-      onChanged();
-    } catch (e) {
-      toast({ tone: 'error', message: `Không xác nhận được. ${(e as Error).message}` });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const confirm = useV1Mutation(
+    (pending: NonNullable<DocumentValidity['pending']>) =>
+      setSupersession(v.document_id, {
+        superseded_by: pending.superseded_by,
+        valid_to: pending.valid_to,
+      }),
+    {
+      invalidates: [['getValidity']],
+      onSuccess: () => toast({ tone: 'success', message: `Đã xác nhận ${v.title} bị thay thế.` }),
+      onError: (e) => toast({ tone: 'error', message: `Không xác nhận được. ${e.message}` }),
+    },
+  );
+  const busy = confirm.pending;
 
   const notOwner = 'Chỉ người phụ trách văn bản xác nhận được quan hệ hiệu lực.';
 
@@ -113,7 +109,11 @@ function ValidityView({ v, onChanged }: { v: DocumentValidity; onChanged: () => 
                   Sửa quan hệ
                 </Button>
                 {v.pending && (
-                  <Button kind="primary" loading={busy} onClick={() => void confirm()}>
+                  <Button
+                    kind="primary"
+                    loading={busy}
+                    onClick={() => v.pending && confirm.run(v.pending)}
+                  >
                     Xác nhận bị thay thế
                   </Button>
                 )}
@@ -179,7 +179,6 @@ function ValidityView({ v, onChanged }: { v: DocumentValidity; onChanged: () => 
           onSaved={() => {
             setEditing(false);
             toast({ tone: 'success', message: 'Đã lưu quan hệ hiệu lực.' });
-            onChanged();
           }}
         />
       )}
@@ -200,8 +199,13 @@ function RelationDialog({
   const docs = useV1(['listLibrary', {}], () => listLibrary({}));
   const [by, setBy] = useState<string | null>(v.pending?.superseded_by ?? null);
   const [date, setDate] = useState(v.pending?.valid_to ?? '');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  // A missing choice is caught here; the server's answer lands in the mutation.
+  const [invalid, setInvalid] = useState<string>();
+  const save = useV1Mutation(
+    ({ by, date }: { by: string; date: string }) =>
+      setSupersession(v.document_id, { superseded_by: by, valid_to: date }),
+    { invalidates: [['getValidity']], onSuccess: () => onSaved() },
+  );
 
   const options = [
     ...(v.pending
@@ -212,18 +216,10 @@ function RelationDialog({
       .map((d) => ({ value: d.id, label: d.title })),
   ];
 
-  const save = async () => {
-    if (!by || !date) return setError('Chọn văn bản thay thế và ngày hết hiệu lực.');
-    setBusy(true);
-    setError(undefined);
-    try {
-      await setSupersession(v.document_id, { superseded_by: by, valid_to: date });
-      onSaved();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+  const submit = () => {
+    if (!by || !date) return setInvalid('Chọn văn bản thay thế và ngày hết hiệu lực.');
+    setInvalid(undefined);
+    save.run({ by, date });
   };
 
   return (
@@ -232,10 +228,10 @@ function RelationDialog({
       title="Sửa quan hệ hiệu lực"
       description={`${v.title} bị thay thế bởi văn bản nào, từ ngày nào.`}
       submitLabel="Lưu"
-      submitting={busy}
-      error={error}
+      submitting={save.pending}
+      error={invalid ?? save.error?.message}
       onClose={onClose}
-      onSubmit={() => void save()}
+      onSubmit={submit}
     >
       <Field labelTone="muted" label="Văn bản thay thế">
         <Select label="Văn bản thay thế" options={options} value={by} onChange={setBy} />

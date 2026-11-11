@@ -27,7 +27,7 @@ import {
   type PrivateAnswer,
 } from '../../lib/v1/exec';
 import { listCatalogMetrics } from '../../lib/v1/metricCatalog';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { encryptCondition, uuidv7 } from '../../lib/vault/crypto';
 import {
   COMPARATOR,
@@ -172,7 +172,7 @@ export function ThesesTab({ frame }: { frame: Frame }) {
           .slice(0, PRIVATE_CONTEXT_MAX)}
         onSaved={memory.reload}
       />
-      <MemoryDialog open={noting} onClose={() => setNoting(false)} onSaved={memory.reload} />
+      <MemoryDialog open={noting} onClose={() => setNoting(false)} />
     </>,
   );
 }
@@ -200,11 +200,8 @@ function ThesisCard({
   onSelect: () => void;
   result: { outcome: string; score: SealedScore | null } | undefined;
 }) {
-  const { theses } = useVault();
   const toast = useToast();
   const [withdrawing, setWithdrawing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
   const status =
     STATUS[t.status === 'scored' ? (result?.outcome ?? 'correct') : t.status] ?? STATUS.open;
   const when =
@@ -224,20 +221,13 @@ function ThesisCard({
             ? `Bằng chứng: ${t.evidence_counts.support} ủng hộ · ${t.evidence_counts.oppose} phản bác`
             : 'Bằng chứng: chưa có lô đầu tiên';
 
-  const withdraw = async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await withdrawThesis(t.id);
+  const withdraw = useV1Mutation(withdrawThesis, {
+    invalidates: [['VaultPage.openTheses']],
+    onSuccess: () => {
       setWithdrawing(false);
-      theses.reload();
       toast({ tone: 'success', message: 'Đã rút luận điểm' });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+    },
+  });
 
   return (
     <div
@@ -272,9 +262,9 @@ function ThesisCard({
         open={withdrawing}
         title="Rút luận điểm này?"
         confirmLabel="Rút"
-        loading={busy}
-        error={error}
-        onConfirm={withdraw}
+        loading={withdraw.pending}
+        error={withdraw.error?.message}
+        onConfirm={() => withdraw.run(t.id)}
         onCancel={() => setWithdrawing(false)}
       >
         Luận điểm rút không vào điểm hiệu chỉnh nhưng vẫn được đếm số lần rút; không mở lại được.
@@ -303,7 +293,7 @@ function Composer({
   statementRef: React.RefObject<HTMLInputElement | null>;
   onSaved: (id: string) => void;
 }) {
-  const { session, theses } = useVault();
+  const { session } = useVault();
   const toast = useToast();
   const targets = useV1(['ThesesTab.targets'], async () => {
     const [metrics, products] = await Promise.all([
@@ -336,8 +326,6 @@ function Composer({
   const [period, setPeriod] = useState('');
   const [due, setDue] = useState(tomorrowLocal);
   const [editing, setEditing] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
 
   const picked = targets.data?.find((t) => t.value === target);
   const value = parseNumber(threshold) ?? NaN;
@@ -365,11 +353,8 @@ function Composer({
     if (p.unit) setUnit(p.unit);
   };
 
-  const save = async () => {
-    if (!ready || !condition || !dueAt) return;
-    setSaving(true);
-    setError(undefined);
-    try {
+  const create = useV1Mutation(
+    async ({ condition, dueAt }: { condition: ThesisCondition; dueAt: Date }) => {
       const id = uuidv7();
       const sealed = session.encrypt(
         {
@@ -395,19 +380,24 @@ function Composer({
         cond_key_version: transit.key_version,
         due_at: dueAt.toISOString(),
       });
-      theses.reload();
-      onSaved(id);
-      toast({ tone: 'success', message: 'Đã lưu luận điểm' });
-      setStatement('');
-      setRationale('');
-      setThreshold('');
-      setPeriod('');
-      setScope('');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
+      return id;
+    },
+    {
+      invalidates: [['VaultPage.openTheses']],
+      onSuccess: (id) => {
+        onSaved(id);
+        toast({ tone: 'success', message: 'Đã lưu luận điểm' });
+        setStatement('');
+        setRationale('');
+        setThreshold('');
+        setPeriod('');
+        setScope('');
+      },
+    },
+  );
+  const save = () => {
+    if (!ready || !condition || !dueAt) return;
+    create.run({ condition, dueAt });
   };
 
   const chip = 'rounded-full bg-subtle px-da-md py-da-xs text-muted-foreground da-label';
@@ -417,7 +407,7 @@ function Composer({
       className="flex flex-col gap-da-md rounded-lg border border-border bg-card p-da-xl xl:w-[480px] xl:shrink-0"
       onSubmit={(e) => {
         e.preventDefault();
-        void save();
+        save();
       }}
     >
       <h2 className="text-foreground da-heading-3">Soạn luận điểm</h2>
@@ -539,19 +529,19 @@ function Composer({
         <span aria-hidden className="mt-[5px] size-[6px] shrink-0 rounded-full bg-warning" />
         Sau khi lưu không sửa được, chỉ tạo luận điểm thay; luận điểm cũ vẫn được chấm.
       </p>
-      {error && <Notice tone="error">{error}</Notice>}
+      {create.error && <Notice tone="error">{create.error.message}</Notice>}
       <div className="flex justify-end gap-da-md">
         <Button
           onClick={() => {
             setStatement('');
             setRationale('');
             setThreshold('');
-            setError(undefined);
+            create.reset();
           }}
         >
           Huỷ
         </Button>
-        <Button type="submit" kind="primary" loading={saving} disabled={!ready}>
+        <Button type="submit" kind="primary" loading={create.pending} disabled={!ready}>
           Lưu luận điểm
         </Button>
       </div>
@@ -615,28 +605,16 @@ function MemoryCard({ memory, error }: { memory: OpenMemory[]; error?: string })
   );
 }
 
-function MemoryDialog({
-  open,
-  onClose,
-  onSaved,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
+function MemoryDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { session } = useVault();
   const [kind, setKind] = useState<MemoryKind>('decision_reason');
   const [text, setText] = useState('');
   const [tag, setTag] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
-  const submit = async () => {
-    setSaving(true);
-    setError(undefined);
-    try {
+  const create = useV1Mutation(
+    () => {
       const id = uuidv7();
       const stamp = formatDate(new Date()).slice(0, 5);
-      await createMemoryItem({
+      return createMemoryItem({
         id,
         kind,
         ...session.encrypt(
@@ -646,27 +624,27 @@ function MemoryDialog({
         ),
         content_version: 1,
       });
-      setText('');
-      setTag('');
-      onSaved();
-      onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+    {
+      invalidates: [['ThesesTab.openMemory']],
+      onSuccess: () => {
+        setText('');
+        setTag('');
+        onClose();
+      },
+    },
+  );
   return (
     <Dialog
       open={open}
       title="Ghi vào bộ nhớ riêng"
       description="Mã hoá trên thiết bị trước khi gửi; chỉ bạn đọc được."
       onClose={onClose}
-      onSubmit={submit}
+      onSubmit={() => create.run()}
       submitLabel="Lưu"
-      submitting={saving}
+      submitting={create.pending}
       canSubmit={Boolean(text.trim())}
-      error={error}
+      error={create.error?.message}
     >
       <div className="flex flex-col gap-da-lg">
         <Field label="Loại">

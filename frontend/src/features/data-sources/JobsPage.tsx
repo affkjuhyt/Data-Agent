@@ -15,7 +15,7 @@ import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import { controlJob, listJobs, type IngestionJob } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import {
   formatLag,
   formatRows,
@@ -63,26 +63,29 @@ export default function JobsPage() {
   const [reason, setReason] = useState('');
   const [pauseError, setPauseError] = useState<string>();
 
-  const act = async (job: IngestionJob, verb: 'run' | 'pause' | 'resume', why?: string) => {
-    const done = { run: 'Đã chạy lại', pause: 'Đã tạm dừng', resume: 'Đã tiếp tục' }[verb];
-    try {
-      await controlJob(job.id, verb, why);
-      toast({ tone: 'success', message: `${done} ${job.table_name}.` });
-      jobs.reload();
-      return true;
-    } catch (e) {
-      toast({
-        tone: 'error',
-        message: `Không thực hiện được với ${job.table_name}. ${(e as Error).message}`,
-      });
-      return false;
-    }
-  };
+  const control = useV1Mutation(
+    ({ job, verb, why }: { job: IngestionJob; verb: 'run' | 'pause' | 'resume'; why?: string }) =>
+      controlJob(job.id, verb, why),
+    {
+      invalidates: [['listJobs']],
+      onSuccess: (_, { job, verb }) => {
+        const done = { run: 'Đã chạy lại', pause: 'Đã tạm dừng', resume: 'Đã tiếp tục' }[verb];
+        toast({ tone: 'success', message: `${done} ${job.table_name}.` });
+        if (verb === 'pause') setPausing(null);
+      },
+      onError: (e, { job }) =>
+        toast({
+          tone: 'error',
+          message: `Không thực hiện được với ${job.table_name}. ${e.message}`,
+        }),
+    },
+  );
+  const act = (job: IngestionJob, verb: 'run' | 'resume') => control.run({ job, verb });
 
-  const pause = async () => {
+  const pause = () => {
     if (!pausing) return;
     if (!reason.trim()) return setPauseError('Ghi lý do tạm dừng.');
-    if (await act(pausing, 'pause', reason.trim())) setPausing(null);
+    control.run({ job: pausing, verb: 'pause', why: reason.trim() });
   };
 
   return (
@@ -252,13 +255,13 @@ export default function JobsPage() {
                             {
                               label: 'Chạy lại ngay',
                               icon: 'play',
-                              onSelect: () => void act(job, 'run'),
+                              onSelect: () => act(job, 'run'),
                             },
                             job.status === 'paused'
                               ? {
                                   label: 'Tiếp tục',
                                   icon: 'play',
-                                  onSelect: () => void act(job, 'resume'),
+                                  onSelect: () => act(job, 'resume'),
                                 }
                               : {
                                   label: 'Tạm dừng',
@@ -301,7 +304,7 @@ export default function JobsPage() {
           title={`Tạm dừng ${pausing?.table_name ?? ''}?`}
           confirmLabel="Tạm dừng"
           error={pauseError}
-          onConfirm={() => void pause()}
+          onConfirm={pause}
           onCancel={() => setPausing(null)}
         >
           <div className="flex flex-col gap-da-md">

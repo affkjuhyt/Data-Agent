@@ -12,7 +12,7 @@ import {
   type PipelineSchedule,
   type ScheduleKind,
 } from '../../lib/v1/dataPrep';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
@@ -39,12 +39,18 @@ export function ScheduleDialog({
   );
   const [draft, setDraft] = useState<PipelineSchedule>();
   const [preview, setPreview] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const saveSchedule = useV1Mutation(
+    ({ id, schedule }: { id: string; schedule: PipelineSchedule }) =>
+      savePipelineSchedule(id, schedule),
+    {
+      invalidates: [['listPipelines']],
+      onSuccess: ({ schedule_text }) => onSaved(schedule_text),
+    },
+  );
 
   useEffect(() => {
     setDraft(loaded.data);
-    setError(undefined);
+    saveSchedule.reset();
   }, [loaded.data]);
 
   useEffect(() => {
@@ -60,18 +66,8 @@ export function ScheduleDialog({
 
   const set = (patch: Partial<PipelineSchedule>) => draft && setDraft({ ...draft, ...patch });
 
-  const save = async () => {
-    if (!pipelineId || !draft) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      const { schedule_text } = await savePipelineSchedule(pipelineId, draft);
-      onSaved(schedule_text);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+  const save = () => {
+    if (pipelineId && draft) saveSchedule.run({ id: pipelineId, schedule: draft });
   };
 
   const kinds: { value: ScheduleKind; label: string }[] = [
@@ -94,7 +90,7 @@ export function ScheduleDialog({
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
-          <Button kind="primary" loading={busy} disabled={!draft} onClick={save}>
+          <Button kind="primary" loading={saveSchedule.pending} disabled={!draft} onClick={save}>
             Lưu lịch
           </Button>
         </>
@@ -105,7 +101,7 @@ export function ScheduleDialog({
       </p>
       {loaded.error && <Notice tone="error">Không tải được lịch. {loaded.error.message}</Notice>}
       {!draft && !loaded.error && <SkeletonRows count={4} label="Đang tải lịch…" />}
-      {error && <Notice tone="error">{error}</Notice>}
+      {saveSchedule.error && <Notice tone="error">{saveSchedule.error.message}</Notice>}
       {draft && (
         <>
           <div role="radiogroup" aria-label="Khi nào chạy" className="flex flex-col gap-da-md">

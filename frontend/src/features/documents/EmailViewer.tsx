@@ -20,7 +20,7 @@ import {
   type ThreadReview,
 } from '../../lib/v1/documents';
 import { getCollection } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 import { FactValue, KeyValue, SidePanel } from './parts';
 
@@ -29,15 +29,7 @@ import { FactValue, KeyValue, SidePanel } from './parts';
  * the left (severity as the agent judged it), the open thread in the middle with the review the
  * agent asked for, and on the right what it extracted plus similar complaints it found.
  */
-export function EmailViewer({
-  doc,
-  thread,
-  onChanged,
-}: {
-  doc: DocumentView;
-  thread: EmailThread;
-  onChanged: () => void;
-}) {
+export function EmailViewer({ doc, thread }: { doc: DocumentView; thread: EmailThread }) {
   return (
     <div className="flex min-h-full">
       {doc.collection && <ThreadList collectionId={doc.collection.id} selectedId={doc.id} />}
@@ -66,7 +58,7 @@ export function EmailViewer({
             )}
           </article>
         ))}
-        {thread.review && <ReviewCard review={thread.review} onChanged={onChanged} />}
+        {thread.review && <ReviewCard review={thread.review} />}
       </section>
       <SidePanel label="Agent trích xuất" width="w-[360px]">
         <h2 className="text-muted-foreground da-overline">Agent trích xuất</h2>
@@ -138,33 +130,35 @@ function ThreadMeta({ thread }: { thread: NonNullable<DocumentRow['thread']> }) 
 }
 
 /* The review the agent asked for (HITLRequest 2040:549), answered with the ordinary :resolve. */
-function ReviewCard({ review, onChanged }: { review: ThreadReview; onChanged: () => void }) {
+function ReviewCard({ review }: { review: ThreadReview }) {
   const toast = useToast();
-  const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
   const [note, setNote] = useState('');
-  const [error, setError] = useState<string>();
+  // An empty note is caught here; a failed request for changes shows in the dialog below.
+  const [invalid, setInvalid] = useState<string>();
 
-  const answer = async (decision: 'approve' | 'reject', text?: string) => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await resolveHitl(review.hitl_id, { decision, note: text });
-      toast({
-        tone: 'success',
-        message:
-          decision === 'approve' ? 'Đã chấp nhận bản nháp.' : 'Đã gửi yêu cầu sửa cho agent.',
-      });
-      setAsking(false);
-      onChanged();
-    } catch (e) {
-      const message = (e as Error).message;
-      if (decision === 'reject') setError(message);
-      else toast({ tone: 'error', message: `Không gửi được. ${message}` });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const answer = useV1Mutation(
+    ({ decision, text }: { decision: 'approve' | 'reject'; text?: string }) =>
+      resolveHitl(review.hitl_id, { decision, note: text }),
+    {
+      invalidates: [['getDocumentView']],
+      onSuccess: (_, { decision }) => {
+        toast({
+          tone: 'success',
+          message:
+            decision === 'approve' ? 'Đã chấp nhận bản nháp.' : 'Đã gửi yêu cầu sửa cho agent.',
+        });
+        setAsking(false);
+      },
+      onError: (e, { decision }) => {
+        if (decision === 'approve')
+          toast({ tone: 'error', message: `Không gửi được. ${e.message}` });
+      },
+    },
+  );
+  const busy = answer.pending;
+  const error =
+    invalid ?? (answer.variables?.decision === 'reject' ? answer.error?.message : undefined);
 
   return (
     <div className="flex flex-col gap-da-md rounded-lg border border-border bg-card px-da-xl py-da-lg">
@@ -178,7 +172,14 @@ function ReviewCard({ review, onChanged }: { review: ThreadReview; onChanged: ()
         <Button kind="ghost" disabled={busy} onClick={() => setAsking(true)}>
           Yêu cầu sửa
         </Button>
-        <Button kind="primary" loading={busy && !asking} onClick={() => void answer('approve')}>
+        <Button
+          kind="primary"
+          loading={busy && !asking}
+          onClick={() => {
+            setInvalid(undefined);
+            answer.run({ decision: 'approve' });
+          }}
+        >
           Chấp nhận
         </Button>
       </div>
@@ -191,8 +192,11 @@ function ReviewCard({ review, onChanged }: { review: ThreadReview; onChanged: ()
         error={error}
         onClose={() => setAsking(false)}
         onSubmit={() => {
-          if (!note.trim()) setError('Ghi rõ cần sửa gì.');
-          else void answer('reject', note.trim());
+          if (!note.trim()) setInvalid('Ghi rõ cần sửa gì.');
+          else {
+            setInvalid(undefined);
+            answer.run({ decision: 'reject', text: note.trim() });
+          }
         }}
       >
         <Field labelTone="muted" label="Cần sửa gì">
@@ -211,23 +215,16 @@ function Similar({
   similar: NonNullable<EmailThread['similar']>;
 }) {
   const toast = useToast();
-  const [busy, setBusy] = useState(false);
-  const investigate = async () => {
-    setBusy(true);
-    try {
-      await investigateDocument(doc);
-      toast({ tone: 'success', message: 'Đã giao Agent Phân tích tìm nguyên nhân hệ thống.' });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không mở được lượt điều tra. ${(e as Error).message}` });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const investigate = useV1Mutation(() => investigateDocument(doc), {
+    onSuccess: () =>
+      toast({ tone: 'success', message: 'Đã giao Agent Phân tích tìm nguyên nhân hệ thống.' }),
+    onError: (e) => toast({ tone: 'error', message: `Không mở được lượt điều tra. ${e.message}` }),
+  });
   return (
     <div className="flex flex-col items-start gap-da-xs rounded-md border border-border px-da-lg py-da-md">
       <p className="text-warning da-body-strong">{similar.title}</p>
       <p className="text-foreground da-caption">{similar.detail}</p>
-      <Button loading={busy} onClick={() => void investigate()}>
+      <Button loading={investigate.pending} onClick={() => investigate.run()}>
         Mở lượt điều tra
       </Button>
     </div>

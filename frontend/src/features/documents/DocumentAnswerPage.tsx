@@ -9,6 +9,7 @@ import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import { askDocuments, type Citation, type DocumentAnswer } from '../../lib/v1/documents';
+import { useV1Mutation } from '../../lib/v1/useV1';
 import { ReportDialog } from '../ask/components/ReportDialog';
 import { requestPage } from './focusPage';
 
@@ -26,7 +27,6 @@ import { requestPage } from './focusPage';
 export default function DocumentAnswerPage() {
   const toast = useToast();
   const [answers, setAnswers] = useState<DocumentAnswer[]>([]);
-  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [selected, setSelected] = useState<Citation | null>(null);
   const [reporting, setReporting] = useState<DocumentAnswer | null>(null);
 
@@ -39,21 +39,18 @@ export default function DocumentAnswerPage() {
     }
   };
 
-  const ask = async (question: string) => {
-    setPendingQuestion(question);
-    try {
-      const answer = await askDocuments({ question });
+  const ask = useV1Mutation((question: string) => askDocuments({ question }), {
+    onSuccess: (answer) => {
       setAnswers((list) => [...list, answer]);
       setSelected(answer.citations[0] ?? null);
-    } catch (e) {
+    },
+    onError: (e) =>
       toast({
         tone: 'error',
-        message: `Agent Tài liệu chưa trả lời được. ${(e as Error).message}`,
-      });
-    } finally {
-      setPendingQuestion(null);
-    }
-  };
+        message: `Agent Tài liệu chưa trả lời được. ${e.message}`,
+      }),
+  });
+  const pendingQuestion = ask.pending ? (ask.variables ?? null) : null;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -96,7 +93,7 @@ export default function DocumentAnswerPage() {
             className="mt-da-xl w-full"
             placeholder="Hỏi về nội dung tài liệu…"
             sending={pendingQuestion !== null}
-            onSubmit={(text) => void ask(text)}
+            onSubmit={(text) => ask.run(text)}
           />
         </section>
         <CitedPassage citation={selected} />

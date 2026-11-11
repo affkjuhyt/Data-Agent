@@ -6,6 +6,7 @@ import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { SkeletonRows } from '../../design-system/SkeletonRow';
 import { createCollection } from '../../lib/v1/documents';
+import { useV1Mutation } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
@@ -27,8 +28,19 @@ export function CreateCollectionDialog({
   const [purpose, setPurpose] = useState('');
   const [piiPolicy, setPiiPolicy] = useState<'mask' | 'keep_for_authorized' | 'reject'>('mask');
   const [retentionDays, setRetentionDays] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  // A missing name or purpose is caught here; the server's answer lands in the mutation.
+  const [invalid, setInvalid] = useState<string>();
+  const create = useV1Mutation(
+    () =>
+      createCollection({
+        name: name.trim(),
+        file_types: types.trim(),
+        purpose: purpose.trim(),
+        pii_policy: piiPolicy,
+        ...(retentionDays.trim() ? { retention_days: Number(retentionDays) } : {}),
+      }),
+    { onSuccess: (collection) => onCreated(collection) },
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -37,29 +49,15 @@ export function CreateCollectionDialog({
     setPurpose('');
     setPiiPolicy('mask');
     setRetentionDays('');
-    setError(undefined);
+    setInvalid(undefined);
+    create.reset();
   }, [open]);
 
-  const submit = async () => {
-    if (!name.trim()) return setError('Đặt tên bộ sưu tập.');
-    if (!purpose.trim()) return setError('Đặt mục đích sử dụng.');
-    setBusy(true);
-    setError(undefined);
-    try {
-      onCreated(
-        await createCollection({
-          name: name.trim(),
-          file_types: types.trim(),
-          purpose: purpose.trim(),
-          pii_policy: piiPolicy,
-          ...(retentionDays.trim() ? { retention_days: Number(retentionDays) } : {}),
-        }),
-      );
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+  const submit = () => {
+    if (!name.trim()) return setInvalid('Đặt tên bộ sưu tập.');
+    if (!purpose.trim()) return setInvalid('Đặt mục đích sử dụng.');
+    setInvalid(undefined);
+    create.run();
   };
 
   return (
@@ -68,10 +66,10 @@ export function CreateCollectionDialog({
       title="Tạo bộ sưu tập"
       description="Gom các tệp cùng loại để agent đọc, trích xuất và tìm kiếm."
       submitLabel="Tạo"
-      submitting={busy}
-      error={error}
+      submitting={create.pending}
+      error={invalid ?? create.error?.message}
       onClose={onClose}
-      onSubmit={() => void submit()}
+      onSubmit={submit}
     >
       <Field labelTone="muted" label="Tên">
         <Input value={name} onChange={(e) => setName(e.target.value)} />

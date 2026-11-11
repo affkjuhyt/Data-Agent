@@ -5,7 +5,7 @@ import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { api, ok, type Page } from '../../lib/v1/client';
 import { createMetric, type NewMetric } from '../../lib/v1/metrics';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 const PERIODS: { value: NewMetric['period_semantics']; label: string }[] = [
   { value: 'sum_over_period', label: 'Cộng trong kỳ (doanh thu, số giao dịch)' },
@@ -40,8 +40,19 @@ export function CreateMetricDialog({
   const [unit, setUnit] = useState('');
   const [period, setPeriod] = useState<NewMetric['period_semantics']>('sum_over_period');
   const [table, setTable] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
+  const [invalid, setInvalid] = useState<string>();
+  const create = useV1Mutation(
+    () =>
+      createMetric({
+        code: code.trim().toUpperCase(),
+        display_name: name.trim(),
+        expression: expression.trim(),
+        unit: unit.trim() || null,
+        period_semantics: period,
+        canonical_dataset_id: table,
+      }),
+    { onSuccess: onCreated },
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -51,36 +62,22 @@ export function CreateMetricDialog({
     setUnit('');
     setPeriod('sum_over_period');
     setTable(null);
-    setError(undefined);
+    setInvalid(undefined);
+    create.reset();
   }, [open]);
 
-  const submit = async () => {
-    if (!CODE.test(code.trim())) {
-      setError('Mã chỉ số bắt đầu bằng chữ, chỉ gồm chữ, số và dấu gạch dưới (2–64 ký tự).');
+  const submit = () => {
+    const problem = !CODE.test(code.trim())
+      ? 'Mã chỉ số bắt đầu bằng chữ, chỉ gồm chữ, số và dấu gạch dưới (2–64 ký tự).'
+      : !name.trim() || !expression.trim()
+        ? 'Nhập tên hiển thị và công thức.'
+        : undefined;
+    setInvalid(problem);
+    if (problem) {
+      create.reset();
       return;
     }
-    if (!name.trim() || !expression.trim()) {
-      setError('Nhập tên hiển thị và công thức.');
-      return;
-    }
-    setSending(true);
-    setError(undefined);
-    try {
-      onCreated(
-        await createMetric({
-          code: code.trim().toUpperCase(),
-          display_name: name.trim(),
-          expression: expression.trim(),
-          unit: unit.trim() || null,
-          period_semantics: period,
-          canonical_dataset_id: table,
-        }),
-      );
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
+    create.run();
   };
 
   return (
@@ -89,8 +86,8 @@ export function CreateMetricDialog({
       title="Tạo chỉ số"
       description="Chỉ số mới bắt đầu bằng một bản nháp; chạy thử và gửi duyệt ở trang của chỉ số."
       submitLabel="Tạo bản nháp"
-      submitting={sending}
-      error={error}
+      submitting={create.pending}
+      error={invalid ?? create.error?.message}
       onSubmit={submit}
       onClose={onClose}
     >

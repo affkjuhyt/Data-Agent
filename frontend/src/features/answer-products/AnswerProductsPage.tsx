@@ -28,7 +28,7 @@ import {
   type ProductMonitoring,
   type ProductStatus,
 } from '../../lib/v1/answerProducts';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P07 · Data product" (2418:14958, SCR-67, UC-07-13): the data products of the Data Space — the
@@ -118,9 +118,7 @@ export default function AnswerProductsPage() {
           nhận; ngoài phạm vi mang nhãn “không có biên nhận” (BR-175).
         </p>
       </div>
-      <div className="min-w-0 flex-1">
-        {id && <ProductView key={id} id={id} onChanged={list.reload} />}
-      </div>
+      <div className="min-w-0 flex-1">{id && <ProductView key={id} id={id} />}</div>
     </div>
   );
 }
@@ -173,51 +171,41 @@ function ProductCard({
   );
 }
 
-function ProductView({ id, onChanged }: { id: string; onChanged: () => void }) {
+function ProductView({ id }: { id: string }) {
   const product = useV1(['getAnswerProduct', id], () => getAnswerProduct(id));
   return (
     <AsyncRegion state={product} what="data product">
-      {(p) => (
-        <ProductBody
-          product={p}
-          onChanged={() => {
-            product.reload();
-            onChanged();
-          }}
-        />
-      )}
+      {(p) => <ProductBody product={p} />}
     </AsyncRegion>
   );
 }
 
-function ProductBody({ product, onChanged }: { product: AnswerProduct; onChanged: () => void }) {
+function ProductBody({ product }: { product: AnswerProduct }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('scope');
   const [submitting, setSubmitting] = useState(false);
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string>();
   const status = STATUS[product.status];
   const fresh = FRESH[product.freshness_state];
   const evalPct = product.stats.eval
     ? (product.stats.eval.passed / product.stats.eval.total) * 100
     : null;
 
-  const act = async (key: string, call: () => Promise<unknown>, message: string) => {
-    setBusy(key);
-    setError(undefined);
-    try {
-      await call();
-      toast({ tone: 'success', message });
-      setSubmitting(false);
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const action = useV1Mutation(
+    ({ call }: { key: string; call: () => Promise<unknown>; message: string }) => call(),
+    {
+      invalidates: [['getAnswerProduct'], ['listAnswerProducts']],
+      onSuccess: (_, { message }) => {
+        toast({ tone: 'success', message });
+        setSubmitting(false);
+      },
+    },
+  );
+  const act = (key: string, call: () => Promise<unknown>, message: string) =>
+    action.run({ key, call, message });
+  const busy = action.pending ? (action.variables?.key ?? null) : null;
+  const error = action.error?.message;
 
   return (
     <div className="flex flex-col">
@@ -279,7 +267,7 @@ function ProductBody({ product, onChanged }: { product: AnswerProduct; onChanged
               kind="primary"
               disabled={busy !== null || product.status === 'pending_review'}
               onClick={() => {
-                setError(undefined);
+                action.reset();
                 setSubmitting(true);
               }}
             >

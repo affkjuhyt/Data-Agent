@@ -20,7 +20,7 @@ import {
   type JobMethod,
   type NewJob,
 } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { LinkButton } from '../../components/shell/AppLink';
 
 /*
@@ -121,7 +121,6 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
   const [candidate, setCandidate] = useState(initial);
   const [job, setJob] = useState<NewJob>(() => draftFor(initial));
   const [dryRun, setDryRun] = useState<DryRunResult | null>(null);
-  const [busy, setBusy] = useState<'dry' | 'save' | null>(null);
   const checksView = useTableView(dryRun?.checks ?? [], {
     search: (check) => `${check.title} ${check.result}`,
     filters: [
@@ -152,27 +151,18 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
   const ready = !incremental || Boolean(job.cursor_column);
   const canDryRun = true;
 
-  const run = async () => {
-    setBusy('dry');
-    try {
-      setDryRun(await dryRunJob(job, candidate));
-    } catch (e) {
-      toast({ tone: 'error', message: `Không chạy thử được. ${(e as Error).message}` });
-    } finally {
-      setBusy(null);
-    }
-  };
-  const save = async () => {
-    setBusy('save');
-    try {
-      await createJob(job, candidate);
+  const run = useV1Mutation(() => dryRunJob(job, candidate), {
+    onSuccess: setDryRun,
+    onError: (e) => toast({ tone: 'error', message: `Không chạy thử được. ${e.message}` }),
+  });
+  const save = useV1Mutation(() => createJob(job, candidate), {
+    onSuccess: () => {
       toast({ tone: 'success', message: `Đã tạo job nạp ${candidate.table_name}.` });
       navigate('data', 'JOBS');
-    } catch (e) {
-      toast({ tone: 'error', message: `Không lưu được job. ${(e as Error).message}` });
-      setBusy(null);
-    }
-  };
+    },
+    onError: (e) => toast({ tone: 'error', message: `Không lưu được job. ${e.message}` }),
+  });
+  const busy = run.pending ? 'dry' : save.pending ? 'save' : null;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -189,7 +179,7 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
               <Button
                 loading={busy === 'dry'}
                 disabled={!ready || busy !== null}
-                onClick={() => void run()}
+                onClick={() => run.run()}
               >
                 Chạy thử 1.000 dòng
               </Button>
@@ -198,7 +188,7 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
               kind="primary"
               loading={busy === 'save'}
               disabled={!ready || busy !== null}
-              onClick={() => void save()}
+              onClick={() => save.run()}
             >
               Lưu job
             </Button>

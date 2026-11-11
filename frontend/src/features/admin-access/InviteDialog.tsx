@@ -8,7 +8,7 @@ import {
   type Role,
   type RowScope,
 } from '../../lib/v1/adminAccess';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { EXPIRIES, expiryValue } from './format';
 import { completeScope, RowScopePicker } from './RowScopePicker';
 import { Dialog } from '../../design-system/Dialog';
@@ -31,8 +31,18 @@ export function InviteDialog({
   const [spaceId, setSpaceId] = useState<string | null>(null);
   const [scope, setScope] = useState<RowScope | null>(null);
   const [expiry, setExpiry] = useState('none');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
+  const [invalid, setInvalid] = useState<string>();
+  const invite = useV1Mutation(
+    ({ roleId, spaceId }: { roleId: string; spaceId: string }) =>
+      inviteUser({
+        email: email.trim(),
+        role_id: roleId,
+        data_space_id: spaceId,
+        row_scope: scope,
+        valid_until: expiryValue(expiry),
+      }),
+    { invalidates: [['listAdminUsers']], onSuccess: () => onInvited(email.trim()) },
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -41,34 +51,23 @@ export function InviteDialog({
     setSpaceId(null);
     setScope(null);
     setExpiry('none');
-    setError(undefined);
+    setInvalid(undefined);
+    invite.reset();
   }, [open]);
 
-  const submit = async () => {
-    if (!email.trim() || !roleId || !spaceId) {
-      setError('Nhập email, chọn vai trò và Data Space.');
+  const submit = () => {
+    const problem =
+      !email.trim() || !roleId || !spaceId
+        ? 'Nhập email, chọn vai trò và Data Space.'
+        : !completeScope(scope)
+          ? 'Chọn ít nhất một giá trị cho phạm vi dòng, hoặc để toàn bộ dòng.'
+          : undefined;
+    setInvalid(problem);
+    if (problem || !roleId || !spaceId) {
+      invite.reset();
       return;
     }
-    if (!completeScope(scope)) {
-      setError('Chọn ít nhất một giá trị cho phạm vi dòng, hoặc để toàn bộ dòng.');
-      return;
-    }
-    setSending(true);
-    setError(undefined);
-    try {
-      await inviteUser({
-        email: email.trim(),
-        role_id: roleId,
-        data_space_id: spaceId,
-        row_scope: scope,
-        valid_until: expiryValue(expiry),
-      });
-      onInvited(email.trim());
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
+    invite.run({ roleId, spaceId });
   };
 
   return (
@@ -77,8 +76,8 @@ export function InviteDialog({
       title="Mời người dùng"
       description="Người được mời đăng nhập qua SSO; quyền theo vai trò trong Data Space."
       submitLabel="Gửi lời mời"
-      submitting={sending}
-      error={error}
+      submitting={invite.pending}
+      error={invalid ?? invite.error?.message}
       onSubmit={submit}
       onClose={onClose}
     >

@@ -5,6 +5,7 @@ import { Field } from '../../design-system/Field';
 import { Notice } from '../../design-system/Notice';
 import { Textarea } from '../../design-system/Textarea';
 import { createVault, type Vault } from '../../lib/v1/exec';
+import { useV1Mutation } from '../../lib/v1/useV1';
 import { isRecoveryCode, newRecoveryCode } from '../../lib/vault/crypto';
 import {
   newVaultMaterial,
@@ -117,33 +118,25 @@ const normalize = (text: string) => text.trim().toLowerCase().split(/\s+/).join(
  * needs. Each code is typed back before the vault is created — a code nobody can read back is a
  * vault nobody can open — and the leader confirms that losing every key loses the content.
  */
-export function SetupPanel({ onCreated }: { onCreated: () => void }) {
+export function SetupPanel() {
   const codes = useMemo(() => [newRecoveryCode(), newRecoveryCode()], []);
   const [typed, setTyped] = useState(['', '']);
   const [understood, setUnderstood] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
   const checked = typed.map((t, i) => normalize(t) === codes[i]);
   const month = new Date().toLocaleDateString('vi-VN', { month: '2-digit', year: 'numeric' });
 
-  const create = async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      const material = await newVaultMaterial(
-        codes.map((code, i) => ({
-          code,
-          label: `Mã khôi phục giấy 24 từ · ${month} · bản ${i + 1}`,
-        })),
-      );
-      await createVault(material);
-      onCreated();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const create = useV1Mutation(
+    async () =>
+      createVault(
+        await newVaultMaterial(
+          codes.map((code, i) => ({
+            code,
+            label: `Mã khôi phục giấy 24 từ · ${month} · bản ${i + 1}`,
+          })),
+        ),
+      ),
+    { invalidates: [['getVault']] },
+  );
 
   return (
     <section
@@ -191,12 +184,12 @@ export function SetupPanel({ onCreated }: { onCreated: () => void }) {
       <Checkbox checked={understood} onChange={setUnderstood}>
         Mất mọi khoá thì mất nội dung, quản trị không khôi phục được.
       </Checkbox>
-      {error && <Notice tone="error">{error}</Notice>}
+      {create.error && <Notice tone="error">{create.error.message}</Notice>}
       <Button
         kind="primary"
-        loading={busy}
+        loading={create.pending}
         disabled={!checked.every(Boolean) || !understood}
-        onClick={create}
+        onClick={() => create.run()}
         className="self-start"
       >
         Tạo kho

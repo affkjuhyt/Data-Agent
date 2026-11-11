@@ -12,7 +12,7 @@ import {
   type EvidenceBatches,
   type EvidenceRow,
 } from '../../lib/v1/exec';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { cn } from '../../lib/utils';
 import {
   conditionTitle,
@@ -63,7 +63,6 @@ export function EvidenceTab({ frame }: { frame: Frame }) {
   const { session, selected, goTo } = useVault();
   const toast = useToast();
   const [log, setLog] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const evidence = useV1(
     ['getEvidence', selected?.id],
     selected ? () => getEvidence(selected.id) : null,
@@ -71,18 +70,11 @@ export function EvidenceTab({ frame }: { frame: Frame }) {
   const batches = evidence.data?.batches ?? [];
   const latest = batches[0];
 
-  const refresh = async () => {
-    if (!selected) return;
-    setRefreshing(true);
-    try {
-      await refreshEvidence(selected.id);
-      toast({ tone: 'success', message: 'Đã yêu cầu lô bằng chứng mới; lô có sau vài phút' });
-    } catch (e) {
-      toast({ tone: 'error', message: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setRefreshing(false);
-    }
-  };
+  const refresh = useV1Mutation(refreshEvidence, {
+    onSuccess: () =>
+      toast({ tone: 'success', message: 'Đã yêu cầu lô bằng chứng mới; lô có sau vài phút' }),
+    onError: (e) => toast({ tone: 'error', message: e.message }),
+  });
 
   const latestItems = evidence.data?.items.filter((r) => r.batch_no === latest?.batch_no) ?? [];
   return frame(
@@ -96,7 +88,7 @@ export function EvidenceTab({ frame }: { frame: Frame }) {
         <>
           <Button onClick={() => setLog(true)}>Xem sổ truy cập</Button>
           {selected.status === 'open' && (
-            <Button loading={refreshing} onClick={refresh}>
+            <Button loading={refresh.pending} onClick={() => refresh.run(selected.id)}>
               Làm mới bằng chứng
             </Button>
           )}

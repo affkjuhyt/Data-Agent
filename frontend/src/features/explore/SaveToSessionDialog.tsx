@@ -4,7 +4,7 @@ import { Button } from '../../design-system/Button';
 import { Dialog } from '../../design-system/Dialog';
 import { Select } from '../../design-system/Select';
 import { listWorkspaces } from '../../lib/v1/api';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "Lưu vào phiên": the design has no dashboards; a result or an answer is kept as a tile of a
@@ -21,19 +21,13 @@ export function SaveToSessionDialog({
 }) {
   const sessions = useV1(['listWorkspaces'], listWorkspaces);
   const [target, setTarget] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string>();
-  const save = async () => {
-    if (!target) return;
-    setBusy(true);
-    try {
-      await onSave(target);
-      onSaved(target, sessions.data?.items.find((w) => w.id === target)?.title ?? 'phiên');
-    } catch (e) {
-      setFailure((e as Error).message);
-      setBusy(false);
-    }
-  };
+  const save = useV1Mutation(onSave, {
+    onSuccess: (_, workspaceId) =>
+      onSaved(
+        workspaceId,
+        sessions.data?.items.find((w) => w.id === workspaceId)?.title ?? 'phiên',
+      ),
+  });
   return (
     <Dialog
       open
@@ -44,7 +38,12 @@ export function SaveToSessionDialog({
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
-          <Button kind="primary" disabled={!target} loading={busy} onClick={() => void save()}>
+          <Button
+            kind="primary"
+            disabled={!target}
+            loading={save.pending}
+            onClick={() => target && save.run(target)}
+          >
             Lưu
           </Button>
         </>
@@ -61,7 +60,7 @@ export function SaveToSessionDialog({
           />
         )}
       </AsyncRegion>
-      {failure && <p className="text-error da-caption">Không lưu được: {failure}</p>}
+      {save.error && <p className="text-error da-caption">Không lưu được: {save.error.message}</p>}
     </Dialog>
   );
 }

@@ -5,7 +5,7 @@ import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { addEvalCase, type NewEvalCase } from '../../lib/v1/agentOps';
 import { listRuns } from '../../lib/v1/api';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "Hộp thoại · addTest" (2095:9006): add a case to the eval set, optionally frozen from a real
@@ -43,8 +43,18 @@ export function AddCaseDialog({
   const [input, setInput] = useState('');
   const [expected, setExpected] = useState('');
   const [kind, setKind] = useState<Kind>('ask_at_right_time');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
+  // Missing fields are caught here, before anything is sent.
+  const [invalid, setInvalid] = useState<string>();
+  const add = useV1Mutation(
+    () =>
+      addEvalCase(evalSetId, {
+        source_run_id: source === MANUAL ? null : source,
+        input: input.trim(),
+        expected: expected.trim(),
+        kind,
+      }),
+    { onSuccess: onAdded },
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -52,7 +62,8 @@ export function AddCaseDialog({
     setInput('');
     setExpected('');
     setKind('ask_at_right_time');
-    setError(undefined);
+    setInvalid(undefined);
+    add.reset();
   }, [open]);
 
   if (!open) return null;
@@ -70,26 +81,13 @@ export function AddCaseDialog({
     if (run && !input.trim()) setInput(run.title);
   };
 
-  const submit = async () => {
+  const submit = () => {
     if (!input.trim() || !expected.trim()) {
-      setError('Cần nhập đầu vào và kỳ vọng.');
+      setInvalid('Cần nhập đầu vào và kỳ vọng.');
       return;
     }
-    setSending(true);
-    setError(undefined);
-    try {
-      await addEvalCase(evalSetId, {
-        source_run_id: source === MANUAL ? null : source,
-        input: input.trim(),
-        expected: expected.trim(),
-        kind,
-      });
-      onAdded();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
+    setInvalid(undefined);
+    add.run();
   };
 
   return (
@@ -98,10 +96,10 @@ export function AddCaseDialog({
       title="Thêm tình huống thử"
       description="Tình huống từ lượt chạy thật giữ nguyên dữ liệu tại thời điểm đó."
       onClose={onClose}
-      onSubmit={() => void submit()}
+      onSubmit={submit}
       submitLabel="Thêm vào bộ thử"
-      submitting={sending}
-      error={error}
+      submitting={add.pending}
+      error={invalid ?? add.error?.message}
     >
       <Field label="Lấy từ">
         <Select<string>

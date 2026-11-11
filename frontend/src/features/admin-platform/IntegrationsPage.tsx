@@ -33,7 +33,7 @@ import {
   type IntegrationUsage,
 } from '../../lib/v1/adminPlatform';
 import { listDataSpaces } from '../../lib/v1/api';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { formatExpiry, pct } from './format';
 import { DateField } from '../../design-system/DateField';
 
@@ -259,7 +259,6 @@ export default function IntegrationsPage() {
               }
               onRevoked={() => {
                 toast({ tone: 'success', message: `Đã thu hồi ${current.name}.` });
-                clients.reload();
               }}
             />
           )}
@@ -278,7 +277,6 @@ export default function IntegrationsPage() {
             setDialog(null);
             if (clientId) setSelected(clientId);
             setIssued(result);
-            clients.reload();
           }}
         />
       )}
@@ -300,20 +298,13 @@ function UsagePanel({
   const usage = useV1(['getIntegrationUsage', client, client.id], () =>
     getIntegrationUsage(client),
   );
-  const [busy, setBusy] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const live = client.status !== 'revoked' && client.status !== 'expired';
 
-  const rotate = async () => {
-    setBusy(true);
-    try {
-      onRotated(await rotateClientSecret(client.id));
-    } catch (e) {
-      toast({ tone: 'error', message: `Không xoay được bí mật: ${(e as Error).message}` });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const rotate = useV1Mutation(() => rotateClientSecret(client.id), {
+    onSuccess: onRotated,
+    onError: (e) => toast({ tone: 'error', message: `Không xoay được bí mật: ${e.message}` }),
+  });
 
   return (
     <>
@@ -323,7 +314,7 @@ function UsagePanel({
       </AsyncRegion>
       {live && (
         <div className="flex flex-wrap gap-da-sm">
-          <Button size="sm" loading={busy} onClick={rotate}>
+          <Button size="sm" loading={rotate.pending} onClick={() => rotate.run()}>
             Xoay bí mật
           </Button>
           <Button size="sm" kind="danger" onClick={() => setRevoking(true)}>
@@ -397,19 +388,10 @@ function RevokeDialog({
   onRevoked: () => void;
 }) {
   const [reason, setReason] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
-  const submit = async () => {
-    setSaving(true);
-    setError(undefined);
-    try {
-      await revokeClient(client.id, reason.trim());
-      onRevoked();
-    } catch (e) {
-      setError((e as Error).message);
-      setSaving(false);
-    }
-  };
+  const revoke = useV1Mutation(() => revokeClient(client.id, reason.trim()), {
+    invalidates: [['listIntegrations']],
+    onSuccess: onRevoked,
+  });
   return (
     <Dialog
       size="sm"
@@ -417,10 +399,10 @@ function RevokeDialog({
       title={`Thu hồi ${client.name}?`}
       description="Client ngừng gọi được ngay, webhook của nó tạm dừng. Không hoàn tác được."
       submitLabel="Thu hồi"
-      submitting={saving}
+      submitting={revoke.pending}
       canSubmit={Boolean(reason.trim())}
-      error={error}
-      onSubmit={submit}
+      error={revoke.error?.message}
+      onSubmit={() => revoke.run()}
       onClose={onClose}
     >
       <Field label="Lý do">
@@ -464,8 +446,6 @@ function AddDialog({
   const [clientId, setClientId] = useState<string | null>(clients[0]?.id ?? null);
   const [target, setTarget] = useState('');
   const [events, setEvents] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
 
   const people = (users.data?.items ?? []).filter((u) => u.kind === 'person');
   const eventTypes = events
@@ -477,23 +457,23 @@ function AddDialog({
       ? Boolean(clientId && target.trim() && eventTypes.length)
       : Boolean(name.trim() && owner && space && tools.length && expiresOn);
 
-  const submit = async () => {
-    setSaving(true);
-    setError(undefined);
-    try {
+  // Either a webhook (its signing key) or a client (its secret); both show once in IssuedDialog.
+  const add = useV1Mutation(
+    async (): Promise<{ issued: Issued; clientId?: string }> => {
       if (kind === 'webhook') {
         const hook = await addWebhook({
           api_client_id: clientId!,
           target_url: target.trim(),
           event_types: eventTypes,
         });
-        onIssued({
-          title: 'Đã đăng ký webhook',
-          label: 'Khoá ký',
-          value: hook.signing_key,
-          note: 'Chỉ hiện một lần: dùng khoá này để kiểm chữ ký của mỗi lần gửi.',
-        });
-        return;
+        return {
+          issued: {
+            title: 'Đã đăng ký webhook',
+            label: 'Khoá ký',
+            value: hook.signing_key,
+            note: 'Chỉ hiện một lần: dùng khoá này để kiểm chữ ký của mỗi lần gửi.',
+          },
+        };
       }
       const { client, secret } = await addClient({
         name: name.trim(),
@@ -508,20 +488,21 @@ function AddDialog({
           tone: 'info',
           message: `${client.name} chờ ${client.owner_name || 'người phụ trách'} xác nhận trước khi gọi được.`,
         });
-      onIssued(
-        {
+      return {
+        issued: {
           title: `Đã cấp ${client.name}`,
           label: 'Client secret',
           value: secret,
           note: 'Chỉ hiện một lần: chép vào công cụ gọi Data Agent ngay.',
         },
-        client.id,
-      );
-    } catch (e) {
-      setError((e as Error).message);
-      setSaving(false);
-    }
-  };
+        clientId: client.id,
+      };
+    },
+    {
+      invalidates: [['listIntegrations']],
+      onSuccess: ({ issued, clientId: issuedFor }) => onIssued(issued, issuedFor),
+    },
+  );
 
   return (
     <Dialog
@@ -530,10 +511,10 @@ function AddDialog({
       title="Thêm tích hợp"
       description="Client gọi Data Agent bằng quyền của người phụ trách; webhook nhận sự kiện."
       submitLabel={kind === 'webhook' ? 'Đăng ký webhook' : 'Cấp client'}
-      submitting={saving}
+      submitting={add.pending}
       canSubmit={canSubmit}
-      error={error}
-      onSubmit={submit}
+      error={add.error?.message}
+      onSubmit={() => add.run()}
       onClose={onClose}
     >
       <Field label="Loại">

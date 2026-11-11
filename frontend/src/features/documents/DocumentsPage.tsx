@@ -35,7 +35,7 @@ import {
   type UploadDetail,
   type RecentUpload,
 } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { HEAD_ROW, KeyValue, ROW } from './parts';
 import { UploadDocumentsDialog } from './UploadDocumentsDialog';
 import { LinkButton } from '../../components/shell/AppLink';
@@ -61,7 +61,19 @@ export default function DocumentsPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [deletingBusy, setDeletingBusy] = useState(false);
+  const remove = useV1Mutation(deleteUpload, {
+    invalidates: [['listUploads']],
+    onSuccess: () => {
+      setDeleting(null);
+      setSelected(null);
+      toast({ tone: 'success', message: 'Đã xóa tệp dữ liệu.' });
+    },
+    onError: (error) =>
+      toast({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Không thể xóa tệp dữ liệu.',
+      }),
+  });
   const counts = useV1(['getDocumentCounts'], getDocumentCounts);
   const rows = useV1(['listLibrary', tab], tab === 'data_uploads' ? null : () => listLibrary(QUERY[tab]));
   const uploads = useV1(['listUploads'], listUploads);
@@ -168,35 +180,15 @@ export default function DocumentsPage() {
             tone: 'success',
             message: `Đã nhận ${formatNumber(accepted)} tệp${skipped ? `, bỏ qua ${formatNumber(skipped)} tệp trùng` : ''}. Agent Tài liệu đang tiền xử lý.`,
           });
-          counts.reload();
-          rows.reload();
-          uploads.reload();
         }}
       />
       <ConfirmDialog
         open={deleting !== null}
         title="Xóa tệp dữ liệu?"
         confirmLabel="Xóa tệp"
-        loading={deletingBusy}
+        loading={remove.pending}
         onCancel={() => setDeleting(null)}
-        onConfirm={() => {
-          if (!deleting) return;
-          setDeletingBusy(true);
-          void deleteUpload(deleting)
-            .then(() => {
-              setDeleting(null);
-              setSelected(null);
-              uploads.reload();
-              toast({ tone: 'success', message: 'Đã xóa tệp dữ liệu.' });
-            })
-            .catch((error: unknown) => {
-              toast({
-                tone: 'error',
-                message: error instanceof Error ? error.message : 'Không thể xóa tệp dữ liệu.',
-              });
-            })
-            .finally(() => setDeletingBusy(false));
-        }}
+        onConfirm={() => deleting && remove.run(deleting)}
       >
         Tệp sẽ bị xóa khỏi danh sách và kho lưu trữ. Thao tác này không thể hoàn tác.
       </ConfirmDialog>

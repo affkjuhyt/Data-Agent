@@ -7,7 +7,7 @@ import {
   listKnowledgePages,
   saveAnswerToKnowledge,
 } from '../../lib/v1/knowledge';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P07 · Lưu câu trả lời thành tri thức" (2405:15399, UC-07-12): a dialog opened from an answer.
@@ -30,8 +30,7 @@ export function SaveToKnowledgeDialog({
   const draft = useV1(['getKnowledgeDraft', answerId], () => getKnowledgeDraft(answerId));
   const pages = useV1(['listKnowledgePages'], listKnowledgePages);
   const [target, setTarget] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const [invalid, setInvalid] = useState<string>();
 
   const proposed = draft.data?.target_page ?? null;
   const targetId = target ?? proposed?.id ?? null;
@@ -42,26 +41,25 @@ export function SaveToKnowledgeDialog({
       .map((p) => ({ value: p.id, label: p.title })),
   ];
 
-  const send = async () => {
+  const save = useV1Mutation(
+    (pageId: string) =>
+      saveAnswerToKnowledge({ answer_id: answerId, mode: 'paragraph', target_page_id: pageId }),
+    {
+      onSuccess: () => {
+        toast({ tone: 'success', message: 'Đã gửi đề xuất; người phụ trách trang sẽ duyệt' });
+        onClose();
+      },
+    },
+  );
+  const error = invalid ?? save.error?.message;
+
+  const send = () => {
     if (!targetId) {
-      setError('Chọn trang đích.');
+      setInvalid('Chọn trang đích.');
       return;
     }
-    setBusy(true);
-    setError(undefined);
-    try {
-      await saveAnswerToKnowledge({
-        answer_id: answerId,
-        mode: 'paragraph',
-        target_page_id: targetId,
-      });
-      toast({ tone: 'success', message: 'Đã gửi đề xuất; người phụ trách trang sẽ duyệt' });
-      onClose();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    setInvalid(undefined);
+    save.run(targetId);
   };
 
   return (
@@ -72,7 +70,7 @@ export function SaveToKnowledgeDialog({
       cancelLabel="Huỷ"
       tone="primary"
       size="md"
-      loading={busy}
+      loading={save.pending}
       error={
         error ?? (draft.error ? `Không đọc được câu trả lời: ${draft.error.message}` : undefined)
       }

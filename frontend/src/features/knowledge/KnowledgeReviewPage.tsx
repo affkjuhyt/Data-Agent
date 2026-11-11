@@ -20,7 +20,7 @@ import {
   type FindingKind,
   type KnowledgeFinding,
 } from '../../lib/v1/knowledge';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P07 · Rà soát tri thức" (2405:15078, UC-07-11): what the latest lint run found across the
@@ -81,7 +81,6 @@ export default function KnowledgeReviewPage() {
   const toast = useToast();
   const [filter, setFilter] = useState<Filter>('all');
   const [selectedId, setSelectedId] = useState<string>();
-  const [starting, setStarting] = useState(false);
 
   const latest = run.data?.items[0];
   const items = findings.data?.items ?? [];
@@ -91,17 +90,11 @@ export default function KnowledgeReviewPage() {
     shown.find((f) => f.kind === 'contradiction') ??
     shown[0];
 
-  const lintNow = async () => {
-    setStarting(true);
-    try {
-      await runKnowledgeLint();
-      toast({ tone: 'info', message: 'Đang rà soát; phát hiện mới hiện ở đây khi xong.' });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không chạy được: ${(e as Error).message}` });
-    } finally {
-      setStarting(false);
-    }
-  };
+  const lint = useV1Mutation(runKnowledgeLint, {
+    onSuccess: () =>
+      toast({ tone: 'info', message: 'Đang rà soát; phát hiện mới hiện ở đây khi xong.' }),
+    onError: (e) => toast({ tone: 'error', message: `Không chạy được: ${e.message}` }),
+  });
 
   return (
     <div className="flex min-h-full flex-col">
@@ -128,7 +121,7 @@ export default function KnowledgeReviewPage() {
             <Tooltip content="Màn đặt lịch rà soát đang được làm.">
               <Button disabled>Lịch rà soát</Button>
             </Tooltip>
-            <Button kind="primary" loading={starting} onClick={lintNow}>
+            <Button kind="primary" loading={lint.pending} onClick={() => lint.run()}>
               Chạy rà soát ngay
             </Button>
           </>
@@ -200,7 +193,6 @@ export default function KnowledgeReviewPage() {
                   onDone={(action) => {
                     toast({ tone: 'success', message: DONE[action] });
                     setSelectedId(undefined);
-                    findings.reload();
                   }}
                 />
               )}
@@ -326,33 +318,33 @@ function FindingCard({
   const [dialog, setDialog] = useState<'dismiss' | 'reassign' | null>(null);
   const [reason, setReason] = useState('');
   const [assignee, setAssignee] = useState<string | null>(null);
-  const [busy, setBusy] = useState<FindingAction | null>(null);
-  const [error, setError] = useState<string>();
+  // A missing reason or person is caught here, before the write.
+  const [invalid, setInvalid] = useState<string>();
   const users = useV1(['listUsers', dialog], dialog === 'reassign' ? listUsers : null);
 
-  const act = async (action: FindingAction) => {
-    if (action === 'dismiss' && !reason.trim()) {
-      setError('Ghi lý do bỏ qua.');
-      return;
-    }
-    if (action === 'reassign' && !assignee) {
-      setError('Chọn người nhận.');
-      return;
-    }
-    setBusy(action);
-    setError(undefined);
-    try {
-      await resolveFinding(finding.id, {
+  const resolve = useV1Mutation(
+    (action: FindingAction) =>
+      resolveFinding(finding.id, {
         action,
         reason: action === 'dismiss' ? reason.trim() : undefined,
         assignee_id: action === 'reassign' ? (assignee ?? undefined) : undefined,
-      });
-      onDone(action);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
+      }),
+    { invalidates: [['listOpenFindings']], onSuccess: (_, action) => onDone(action) },
+  );
+  const busy = resolve.pending ? (resolve.variables ?? null) : null;
+  const error = invalid ?? resolve.error?.message;
+
+  const act = (action: FindingAction) => {
+    if (action === 'dismiss' && !reason.trim()) {
+      setInvalid('Ghi lý do bỏ qua.');
+      return;
     }
+    if (action === 'reassign' && !assignee) {
+      setInvalid('Chọn người nhận.');
+      return;
+    }
+    setInvalid(undefined);
+    resolve.run(action);
   };
 
   return (
@@ -406,7 +398,8 @@ function FindingCard({
         error={dialog ? error : undefined}
         onCancel={() => {
           setDialog(null);
-          setError(undefined);
+          setInvalid(undefined);
+          resolve.reset();
         }}
         onConfirm={() => dialog && act(dialog)}
       >

@@ -11,7 +11,7 @@ import {
   type DatasetRefresh,
   type DerivedTable,
 } from '../../lib/v1/dataPrep';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
@@ -48,40 +48,40 @@ export function SaveDatasetDialog({
   const [space, setSpace] = useState<string | null>(null);
   const [refresh, setRefresh] = useState<DatasetRefresh>('after_etl');
   const [access, setAccess] = useState<DatasetAccess>('inherit');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  // A missing name or Data Space is caught here; the server's answer lands in the mutation.
+  const [invalid, setInvalid] = useState<string>();
+  const create = useV1Mutation(
+    (dataSpaceId: string) =>
+      createDerivedTable({
+        name: name.trim(),
+        data_space_id: dataSpaceId,
+        refresh,
+        access,
+        sql,
+      }),
+    { onSuccess: (table) => onSaved(table) },
+  );
+  const busy = create.pending;
+  const error = invalid ?? create.error?.message;
 
   useEffect(() => {
     if (open) {
       setName(suggestedName);
-      setError(undefined);
+      setInvalid(undefined);
+      create.reset();
     }
   }, [open, suggestedName]);
 
   const spaceOptions = (spaces.data?.items ?? []).map((s) => ({ value: s.id, label: s.name }));
   const chosenSpace = space ?? spaceOptions[0]?.value ?? null;
 
-  const save = async () => {
+  const save = () => {
     if (!name.trim() || !chosenSpace) {
-      setError('Đặt tên và chọn Data Space trước khi lưu.');
+      setInvalid('Đặt tên và chọn Data Space trước khi lưu.');
       return;
     }
-    setBusy(true);
-    setError(undefined);
-    try {
-      const table = await createDerivedTable({
-        name: name.trim(),
-        data_space_id: chosenSpace,
-        refresh,
-        access,
-        sql,
-      });
-      onSaved(table);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    setInvalid(undefined);
+    create.run(chosenSpace);
   };
 
   return (

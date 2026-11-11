@@ -18,7 +18,7 @@ import {
   type UploadColumn,
   type UploadColumnType,
 } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P04 · Tải tệp · Kiểm tra cột" (2282:17099, UC-04-08): after a CSV/Excel file is chosen, the
@@ -44,8 +44,6 @@ export default function UploadPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [analysis, setAnalysis] = useState<UploadAnalysis | null>(null);
   const [columns, setColumns] = useState<UploadColumn[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const uploads = useV1(['listUploads'], listUploads);
   const recentView = useTableView(uploads.data?.items ?? [], {
@@ -79,47 +77,43 @@ export default function UploadPage() {
     pageSize: 50,
   });
 
-  const read = async (file: File | undefined) => {
-    if (!file) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await createUpload(file);
+  const upload = useV1Mutation(createUpload, {
+    invalidates: [['listUploads']],
+    onSuccess: (result) => {
       setAnalysis(result);
       setColumns(result.columns);
-      uploads.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const create = async () => {
-    if (!analysis) return;
-    setBusy(true);
-    try {
-      const { table } = await commitUpload(analysis.id, columns);
+    },
+  });
+  const commit = useV1Mutation((analysisId: string) => commitUpload(analysisId, columns), {
+    onSuccess: ({ table }) => {
       toast({ tone: 'success', message: `Đã tạo bảng ${table}. Job nạp đang chạy.` });
       navigate('data', 'JOBS');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+
+  const read = (file: File | undefined) => {
+    if (!file) return;
+    commit.reset();
+    upload.run(file);
   };
+  const create = () => {
+    if (analysis) commit.run(analysis.id);
+  };
+  const busy = upload.pending || commit.pending;
+  const error = (upload.error ?? commit.error)?.message ?? null;
 
   const reset = () => {
     setAnalysis(null);
     setColumns([]);
-    setError(null);
+    upload.reset();
+    commit.reset();
     inputRef.current?.click();
   };
 
   const onDrop = (event: DragEvent) => {
     event.preventDefault();
     setDragging(false);
-    void read(event.dataTransfer.files[0]);
+    read(event.dataTransfer.files[0]);
   };
 
   const picker = (
@@ -130,7 +124,7 @@ export default function UploadPage() {
       className="sr-only"
       aria-label="Chọn tệp CSV hoặc Excel"
       onChange={(e) => {
-        void read(e.target.files?.[0]);
+        read(e.target.files?.[0]);
         e.target.value = '';
       }}
     />
@@ -229,7 +223,7 @@ export default function UploadPage() {
               kind="primary"
               loading={busy}
               disabled={columns.some((c) => !c.name.trim())}
-              onClick={() => void create()}
+              onClick={create}
             >
               Tạo bảng
             </Button>

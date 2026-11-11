@@ -40,7 +40,9 @@ vi.mock('../../lib/v1/api', () => ({
     next_page_token: '',
   })),
 }));
-vi.mock('../../lib/v1/useV1', () => ({
+vi.mock('../../lib/v1/useV1', async (importOriginal) => ({
+  // ReportDialog writes through the real useV1Mutation.
+  ...(await importOriginal<typeof import('../../lib/v1/useV1')>()),
   useV1: () => ({ data: { metrics: [{ id: 'm1', label: 'Doanh thu Internet', code: 'DTI', certified: true, version: 1, allowed_dimension_ids: [] }], dimensions: [] } }),
 }));
 vi.mock('./hooks/useQuestionStream', () => ({

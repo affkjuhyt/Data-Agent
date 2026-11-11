@@ -23,7 +23,7 @@ import {
   type SkillStepSpec,
   type SkillTrial,
 } from '../../lib/v1/skillAuthoring';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { KeyValue } from './KeyValue';
 
 /*
@@ -72,8 +72,6 @@ function Editor({
   const [steps, setSteps] = useState(initial.steps);
   const [instructions, setInstructions] = useState(initial.instructions);
   const [quality, setQuality] = useState(initial.quality_text);
-  const [busy, setBusy] = useState<'try' | 'save' | null>(null);
-  const [error, setError] = useState<string>();
   const dirty =
     instructions !== initial.instructions ||
     steps.length !== initial.steps.length ||
@@ -91,38 +89,41 @@ function Editor({
     else go(tab);
   };
 
-  const runTrial = async () => {
-    setBusy('try');
-    setError(undefined);
-    try {
-      const result = await trySkill(initial, initial.quick_test.params);
+  const trying = useV1Mutation(() => trySkill(initial, initial.quick_test.params), {
+    onSuccess: (result) => {
       setTrial(result);
       setQuality(`v3: 96% · v${result.version}: đã chạy thử`);
       toast({
         tone: 'success',
         message: `Đã chạy thử v${result.version} · ${result.duration_text}`,
       });
-    } catch (e) {
-      setError(`Không chạy thử được: ${(e as Error).message}`);
-    } finally {
-      setBusy(null);
-    }
+    },
+  });
+  const saving = useV1Mutation(
+    () => saveSkillDefinition(initial, { instructions, steps: renumber(steps) }),
+    {
+      onSuccess: (saved) => {
+        setSteps(saved.steps);
+        setInstructions(saved.instructions);
+        toast({ tone: 'success', message: `Đã lưu v${saved.version} (nháp)` });
+        onSaved(saved);
+      },
+    },
+  );
+  // One error line for both actions: starting one clears the other's.
+  const busy = trying.pending ? 'try' : saving.pending ? 'save' : null;
+  const error = trying.error
+    ? `Không chạy thử được: ${trying.error.message}`
+    : saving.error
+      ? `Không lưu được: ${saving.error.message}`
+      : undefined;
+  const runTrial = () => {
+    saving.reset();
+    trying.run();
   };
-
-  const save = async () => {
-    setBusy('save');
-    setError(undefined);
-    try {
-      const saved = await saveSkillDefinition(initial, { instructions, steps: renumber(steps) });
-      setSteps(saved.steps);
-      setInstructions(saved.instructions);
-      toast({ tone: 'success', message: `Đã lưu v${saved.version} (nháp)` });
-      onSaved(saved);
-    } catch (e) {
-      setError(`Không lưu được: ${(e as Error).message}`);
-    } finally {
-      setBusy(null);
-    }
+  const save = () => {
+    trying.reset();
+    saving.run();
   };
 
   const draft = initial.status === 'draft';

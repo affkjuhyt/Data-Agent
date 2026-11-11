@@ -27,7 +27,7 @@ import {
   type DsrRequest,
 } from '../../lib/v1/adminAccess';
 import { csvCell } from '../../lib/csv';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { CreateDsrDialog, DSR_KINDS } from './CreateDsrDialog';
 import { dayMonth } from './format';
 
@@ -214,8 +214,6 @@ function DsrDetail({ id }: { id: string }) {
   const [bases, setBases] = useState<Record<string, string>>({});
   const [confirming, setConfirming] = useState(false);
   const [missing, setMissing] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
 
   // Everything that may be deleted starts selected; what must be kept cannot be.
   useEffect(() => {
@@ -225,23 +223,19 @@ function DsrDetail({ id }: { id: string }) {
     setBases(Object.fromEntries(request.items.map((i) => [i.id, i.legal_basis ?? ''])));
   }, [dsr.data]);
 
-  const act = async (d: DsrRequest) => {
-    setSending(true);
-    setError(undefined);
-    try {
-      await executeDsr(d.id, decisionsOf(d, selected, bases));
-      toast({
-        tone: 'success',
-        message: `Đã gửi ${d.code} để thực hiện. Thư trả lời chờ Pháp chế duyệt.`,
-      });
-      setConfirming(false);
-      dsr.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
-  };
+  const execute = useV1Mutation(
+    (d: DsrRequest) => executeDsr(d.id, decisionsOf(d, selected, bases)),
+    {
+      invalidates: [['getDsr', id]],
+      onSuccess: (_, d) => {
+        toast({
+          tone: 'success',
+          message: `Đã gửi ${d.code} để thực hiện. Thư trả lời chờ Pháp chế duyệt.`,
+        });
+        setConfirming(false);
+      },
+    },
+  );
 
   const exportList = (d: DsrRequest) => {
     const rows = [
@@ -306,9 +300,9 @@ function DsrDetail({ id }: { id: string }) {
                   )
                 }
               />
-              {error && (
+              {execute.error && (
                 <div className="px-da-3xl pt-da-xl">
-                  <Notice tone="error">{error}</Notice>
+                  <Notice tone="error">{execute.error.message}</Notice>
                 </div>
               )}
               <div className="flex min-h-0 flex-1">
@@ -348,7 +342,7 @@ function DsrDetail({ id }: { id: string }) {
                   deletes ? `Duyệt kế hoạch xoá ${d.code}?` : `Cung cấp dữ liệu cho ${d.code}?`
                 }
                 confirmLabel="Duyệt và thực hiện"
-                loading={sending}
+                loading={execute.pending}
                 error={missing ? 'Ghi căn cứ pháp lý cho mọi nơi được giữ lại.' : undefined}
                 onCancel={() => setConfirming(false)}
                 onConfirm={() => {
@@ -356,7 +350,7 @@ function DsrDetail({ id }: { id: string }) {
                     setMissing(true);
                     return;
                   }
-                  void act(d);
+                  execute.run(d);
                 }}
               >
                 <div className="flex flex-col gap-da-sm">

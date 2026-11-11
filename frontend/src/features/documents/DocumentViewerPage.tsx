@@ -24,7 +24,7 @@ import {
   type FieldIssue,
   type PageBox,
 } from '../../lib/v1/documents';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { CallViewer } from './CallViewer';
 import { EmailViewer } from './EmailViewer';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
@@ -58,9 +58,9 @@ export default function DocumentViewerPage() {
       {(data) => {
         const view = normalize(data);
         if (view.kind === 'email' && view.email)
-          return <EmailViewer doc={view} thread={view.email} onChanged={doc.reload} />;
+          return <EmailViewer doc={view} thread={view.email} />;
         if (view.kind === 'call' && view.call) return <CallViewer doc={view} call={view.call} />;
-        return <FileViewer key={view.id} doc={view} onChanged={doc.reload} />;
+        return <FileViewer key={view.id} doc={view} />;
       }}
     </AsyncRegion>
   );
@@ -90,7 +90,7 @@ function normalize(doc: DocumentView): DocumentView {
 type Tab = 'fields' | 'chunks' | 'history';
 type Mode = 'original' | 'ocr';
 
-function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => void }) {
+function FileViewer({ doc }: { doc: DocumentView }) {
   const { navigate } = useAppState();
   const hasPages = doc.page_count > 0;
   // A citation opens the page it cites (focusPage.ts); otherwise the document's focus page.
@@ -217,7 +217,7 @@ function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => vo
           ]}
         />
         <div role="tabpanel" className="flex flex-col gap-da-lg">
-          {tab === 'fields' && <FieldsTab doc={doc} onJump={setPageNo} onChanged={onChanged} />}
+          {tab === 'fields' && <FieldsTab doc={doc} onJump={setPageNo} />}
           {tab === 'chunks' && <ChunksTab doc={doc} onJump={setPageNo} />}
           {tab === 'history' && <HistoryTab id={doc.id} />}
         </div>
@@ -390,15 +390,7 @@ function PageText({ page }: { page: DocumentPage }) {
   );
 }
 
-function FieldsTab({
-  doc,
-  onJump,
-  onChanged,
-}: {
-  doc: DocumentView;
-  onJump: (page: number) => void;
-  onChanged: () => void;
-}) {
+function FieldsTab({ doc, onJump }: { doc: DocumentView; onJump: (page: number) => void }) {
   if (doc.fields.length === 0)
     return (
       <p className="text-muted-foreground da-body-small">
@@ -412,7 +404,7 @@ function FieldsTab({
           <FieldRow key={field.name} field={field} onJump={onJump} />
         ))}
       </ul>
-      {doc.issue && <IssueBox issue={doc.issue} onChanged={onChanged} />}
+      {doc.issue && <IssueBox issue={doc.issue} />}
     </>
   );
 }
@@ -442,32 +434,30 @@ function FieldRow({ field, onJump }: { field: ExtractedField; onJump: (page: num
   );
 }
 
-function IssueBox({ issue, onChanged }: { issue: FieldIssue; onChanged: () => void }) {
+function IssueBox({ issue }: { issue: FieldIssue }) {
   const toast = useToast();
-  const [busy, setBusy] = useState<'correct' | 'keep' | null>(null);
-  const resolve = async (action: 'correct' | 'keep') => {
-    setBusy(action);
-    try {
-      await resolveQualityIssue(
+  const resolve = useV1Mutation(
+    (action: 'correct' | 'keep') =>
+      resolveQualityIssue(
         issue.quality_issue_id,
         action === 'correct'
           ? { action: 'correct', value: issue.suggested_value }
           : { action: 'keep_and_conflict' },
-      );
-      toast({
-        tone: 'success',
-        message:
-          action === 'correct'
-            ? `Đã sửa ${issue.field} thành ${issue.suggested_value}.`
-            : 'Đã giữ giá trị đọc được và mở yêu cầu xung đột.',
-      });
-      onChanged();
-    } catch (e) {
-      toast({ tone: 'error', message: `Không lưu được. ${(e as Error).message}` });
-    } finally {
-      setBusy(null);
-    }
-  };
+      ),
+    {
+      invalidates: [['getDocumentView']],
+      onSuccess: (_, action) =>
+        toast({
+          tone: 'success',
+          message:
+            action === 'correct'
+              ? `Đã sửa ${issue.field} thành ${issue.suggested_value}.`
+              : 'Đã giữ giá trị đọc được và mở yêu cầu xung đột.',
+        }),
+      onError: (e) => toast({ tone: 'error', message: `Không lưu được. ${e.message}` }),
+    },
+  );
+  const busy = resolve.pending ? resolve.variables : null;
   return (
     <div className="flex flex-col gap-da-sm rounded-md border border-warning px-da-lg py-da-md">
       <p className="text-foreground da-body-strong">{issue.title}</p>
@@ -476,7 +466,7 @@ function IssueBox({ issue, onChanged }: { issue: FieldIssue; onChanged: () => vo
         <Button
           loading={busy === 'correct'}
           disabled={busy !== null && busy !== 'correct'}
-          onClick={() => void resolve('correct')}
+          onClick={() => resolve.run('correct')}
         >
           Sửa thành {issue.suggested_value}
         </Button>
@@ -484,7 +474,7 @@ function IssueBox({ issue, onChanged }: { issue: FieldIssue; onChanged: () => vo
           kind="ghost"
           loading={busy === 'keep'}
           disabled={busy !== null && busy !== 'keep'}
-          onClick={() => void resolve('keep')}
+          onClick={() => resolve.run('keep')}
         >
           Giữ {issue.current_value} · báo xung đột
         </Button>

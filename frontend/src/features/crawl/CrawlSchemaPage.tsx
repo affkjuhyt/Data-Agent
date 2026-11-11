@@ -16,7 +16,7 @@ import {
   testCrawlSchema,
   type CrawlSchemaVersion,
 } from '../../lib/v1/crawl';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P14 · Suy ngược schema · Chạy thử" (2389:15042, UC-14-02): one source's extraction schema.
@@ -41,7 +41,6 @@ export default function CrawlSchemaPage() {
             key={page.items[0].id}
             sourceName={source.data?.name ?? ''}
             schema={page.items[0]}
-            onChanged={schemas.reload}
           />
         ) : (
           <p className="px-da-3xl pt-da-xl text-muted-foreground da-body-small">
@@ -53,20 +52,10 @@ export default function CrawlSchemaPage() {
   );
 }
 
-function SchemaBody({
-  sourceName,
-  schema,
-  onChanged,
-}: {
-  sourceName: string;
-  schema: CrawlSchemaVersion;
-  onChanged: () => void;
-}) {
+function SchemaBody({ sourceName, schema }: { sourceName: string; schema: CrawlSchemaVersion }) {
   const toast = useToast();
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<string>();
-  const [busy, setBusy] = useState<'test' | 'approve' | null>(null);
-  const [error, setError] = useState<string>();
   const fields = useTableView(schema.fields, {
     search: (field) => `${field.name} ${field.type} ${field.locator} ${field.canonical ?? ''}`,
     filters: [{ id: 'type', label: 'Kiểu', value: (field) => field.type }],
@@ -95,24 +84,22 @@ function SchemaBody({
         ? `Chọn thuộc tính chuẩn cho ${missing.map((f) => f.name).join(', ')}.`
         : null;
 
-  const run = async (verb: 'test' | 'approve') => {
-    setBusy(verb);
-    setError(undefined);
-    try {
-      if (verb === 'test') {
-        await testCrawlSchema(schema.id);
-        toast({ tone: 'info', message: 'Đang chạy thử trên mẫu giữ lại' });
-      } else {
-        await approveCrawlSchema(schema.id, choices);
-        toast({ tone: 'success', message: `Đã duyệt v${schema.version}; lịch thu bắt đầu chạy` });
-      }
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const action = useV1Mutation(
+    (verb: 'test' | 'approve'): Promise<unknown> =>
+      verb === 'test' ? testCrawlSchema(schema.id) : approveCrawlSchema(schema.id, choices),
+    {
+      invalidates: [['listCrawlSchemas']],
+      onSuccess: (_, verb) =>
+        toast(
+          verb === 'test'
+            ? { tone: 'info', message: 'Đang chạy thử trên mẫu giữ lại' }
+            : { tone: 'success', message: `Đã duyệt v${schema.version}; lịch thu bắt đầu chạy` },
+        ),
+    },
+  );
+  const run = action.run;
+  const busy = action.pending ? (action.variables ?? null) : null;
+  const error = action.error?.message;
 
   return (
     <div className="flex min-h-full flex-col">

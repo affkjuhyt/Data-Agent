@@ -23,7 +23,7 @@ import {
   type FilterOp,
   type TablePreview,
 } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { LinkButton } from '../../components/shell/AppLink';
@@ -88,7 +88,6 @@ function ExploreView({
   const { navigate } = useAppState();
   const toast = useToast();
   const [adding, setAdding] = useState(false);
-  const [deriving, setDeriving] = useState<'filtered' | 'dedup' | null>(null);
   const [column, setColumn] = useState(
     () => preview.columns.find((c) => c.numeric && !c.masked)?.name ?? preview.columns[0]?.name,
   );
@@ -110,23 +109,22 @@ function ExploreView({
     pageSize: 50,
   });
 
-  const derive = async (dropDuplicates: boolean) => {
-    setDeriving(dropDuplicates ? 'dedup' : 'filtered');
-    try {
-      const table = await deriveTable(id, { filters, drop_duplicates: dropDuplicates });
-      toast({
-        tone: 'success',
-        message:
-          table.row_count === null || table.row_count === undefined
-            ? `Đang tạo bảng dẫn xuất ${table.name} trên nguồn; bảng bật khi đã ghi xong.`
-            : `Đã tạo bảng dẫn xuất ${table.name} · ${formatNumber(table.row_count)} dòng.`,
-      });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không tạo được bảng dẫn xuất. ${(e as Error).message}` });
-    } finally {
-      setDeriving(null);
-    }
-  };
+  const derive = useV1Mutation(
+    (dropDuplicates: boolean) => deriveTable(id, { filters, drop_duplicates: dropDuplicates }),
+    {
+      onSuccess: (table) =>
+        toast({
+          tone: 'success',
+          message:
+            table.row_count === null || table.row_count === undefined
+              ? `Đang tạo bảng dẫn xuất ${table.name} trên nguồn; bảng bật khi đã ghi xong.`
+              : `Đã tạo bảng dẫn xuất ${table.name} · ${formatNumber(table.row_count)} dòng.`,
+        }),
+      onError: (e) =>
+        toast({ tone: 'error', message: `Không tạo được bảng dẫn xuất. ${e.message}` }),
+    },
+  );
+  const deriving = derive.pending ? (derive.variables ? 'dedup' : 'filtered') : null;
 
   return (
     <div className="flex min-h-full max-[1023px]:flex-col">
@@ -146,7 +144,7 @@ function ExploreView({
                 kind="primary"
                 loading={deriving === 'filtered'}
                 disabled={deriving !== null}
-                onClick={() => void derive(false)}
+                onClick={() => derive.run(false)}
               >
                 Tạo bảng dẫn xuất
               </Button>
@@ -260,7 +258,7 @@ function ExploreView({
               <Button
                 loading={deriving === 'dedup'}
                 disabled={deriving !== null}
-                onClick={() => void derive(true)}
+                onClick={() => derive.run(true)}
               >
                 Loại trùng vào bảng dẫn xuất
               </Button>

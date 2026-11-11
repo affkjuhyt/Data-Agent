@@ -14,7 +14,7 @@ import {
   type Onboarding,
   type OnboardingStepKey,
 } from '../../lib/v1/explore';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { cn } from '../../lib/utils';
 import { BrandBar } from './BrandBar';
 
@@ -55,26 +55,18 @@ const ELSEWHERE: Partial<
 export function OnboardingPage({ onFinish }: { onFinish: (exit?: OnboardingExit) => void }) {
   const onboarding = useV1(['getOnboarding'], getOnboarding);
   const toast = useToast();
-  const [skipping, setSkipping] = useState(false);
-
-  const skip = async () => {
-    setSkipping(true);
-    try {
-      await skipOnboarding();
-      onFinish();
-    } catch (e) {
-      toast({ tone: 'error', message: `Không lưu được lựa chọn: ${(e as Error).message}` });
-      setSkipping(false);
-    }
-  };
+  const skip = useV1Mutation(skipOnboarding, {
+    onSuccess: () => onFinish(),
+    onError: (e) => toast({ tone: 'error', message: `Không lưu được lựa chọn: ${e.message}` }),
+  });
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-card">
       <BrandBar>
         <button
           type="button"
-          onClick={() => void skip()}
-          disabled={skipping}
+          onClick={() => skip.run()}
+          disabled={skip.pending}
           className="text-muted-foreground da-label hover:text-foreground"
         >
           Bỏ qua, làm sau
@@ -158,20 +150,11 @@ function FirstAgent({
   const [chosen, setChosen] = useState(
     (data.templates.find((t) => t.badge.recommended) ?? data.templates[0])?.ref,
   );
-  const [busy, setBusy] = useState(false);
   const template = data.templates.find((t) => t.ref === chosen);
-
-  const run = async () => {
-    if (!template) return;
-    setBusy(true);
-    try {
-      const started = await tryOnboardingAgent(template.ref);
-      onFinish({ area: 'agents', page: 'RUN', id: started.run_id });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không chạy thử được: ${(e as Error).message}` });
-      setBusy(false);
-    }
-  };
+  const tryAgent = useV1Mutation(tryOnboardingAgent, {
+    onSuccess: (started) => onFinish({ area: 'agents', page: 'RUN', id: started.run_id }),
+    onError: (e) => toast({ tone: 'error', message: `Không chạy thử được: ${e.message}` }),
+  });
 
   return (
     <>
@@ -227,7 +210,12 @@ function FirstAgent({
             Quay lại
           </Button>
         )}
-        <Button kind="primary" loading={busy} disabled={!template} onClick={() => void run()}>
+        <Button
+          kind="primary"
+          loading={tryAgent.pending}
+          disabled={!template}
+          onClick={() => template && tryAgent.run(template.ref)}
+        >
           Chạy thử {template?.title ?? 'agent'}
         </Button>
       </div>

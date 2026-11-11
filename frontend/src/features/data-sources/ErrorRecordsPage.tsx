@@ -17,7 +17,7 @@ import {
   reloadErrorGroups,
   type ErrorRecordGroup,
 } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P04 · Bản ghi lỗi" (2281:17467, UC-04-07): records a job could not load, grouped by cause,
@@ -46,19 +46,19 @@ export default function ErrorRecordsPage() {
         </div>
       }
     >
-      {(page) => <ErrorGroups groups={page.items} onChanged={groups.reload} />}
+      {(page) => <ErrorGroups groups={page.items} />}
     </AsyncRegion>
   );
 }
 
-function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChanged: () => void }) {
+function ErrorGroups({ groups }: { groups: ErrorRecordGroup[] }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState<'reload' | 'discard' | null>(null);
   const [discarding, setDiscarding] = useState(false);
   const [reason, setReason] = useState('');
-  const [discardError, setDiscardError] = useState<string>();
+  // A missing reason is caught here; the server's answer lands in the mutation.
+  const [invalid, setInvalid] = useState<string>();
 
   // Groups emptied by a reload or discard cannot be chosen again.
   const chosen = groups.filter((g) => selected.has(g.id) && g.count > 0);
@@ -91,37 +91,33 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
       return next;
     });
 
-  const reload = async () => {
-    setBusy('reload');
-    try {
-      const { reloaded } = await reloadErrorGroups(chosen);
+  const reload = useV1Mutation(() => reloadErrorGroups(chosen), {
+    invalidates: [['listErrorGroups']],
+    onSuccess: ({ reloaded }) => {
       toast({ tone: 'success', message: `Đã nạp lại ${formatNumber(reloaded)} bản ghi.` });
       setSelected(new Set());
-      onChanged();
-    } catch (e) {
-      toast({ tone: 'error', message: `Không nạp lại được. ${(e as Error).message}` });
-    } finally {
-      setBusy(null);
-    }
-  };
+    },
+    onError: (e) => toast({ tone: 'error', message: `Không nạp lại được. ${e.message}` }),
+  });
 
-  const discard = async () => {
-    if (!reason.trim()) {
-      setDiscardError('Ghi lý do để lưu vào nhật ký kiểm toán.');
-      return;
-    }
-    setBusy('discard');
-    try {
-      const { discarded } = await discardErrorGroups(chosen, reason.trim());
+  const discardGroups = useV1Mutation((why: string) => discardErrorGroups(chosen, why), {
+    invalidates: [['listErrorGroups']],
+    onSuccess: ({ discarded }) => {
       toast({ tone: 'success', message: `Đã bỏ ${formatNumber(discarded)} bản ghi.` });
       setDiscarding(false);
       setSelected(new Set());
-      onChanged();
-    } catch (e) {
-      setDiscardError((e as Error).message);
-    } finally {
-      setBusy(null);
+    },
+  });
+  const busy = reload.pending ? 'reload' : discardGroups.pending ? 'discard' : null;
+  const discardError = invalid ?? discardGroups.error?.message;
+
+  const discard = () => {
+    if (!reason.trim()) {
+      setInvalid('Ghi lý do để lưu vào nhật ký kiểm toán.');
+      return;
     }
+    setInvalid(undefined);
+    discardGroups.run(reason.trim());
   };
 
   return (
@@ -138,7 +134,8 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
               disabled={chosen.length === 0 || busy !== null}
               onClick={() => {
                 setReason('');
-                setDiscardError(undefined);
+                setInvalid(undefined);
+                discardGroups.reset();
                 setDiscarding(true);
               }}
             >
@@ -148,7 +145,7 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
               kind="primary"
               loading={busy === 'reload'}
               disabled={chosen.length === 0 || busy !== null}
-              onClick={() => void reload()}
+              onClick={() => reload.run()}
             >
               Nạp lại đã chọn
             </Button>
@@ -259,7 +256,7 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
         confirmLabel="Bỏ bản ghi"
         loading={busy === 'discard'}
         error={discardError}
-        onConfirm={() => void discard()}
+        onConfirm={discard}
         onCancel={() => setDiscarding(false)}
       >
         <div className="flex flex-col gap-da-md">

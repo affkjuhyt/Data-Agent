@@ -21,7 +21,7 @@ import {
   type Writeback,
   type WritebackStatus,
 } from '../../lib/v1/dataPrep';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
@@ -64,32 +64,27 @@ export default function WritebackPage() {
   const toast = useToast();
   const [wb, setWb] = useState<Writeback | null>();
   const [asking, setAsking] = useState<'reject' | 'changes' | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
 
   useEffect(() => setWb(loaded.data), [loaded.data]);
 
   const step = wb ? wb.approvers.findIndex((a) => a.state === 'pending') + 1 : 0;
 
-  const approve = async () => {
-    if (!wb) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      const next = await approveWriteback(wb.id);
+  const approval = useV1Mutation((current: Writeback) => approveWriteback(current.id), {
+    onSuccess: (next, current) => {
       setWb(next);
       toast({
         tone: 'success',
         message:
           next.status === 'approved'
-            ? `Đã duyệt đủ · ${wb.code} sẽ ghi vào ${wb.target_table}`
-            : `Đã duyệt bước ${step}/${wb.approvers.length} · chờ ${next.approvers[step]?.name ?? 'người duyệt tiếp'}`,
+            ? `Đã duyệt đủ · ${current.code} sẽ ghi vào ${current.target_table}`
+            : `Đã duyệt bước ${step}/${current.approvers.length} · chờ ${next.approvers[step]?.name ?? 'người duyệt tiếp'}`,
       });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+  const busy = approval.pending;
+  const error = approval.error?.message;
+  const approve = () => {
+    if (wb) approval.run(wb);
   };
 
   if (loaded.data === null)
@@ -227,25 +222,14 @@ function ReasonDialog({
   onSubmit: (text: string) => Promise<void>;
 }) {
   const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const send = useV1Mutation(onSubmit);
 
   useEffect(() => {
     setText('');
-    setError(undefined);
+    send.reset();
   }, [kind]);
 
-  const submit = async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await onSubmit(text.trim());
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const submit = () => send.run(text.trim());
 
   const reject = kind === 'reject';
   return (
@@ -260,7 +244,7 @@ function ReasonDialog({
           </Button>
           <Button
             kind={reject ? 'danger' : 'primary'}
-            loading={busy}
+            loading={send.pending}
             disabled={!text.trim()}
             onClick={submit}
           >
@@ -269,7 +253,7 @@ function ReasonDialog({
         </>
       }
     >
-      {error && <Notice tone="error">{error}</Notice>}
+      {send.error && <Notice tone="error">{send.error.message}</Notice>}
       <Field
         label={reject ? 'Lý do từ chối' : 'Cần sửa gì'}
         hint="Người đề xuất nhận được nội dung này. Không có gì được ghi vào bảng chờ."

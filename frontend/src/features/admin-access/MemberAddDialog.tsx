@@ -10,7 +10,7 @@ import {
   type RowScope,
   type PermissionMatrix,
 } from '../../lib/v1/adminAccess';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { completeScope, RowScopePicker } from './RowScopePicker';
 import { Dialog } from '../../design-system/Dialog';
 
@@ -38,15 +38,25 @@ export function MemberAddDialog({
   const [principal, setPrincipal] = useState<string | null>(null);
   const [roleId, setRoleId] = useState<string | null>(null);
   const [scope, setScope] = useState<RowScope | null>(null);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
+  const [invalid, setInvalid] = useState<string>();
+  const add = useV1Mutation(
+    ({ list }: { list: MemberInput[]; who: string }) => putMembers(dataSpaceId, list),
+    {
+      invalidates: [
+        ['listMembers', dataSpaceId],
+        ['getDataSpace', dataSpaceId],
+      ],
+      onSuccess: (_, { who }) => onAdded(who),
+    },
+  );
 
   useEffect(() => {
     if (!open) return;
     setPrincipal(null);
     setRoleId(null);
     setScope(null);
-    setError(undefined);
+    setInvalid(undefined);
+    add.reset();
   }, [open]);
 
   // Agents join a Data Space through their owner, so only people and groups are offered.
@@ -60,13 +70,18 @@ export function MemberAddDialog({
       .map((u) => ({ value: `user:${u.id}`, label: u.display_name })),
   ];
 
-  const submit = async () => {
+  const refuse = (message: string) => {
+    add.reset();
+    setInvalid(message);
+  };
+
+  const submit = () => {
     if (!principal || !roleId) {
-      setError('Chọn người hoặc nhóm và vai trò.');
+      refuse('Chọn người hoặc nhóm và vai trò.');
       return;
     }
     if (!completeScope(scope)) {
-      setError('Chọn ít nhất một giá trị cho phạm vi dòng, hoặc để toàn bộ dòng.');
+      refuse('Chọn ít nhất một giá trị cho phạm vi dòng, hoặc để toàn bộ dòng.');
       return;
     }
     const [type, principalId] = principal.split(':') as ['user' | 'group', string];
@@ -77,10 +92,9 @@ export function MemberAddDialog({
       row_scope: m.row_scope,
       valid_until: m.valid_until,
     }));
-    setSending(true);
-    setError(undefined);
-    try {
-      await putMembers(dataSpaceId, [
+    setInvalid(undefined);
+    add.run({
+      list: [
         ...current,
         {
           principal_type: type,
@@ -89,13 +103,9 @@ export function MemberAddDialog({
           row_scope: scope,
           valid_until: null,
         },
-      ]);
-      onAdded(options.find((o) => o.value === principal)?.label.split(' · ')[0] ?? principalId);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
+      ],
+      who: options.find((o) => o.value === principal)?.label.split(' · ')[0] ?? principalId,
+    });
   };
 
   return (
@@ -104,8 +114,8 @@ export function MemberAddDialog({
       title="Thêm thành viên Data Space"
       description="Quyền theo vai trò; agent luôn theo quyền của chủ sở hữu."
       submitLabel="Thêm"
-      submitting={sending}
-      error={error}
+      submitting={add.pending}
+      error={invalid ?? add.error?.message}
       onSubmit={submit}
       onClose={onClose}
     >

@@ -19,7 +19,7 @@ import {
   type NotificationChannel,
   type NotificationPreferences,
 } from '../../lib/v1/adminPlatform';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P08 · Cài đặt · Thông báo" (2272:16341, UC-08-07): which events reach the user on which
@@ -132,8 +132,6 @@ export default function NotificationsPage() {
   const { navigate } = useAppState();
   const saved = useV1(['getNotificationPreferences'], getNotificationPreferences);
   const [draft, setDraft] = useState<NotificationPreferences>();
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     if (saved.data) setDraft(saved.data);
@@ -156,32 +154,19 @@ export default function NotificationsPage() {
         },
     );
 
-  const save = async () => {
-    if (!draft) return;
-    setSaving(true);
-    try {
-      await saveNotificationPreferences(draft);
-      toast({ tone: 'success', message: 'Đã lưu cách nhận thông báo.' });
-      saved.reload();
-    } catch (e) {
-      toast({ tone: 'error', message: (e as Error).message });
-    } finally {
-      setSaving(false);
-    }
-  };
+  const save = useV1Mutation(saveNotificationPreferences, {
+    invalidates: [['getNotificationPreferences']],
+    onSuccess: () => toast({ tone: 'success', message: 'Đã lưu cách nhận thông báo.' }),
+    onError: (e) => toast({ tone: 'error', message: e.message }),
+  });
 
-  const test = async () => {
-    setTesting(true);
-    try {
-      const result = await sendTestNotification();
+  const test = useV1Mutation(sendTestNotification, {
+    onSuccess: (result) => {
       const names = CHANNELS.filter((c) => result.channels.includes(c.key)).map((c) => c.label);
       toast({ tone: 'info', message: `Đã gửi thông báo thử tới ${names.join(', ')}.` });
-    } catch (e) {
-      toast({ tone: 'error', message: (e as Error).message });
-    } finally {
-      setTesting(false);
-    }
-  };
+    },
+    onError: (e) => toast({ tone: 'error', message: e.message }),
+  });
 
   return (
     <div className="flex flex-col">
@@ -192,10 +177,15 @@ export default function NotificationsPage() {
         description="Chọn bạn nhận gì, qua kênh nào. Việc rủi ro cao luôn được báo trong ứng dụng, không tắt được."
         actions={
           <>
-            <Button kind="ghost" onClick={test} loading={testing}>
+            <Button kind="ghost" onClick={() => test.run()} loading={test.pending}>
               Gửi thử
             </Button>
-            <Button kind="primary" onClick={save} loading={saving} disabled={!dirty}>
+            <Button
+              kind="primary"
+              onClick={() => draft && save.run(draft)}
+              loading={save.pending}
+              disabled={!dirty}
+            >
               Lưu
             </Button>
           </>

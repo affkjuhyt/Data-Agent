@@ -22,7 +22,7 @@ import {
   type SkillVersion,
   type SkillVersionReview,
 } from '../../lib/v1/skills';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { VERSION_TONE } from './labels';
 
 /*
@@ -90,12 +90,12 @@ export default function SkillVersionsPage() {
         </div>
       }
     >
-      {(data) => data && <Versions data={data} reload={state.reload} />}
+      {(data) => data && <Versions data={data} />}
     </AsyncRegion>
   );
 }
 
-function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
+function Versions({ data }: { data: Loaded }) {
   const toast = useToast();
   const { skill, versions, review } = data;
   const pending = versions.find((v) => v.id === review?.version_id);
@@ -103,25 +103,31 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
 
   const [dialog, setDialog] = useState<'publish' | 'changes' | null>(null);
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  // A request for changes without a note is caught here, before anything is sent.
+  const [invalid, setInvalid] = useState<string>();
+  const decide = useV1Mutation(
+    ({ call }: { call: () => Promise<unknown>; done: string }) => call(),
+    {
+      invalidates: [['SkillVersionsPage.load']],
+      onSuccess: (_, { done }) => {
+        setDialog(null);
+        toast({ tone: 'success', message: done });
+      },
+    },
+  );
+  const busy = decide.pending;
+  const error = invalid ?? decide.error?.message;
 
   const open = (which: 'publish' | 'changes') => {
-    setError(undefined);
+    setInvalid(undefined);
+    decide.reset();
     setNote('');
     setDialog(which);
   };
 
   const act = (call: () => Promise<unknown>, done: string) => {
-    setBusy(true);
-    call()
-      .then(() => {
-        setDialog(null);
-        toast({ tone: 'success', message: done });
-        reload();
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setBusy(false));
+    setInvalid(undefined);
+    decide.run({ call, done });
   };
 
   const active = versions.find((v) => v.status === 'active');
@@ -306,7 +312,7 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
             onCancel={() => setDialog(null)}
             onConfirm={() => {
               if (!note.trim()) {
-                setError('Ghi điều cần sửa.');
+                setInvalid('Ghi điều cần sửa.');
                 return;
               }
               if (!proposalId) return;

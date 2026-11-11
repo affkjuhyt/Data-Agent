@@ -23,7 +23,7 @@ import {
   type AccessRequest,
   type DecideAccess,
 } from '../../lib/v1/adminAccess';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { dayMonth, daysUntil } from './format';
 
 /*
@@ -112,8 +112,6 @@ function RequestDetail({
   const narrower = NARROWER_CAPABILITIES[r.capability as AccessCapability] ?? [];
   const [scope, setScope] = useState<AccessCapability | null>(null);
   const [missing, setMissing] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
   const pending = r.status === 'pending';
   // AccessRequestView has no impact; readAccessRequest fills []. Guard here so a raw wire
   // answer cannot crash useTableView on source.map.
@@ -130,22 +128,23 @@ function RequestDetail({
   });
   const asked = Math.max(1, daysUntil(r.requested_until, new Date(r.created_at)));
 
-  const decide = async (body: DecideAccess) => {
-    setSending(true);
-    setError(undefined);
-    try {
-      await decideAccessRequest(r.id, body, r.data_space_id);
-      const word = { approve: 'Đã cấp quyền', narrow: 'Đã cấp hẹp hơn', reject: 'Đã từ chối' }[body.decision];
-      toast({ tone: 'success', message: `${word} · ${r.code}. Người xin đã được báo.` });
-      setDialog(null);
-      onDecided(queue.find((q) => q.id !== r.id)?.id);
-    } catch (e) {
-      setError((e as Error).message);
-      setDialog(null);
-    } finally {
-      setSending(false);
-    }
-  };
+  const decision = useV1Mutation(
+    (body: DecideAccess) => decideAccessRequest(r.id, body, r.data_space_id),
+    {
+      onSuccess: (_, body) => {
+        const word = { approve: 'Đã cấp quyền', narrow: 'Đã cấp hẹp hơn', reject: 'Đã từ chối' }[
+          body.decision
+        ];
+        toast({ tone: 'success', message: `${word} · ${r.code}. Người xin đã được báo.` });
+        setDialog(null);
+        onDecided(queue.find((q) => q.id !== r.id)?.id);
+      },
+      onError: () => setDialog(null),
+    },
+  );
+  const decide = decision.run;
+  const sending = decision.pending;
+  const error = decision.error?.message;
 
   const openDialog = (kind: Dialog) => {
     setNote('');
@@ -280,7 +279,7 @@ function RequestDetail({
             setMissing(true);
             return;
           }
-          void decide(
+          decide(
             dialog === 'reject' || !scope
               ? { decision: 'reject', note: note.trim() }
               : { decision: 'narrow', granted_scope: { capability: scope }, note: note.trim() || undefined },

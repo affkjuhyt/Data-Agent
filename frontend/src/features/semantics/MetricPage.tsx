@@ -19,7 +19,7 @@ import {
   type MetricVersion,
 } from '../../lib/v1/metrics';
 import { listMetrics } from '../../lib/v1/api';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P07 · Chỉ số · Định nghĩa" (2301:19011, UC-07-01): one metric of the context layer. The
@@ -70,19 +70,17 @@ export default function MetricPage() {
   if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={metric} what="chỉ số">
-      {(m) => <MetricBody metric={m} onChanged={metric.reload} />}
+      {(m) => <MetricBody metric={m} />}
     </AsyncRegion>
   );
 }
 
-function MetricBody({ metric, onChanged }: { metric: MetricDetail; onChanged: () => void }) {
+function MetricBody({ metric }: { metric: MetricDetail }) {
   const toast = useToast();
   const inUse = metric.versions.find((v) => v.status === 'certified');
   const draft = metric.versions.find((v) => v.status === 'draft' || v.status === 'testing');
   const [shownId, setShownId] = useState(inUse?.id ?? metric.versions[0]?.id);
   const shown = metric.versions.find((v) => v.id === shownId) ?? inUse ?? metric.versions[0];
-  const [busy, setBusy] = useState<'draft' | 'preview' | null>(null);
-  const [error, setError] = useState<string>();
   const stewards = useTableView(metric.stewardship, {
     search: (row) => `${row.role} ${row.who} ${row.note}`,
     filters: [{ id: 'role', label: 'Vai trò', value: (row) => row.role }],
@@ -94,38 +92,38 @@ function MetricBody({ metric, onChanged }: { metric: MetricDetail; onChanged: ()
     pageSize: 50,
   });
 
-  const edit = async () => {
+  const createDraft = useV1Mutation(
+    (from: MetricVersion) => createMetricDraft(metric.id, from, 'Bản nháp mới'),
+    {
+      invalidates: [['getMetric']],
+      onSuccess: (created) => {
+        toast({ tone: 'success', message: `Đã tạo bản nháp v${created.version}` });
+        setShownId(created.id);
+      },
+    },
+  );
+  const runPreview = useV1Mutation((version: MetricVersion) => previewMetricVersion(version.id), {
+    invalidates: [['getMetric']],
+    onSuccess: (_, version) =>
+      toast({ tone: 'info', message: `Đang chạy thử v${version.version} trên 6 kỳ` }),
+  });
+  const busy = createDraft.pending ? 'draft' : runPreview.pending ? 'preview' : null;
+  // One notice for both actions; starting either clears the other's failure.
+  const error = (createDraft.error ?? runPreview.error)?.message;
+
+  const edit = () => {
     if (draft) {
       setShownId(draft.id);
       return;
     }
     if (!inUse) return;
-    setBusy('draft');
-    setError(undefined);
-    try {
-      const created = await createMetricDraft(metric.id, inUse, 'Bản nháp mới');
-      toast({ tone: 'success', message: `Đã tạo bản nháp v${created.version}` });
-      setShownId(created.id);
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
+    runPreview.reset();
+    createDraft.run(inUse);
   };
 
-  const preview = async (version: MetricVersion) => {
-    setBusy('preview');
-    setError(undefined);
-    try {
-      await previewMetricVersion(version.id);
-      toast({ tone: 'info', message: `Đang chạy thử v${version.version} trên 6 kỳ` });
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
+  const preview = (version: MetricVersion) => {
+    createDraft.reset();
+    runPreview.run(version);
   };
 
   const titleStatus = inUse

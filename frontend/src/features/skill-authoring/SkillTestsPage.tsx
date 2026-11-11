@@ -20,7 +20,7 @@ import {
   submitSkill,
   type SkillTestRun,
 } from '../../lib/v1/skillAuthoring';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
@@ -53,8 +53,6 @@ function Tests({ initial }: { initial: SkillTestRun }) {
   const [run, setRun] = useState(initial);
   const [selected, setSelected] = useState(() => initial.failures[0]?.case_id);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState<'test' | 'submit' | null>(null);
-  const [error, setError] = useState<string>();
   const [adding, setAdding] = useState(false);
 
   const id = run.skill_id;
@@ -76,17 +74,8 @@ function Tests({ initial }: { initial: SkillTestRun }) {
     pageSize: 50,
   });
 
-  const act = async (verb: 'test' | 'submit') => {
-    setBusy(verb);
-    setError(undefined);
-    try {
-      if (verb === 'submit') {
-        await submitSkill(run);
-        toast({ tone: 'success', message: `Đã gửi duyệt ${run.skill_name} v${run.version}` });
-        navigate('agents', 'SKILL_VERSIONS', id);
-        return;
-      }
-      const next = await runSkillTests(run);
+  const retest = useV1Mutation(() => runSkillTests(run), {
+    onSuccess: (next) => {
       setRun(next);
       setSelected(next.failures[0]?.case_id);
       const ok = next.cases.filter((c) => c.passed).length;
@@ -97,10 +86,25 @@ function Tests({ initial }: { initial: SkillTestRun }) {
             ? `Đã gửi v${next.version} chạy kiểm định; kết quả hiện khi bộ đánh giá chấm xong.`
             : `Đã chạy lại · ${ok}/${next.cases.length} đạt`,
       });
-    } catch (e) {
-      setError(`Không thực hiện được: ${(e as Error).message}`);
-    } finally {
-      setBusy(null);
+    },
+  });
+  const submit = useV1Mutation(() => submitSkill(run), {
+    onSuccess: () => {
+      toast({ tone: 'success', message: `Đã gửi duyệt ${run.skill_name} v${run.version}` });
+      navigate('agents', 'SKILL_VERSIONS', id);
+    },
+  });
+  // One error line for both actions: starting one clears the other's.
+  const busy = retest.pending ? 'test' : submit.pending ? 'submit' : null;
+  const failed = retest.error ?? submit.error;
+  const error = failed && `Không thực hiện được: ${failed.message}`;
+  const act = (verb: 'test' | 'submit') => {
+    if (verb === 'test') {
+      submit.reset();
+      retest.run();
+    } else {
+      retest.reset();
+      submit.run();
     }
   };
 
@@ -341,22 +345,20 @@ function AddCaseDialog({
   const [name, setName] = useState('');
   const [period, setPeriod] = useState('');
   const [expected, setExpected] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const submit = async () => {
-    if (!name.trim() || !expected.trim()) return setError('Cần tên ca và kết quả kỳ vọng.');
-    setBusy(true);
-    setError(undefined);
-    try {
-      await onAdd({ name: name.trim(), period_text: period.trim(), expected: expected.trim() });
+  // A case without a name or an expectation is caught here, before anything is sent.
+  const [invalid, setInvalid] = useState<string>();
+  const add = useV1Mutation(onAdd, {
+    onSuccess: () => {
       setName('');
       setPeriod('');
       setExpected('');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+  const error = invalid ?? add.error?.message;
+  const submit = () => {
+    if (!name.trim() || !expected.trim()) return setInvalid('Cần tên ca và kết quả kỳ vọng.');
+    setInvalid(undefined);
+    add.run({ name: name.trim(), period_text: period.trim(), expected: expected.trim() });
   };
   return (
     <Dialog
@@ -368,7 +370,7 @@ function AddCaseDialog({
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
-          <Button kind="primary" loading={busy} onClick={submit}>
+          <Button kind="primary" loading={add.pending} onClick={submit}>
             Thêm ca
           </Button>
         </>

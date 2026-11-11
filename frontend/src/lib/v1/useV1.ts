@@ -1,4 +1,11 @@
-import { keepPreviousData, skipToken, useQuery, type QueryKey } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  skipToken,
+  useMutation,
+  useQuery,
+  type MutateOptions,
+  type QueryKey,
+} from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { currentDataSpace, V1Error } from './client';
 import { queryClient } from './queryClient';
@@ -65,5 +72,68 @@ export function useV1<T>(
     error: query.error ?? undefined,
     loading: query.isFetching,
     reload,
+  };
+}
+
+/*
+ * Write through TanStack Query, on the same client as useV1. `pending` and `error` replace a
+ * screen's own busy/error state (a new run clears the last error), and on success every v1 query
+ * under each key prefix in `invalidates` is marked stale and refetched if a screen shows it, so a
+ * screen no longer reloads by hand what it just changed. The prefixes are matched under the
+ * current Data Space, like the keys useV1 builds.
+ *
+ * `run` keeps a failure in `error` and never rejects; `runAsync` rejects as well, for a screen
+ * that awaits the answer. The invalidation is not awaited: `pending` ends with the write, as the
+ * hand-written busy flags did, and the region refreshes behind it.
+ */
+export interface V1Mutation<TData, TVars> {
+  run: (vars: TVars, options?: MutateOptions<TData, Error, TVars>) => void;
+  runAsync: (vars: TVars, options?: MutateOptions<TData, Error, TVars>) => Promise<TData>;
+  pending: boolean;
+  error: V1Error | Error | undefined;
+  /** The answer of the last successful run. */
+  data: TData | undefined;
+  /** What the running (or last) run was called with — e.g. which row's button is busy. */
+  variables: TVars | undefined;
+  reset: () => void;
+}
+
+interface V1MutationOptions<TData, TVars> {
+  /** v1 key prefixes (without 'v1' and the Data Space) to refetch after a success. */
+  invalidates?: QueryKey[];
+  onSuccess?: (data: TData, vars: TVars) => void;
+  onError?: (error: Error, vars: TVars) => void;
+}
+
+export function invalidateV1(prefixes: QueryKey[]): void {
+  for (const prefix of prefixes) {
+    void queryClient.invalidateQueries({ queryKey: ['v1', currentDataSpace(), ...prefix] });
+  }
+}
+
+export function useV1Mutation<TData, TVars = void>(
+  fn: (vars: TVars) => Promise<TData>,
+  options: V1MutationOptions<TData, TVars> = {},
+): V1Mutation<TData, TVars> {
+  const { invalidates, onSuccess, onError } = options;
+  const mutation = useMutation<TData, Error, TVars>(
+    {
+      mutationFn: fn,
+      onSuccess: (data, vars) => {
+        if (invalidates) invalidateV1(invalidates);
+        onSuccess?.(data, vars);
+      },
+      onError: (error, vars) => onError?.(error, vars),
+    },
+    queryClient,
+  );
+  return {
+    run: mutation.mutate,
+    runAsync: mutation.mutateAsync,
+    pending: mutation.isPending,
+    error: mutation.error ?? undefined,
+    data: mutation.data,
+    variables: mutation.variables,
+    reset: mutation.reset,
   };
 }

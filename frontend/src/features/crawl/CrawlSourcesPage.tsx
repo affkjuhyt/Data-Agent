@@ -17,7 +17,7 @@ import {
   type CrawlSource,
   type ReviewGate,
 } from '../../lib/v1/crawl';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { LinkButton } from '../../components/shell/AppLink';
 
 /*
@@ -53,7 +53,6 @@ export default function CrawlSourcesPage() {
   const mergeRunId = latest?.consolidation_run_id ?? null;
   const toast = useToast();
   const [selected, setSelected] = useState<string>();
-  const [running, setRunning] = useState(false);
 
   const items = sources.data?.items ?? [];
   const view = useTableView(items, {
@@ -74,18 +73,13 @@ export default function CrawlSourcesPage() {
   const chosen = items.find((s) => s.id === selected);
   const count = (h: CrawlHealth) => items.filter((s) => s.health === h).length;
 
-  const runNow = async () => {
-    if (!chosen) return;
-    setRunning(true);
-    try {
-      await runCrawlSource(chosen.id);
-      toast({ tone: 'info', message: `Đang thu ${chosen.name}` });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không chạy được: ${(e as Error).message}` });
-    } finally {
-      setRunning(false);
-    }
-  };
+  const runNow = useV1Mutation(
+    (source: { id: string; name: string }) => runCrawlSource(source.id),
+    {
+      onSuccess: (_, source) => toast({ tone: 'info', message: `Đang thu ${source.name}` }),
+      onError: (e) => toast({ tone: 'error', message: `Không chạy được: ${e.message}` }),
+    },
+  );
 
   return (
     <div className="flex min-h-full flex-col">
@@ -107,7 +101,7 @@ export default function CrawlSourcesPage() {
         actions={
           <>
             {chosen ? (
-              <Button loading={running} onClick={runNow}>
+              <Button loading={runNow.pending} onClick={() => runNow.run(chosen)}>
                 Chạy ngay
               </Button>
             ) : (

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Button } from '../../design-system/Button';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
@@ -7,6 +6,7 @@ import { StatusDot } from '../../design-system/StatusDot';
 import { Tooltip } from '../../design-system/Tooltip';
 import { retryRun } from '../../lib/v1/api';
 import type { AgentRun, RunPlanStep } from '../../lib/v1/types';
+import { useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "v3.1 · Trạng thái · Lượt chạy lỗi" (2076:5030, UC-13-06): a failed run says what broke and
@@ -34,22 +34,12 @@ export function FailedRun({
   /** The new run started by a retry. */
   onRetried: (runId: string) => void;
 }) {
-  const [busy, setBusy] = useState<'now' | 'fallback' | null>(null);
-  const [error, setError] = useState<string>();
+  const retry = useV1Mutation((useFallback: boolean) => retryRun(run.id, useFallback), {
+    onSuccess: (next) => onRetried(next.id),
+  });
+  const busy = retry.pending ? (retry.variables ? 'fallback' : 'now') : null;
+  const error = retry.error?.message;
   const failure = run.failure;
-
-  const retry = async (useFallback: boolean) => {
-    setBusy(useFallback ? 'fallback' : 'now');
-    setError(undefined);
-    try {
-      const next = await retryRun(run.id, useFallback);
-      onRetried(next.id);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
 
   return (
     <div className="flex justify-center px-da-3xl">
@@ -112,7 +102,7 @@ export function FailedRun({
             icon="refresh"
             loading={busy === 'now'}
             disabled={busy !== null}
-            onClick={() => retry(false)}
+            onClick={() => retry.run(false)}
           >
             Chạy lại ngay
           </Button>
@@ -122,7 +112,7 @@ export function FailedRun({
                 icon="database"
                 loading={busy === 'fallback'}
                 disabled={busy !== null}
-                onClick={() => retry(true)}
+                onClick={() => retry.run(true)}
               >
                 Chạy với nguồn dự phòng
               </Button>

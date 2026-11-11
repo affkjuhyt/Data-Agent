@@ -22,7 +22,7 @@ import {
   type KnowledgePageStatus,
   type KnowledgePageSummary,
 } from '../../lib/v1/knowledge';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P07 · Trang tri thức" (2405:14761, UC-07-10, UC-07-12): the compiled knowledge pages. The
@@ -151,22 +151,15 @@ function PageCard({
 
 function Header({ page }: { page: KnowledgePage }) {
   const toast = useToast();
-  const [busy, setBusy] = useState(false);
   const status = STATUS[page.status];
   const valid = page.claims.filter((c) => c.status === 'valid').length;
   const expired = page.claims.length - valid;
 
-  const recompile = async () => {
-    setBusy(true);
-    try {
-      await recompileKnowledgePage(page.id);
-      toast({ tone: 'info', message: 'Đang biên soạn lại; bản mới chờ duyệt trước khi thay.' });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không biên soạn lại được: ${(e as Error).message}` });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const recompile = useV1Mutation(() => recompileKnowledgePage(page.id), {
+    onSuccess: () =>
+      toast({ tone: 'info', message: 'Đang biên soạn lại; bản mới chờ duyệt trước khi thay.' }),
+    onError: (e) => toast({ tone: 'error', message: `Không biên soạn lại được: ${e.message}` }),
+  });
 
   return (
     <PageHeader
@@ -194,7 +187,7 @@ function Header({ page }: { page: KnowledgePage }) {
         .join(' · ')}
       actions={
         <>
-          <Button loading={busy} onClick={recompile}>
+          <Button loading={recompile.pending} onClick={() => recompile.run()}>
             Biên soạn lại
           </Button>
           <Tooltip content="Trình sửa trang tri thức đang được làm; dùng “Biên soạn lại” để agent viết bản mới.">

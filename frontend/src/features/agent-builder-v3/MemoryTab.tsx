@@ -20,7 +20,7 @@ import {
   type MemoryExpiry,
   type MemoryScope,
 } from '../../lib/v1/agentBuilder';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P13 · Agent · Bộ nhớ" (2310:20345, UC-13-07): what the agent learnt from people, with where it
@@ -79,24 +79,13 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
   });
   const [forgetting, setForgetting] = useState<AgentMemory | null>(null);
   const [editing, setEditing] = useState<AgentMemory | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-
-  const forget = async () => {
-    if (!forgetting) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      await forgetMemory(forgetting.id);
+  const forget = useV1Mutation((memory: AgentMemory) => forgetMemory(memory.id), {
+    invalidates: [['listMemories', agentId]],
+    onSuccess: () => {
       toast({ tone: 'success', message: 'Agent đã quên ghi nhớ này' });
       setForgetting(null);
-      memories.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+    },
+  });
 
   return (
     <div className="flex flex-col gap-da-lg px-da-3xl pb-da-2xl pt-da-xl">
@@ -108,10 +97,9 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
         <MemoryDialog
           agentId={agentId}
           memory={editing}
-          onDone={(saved) => {
+          onDone={() => {
             if (editing) setEditing(null);
             else onAddingDone();
-            if (saved) memories.reload();
           }}
         />
       )}
@@ -199,12 +187,12 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
         open={forgetting !== null}
         title="Quên ghi nhớ này?"
         confirmLabel="Quên"
-        loading={busy}
-        error={error}
-        onConfirm={forget}
+        loading={forget.pending}
+        error={forget.error?.message}
+        onConfirm={() => forgetting && forget.run(forgetting)}
         onCancel={() => {
           setForgetting(null);
-          setError(undefined);
+          forget.reset();
         }}
       >
         Từ lượt chạy sau, agent không dùng “{forgetting?.content}” nữa. Không hoàn tác được; muốn dùng
@@ -234,32 +222,27 @@ function MemoryDialog({
   const [kind, setKind] = useState<AgentMemory['kind']>(memory?.kind ?? 'preference');
   const [scope, setScope] = useState<MemoryScope>(memory?.scope ?? 'agent');
   const [expiry, setExpiry] = useState<MemoryExpiry>(memory?.expiry ?? 'days_90');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
-
-  const save = async () => {
-    setSaving(true);
-    setError(undefined);
-    try {
-      const saved = editing
-        ? await updateMemory(memory.id, { content: content.trim(), expiry })
-        : await addMemory(agentId, { scope, kind, content: content.trim(), expiry });
-      toast({
-        tone: 'success',
-        message:
-          saved.status === 'pending_review' && memory?.status !== 'pending_review'
-            ? 'Đã gửi ghi nhớ cho chủ sở hữu Data Space duyệt'
-            : editing
-              ? 'Đã lưu ghi nhớ'
-              : 'Đã thêm ghi nhớ',
-      });
-      onDone(true);
-    } catch (e) {
-      setError(`Không lưu được: ${(e as Error).message}`);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const save = useV1Mutation(
+    () =>
+      editing
+        ? updateMemory(memory.id, { content: content.trim(), expiry })
+        : addMemory(agentId, { scope, kind, content: content.trim(), expiry }),
+    {
+      invalidates: [['listMemories', agentId]],
+      onSuccess: (saved) => {
+        toast({
+          tone: 'success',
+          message:
+            saved.status === 'pending_review' && memory?.status !== 'pending_review'
+              ? 'Đã gửi ghi nhớ cho chủ sở hữu Data Space duyệt'
+              : editing
+                ? 'Đã lưu ghi nhớ'
+                : 'Đã thêm ghi nhớ',
+        });
+        onDone(true);
+      },
+    },
+  );
 
   return (
     <Dialog
@@ -271,10 +254,10 @@ function MemoryDialog({
           : 'Ghi nhớ giúp agent làm đúng ý bạn ở lượt sau.'
       }
       submitLabel={editing ? 'Lưu' : 'Lưu ghi nhớ'}
-      submitting={saving}
+      submitting={save.pending}
       canSubmit={content.trim() !== ''}
-      error={error}
-      onSubmit={save}
+      error={save.error && `Không lưu được: ${save.error.message}`}
+      onSubmit={() => save.run()}
       onClose={() => onDone(false)}
     >
       <Field label="Nội dung" labelTone="muted">

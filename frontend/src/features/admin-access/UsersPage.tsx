@@ -19,7 +19,7 @@ import {
   type AdminUser,
   type Role,
 } from '../../lib/v1/adminAccess';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { clock, count, dayMonth } from './format';
 import { InviteDialog } from './InviteDialog';
 import { SelfApprovalSwitch } from './SelfApprovalSwitch';
@@ -36,7 +36,6 @@ export default function UsersPage() {
   const users = useV1(['listAdminUsers'], listAdminUsers);
   const roles = useV1(['listRoles'], listRoles);
   const [inviting, setInviting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
 
   // A disabled or departed account (directory sync, org.app_user.status) is listed, marked, but
   // not counted among the organisation's people.
@@ -51,18 +50,12 @@ export default function UsersPage() {
     ? `${count(people.length)} người từ ${people[0]?.identity_source ?? 'nguồn danh tính'} · đồng bộ ${clock(lastSync)} · vai trò gán theo nhóm AD, Data Space gán theo thành viên`
     : undefined;
 
-  const sync = async () => {
-    setSyncing(true);
-    try {
-      await syncDirectory();
-      toast({ tone: 'success', message: 'Đã bắt đầu đồng bộ AD. Danh sách cập nhật khi xong.' });
-      users.reload();
-    } catch (e) {
-      toast({ tone: 'error', message: `Không đồng bộ được: ${(e as Error).message}` });
-    } finally {
-      setSyncing(false);
-    }
-  };
+  const sync = useV1Mutation(syncDirectory, {
+    invalidates: [['listAdminUsers']],
+    onSuccess: () =>
+      toast({ tone: 'success', message: 'Đã bắt đầu đồng bộ AD. Danh sách cập nhật khi xong.' }),
+    onError: (e) => toast({ tone: 'error', message: `Không đồng bộ được: ${e.message}` }),
+  });
 
   return (
     <div className="flex min-h-full flex-col">
@@ -73,7 +66,7 @@ export default function UsersPage() {
         description={summary}
         actions={
           <>
-            <Button loading={syncing} onClick={sync}>
+            <Button loading={sync.pending} onClick={() => sync.run()}>
               Đồng bộ AD
             </Button>
             <Button kind="primary" onClick={() => setInviting(true)}>
@@ -120,7 +113,6 @@ export default function UsersPage() {
         onInvited={(email) => {
           setInviting(false);
           toast({ tone: 'success', message: `Đã gửi lời mời tới ${email}` });
-          users.reload();
         }}
       />
     </div>

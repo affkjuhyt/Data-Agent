@@ -6,7 +6,7 @@ import { Toggle } from '../../design-system/Toggle';
 import { useToast } from '../../design-system/Toast';
 import { useAuth } from '../../lib/AuthProvider';
 import { getOrganization, setSelfApproval, type Organization } from '../../lib/v1/adminAccess';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * The organisation's self-approval switch (org.organization.allow_self_approval), on top of
@@ -20,36 +20,30 @@ export function SelfApprovalSwitch() {
   const organization = useV1(['getOrganization'], getOrganization);
   return (
     <AsyncRegion state={organization} what="thiết lập tự duyệt" skeletonRows={1}>
-      {(org) => <Switch organization={org} onChanged={organization.reload} />}
+      {(org) => <Switch organization={org} />}
     </AsyncRegion>
   );
 }
 
-function Switch({ organization, onChanged }: { organization: Organization; onChanged: () => void }) {
+function Switch({ organization }: { organization: Organization }) {
   const toast = useToast();
   const { me } = useAuth();
-  const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string>();
   const isAdmin = me?.capabilities.includes('admin') ?? false;
 
-  const turn = async (on: boolean) => {
-    setSaving(true);
-    setError(undefined);
-    try {
-      await setSelfApproval(on);
+  const change = useV1Mutation(setSelfApproval, {
+    invalidates: [['getOrganization']],
+    onSuccess: (_, on) => {
       toast({
         tone: 'success',
         message: on ? 'Đã bật tự duyệt cho tổ chức' : 'Đã tắt tự duyệt cho tổ chức',
       });
       setConfirming(false);
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+  });
+  const turn = change.run;
+  const saving = change.pending;
+  const error = change.error?.message;
 
   return (
     <div className="flex flex-col gap-da-xs">
@@ -81,7 +75,7 @@ function Switch({ organization, onChanged }: { organization: Organization; onCha
         error={error && `Không đổi được: ${error}`}
         onCancel={() => {
           setConfirming(false);
-          setError(undefined);
+          change.reset();
         }}
         onConfirm={() => turn(true)}
       >

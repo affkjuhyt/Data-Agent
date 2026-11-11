@@ -14,7 +14,7 @@ import {
   type QualityIssue,
   type ResolveIssue,
 } from '../../lib/v1/documents';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
@@ -39,49 +39,42 @@ export default function QualityQueuePage() {
         />
       }
     >
-      {(p) => (
-        <IssueView
-          key={p.items[0].id}
-          issue={p.items[0]}
-          total={p.items.length}
-          onResolved={issues.reload}
-        />
-      )}
+      {(p) => <IssueView key={p.items[0].id} issue={p.items[0]} total={p.items.length} />}
     </AsyncRegion>
   );
 }
 
-function IssueView({
-  issue,
-  total,
-  onResolved,
-}: {
-  issue: QualityIssue;
-  total: number;
-  onResolved: () => void;
-}) {
+function IssueView({ issue, total }: { issue: QualityIssue; total: number }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(issue.read.paragraphs.join('\n\n'));
   const [dropping, setDropping] = useState(false);
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState<ResolveIssue['action'] | null>(null);
-  const [dropError, setDropError] = useState<string>();
-
-  const resolve = async (body: ResolveIssue, done: string) => {
-    setBusy(body.action);
-    setDropError(undefined);
-    try {
-      await resolveQualityIssue(issue.id, body);
-      toast({ tone: 'success', message: done });
-      onResolved();
-    } catch (e) {
-      const message = (e as Error).message;
-      if (body.action === 'drop') setDropError(message);
-      else toast({ tone: 'error', message: `Không lưu được. ${message}` });
-      setBusy(null);
-    }
+  // A missing reason is caught here; a failed drop shows in the dialog, other failures toast.
+  const [invalid, setInvalid] = useState<string>();
+  // Once resolved, the page stays busy until the reloaded queue replaces it (keyed on the id).
+  const [resolvedAs, setResolvedAs] = useState<ResolveIssue['action'] | null>(null);
+  const resolve = useV1Mutation(
+    ({ body }: { body: ResolveIssue; done: string }) => resolveQualityIssue(issue.id, body),
+    {
+      invalidates: [['listQualityIssues']],
+      onSuccess: (_, { body, done }) => {
+        setResolvedAs(body.action);
+        toast({ tone: 'success', message: done });
+      },
+      onError: (e, { body }) => {
+        if (body.action !== 'drop')
+          toast({ tone: 'error', message: `Không lưu được. ${e.message}` });
+      },
+    },
+  );
+  const busy = resolve.pending ? (resolve.variables?.body.action ?? null) : resolvedAs;
+  const dropError =
+    invalid ?? (resolve.variables?.body.action === 'drop' ? resolve.error?.message : undefined);
+  const run = (body: ResolveIssue, done: string) => {
+    setInvalid(undefined);
+    resolve.run({ body, done });
   };
 
   const title = `${issue.document.title} · trang ${issue.page}`;
@@ -112,9 +105,9 @@ function IssueView({
               loading={busy === 'confirm' || busy === 'edit'}
               disabled={busy === 'drop'}
               onClick={() =>
-                void (editing
-                  ? resolve({ action: 'edit', text }, `Đã lưu văn bản sửa của ${title}.`)
-                  : resolve({ action: 'confirm' }, `Đã xác nhận ${title}.`))
+                editing
+                  ? run({ action: 'edit', text }, `Đã lưu văn bản sửa của ${title}.`)
+                  : run({ action: 'confirm' }, `Đã xác nhận ${title}.`)
               }
             >
               {editing ? 'Lưu và tiếp' : 'Xác nhận và tiếp'}
@@ -202,8 +195,8 @@ function IssueView({
         error={dropError}
         onClose={() => setDropping(false)}
         onSubmit={() => {
-          if (!reason.trim()) setDropError('Ghi lý do bỏ trang.');
-          else void resolve({ action: 'drop', reason: reason.trim() }, `Đã bỏ ${title}.`);
+          if (!reason.trim()) setInvalid('Ghi lý do bỏ trang.');
+          else run({ action: 'drop', reason: reason.trim() }, `Đã bỏ ${title}.`);
         }}
       >
         <Field labelTone="muted" label="Lý do">

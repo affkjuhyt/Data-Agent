@@ -19,7 +19,7 @@ import {
   type RerunMode,
 } from '../../lib/v1/answerReceipts';
 import { V1Error } from '../../lib/v1/client';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
@@ -309,20 +309,14 @@ function rerunSummary(run: ReceiptRerun): string {
 function Rerun({ receipt }: { receipt: AnswerReceipt }) {
   const toast = useToast();
   const [mode, setMode] = useState<RerunMode>('figures');
-  const [busy, setBusy] = useState(false);
   // The receipt does not say whether it was re-run before: only this visit's re-run is shown.
+  // Kept here rather than read from the mutation, so a failed re-run leaves the last one shown.
   const [run, setRun] = useState<ReceiptRerun | null>(null);
-
-  const start = async () => {
-    setBusy(true);
-    try {
-      setRun(await rerunReceipt(receipt.id, mode));
-    } catch (e) {
-      toast({ tone: 'error', message: `Không chạy lại được: ${(e as Error).message}` });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const rerun = useV1Mutation(() => rerunReceipt(receipt.id, mode), {
+    onSuccess: setRun,
+    onError: (e) => toast({ tone: 'error', message: `Không chạy lại được: ${e.message}` }),
+  });
+  const busy = rerun.pending;
 
   const reproduced =
     run && !run.failed && run.figures_matched === run.figures_total && run.hashes_match;
@@ -360,7 +354,7 @@ function Rerun({ receipt }: { receipt: AnswerReceipt }) {
           kind="primary"
           loading={busy}
           disabled={busy || receipt.status !== 'locked'}
-          onClick={start}
+          onClick={() => rerun.run()}
         >
           Chạy lại
         </Button>

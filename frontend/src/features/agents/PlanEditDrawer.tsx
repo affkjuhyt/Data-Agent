@@ -9,6 +9,7 @@ import { StatusDot } from '../../design-system/StatusDot';
 import { cn } from '../../lib/utils';
 import { updateRunPlan, type PlanEdit } from '../../lib/v1/runPlan';
 import type { AgentRun } from '../../lib/v1/types';
+import { useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P13 · Can thiệp kế hoạch" (2070:3221, UC-13-06): a 560px drawer over the run, opened while the
@@ -64,8 +65,14 @@ export function PlanEditDrawer({
   const [note, setNote] = useState('');
   const [editing, setEditing] = useState<string>();
   const [dragging, setDragging] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  // A step left without a name is caught here, before anything is sent.
+  const [invalid, setInvalid] = useState<string>();
+  const save = useV1Mutation(() => updateRunPlan(run.id, edit), {
+    invalidates: [['getRun']],
+    onSuccess: (saved) => onApplied(saved.version),
+  });
+  const busy = save.pending;
+  const error = invalid ?? save.error?.message;
 
   const agents = [...new Set(plan.map((s) => s.agent_name ?? run.agent_name))];
   const firstOpen = done.length + 1;
@@ -124,21 +131,13 @@ export function PlanEditDrawer({
     setEditing(key);
   };
 
-  const apply = async () => {
+  const apply = () => {
     if (steps.some((s) => s.change !== 'removed' && !s.title.trim())) {
-      setError('Đặt tên cho mọi bước trước khi áp dụng.');
+      setInvalid('Đặt tên cho mọi bước trước khi áp dụng.');
       return;
     }
-    setBusy(true);
-    setError(undefined);
-    try {
-      const plan = await updateRunPlan(run.id, edit);
-      onApplied(plan.version);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    setInvalid(undefined);
+    save.run();
   };
 
   return (

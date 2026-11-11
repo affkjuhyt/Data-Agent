@@ -16,7 +16,7 @@ import {
   listUnknownPhrases,
   type GlossaryEntry,
 } from '../../lib/v1/semanticLayer';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "v3.1 · Semantic · Từ điển nghiệp vụ" (2088:7308, UC-07-09): how the agent reads the
@@ -40,8 +40,6 @@ export default function GlossaryPage() {
   const [adding, setAdding] = useState(false);
   const [term, setTerm] = useState('');
   const [definition, setDefinition] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string>();
   const items = terms.data?.items ?? [];
   const view = useTableView(items, {
     search: (t) => `${t.term} ${t.maps_to} ${t.synonyms} ${t.data_space_text}`,
@@ -57,23 +55,22 @@ export default function GlossaryPage() {
   const selected =
     items.find((t) => t.id === picked) ?? items.find((t) => t.status === 'ambiguous') ?? items[0];
 
-  const add = async (key: string, body: { term: string; definition: string }) => {
-    setBusy(key);
-    setError(undefined);
-    try {
-      const created = await createTerm(body);
-      toast({ tone: 'success', message: `Đã thêm “${created.term}” ở trạng thái nháp` });
-      setAdding(false);
-      setTerm('');
-      setDefinition('');
-      terms.reload();
-      unknown.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const create = useV1Mutation(
+    ({ body }: { key: string; body: { term: string; definition: string } }) => createTerm(body),
+    {
+      invalidates: [['listGlossary'], ['listUnknownPhrases']],
+      onSuccess: (created) => {
+        toast({ tone: 'success', message: `Đã thêm “${created.term}” ở trạng thái nháp` });
+        setAdding(false);
+        setTerm('');
+        setDefinition('');
+      },
+    },
+  );
+  const add = (key: string, body: { term: string; definition: string }) =>
+    create.run({ key, body });
+  const busy = create.pending ? (create.variables?.key ?? null) : null;
+  const error = create.error?.message;
 
   return (
     <div className="flex min-h-full max-[1023px]:flex-col">
@@ -92,7 +89,7 @@ export default function GlossaryPage() {
               <Button
                 kind="primary"
                 onClick={() => {
-                  setError(undefined);
+                  create.reset();
                   setAdding(true);
                 }}
               >

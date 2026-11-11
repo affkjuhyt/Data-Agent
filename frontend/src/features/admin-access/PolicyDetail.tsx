@@ -18,7 +18,7 @@ import {
   type AccessPolicy,
   type Backtest,
 } from '../../lib/v1/adminAccess';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { POLICY_KIND, POLICY_STATUS } from './policyLabels';
 
 /*
@@ -36,28 +36,19 @@ const HISTORY_PENDING = 'Lịch sử phiên bản chưa có API.';
 export default function PolicyDetail({ id }: { id: string }) {
   const toast = useToast();
   const policy = useV1(['getAccessPolicy', id], () => getAccessPolicy(id));
-  const [running, setRunning] = useState(false);
   const [backtest, setBacktest] = useState<Backtest | null>(null);
-  const [error, setError] = useState<string>();
 
   useEffect(() => {
     if (!policy.data) return;
     setBacktest(policy.data.last_backtest);
   }, [policy.data]);
 
-  const rerun = async (p: AccessPolicy) => {
-    setRunning(true);
-    setError(undefined);
-    try {
-      const result = await backtestPolicy(p.id);
+  const rerun = useV1Mutation((p: AccessPolicy) => backtestPolicy(p.id), {
+    onSuccess: (result) => {
       if (result) setBacktest(result);
       else toast({ tone: 'success', message: 'Đang chạy thử lại; kết quả hiện khi xong' });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setRunning(false);
-    }
-  };
+    },
+  });
 
   return (
     <div className="flex min-h-full flex-col">
@@ -81,15 +72,15 @@ export default function PolicyDetail({ id }: { id: string }) {
                       Lịch sử
                     </Button>
                   </Tooltip>
-                  <Button loading={running} onClick={() => rerun(p)}>
+                  <Button loading={rerun.pending} onClick={() => rerun.run(p)}>
                     Chạy thử lại
                   </Button>
                 </>
               }
             />
-            {error && (
+            {rerun.error && (
               <div className="px-da-3xl pt-da-xl">
-                <Notice tone="error">{error}</Notice>
+                <Notice tone="error">{rerun.error.message}</Notice>
               </div>
             )}
             <div className="flex min-h-0 flex-1">

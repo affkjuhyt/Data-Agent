@@ -19,7 +19,7 @@ import {
   type LiveStats,
   type Rollout,
 } from '../../lib/v1/agentOps';
-import { useV1 } from '../../lib/v1/useV1';
+import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { AddCaseDialog } from './AddCaseDialog';
 import { formatMeasure, formatThreshold, gateOf, rolloutStatus } from './format';
 
@@ -48,31 +48,37 @@ export default function EvaluatePage() {
   const [current, setCurrent] = useState<Rollout | null>();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [adding, setAdding] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
+  // A rollback without a reason is caught here, before anything is sent.
+  const [invalid, setInvalid] = useState<string>();
   const [reason, setReason] = useState('');
 
   useEffect(() => setCurrent(undefined), [routeId]);
 
   const state = { ...loaded, data: current !== undefined ? current : loaded.data };
 
-  const act = async (run: () => Promise<Rollout>, done: (next: Rollout) => void) => {
-    setSending(true);
-    setError(undefined);
-    try {
-      const next = await run();
-      setCurrent(next);
-      setDialog(null);
-      done(next);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
+  const action = useV1Mutation(
+    ({ call }: { call: () => Promise<Rollout>; done: (next: Rollout) => void }) => call(),
+    {
+      onSuccess: (next, { done }) => {
+        setCurrent(next);
+        setDialog(null);
+        done(next);
+      },
+    },
+  );
+  const sending = action.pending;
+  const error = invalid ?? action.error?.message;
+  const clearError = () => {
+    setInvalid(undefined);
+    action.reset();
+  };
+  const act = (call: () => Promise<Rollout>, done: (next: Rollout) => void) => {
+    setInvalid(undefined);
+    action.run({ call, done });
   };
 
   const undoTo = (r: Rollout, pct: number) => () => {
-    void act(
+    act(
       () => setRolloutShare(r, pct),
       () => {},
     );
@@ -105,11 +111,11 @@ export default function EvaluatePage() {
               rollout={r}
               sending={sending}
               onWiden={() => {
-                setError(undefined);
+                clearError();
                 setDialog('widen');
               }}
               onRollback={() => {
-                setError(undefined);
+                clearError();
                 setReason('');
                 setDialog('rollback');
               }}
@@ -147,10 +153,10 @@ export default function EvaluatePage() {
           }
           onRollback={(r) => {
             if (!reason.trim()) {
-              setError('Ghi lý do quay lui.');
+              setInvalid('Ghi lý do quay lui.');
               return;
             }
-            void act(
+            act(
               () => rollbackRollout(r, reason.trim()),
               (next) =>
                 toast({
