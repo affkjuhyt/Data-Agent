@@ -31,7 +31,9 @@ class Wiki:
     def headers(self, who: str) -> dict[str, str]:
         return {"Authorization": f"Bearer kc-{who}", "X-Data-Space": str(self.space)}
 
-    def reviewed_version(self, author: str, reviewer: str) -> uuid.UUID:
+    def reviewed_version(
+        self, author: str, reviewer: str, *, expired_claim: bool = False
+    ) -> uuid.UUID:
         """A reviewed version of a new topic page, written by `author`, reviewed by `reviewer`."""
         page = self.seed.row(
             "context.knowledge_page",
@@ -71,6 +73,17 @@ class Wiki:
             source_link_id=source,
             valid_from="2026-10-01",
         )
+        if expired_claim:
+            self.seed.row(
+                "context.knowledge_claim",
+                org_id=self.org,
+                page_version_id=version,
+                anchor="c2",
+                statement="Giá cũ.",
+                source_link_id=source,
+                valid_from="2026-01-01",
+                valid_to="2026-02-01",
+            )
         # The guard trigger takes a version only in order: draft, pending_review, reviewed.
         with self.seed.conn.cursor() as cur:
             cur.execute(
@@ -172,3 +185,21 @@ async def test_knowledge_page_certify_self_approved_when_the_org_allows_it(
     assert r.status_code == 200, r.text
     assert wiki.status(version) == ("certified", str(wiki.users["author"]))
     assert self_approvals(wiki.org) == ["knowledge_page.certify"]
+
+
+async def test_a_steward_sees_the_expired_claims_of_the_page_they_keep(wiki: Wiki) -> None:
+    version = wiki.reviewed_version("author", "reviewer", expired_claim=True)
+    with wiki.seed.conn.cursor() as cur:
+        cur.execute(
+            "SELECT page_id FROM context.knowledge_page_version WHERE id = %s", (str(version),)
+        )
+        (page,) = cur.fetchone()
+        cur.execute(
+            "UPDATE context.knowledge_page SET current_version_id = %s WHERE id = %s",
+            (str(version), str(page)),
+        )
+    async with client(wiki) as api:
+        got = await api.get(f"/v1/knowledge-pages/{page}", headers=wiki.headers("author"))
+    assert got.status_code == 200, got.text
+    # The keeper sees the expired claim too (the page marks it "Hết hạn"); BR-161 is for readers.
+    assert {c["anchor"] for c in got.json()["claims"]} == {"c1", "c2"}

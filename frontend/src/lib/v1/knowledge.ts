@@ -118,7 +118,8 @@ function readRendered(raw: RenderedWire, titles: Map<string, string>): Knowledge
         valid_text: c.valid_to
           ? `${day(c.valid_from)} – ${day(c.valid_to)}`
           : `Từ ${day(c.valid_from)}`,
-        status: c.valid_to && c.valid_to < today ? 'expired' : 'valid',
+        // valid_to is exclusive, as the server reads it (BR-161: valid_to > as_of).
+        status: c.valid_to && c.valid_to <= today ? 'expired' : 'valid',
       };
     }),
     policy: {

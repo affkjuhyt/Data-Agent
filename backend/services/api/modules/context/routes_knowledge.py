@@ -383,7 +383,9 @@ async def get_knowledge_page(
             version,
             as_of=as_of or datetime.date.today(),
             render=render,
-            valid_only=True,
+            # BR-161 holds for what answers a reader; whoever keeps the page sees its expired
+            # claims too, marked by their dates (the page's "Hết hạn" filter had nothing to show).
+            valid_only=reader,
         )
 
 
