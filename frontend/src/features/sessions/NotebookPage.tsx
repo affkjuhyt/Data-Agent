@@ -12,11 +12,10 @@ import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import {
   addTileComment,
-  createSessionReport,
   decideTile,
   getTileThread,
   getWorkspace,
-  listSessionReports,
+  openOrCreateSessionReport,
   refreshWorkspace,
   type Author,
   type WorkspaceDetail,
@@ -117,11 +116,9 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
     setBusy('report');
     setError(undefined);
     try {
-      // An unpublished report of this session is reviewed, not drafted again; a list that cannot
-      // be read is an error, not a reason to draft a second one.
-      const drafts = await listSessionReports(ws.id);
-      const existing = drafts.items.find((r) => r.status !== 'published');
-      const report = existing ?? (await createSessionReport(ws.id, ws.title));
+      // Draft + :check run in the client: the api only queues the worker, and an empty seed
+      // draft must not block a real create (openOrCreateSessionReport).
+      const report = await openOrCreateSessionReport(ws.id, ws.title);
       navigate('analysis', 'REPORT', report.id);
     } catch (e) {
       setError(`Không tạo được báo cáo: ${(e as Error).message}`);

@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Data Agent — kiến trúc runtime Ask",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ask-path",
+        "label": "Đường Ask chính",
+        "focus": ["user", "ui", "api", "db", "worker", "agentic"],
+        "note": "Từ câu hỏi tới worker-agent và engine agentic mặc định."
+      },
+      {
+        "id": "engines",
+        "label": "Hai engine",
+        "focus": ["worker", "agentic", "governed", "llm", "warehouse"],
+        "note": "Agentic trước; governed / verified là đường deterministic."
+      },
+      {
+        "id": "async",
+        "label": "Outbox async",
+        "focus": ["api", "db", "worker"],
+        "note": "API chỉ ghi outbox; worker claim rồi xử lý."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "Người hỏi",
+      "sublabel": "Chat / mục tiêu",
+      "pos": [40, 280],
+      "size": [128, 64]
+    },
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "Frontend",
+      "sublabel": "SSE · poll",
+      "pos": [220, 280],
+      "size": [132, 64]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "API /v1",
+      "sublabel": "qa.create_question",
+      "pos": [420, 280],
+      "size": [148, 64],
+      "tag": "modular monolith"
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "qa · outbox · plans",
+      "pos": [640, 280],
+      "size": [148, 64],
+      "tag": "ADR-06"
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "worker-agent",
+      "sublabel": "outbox relay",
+      "pos": [640, 120],
+      "size": [148, 64],
+      "tag": "handlers"
+    },
+    {
+      "id": "agentic",
+      "type": "backend",
+      "label": "Agentic engine",
+      "sublabel": "plan → act ⟲",
+      "pos": [860, 80],
+      "size": [150, 64],
+      "tag": "ASK_ENGINE"
+    },
+    {
+      "id": "governed",
+      "type": "backend",
+      "label": "Governed path",
+      "sublabel": "understand → SQL",
+      "pos": [860, 200],
+      "size": [150, 64],
+      "tag": "fallback"
+    },
+    {
+      "id": "llm",
+      "type": "cloud",
+      "label": "LLM Gateway",
+      "sublabel": "LiteLLM roles",
+      "pos": [1080, 80],
+      "size": [140, 64]
+    },
+    {
+      "id": "warehouse",
+      "type": "database",
+      "label": "Warehouse",
+      "sublabel": "query in place",
+      "pos": [1080, 200],
+      "size": [140, 64]
+    },
+    {
+      "id": "runs",
+      "type": "messagebus",
+      "label": "Agent runs",
+      "sublabel": "checkpoint · HITL",
+      "pos": [420, 120],
+      "size": [148, 64]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Cluster Data Agent V3",
+      "wraps": ["ui", "api", "db", "worker", "agentic", "governed", "runs"]
+    },
+    {
+      "kind": "security-group",
+      "label": "Đường trả lời Ask",
+      "wraps": ["worker", "agentic", "governed"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "ask",
+      "from": "user",
+      "to": "ui",
+      "label": "hỏi",
+      "variant": "emphasis"
+    },
+    {
+      "id": "post",
+      "from": "ui",
+      "to": "api",
+      "label": "POST /v1/questions",
+      "variant": "emphasis",
+      "labelDy": 56
+    },
+    {
+      "id": "tx",
+      "from": "api",
+      "to": "db",
+      "label": "question + outbox",
+      "labelDy": 56
+    },
+    {
+      "id": "claim",
+      "from": "db",
+      "to": "worker",
+      "label": "question.received",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "stream",
+      "from": "api",
+      "to": "ui",
+      "label": "SSE",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "top",
+      "labelDy": -28
+    },
+    {
+      "id": "to-agentic",
+      "from": "worker",
+      "to": "agentic",
+      "label": "mặc định",
+      "variant": "emphasis"
+    },
+    {
+      "id": "handback",
+      "from": "agentic",
+      "to": "governed",
+      "label": "hand back",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "id": "to-governed",
+      "from": "worker",
+      "to": "governed",
+      "label": "fallback",
+      "variant": "dashed",
+      "labelDy": 12
+    },
+    {
+      "id": "agentic-llm",
+      "from": "agentic",
+      "to": "llm",
+      "label": "plan / act"
+    },
+    {
+      "id": "query",
+      "from": "governed",
+      "to": "warehouse",
+      "label": "SQL"
+    },
+    {
+      "id": "runs-link",
+      "from": "worker",
+      "to": "runs",
+      "label": "agent.run",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "right"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Luồng Ask (questions._run)",
+      "items": [
+        "1. Verified query khớp → trả ngay",
+        "2. Agentic graph (ASK_ENGINE=agentic)",
+        "3. Governed: understand → semantic → run_query → narrate"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Agentic graph",
+      "items": [
+        "prepare → plan → act ⟲ → replan/review → compose → persist",
+        "Tools gọi warehouse / docs / sandbox (query_metric, explore_sql, analyze, …)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Phân biệt",
+      "items": [
+        "Ask = một câu hỏi → answer blocks",
+        "Agent run = multi-step + checkpoint/HITL (runs.py)",
+        "plan.edited và data_scope eval → chỉ governed"
+      ]
+    }
+  ]
+}

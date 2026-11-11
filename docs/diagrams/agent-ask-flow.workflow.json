@@ -1,0 +1,254 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Data Agent — luồng Ask hiện tại",
+    "quality_profile": "showcase",
+    "animation": "trace",
+    "views": [
+      {
+        "id": "intake",
+        "label": "Vào hệ thống",
+        "focus": ["user", "ui", "api", "outbox", "worker"],
+        "note": "UI → API ghi question + outbox; worker-agent claim event."
+      },
+      {
+        "id": "routing",
+        "label": "Chọn đường trả lời",
+        "focus": ["worker", "agentic", "governed", "tools"],
+        "note": "Mặc định agentic; hand back sang governed khi cần."
+      },
+      {
+        "id": "close",
+        "label": "Kết thúc lượt",
+        "focus": ["tools", "compose", "answer"],
+        "note": "Compose blocks, persist, stream về UI."
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "client", "label": "Người dùng / UI" },
+    { "id": "api", "label": "API /v1 + Outbox" },
+    { "id": "worker", "label": "worker-agent" },
+    { "id": "engines", "label": "Đường trả lời" },
+    { "id": "evidence", "label": "Tool / kết quả", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "Tiếp nhận", "fromCol": 0, "toCol": 1 },
+    { "id": "route", "label": "Định tuyến + chạy", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "close", "label": "Trả lời", "fromCol": 4, "toCol": 4, "variant": "dashed" }
+  ],
+  "groups": [
+    {
+      "id": "engine_loop",
+      "label": "Agentic loop",
+      "lane": "engines",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "result_path",
+      "label": "Kết quả",
+      "lane": "evidence",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": ["user", "ui", "api", "outbox", "worker", "agentic", "tools", "compose", "answer"],
+  "nodes": [
+    {
+      "id": "user",
+      "lane": "client",
+      "col": 0,
+      "type": "external",
+      "label": "Người hỏi",
+      "sublabel": "câu hỏi",
+      "width": 132
+    },
+    {
+      "id": "ui",
+      "lane": "client",
+      "col": 1,
+      "type": "frontend",
+      "label": "Chat UI",
+      "sublabel": "SSE stream",
+      "width": 132
+    },
+    {
+      "id": "answer",
+      "lane": "client",
+      "col": 4,
+      "type": "frontend",
+      "label": "Câu trả lời",
+      "sublabel": "blocks + trust",
+      "width": 132
+    },
+    {
+      "id": "api",
+      "lane": "api",
+      "col": 1,
+      "type": "backend",
+      "label": "POST /v1/questions",
+      "sublabel": "create_question",
+      "tag": "qa",
+      "width": 148
+    },
+    {
+      "id": "outbox",
+      "lane": "api",
+      "col": 2,
+      "type": "messagebus",
+      "label": "qa.outbox",
+      "sublabel": "question.received",
+      "tag": "ADR-06",
+      "width": 148
+    },
+    {
+      "id": "worker",
+      "lane": "worker",
+      "col": 2,
+      "type": "backend",
+      "label": "Outbox relay",
+      "sublabel": "claim → handler",
+      "width": 148
+    },
+    {
+      "id": "agentic",
+      "lane": "engines",
+      "col": 2,
+      "type": "backend",
+      "label": "Agentic engine",
+      "sublabel": "prepare→plan→act",
+      "tag": "mặc định",
+      "width": 148
+    },
+    {
+      "id": "governed",
+      "lane": "engines",
+      "col": 3,
+      "type": "backend",
+      "label": "Governed path",
+      "sublabel": "understand→SQL",
+      "tag": "fallback",
+      "width": 148
+    },
+    {
+      "id": "tools",
+      "lane": "engines",
+      "col": 4,
+      "type": "messagebus",
+      "label": "Tools / query",
+      "sublabel": "metric · SQL · docs",
+      "width": 148
+    },
+    {
+      "id": "compose",
+      "lane": "evidence",
+      "col": 4,
+      "type": "database",
+      "label": "Compose",
+      "sublabel": "blocks · facts",
+      "width": 132
+    },
+    {
+      "id": "verified",
+      "lane": "evidence",
+      "col": 3,
+      "type": "security",
+      "label": "Verified query",
+      "sublabel": "ưu tiên trước agentic",
+      "width": 148
+    }
+  ],
+  "edges": [
+    { "id": "ask", "from": "user", "to": "ui", "variant": "emphasis" },
+    { "id": "post", "from": "ui", "to": "api", "label": "POST", "variant": "emphasis" },
+    { "id": "write-outbox", "from": "api", "to": "outbox", "label": "cùng TX" },
+    { "id": "claim", "from": "outbox", "to": "worker", "label": "claim" },
+    {
+      "id": "to-agentic",
+      "from": "worker",
+      "to": "agentic",
+      "label": "answer_question",
+      "variant": "emphasis"
+    },
+    {
+      "id": "check-verified",
+      "from": "worker",
+      "to": "verified",
+      "label": "1. verified?",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "handback",
+      "from": "agentic",
+      "to": "governed",
+      "label": "hand back",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "agentic-tools",
+      "from": "agentic",
+      "to": "tools",
+      "label": "act ⟲ replan",
+      "variant": "emphasis"
+    },
+    {
+      "id": "governed-tools",
+      "from": "governed",
+      "to": "tools",
+      "label": "compile + query",
+      "variant": "dashed"
+    },
+    { "id": "to-compose", "from": "tools", "to": "compose" },
+    {
+      "id": "to-ui",
+      "from": "compose",
+      "to": "answer",
+      "label": "SSE / poll",
+      "variant": "emphasis",
+      "role": "return"
+    },
+    {
+      "id": "verified-hit",
+      "from": "verified",
+      "to": "compose",
+      "label": "khớp → trả",
+      "variant": "dashed",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Thứ tự trong questions._run",
+      "items": [
+        "Verified query khớp → trả ngay",
+        "Agentic graph nếu ASK_ENGINE=agentic (không data_scope / plan.edited)",
+        "Governed: understand → semantic compile → run_query → narrate"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Graph agentic (engine.py)",
+      "items": [
+        "prepare → plan → act ⟲ → replan / review → compose → persist",
+        "Tools: query_metric, explore_sql, analyze, search_documents, ask_user, specialists",
+        "Số lấy từ dataset; văn bản neo bằng thẻ {{F<n>}}"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Luồng khác cùng worker",
+      "items": [
+        "Agent run (runs.py): multi-step + checkpoint / HITL / timer",
+        "plan.edited → chỉ governed",
+        "Skill / report / eval / marts: handler riêng trên outbox"
+      ]
+    }
+  ]
+}

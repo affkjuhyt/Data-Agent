@@ -541,12 +541,22 @@ export const listSessionReports = async (workspaceId: string) => {
 
 /** Asks Agent Báo cáo to draft a report from every tile of the session. */
 export const createSessionReport = async (workspaceId: string, title: string) =>
-  ok<components['schemas']['ReportView']>(
-    api.POST('/v1/workspaces/{id}/reports', {
-      params: { path: { id: workspaceId } },
-      body: {
-        title,
-      },
+  readSessionReport(
+    await ok<components['schemas']['ReportView']>(
+      api.POST('/v1/workspaces/{id}/reports', {
+        params: { path: { id: workspaceId } },
+        body: {
+          title,
+        },
+      }),
+    ),
+  );
+
+/** Runs the four publish checks; the worker sets ready or failed_checks. */
+export const checkSessionReport = async (id: string) =>
+  ok(
+    api.POST('/v1/session-reports/{id}:check', {
+      params: { path: { id } },
     }),
   );
 
@@ -566,6 +576,78 @@ export const getSessionReport = async (id: string) => {
     if (error instanceof V1Error && (error.status === 404 || error.status === 503)) return report;
     throw error;
   }
+};
+
+const _sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const _hasReportBody = (report: SessionReport) =>
+  Boolean(
+    report.document.summary.trim() ||
+      report.document.figures.length > 0 ||
+      report.document.recommendation.trim(),
+  );
+
+async function _waitReport(
+  id: string,
+  keepGoing: (report: SessionReport) => boolean,
+  attempts = 20,
+  delayMs = 800,
+): Promise<SessionReport> {
+  let report = await getSessionReport(id);
+  for (let i = 0; i < attempts && keepGoing(report); i++) {
+    await _sleep(delayMs);
+    report = await getSessionReport(id);
+  }
+  return report;
+}
+
+/**
+ * After the draft row exists, wait for the worker markdown then POST :check so the review
+ * screen leaves "Đang soạn" with empty checks.
+ */
+async function _finishDraft(report: SessionReport): Promise<SessionReport> {
+  if (report.status === 'pending_review' || report.status === 'changes_requested') return report;
+  if (report.status === 'published') return report;
+  // failed_checks stays "drafting" on the wire adapter but already carries the four verdicts.
+  if (report.checks.length > 0) return report;
+  try {
+    await checkSessionReport(report.id);
+  } catch (error) {
+    if (!(error instanceof V1Error && error.status === 409)) throw error;
+  }
+  return _waitReport(
+    report.id,
+    (current) => current.status === 'drafting' && current.checks.length === 0,
+  );
+}
+
+/**
+ * Opens the session's unpublished report, or drafts one. Empty seed drafts (row without a
+ * MinIO body) are skipped so "Tạo báo cáo" is not stuck forever on a dead row.
+ */
+export const openOrCreateSessionReport = async (workspaceId: string, title: string) => {
+  const drafts = await listSessionReports(workspaceId);
+  const waiting = drafts.items.find(
+    (report) => report.status === 'pending_review' || report.status === 'changes_requested',
+  );
+  if (waiting) return getSessionReport(waiting.id);
+
+  for (const draft of drafts.items.filter((report) => report.status === 'drafting')) {
+    const full = await getSessionReport(draft.id);
+    if (!_hasReportBody(full) && full.checks.length === 0) continue;
+    const drafted = _hasReportBody(full)
+      ? full
+      : await _waitReport(full.id, (current) => !_hasReportBody(current), 15);
+    return _finishDraft(drafted);
+  }
+
+  const created = await createSessionReport(workspaceId, title);
+  const drafted = await _waitReport(
+    created.id,
+    (current) => !_hasReportBody(current) && current.status === 'drafting',
+    15,
+  );
+  return _finishDraft(drafted);
 };
 
 /**

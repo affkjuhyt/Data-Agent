@@ -716,10 +716,10 @@ export function createSessionHandlers() {
       const [id, verb] = String(params.action).split(':');
       const report = reports.find((r) => r.id === id);
       if (!report) return problem(404, 'not_found', 'Không tìm thấy báo cáo.');
+      // :check is for drafts (and re-checks of ready/failed); :publish needs pending_review.
+      if (verb === 'check') return accepted(id);
       if (report.status !== 'pending_review')
         return problem(409, 'invalid_state', 'Báo cáo không ở trạng thái chờ duyệt.');
-      // The mock's checks do not change on their own; a re-check finds the same result.
-      if (verb === 'check') return accepted(`check-${id}`);
       if (verb !== 'publish') return problem(404, 'not_found', 'Không có thao tác này.');
       if (report.checks.some((c) => !c.ok))
         return problem(409, 'checks_failed', 'Còn kiểm tra chưa đạt, chưa phát hành được.');

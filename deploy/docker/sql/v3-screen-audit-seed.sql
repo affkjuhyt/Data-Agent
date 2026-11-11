@@ -176,35 +176,11 @@ VALUES (
 )
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, steps = EXCLUDED.steps;
 
-INSERT INTO pipeline.data_mart (
-    id, org_id, data_space_id, name, fact_dataset_id, grain, measures, dimensions, relations,
-    status, created_by, updated_by
-)
-SELECT
-    'a0000000-0000-0000-0000-000000aa1d31'::uuid, :org::uuid, :space::uuid,
-    'Mart doanh thu Internet (seed)', d.id, 'ngày × sản phẩm',
-    '[{"name": "sales_amount", "agg": "sum"}]'::jsonb,
-    '[{"name": "order_date"}]'::jsonb, '[]'::jsonb, 'draft', :engineer::uuid, :engineer::uuid
-FROM catalog.dataset d
-WHERE d.data_space_id = :space::uuid AND d.deleted_at IS NULL
-ORDER BY d.table_name
-LIMIT 1
-ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status;
-
-INSERT INTO pipeline.data_product (
-    id, org_id, data_space_id, code, name, version, dataset_id, contract, owner_id, status,
-    created_by, updated_by
-)
-SELECT
-    'a0000000-0000-0000-0000-000000aa1d32'::uuid, :org::uuid, :space::uuid,
-    'aw-internet-sales', 'Doanh thu Internet (seed)', 1, d.id,
-    '{"sla": "T+1", "columns": ["order_date", "sales_amount"]}'::jsonb,
-    :engineer::uuid, 'draft', :engineer::uuid, :engineer::uuid
-FROM catalog.dataset d
-WHERE d.data_space_id = :space::uuid AND d.deleted_at IS NULL
-ORDER BY d.table_name
-LIMIT 1
-ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status;
+-- Data marts are not seeded: POST /v1/marts bootstraps dimensions from active
+-- context.relationship rows of the chosen fact table (UC-06-06). The bad LIMIT-1
+-- seed that pointed at dim_account was removed on 09/11/2026.
+DELETE FROM pipeline.data_product WHERE id = 'a0000000-0000-0000-0000-000000aa1d32'::uuid;
+DELETE FROM pipeline.data_mart WHERE id = 'a0000000-0000-0000-0000-000000aa1d31'::uuid;
 
 -- ── Monitor / alert / report / digest (needs an active metric when semantic-import ran) ──
 
@@ -517,17 +493,9 @@ FROM org.app_user a
 WHERE a.org_id = :org::uuid AND a.username = 'helios-admin'
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description;
 
-INSERT INTO workspace.session_report (
-    id, org_id, workspace_id, version, title, body_ref, checks, status, created_by, updated_by
-)
-VALUES (
-    'a0000000-0000-0000-0000-000000aa1f15', :org::uuid,
-    'a0000000-0000-0000-0000-000000aa0d11', 1,
-    'Báo cáo biên gộp Q4/2013 (seed)',
-    'session-reports/a0000000-0000-0000-0000-000000aa1f15/v1.md',
-    '{}'::jsonb, 'draft', :engineer::uuid, :engineer::uuid
-)
-ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, status = EXCLUDED.status;
+-- Session reports are not seeded: a draft row without the worker's MinIO body and
+-- session_report.created outbox stuck "Tạo báo cáo" on an empty review screen. Create
+-- via POST /v1/workspaces/{id}/reports (worker drafts, then :check).
 
 INSERT INTO governance.behavior_policy (
     id, org_id, scope, data_space_id, kind, description, condition, action, status,

@@ -153,9 +153,14 @@ function Review({ report: loaded }: { report: SessionReport }) {
         }
       />
 
-      {error && (
+      {(error || (report.status === 'drafting' && report.checks.length === 0)) && (
         <div className="px-da-3xl pt-da-lg">
-          <Notice tone="error">{error}</Notice>
+          {error && <Notice tone="error">{error}</Notice>}
+          {!error && report.status === 'drafting' && report.checks.length === 0 && (
+            <Notice tone="info">
+              Agent Báo cáo đang soạn và chạy bốn kiểm tra. Mở lại từ phiên nếu nội dung chưa hiện.
+            </Notice>
+          )}
         </div>
       )}
 
@@ -186,6 +191,9 @@ function Review({ report: loaded }: { report: SessionReport }) {
           className="flex w-[380px] shrink-0 flex-col gap-[10px] border-l border-border px-da-2xl pt-[20px]"
         >
           <h2 className="text-foreground da-heading-3">Kiểm tra trước khi phát hành</h2>
+          {report.checks.length === 0 ? (
+            <p className="text-muted-foreground da-caption">Chưa có kết quả kiểm tra.</p>
+          ) : null}
           <ul className="flex flex-col gap-[10px]">
             {report.checks.map((c) => (
               <li key={c.title} className="flex items-start gap-da-md">
