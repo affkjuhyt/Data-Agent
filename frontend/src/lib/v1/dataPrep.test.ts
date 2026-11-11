@@ -61,7 +61,8 @@ describe('readPipelineDetail', () => {
     );
 
     expect(pipeline.input_table).toBe('raw.loans');
-    expect(pipeline.input_rows).toBe(1200);
+    // A sampled preview's rows_in is the sample: it does not say how many rows the input has.
+    expect(pipeline.input_rows).toBeNull();
     expect(pipeline.preview_sample).toBe(1000);
     expect(pipeline.output_table).toBe('prep.loans_clean');
     expect(pipeline.steps).toEqual([

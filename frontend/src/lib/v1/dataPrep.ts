@@ -337,7 +337,10 @@ export function readPipelineDetail(
   return {
     ...base,
     input_table: raw.input_dataset_ids.map((id) => tables.get(id) ?? id).join(', '),
-    input_rows: lastRun?.rows_in ?? 0,
+    input_rows:
+      lastRun && !(lastRun.mode === 'preview' && lastRun.sample_rows !== null)
+        ? (lastRun.rows_in ?? null)
+        : null,
     preview_sample: lastRun?.sample_rows ?? 10_000,
     steps: readPipelineSteps(raw),
     messages: raw.messages ?? [],
@@ -412,7 +415,9 @@ export interface PrepMessage {
 /** GET /v1/pipelines/{id} — with its steps and the conversation that built them. */
 export interface PipelineDetail extends Pipeline {
   input_table: string;
-  input_rows: number;
+  /** The input's rows as the last run that read all of it counted them; null after a sampled
+   *  preview, whose rows_in is the sample's size, or before any run. */
+  input_rows: number | null;
   /** PROPOSAL: previews run on this many rows ("xem trước trên 1.000 dòng"). */
   preview_sample: number;
   steps: PipelineStep[];

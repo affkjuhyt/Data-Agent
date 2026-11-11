@@ -140,7 +140,7 @@ export default function PipelinePage() {
         title={pipeline?.name ?? 'Pipeline'}
         description={
           pipeline
-            ? `Đầu vào ${pipeline.input_table} · ${formatNumber(pipeline.input_rows)} dòng · xem trước trên ${formatNumber(pipeline.preview_sample)} dòng`
+            ? `Đầu vào ${pipeline.input_table}${pipeline.input_rows !== null ? ` · ${formatNumber(pipeline.input_rows)} dòng` : ''} · xem trước trên ${formatNumber(pipeline.preview_sample)} dòng`
             : undefined
         }
         actions={

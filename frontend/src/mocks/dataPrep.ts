@@ -652,7 +652,7 @@ export function createDataPrepHandlers() {
       if (!detail) return notFound();
       const { text } = (await request.json()) as { text: string };
       const nextSeq = detail.steps.length + 1;
-      const rows = detail.steps.at(-1)?.rows_out ?? detail.input_rows;
+      const rows = detail.steps.at(-1)?.rows_out ?? detail.input_rows ?? 0;
       const updated: PipelineDetail = {
         ...detail,
         step_count: nextSeq,
