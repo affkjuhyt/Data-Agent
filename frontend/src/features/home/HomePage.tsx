@@ -66,8 +66,8 @@ export default function HomePage() {
         <MobileHome
           name={givenName(user.name)}
           home={home.data}
-          inbox={inbox.data?.items ?? []}
-          runs={runs.data?.items ?? []}
+          inbox={inbox.data?.items}
+          runs={runs.data?.items}
           onNeedsYou={() => navigate('needs-you')}
           onRuns={() => navigate('agents', 'RUNS')}
         />

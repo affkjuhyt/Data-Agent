@@ -51,7 +51,10 @@ export function DataToday({
 }) {
   const items = sources.data?.items ?? [];
   if (!sources.data || items.length === 0) return null;
-  const attention = (s: Source) => (s.status === 'needs_fix' ? 0 : s.status === 'testing' ? 1 : 2);
+  // The same test as the red tile: a late source is put first too, or a fifth source's lateness
+  // fell off the four tiles while healthy ones were shown.
+  const attention = (s: Source) =>
+    s.status === 'needs_fix' || (s.late_by_minutes ?? 0) > 0 ? 0 : s.status === 'testing' ? 1 : 2;
   const tiles = [...items].sort((a, b) => attention(a) - attention(b)).slice(0, MAX_TILES);
   // Keep the order of the design: healthy sources first, then the ones to look at.
   tiles.sort((a, b) => attention(b) - attention(a));

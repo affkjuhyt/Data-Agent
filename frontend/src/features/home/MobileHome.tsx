@@ -22,14 +22,17 @@ export function MobileHome({
 }: {
   name: string;
   home: MyHome | undefined;
-  inbox: HitlRequest[];
-  runs: AgentRun[];
+  /** undefined while loading or when it could not be read: no number rather than a made-up 0 */
+  inbox: HitlRequest[] | undefined;
+  runs: AgentRun[] | undefined;
   onNeedsYou: () => void;
   onRuns: () => void;
 }) {
-  const live = runs.filter((r) => r.status === 'running' || r.status === 'waiting_human');
+  const live = (runs ?? []).filter((r) => r.status === 'running' || r.status === 'waiting_human');
   const lead = live[0];
-  const expiring = inbox.filter((r) => isExpiringSoon(r)).length;
+  const expiring = (inbox ?? []).filter((r) => isExpiringSoon(r)).length;
+  // Agents, not runs: an agent with two runs is one agent, as the top bar counts them.
+  const agents = new Set(live.map((r) => r.agent_id)).size;
   return (
     <div className="flex flex-col gap-da-md px-da-md py-da-lg">
       <h1 className="text-foreground da-heading-1">Chào {name}</h1>
@@ -74,10 +77,11 @@ export function MobileHome({
         </dl>
       )}
       <LinkCard title="Cần bạn" onClick={onNeedsYou}>
-        {inbox.length} việc{expiring > 0 && ` · ${expiring} sắp hết hạn`}
+        {inbox ? `${inbox.length} việc` : '—'}
+        {expiring > 0 && ` · ${expiring} sắp hết hạn`}
       </LinkCard>
       <LinkCard title="Agent đang chạy" onClick={onRuns}>
-        {live.length} agent
+        {runs ? `${agents} agent` : '—'}
         {lead?.current_step && lead.total_steps
           ? ` · ${lead.agent_name} ở bước ${lead.current_step}/${lead.total_steps}`
           : ''}
