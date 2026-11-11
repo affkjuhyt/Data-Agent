@@ -11,9 +11,11 @@ import { createQualityRule, listQualityRules } from './dataProducts';
 const day = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString();
 
 let created: unknown;
+let askedStatus: string | null = null;
 const server = setupServer(
-  http.get('*/v1/quality-rules', () =>
-    HttpResponse.json({
+  http.get('*/v1/quality-rules', ({ request }) => {
+    askedStatus = new URL(request.url).searchParams.get('status');
+    return HttpResponse.json({
       items: [
         {
           id: 'qr-1',
@@ -27,8 +29,8 @@ const server = setupServer(
         },
       ],
       next_page_token: '',
-    }),
-  ),
+    });
+  }),
   http.get('*/v1/datasets', () =>
     HttpResponse.json({
       items: [{ id: 'ds-1', table_name: 'loans_retail', display_name: 'Dư nợ bán lẻ' }],
@@ -77,6 +79,8 @@ describe('quality rules from the api', () => {
       current: { state: 'fail', value_text: '3 dòng vi phạm' },
     });
     expect(rule.last_7d).toEqual([null, null, null, null, 'pass', null, 'fail']);
+    // A draft or disabled rule does not run: only active ones are listed and counted.
+    expect(askedStatus).toBe('active');
   });
 
   it('sends a new rule as QualityRuleCreate', async () => {

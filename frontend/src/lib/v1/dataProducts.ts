@@ -432,7 +432,11 @@ function readRule(raw: RuleWire, tables: Map<string, string>, results: ResultRow
 export const listQualityRules = async (): Promise<Page<QualityRule>> => {
   const week = new Date(Date.now() - 7 * 86_400_000).toISOString();
   const [rules, datasets, results] = await Promise.all([
-    ok<Page<RuleWire>>(api.GET('/v1/quality-rules', { params: { query: { page_size: 500 } } })),
+    // Active rules only: a draft or a disabled rule does not run, yet its old failures were
+    // counted in "N quy tắc · M đang vi phạm" (rules are created active, ingest quality_rule).
+    ok<Page<RuleWire>>(
+      api.GET('/v1/quality-rules', { params: { query: { status: 'active', page_size: 500 } } }),
+    ),
     listDatasets(),
     ok<Page<ResultRow>>(
       api.GET('/v1/quality-results', { params: { query: { from: week, page_size: 500 } } }),
