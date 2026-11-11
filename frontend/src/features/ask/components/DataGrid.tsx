@@ -15,6 +15,7 @@ import { cn } from '../../../lib/utils';
 import { formatCell, formatNumber, isNumericColumn, toNumber } from '../../../lib/formatVN';
 import { TRUNCATION_LABELS } from '../labels';
 import type { Truncation } from '../types';
+import { folds } from '../../../lib/fold';
 
 interface DataGridProps {
   columns: string[];
@@ -111,11 +112,11 @@ export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncat
     return [{ value: '_all', label: 'Giá trị: tất cả' }, ...values.map((value) => ({ value, label: value }))];
   }, [filterColumn, rows]);
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = query.trim();
     return rows.filter((row) => {
       if (valueFilter !== '_all' && String(row[filterColumn] ?? '') !== valueFilter) return false;
       if (!q) return true;
-      return columns.some((column) => String(row[column] ?? '').toLowerCase().includes(q));
+      return columns.some((column) => folds(String(row[column] ?? ''), q));
     });
   }, [columns, filterColumn, query, rows, valueFilter]);
   const sorted = useMemo(() => {

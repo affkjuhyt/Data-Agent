@@ -41,12 +41,13 @@ describe('TableExplorePage', () => {
     expect(screen.getByText(/dòng 5 trùng hoàn toàn với dòng 4/)).toBeInTheDocument();
 
     // The first numeric column is picked; overdue_days has the histogram of Figma.
-    fireEvent.click(screen.getByRole('button', { name: /overdue_days/ }));
+    // The column picker (a toggle), not the table's sort button of the same name.
+    fireEvent.click(screen.getByRole('button', { name: /overdue_days/, pressed: false }));
     expect(await screen.findByText('số nguyên')).toBeInTheDocument();
     expect(screen.getByText('1.462')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Phân bố của overdue_days' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /customer_id/ }));
+    fireEvent.click(screen.getByRole('button', { name: /customer_id/, pressed: false }));
     expect(await screen.findByText(/không lập hồ sơ/)).toBeInTheDocument();
   });
 

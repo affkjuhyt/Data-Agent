@@ -3,6 +3,7 @@ import { cn } from '../lib/utils';
 import { Input } from './Input';
 import { Pagination } from './Pagination';
 import { Select } from './Select';
+import { folds } from '../lib/fold';
 
 /**
  * Client-side search, filter, sort and pagination for a record table.
@@ -91,9 +92,10 @@ export function useTableView<T>(
   }, [filters, source]);
 
   const matched = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    // Marks and case do not count: "chi nhanh" finds "Chi nhánh" (lib/fold).
+    const q = query.trim();
     const rows = source.filter((row) => {
-      if (q && !config.search(row).toLowerCase().includes(q)) return false;
+      if (q && !folds(config.search(row), q)) return false;
       if (config.predicate && !config.predicate(row)) return false;
       return filters.every((spec) => {
         const chosen = filter[spec.id] ?? ALL;
@@ -196,20 +198,26 @@ export function SortableTh<T>({
 }) {
   const active = column != null && view.sort?.id === column;
   const dir = view.sort?.dir;
+  // The sort is a button inside the header: a clickable <th> was out of reach of the keyboard.
   return (
     <th
-      className={cn(column && 'cursor-pointer select-none', className)}
+      className={className}
       aria-sort={column ? (active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none') : undefined}
-      onClick={column ? () => view.toggleSort(column) : undefined}
     >
-      <span className="inline-flex items-center gap-da-xs">
-        {children}
-        {column && (
+      {column ? (
+        <button
+          type="button"
+          onClick={() => view.toggleSort(column)}
+          className="inline-flex cursor-pointer select-none items-center gap-da-xs rounded-sm font-[inherit] text-[inherit] focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
+        >
+          {children}
           <span aria-hidden className={active ? 'opacity-100' : 'opacity-40'}>
             {active ? (view.sort!.dir === 'asc' ? '↑' : '↓') : '↕'}
           </span>
-        )}
-      </span>
+        </button>
+      ) : (
+        <span className="inline-flex items-center gap-da-xs">{children}</span>
+      )}
     </th>
   );
 }

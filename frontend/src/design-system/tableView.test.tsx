@@ -71,7 +71,8 @@ describe('table view', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Lọc theo Loại' }));
     fireEvent.click(screen.getByRole('option', { name: 'Loại: tất cả' }));
-    fireEvent.click(screen.getByRole('columnheader', { name: /Dòng/ }));
+    // The header's sort is a button: reached by Tab, pressed with Enter or Space.
+    fireEvent.click(screen.getByRole('button', { name: /Dòng/ }));
     expect(screen.getByRole('columnheader', { name: /Dòng/ })).toHaveAttribute('aria-sort', 'ascending');
     const names = screen.getAllByRole('row').slice(1).map((row) => row.textContent);
     expect(names).toEqual(['rates', 'countries']);
