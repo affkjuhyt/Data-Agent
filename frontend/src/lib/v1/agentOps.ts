@@ -202,7 +202,9 @@ export const getRollout = async (agentId: string): Promise<Rollout | null> => {
     next_share_pct: null,
     status: 'rolling',
     change_summary: candidate?.change_note ?? null,
-    eval_set: run ? await evalOf(run) : null,
+    // A run still scoring (or one that failed) has no pass rate yet: read as 0 %, it failed the
+    // gate in red while the eval was running.
+    eval_set: run?.status === 'completed' ? await evalOf(run) : null,
     live: null,
     auto_rollback_rules: [],
   };

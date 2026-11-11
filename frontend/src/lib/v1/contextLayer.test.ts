@@ -135,7 +135,7 @@ const server = setupServer(
         },
       ],
       open_error_book_entries: 2,
-      latest_eval_run: { passed: 9, item_count: 10 },
+      latest_eval_run: { passed: 9, item_count: 10, status: 'completed' },
     }),
   ),
 );

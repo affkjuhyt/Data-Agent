@@ -159,8 +159,16 @@ const chipsOf = (raw: unknown): string[] =>
 /** latest_eval_run is the run's row: its passed and item counts. */
 function evalOf(raw: unknown): AnswerProduct['stats']['eval'] {
   if (typeof raw !== 'object' || raw === null) return null;
-  const { passed, item_count } = raw as { passed?: unknown; item_count?: unknown };
-  return typeof passed === 'number' && typeof item_count === 'number' && item_count > 0
+  const { passed, item_count, status } = raw as {
+    passed?: unknown;
+    item_count?: unknown;
+    status?: unknown;
+  };
+  // A run still scoring (or failed) holds partial counts: "0/N đạt · 0%" right after "Gửi duyệt".
+  return status === 'completed' &&
+    typeof passed === 'number' &&
+    typeof item_count === 'number' &&
+    item_count > 0
     ? { passed, total: item_count, threshold_pct: 95 }
     : null;
 }

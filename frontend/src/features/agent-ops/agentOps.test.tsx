@@ -141,6 +141,18 @@ describe('EvaluatePage', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
+  it('shows no pass rate while the eval run is still scoring', async () => {
+    routeId = ROLLOUT_AGENT_ID;
+    renderWith(
+      <EvaluatePage />,
+      http.get('*/v1/eval-runs/:id', () =>
+        HttpResponse.json({ ...evalRunFixture(), status: 'running', pass_rate: null, passed: 0 }),
+      ),
+    );
+    expect(await screen.findByText(/chưa có kết quả bộ đánh giá/, {}, SLOW)).toBeInTheDocument();
+    expect(screen.queryByText('0,0%')).toBeNull();
+  });
+
   it('adds a case to the eval set as an eval item', async () => {
     routeId = ROLLOUT_AGENT_ID;
     let sent: unknown;

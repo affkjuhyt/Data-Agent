@@ -98,7 +98,8 @@ export function evalRunFixture(): Schemas['EvalRunDetail'] {
     pass_rate: 0.975,
     baseline_run_id: 'er-collect-5',
     regressions: 1,
-    status: 'succeeded',
+    // eval.eval_run.status is running | completed | failed.
+    status: 'completed',
     started_at: minutesAgo(4 * 24 * 60),
     finished_at: minutesAgo(4 * 24 * 60 - 10),
     created_at: minutesAgo(4 * 24 * 60),
