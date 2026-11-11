@@ -1,3 +1,15 @@
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { Segmented } from '../../design-system/Segmented';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import type { ExploreResult, ExploreRow } from '../../lib/v1/explore';
@@ -10,7 +22,11 @@ import { formatDelta, formatValue } from './format';
  * with the category labels under it, and the links under the chart. The first series is
  * chart-6 and the last chart-1, as the frame compares an earlier period with the latest.
  * While a new query runs, the bars of the last result turn subtle ("Khám phá · Đang tải").
- * A click on a column group drills into it when the result names a drill dimension.
+ * A click on a column group drills into it when the result names a drill dimension; the same
+ * drill is offered as buttons for the keyboard and screen readers, which an SVG bar is not.
+ *
+ * Drawn by recharts, as the answer's charts are (ChartRenderer): the hand-drawn bars had no value
+ * axis and shrank a negative value to a 2px stub on the baseline.
  */
 export type ChartKind = 'bar' | 'line' | 'table';
 
@@ -21,13 +37,26 @@ function seriesColor(index: number, count: number): string {
   return ['bg-chart-6', 'bg-chart-2', 'bg-chart-3', 'bg-chart-4', 'bg-chart-5'][index % 5];
 }
 
-const STROKE: Record<string, string> = {
-  'bg-chart-1': 'stroke-chart-1',
-  'bg-chart-2': 'stroke-chart-2',
-  'bg-chart-3': 'stroke-chart-3',
-  'bg-chart-4': 'stroke-chart-4',
-  'bg-chart-5': 'stroke-chart-5',
-  'bg-chart-6': 'stroke-chart-6',
+/** The CSS colour of a series, as seriesColor's class names it (the legend draws those). */
+const seriesFill = (index: number, count: number) =>
+  `var(--${seriesColor(index, count).replace('bg-', '')})`;
+
+/** recharts' rows: one record per category, each series' value under its key. */
+export function chartRows(result: ExploreResult): Record<string, string | number | null>[] {
+  return result.rows.map((row) => ({
+    key: row.key,
+    label: row.short_label,
+    ...Object.fromEntries(result.series.map((s, i) => [s.key, row.values[i] ?? null])),
+  }));
+}
+
+const TOOLTIP: React.CSSProperties = {
+  background: 'var(--card)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+  boxShadow: 'var(--shadow-md)',
+  fontSize: 12,
+  color: 'var(--foreground)',
 };
 
 export function ResultChart({
@@ -45,8 +74,39 @@ export function ResultChart({
   onDrill?: (row: ExploreRow) => void;
   links: React.ReactNode;
 }) {
-  const max = Math.max(0, ...result.rows.flatMap((r) => r.values.map((x) => x ?? 0))) * 1.08 || 1;
   const n = result.series.length;
+  const data = chartRows(result);
+  const negative = result.rows.some((r) => r.values.some((x) => (x ?? 0) < 0));
+  const drill = onDrill && !loading ? onDrill : undefined;
+  const describe = (row: ExploreRow) =>
+    row.values
+      .map((x, i) => `${result.series[i]?.label}: ${formatValue(x, result.unit)}`)
+      .join(', ');
+  const axes = (
+    <>
+      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+      <XAxis
+        dataKey="label"
+        stroke="var(--muted-foreground)"
+        fontSize={12}
+        axisLine={false}
+        tickLine={false}
+      />
+      <YAxis
+        stroke="var(--muted-foreground)"
+        fontSize={12}
+        axisLine={false}
+        tickLine={false}
+        width={64}
+        tickFormatter={(v: number) => formatValue(v, result.unit)}
+      />
+      <Tooltip
+        contentStyle={TOOLTIP}
+        formatter={(v: unknown) => formatValue(typeof v === 'number' ? v : null, result.unit)}
+      />
+      {negative && <ReferenceLine y={0} stroke="var(--border)" />}
+    </>
+  );
 
   return (
     <section
@@ -83,101 +143,75 @@ export function ResultChart({
         </ul>
       )}
 
-      {kind === 'bar' && (
-        <div className="flex w-full flex-col">
-          <div
-            className="flex w-full items-end justify-around border-b border-border"
-            style={{ height: PLOT }}
-          >
-            {result.rows.map((row) => {
-              const values = row.values
-                .map((x, i) => `${result.series[i]?.label}: ${formatValue(x, result.unit)}`)
-                .join(', ');
-              const bars = row.values.map((x, i) => (
-                <span
-                  key={result.series[i]?.key ?? i}
-                  className={cn(
-                    'w-7 rounded-[3px] transition-[height] duration-200',
-                    loading ? 'bg-subtle' : seriesColor(i, n),
-                  )}
-                  style={{ height: Math.max(2, ((x ?? 0) / max) * PLOT) }}
-                />
-              ));
-              return onDrill && !loading ? (
-                <button
-                  key={row.key}
-                  type="button"
-                  onClick={() => onDrill(row)}
-                  aria-label={`Đi sâu: ${row.label} (${values})`}
-                  className="flex h-full items-end gap-da-xs rounded-sm hover:bg-subtle"
-                >
-                  {bars}
-                </button>
-              ) : (
-                <span
-                  key={row.key}
-                  role="img"
-                  aria-label={`${row.label}: ${values}`}
-                  className="flex h-full items-end gap-da-xs"
-                >
-                  {bars}
-                </span>
-              );
-            })}
-          </div>
-          <CategoryLabels rows={result.rows} />
+      {kind !== 'table' && (
+        <div
+          role="img"
+          aria-label={`${result.title}: ${result.rows.map((row) => `${row.label} (${describe(row)})`).join('; ')}`}
+          className="w-full"
+          style={{ height: PLOT }}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            {kind === 'bar' ? (
+              <BarChart data={data}>
+                {axes}
+                {result.series.map((s, i) => (
+                  <Bar
+                    key={s.key}
+                    dataKey={s.key}
+                    name={s.label}
+                    fill={loading ? 'var(--subtle)' : seriesFill(i, n)}
+                    radius={[3, 3, 0, 0]}
+                    cursor={drill ? 'pointer' : undefined}
+                    onClick={
+                      drill ? (_: unknown, index: number) => drill(result.rows[index]) : undefined
+                    }
+                  />
+                ))}
+              </BarChart>
+            ) : (
+              <LineChart data={data}>
+                {axes}
+                {result.series.map((s, i) => (
+                  <Line
+                    key={s.key}
+                    type="monotone"
+                    dataKey={s.key}
+                    name={s.label}
+                    stroke={loading ? 'var(--border)' : seriesFill(i, n)}
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                ))}
+              </LineChart>
+            )}
+          </ResponsiveContainer>
         </div>
       )}
 
-      {kind === 'line' && (
-        <div className="flex w-full flex-col">
-          <svg
-            viewBox={`0 0 100 ${PLOT}`}
-            preserveAspectRatio="none"
-            className="w-full border-b border-border"
-            style={{ height: PLOT }}
-            role="img"
-            aria-label={result.title}
-          >
-            {result.series.map((s, si) => {
-              const step = 100 / result.rows.length;
-              const points = result.rows
-                .map(
-                  (r, ri) => `${step * ri + step / 2},${PLOT - ((r.values[si] ?? 0) / max) * PLOT}`,
-                )
-                .join(' ');
-              return (
-                <polyline
-                  key={s.key}
-                  points={points}
-                  fill="none"
-                  strokeWidth={2}
-                  vectorEffect="non-scaling-stroke"
-                  className={loading ? 'stroke-border' : STROKE[seriesColor(si, n)]}
-                />
-              );
-            })}
-          </svg>
-          <CategoryLabels rows={result.rows} />
-        </div>
+      {kind !== 'table' && drill && (
+        <ul
+          aria-label="Đi sâu theo nhóm"
+          className="sr-only focus-within:not-sr-only focus-within:flex focus-within:flex-wrap focus-within:gap-da-sm"
+        >
+          {result.rows.map((row) => (
+            <li key={row.key}>
+              <button
+                type="button"
+                onClick={() => drill(row)}
+                aria-label={`Đi sâu: ${row.label} (${describe(row)})`}
+                className="rounded-sm px-da-sm text-foreground da-caption hover:bg-subtle"
+              >
+                {row.label}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
 
       {kind === 'table' && <ValueTable result={result} bare />}
 
       <div className="flex flex-wrap gap-da-xl">{links}</div>
     </section>
-  );
-}
-
-function CategoryLabels({ rows }: { rows: ExploreRow[] }) {
-  return (
-    <div className="flex w-full justify-around pt-da-md" aria-hidden>
-      {rows.map((row) => (
-        <span key={row.key} className="truncate px-da-xs text-muted-foreground da-caption">
-          {row.short_label}
-        </span>
-      ))}
-    </div>
   );
 }
 
