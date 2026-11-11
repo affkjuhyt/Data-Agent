@@ -4,6 +4,8 @@ BR-180), and the schedule preview every "Lịch chạy" dialog shares (UC-06-03,
 A new model for a task is a `testing` version of governance.model_config with its eval run id
 reserved; the eval module runs every Data Space's standard set against it and the version goes
 active only when no Data Space loses correct answers (BR-140). The old version keeps serving.
+Serving does not read model_config yet, so PUT /v1/admin/models/{task} answers 501 not_available
+after its checks and writes no version.
 
 Health is read from Prometheus at PROMETHEUS_URL (operator configuration, never a caller's URL);
 a section that cannot be read is `no_data`, never a stale number (UC-11-04 E1).
@@ -24,7 +26,7 @@ import zoneinfo
 from collections.abc import Callable
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Path, Query, Response
+from fastapi import APIRouter, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,13 +37,12 @@ from libs.dataagent_db.models import governance, org
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
-from services.api.kernel.problems import FieldError, Problem
+from services.api.kernel.problems import FieldError, Problem, not_available
 from services.api.modules.agent import agents_of_runs, run_usage
 from services.api.modules.eval import eval_runs
 
 router = APIRouter()
 ROLE = "svc_governance"
-POLL_AFTER_MS = 2_000
 PROMETHEUS_TIMEOUT_S = 3.0
 
 Task = Literal[
@@ -235,10 +236,8 @@ async def change_model(
     task: Annotated[Task, Path()],
     body: ModelChange,
     principal: CurrentPrincipal,
-    response: Response,
 ) -> ModelChangeAccepted:
     mc = governance.ModelConfig
-    stamp = _now()
     async with transaction(ROLE, principal) as session:
         # A new task model is an on-prem primary; frontier candidates come with their provider
         # (UC-11-05 1b). The installation creates the on-prem provider (ADR-41).
@@ -263,64 +262,23 @@ async def change_model(
                 "endpoint",
                 f"The endpoint is served by the on-prem provider at {provider.endpoint}.",
             )
-        versions = (
-            await session.scalars(
-                select(mc)
-                .where(mc.org_id == principal.org_id, mc.task == task)
-                .order_by(mc.version.desc())
-                .with_for_update()
+        testing = await session.scalar(
+            select(mc.id)
+            .where(
+                mc.org_id == principal.org_id,
+                mc.task == task,
+                mc.status == "testing",
+                mc.route_role == "primary",
             )
-        ).all()
-        if any(v.status == "testing" and v.route_role == "primary" for v in versions):
+            .limit(1)
+        )
+        if testing is not None:
             raise Problem(409, "invalid_state", f"A model change for {task} is being evaluated.")
-        current = next(
-            (v for v in versions if v.status == "active" and v.route_role == "primary"), None
-        )
-        eval_run_id = uuid7()
-        row = mc(
-            id=uuid7(),
-            org_id=principal.org_id,
-            task=task,
-            version=(versions[0].version + 1) if versions else 1,
-            model_name=body.model_name,
-            endpoint=body.endpoint,
-            fallback_model=body.fallback_model,
-            limits=body.limits if body.limits is not None else (current.limits if current else {}),
-            rollout_pct=body.rollout_pct or 100,
-            eval_run_id=eval_run_id,
-            status="testing",
-            provider_id=provider.id,
-            route_role="primary",
-            created_by=principal.user_id,
-            updated_by=principal.user_id,
-            created_at=stamp,
-            updated_at=stamp,
-        )
-        session.add(row)
-        await session.flush()
-        # The eval module runs every Data Space's standard set and activates the version only
-        # when none loses correct answers (BR-140); otherwise the owners decide in Cần bạn.
-        _event(
-            session,
-            principal,
-            "model_config",
-            row.id,
-            "model_config.eval_requested",
-            model_config_id=row.id,
-            task=task,
-            version=row.version,
-            eval_run_id=eval_run_id,
-            baseline_model_config_id=current.id if current else None,
-            rollout_pct=row.rollout_pct,
-            status=row.status,
-        )
-    response.headers["Location"] = f"/v1/eval-runs/{eval_run_id}"
-    return ModelChangeAccepted(
-        id=eval_run_id,
-        status="queued",
-        poll_after_ms=POLL_AFTER_MS,
-        model_config_id=row.id,
-        version=row.version,
+    # Serving does not read model_config yet, so a new version would be evaluated and activated
+    # without ever answering a call: refused, no version written and no eval asked (BR-140).
+    raise not_available(
+        "Hệ thống phục vụ mô hình chưa đọc cấu hình mô hình theo tác vụ, nên chưa đổi được "
+        "mô hình cho tác vụ này."
     )
 
 

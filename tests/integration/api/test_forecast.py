@@ -1826,9 +1826,7 @@ async def test_a_ledger_line_is_read_in_its_data_space(fx: Fx) -> None:
         assert denied.status_code == 403
 
 
-# AC-15-08-07
-@pytest.mark.req("AC-15-08-07")
-async def test_a_rescore_is_asked_of_ml_forecast(fx: Fx) -> None:
+async def test_a_rescore_is_checked_then_refused_until_ml_forecast_exists(fx: Fx) -> None:
     lines = _ledger(fx)
     body = {"reason": "Bộ đính chính bản tin kỳ 02/7"}
     async with client(fx) as api:
@@ -1845,14 +1843,9 @@ async def test_a_rescore_is_asked_of_ml_forecast(fx: Fx) -> None:
         asked = await api.post(
             f"/v1/forecast-ledger/{lines.scored}:score", json=body, headers=fx.headers("steward")
         )
-        assert asked.status_code == 202, asked.text
-        assert asked.headers["Location"] == f"/v1/forecast-ledger/{lines.scored}"
-        assert asked.json()["status"] == "queued"
-        event = dict(fx.events(lines.scored))["forecast.ledger.rescore_requested"]
-        assert event["ledger_entry_id"] == str(lines.scored)
-        assert event["forecast_model_id"] == str(fx.model)
-        assert event["requested_by"] == str(fx.users["steward"])
-        # The old score stays until ml-forecast writes the new one.
+        assert asked.status_code == 501, asked.text
+        assert asked.json()["code"] == "not_available" and asked.json()["detail"]
+        assert "forecast.ledger.rescore_requested" not in dict(fx.events(lines.scored))
         assert (
             fx.one("SELECT actual FROM forecast.ledger_entry WHERE id = %s", lines.scored) == 19730
         )

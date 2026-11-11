@@ -2,8 +2,8 @@
 
 Lines are written by ml-forecast before their period and scored when the published price arrives;
 ledger_entry_guard keeps the forecast half immutable and ledger_entry_scored_event emits
-forecast.ledger.scored / .missed. The API reads the ledger and asks for a rescore (202); the
-scoring itself, against the corrected dataset version, is ml-forecast's.
+forecast.ledger.scored / .missed. The API reads the ledger; a rescore, against the corrected
+dataset version, is ml-forecast's, which does not exist yet, so :score answers 501 not_available.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import datetime
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Response
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,7 @@ from services.api.kernel.pagination import (
     invalid_page_token,
     page_request,
 )
-from services.api.kernel.problems import Problem
+from services.api.kernel.problems import Problem, not_available
 from services.api.modules.forecast import rules, store
 from services.api.modules.forecast.schemas import (
     Accepted,
@@ -195,7 +195,6 @@ async def rescore_ledger_entry(
     entry_id: EntryId,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
-    response: Response,
 ) -> Accepted:
     async with transaction(ROLE, principal) as session:
         row = await store.ledger_entry(session, entry_id, principal, data_space)
@@ -203,23 +202,11 @@ async def rescore_ledger_entry(
             raise Problem(409, "invalid_state", "The period did not take place; nothing to score.")
         if row.actual is None:
             raise Problem(409, "invalid_state", "The period has no published price yet.")
-        # ml-forecast rescores against the dataset's newest version; the old score stays in
-        # accuracy_log (UC-15-08 alt 1). The reason is the caller's text: audit keeps it with
-        # the request, the event carries ids only.
-        store.emit(
-            session,
-            principal,
-            "ledger_entry",
-            row.id,
-            "forecast.ledger.rescore_requested",
-            ledger_entry_id=row.id,
-            forecast_model_id=row.forecast_model_id,
-            data_space_id=data_space,
-            status=row.status,
-            requested_by=principal.user_id,
-        )
-    response.headers["Location"] = f"/v1/forecast-ledger/{row.id}"
-    return Accepted(id=row.id, status="queued", poll_after_ms=rules.POLL_AFTER_MS)
+    # The rescore against the dataset's newest version (UC-15-08 alt 1) is ml-forecast's, and
+    # that service does not exist: refused, nothing asked.
+    raise not_available(
+        "Chưa có dịch vụ chấm lại dự báo theo phiên bản dữ liệu mới, nên chưa chấm lại được dòng này."
+    )
 
 
 @router.get(

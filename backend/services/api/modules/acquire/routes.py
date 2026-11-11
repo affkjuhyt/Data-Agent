@@ -51,7 +51,7 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.kernel.problems import Problem
+from services.api.kernel.problems import Problem, not_available
 from services.api.modules.acquire import rules
 from services.api.modules.acquire.schemas import (
     Accepted,
@@ -582,31 +582,16 @@ async def list_crawl_sources(
     **endpoint("POST", "/v1/crawl-sources:suggest", operation_id="suggestCrawlSources"),
 )
 async def suggest_crawl_sources(
-    body: CrawlSourceSuggest,
-    principal: CurrentPrincipal,
-    space: CurrentDataSpace,
-    response: Response,
+    body: CrawlSourceSuggest, principal: CurrentPrincipal, space: CurrentDataSpace
 ) -> Accepted:
     """UC-14-01: the agent proposes sources for a goal, with what robots.txt and the terms say.
-    Searching and checking take longer than a request, so this is the Agent Thu thập run's job:
-    the api reserves the run id and asks for it, and registers nothing. A proposal becomes a
-    source only through POST /v1/crawl-sources, by a person."""
-    agent_run_id = uuid7()
-    async with transaction(ROLE, principal) as session:
-        _emit(
-            session,
-            principal,
-            "agent_run",
-            agent_run_id,
-            "acquire.source.suggest_requested",
-            agent_run_id=agent_run_id,
-            data_space_id=space,
-            requested_by=principal.user_id,
-            # The goal and examples are the request itself; no column holds them.
-            goal=body.goal,
-            examples=body.examples or [],
-        )
-    return _accepted(response, f"/v1/runs/{agent_run_id}", agent_run_id, "queued")
+    Searching and checking take longer than a request, so this is the Agent Thu thập run's job.
+    That run needs a web search, which the stack does not have: refused, nothing registered. A
+    proposal becomes a source only through POST /v1/crawl-sources, by a person."""
+    raise not_available(
+        "Chưa có công cụ tìm kiếm web trong hệ thống, nên agent chưa gợi ý được nguồn thu thập. "
+        "Hãy thêm nguồn trực tiếp bằng địa chỉ của nó."
+    )
 
 
 @router.post(
@@ -1052,13 +1037,12 @@ async def infer_schema(
     source_id: PathId,
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
-    response: Response,
     # Both fields are optional, so is the body.
     body: Annotated[SchemaInferenceRequest | None, Body()] = None,
 ) -> Accepted:
     request = body or SchemaInferenceRequest()
     async with transaction(ROLE, principal) as session:
-        source = await _source(session, principal, space, source_id, lock=True)
+        source = await _source(session, principal, space, source_id)
         if source.status == "retired":
             raise Problem(409, "invalid_state", "A retired source is not inferred.")
         if request.sample_urls:
@@ -1070,26 +1054,10 @@ async def infer_schema(
                 "business_rule_violated",
                 "The source needs a legal review in force before pages are fetched (BR-174).",
             )
-        # The agent runtime opens the Agent Thu thập run with this id; it records the draft
-        # version with inferred_by_run_id = this id (UC-14-02 steps 1-3).
-        agent_run_id = uuid7()
-        _emit(
-            session,
-            principal,
-            "crawl_source",
-            source.id,
-            "acquire.schema.inference_requested",
-            source_id=source.id,
-            data_space_id=space,
-            agent_run_id=agent_run_id,
-            kind=source.kind,
-            sample_urls=request.sample_urls or [],
-            # The extraction hint is the operator's instruction to the agent, which has nowhere
-            # else to read it (no column holds it).
-            hints=request.hints,
-            has_openapi=source.openapi_url is not None,
-        )
-        return _accepted(response, f"/v1/runs/{agent_run_id}", agent_run_id, "queued")
+    # KB-04, the agent proposing selectors from sample pages, is not built: refused, nothing asked.
+    raise not_available(
+        "Chưa có agent đề xuất lược đồ trích xuất từ trang mẫu, nên chưa suy ra được lược đồ."
+    )
 
 
 @router.get(

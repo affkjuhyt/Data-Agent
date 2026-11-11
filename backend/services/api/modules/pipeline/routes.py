@@ -40,7 +40,7 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.kernel.problems import Problem
+from services.api.kernel.problems import Problem, not_available
 from services.api.modules.audit import record_self_approval
 from services.api.modules.catalog.public import upcoming_runs
 from services.api.modules.ingest.public import job_name, jobs_feeding
@@ -1788,7 +1788,6 @@ async def undo_writeback(
     writeback_id: PathId,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
-    response: Response,
 ) -> Accepted:
     _forbid_delegated(principal)
     async with transaction(ROLE, principal) as session:
@@ -1799,26 +1798,6 @@ async def undo_writeback(
             raise Problem(
                 409, "invalid_state", "The 30-day undo window of this writeback has passed."
             )
-        # UC-06-04 5a: the undo is approved like the write; the worker restores from the snapshot
-        # and publishes writeback.rolled_back. undo_requested keeps a second undo from being asked.
-        row.status = "undo_requested"
-        row.updated_by, row.updated_at = principal.user_id, now()
-        emit(
-            session,
-            principal,
-            "writeback_request",
-            row.id,
-            "writeback.undo_requested",
-            writeback_request_id=row.id,
-            data_space_id=data_space,
-            previous_status="executed",
-            status=row.status,
-            requested_by=principal.user_id,
-            excluded_reviewer_ids=[principal.user_id],
-            reason=body.reason.strip(),
-        )
-    return _accepted(
-        response,
-        f"/v1/writebacks/{row.id}",
-        Accepted(id=row.id, status="undo_requested", poll_after_ms=POLL_AFTER_MS),
-    )
+    # UC-06-04 5a restores from the snapshot, but nothing executes a writeback yet, so an undo
+    # would wait on a worker that does not exist: refused, the status stays executed.
+    raise not_available("Chưa có bộ thực thi ghi ngược, nên chưa hoàn tác được lần ghi ngược này.")

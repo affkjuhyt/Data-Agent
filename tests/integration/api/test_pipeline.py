@@ -1418,7 +1418,7 @@ async def test_submit_sends_a_previewed_diff_without_deletes_for_review(pp: Spac
 
 # AC-06-04-03
 @pytest.mark.req("AC-06-04-03")
-async def test_an_executed_write_is_undone_within_thirty_days(pp: Space) -> None:
+async def test_an_undo_is_checked_for_thirty_days_then_refused(pp: Space) -> None:
     async with client(pp) as api:
         made = (
             await api.post("/v1/writebacks", json=_writeback_body(pp), headers=pp.headers("eng"))
@@ -1437,23 +1437,20 @@ async def test_an_executed_write_is_undone_within_thirty_days(pp: Space) -> None
         assert no_reason.status_code == 422
         no_writeback = await api.post(url, json={"reason": "x"}, headers=pp.headers("analyst"))
         assert no_writeback.status_code == 403
+        # Nothing executes a writeback yet, so nothing would restore it: the undo is refused and
+        # the write stays executed, with no event asked.
         undo = await api.post(url, json={"reason": "  ghi nhầm kỳ  "}, headers=pp.headers("eng"))
-        assert undo.status_code == 202, undo.text
-        assert undo.headers["Location"] == f"/v1/writebacks/{made['id']}"
-        payload = dict(pp.events(made["id"]))["writeback.undo_requested"]
-        assert payload["reason"] == "ghi nhầm kỳ"
-        assert payload["excluded_reviewer_ids"] == [str(pp.users["eng"])]
-        # undo_requested (12/10/2026): the undo is not asked twice.
+        assert undo.status_code == 501, undo.text
+        assert undo.json()["code"] == "not_available" and undo.json()["detail"]
+        assert "writeback.undo_requested" not in dict(pp.events(made["id"]))
         assert (
             pp.one("SELECT status FROM pipeline.writeback_request WHERE id = %s", made["id"])
-            == "undo_requested"
+            == "executed"
         )
-        twice = await api.post(url, json={"reason": "lần nữa"}, headers=pp.headers("eng"))
-        assert twice.status_code == 409
 
         pp.run(
-            "UPDATE pipeline.writeback_request SET status = 'executed',"
-            " executed_at = now() - interval '31 days' WHERE id = %s",
+            "UPDATE pipeline.writeback_request SET executed_at = now() - interval '31 days'"
+            " WHERE id = %s",
             made["id"],
         )
         late = await api.post(url, json={"reason": "muộn"}, headers=pp.headers("eng"))

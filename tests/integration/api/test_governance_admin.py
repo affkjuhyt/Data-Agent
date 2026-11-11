@@ -4,6 +4,7 @@ system health (UC-11-05, UC-11-04)."""
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import hmac
 import uuid
@@ -16,6 +17,7 @@ from psycopg2.extras import Json
 
 from services.api.app import create_app
 from services.api.config import Settings
+from services.api.modules.governance.dsr import subject_hash
 
 from .conftest import Seed
 
@@ -442,117 +444,130 @@ async def test_policy_self_activation_when_the_org_allows_it(gov: Org, self_appr
 KEY = "k" * 40
 
 
-async def test_a_data_subject_request_keeps_only_the_hash(
+def test_the_subject_hash_is_keyed_by_the_organisation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DSR_SUBJECT_KEY", KEY)
+    org = uuid.uuid4()
+    digest = subject_hash(" 0010 9200 1234 ", org)
+    org_key = hmac.new(KEY.encode(), str(org).encode(), hashlib.sha256).digest()
+    assert digest == hmac.new(org_key, b"001092001234", hashlib.sha256).hexdigest()
+    # A plain SHA-256 of the id would be reversed by trying every 12-digit number.
+    assert digest != hashlib.sha256(b"001092001234").hexdigest()
+
+
+def _dsr_written(gov: Org) -> tuple[int, int]:
+    return (
+        gov.one("SELECT count(*) FROM governance.dsr_request WHERE org_id = %s", gov.org),
+        gov.one(
+            "SELECT count(*) FROM governance.outbox WHERE org_id = %s AND left(event_type, 4) = 'dsr.'",
+            gov.org,
+        ),
+    )
+
+
+async def test_opening_a_data_subject_request_is_refused_until_the_search_exists(
     gov: Org, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("DSR_SUBJECT_KEY", KEY)
+    request = {
+        "request_kind": "delete",
+        "received_at": "2026-10-01T09:00:00+07:00",
+        "due_at": "2026-10-31T17:00:00+07:00",
+        "subject_identifier": " 0010 9200 1234 ",
+    }
     async with client(gov) as api:
-        opened = await api.post(
+        opened = await api.post("/v1/dsr", json=request, headers=gov.headers("officer"))
+        assert opened.status_code == 501, opened.text
+        assert opened.json()["code"] == "not_available" and opened.json()["detail"]
+        backwards = await api.post(
             "/v1/dsr",
-            json={
-                "request_kind": "delete",
-                "received_at": "2026-10-01T09:00:00+07:00",
-                "due_at": "2026-10-31T17:00:00+07:00",
-                "subject_identifier": " 0010 9200 1234 ",
-            },
+            json={**request, "due_at": "2026-09-01T09:00:00+07:00"},
             headers=gov.headers("officer"),
         )
-        assert opened.status_code == 202, opened.text
-        dsr = opened.json()["id"]
-        assert opened.headers["Location"] == f"/v1/dsr/{dsr}"
-        stored = gov.one("SELECT subject_hash FROM governance.dsr_request WHERE id = %s", dsr)
-        org_key = hmac.new(KEY.encode(), str(gov.org).encode(), hashlib.sha256).digest()
-        assert stored == hmac.new(org_key, b"001092001234", hashlib.sha256).hexdigest()
-        # A plain SHA-256 of the id would be reversed by trying every 12-digit number.
-        assert stored != hashlib.sha256(b"001092001234").hexdigest()
-        searched = dict(gov.events(dsr))["dsr.search_requested"]
-        assert searched["subject_hash"] == stored and "0010" not in str(searched)
+        assert backwards.status_code == 422
+        admin_only = await api.post("/v1/dsr", json=request, headers=gov.headers("admin"))
+        assert admin_only.status_code == 403
+    assert _dsr_written(gov) == (0, 0)
 
-        early = await api.post(
-            f"/v1/dsr/{dsr}:execute",
-            json={"items": [{"id": str(uuid.uuid4()), "action": "delete"}]},
+
+async def test_executing_a_data_subject_request_is_checked_then_refused(gov: Org) -> None:
+    def request(status: str) -> uuid.UUID:
+        return gov.seed.row(
+            "governance.dsr_request",
+            org_id=gov.org,
+            subject_hash=uuid.uuid4().hex * 2,
+            request_kind="delete",
+            received_at=datetime.datetime(2026, 10, 1, 2, tzinfo=datetime.UTC),
+            due_at=datetime.datetime(2026, 10, 31, 10, tzinfo=datetime.UTC),
+            status=status,
+            handler_id=gov.users["officer"],
+        )
+
+    dsr, searching = request("review"), request("searching")
+
+    # What the search worker would write.
+    def item(kind: str, action: str, basis: str | None = None) -> uuid.UUID:
+        return gov.seed.row(
+            "governance.dsr_item",
+            org_id=gov.org,
+            dsr_request_id=dsr,
+            location_kind=kind,
+            location_ref=f"{kind}:1",
+            proposed_action=action,
+            legal_basis=basis,
+        )
+
+    chunk = item("chunk", "delete")
+    source = item("source_system", "retain", "Nghĩa vụ lưu trữ của ngân hàng")
+    filed = item("tile_snapshot", "retain", "Kỳ chốt đã nộp")
+
+    async def execute(dsr_id: uuid.UUID, *items: dict[str, str]) -> httpx.Response:
+        return await api.post(
+            f"/v1/dsr/{dsr_id}:execute",
+            json={"items": list(items)},
             headers=gov.headers("officer"),
         )
+
+    async with client(gov) as api:
+        early = await execute(searching, {"id": str(chunk), "action": "delete"})
         assert early.status_code == 422
-
-        # What the search worker writes.
-        def item(kind: str, action: str, basis: str | None = None) -> uuid.UUID:
-            return gov.seed.row(
-                "governance.dsr_item",
-                org_id=gov.org,
-                dsr_request_id=dsr,
-                location_kind=kind,
-                location_ref=f"{kind}:1",
-                proposed_action=action,
-                legal_basis=basis,
-            )
-
-        chunk = item("chunk", "delete")
-        source = item("source_system", "retain", "Nghĩa vụ lưu trữ của ngân hàng")
-        filed = item("tile_snapshot", "retain", "Kỳ chốt đã nộp")
-        gov.seed.conn.cursor().execute(
-            "UPDATE governance.dsr_request SET status = 'review' WHERE id = %s", (dsr,)
-        )
-        got = await api.get(f"/v1/dsr/{dsr}", headers=gov.headers("officer"))
-        assert got.status_code == 200
-        assert {i["id"] for i in got.json()["items"]} == {str(chunk), str(source), str(filed)}
-
-        partial = await api.post(
-            f"/v1/dsr/{dsr}:execute",
-            json={"items": [{"id": str(chunk), "action": "delete"}]},
-            headers=gov.headers("officer"),
-        )
+        missing = await execute(uuid.uuid4(), {"id": str(chunk), "action": "delete"})
+        assert missing.status_code == 404
+        partial = await execute(dsr, {"id": str(chunk), "action": "delete"})
         assert partial.status_code == 422
-        at_source = await api.post(
-            f"/v1/dsr/{dsr}:execute",
-            json={
-                "items": [
-                    {"id": str(chunk), "action": "delete"},
-                    {"id": str(source), "action": "delete"},
-                    {"id": str(filed), "action": "retain", "legal_basis": "Kỳ chốt đã nộp"},
-                ]
-            },
-            headers=gov.headers("officer"),
+        retained = {"id": str(filed), "action": "retain", "legal_basis": "Kỳ chốt đã nộp"}
+        at_source = await execute(
+            dsr,
+            {"id": str(chunk), "action": "delete"},
+            {"id": str(source), "action": "delete"},
+            retained,
         )
         assert at_source.status_code == 422
-        no_basis = await api.post(
-            f"/v1/dsr/{dsr}:execute",
-            json={
-                "items": [
-                    {"id": str(chunk), "action": "delete"},
-                    {"id": str(source), "action": "retain"},
-                    {"id": str(filed), "action": "retain", "legal_basis": "Kỳ chốt đã nộp"},
-                ]
-            },
-            headers=gov.headers("officer"),
+        no_basis = await execute(
+            dsr,
+            {"id": str(chunk), "action": "delete"},
+            {"id": str(source), "action": "retain"},
+            retained,
         )
         assert no_basis.status_code == 422
-        done = await api.post(
-            f"/v1/dsr/{dsr}:execute",
-            json={
-                "items": [
-                    {"id": str(chunk), "action": "delete"},
-                    {"id": str(source), "action": "retain", "legal_basis": "Ở hệ thống nguồn"},
-                    {"id": str(filed), "action": "retain", "legal_basis": "Kỳ chốt đã nộp"},
-                ]
-            },
-            headers=gov.headers("officer"),
+        valid = await execute(
+            dsr,
+            {"id": str(chunk), "action": "delete"},
+            {"id": str(source), "action": "retain", "legal_basis": "Ở hệ thống nguồn"},
+            retained,
         )
-        assert done.status_code == 202, done.text
-        assert (
-            gov.one("SELECT status FROM governance.dsr_request WHERE id = %s", dsr) == "executing"
-        )
-        assert (
-            gov.one("SELECT decision FROM governance.dsr_item WHERE id = %s", filed) == "retained"
-        )
-        executed = dict(gov.events(dsr))["dsr.execute_requested"]
-        assert executed["delete_item_ids"] == [str(chunk)]
+        assert valid.status_code == 501, valid.text
+        assert valid.json()["code"] == "not_available"
+        assert gov.one("SELECT status FROM governance.dsr_request WHERE id = %s", dsr) == "review"
+        assert gov.one("SELECT decision FROM governance.dsr_item WHERE id = %s", filed) == "pending"
+        assert gov.events(dsr) == []
 
+        got = await api.get(f"/v1/dsr/{dsr}", headers=gov.headers("officer"))
+        assert {i["id"] for i in got.json()["items"]} == {str(chunk), str(source), str(filed)}
         admin_only = await api.get(f"/v1/dsr/{dsr}", headers=gov.headers("admin"))
         assert admin_only.status_code == 403
 
 
-async def test_a_model_change_is_evaluated_before_it_serves(gov: Org) -> None:
+async def test_a_model_change_is_checked_then_refused_until_serving_reads_it(gov: Org) -> None:
     provider = gov.seed.row(
         "governance.model_provider",
         org_id=gov.org,
@@ -581,23 +596,14 @@ async def test_a_model_change_is_evaluated_before_it_serves(gov: Org) -> None:
             json={"model_name": "Qwen3-Coder-72B", "endpoint": "http://vllm:8000/v1"},
             headers=gov.headers("admin"),
         )
-        assert changed.status_code == 202, changed.text
-        body = changed.json()
-        assert body["version"] == 2 and changed.headers["Location"] == f"/v1/eval-runs/{body['id']}"
-        requested = dict(gov.events(body["model_config_id"]))["model_config.eval_requested"]
-        assert requested["eval_run_id"] == body["id"]
+        assert changed.status_code == 501, changed.text
+        assert changed.json()["code"] == "not_available" and changed.json()["detail"]
         elsewhere = await api.put(
             "/v1/admin/models/answer_writing",
             json={"model_name": "gpt", "endpoint": "https://api.example.com/v1"},
             headers=gov.headers("admin"),
         )
         assert elsewhere.status_code == 422
-        busy = await api.put(
-            "/v1/admin/models/sql_generation",
-            json={"model_name": "X", "endpoint": "http://vllm:8000/v1"},
-            headers=gov.headers("admin"),
-        )
-        assert busy.status_code == 409
         unknown = await api.put(
             "/v1/admin/models/painting",
             json={"model_name": "X", "endpoint": "http://x"},
@@ -607,10 +613,36 @@ async def test_a_model_change_is_evaluated_before_it_serves(gov: Org) -> None:
 
         listed = await api.get("/v1/admin/models", headers=gov.headers("admin"))
         assert listed.status_code == 200
-        versions = {(m["version"], m["status"]) for m in listed.json()}
-        assert versions == {(1, "active"), (2, "testing")}
-        # The old version keeps its limits for the new one when none are given.
-        assert next(m for m in listed.json() if m["version"] == 2)["limits"] == {"max_tokens": 4096}
+        assert {(m["version"], m["status"]) for m in listed.json()} == {(1, "active")}
+    assert (
+        gov.one(
+            "SELECT count(*) FROM governance.outbox WHERE org_id = %s"
+            " AND event_type = 'model_config.eval_requested'",
+            gov.org,
+        )
+        == 0
+    )
+
+    # A change already under evaluation still answers 409 before the refusal.
+    gov.seed.row(
+        "governance.model_config",
+        org_id=gov.org,
+        task="sql_generation",
+        version=2,
+        model_name="Qwen3-Coder-72B",
+        endpoint="http://vllm:8000/v1",
+        provider_id=provider,
+        status="testing",
+        eval_run_id=uuid.uuid4(),
+        limits=Json({}),
+    )
+    async with client(gov) as api:
+        busy = await api.put(
+            "/v1/admin/models/sql_generation",
+            json={"model_name": "X", "endpoint": "http://vllm:8000/v1"},
+            headers=gov.headers("admin"),
+        )
+        assert busy.status_code == 409
 
 
 async def test_ai_settings_are_versioned_and_checked(gov: Org) -> None:

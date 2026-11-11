@@ -45,7 +45,7 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.kernel.problems import Problem
+from services.api.kernel.problems import Problem, not_available
 from services.api.kernel.ratelimit import questions_per_minute, within_quota
 from services.api.kernel.screening import refuse_instructions
 from services.api.kernel.sse import Event, event_stream
@@ -99,11 +99,8 @@ Paging = Annotated[PageRequest, Depends(page_request)]
 OFFLINE_WRAPS = ("hardware_key", "recovery_code")
 OPEN_PUBLICATION = ("pending_review", "published")
 PUBLISHABLE = ("open", "scored")
-REFRESH_EVENT = "exec.thesis.evidence_refresh_requested"
-# BR-192: at most three condition decrypts per thesis in 24 hours; a refresh asked within the hour
-# joins the pending batch instead of costing another one.
+# BR-192: at most three condition decrypts per thesis in 24 hours.
 DECRYPTS_PER_DAY = 3
-REFRESH_WINDOW = datetime.timedelta(hours=1)
 # A1.4 / tab 4: private context is at most 8 items and 4,000 tokens. The api has no tokenizer, so
 # it counts one token per 4 characters, the usual estimate for the local model's vocabulary.
 CONTEXT_TOKENS = 4_000
@@ -660,11 +657,9 @@ async def list_evidence(
         "POST", "/v1/exec/theses/{id}/evidence:refresh", operation_id="refreshExecThesisEvidence"
     ),
 )
-async def refresh_evidence(
-    thesis_id: IdPath, principal: CurrentPrincipal, response: Response
-) -> Accepted:
+async def refresh_evidence(thesis_id: IdPath, principal: CurrentPrincipal) -> Accepted:
     async with transaction(ROLE, principal) as session:
-        thesis = await _thesis(session, thesis_id, principal, lock=True)
+        thesis = await _thesis(session, thesis_id, principal)
         if thesis.status != "open":
             raise Problem(409, "invalid_state", f"The thesis is {thesis.status}.")
         vault = await _require_vault(session, principal)
@@ -673,52 +668,25 @@ async def refresh_evidence(
             raise Problem(409, "invalid_state", f"The vault is {vault.status}.")
         now = await session.scalar(select(func.now()))
         assert now is not None
-        pending = await session.scalar(
-            select(vaultdb.Outbox.payload)
-            .where(
-                vaultdb.Outbox.aggregate_id == thesis.id,
-                vaultdb.Outbox.event_type == REFRESH_EVENT,
-                vaultdb.Outbox.created_at > now - REFRESH_WINDOW,
+        decrypts = await session.scalar(
+            select(func.count()).where(
+                vaultdb.KeyAccessLog.thesis_id == thesis.id,
+                vaultdb.KeyAccessLog.action == "decrypt_condition",
+                vaultdb.KeyAccessLog.at > now - datetime.timedelta(hours=24),
             )
-            .order_by(vaultdb.Outbox.created_at.desc())
-            .limit(1)
         )
-        if isinstance(pending, dict) and pending.get("agent_run_id"):
-            # BR-192: joins the batch already asked for this hour; no second decrypt.
-            run_id = uuid.UUID(str(pending["agent_run_id"]))
-        else:
-            decrypts = await session.scalar(
-                select(func.count()).where(
-                    vaultdb.KeyAccessLog.thesis_id == thesis.id,
-                    vaultdb.KeyAccessLog.action == "decrypt_condition",
-                    vaultdb.KeyAccessLog.at > now - datetime.timedelta(hours=24),
-                )
+        if int(decrypts or 0) >= DECRYPTS_PER_DAY:
+            raise Problem(
+                429,
+                "rate_limited",
+                "The condition was decrypted 3 times in the last 24 hours (BR-192).",
             )
-            if int(decrypts or 0) >= DECRYPTS_PER_DAY:
-                raise Problem(
-                    429,
-                    "rate_limited",
-                    "The condition was decrypted 3 times in the last 24 hours (BR-192).",
-                )
-            # The Evidence agent's run is created by the worker under this id (agent schema).
-            run_id = uuid7()
-            session.add(
-                _event(
-                    principal,
-                    "thesis",
-                    thesis.id,
-                    REFRESH_EVENT,
-                    thesis_id=thesis.id,
-                    vault_id=vault.id,
-                    owner_id=principal.user_id,
-                    workflow_id=thesis.workflow_id,
-                    agent_run_id=run_id,
-                    purpose="evidence_refresh",
-                )
-            )
-            await session.flush()
-    response.headers["Location"] = f"/v1/runs/{run_id}"
-    return Accepted(id=run_id, status="queued", poll_after_ms=5_000)
+    # The refresh decrypts the condition through the Transit workflow (ADR-46), which is not
+    # built: refused, no batch asked.
+    raise not_available(
+        "Chưa có quy trình giải mã điều kiện qua Transit, nên chưa làm mới được bằng chứng "
+        "của luận điểm."
+    )
 
 
 @router.get(

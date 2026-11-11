@@ -22,7 +22,7 @@ import datetime
 import uuid
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Path, Query, Response
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,7 +41,7 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.kernel.problems import Problem
+from services.api.kernel.problems import Problem, not_available
 from services.api.modules import org as org_module
 from services.api.modules.integration import rules
 from services.api.modules.integration.ports import (
@@ -456,29 +456,15 @@ async def list_deliveries(
     response_model=Accepted,
     **endpoint("POST", "/v1/webhook-deliveries/{id}:retry", operation_id="retryWebhookDelivery"),
 )
-async def retry_delivery(
-    delivery_id: PathId, principal: CurrentPrincipal, response: Response
-) -> Accepted:
+async def retry_delivery(delivery_id: PathId, principal: CurrentPrincipal) -> Accepted:
     d = ig.WebhookDelivery
     async with transaction(ROLE, principal) as session:
-        row = await session.scalar(select(d).where(d.id == delivery_id).with_for_update())
+        row = await session.scalar(select(d).where(d.id == delivery_id))
         if row is None:
             raise Problem(404, "not_found", "No such delivery.")
         if row.status != "failed":
             raise Problem(
                 409, "invalid_state", f"Only a failed delivery is retried, not {row.status}."
             )
-        # Same event id on the retry, so the receiver can drop a duplicate (AC-12-03-02).
-        row.status = "retrying"
-        row.next_attempt_at = _now()
-        _emit(
-            session,
-            principal,
-            "webhook_delivery",
-            row.id,
-            "webhook_delivery.retry_requested",
-            subscription_id=row.subscription_id,
-            event_id=row.event_id,
-        )
-    response.headers["Location"] = f"/v1/webhook-deliveries/{delivery_id}"
-    return Accepted(id=delivery_id, status="retrying")
+    # Nothing sends webhooks yet: a retry would wait on a dispatcher that does not exist.
+    raise not_available("Chưa có bộ gửi webhook, nên chưa gửi lại được lần giao này.")

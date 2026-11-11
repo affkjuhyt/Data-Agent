@@ -554,15 +554,11 @@ async def test_dlq_lists_and_replays_a_pending_record_but_not_a_locked_one(ds: S
         hidden = await api.get(f"/v1/jobs/{job}/dlq", headers=ds.headers("engineer", ds.other))
         assert hidden.status_code == 404
 
-        accepted = await api.post(f"/v1/dlq/{pending}:replay", headers=ds.headers("engineer"))
-        assert accepted.status_code == 202, accepted.text
-        assert accepted.json()["id"] == str(pending)
-        assert accepted.headers["Location"] == f"/v1/jobs/{job}/dlq"
-        [(kind, payload)] = ds.events(pending)
-        assert kind == "dlq_record.replay_requested"
-        assert payload["job_id"] == str(job) and payload["job_run_id"] == str(run)
-        assert payload["replay_count"] == 1
-        # The worker does the replay: the api leaves the record as it is.
+        # No worker replays a single record yet: refused, nothing asked, the record as it was.
+        refused = await api.post(f"/v1/dlq/{pending}:replay", headers=ds.headers("engineer"))
+        assert refused.status_code == 501, refused.text
+        assert refused.json()["code"] == "not_available" and refused.json()["detail"]
+        assert ds.events(pending) == []
         assert ds.one("SELECT status FROM ingest.dlq_record WHERE id = %s", pending) == "pending"
 
         # A3: locked after three failed replays is 409; a replayed record is done.

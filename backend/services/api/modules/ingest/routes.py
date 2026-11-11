@@ -42,7 +42,7 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.kernel.problems import Problem
+from services.api.kernel.problems import Problem, not_available
 from services.api.modules.ingest.schemas import (
     Accepted,
     Acknowledge,
@@ -666,36 +666,20 @@ async def _dlq_record(
     **endpoint("POST", "/v1/dlq/{id}:replay", operation_id="replayDlqRecord"),
 )
 async def replay_dlq(
-    record_id: IdPath,
-    principal: CurrentPrincipal,
-    data_space: CurrentDataSpace,
-    response: Response,
+    record_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace
 ) -> Accepted:
     async with transaction(ROLE, principal) as session:
-        record, job = await _dlq_record(session, record_id, principal, data_space)
+        record, _ = await _dlq_record(session, record_id, principal, data_space)
         if record.status == "locked":
             # UC-04-07 E1: locked after three failed replays; A3 answers 409.
             raise Problem(409, "invalid_state", "The record is locked after three failed replays.")
         if record.status != "pending":
             raise Problem(409, "invalid_state", f"The record is already {record.status}.")
-        # The worker replays with the job's current mapping, then marks the record replayed or
-        # counts the failure (and locks it on the fourth).
-        session.add(
-            _event(
-                principal,
-                "dlq_record",
-                record.id,
-                "dlq_record.replay_requested",
-                dlq_record_id=record.id,
-                job_id=job.id,
-                job_run_id=record.job_run_id,
-                data_space_id=data_space,
-                replay_count=record.replay_count,
-                status=record.status,
-            )
-        )
-    response.headers["Location"] = f"/v1/jobs/{job.id}/dlq"
-    return Accepted(id=record.id, status=record.status, poll_after_ms=POLL_AFTER_MS)
+    # No worker replays a single record with the job's current mapping: refused, nothing asked.
+    raise not_available(
+        "Chưa có bộ nạp lại từng bản ghi lỗi theo ánh xạ hiện tại của job, nên chưa nạp lại được "
+        "bản ghi này."
+    )
 
 
 @router.post(

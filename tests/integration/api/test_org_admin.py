@@ -95,8 +95,16 @@ def _member(seed: Seed, org: uuid.UUID, space: uuid.UUID, user: uuid.UUID, role:
     )
 
 
-@pytest.mark.req("AC-11-01-07")
-async def test_directory_sync_and_invitation_are_queued(world: World) -> None:
+def _directory_events(world: World) -> int:
+    return world.one(
+        "SELECT count(*) FROM org.outbox WHERE org_id = %s AND event_type LIKE 'directory.%%'",
+        world.org,
+    )
+
+
+async def test_directory_sync_and_invitation_are_refused_until_a_directory_client_exists(
+    world: World,
+) -> None:
     async with client(world) as api:
         synced = await api.post("/v1/admin/directory:sync", headers=world.headers("admin"))
         invited = await api.post(
@@ -108,13 +116,25 @@ async def test_directory_sync_and_invitation_are_queued(world: World) -> None:
                 "data_space_id": str(world.space),
             },
         )
-    assert synced.status_code == 202, synced.text
-    assert synced.json() == {"status": "queued"}
-    assert world.event_types(world.org) == ["directory.sync_requested"]
-    assert invited.status_code == 202, invited.text
-    invitation_id = invited.json()["id"]
-    assert invited.json()["status"] == "pending"
-    assert world.event_types(invitation_id) == ["directory.invitation_requested"]
+        # The checks before the refusal still answer as they did.
+        no_role = await api.post(
+            "/v1/admin/invitations",
+            headers=world.headers("admin"),
+            json={
+                "email": "new.user@example.test",
+                "role_id": str(uuid.uuid4()),
+                "data_space_id": str(world.space),
+            },
+        )
+        not_admin = await api.post(
+            "/v1/admin/directory:sync", headers=world.headers("steward", world.space)
+        )
+    for refused in (synced, invited):
+        assert refused.status_code == 501, refused.text
+        assert refused.json()["code"] == "not_available" and refused.json()["detail"]
+    assert no_role.status_code == 404
+    assert not_admin.status_code == 403
+    assert _directory_events(world) == 0
 
 
 async def test_the_permission_matrix_counts_the_members_of_each_role(world: World) -> None:
@@ -141,28 +161,21 @@ async def test_the_permission_matrix_counts_the_members_of_each_role(world: Worl
     assert elsewhere.status_code == 404
 
 
-async def test_an_invitation_carries_its_row_scope_as_a_membership_does(world: World) -> None:
+async def test_an_invitation_row_scope_is_checked_as_a_membership_is(world: World) -> None:
     body = {
         "email": "scoped.user@example.test",
         "role_id": str(world.roles["analyst"]),
         "data_space_id": str(world.space),
     }
     async with client(world) as api:
-        scoped = await api.post(
-            "/v1/admin/invitations",
-            headers=world.headers("admin"),
-            json={**body, "row_scope": {"region": ["Bắc", "Trung"]}},
-        )
         # A named scope ("Vùng: Bắc") is no boundary the query engine can apply.
         named = await api.post(
             "/v1/admin/invitations",
             headers=world.headers("admin"),
             json={**body, "row_scope": "Vùng: Bắc"},
         )
-    assert scoped.status_code == 202, scoped.text
-    payload = dict(world.events(scoped.json()["id"]))["directory.invitation_requested"]
-    assert payload["row_scope"] == {"region": ["Bắc", "Trung"]}
     assert named.status_code == 422
+    assert _directory_events(world) == 0
 
 
 @pytest.fixture

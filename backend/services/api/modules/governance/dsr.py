@@ -6,6 +6,9 @@ snapshots, derived tables, conversations and agent memory is a worker's job: it 
 dsr_item rows and moves the request to review. The handler then decides each item here; deleting
 is again the worker's, on the copies inside Data Agent only (E1: a source system is reported,
 not touched).
+
+Neither worker exists yet (UC-11-06 todo), so opening and executing a request answer 501
+not_available after their checks and write nothing; listing and reading work on what is there.
 """
 
 from __future__ import annotations
@@ -16,14 +19,13 @@ import hmac
 import os
 import unicodedata
 import uuid
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Path, Query, Response
+from fastapi import APIRouter, Depends, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import governance
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal, Principal
@@ -37,11 +39,16 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.kernel.problems import FieldError, Problem
+from services.api.kernel.problems import FieldError, Problem, not_available
 
 router = APIRouter()
 ROLE = "svc_governance"
-POLL_AFTER_MS = 2_000
+# UC-11-06 is todo: nothing searches the stores for a person's data, nor deletes or hands over
+# what it found, so both actions are refused instead of waiting on a worker that does not exist.
+DSR_NOT_AVAILABLE = (
+    "Chưa có chức năng tìm và xử lý dữ liệu cá nhân trên các kho của Data Agent, "
+    "nên chưa nhận hay thực hiện được yêu cầu của chủ thể dữ liệu."
+)
 DsrId = Annotated[uuid.UUID, Path(alias="id")]
 
 
@@ -116,10 +123,6 @@ class DsrAccepted(BaseModel):
     poll_after_ms: int
 
 
-def _now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.UTC)
-
-
 SUBJECT_KEY_ENV = "DSR_SUBJECT_KEY"
 
 
@@ -141,34 +144,13 @@ def _rule(detail: str) -> Problem:
     return Problem(422, "business_rule_violated", detail)
 
 
-def _event(
-    session: AsyncSession,
-    principal: Principal,
-    row_id: uuid.UUID,
-    event_type: str,
-    **payload: Any,
-) -> None:
-    session.add(
-        governance.Outbox(
-            id=uuid7(),
-            org_id=principal.org_id,
-            aggregate_type="dsr_request",
-            aggregate_id=row_id,
-            event_type=event_type,
-            payload={k: str(v) if isinstance(v, uuid.UUID) else v for k, v in payload.items()},
-        )
-    )
-
-
 async def _request(
-    session: AsyncSession, principal: Principal, dsr_id: uuid.UUID, *, lock: bool = False
+    session: AsyncSession, principal: Principal, dsr_id: uuid.UUID
 ) -> governance.DsrRequest:
     query = select(governance.DsrRequest).where(
         governance.DsrRequest.id == dsr_id,
         governance.DsrRequest.org_id == principal.org_id,
     )
-    if lock:
-        query = query.with_for_update()
     row = await session.scalar(query)
     if row is None:
         raise Problem(404, "not_found", "Data subject request not found.")
@@ -181,9 +163,7 @@ async def _request(
     response_model=DsrAccepted,
     **endpoint("POST", "/v1/dsr", operation_id="createDsr"),
 )
-async def create_dsr(
-    body: DsrCreate, principal: CurrentPrincipal, response: Response
-) -> DsrAccepted:
+async def create_dsr(body: DsrCreate, principal: CurrentPrincipal) -> DsrAccepted:
     if body.received_at.tzinfo is None or body.due_at.tzinfo is None:
         raise Problem(422, "validation_failed", "received_at and due_at need a time zone.")
     if body.due_at <= body.received_at:
@@ -193,39 +173,9 @@ async def create_dsr(
             "due_at is after received_at.",
             errors=[FieldError(field="due_at", code="invalid", message="after received_at")],
         )
-    digest = subject_hash(body.subject_identifier, principal.org_id)
-    stamp = _now()
-    async with transaction(ROLE, principal) as session:
-        row = governance.DsrRequest(
-            id=uuid7(),
-            org_id=principal.org_id,
-            subject_hash=digest,
-            request_kind=body.request_kind,
-            received_at=body.received_at,
-            due_at=body.due_at,
-            status="searching",
-            handler_id=principal.user_id,
-            created_by=principal.user_id,
-            updated_by=principal.user_id,
-            created_at=stamp,
-            updated_at=stamp,
-        )
-        session.add(row)
-        await session.flush()
-        # The search worker needs the hash to match; the identifier itself never leaves here.
-        _event(
-            session,
-            principal,
-            row.id,
-            "dsr.search_requested",
-            dsr_request_id=row.id,
-            subject_hash=digest,
-            request_kind=row.request_kind,
-            due_at=row.due_at.isoformat(),
-            status=row.status,
-        )
-    response.headers["Location"] = f"/v1/dsr/{row.id}"
-    return DsrAccepted(id=row.id, status=row.status, poll_after_ms=POLL_AFTER_MS)
+    # The key is the deploy's to configure whatever the search becomes: a missing one stays 503.
+    subject_hash(body.subject_identifier, principal.org_id)
+    raise not_available(DSR_NOT_AVAILABLE)
 
 
 @router.get(
@@ -290,21 +240,16 @@ async def get_dsr(dsr_id: DsrId, principal: CurrentPrincipal) -> DsrRequestView:
     response_model=DsrAccepted,
     **endpoint("POST", "/v1/dsr/{id}:execute", operation_id="executeDsr"),
 )
-async def execute_dsr(
-    dsr_id: DsrId, body: DsrExecute, principal: CurrentPrincipal, response: Response
-) -> DsrAccepted:
-    stamp = _now()
+async def execute_dsr(dsr_id: DsrId, body: DsrExecute, principal: CurrentPrincipal) -> DsrAccepted:
     async with transaction(ROLE, principal) as session:
-        row = await _request(session, principal, dsr_id, lock=True)
+        row = await _request(session, principal, dsr_id)
         if row.status != "review":
             raise _rule(f"The request is {row.status}; items are decided in review.")
         items = {
             i.id: i
             for i in (
                 await session.scalars(
-                    select(governance.DsrItem)
-                    .where(governance.DsrItem.dsr_request_id == row.id)
-                    .with_for_update()
+                    select(governance.DsrItem).where(governance.DsrItem.dsr_request_id == row.id)
                 )
             ).all()
         }
@@ -324,22 +269,4 @@ async def execute_dsr(
                 raise _rule("Data in a source system is reported, not deleted by Data Agent.")
             if decision.action == "delete" and row.request_kind not in ("delete", "correct"):
                 raise _rule(f"A {row.request_kind} request does not delete data.")
-            item.proposed_action = decision.action
-            if decision.action == "retain":
-                item.legal_basis = decision.legal_basis
-                item.decision = "retained"
-            item.updated_by, item.updated_at = principal.user_id, stamp
-        row.status = "executing"
-        row.updated_by, row.updated_at = principal.user_id, stamp
-        _event(
-            session,
-            principal,
-            row.id,
-            "dsr.execute_requested",
-            dsr_request_id=row.id,
-            status=row.status,
-            delete_item_ids=[str(i) for i, d in decided.items() if d.action == "delete"],
-            provide_item_ids=[str(i) for i, d in decided.items() if d.action == "provide"],
-        )
-    response.headers["Location"] = f"/v1/dsr/{row.id}"
-    return DsrAccepted(id=row.id, status=row.status, poll_after_ms=POLL_AFTER_MS)
+    raise not_available(DSR_NOT_AVAILABLE)

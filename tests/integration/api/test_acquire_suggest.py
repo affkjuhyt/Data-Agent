@@ -1,8 +1,8 @@
 """POST /v1/crawl-sources:suggest (UC-14-01, added 12/10/2026) against PostgreSQL.
 
-Proposing sources for a goal is the Agent Thu thập run's job: the api reserves the run id, writes
-the request to acquire.outbox and answers 202 with a Location to the run. It registers nothing.
-Organisation and users come from the acquire suite's fixture.
+Proposing sources for a goal is the Agent Thu thập run's job, and that run needs a web search the
+stack does not have: after its checks the api answers 501 not_available and writes nothing, no
+outbox event and no source. Organisation and users come from the acquire suite's fixture.
 """
 
 from __future__ import annotations
@@ -25,32 +25,21 @@ def _sources(w: World) -> int:
     return int(w.one("SELECT count(*) FROM acquire.crawl_source WHERE org_id = %s", w.org))
 
 
-async def test_suggest_queues_the_agent_run_and_registers_nothing(w: World) -> None:
+def _events(w: World) -> int:
+    return int(w.one("SELECT count(*) FROM acquire.outbox WHERE org_id = %s", w.org))
+
+
+async def test_suggest_is_refused_until_a_web_search_exists(w: World) -> None:
     async with w.client("owner") as c:
         r = await c.post(
             URL, json={"goal": f"  {GOAL} ", "examples": ["https://bank.example.vn/lai-suat"]}
         )
-        bare = await c.post(URL, json={"goal": GOAL})
-    assert r.status_code == 202, r.text
-    run = r.json()["id"]
-    assert r.json()["status"] == "queued" and r.json()["poll_after_ms"] > 0
-    assert r.headers["Location"] == f"/v1/runs/{run}"
-    [(kind, event)] = w.events(run)
-    assert kind == "acquire.source.suggest_requested"
-    assert event["agent_run_id"] == run and event["data_space_id"] == str(w.space)
-    assert event["requested_by"] == str(w.users["owner"])
-    assert event["goal"] == GOAL
-    assert event["examples"] == ["https://bank.example.vn/lai-suat"]
-    assert bare.status_code == 202, bare.text
-    assert bare.json()["id"] != run
-    assert w.event(bare.json()["id"], "acquire.source.suggest_requested")["examples"] == []
-    assert _sources(w) == 0
-
-
-async def test_admin_data_may_ask_too(w: World) -> None:
     async with w.client("admin") as c:
-        r = await c.post(URL, json={"goal": GOAL})
-    assert r.status_code == 202, r.text
+        admin = await c.post(URL, json={"goal": GOAL})
+    for refused in (r, admin):
+        assert refused.status_code == 501, refused.text
+        assert refused.json()["code"] == "not_available" and refused.json()["detail"]
+    assert _events(w) == 0 and _sources(w) == 0
 
 
 async def test_suggest_validation(w: World) -> None:
@@ -62,7 +51,7 @@ async def test_suggest_validation(w: World) -> None:
     for r in (no_goal, blank, empty_example, unknown_field):
         assert r.status_code == 422, r.text
         assert r.json()["code"] == "validation_failed"
-    assert int(w.one("SELECT count(*) FROM acquire.outbox WHERE org_id = %s", w.org)) == 0
+    assert _events(w) == 0
 
 
 @pytest.mark.security
@@ -74,4 +63,4 @@ async def test_suggest_needs_steward_or_admin_data_and_a_data_space(w: World) ->
     async with w.client("admin", w.other_space) as c:
         outside = await c.post(URL, json={"goal": GOAL})
     assert outside.status_code == 404, outside.text
-    assert int(w.one("SELECT count(*) FROM acquire.outbox WHERE org_id = %s", w.org)) == 0
+    assert _events(w) == 0

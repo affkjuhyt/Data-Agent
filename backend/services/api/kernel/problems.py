@@ -40,6 +40,7 @@ DEFAULT_CODES: dict[int, str] = {
     422: "validation_failed",
     423: "period_locked",
     429: "rate_limited",
+    501: "not_available",
     503: "source_unavailable",
 }
 
@@ -64,6 +65,7 @@ TITLES: dict[str, str] = {
     "quota_exceeded": "Quota exceeded",
     "source_unavailable": "Source unavailable",
     "model_unavailable": "Model unavailable",
+    "not_available": "Not available",
     "internal_error": "Internal error",
 }
 
@@ -104,6 +106,16 @@ class Problem(Exception):
         self.errors = errors
         self.headers = headers or {}
         super().__init__(f"{status} {self.code}: {detail or ''}")
+
+
+def not_available(missing: str) -> Problem:
+    """The refusal of an action whose machinery is not built yet: answered at once, nothing written.
+
+    Such actions used to answer 202 and write a `*_requested` event no worker handles, so the
+    screen waited forever. The route raises this after its own checks (401/403/404/409/422 stay
+    as they were); `missing` is the Vietnamese sentence the screen shows. Once the worker exists,
+    the route's one `raise not_available(...)` line is where the request goes back in."""
+    return Problem(501, "not_available", missing)
 
 
 def problem_body(

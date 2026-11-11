@@ -124,8 +124,17 @@ export default function CrawlRegisterPage() {
         review_gate: gate,
         trust_level: TRUST_LEVEL,
       });
-      await inferCrawlSchema(id);
-      toast({ tone: 'success', message: 'Đã lưu nguồn; Agent Thu thập đang suy ngược schema' });
+      // The source is saved whatever inference answers (501 while the agent is not built): an
+      // error here must not read as "nothing saved", or a second click registers it twice.
+      const inferred = await inferCrawlSchema(id).then(
+        () => undefined,
+        (e: unknown) => (e as Error).message,
+      );
+      toast(
+        inferred === undefined
+          ? { tone: 'success', message: 'Đã lưu nguồn; Agent Thu thập đang suy ngược schema' }
+          : { tone: 'info', message: `Đã lưu nguồn. ${inferred}` },
+      );
       navigate('data', 'CRAWL_SOURCE', id);
     } catch (e) {
       setError((e as Error).message);

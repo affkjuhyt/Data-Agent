@@ -886,7 +886,7 @@ async def test_run_detail_lists_its_pages_and_pages_are_append_only(w: World) ->
 # ================================================================ schema versions (UC-14-02, -03)
 
 
-async def test_schema_inference_is_queued_for_the_agent(w: World) -> None:
+async def test_schema_inference_is_checked_then_refused_until_the_agent_exists(w: World) -> None:
     source, _ = w.source(active=False)
     async with w.client("owner") as c:
         r = await c.post(
@@ -898,15 +898,11 @@ async def test_schema_inference_is_queued_for_the_agent(w: World) -> None:
             f"/v1/crawl-sources/{source}/schema-inference",
             json={"sample_urls": ["https://evil.example.com/a"]},
         )
-    assert r.status_code == 202, r.text
-    agent_run = r.json()["id"]
-    assert r.headers["Location"] == f"/v1/runs/{agent_run}"
-    (event,) = (e for _, e in w.events(source) if e["agent_run_id"] == agent_run)
-    assert event["hints"] == "cột 12 tháng"
-    assert event["sample_urls"] == ["https://bank.example.vn/lai-suat?p=2"]
-    assert {e["agent_run_id"] for t, e in w.events(source)} == {agent_run, no_body.json()["id"]}
-    assert no_body.status_code == 202, no_body.text
+    for refused in (r, no_body):
+        assert refused.status_code == 501, refused.text
+        assert refused.json()["code"] == "not_available" and refused.json()["detail"]
     assert outside.status_code == 422, outside.text
+    assert w.events(source) == []
 
 
 @pytest.mark.req("AC-14-01-08")

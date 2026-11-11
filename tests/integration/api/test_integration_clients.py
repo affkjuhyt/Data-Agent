@@ -268,15 +268,25 @@ async def test_ac_12_03_webhook_targets_and_retry(
             "payload" not in listed["items"][0]
         )  # AC-12-03-07: no data rows leave through the API either
 
+        # No dispatcher sends webhooks yet: the retry is refused and the delivery stays failed.
         retry = await c.post(f"/v1/webhook-deliveries/{failed}:retry")
-        assert retry.status_code == 202 and retry.headers["Location"].endswith(str(failed))
+        assert retry.status_code == 501, retry.text
+        assert retry.json()["code"] == "not_available" and retry.json()["detail"]
         again = await c.post(f"/v1/webhook-deliveries/{done}:retry")
+        missing = await c.post(f"/v1/webhook-deliveries/{uuid.uuid4()}:retry")
     assert again.status_code == 409
+    assert missing.status_code == 404
     cur = seed.conn.cursor()
     cur.execute(
         "SELECT status, event_id FROM integration.webhook_delivery WHERE id = %s", (str(failed),)
     )
-    assert cur.fetchone() == ("retrying", event)
+    assert cur.fetchone() == ("failed", event)
+    cur.execute(
+        "SELECT count(*) FROM integration.outbox WHERE event_type = 'webhook_delivery.retry_requested'"
+        " AND aggregate_id = %s",
+        (str(failed),),
+    )
+    assert cur.fetchone() == (0,)
 
 
 async def test_revoking_a_client_pauses_its_webhooks(

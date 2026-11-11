@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import org
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal
@@ -30,8 +29,8 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.kernel.problems import Problem
-from services.api.modules.org.admin.common import emit, live_data_space, org_only, same_space
+from services.api.kernel.problems import Problem, not_available
+from services.api.modules.org.admin.common import live_data_space, org_only, same_space
 from services.api.modules.org.admin.schemas import (
     MemberView,
     PermissionMatrix,
@@ -46,6 +45,15 @@ PrincipalKind = Literal["user", "group", "agent"]
 # A user principal is a person; service accounts are not offered for sharing or membership.
 _USER_KINDS: dict[str, tuple[str, ...]] = {"user": ("human",), "agent": ("agent",)}
 MAX_PRINCIPALS = 100
+# Nothing calls Keycloak's or the AD's admin API and no table holds an invitation, so both
+# actions are refused instead of queueing an event no worker takes.
+DIRECTORY_SYNC_NOT_AVAILABLE = (
+    "Chưa có kết nối quản trị tới Keycloak hay AD, nên chưa đồng bộ được danh bạ người dùng."
+)
+INVITATION_NOT_AVAILABLE = (
+    "Chưa có kết nối quản trị tới Keycloak hay AD và chưa có nơi lưu lời mời, "
+    "nên chưa gửi được lời mời."
+)
 
 
 class PrincipalRef(BaseModel):
@@ -208,10 +216,7 @@ async def list_groups(principal: CurrentPrincipal) -> Page[UserGroupView]:
     **endpoint("POST", "/v1/admin/directory:sync", operation_id="syncDirectory"),
 )
 async def sync_directory(principal: CurrentPrincipal) -> DirectorySyncAccepted:
-    """Queue an identity-directory refresh; the connector owns the external call."""
-    async with transaction(ROLE, principal) as session:
-        emit(session, principal, "directory", principal.org_id, "directory.sync_requested")
-    return DirectorySyncAccepted(status="queued")
+    raise not_available(DIRECTORY_SYNC_NOT_AVAILABLE)
 
 
 @router.post(
@@ -221,7 +226,6 @@ async def sync_directory(principal: CurrentPrincipal) -> DirectorySyncAccepted:
     **endpoint("POST", "/v1/admin/invitations", operation_id="inviteUser"),
 )
 async def invite_user(body: InvitationCreate, principal: CurrentPrincipal) -> InvitationAccepted:
-    invitation_id = uuid7()
     async with transaction(ROLE, principal) as session:
         await live_data_space(session, body.data_space_id)
         role = await session.scalar(
@@ -229,21 +233,7 @@ async def invite_user(body: InvitationCreate, principal: CurrentPrincipal) -> In
         )
         if role is None:
             raise Problem(404, "not_found", "Role not found.")
-        emit(
-            session,
-            principal,
-            "invitation",
-            invitation_id,
-            "directory.invitation_requested",
-            invitation_id=invitation_id,
-            email=body.email,
-            role_id=body.role_id,
-            data_space_id=body.data_space_id,
-            row_scope=body.row_scope,
-            valid_until=body.valid_until,
-            requested_by=principal.user_id,
-        )
-    return InvitationAccepted(id=invitation_id, email=body.email, status="pending")
+    raise not_available(INVITATION_NOT_AVAILABLE)
 
 
 @router.get(

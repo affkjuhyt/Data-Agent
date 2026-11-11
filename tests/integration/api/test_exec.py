@@ -776,23 +776,18 @@ async def test_evidence_shows_the_latest_batch_and_the_one_before(w: World) -> N
         assert other.status_code == 404
 
 
-async def test_evidence_refresh_joins_the_pending_batch_within_the_hour(w: World) -> None:
+async def test_evidence_refresh_is_checked_then_refused_until_transit_decrypt_exists(
+    w: World,
+) -> None:
     async with client(w) as api:
         await make_vault(api, w, "leader")
         await make_vault(api, w, "leader2")
         h = w.headers("leader")
         thesis = await make_thesis(api, w, "leader")
         asked = await api.post(f"/v1/exec/theses/{thesis['id']}/evidence:refresh", headers=h)
-        assert asked.status_code == 202, asked.text
-        run = asked.json()["id"]
-        assert asked.json()["status"] == "queued"
-        assert asked.headers["Location"] == f"/v1/runs/{run}"
-        again = await api.post(f"/v1/exec/theses/{thesis['id']}/evidence:refresh", headers=h)
-        assert again.status_code == 202 and again.json()["id"] == run
-        refreshes = [e for e in w.events(thesis["id"]) if e[0] == REFRESH_EVENT]
-        assert len(refreshes) == 1
-        assert refreshes[0][1]["agent_run_id"] == run
-        assert refreshes[0][1]["workflow_id"] == thesis["workflow_id"]
+        assert asked.status_code == 501, asked.text
+        assert asked.json()["code"] == "not_available" and asked.json()["detail"]
+        assert REFRESH_EVENT not in [e[0] for e in w.events(thesis["id"])]
 
         foreign = await api.post(
             f"/v1/exec/theses/{thesis['id']}/evidence:refresh", headers=w.headers("leader2")
