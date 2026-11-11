@@ -7,6 +7,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
+import { runsFixture } from '../../mocks/fixtures';
 import { createHandlers } from '../../mocks/handlers';
 import AgentTeamPage from './AgentTeamPage';
 import RunDetailPage from './RunDetailPage';
@@ -45,6 +46,26 @@ describe('RunsPage', () => {
 
     fireEvent.click(screen.getByText('Soạn báo cáo rủi ro tháng 9'));
     expect(navigate).toHaveBeenCalledWith('agents', 'RUN', 'run-414');
+  });
+});
+
+describe('RunsPage over more than one page', () => {
+  it('marks the counts as partial and reads older runs on demand', async () => {
+    const [newest, ...rest] = runsFixture();
+    const failed = rest.find((r) => r.status === 'failed') ?? rest[0];
+    server.use(
+      http.get('*/v1/runs', ({ request }) =>
+        new URL(request.url).searchParams.get('page_token') === 'p2'
+          ? HttpResponse.json({ items: [failed], next_page_token: '' })
+          : HttpResponse.json({ items: [{ ...newest, status: 'succeeded' }], next_page_token: 'p2' }),
+      ),
+    );
+    wrap(<RunsPage />);
+    // Only the newest page is read: its counts are "at least".
+    expect(await screen.findByRole('radio', { name: 'Lỗi · 0+' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Tải lượt cũ hơn' }));
+    expect(await screen.findByRole('radio', { name: 'Lỗi · 1' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tải lượt cũ hơn' })).toBeNull();
   });
 });
 

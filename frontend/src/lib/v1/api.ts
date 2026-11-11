@@ -259,7 +259,7 @@ export const listAgents = async (): Promise<Page<AgentDef>> => {
 };
 
 export const listRuns = async (
-  query: { status?: RunStatus; agent_id?: string } = {},
+  query: { status?: RunStatus; agent_id?: string; page_token?: string } = {},
 ): Promise<Page<AgentRun>> => {
   const [page, agents] = await Promise.all([
     okAs<Page<RunWire>>(api.GET('/v1/runs', { params: { query: { ...ALL, ...query } } })),

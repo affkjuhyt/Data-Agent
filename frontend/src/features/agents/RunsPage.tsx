@@ -10,6 +10,7 @@ import { StatusDot } from '../../design-system/StatusDot';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Tooltip } from '../../design-system/Tooltip';
 import { listRuns } from '../../lib/v1/api';
+import type { AgentRun } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 import { matchesFilter, runDuration, runStatus, shortCost, type RunFilter } from './runStatus';
 
@@ -23,9 +24,28 @@ export default function RunsPage() {
   const { navigate } = useAppState();
   const runs = useV1(['listRuns'], () => listRuns());
   const [filter, setFilter] = useState<RunFilter>('all');
+  // Older pages, read on demand: the first holds the newest 500 runs, and every Ask question is a
+  // run, so the chips and the list said the 500 were all there was.
+  const [older, setOlder] = useState<{ items: AgentRun[]; token: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const token = older ? older.token : (runs.data?.next_page_token ?? '');
+  const loadOlder = async () => {
+    setLoading(true);
+    try {
+      const page = await listRuns({ page_token: token });
+      setOlder((prev) => ({
+        items: [...(prev?.items ?? []), ...page.items],
+        token: page.next_page_token,
+      }));
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const items = runs.data?.items ?? [];
-  const count = (f: RunFilter) => items.filter((r) => matchesFilter(r, f)).length;
+  const items = [...(runs.data?.items ?? []), ...(older?.items ?? [])];
+  // "+" while older runs are not read: the count is of the runs listed, not of all.
+  const count = (f: RunFilter) =>
+    `${items.filter((r) => matchesFilter(r, f)).length}${token ? '+' : ''}`;
   const view = useTableView(items, {
     search: (r) => `${r.title} ${r.agent_name} ${r.code} ${r.initiated_label ?? ''}`,
     filters: [{ id: 'agent', label: 'Agent', value: (r) => r.agent_name }],
@@ -97,13 +117,21 @@ export default function RunsPage() {
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="bg-subtle text-left text-muted-foreground da-label">
-                  <SortableTh view={view} column="code" className="w-[76px] px-da-lg py-da-sm font-medium">
+                  <SortableTh
+                    view={view}
+                    column="code"
+                    className="w-[76px] px-da-lg py-da-sm font-medium"
+                  >
                     Lượt
                   </SortableTh>
                   <SortableTh view={view} column="title" className="px-da-md py-da-sm font-medium">
                     Mục tiêu
                   </SortableTh>
-                  <SortableTh view={view} column="agent" className="w-[230px] px-da-md py-da-sm font-medium">
+                  <SortableTh
+                    view={view}
+                    column="agent"
+                    className="w-[230px] px-da-md py-da-sm font-medium"
+                  >
                     Agent chính
                   </SortableTh>
                   <SortableTh
@@ -113,16 +141,32 @@ export default function RunsPage() {
                   >
                     Khởi tạo bởi
                   </SortableTh>
-                  <SortableTh view={view} column="status" className="w-[130px] px-da-md py-da-sm font-medium">
+                  <SortableTh
+                    view={view}
+                    column="status"
+                    className="w-[130px] px-da-md py-da-sm font-medium"
+                  >
                     Trạng thái
                   </SortableTh>
-                  <SortableTh view={view} column="duration" className="w-[80px] px-da-md py-da-sm font-medium">
+                  <SortableTh
+                    view={view}
+                    column="duration"
+                    className="w-[80px] px-da-md py-da-sm font-medium"
+                  >
                     Thời gian
                   </SortableTh>
-                  <SortableTh view={view} column="hitl" className="w-[52px] px-da-md py-da-sm font-medium">
+                  <SortableTh
+                    view={view}
+                    column="hitl"
+                    className="w-[52px] px-da-md py-da-sm font-medium"
+                  >
                     HITL
                   </SortableTh>
-                  <SortableTh view={view} column="cost" className="w-[76px] px-da-md py-da-sm font-medium">
+                  <SortableTh
+                    view={view}
+                    column="cost"
+                    className="w-[76px] px-da-md py-da-sm font-medium"
+                  >
                     Chi phí
                   </SortableTh>
                 </tr>
@@ -179,6 +223,16 @@ export default function RunsPage() {
         )}
       </AsyncRegion>
       <TablePager view={view} />
+      {token && (
+        <div className="flex items-center gap-da-md">
+          <span className="text-muted-foreground da-caption">
+            Đang hiện {items.length} lượt mới nhất; còn lượt cũ hơn.
+          </span>
+          <Button onClick={() => void loadOlder()} disabled={loading}>
+            {loading ? 'Đang tải…' : 'Tải lượt cũ hơn'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
