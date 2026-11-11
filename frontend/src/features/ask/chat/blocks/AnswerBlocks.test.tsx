@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -64,6 +65,17 @@ describe('AnswerBlocks', () => {
     const filters = screen.getByRole('dialog', { name: 'Bộ lọc của câu trả lời' });
     expect(within(filters).getByText('năm 2013')).toBeInTheDocument();
     expect(within(filters).queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('closes the filters on Esc and gives focus back to their button', async () => {
+    const user = userEvent.setup();
+    render(<AnswerBlocks message={message()} />);
+    const button = screen.getByRole('button', { name: 'Bộ lọc 1' });
+    await user.click(button);
+    expect(screen.getByRole('dialog', { name: 'Bộ lọc của câu trả lời' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Bộ lọc của câu trả lời' })).toBeNull();
+    await waitFor(() => expect(button).toHaveFocus());
   });
 
   it('puts the SQL first when /sql asked for it', () => {

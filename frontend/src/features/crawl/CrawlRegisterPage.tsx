@@ -4,7 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
 import { Notice } from '../../design-system/Notice';
-import { Radio } from '../../design-system/Radio';
+import { RadioGroup, RadioOption } from '../../design-system/Radio';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
@@ -291,27 +291,13 @@ export default function CrawlRegisterPage() {
             </dl>
           </Card>
           <Card title="4 · Cổng duyệt và độ tin cậy nguồn">
-            <div role="radiogroup" aria-label="Cổng duyệt" className="flex flex-col gap-da-md">
-              <Radio
-                name="gate"
-                value="all"
-                checked={gate === 'all'}
-                onChange={() => setGate('all')}
-              >
-                Duyệt hết
-              </Radio>
-              <Radio
-                name="gate"
-                value="exceptions"
-                checked={gate === 'exceptions'}
-                onChange={() => setGate('exceptions')}
-              >
-                Duyệt ngoại lệ (mặc định)
-              </Radio>
-              <Radio name="gate" value="auto" checked={false} onChange={() => {}} disabled>
+            <RadioGroup<ReviewGate> label="Cổng duyệt" value={gate} onChange={setGate}>
+              <RadioOption value="all">Duyệt hết</RadioOption>
+              <RadioOption value="exceptions">Duyệt ngoại lệ (mặc định)</RadioOption>
+              <RadioOption value="auto" disabled>
                 Tự động · bật khi chính xác ≥ 98% trong 4 lượt
-              </Radio>
-            </div>
+              </RadioOption>
+            </RadioGroup>
             <dl className="da-body-small">
               <Row label="Mức tin cậy nguồn">0,7 · nguồn ngoài</Row>
             </dl>

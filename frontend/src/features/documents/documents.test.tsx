@@ -154,7 +154,8 @@ describe('DocumentsPage', () => {
     wrap(<DocumentsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Nạp tài liệu' }));
     const dialog = await screen.findByRole('dialog', { name: 'Nạp tệp vào bộ sưu tập' });
-    fireEvent.change(within(dialog).getByLabelText('Chọn tệp để nạp'), {
+    // The file input behind "Kéo thả hoặc chọn tệp" is hidden from the accessibility tree.
+    fireEvent.change(dialog.querySelector('input[type="file"]') as HTMLInputElement, {
       target: {
         files: [
           new File(['x'], 'HS_LD2409_0187.pdf', { type: 'application/pdf' }),

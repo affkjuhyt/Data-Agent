@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { AutocompleteTextArea, type Suggestion } from '../../../design-system/AutocompleteTextArea';
 import { Icon } from '../../../design-system/Icon';
 import type { ExploreModel } from '../../../lib/v1/explore';
 import { cn } from '../../../lib/utils';
@@ -53,6 +54,40 @@ export function ChatComposer({
     trimmed.startsWith('/') && !trimmed.includes(' ')
       ? CHAT_COMMANDS.filter((c) => c.label.startsWith(trimmed.toLowerCase()))
       : [];
+  const suggestions: Suggestion[] =
+    commands.length > 0
+      ? commands.map((c) => ({
+          id: `command:${c.name}`,
+          textValue: `${c.label} ${c.description}`,
+          content: (
+            <>
+              <span className="text-foreground da-body-strong">{c.label}</span>
+              <span className="text-muted-foreground da-caption">{c.description}</span>
+            </>
+          ),
+        }))
+      : candidates.map((c) => ({
+          id: `${c.kind}:${c.label}`,
+          textValue: c.label,
+          content: (
+            <span className="flex items-center gap-da-sm">
+              <Icon name={c.kind === 'metric' ? 'chart' : 'layers'} size={14} className="text-muted-foreground" />
+              <span className="text-foreground da-body-small">{c.label}</span>
+              <span className="text-muted-foreground da-caption">{c.kind === 'metric' ? 'chỉ số' : 'chiều'}</span>
+            </span>
+          ),
+        }));
+
+  const pick = (id: string) => {
+    const command = commands.find((c) => `command:${c.name}` === id);
+    if (command) {
+      setText(`${command.label} `);
+      ref.current?.focus();
+      return;
+    }
+    const candidate = candidates.find((c) => `${c.kind}:${c.label}` === id);
+    if (candidate) pin(candidate);
+  };
 
   const resize = () => {
     const el = ref.current;
@@ -82,44 +117,6 @@ export function ChatComposer({
 
   return (
     <div className="relative flex flex-col gap-da-xs rounded-xl border border-border-strong bg-card px-da-md py-da-sm shadow-sm focus-within:border-ring">
-      {(candidates.length > 0 || commands.length > 0) && (
-        <div
-          role="listbox"
-          aria-label={commands.length > 0 ? 'Lệnh chat' : 'Ngữ cảnh'}
-          className="absolute bottom-full left-0 z-[var(--z-popover)] mb-da-xs w-full max-w-[480px] rounded-md border border-border bg-card p-da-xs shadow-md"
-        >
-          {commands.map((c) => (
-            <button
-              key={c.name}
-              type="button"
-              role="option"
-              aria-selected={false}
-              onClick={() => {
-                setText(`${c.label} `);
-                ref.current?.focus();
-              }}
-              className="flex w-full items-center gap-da-md rounded-sm px-da-md py-da-sm text-left hover:bg-subtle"
-            >
-              <span className="text-foreground da-body-strong">{c.label}</span>
-              <span className="text-muted-foreground da-caption">{c.description}</span>
-            </button>
-          ))}
-          {candidates.map((c) => (
-            <button
-              key={`${c.kind}-${c.label}`}
-              type="button"
-              role="option"
-              aria-selected={false}
-              onClick={() => pin(c)}
-              className="flex w-full items-center gap-da-sm rounded-sm px-da-md py-da-sm text-left hover:bg-subtle"
-            >
-              <Icon name={c.kind === 'metric' ? 'chart' : 'layers'} size={14} className="text-muted-foreground" />
-              <span className="text-foreground da-body-small">{c.label}</span>
-              <span className="text-muted-foreground da-caption">{c.kind === 'metric' ? 'chỉ số' : 'chiều'}</span>
-            </button>
-          ))}
-        </div>
-      )}
       {pins.length > 0 && (
         <div className="flex flex-wrap gap-da-xs">
           {pins.map((p) => (
@@ -139,17 +136,20 @@ export function ChatComposer({
         </div>
       )}
       <div className="flex items-end gap-da-sm">
-        <textarea
-          ref={ref}
+        <AutocompleteTextArea
+          textAreaRef={ref}
           value={text}
-          rows={1}
           autoFocus={autoFocus}
-          aria-label="Câu hỏi"
+          label="Câu hỏi"
           placeholder={sending ? 'Đang trả lời… gõ tiếp để xếp câu hỏi' : placeholder}
-          onChange={(e) => {
-            setText(e.target.value);
+          onChange={(next) => {
+            setText(next);
             resize();
           }}
+          suggestions={suggestions}
+          suggestionsLabel={commands.length > 0 ? 'Lệnh chat' : 'Ngữ cảnh'}
+          onPick={pick}
+          listClassName="absolute bottom-full left-0 z-[var(--z-popover)] mb-da-xs w-full max-w-[480px]"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();

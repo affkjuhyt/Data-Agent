@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
 import { cn } from '../../lib/utils';
 import { Avatar } from '../../design-system/Avatar';
 import { Icon } from '../../design-system/Icon';
@@ -172,6 +171,11 @@ function AreaLink({
   );
 }
 
+/*
+ * The folded areas and the Data Space switcher are the design system's Menu (React Aria): it
+ * closes on Esc or a click outside, moves with the arrow keys and returns focus to its button,
+ * which the hand-written popovers with their own document listeners did not.
+ */
 function NarrowAreaMenu({
   areas,
   active,
@@ -181,40 +185,20 @@ function NarrowAreaMenu({
   active: AreaId;
   onNavigate: (area: AreaId) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useOutsideClose(ref, open, () => setOpen(false));
   return (
-    <div ref={ref} className="relative hidden max-[1279px]:block">
-      <button
-        type="button"
-        aria-label="Khu vực khác"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="rounded-md px-da-md py-da-sm text-muted-foreground da-body-strong hover:text-foreground"
-      >
-        ☰
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full z-[var(--z-popover)] mt-da-xs flex w-48 flex-col rounded-md border border-border bg-card p-da-xs shadow-md">
-          {areas.map((area) => (
-            <button
-              key={area.id}
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onNavigate(area.id);
-              }}
-              className={cn(
-                'rounded-sm px-da-md py-da-sm text-left da-body-small hover:bg-subtle',
-                area.id === active ? 'text-primary' : 'text-foreground',
-              )}
-            >
-              {area.label}
-            </button>
-          ))}
-        </div>
-      )}
+    <div className="hidden max-[1279px]:block">
+      <Menu
+        label="Khu vực khác"
+        triggerKind="custom"
+        trigger="☰"
+        triggerClassName="rounded-md px-da-md py-da-sm text-muted-foreground da-body-strong hover:text-foreground"
+        placement="bottom start"
+        items={areas.map((area) => ({
+          label: area.label,
+          selected: area.id === active,
+          onSelect: () => onNavigate(area.id),
+        }))}
+      />
     </div>
   );
 }
@@ -228,64 +212,26 @@ function WorkspaceSwitcher({
   workspaces: Workspace[];
   onSelect: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useOutsideClose(ref, open, () => setOpen(false));
-  const switchable = workspaces.length > 1;
+  if (workspaces.length <= 1)
+    return <span className="flex items-center text-foreground da-body-strong">{name}</span>;
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        aria-haspopup={switchable ? 'listbox' : undefined}
-        aria-expanded={switchable ? open : undefined}
-        onClick={() => switchable && setOpen((v) => !v)}
-        className="flex items-center gap-da-xs text-foreground da-body-strong"
-      >
-        {name}
-        {switchable && <Icon name="chevron-down" className="text-muted-foreground" />}
-      </button>
-      {open && (
-        <ul
-          role="listbox"
-          aria-label="Chọn Data Space"
-          className="absolute left-0 top-full z-[var(--z-popover)] mt-da-xs flex w-60 flex-col rounded-md border border-border bg-card p-da-xs shadow-md"
-        >
-          {workspaces.map((ws) => (
-            <li
-              key={ws.id}
-              role="option"
-              aria-selected={ws.name === name}
-              onClick={() => {
-                setOpen(false);
-                onSelect(ws.id);
-              }}
-              className={cn(
-                'flex cursor-pointer items-center rounded-sm px-da-md py-da-sm da-body-small',
-                ws.name === name ? 'bg-accent text-primary' : 'text-foreground hover:bg-subtle',
-              )}
-            >
-              <span className="flex-1 truncate">{ws.name}</span>
-              {ws.name === name && <Icon name="check" />}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <Menu
+      // The button names the current Data Space, as its text shows; the menu is named after it.
+      label={`Data Space: ${name}`}
+      triggerKind="custom"
+      trigger={
+        <>
+          {name}
+          <Icon name="chevron-down" className="text-muted-foreground" />
+        </>
+      }
+      triggerClassName="flex items-center gap-da-xs text-foreground da-body-strong"
+      placement="bottom start"
+      items={workspaces.map((ws) => ({
+        label: ws.name,
+        selected: ws.name === name,
+        onSelect: () => onSelect(ws.id),
+      }))}
+    />
   );
-}
-
-function useOutsideClose(ref: RefObject<HTMLElement | null>, open: boolean, close: () => void) {
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) close();
-    };
-    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && close();
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [ref, open, close]);
 }

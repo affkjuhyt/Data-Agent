@@ -149,7 +149,8 @@ describe('UploadPage', () => {
   it('reads a spreadsheet, lets the columns be edited, and creates the table', async () => {
     renderPage(<UploadPage />);
     const file = new File(['x'], 'chi_tieu_chi_nhanh_Q4.xlsx');
-    fireEvent.change(screen.getByLabelText('Chọn tệp CSV hoặc Excel'), {
+    // The file input behind "Chọn tệp" is hidden from the accessibility tree.
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
       target: { files: [file] },
     });
     expect(

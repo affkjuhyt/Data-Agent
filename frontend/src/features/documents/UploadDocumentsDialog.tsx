@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { Field } from '../../design-system/Field';
+import { FileDropZone, FilePicker } from '../../design-system/FileDropZone';
 import { Select } from '../../design-system/Select';
 import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -38,7 +39,6 @@ export function UploadDocumentsDialog({
   onClose: () => void;
   onUploaded: (result: { accepted: number; skipped: number }) => void;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
   const collections = useV1(['listCollections', open], open ? listCollections : null);
   const schemas = useV1(['listSchemas', open], open ? listSchemas : null);
   const [files, setFiles] = useState<File[]>([]);
@@ -82,15 +82,6 @@ export function UploadDocumentsDialog({
     // collectionSchemas is derived from these two.
   }, [collection, schemas.data]);
 
-  const pick = (list: FileList | null) => {
-    if (list && list.length) setFiles(Array.from(list));
-  };
-
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    pick(e.dataTransfer.files);
-  };
-
   const submit = () => {
     if (files.length === 0) return setInvalid('Chọn ít nhất một tệp.');
     if (!collection) return setInvalid('Chọn bộ sưu tập.');
@@ -113,31 +104,29 @@ export function UploadDocumentsDialog({
     >
       <div className="flex flex-col gap-da-xs">
         <span className="text-muted-foreground da-label">Tệp</span>
-        <input
-          ref={fileRef}
-          type="file"
-          multiple
-          className="sr-only"
-          aria-label="Chọn tệp để nạp"
-          onChange={(e) => {
-            pick(e.target.files);
-            e.target.value = '';
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDrop}
-          className={cn(
-            'flex items-center rounded-md border border-dashed border-border-strong bg-subtle p-da-md text-left da-body-small',
-            files.length ? 'text-foreground' : 'text-muted-foreground',
-          )}
+        <FileDropZone
+          label="Thả tệp để nạp"
+          onFiles={setFiles}
+          className={({ isDropTarget }) =>
+            cn(
+              'flex rounded-md border border-dashed',
+              isDropTarget ? 'border-primary bg-accent' : 'border-border-strong bg-subtle',
+            )
+          }
         >
-          {files.length
-            ? `Kéo thả hoặc chọn · ${formatNumber(files.length)} tệp · ${sizeText(total)}`
-            : 'Kéo thả hoặc chọn tệp'}
-        </button>
+          <FilePicker
+            allowsMultiple
+            onFiles={setFiles}
+            className={cn(
+              'flex flex-1 items-center rounded-md p-da-md text-left da-body-small outline-none focus-visible:shadow-[var(--focus-ring)]',
+              files.length ? 'text-foreground' : 'text-muted-foreground',
+            )}
+          >
+            {files.length
+              ? `Kéo thả hoặc chọn · ${formatNumber(files.length)} tệp · ${sizeText(total)}`
+              : 'Kéo thả hoặc chọn tệp'}
+          </FilePicker>
+        </FileDropZone>
       </div>
       <Field labelTone="muted" label="Bộ sưu tập">
         <Select

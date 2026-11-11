@@ -6,6 +6,7 @@ import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { StatusDot } from '../../design-system/StatusDot';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
+import { Segmented } from '../../design-system/Segmented';
 import { Tabs } from '../../design-system/Tabs';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -83,23 +84,16 @@ export default function KnowledgePageView() {
             placeholder="Tìm trang, chỉ số, thuật ngữ…"
             className="rounded-sm border border-border-strong bg-card px-[10px] py-da-md text-foreground da-body-small"
           />
-          <div role="radiogroup" aria-label="Loại trang" className="flex flex-wrap gap-[6px]">
-            {(['all', 'metric', 'entity', 'source', 'topic'] as Filter[]).map((f) => (
-              <button
-                key={f}
-                type="button"
-                role="radio"
-                aria-checked={filter === f}
-                onClick={() => setFilter(f)}
-                className={cn(
-                  'rounded-full px-da-md py-da-xs da-label',
-                  filter === f ? 'bg-accent text-primary' : 'bg-subtle text-muted-foreground',
-                )}
-              >
-                {f === 'all' ? `Tất cả ${items.length}` : `${KIND[f]} ${count(f)}`}
-              </button>
-            ))}
-          </div>
+          <Segmented<Filter>
+            label="Loại trang"
+            variant="pills"
+            value={filter}
+            onChange={setFilter}
+            items={(['all', 'metric', 'entity', 'source', 'topic'] as Filter[]).map((f) => ({
+              value: f,
+              label: f === 'all' ? `Tất cả ${items.length}` : `${KIND[f]} ${count(f)}`,
+            }))}
+          />
           <ul className="flex flex-col gap-[10px]">
             {shown.map((p) => (
               <li key={p.id}>

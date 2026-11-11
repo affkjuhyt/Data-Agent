@@ -7,7 +7,8 @@ import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { Notice } from '../../design-system/Notice';
 import { MatrixTable, SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
-import { Radio } from '../../design-system/Radio';
+import { RadioGroup, RadioOption } from '../../design-system/Radio';
+import { Segmented } from '../../design-system/Segmented';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
@@ -133,23 +134,16 @@ function ReviewBody({ run, records }: { run: CrawlRun; records: ExtractedRecord[
           aria-label="Hàng duyệt"
           className="flex w-[380px] shrink-0 flex-col gap-da-lg max-[1279px]:w-full"
         >
-          <div role="radiogroup" aria-label="Lý do" className="flex flex-wrap gap-[6px]">
-            {(['all', ...FILTERS] as const).map((f) => (
-              <button
-                key={f}
-                type="button"
-                role="radio"
-                aria-checked={filter === f}
-                onClick={() => setFilter(f)}
-                className={cn(
-                  'rounded-full px-da-md py-da-xs da-label',
-                  filter === f ? 'bg-accent text-primary' : 'bg-subtle text-muted-foreground',
-                )}
-              >
-                {f === 'all' ? `Tất cả ${records.length}` : `${REASON[f]} ${count(f)}`}
-              </button>
-            ))}
-          </div>
+          <Segmented<'all' | ReviewReason>
+            label="Lý do"
+            variant="pills"
+            value={filter}
+            onChange={setFilter}
+            items={(['all', ...FILTERS] as const).map((f) => ({
+              value: f,
+              label: f === 'all' ? `Tất cả ${records.length}` : `${REASON[f]} ${count(f)}`,
+            }))}
+          />
           {shown.length === 0 && (
             <p className="text-muted-foreground da-body-small">Không còn bản ghi nào cần xem.</p>
           )}
@@ -499,24 +493,15 @@ function BulkDialog({
             options={reasons.map((r) => ({ value: r, label: REASON[r] }))}
           />
         </div>
-        <div role="radiogroup" aria-label="Quyết định" className="flex gap-da-xl">
-          <Radio
-            name="bulk"
-            value="confirm"
-            checked={decision === 'confirm'}
-            onChange={() => setDecision('confirm')}
-          >
-            Xác nhận
-          </Radio>
-          <Radio
-            name="bulk"
-            value="reject"
-            checked={decision === 'reject'}
-            onChange={() => setDecision('reject')}
-          >
-            Bỏ
-          </Radio>
-        </div>
+        <RadioGroup<'confirm' | 'reject'>
+          label="Quyết định"
+          orientation="horizontal"
+          value={decision}
+          onChange={setDecision}
+        >
+          <RadioOption value="confirm">Xác nhận</RadioOption>
+          <RadioOption value="reject">Bỏ</RadioOption>
+        </RadioGroup>
         <label className="flex flex-col gap-da-xs">
           <span className="text-foreground da-label">Lý do (bắt buộc)</span>
           <textarea

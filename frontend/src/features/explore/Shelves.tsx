@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { useState, type DragEvent, type ReactNode } from 'react';
 import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
 import { Icon } from '../../design-system/Icon';
+import { Menu } from '../../design-system/Menu';
 import type { ExploreDimension, ExploreFilter, ExploreModel } from '../../lib/v1/explore';
 import { cn } from '../../lib/utils';
 import { Dialog } from '../../design-system/Dialog';
@@ -190,50 +191,16 @@ function AddTarget({
   choices: { field: FieldRef; label: string }[];
   onPick: (field: FieldRef) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [open]);
   return (
-    <div ref={ref} className="relative" onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}>
-      <button
-        type="button"
-        aria-label={`Thêm vào kệ ${label}`}
-        aria-expanded={open}
-        disabled={choices.length === 0}
-        onClick={() => setOpen((o) => !o)}
-        className="rounded-full border border-dashed border-border-strong px-da-md py-da-xs text-muted-foreground da-caption hover:text-foreground"
-      >
-        + kéo vào đây
-      </button>
-      {open && (
-        <ul
-          role="menu"
-          aria-label={`Thêm vào kệ ${label}`}
-          className="absolute left-0 top-full z-[var(--z-popover)] mt-da-xs flex max-h-72 w-56 flex-col overflow-y-auto rounded-md border border-border bg-card p-da-xs shadow-md"
-        >
-          {choices.map((c) => (
-            <li key={c.field.id}>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setOpen(false);
-                  onPick(c.field);
-                }}
-                className="w-full rounded-sm px-da-md py-da-sm text-left text-foreground da-body-small hover:bg-subtle"
-              >
-                {c.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <Menu
+      label={`Thêm vào kệ ${label}`}
+      triggerKind="custom"
+      trigger="+ kéo vào đây"
+      triggerClassName="rounded-full border border-dashed border-border-strong px-da-md py-da-xs text-muted-foreground da-caption hover:text-foreground"
+      placement="bottom start"
+      disabled={choices.length === 0}
+      items={choices.map((c) => ({ label: c.label, onSelect: () => onPick(c.field) }))}
+    />
   );
 }
 

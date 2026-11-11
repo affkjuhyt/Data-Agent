@@ -1,7 +1,8 @@
-import { useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
-import { Button } from '../../design-system/Button';
+import { Button, buttonClass } from '../../design-system/Button';
+import { FileDropZone, FilePicker } from '../../design-system/FileDropZone';
 import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
@@ -41,10 +42,8 @@ function columnTypeLabel(type: UploadColumnType): string {
 export default function UploadPage() {
   const { navigate } = useAppState();
   const toast = useToast();
-  const inputRef = useRef<HTMLInputElement>(null);
   const [analysis, setAnalysis] = useState<UploadAnalysis | null>(null);
   const [columns, setColumns] = useState<UploadColumn[]>([]);
-  const [dragging, setDragging] = useState(false);
   const uploads = useV1(['listUploads'], listUploads);
   const recentView = useTableView(uploads.data?.items ?? [], {
     search: (upload) =>
@@ -102,33 +101,14 @@ export default function UploadPage() {
   const busy = upload.pending || commit.pending;
   const error = (upload.error ?? commit.error)?.message ?? null;
 
-  const reset = () => {
+  // Another file replaces the one under review once it is chosen; cancelling the chooser keeps it.
+  const readAnother = (file: File | undefined) => {
     setAnalysis(null);
     setColumns([]);
     upload.reset();
-    commit.reset();
-    inputRef.current?.click();
+    read(file);
   };
-
-  const onDrop = (event: DragEvent) => {
-    event.preventDefault();
-    setDragging(false);
-    read(event.dataTransfer.files[0]);
-  };
-
-  const picker = (
-    <input
-      ref={inputRef}
-      type="file"
-      accept=".csv,.xlsx,.xls"
-      className="sr-only"
-      aria-label="Chọn tệp CSV hoặc Excel"
-      onChange={(e) => {
-        read(e.target.files?.[0]);
-        e.target.value = '';
-      }}
-    />
-  );
+  const accepted = ['.csv', '.xlsx', '.xls'];
 
   if (!analysis)
     return (
@@ -141,26 +121,28 @@ export default function UploadPage() {
         />
         <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl">
           {error && <Notice tone="error">{error}</Notice>}
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-            className={cn(
-              'flex flex-col items-center gap-da-lg rounded-lg border border-dashed px-da-2xl py-da-3xl text-center',
-              dragging ? 'border-primary bg-accent' : 'border-border-strong bg-card',
-            )}
+          <FileDropZone
+            label="Thả tệp CSV hoặc Excel"
+            onFiles={(files) => read(files[0])}
+            className={({ isDropTarget }) =>
+              cn(
+                'flex flex-col items-center gap-da-lg rounded-lg border border-dashed px-da-2xl py-da-3xl text-center',
+                isDropTarget ? 'border-primary bg-accent' : 'border-border-strong bg-card',
+              )
+            }
           >
             <Icon name="upload" className="text-primary" />
             <p className="text-foreground da-body">Kéo tệp vào đây, hoặc chọn từ máy.</p>
             <p className="text-muted-foreground da-caption">CSV, XLSX, XLS</p>
-            {picker}
-            <Button kind="primary" loading={busy} onClick={() => inputRef.current?.click()}>
+            <FilePicker
+              acceptedFileTypes={accepted}
+              onFiles={(files) => read(files[0])}
+              loading={busy}
+              className={buttonClass({ kind: 'primary', loading: busy })}
+            >
               Chọn tệp
-            </Button>
-          </div>
+            </FilePicker>
+          </FileDropZone>
           {uploads.data && uploads.data.items.length > 0 && (
             <section className="flex flex-col gap-da-md">
               <h2 className="text-foreground da-heading-3">Tệp vừa tải</h2>
@@ -215,10 +197,13 @@ export default function UploadPage() {
         }`}
         actions={
           <>
-            {picker}
-            <Button kind="ghost" onClick={reset}>
+            <FilePicker
+              acceptedFileTypes={accepted}
+              onFiles={(files) => readAnother(files[0])}
+              className={buttonClass({ kind: 'ghost' })}
+            >
               Chọn tệp khác
-            </Button>
+            </FilePicker>
             <Button
               kind="primary"
               loading={busy}

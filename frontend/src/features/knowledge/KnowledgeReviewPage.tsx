@@ -5,6 +5,7 @@ import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Segmented } from '../../design-system/Segmented';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -157,26 +158,16 @@ export default function KnowledgeReviewPage() {
             />
           </div>
         )}
-        <div role="radiogroup" aria-label="Loại phát hiện" className="flex flex-wrap gap-[6px]">
-          {(['all', ...KIND_ORDER] as Filter[]).map((k) => {
+        <Segmented<Filter>
+          label="Loại phát hiện"
+          variant="pills"
+          value={filter}
+          onChange={setFilter}
+          items={(['all', ...KIND_ORDER] as Filter[]).map((k) => {
             const n = k === 'all' ? items.length : items.filter((f) => f.kind === k).length;
-            return (
-              <button
-                key={k}
-                type="button"
-                role="radio"
-                aria-checked={filter === k}
-                onClick={() => setFilter(k)}
-                className={cn(
-                  'rounded-full px-da-md py-da-xs da-label',
-                  filter === k ? 'bg-accent text-primary' : 'bg-subtle text-muted-foreground',
-                )}
-              >
-                {k === 'all' ? 'Tất cả' : KIND[k]} {n}
-              </button>
-            );
+            return { value: k, label: `${k === 'all' ? 'Tất cả' : KIND[k]} ${n}` };
           })}
-        </div>
+        />
         <AsyncRegion
           state={findings}
           what="phát hiện"

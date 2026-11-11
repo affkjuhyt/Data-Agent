@@ -1,7 +1,7 @@
 /**
  * The v3.1 frame: top bar areas and counts, the ⌘K palette, the rail and the page header.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AREAS } from './areas';
@@ -65,8 +65,43 @@ describe('AppTopBar', () => {
       }),
     );
     fireEvent.click(screen.getByRole('button', { name: /Rủi ro tín dụng/ }));
-    fireEvent.click(screen.getByRole('option', { name: 'Bán lẻ' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Bán lẻ' }));
     expect(onWorkspace).toHaveBeenCalledWith('b');
+  });
+
+  it('checks the current Data Space and closes on Esc, back on its button', async () => {
+    const user = userEvent.setup();
+    const onWorkspace = vi.fn();
+    render(
+      topBar({
+        workspaces: [
+          { id: 'a', name: 'Rủi ro tín dụng' },
+          { id: 'b', name: 'Bán lẻ' },
+        ],
+        onWorkspace,
+      }),
+    );
+    const button = screen.getByRole('button', { name: /Rủi ro tín dụng/ });
+    await user.click(button);
+    expect(screen.getByRole('menu', { name: 'Data Space: Rủi ro tín dụng' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitemradio', { name: 'Rủi ro tín dụng' })).toBeChecked();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+    // React Aria hands focus back to the trigger a frame after the popover goes.
+    await waitFor(() => expect(button).toHaveFocus());
+    expect(onWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('folds the other areas into ☰ and navigates from it', async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    render(topBar({ onNavigate }));
+    await user.click(screen.getByRole('button', { name: 'Khu vực khác' }));
+    const items = screen.getAllByRole('menuitemradio');
+    expect(items.length).toBeGreaterThan(0);
+    await user.click(items[items.length - 1]);
+    expect(onNavigate).toHaveBeenCalled();
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });
 

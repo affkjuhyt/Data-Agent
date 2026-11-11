@@ -86,7 +86,7 @@ export function useV1<T>(
  * that awaits the answer. The invalidation is not awaited: `pending` ends with the write, as the
  * hand-written busy flags did, and the region refreshes behind it.
  */
-export interface V1Mutation<TData, TVars> {
+interface V1Mutation<TData, TVars> {
   run: (vars: TVars, options?: MutateOptions<TData, Error, TVars>) => void;
   runAsync: (vars: TVars, options?: MutateOptions<TData, Error, TVars>) => Promise<TData>;
   pending: boolean;

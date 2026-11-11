@@ -9,6 +9,8 @@ import { cn } from '../lib/utils';
  * (radius-sm) split by lines, the chosen view on subtle in Body Strong.
  * `chips` is the filter row of "P03 · Kỹ năng · Thư viện" (2293:17995): loose chips, no track,
  * radius-sm, 10×5 padding, 8px apart; the chosen chip on subtle with a border in Body Strong.
+ * `pills` is the count filter above the review queues (crawl, knowledge): round pills 6px apart
+ * that wrap, the chosen one on accent in primary, the rest on subtle.
  *
  * A React Aria RadioGroup: one tab stop, the arrow keys move the choice, the focus ring shows for
  * the keyboard only. The hand-made buttons were a tab stop each and ignored the arrow keys.
@@ -22,9 +24,17 @@ const GROUP = {
   track: 'inline-flex w-fit gap-[2px] rounded-md bg-subtle p-da-xs',
   outline: 'inline-flex w-fit overflow-hidden rounded-sm border border-border',
   chips: 'flex items-center gap-da-md',
+  pills: 'flex flex-wrap gap-[6px]',
 };
 
-function segment(variant: 'track' | 'outline' | 'chips', active: boolean): string {
+type Variant = keyof typeof GROUP;
+
+function segment(variant: Variant, active: boolean): string {
+  if (variant === 'pills')
+    return cn(
+      'rounded-full px-da-md py-da-xs da-label',
+      active ? 'bg-accent text-primary' : 'bg-subtle text-muted-foreground',
+    );
   if (variant === 'chips')
     return cn(
       'whitespace-nowrap rounded-sm border px-[10px] py-[5px] transition-colors duration-[120ms] ease-out',
@@ -58,7 +68,7 @@ export function Segmented<V extends string>({
   value: V;
   onChange: (value: V) => void;
   label: string;
-  variant?: 'track' | 'outline' | 'chips';
+  variant?: Variant;
 }) {
   return (
     <RadioGroup

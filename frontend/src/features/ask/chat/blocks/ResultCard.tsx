@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Dialog } from '../../../../design-system/Dialog';
 import { Icon } from '../../../../design-system/Icon';
 import { Menu } from '../../../../design-system/Menu';
+import { Popover } from '../../../../design-system/Popover';
 import { cn } from '../../../../lib/utils';
 import { ChartRenderer } from '../../components/ChartRenderer';
 import { DataGrid } from '../../components/DataGrid';
@@ -45,7 +46,6 @@ export function ResultCard({
   const [view, setView] = useState<View>(chart ? 'chart' : 'table');
   const [full, setFull] = useState(false);
   const [explore, setExplore] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const filters = reading.filter((chip) => chip.label !== 'Chỉ số');
   const menu = [
     ...(onExportCsv ? [{ label: 'Tải CSV', icon: 'download' as const, onSelect: onExportCsv }] : []),
@@ -92,33 +92,22 @@ export function ResultCard({
           <Icon name="external-link" size={14} /> Xem
         </button>
         {filters.length > 0 && (
-          <div className="relative">
-            <button
-              type="button"
-              className={toolButton}
-              aria-expanded={filtersOpen}
-              onClick={() => setFiltersOpen((v) => !v)}
-            >
-              <Icon name="filter" size={14} /> Bộ lọc {filters.length}
-            </button>
-            {filtersOpen && (
-              <div
-                role="dialog"
-                aria-label="Bộ lọc của câu trả lời"
-                className="absolute right-0 z-[var(--z-popover)] mt-da-xs w-64 rounded-md border border-border bg-card p-da-md shadow-md"
-              >
-                <ul className="m-0 flex list-none flex-col gap-da-xs p-0 da-body-small">
-                  {filters.map((chip) => (
-                    <li key={chip.key} className="flex justify-between gap-da-md">
-                      <span className="text-muted-foreground">{chip.label}</span>
-                      <span className="text-foreground">{chip.value}</span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="m-0 mt-da-sm text-muted-foreground da-caption">Muốn đổi bộ lọc, hãy hỏi tiếp.</p>
-              </div>
-            )}
-          </div>
+          <Popover
+            label="Bộ lọc của câu trả lời"
+            trigger={<><Icon name="filter" size={14} /> Bộ lọc {filters.length}</>}
+            triggerClassName={toolButton}
+            className="w-64"
+          >
+            <ul className="m-0 flex list-none flex-col gap-da-xs p-0 da-body-small">
+              {filters.map((chip) => (
+                <li key={chip.key} className="flex justify-between gap-da-md">
+                  <span className="text-muted-foreground">{chip.label}</span>
+                  <span className="text-foreground">{chip.value}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="m-0 mt-da-sm text-muted-foreground da-caption">Muốn đổi bộ lọc, hãy hỏi tiếp.</p>
+          </Popover>
         )}
         {menu.length > 0 && <Menu label="Thêm thao tác với kết quả" items={menu} />}
       </header>

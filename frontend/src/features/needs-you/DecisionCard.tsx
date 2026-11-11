@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AgentChip } from '../../design-system/AgentChip';
 import { Button } from '../../design-system/Button';
 import { Icon } from '../../design-system/Icon';
+import { RadioCard, RadioGroup } from '../../design-system/Radio';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
@@ -69,37 +70,22 @@ export function DecisionCard({
         )}
 
         {kind === 'choose' && (
-          <div
-            role="radiogroup"
-            aria-label="Phương án"
-            className="flex w-full gap-da-md max-[767px]:flex-col max-[767px]:gap-da-sm"
+          <RadioGroup
+            label="Phương án"
+            orientation="horizontal"
+            value={chosen}
+            onChange={setChosen}
+            className="w-full gap-da-md max-[767px]:flex-col max-[767px]:gap-da-sm"
           >
-            {request.options.map((option) => {
-              const active = option.id === chosen;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setChosen(option.id)}
-                  className={cn(
-                    'flex min-w-0 flex-1 flex-col gap-[2px] rounded-md px-da-md py-da-sm text-left',
-                    active
-                      ? 'border-[1.5px] border-primary'
-                      : 'border border-border hover:border-border-strong',
-                  )}
-                >
-                  <span
-                    className={cn('da-body-strong', active ? 'text-primary' : 'text-foreground')}
-                  >
-                    {option.label}
-                  </span>
-                  <span className="text-muted-foreground da-caption">{option.consequence}</span>
-                </button>
-              );
-            })}
-          </div>
+            {request.options.map((option) => (
+              <RadioCard
+                key={option.id}
+                value={option.id}
+                label={option.label}
+                description={option.consequence}
+              />
+            ))}
+          </RadioGroup>
         )}
 
         <div className="flex w-full items-center gap-da-md max-[767px]:flex-wrap">

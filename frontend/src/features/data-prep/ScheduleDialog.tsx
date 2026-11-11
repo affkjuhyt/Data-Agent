@@ -3,7 +3,7 @@ import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
-import { Radio } from '../../design-system/Radio';
+import { RadioGroup, RadioOption } from '../../design-system/Radio';
 import { SkeletonRows } from '../../design-system/SkeletonRow';
 import {
   getPipelineSchedule,
@@ -104,18 +104,18 @@ export function ScheduleDialog({
       {saveSchedule.error && <Notice tone="error">{saveSchedule.error.message}</Notice>}
       {draft && (
         <>
-          <div role="radiogroup" aria-label="Khi nào chạy" className="flex flex-col gap-da-md">
-            {kinds.map((k) => (
-              <Radio
-                key={k.value}
-                name="schedule-kind"
-                value={k.value}
-                checked={draft.kind === k.value}
-                onChange={() => set({ kind: k.value })}
-              >
-                {k.label}
-              </Radio>
-            ))}
+          <div className="flex flex-col gap-da-md">
+            <RadioGroup<ScheduleKind>
+              label="Khi nào chạy"
+              value={draft.kind}
+              onChange={(kind) => set({ kind })}
+            >
+              {kinds.map((k) => (
+                <RadioOption key={k.value} value={k.value}>
+                  {k.label}
+                </RadioOption>
+              ))}
+            </RadioGroup>
             {draft.kind === 'cron' && (
               <Input
                 aria-label="Biểu thức cron"
