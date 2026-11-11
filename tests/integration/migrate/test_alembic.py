@@ -205,7 +205,8 @@ def test_the_endpoint_batches_of_12_10_apply_to_a_migrated_cluster(admin):
     assert "'try'" in checks("skill.skill_run")
     # The CHECKs are replaced, not added next to the old ones.
     assert _one(db, "SELECT count(*) FROM pg_constraint WHERE conname = 'agent_def_check'") == 1
-    # The audit worker releases an approved export and reads nothing else of the audit database.
+    # The audit worker releases an approved export and writes it (v3_0034): it reads the log,
+    # never changes it.
     assert (
         _one(audit, "SELECT has_table_privilege('svc_audit_worker', 'audit.export_job', 'SELECT')")
         is True
@@ -220,10 +221,16 @@ def test_the_endpoint_batches_of_12_10_apply_to_a_migrated_cluster(admin):
     )
     assert (
         _one(audit, "SELECT has_table_privilege('svc_audit_worker', 'audit.audit_log', 'SELECT')")
+        is True
+    )
+    assert (
+        _one(audit, "SELECT has_table_privilege('svc_audit_worker', 'audit.audit_log', 'UPDATE')")
         is False
     )
-    # RESTRICTIVE worker_decision_only: the worker only moves a waiting export to queued (approved)
-    # or failed; nothing else of a job is its to change.
+    assert _one(audit, "SELECT count(*) FROM pg_policy WHERE polname = 'worker_decision_only'") == 0
+    # RESTRICTIVE worker_export_steps and the trigger export_job_worker_step: the worker moves a
+    # waiting export to queued (approved) or failed, a queued one to running, a running one to
+    # ready with its file; nothing else of a job is its to change.
     org, requester, approver = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     waiting, waiting_too, queued = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     conn = psycopg2.connect(audit)
@@ -234,10 +241,11 @@ def test_the_endpoint_batches_of_12_10_apply_to_a_migrated_cluster(admin):
                 (waiting_too, "waiting_approval"),
                 (queued, "queued"),
             ):
+                # The queued one is under BR-138's threshold: it runs without an approver.
                 cur.execute(
                     "INSERT INTO audit.export_job (id, org_id, status, requested_by, row_count)"
-                    " VALUES (%s, %s, %s, %s, 200000)",
-                    (str(job), str(org), status, str(requester)),
+                    " VALUES (%s, %s, %s, %s, %s)",
+                    (str(job), str(org), status, str(requester), 10 if job == queued else 200000),
                 )
             cur.execute("SET ROLE svc_audit_worker")
             cur.execute("SELECT set_config('app.org_id', %s, false)", (str(org),))
@@ -247,8 +255,33 @@ def test_the_endpoint_batches_of_12_10_apply_to_a_migrated_cluster(admin):
                 (str(approver), str(waiting)),
             )
             assert cur.rowcount == 1
+            cur.execute("SAVEPOINT s")
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege):
+                cur.execute(  # a queued export is not ready before it was written
+                    "UPDATE audit.export_job SET status = 'ready', object_key = 'k',"
+                    " signature = 's', expires_at = now() WHERE id = %s",
+                    (str(queued),),
+                )
+            cur.execute("ROLLBACK TO SAVEPOINT s")
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege):
+                cur.execute(  # the writer does not change who approved it
+                    "UPDATE audit.export_job SET status = 'running', approved_by = %s"
+                    " WHERE id = %s",
+                    (str(approver), str(queued)),
+                )
+            cur.execute("ROLLBACK TO SAVEPOINT s")
             cur.execute(
-                "UPDATE audit.export_job SET status = 'ready' WHERE id = %s", (str(queued),)
+                "UPDATE audit.export_job SET status = 'running' WHERE id = %s", (str(queued),)
+            )
+            cur.execute(
+                "UPDATE audit.export_job SET status = 'ready', object_key = 'k',"
+                " signature = 's', expires_at = now() WHERE id = %s RETURNING id",
+                (str(queued),),
+            )
+            assert cur.fetchone() == (queued,)
+            # A finished export is no longer the worker's to change.
+            cur.execute(
+                "UPDATE audit.export_job SET status = 'failed' WHERE id = %s", (str(queued),)
             )
             assert cur.rowcount == 0
             with pytest.raises(psycopg2.errors.InsufficientPrivilege):

@@ -182,6 +182,12 @@ async def test_br_138_export_is_queued_with_its_count_and_is_logged(
         org.id,
     )
     assert requested == 1
+    # The worker that writes the file follows the job's event (worker_agent/audit_exports.py).
+    assert audit_db.one(
+        "SELECT payload FROM audit.outbox WHERE aggregate_id = %s"
+        " AND event_type = 'audit.export_requested'",
+        job.json()["id"],
+    ) == {"export_job_id": job.json()["id"], "format": "jsonl"}
 
 
 @pytest.mark.req("AC-11-03-07")
@@ -197,6 +203,15 @@ async def test_br_138_a_large_export_waits_for_a_second_person(
     async with client(org) as c:
         r = await c.post("/v1/audit:export", json={"filters": {}})
     assert r.json()["status"] == "waiting_approval"
+    # Nothing writes the file before the approval, which starts it (worker_agent/resolutions.py).
+    assert (
+        audit_db.one(
+            "SELECT count(*) FROM audit.outbox WHERE aggregate_id = %s"
+            " AND event_type = 'audit.export_requested'",
+            r.json()["id"],
+        )
+        == 0
+    )
     # The table itself refuses to run it before someone else approves (BR-138).
     with pytest.raises(psycopg2.errors.CheckViolation), audit_db.conn.cursor() as cur:
         cur.execute(

@@ -57,7 +57,12 @@ Mỗi routine ghi diễn giải của mình trong chú thích cạnh dấu `cove
 - Ghi `audit.audit_log` từ trigger: audit nằm ở CSDL riêng (D1.1), nên trigger phát sự kiện outbox
   `audit.requested`; Audit service ghi.
 - `audit.export_job` (thêm 12/10/2026, revision `v3_0006`) nằm trong CSDL audit cùng các dòng nó xuất; quá
-  100.000 dòng thì `approved_by` khác `requested_by` mới chạy được (CHECK, BR-138).
+  100.000 dòng thì `approved_by` khác `requested_by` mới chạy được (CHECK, BR-138). Từ revision `v3_0034`
+  (11/11/2026) `svc_audit_worker` của worker-agent viết tệp (`worker_agent/audit_exports.py`): đọc
+  `audit_log` (không ghi), ghi `object_key`, `signature`, `expires_at`, và trigger
+  `audit.export_job_worker_step` chỉ cho các bước waiting_approval → queued/failed, queued → running/failed,
+  running → ready/failed. `signature` là HMAC-SHA256 trên SHA-256 của tệp, khoá theo tổ chức dẫn từ
+  `AUDIT_EXPORT_SIGNING_KEY` (chưa có cặp khoá ký tệp trong hệ thống); thiếu khoá thì bản xuất `failed`.
 - `governance.dsr_request.subject_hash` là HMAC-SHA256 theo tổ chức (khoá dẫn từ `DSR_SUBJECT_KEY`, deploy đọc từ
   OpenBao), không phải SHA-256 trần: số CCCD 12 chữ số dò ngược được. Thiếu khoá thì `POST /v1/dsr` trả 503.
 - `exec`: mọi bảng FORCE RLS; hàm SECURITY DEFINER chạy dưới `da_owner` và vẫn bị `org_isolation` giới

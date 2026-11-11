@@ -20,7 +20,7 @@ from sqlalchemy import case, update
 
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import audit, qa
-from services.worker_agent import exports, periods, runs, self_approval
+from services.worker_agent import audit_exports, exports, periods, runs, self_approval
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
@@ -62,8 +62,8 @@ async def _audit_export(event: Event) -> None:
                 "approved_by": case((own, None), else_=resolver),
                 "approved_at": case((own, None), else_=now),
             }
-    # svc_audit_worker may only move waiting_approval → queued/failed (v3_0011's policy), nothing
-    # else in the audit database.
+    # svc_audit_worker moves a waiting export only to queued (approved) or failed
+    # (routines/audit.sql's export_job_worker_step).
     async with scoped_session("svc_audit_worker", event.org_id) as session:
         status = await session.scalar(
             update(audit.ExportJob)
@@ -77,6 +77,11 @@ async def _audit_export(event: Event) -> None:
         )
     if status is not None:
         logger.info("worker-agent | audit export %s %s", job_id, status)
+    if approved:
+        # The approval starts the export the api did not (audit_exports.py). Run whether or not
+        # this delivery moved it: a redelivery after the job was queued but before it was written
+        # writes it, and a job already taken or failed is left alone by the claim.
+        await audit_exports.run(event.org_id, job_id)
 
 
 async def _answer_export(event: Event) -> None:

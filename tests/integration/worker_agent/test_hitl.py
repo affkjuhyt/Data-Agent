@@ -12,6 +12,7 @@ import pytest
 from services.worker_agent.main import HANDLERS, run_once, sources
 
 from .conftest import Seed
+from .test_audit_exports import MemoryStore, store  # noqa: F401  (fixture)
 
 pytestmark = [pytest.mark.integration]
 
@@ -112,7 +113,9 @@ async def test_an_org_wide_request_from_the_audit_database(
 
 
 async def test_an_approved_audit_export_is_released_once(
-    seed: Seed, ddl_server: dict[str, str]
+    seed: Seed,
+    ddl_server: dict[str, str],
+    store: MemoryStore,  # noqa: F811
 ) -> None:
     org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Tổ chức thử")
     requester, approver = uuid.uuid4(), uuid.uuid4()
@@ -150,8 +153,10 @@ async def test_an_approved_audit_export_is_released_once(
         cur.execute(
             "SELECT status, approved_by::text FROM audit.export_job WHERE id = %s", (str(job),)
         )
-        assert cur.fetchone() == ("queued", str(approver))
+        # Released and, by the same approval, written (audit_exports.py): once.
+        assert cur.fetchone() == ("ready", str(approver))
     audit.close()
+    assert [key for _, key in store.objects] == [f"{org}/audit/{job}.csv"]
 
 
 def _requester_decides_export(
@@ -211,12 +216,14 @@ def _export_job(ddl_server: dict[str, str], job: uuid.UUID) -> tuple[object, ...
 
 
 async def test_an_audit_export_approved_by_its_requester_is_released(
-    seed: Seed, ddl_server: dict[str, str]
+    seed: Seed,
+    ddl_server: dict[str, str],
+    store: MemoryStore,  # noqa: F811
 ) -> None:
     # The API let the requester decide because the org's switch is on; the job says so itself.
     job, requester = _requester_decides_export(seed, ddl_server, allow_self_approval=True)
     await _drain()
-    assert _export_job(ddl_server, job) == ("queued", str(requester), True)
+    assert _export_job(ddl_server, job) == ("ready", str(requester), True)
 
 
 async def test_an_audit_export_its_requester_approved_without_the_switch_fails(

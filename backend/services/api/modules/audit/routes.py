@@ -7,10 +7,11 @@ svc_audit may only SELECT and INSERT it. RLS keeps a caller to their organisatio
 Reading the log is itself logged (A3: "việc tra cứu cũng được ghi nhật ký"), in the same
 transaction, so a search that fails leaves no trace and one that succeeds always does.
 
-POST /v1/audit:export records an audit.export_job beside the rows it exports; an export
-worker writes and signs the file. Over 100 000 rows a second person must approve it (BR-138), so
-the job waits in waiting_approval, and the CHECKs of audit.export_job keep it from running
-before approved_by is set by someone other than the requester.
+POST /v1/audit:export records an audit.export_job beside the rows it exports and writes
+`audit.export_requested` to audit.outbox; worker-agent writes and signs the file. Over 100 000
+rows a second person must approve it (BR-138), so the job waits in waiting_approval, and the
+CHECKs of audit.export_job keep it from running before approved_by is set by someone other than
+the requester.
 """
 
 from __future__ import annotations
@@ -58,6 +59,8 @@ ROLE = "svc_audit"
 SERVICE = "api"
 # BR-138: above this many rows an export needs a second person's approval.
 APPROVAL_ROWS = 100_000
+# worker-agent writes and signs the file (services/worker_agent/audit_exports.py).
+EXPORT_REQUESTED = "audit.export_requested"
 
 
 def audit_filters(
@@ -250,6 +253,19 @@ async def export_audit_log(
             requested_by=principal.user_id,
         )
         session.add(job)
+        if status == "queued":
+            # A1.6, D1 rule 8: the worker that writes the file follows this event. A job waiting
+            # for approval gets none: its approval starts it (worker_agent/resolutions.py).
+            session.add(
+                audit.Outbox(
+                    id=uuid7(),
+                    org_id=principal.org_id,
+                    aggregate_type="export_job",
+                    aggregate_id=job.id,
+                    event_type=EXPORT_REQUESTED,
+                    payload={"export_job_id": str(job.id), "format": body.format},
+                )
+            )
         if status == "waiting_approval":
             # BR-138: a second person with audit_read, never the requester, approves it in Cần bạn.
             # Org-wide: an export of the audit log belongs to no Data Space.

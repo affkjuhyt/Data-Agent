@@ -110,6 +110,7 @@ GRANT query_read TO svc_skill;
 GRANT org_read TO svc_document;
 GRANT catalog_read TO svc_document;
 GRANT catalog_read TO svc_pipeline;
+GRANT context_read TO svc_pipeline;
 GRANT org_read TO svc_pipeline;
 GRANT catalog_read TO svc_ingest;
 GRANT org_read TO svc_ingest;

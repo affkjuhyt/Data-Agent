@@ -82,6 +82,7 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_ORG="${DATAAGENT_DB_URL__SVC_ORG}" \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --from-literal=NOTIFY_VERIFICATION_SECRET="${NOTIFY_VERIFICATION_SECRET}" \
+  --from-literal=AUDIT_EXPORT_SIGNING_KEY="${AUDIT_EXPORT_SIGNING_KEY}" \
   --from-literal=MINIO_URL="${WORKER_AGENT_MINIO_URL}" \
   --from-literal=OPENBAO_ROLE_ID="${WORKER_AGENT_OPENBAO_ROLE_ID}" \
   --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \

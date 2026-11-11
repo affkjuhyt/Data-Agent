@@ -30,6 +30,7 @@ from libs.dataagent_db import scoped_session, unscoped_session
 from libs.dataagent_db.models import org
 from services.worker_agent import (
     agent_evals,
+    audit_exports,
     derived,
     eval_runs,
     exports,
@@ -147,10 +148,11 @@ HANDLERS: dict[str, Handler] = {
     **indexed.HANDLERS,
     **extraction.HANDLERS,
     **document_sync.HANDLERS,
-    **skill_evals.HANDLERS,
-    **writeback_diffs.HANDLERS,
     **product_use.HANDLERS,
     **monitor_backtests.HANDLERS,
+    **audit_exports.HANDLERS,
+    **skill_evals.HANDLERS,
+    **writeback_diffs.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -248,10 +250,9 @@ async def sources() -> list[EventSource]:
         # No URL for the audit database: requests raised by the audit module wait until it is set.
         logger.warning("worker-agent | DATAAGENT_DB_URL__%s is not set", AUDIT_RELAY.upper())
         audit = []
-    found += [
-        OutboxTableSource(schema=s, event_types=frozenset({hitl.EVENT_TYPE}), role=AUDIT_RELAY)
-        for s in audit
-    ]
+    # The audit database's requests, and its exports to write (audit_exports.py).
+    audit_types = frozenset({hitl.EVENT_TYPE} | set(audit_exports.HANDLERS))
+    found += [OutboxTableSource(schema=s, event_types=audit_types, role=AUDIT_RELAY) for s in audit]
     return found
 
 
