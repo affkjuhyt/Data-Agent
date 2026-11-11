@@ -1134,14 +1134,22 @@ def _receipt_lookup(principal: Principal, space: uuid.UUID, ref: str) -> Any:
         return stmt.where(qa.AnswerReceipt.receipt_no == ref)
 
 
+def figure_order(key: str) -> list[Any]:
+    """F2 before F10: figure keys sorted as text listed F1, F10, F11, F2 on the receipt."""
+    return [(0, int(part)) if part.isdigit() else (1, part) for part in re.split(r"(\d+)", key)]
+
+
 async def _receipt_view(session: Any, receipt: qa.AnswerReceipt) -> ReceiptView:
-    figures = (
-        await session.scalars(
-            select(qa.AnswerReceiptFigure)
-            .where(qa.AnswerReceiptFigure.receipt_id == receipt.id)
-            .order_by(qa.AnswerReceiptFigure.figure_key)
-        )
-    ).all()
+    figures = sorted(
+        (
+            await session.scalars(
+                select(qa.AnswerReceiptFigure).where(
+                    qa.AnswerReceiptFigure.receipt_id == receipt.id
+                )
+            )
+        ).all(),
+        key=lambda f: figure_order(f.figure_key),
+    )
     view = ReceiptView.model_validate(receipt)
     view.figures = [ReceiptFigureView.model_validate(f) for f in figures]
     return view

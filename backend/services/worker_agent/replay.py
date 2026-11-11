@@ -24,6 +24,7 @@ import datetime
 import decimal
 import hashlib
 import logging
+import re
 import uuid
 from typing import Any
 
@@ -71,13 +72,19 @@ async def replay_receipt(event: Event) -> None:
         replay = await session.get(qa.ReceiptReplay, replay_id)
         if replay is None or replay.status != "running":
             return
-        figures = (
-            await session.scalars(
-                select(qa.AnswerReceiptFigure)
-                .where(qa.AnswerReceiptFigure.receipt_id == replay.receipt_id)
-                .order_by(qa.AnswerReceiptFigure.figure_key)
-            )
-        ).all()
+        figures = sorted(
+            (
+                await session.scalars(
+                    select(qa.AnswerReceiptFigure).where(
+                        qa.AnswerReceiptFigure.receipt_id == replay.receipt_id
+                    )
+                )
+            ).all(),
+            # F2 before F10, as the receipt lists them (the re-run's values follow this order).
+            key=lambda f: [
+                (0, int(p)) if p.isdigit() else (1, p) for p in re.split(r"(\d+)", f.figure_key)
+            ],
+        )
         mode = replay.mode
         receipt = await session.get(qa.AnswerReceipt, replay.receipt_id)
         answer = await session.get(qa.Answer, receipt.answer_id) if receipt else None
