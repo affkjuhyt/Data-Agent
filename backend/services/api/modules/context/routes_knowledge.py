@@ -175,9 +175,9 @@ async def knowledge_index(
     if q:
         document = func.to_tsvector("simple", page.title + " " + page.index_summary)
         terms = func.plainto_tsquery("simple", q)
-        query = query.where(or_(document.op("@@")(terms), page.title.ilike(f"%{q}%"))).order_by(
-            func.ts_rank(document, terms).desc(), page.updated_at.desc()
-        )
+        query = query.where(
+            or_(document.op("@@")(terms), page.title.icontains(q, autoescape=True))
+        ).order_by(func.ts_rank(document, terms).desc(), page.updated_at.desc())
     else:
         query = query.order_by(page.updated_at.desc())
     # Always as a reader: the planner reads for the person asking.
@@ -210,7 +210,11 @@ async def list_knowledge_pages(
         query = query.where(kp.owner_id == owner_id)
     if q:
         query = query.where(
-            or_(kp.title.ilike(f"%{q}%"), kp.slug.ilike(f"%{q}%"), kp.index_summary.ilike(f"%{q}%"))
+            or_(
+                kp.title.icontains(q, autoescape=True),
+                kp.slug.icontains(q, autoescape=True),
+                kp.index_summary.icontains(q, autoescape=True),
+            )
         )
     async with _session(principal, reader=False) as session:
         items, token = await keyset_page(session, query, kp, page, KnowledgePageView.model_validate)

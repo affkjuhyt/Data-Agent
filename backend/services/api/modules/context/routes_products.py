@@ -281,7 +281,9 @@ async def data_product_index(
         dp.org_id == principal.org_id, dp.data_space_id == data_space, dp.status == "active"
     )
     if q:
-        query = query.where(or_(dp.name.ilike(f"%{q}%"), dp.description.ilike(f"%{q}%")))
+        query = query.where(
+            or_(dp.name.icontains(q, autoescape=True), dp.description.icontains(q, autoescape=True))
+        )
     async with transaction(ROLE, principal) as session:
         products = list((await session.scalars(query.order_by(dp.code))).all())
         codes: dict[uuid.UUID, list[str]] = {p.id: [] for p in products}
@@ -346,7 +348,11 @@ async def list_data_products(
         query = query.where(dp.steward_id == steward_id)
     if q:
         query = query.where(
-            or_(dp.name.ilike(f"%{q}%"), dp.code.ilike(f"%{q}%"), dp.description.ilike(f"%{q}%"))
+            or_(
+                dp.name.icontains(q, autoescape=True),
+                dp.code.icontains(q, autoescape=True),
+                dp.description.icontains(q, autoescape=True),
+            )
         )
     async with transaction(ROLE, principal) as session:
         items, token = await keyset_page(session, query, dp, page, _view)

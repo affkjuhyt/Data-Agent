@@ -298,6 +298,10 @@ async def test_the_entity_model_lists_keys_tables_and_relationships(ctx: Ctx) ->
 
         found = await api.get("/v1/entities", params={"q": "hợp"}, headers=ctx.headers("asker"))
         assert [e["key"] for e in found.json()["items"]] == ["hop_dong"]
+        # q is a literal substring: as LIKE wildcards "h_p" matched hop_dong and "%" everything.
+        for wild in ("h_p", "%"):
+            none = await api.get("/v1/entities", params={"q": wild}, headers=ctx.headers("asker"))
+            assert none.json()["items"] == [], wild
         paged = await api.get("/v1/entities", params={"page_size": 1}, headers=ctx.headers("asker"))
         token = paged.json()["next_page_token"]
         rest = await api.get(
@@ -445,6 +449,8 @@ async def test_examples_are_listed_by_status_and_text(ctx: Ctx) -> None:
         assert [i["id"] for i in pending.json()["items"]] == [str(suggested)]
         text = await api.get("/v1/examples", params={"q": "dư nợ"}, headers=ctx.headers("asker"))
         assert [i["id"] for i in text.json()["items"]] == [str(suggested)]
+        wild = await api.get("/v1/examples", params={"q": "%"}, headers=ctx.headers("asker"))
+        assert wild.json()["items"] == []
         paged = await api.get("/v1/examples", params={"page_size": 1}, headers=ctx.headers("asker"))
         assert paged.json()["next_page_token"]
         assert (await api.get("/v1/examples", headers=ctx.headers("nocap"))).status_code == 403

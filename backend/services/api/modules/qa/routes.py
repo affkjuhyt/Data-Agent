@@ -545,7 +545,7 @@ async def list_conversations(
         qa.Conversation.deleted_at.is_(None),
     )
     if q:
-        stmt = stmt.where(qa.Conversation.title.ilike(f"%{q}%"))
+        stmt = stmt.where(qa.Conversation.title.icontains(q, autoescape=True))
     if from_ is not None:
         stmt = stmt.where(qa.Conversation.updated_at >= from_)
     if to is not None:

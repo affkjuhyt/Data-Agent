@@ -173,9 +173,9 @@ async def list_metrics(
     if q:
         named = exists().where(
             context.MetricVersion.metric_id == metric.id,
-            context.MetricVersion.display_name.ilike(f"%{q}%"),
+            context.MetricVersion.display_name.icontains(q, autoescape=True),
         )
-        query = query.where(or_(metric.code.ilike(f"%{q}%"), named))
+        query = query.where(or_(metric.code.icontains(q, autoescape=True), named))
     async with transaction(ROLE, principal) as session:
         rows, token = await keyset_page(session, query, metric, page, lambda r: r)
         items = await _metric_views(session, rows)
@@ -638,7 +638,11 @@ async def list_entities(
     if status:
         query = query.where(entity.status == status)
     if q:
-        query = query.where(or_(entity.code.ilike(f"%{q}%"), entity.name.ilike(f"%{q}%")))
+        query = query.where(
+            or_(
+                entity.code.icontains(q, autoescape=True), entity.name.icontains(q, autoescape=True)
+            )
+        )
     async with transaction(ROLE, principal) as session:
         rows, token = await keyset_page(session, query, entity, page, lambda r: r)
         items = await _entity_views(session, rows, data_space)
@@ -948,7 +952,7 @@ async def list_synonyms(
             query = query.where(column == value)
     if q:
         # Matched on the normalised phrase, as the planner matches a question (D4.5).
-        query = query.where(synonym.phrase_norm.contains(normalize(q)))
+        query = query.where(synonym.phrase_norm.contains(normalize(q), autoescape=True))
     async with transaction(ROLE, principal) as session:
         items, token = await keyset_page(session, query, synonym, page, SynonymView.model_validate)
     return Page(items=items, next_page_token=token)
@@ -1069,7 +1073,7 @@ async def list_examples(
         if value is not None:
             query = query.where(column == value)
     if q:
-        query = query.where(example.question.ilike(f"%{q}%"))
+        query = query.where(example.question.icontains(q, autoescape=True))
     async with transaction(ROLE, principal) as session:
         items, token = await keyset_page(session, query, example, page, ExampleView.model_validate)
     return Page(items=items, next_page_token=token)
@@ -1244,7 +1248,10 @@ async def list_terms(
         query = query.where(term.status == status)
     if q:
         query = query.where(
-            or_(term.term_norm.contains(normalize(q)), term.definition.ilike(f"%{q}%"))
+            or_(
+                term.term_norm.contains(normalize(q), autoescape=True),
+                term.definition.icontains(q, autoescape=True),
+            )
         )
     async with transaction(ROLE, principal) as session:
         items, token = await keyset_page(session, query, term, page, TermView.model_validate)
