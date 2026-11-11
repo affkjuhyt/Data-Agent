@@ -1,3 +1,4 @@
+import { createParser } from 'eventsource-parser';
 import createClient, { type Middleware } from 'openapi-fetch';
 import keycloak from '../keycloak';
 import { setting } from '../runtimeConfig';
@@ -317,19 +318,14 @@ export async function v1Events(
     signal: options.signal,
     slow: true,
   });
-  return (text ?? '')
-    .split(/\r?\n\r?\n/)
-    .filter((block) => block.trim())
-    .map((block) => {
-      const lines = block.split(/\r?\n/);
-      const field = (name: string) =>
-        lines
-          .filter((l) => l.startsWith(`${name}:`))
-          .map((l) => l.slice(name.length + 1).trimStart());
-      return {
-        id: field('id')[0],
-        event: field('event')[0] ?? 'message',
-        data: field('data').join('\n'),
-      };
-    });
+  // Read by eventsource-parser as the SSE spec says: comments (kernel/sse.py's keep-alive) are no
+  // event, one space after the colon is dropped and the rest kept, CR, LF and CRLF all end a line.
+  const events: V1Event[] = [];
+  const parser = createParser({
+    onEvent: (e) => events.push({ id: e.id, event: e.event ?? 'message', data: e.data }),
+  });
+  // An event the stream ends inside of (no blank line after it) is dropped, as the spec says: the
+  // connection was cut, and its data may be half a JSON document. kernel/sse.py ends every event.
+  parser.feed(text ?? '');
+  return events;
 }
