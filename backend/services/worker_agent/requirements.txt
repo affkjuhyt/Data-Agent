@@ -32,3 +32,5 @@ hvac==2.4.0
 rapidfuzz==3.14.6
 # Calendar-month arithmetic (relativedelta); already pulled in by pandas/botocore, pinned here.
 python-dateutil==2.9.0.post0
+# The document chunks' vectors in Qdrant (libs/vectors).
+qdrant-client==1.20.0

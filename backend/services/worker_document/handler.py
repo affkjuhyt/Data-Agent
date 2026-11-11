@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 from sqlalchemy import delete, func, select, update
 
 from libs import pii
@@ -231,7 +232,7 @@ async def _index_or_keyword_only(meta: Meta, plan: ChunkPlan) -> bool:
         return True  # nothing to write: a redelivered event costs no call to Qdrant
     try:
         return await _index(meta, plan)
-    except (httpx.HTTPError, ValueError):
+    except (httpx.HTTPError, ResponseHandlingException, UnexpectedResponse, ValueError):
         # The chunks are still correct text and full-text search serves them; a NULL
         # qdrant_point_id is what "not indexed yet" means, so the next run embeds them.
         log.exception("vector indexing failed id=%s; document is keyword-only", meta.document_id)

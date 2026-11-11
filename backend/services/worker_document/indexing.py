@@ -9,17 +9,27 @@ model it was made with: the search side keeps only points of the collection's cu
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import uuid
 from dataclasses import dataclass
 
 import httpx
+from qdrant_client import AsyncQdrantClient
 
+from libs import vectors
 from libs.shared.embeddings import DEFAULT_MODEL, aembed
 
 log = logging.getLogger(__name__)
 EMBED_BATCH = 32
+
+
+@functools.cache
+def _qdrant(url: str) -> AsyncQdrantClient:
+    # One client for the process: a document's indexing reuses its connections, and none is left
+    # open per document (the httpx client of the embeddings call is closed by its caller).
+    return vectors.connect(url)
 
 
 @dataclass(frozen=True)
@@ -33,14 +43,15 @@ class VectorIndex:
         self,
         client: httpx.AsyncClient,
         *,
-        qdrant_url: str,
+        qdrant: AsyncQdrantClient,
         embed_url: str,
         embed_key: str,
         embed_route: str = DEFAULT_MODEL,
         dimension: int = 1024,
     ) -> None:
         self._client = client
-        self._qdrant = qdrant_url.rstrip("/")
+        # Written through libs/vectors (qdrant-client), the layout the two searches read.
+        self._qdrant = qdrant
         self._embed_url = embed_url
         self._embed_key = embed_key
         self._route = embed_route
@@ -56,7 +67,7 @@ class VectorIndex:
             return None
         return cls(
             client,
-            qdrant_url=qdrant,
+            qdrant=_qdrant(qdrant),
             embed_url=embed,
             embed_key=os.getenv("LITELLM_API_KEY", ""),
             # The LiteLLM route that serves collection.embed_model (bge-m3 behind `embedder`).
@@ -78,61 +89,33 @@ class VectorIndex:
         """Writes the points of new chunks and deletes those of chunks the document no longer
         has. Chunks kept from an earlier run keep their points: re-processing a document embeds
         only what changed (AC-05-02-05)."""
-        await self._ensure(collection)
-        if deletes:
-            await self._call(
-                "POST",
-                f"/collections/{collection}/points/delete?wait=true",
-                {"points": [str(i) for i in deletes]},
-            )
+        if await vectors.ensure_collection(self._qdrant, collection, self._dimension):
+            log.info("qdrant collection created name=%s dim=%d", collection, self._dimension)
+        await vectors.delete_chunks(self._qdrant, collection, deletes)
         for start in range(0, len(upserts), EMBED_BATCH):
             batch = upserts[start : start + EMBED_BATCH]
-            vectors = await aembed(
+            embedded = await aembed(
                 [p.text for p in batch],
                 base_url=self._embed_url,
                 api_key=self._embed_key,
                 model=self._route,
                 client=self._client,
             )
-            await self._call(
-                "PUT",
-                f"/collections/{collection}/points?wait=true",
-                {
-                    "points": [
+            await vectors.upsert_chunks(
+                self._qdrant,
+                collection,
+                [
+                    vectors.ChunkPoint(
+                        p.chunk_id,
+                        vector,
                         {
-                            "id": str(p.chunk_id),
-                            "vector": vector,
-                            "payload": {
-                                "org_id": str(org_id),
-                                "collection_id": str(collection_id),
-                                "document_id": str(document_id),
-                                "chunk_id": str(p.chunk_id),
-                                "embed_model": embed_model,
-                            },
-                        }
-                        for p, vector in zip(batch, vectors, strict=True)
-                    ]
-                },
+                            "org_id": str(org_id),
+                            "collection_id": str(collection_id),
+                            "document_id": str(document_id),
+                            "chunk_id": str(p.chunk_id),
+                            "embed_model": embed_model,
+                        },
+                    )
+                    for p, vector in zip(batch, embedded, strict=True)
+                ],
             )
-
-    async def _ensure(self, collection: str) -> None:
-        response = await self._client.get(f"{self._qdrant}/collections/{collection}")
-        if response.status_code == 200:
-            return
-        if response.status_code != 404:
-            response.raise_for_status()
-        await self._call(
-            "PUT",
-            f"/collections/{collection}",
-            {"vectors": {"size": self._dimension, "distance": "Cosine"}},
-        )
-        await self._call(
-            "PUT",
-            f"/collections/{collection}/index",
-            {"field_name": "document_id", "field_schema": "keyword"},
-        )
-        log.info("qdrant collection created name=%s dim=%d", collection, self._dimension)
-
-    async def _call(self, method: str, path: str, body: dict) -> None:
-        response = await self._client.request(method, f"{self._qdrant}{path}", json=body)
-        response.raise_for_status()

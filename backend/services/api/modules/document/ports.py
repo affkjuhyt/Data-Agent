@@ -7,11 +7,15 @@ explicit dependency whose default refuses; tests replace every port with a fake.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import uuid
 from dataclasses import dataclass
-from typing import BinaryIO, Protocol
+from typing import TYPE_CHECKING, BinaryIO, Protocol
+
+if TYPE_CHECKING:
+    from qdrant_client import AsyncQdrantClient
 from urllib.parse import urlparse
 
 from services.api.kernel.problems import Problem
@@ -168,15 +172,24 @@ class NoVectors:
         return []
 
 
+@functools.cache
+def _qdrant_client(url: str) -> AsyncQdrantClient:
+    from libs import vectors
+
+    return vectors.connect(url)
+
+
 class QdrantVectors:
-    """Nearest chunks over the collections' Qdrant indexes (worker_document writes them).
+    """Nearest chunks over the collections' Qdrant indexes (worker_document writes them), through
+    libs/vectors as worker-agent's search reads them.
 
     A failure here costs recall, not the answer: search still has its full-text half, so the
     port logs and contributes nothing rather than failing the request.
     """
 
     def __init__(self, qdrant_url: str, embed_url: str, embed_key: str, embed_route: str) -> None:
-        self._qdrant = qdrant_url.rstrip("/")
+        # One client per Qdrant for the process: this port is built per request.
+        self._qdrant = _qdrant_client(qdrant_url)
         self._embed_url = embed_url.rstrip("/")
         self._embed_key = embed_key
         self._route = embed_route
@@ -185,10 +198,12 @@ class QdrantVectors:
         self, targets: list[VectorTarget], query: str, limit: int
     ) -> list[tuple[uuid.UUID, float]]:
         import httpx
+        from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
+
+        from libs import vectors
 
         if not targets:
             return []
-        hits: list[tuple[uuid.UUID, float]] = []
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 response = await client.post(
@@ -198,31 +213,23 @@ class QdrantVectors:
                 )
                 response.raise_for_status()
                 vector = response.json()["data"][0]["embedding"]
-                for target in targets:
-                    found = await client.post(
-                        f"{self._qdrant}/collections/{target.qdrant_collection}/points/search",
-                        json={
-                            "vector": vector,
-                            "limit": limit,
-                            # BR-18: only points of the collection's current embedding model.
-                            "filter": {
-                                "must": [
-                                    {"key": "embed_model", "match": {"value": target.embed_model}}
-                                ]
-                            },
-                        },
-                    )
-                    if found.status_code == 404:
-                        continue  # nothing indexed in this collection yet
-                    found.raise_for_status()
-                    hits.extend(
-                        (uuid.UUID(str(p["id"])), float(p["score"])) for p in found.json()["result"]
-                    )
-        except (httpx.HTTPError, KeyError, IndexError, ValueError):
+            # BR-18: only points of each collection's current embedding model.
+            return await vectors.nearest(
+                self._qdrant,
+                [vectors.Target(t.qdrant_collection, t.embed_model) for t in targets],
+                vector,
+                limit,
+            )
+        except (
+            httpx.HTTPError,
+            ResponseHandlingException,
+            UnexpectedResponse,
+            KeyError,
+            IndexError,
+            ValueError,
+        ):
             _log.warning("vector search unavailable; keyword results only", exc_info=True)
             return []
-        hits.sort(key=lambda hit: -hit[1])
-        return hits[:limit]
 
 
 _log = logging.getLogger(__name__)

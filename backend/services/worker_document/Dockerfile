@@ -21,6 +21,7 @@ COPY backend/libs/dataagent_db/ ./libs/dataagent_db/
 COPY backend/libs/tabular/ ./libs/tabular/
 COPY backend/libs/pii/ ./libs/pii/
 COPY backend/libs/shared/ ./libs/shared/
+COPY backend/libs/vectors/ ./libs/vectors/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/worker_document/ ./services/worker_document/
 USER app

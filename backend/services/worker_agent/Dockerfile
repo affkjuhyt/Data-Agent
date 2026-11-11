@@ -23,6 +23,7 @@ COPY backend/libs/pii/ ./libs/pii/
 COPY backend/libs/forecast_fit/ ./libs/forecast_fit/
 COPY backend/libs/contracts/ ./libs/contracts/
 COPY backend/libs/openbao/ ./libs/openbao/
+COPY backend/libs/vectors/ ./libs/vectors/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/worker_agent/ ./services/worker_agent/
 USER app
