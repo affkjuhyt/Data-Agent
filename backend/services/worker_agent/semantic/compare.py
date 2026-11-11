@@ -41,7 +41,8 @@ COMPARE_TO = (PREVIOUS_PERIOD, SAME_PERIOD_LAST_YEAR)
 
 def _add_months(day: datetime.date, months: int) -> datetime.date:
     # 29/02 a year back is 28/02: relativedelta clamps to the month's last day, never an error.
-    return day + relativedelta(months=months)
+    shifted: datetime.date = day + relativedelta(months=months)
+    return shifted
 
 
 def _months_between(period: Period) -> int | None:

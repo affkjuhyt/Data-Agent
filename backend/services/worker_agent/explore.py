@@ -40,7 +40,9 @@ def grain_of(period: Period) -> str:
 
 
 def _add_months(start: D, months: int) -> D:
-    return (start + relativedelta(months=months)).replace(day=1)
+    # relativedelta ships no types: the sum is annotated so it stays a date to mypy.
+    shifted: D = start + relativedelta(months=months)
+    return shifted.replace(day=1)
 
 
 def bucket(start: D, grain: str) -> Period:

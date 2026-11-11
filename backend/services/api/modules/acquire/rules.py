@@ -109,7 +109,9 @@ def check_secret_ref(secret_ref: str, org_id: uuid.UUID) -> str:
 
 def add_months(moment: datetime.datetime, months: int) -> datetime.datetime:
     """Calendar months, clamped to the month's last day (10/10/2026 + 6 → 10/04/2027)."""
-    return moment + relativedelta(months=months)
+    # relativedelta ships no types: the sum is annotated so it stays a datetime to mypy.
+    shifted: datetime.datetime = moment + relativedelta(months=months)
+    return shifted
 
 
 def legal_review_due(
