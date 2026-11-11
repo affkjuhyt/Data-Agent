@@ -227,7 +227,7 @@ describe('Checkbox, Radio, Toggle', () => {
     fireEvent.click(screen.getByLabelText('Nội bộ · nhóm 2–5'));
     expect(onRadio).toHaveBeenCalledWith('internal');
     const toggle = screen.getByRole('switch', { name: 'Bản tin tuần' });
-    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(toggle).toBeChecked();
     fireEvent.click(toggle);
     expect(onToggle).toHaveBeenCalledWith(false);
   });

@@ -183,7 +183,7 @@ describe('ExplorePage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Điền kệ' }));
     await waitFor(() => expect(within(shelf('Chỉ số')).getByText('Dư nợ')).toBeInTheDocument());
     expect(within(shelf('Chiều')).getByText('Chi nhánh')).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Kéo thả' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'Kéo thả' })).toBeChecked();
   });
 
   it('opens the metric definition for "Vì sao số này?"', async () => {

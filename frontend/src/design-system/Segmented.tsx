@@ -1,3 +1,4 @@
+import { Radio, RadioGroup } from 'react-aria-components';
 import { cn } from '../lib/utils';
 
 /*
@@ -8,10 +9,42 @@ import { cn } from '../lib/utils';
  * (radius-sm) split by lines, the chosen view on subtle in Body Strong.
  * `chips` is the filter row of "P03 · Kỹ năng · Thư viện" (2293:17995): loose chips, no track,
  * radius-sm, 10×5 padding, 8px apart; the chosen chip on subtle with a border in Body Strong.
+ *
+ * A React Aria RadioGroup: one tab stop, the arrow keys move the choice, the focus ring shows for
+ * the keyboard only. The hand-made buttons were a tab stop each and ignored the arrow keys.
  */
 interface Segment<V extends string> {
   value: V;
   label: string;
+}
+
+const GROUP = {
+  track: 'inline-flex w-fit gap-[2px] rounded-md bg-subtle p-da-xs',
+  outline: 'inline-flex w-fit overflow-hidden rounded-sm border border-border',
+  chips: 'flex items-center gap-da-md',
+};
+
+function segment(variant: 'track' | 'outline' | 'chips', active: boolean): string {
+  if (variant === 'chips')
+    return cn(
+      'whitespace-nowrap rounded-sm border px-[10px] py-[5px] transition-colors duration-[120ms] ease-out',
+      active
+        ? 'border-border bg-subtle text-foreground da-body-strong'
+        : 'border-transparent text-muted-foreground da-body-small hover:text-foreground',
+    );
+  if (variant === 'outline')
+    return cn(
+      'whitespace-nowrap border-r border-border px-da-lg py-da-sm',
+      active
+        ? 'bg-subtle text-foreground da-body-strong'
+        : 'text-muted-foreground da-body-small hover:text-foreground',
+    );
+  return cn(
+    'whitespace-nowrap rounded-sm border px-da-md py-da-xs da-body-strong transition-colors duration-[120ms] ease-out',
+    active
+      ? 'border-border bg-card text-foreground'
+      : 'border-transparent text-muted-foreground hover:text-foreground',
+  );
 }
 
 export function Segmented<V extends string>({
@@ -27,88 +60,29 @@ export function Segmented<V extends string>({
   label: string;
   variant?: 'track' | 'outline' | 'chips';
 }) {
-  if (variant === 'chips') {
-    return (
-      <div role="radiogroup" aria-label={label} className="flex items-center gap-da-md">
-        {items.map((item) => {
-          const active = item.value === value;
-          return (
-            <button
-              key={item.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              onClick={() => onChange(item.value)}
-              className={cn(
-                'whitespace-nowrap rounded-sm border px-[10px] py-[5px] transition-colors duration-[120ms] ease-out',
-                active
-                  ? 'border-border bg-subtle text-foreground da-body-strong'
-                  : 'border-transparent text-muted-foreground da-body-small hover:text-foreground',
-              )}
-            >
-              {item.label}
-            </button>
-          );
-        })}
-      </div>
-    );
-  }
-  if (variant === 'outline') {
-    return (
-      <div
-        role="radiogroup"
-        aria-label={label}
-        className="inline-flex w-fit overflow-hidden rounded-sm border border-border"
-      >
-        {items.map((item) => {
-          const active = item.value === value;
-          return (
-            <button
-              key={item.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              onClick={() => onChange(item.value)}
-              className={cn(
-                'whitespace-nowrap border-r border-border px-da-lg py-da-sm',
-                active
-                  ? 'bg-subtle text-foreground da-body-strong'
-                  : 'text-muted-foreground da-body-small hover:text-foreground',
-              )}
-            >
-              {item.label}
-            </button>
-          );
-        })}
-      </div>
-    );
-  }
   return (
-    <div
-      role="radiogroup"
+    <RadioGroup
       aria-label={label}
-      className="inline-flex w-fit gap-[2px] rounded-md bg-subtle p-da-xs"
+      orientation="horizontal"
+      value={value}
+      onChange={(next) => onChange(next as V)}
+      className={GROUP[variant]}
     >
-      {items.map((item) => {
-        const active = item.value === value;
-        return (
-          <button
-            key={item.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => onChange(item.value)}
-            className={cn(
-              'whitespace-nowrap rounded-sm border px-da-md py-da-xs da-body-strong transition-colors duration-[120ms] ease-out',
-              active
-                ? 'border-border bg-card text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {item.label}
-          </button>
-        );
-      })}
-    </div>
+      {items.map((item) => (
+        <Radio
+          key={item.value}
+          value={item.value}
+          className={({ isSelected, isFocusVisible }) =>
+            cn(
+              'cursor-pointer',
+              segment(variant, isSelected),
+              isFocusVisible && 'shadow-[var(--focus-ring)]',
+            )
+          }
+        >
+          {item.label}
+        </Radio>
+      ))}
+    </RadioGroup>
   );
 }

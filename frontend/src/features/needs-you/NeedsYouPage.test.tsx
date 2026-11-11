@@ -47,10 +47,7 @@ describe('NeedsYouPage', () => {
       await screen.findByRole('heading', { name: '“Nợ xấu” nên tính theo định nghĩa nào?' }),
     ).toBeInTheDocument();
     expect(screen.getByText(/Vì sao agent hỏi: hai định nghĩa hợp lệ/)).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /Nhóm 3–5 · NPL_RATIO v4/ })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    expect(screen.getByRole('radio', { name: /Nhóm 3–5 · NPL_RATIO v4/ })).toBeChecked();
     expect(screen.getAllByRole('article')).toHaveLength(5);
     expect(screen.getByRole('radio', { name: 'Đang chờ · 5' })).toBeInTheDocument();
   });

@@ -56,10 +56,7 @@ describe('OnboardingPage', () => {
     expect(
       screen.getByText(/Gói Ngân hàng đã kết nối Core banking, DWH và Sổ cái\./),
     ).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /Agent Giám sát chỉ số/ })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    expect(screen.getByRole('radio', { name: /Agent Giám sát chỉ số/ })).toBeChecked();
 
     fireEvent.click(screen.getByRole('radio', { name: /Agent Báo cáo định kỳ/ }));
     const run = screen.getByRole('button', { name: 'Chạy thử Agent Báo cáo định kỳ' });

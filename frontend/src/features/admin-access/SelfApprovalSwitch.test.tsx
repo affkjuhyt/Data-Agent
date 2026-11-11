@@ -56,7 +56,7 @@ describe('SelfApprovalSwitch', () => {
     serve(true);
     draw();
     const toggle = await screen.findByRole('switch', { name: 'Cho phép tự duyệt' });
-    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+    await waitFor(() => expect(toggle).toBeChecked());
     expect(screen.getByText('Cho phép tự duyệt')).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -70,7 +70,7 @@ describe('SelfApprovalSwitch', () => {
     serve(false);
     draw();
     const toggle = await screen.findByRole('switch', { name: 'Cho phép tự duyệt' });
-    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+    await waitFor(() => expect(toggle).not.toBeChecked());
     expect(toggle).toBeEnabled();
     fireEvent.click(toggle);
     const dialog = await screen.findByRole('alertdialog', { name: 'Bật tự duyệt cho tổ chức?' });
@@ -78,7 +78,7 @@ describe('SelfApprovalSwitch', () => {
     expect(patched).toEqual([]);
     fireEvent.click(screen.getByRole('button', { name: 'Bật tự duyệt' }));
     await waitFor(() => expect(patched).toEqual([{ allow_self_approval: true }]));
-    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+    await waitFor(() => expect(toggle).toBeChecked());
     expect(await screen.findByText('Đã bật tự duyệt cho tổ chức')).toBeInTheDocument();
   });
 
@@ -87,12 +87,12 @@ describe('SelfApprovalSwitch', () => {
     serve(false);
     draw();
     const toggle = await screen.findByRole('switch', { name: 'Cho phép tự duyệt' });
-    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+    await waitFor(() => expect(toggle).not.toBeChecked());
     fireEvent.click(toggle);
     fireEvent.click(await screen.findByRole('button', { name: 'Huỷ' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(patched).toEqual([]);
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(toggle).not.toBeChecked();
   });
 
   it('an admin turns it off at once: that only narrows who may approve', async () => {
@@ -100,7 +100,7 @@ describe('SelfApprovalSwitch', () => {
     serve(true);
     draw();
     const toggle = await screen.findByRole('switch', { name: 'Cho phép tự duyệt' });
-    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+    await waitFor(() => expect(toggle).toBeChecked());
     fireEvent.click(toggle);
     await waitFor(() => expect(patched).toEqual([{ allow_self_approval: false }]));
     expect(screen.queryByRole('alertdialog')).toBeNull();

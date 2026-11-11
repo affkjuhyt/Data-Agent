@@ -60,7 +60,7 @@ describe('AgentOperationsPage', () => {
   it('shows the roll-up for 7 days and sends each issue to the place that fixes it', async () => {
     renderPage(<AgentOperationsPage />);
     expect(await screen.findByText('286')).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: '7 ngày' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: '7 ngày' })).toBeChecked();
     expect(screen.getByText('94,1%')).toBeInTheDocument();
     // The api does not measure how fast people answer: the KPI says nothing rather than a guess.
     expect(screen.queryByText(/trung vị phản hồi/)).toBeNull();
@@ -74,12 +74,7 @@ describe('AgentOperationsPage', () => {
     expect(navigate).toHaveBeenCalledWith('agents', 'EVALUATE', 'agent-report');
 
     fireEvent.click(screen.getByRole('radio', { name: '30 ngày' }));
-    await waitFor(() =>
-      expect(screen.getByRole('radio', { name: '30 ngày' })).toHaveAttribute(
-        'aria-checked',
-        'true',
-      ),
-    );
+    await waitFor(() => expect(screen.getByRole('radio', { name: '30 ngày' })).toBeChecked());
   });
 });
 
@@ -127,7 +122,9 @@ describe('ModelsPage', () => {
     fireEvent.click(submit);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     // The routing table's row; a Select's hidden native <select> holds the model's name too.
-    expect(await screen.findByRole('row', { name: /LLM-M 24B.*đang đánh giá/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('row', { name: /LLM-M 24B.*đang đánh giá/ }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -169,17 +166,16 @@ describe('ModelsPage tabs', () => {
     renderPage(<ModelsPage />);
     fireEvent.click(screen.getByRole('tab', { name: 'Provider' }));
     const toggle = await screen.findByRole('switch', { name: 'Cho phép frontier trong tổ chức' });
-    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(toggle).toBeChecked();
     expect(screen.getByText('Đang bật')).toBeInTheDocument();
 
     fireEvent.click(toggle);
     let dialog = screen.getByRole('alertdialog', { name: 'Tắt frontier trong tổ chức?' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tắt frontier' }));
     expect(await screen.findByText('Đang tắt')).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: 'Cho phép frontier trong tổ chức' })).toHaveAttribute(
-      'aria-checked',
-      'false',
-    );
+    expect(
+      screen.getByRole('switch', { name: 'Cho phép frontier trong tổ chức' }),
+    ).not.toBeChecked();
 
     fireEvent.click(screen.getByRole('switch', { name: 'Cho phép frontier trong tổ chức' }));
     dialog = screen.getByRole('alertdialog', { name: 'Cho phép frontier trong tổ chức?' });
@@ -356,7 +352,9 @@ describe('MyClients on Hồ sơ', () => {
     renderPage(<ProfilePage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Đồng ý' }));
     expect(
-      await screen.findByText('Power BI phòng Rủi ro vừa được quản trị viên sửa. Xem lại rồi đồng ý.'),
+      await screen.findByText(
+        'Power BI phòng Rủi ro vừa được quản trị viên sửa. Xem lại rồi đồng ý.',
+      ),
     ).toBeInTheDocument();
   });
 });

@@ -31,7 +31,7 @@ describe('JobSetupPage', () => {
     expect(
       await screen.findByRole('heading', { name: 'Job nạp · card_transactions' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Tăng dần' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'Tăng dần' })).toBeChecked();
     expect(screen.getByRole('button', { name: 'Cột con trỏ' })).toHaveTextContent(
       'updated_at · TIMESTAMP',
     );
