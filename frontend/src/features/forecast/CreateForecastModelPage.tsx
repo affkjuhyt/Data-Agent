@@ -73,6 +73,10 @@ function CreateForm({ metrics }: { metrics: CertifiedMetricOption[] }) {
       setError('Tầm từ 1 đến 24 kỳ.');
       return;
     }
+    if (scope.error || (scope.loading && !scope.data)) {
+      setError('Đợi phạm vi chỉ số tải xong, hoặc chọn chỉ số khác.');
+      return;
+    }
     sending.current = true;
     const cuts: Record<string, string[]> = {};
     for (const [code, members] of Object.entries(picked)) {
@@ -110,7 +114,13 @@ function CreateForm({ metrics }: { metrics: CertifiedMetricOption[] }) {
         title="Tạo mô hình dự báo"
         description="Một chỉ số đã chứng nhận, tần suất tháng hoặc quý, và tầm từ 1 đến 24 kỳ."
         actions={
-          <Button kind="primary" type="submit" loading={busy} onClick={() => void submit()}>
+          <Button
+            kind="primary"
+            type="submit"
+            loading={busy}
+            disabled={Boolean(scope.error) || (scope.loading && !scope.data)}
+            onClick={() => void submit()}
+          >
             Tạo mô hình
           </Button>
         }
@@ -122,7 +132,10 @@ function CreateForm({ metrics }: { metrics: CertifiedMetricOption[] }) {
             label="Chỉ số"
             options={metrics.map((item) => ({ value: item.id, label: item.label }))}
             value={metric?.id ?? null}
-            onChange={setMetricId}
+            onChange={(id) => {
+              setMetricId(id);
+              setPicked({});
+            }}
             placeholder="Chọn chỉ số đã chứng nhận"
           />
         </Field>
@@ -144,7 +157,18 @@ function CreateForm({ metrics }: { metrics: CertifiedMetricOption[] }) {
             onChange={(event) => setHorizon(event.target.value)}
           />
         </Field>
-        <ScopeEditor dimensions={scope.data ?? []} picked={picked} onToggle={toggle} />
+        {scope.error ? (
+          <Notice tone="error">
+            Không tải được phạm vi của chỉ số. Thử lại hoặc chọn chỉ số khác.
+          </Notice>
+        ) : (
+          <ScopeEditor
+            dimensions={scope.data ?? []}
+            picked={picked}
+            loading={scope.loading && !scope.data}
+            onToggle={toggle}
+          />
+        )}
       </div>
     </form>
   );
@@ -153,13 +177,24 @@ function CreateForm({ metrics }: { metrics: CertifiedMetricOption[] }) {
 function ScopeEditor({
   dimensions,
   picked,
+  loading,
   onToggle,
 }: {
   dimensions: ForecastScopeDimension[];
   picked: Record<string, string[]>;
+  loading: boolean;
   onToggle: (dimension: string, member: string, on: boolean) => void;
 }) {
-  if (dimensions.length === 0) return null;
+  if (loading) {
+    return <p className="text-muted-foreground da-caption">Đang tải phạm vi…</p>;
+  }
+  if (dimensions.length === 0) {
+    return (
+      <p className="text-muted-foreground da-caption">
+        Chỉ số này không có chiều cắt — mô hình sẽ dùng toàn bộ.
+      </p>
+    );
+  }
   return (
     <div className="flex flex-col gap-da-lg">
       <p className="text-foreground da-label">Phạm vi</p>

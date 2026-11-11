@@ -396,7 +396,7 @@ def _workbench(
             ForecastStat(
                 label="Chuỗi huấn luyện",
                 value=points,
-                note=f"{_date_vn(version.training_from)} - {_date_vn(version.training_to)}",
+                note=f"{_date_vn(version.training_from)} – {_date_vn(version.training_to)}",  # noqa: RUF001
                 tone="default",
             ),
             ForecastStat(

@@ -35,14 +35,36 @@ const metric = (code: string, name: string, certified: boolean) => ({
 const server = setupServer(
   http.get('*/v1/metrics', ({ request }) => {
     const certified = new URL(request.url).searchParams.get('certified');
-    const items = [metric('DOANH_THU', 'Doanh thu', true), metric('DRAFT_METRIC', 'Chỉ số nháp', false)];
+    const items = [
+      metric('DOANH_THU', 'Doanh thu', true),
+      metric('LOI_NHUAN', 'Lợi nhuận', true),
+      metric('DRAFT_METRIC', 'Chỉ số nháp', false),
+    ];
     return HttpResponse.json({
       items: certified === 'true' ? items.filter((item) => item.certified) : items,
       next_page_token: '',
     });
   }),
-  http.get('*/v1/metrics/:id', () =>
-    HttpResponse.json({
+  http.get('*/v1/metrics/:id', ({ params }) => {
+    const id = String(params.id);
+    if (id === 'metric-LOI_NHUAN') {
+      return HttpResponse.json({
+        id: 'metric-LOI_NHUAN',
+        code: 'LOI_NHUAN',
+        status: 'active',
+        current_version: 1,
+        versions: [
+          {
+            id: 'mv-ln-1',
+            version: 1,
+            status: 'certified',
+            display_name: 'Lợi nhuận',
+            allowed_dimensions: ['dim-region'],
+          },
+        ],
+      });
+    }
+    return HttpResponse.json({
       id: 'metric-DOANH_THU',
       code: 'DOANH_THU',
       status: 'active',
@@ -56,8 +78,8 @@ const server = setupServer(
           allowed_dimensions: ['dim-cat'],
         },
       ],
-    }),
-  ),
+    });
+  }),
   http.get('*/v1/entities', () =>
     HttpResponse.json({
       items: [
@@ -92,6 +114,14 @@ const server = setupServer(
           is_time: true,
           parent_dimension_id: null,
         },
+        {
+          id: 'dim-region',
+          code: 'region',
+          name: 'Khu vực',
+          expression: 'region',
+          is_time: false,
+          parent_dimension_id: null,
+        },
       ],
     }),
   ),
@@ -106,6 +136,12 @@ const server = setupServer(
               { value: 'Bikes', count: 40 },
               { value: 'Components', count: 12 },
             ],
+          },
+        },
+        {
+          name: 'region',
+          profile: {
+            top_values: [{ value: 'North', count: 8 }],
           },
         },
       ],
@@ -195,5 +231,39 @@ describe('CreateForecastModelPage', () => {
       scope: { product_category: ['Bikes'] },
     }));
     expect(navigate).toHaveBeenCalledWith('analysis', 'FORECAST_JOB', JOB_ID);
+  });
+
+  it('clears the previous metric cuts when the metric changes', async () => {
+    show();
+    const scope = await screen.findByRole('group', { name: 'Nhóm sản phẩm' });
+    fireEvent.click(within(scope).getByRole('checkbox', { name: 'Bikes' }));
+    expect(within(scope).getByRole('checkbox', { name: 'Bikes' })).toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chỉ số' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Lợi nhuận/ }));
+
+    const region = await screen.findByRole('group', { name: 'Khu vực' });
+    expect(within(region).getByRole('checkbox', { name: 'North' })).not.toBeChecked();
+    expect(screen.queryByRole('group', { name: 'Nhóm sản phẩm' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo mô hình' }));
+    await waitFor(() =>
+      expect(posted).toEqual({
+        metric_code: 'LOI_NHUAN',
+        frequency: 'month',
+        horizon: 12,
+        scope: {},
+      }),
+    );
+  });
+
+  it('shows a scope error and does not create when the scope request fails', async () => {
+    server.use(http.get('*/v1/metrics/:id', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
+    show();
+    expect(
+      await screen.findByText('Không tải được phạm vi của chỉ số. Thử lại hoặc chọn chỉ số khác.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tạo mô hình' })).toHaveAttribute('aria-disabled', 'true');
+    expect(posted).toBeUndefined();
   });
 });

@@ -250,9 +250,9 @@ def fit(
         if scale > tolerance and c.algorithm not in BASELINES and c.mase is not None and c.mase < 1
     ]
     if not beating:
+        # Plan / Review Focus wording — keep the seasonal-naive phrase so jobs and tests match.
         return _nothing(
-            "Không mô hình nào tốt hơn cách dự báo đơn giản (lặp lại cùng kỳ năm trước) "
-            "khi kiểm định trên dữ liệu quá khứ, nên không tạo dự báo.",
+            "Không mô hình nào tốt hơn cách đoán theo mùa (seasonal naive)",
             candidates,
             cutoffs,
         )

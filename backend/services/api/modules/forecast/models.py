@@ -362,7 +362,12 @@ async def _policy_blocks(
     """
     names = _column_names(version.expression)
     if names is None:
-        return True
+        # Fail closed, but not as a permission denial — the formula itself cannot be checked.
+        raise Problem(
+            422,
+            "business_rule_violated",
+            "The metric formula cannot be checked.",
+        )
     if not names:
         return False
     measures = (

@@ -617,25 +617,6 @@ function readForecast(
   };
 }
 
-/**
- * A2 has no list of forecast jobs. The issued forecasts are the ledger's lines, each pointing at
- * the job that made it; a fuel price's line (scope.product_code) belongs to its own screen.
- */
-export async function listForecasts(): Promise<Page<{ id: string }>> {
-  const ledger = await ok<Page<Schemas['LedgerEntryView']>>(
-    api.GET('/v1/forecast-ledger', {
-      params: {
-        query: {
-          page_size: 50,
-        },
-      },
-    }),
-  );
-  const ids = new Set<string>();
-  for (const line of ledger.items) if (line.job_id && !productOf(line)) ids.add(line.job_id);
-  return { items: [...ids].map((id) => ({ id })), next_page_token: ledger.next_page_token };
-}
-
 /** A model and its latest predictions, the forecast the rail opens when no job is addressed. */
 export async function getModelForecast(modelId: string): Promise<Forecast> {
   const [model, predictions] = await Promise.all([

@@ -343,7 +343,7 @@ nghĩa chưa huấn luyện (không có phiên bản).
 
 | ID | Mức | Việc | Công sức | TT |
 | --- | --- | --- | --- | --- |
-| FC-01 | — | Dự báo thống kê trên DS-AW: dịch vụ `ml-forecast`, hai định nghĩa chưa huấn luyện (`DOANH_THU` tháng, và cùng chỉ số theo nhóm hàng Bikes), đường e2e huấn luyện, duyệt đề xuất và đọc 12 dự báo | M | done: `services/ml_forecast`, seed `v3-adventureworks-seed.sql`, `tests/e2e/test_forecast_e2e.py` |
+| FC-01 | — | Dự báo thống kê trên DS-AW: dịch vụ `ml-forecast`, hai định nghĩa chưa huấn luyện (`DOANH_THU` tháng, và cùng chỉ số theo nhóm hàng Bikes), đường e2e huấn luyện, duyệt đề xuất và đọc 12 dự báo | M | done 21b7edfa: `services/ml_forecast`, seed `v3-adventureworks-seed.sql`, `tests/e2e/test_forecast_e2e.py` |
 
 ## 4. Quy tắc theo dõi
 
