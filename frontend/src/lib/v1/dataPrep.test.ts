@@ -214,3 +214,17 @@ describe('sendPrepMessage', () => {
     });
   });
 });
+
+describe('formatSql', () => {
+  it('lays a statement out clause by clause without touching a string', async () => {
+    const { formatSql } = await import('./dataPrep');
+    expect((await formatSql("select a from t where name = 'from here'")).sql).toBe(
+      "SELECT\n  a\nFROM\n  t\nWHERE\n  name = 'from here'",
+    );
+  });
+
+  it('gives back what it cannot read as written', async () => {
+    const { formatSql } = await import('./dataPrep');
+    expect((await formatSql('  select ((( from  ')).sql).toBe('select ((( from');
+  });
+});

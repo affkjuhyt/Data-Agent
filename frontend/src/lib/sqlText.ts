@@ -51,42 +51,11 @@ const KEYWORDS = new Set([
   'partition',
 ]);
 
-const CLAUSE = new Set([
-  'select',
-  'from',
-  'where',
-  'group by',
-  'order by',
-  'having',
-  'limit',
-  'union',
-  'union all',
-  'join',
-  'left join',
-  'right join',
-  'inner join',
-  'full join',
-  'cross join',
-]);
-
 type SqlTokenKind = 'keyword' | 'string' | 'number' | 'comment' | 'plain';
 
 interface SqlToken {
   text: string;
   kind: SqlTokenKind;
-}
-
-/** One highlighted line. A newline is a token boundary, never a painted character. */
-export function sqlLines(sql: string): SqlToken[][] {
-  const lines: SqlToken[][] = [[]];
-  for (const token of sqlTokens(sql)) {
-    const parts = token.text.split('\n');
-    parts.forEach((part, index) => {
-      if (index > 0) lines.push([]);
-      if (part) lines[lines.length - 1].push({ text: part, kind: token.kind });
-    });
-  }
-  return lines;
 }
 
 /** Split SQL without dropping characters, so the highlight lines up with the textarea. */
@@ -144,44 +113,6 @@ function sqlTokens(sql: string): SqlToken[] {
     i += 1;
   }
   return tokens;
-}
-
-/** Indent each clause onto its own line. Strings and comments stay intact. */
-export function formatReadOnlySql(sql: string): string {
-  const tokens = sqlTokens(sql.trim());
-  let out = '';
-  for (let i = 0; i < tokens.length; i += 1) {
-    const token = tokens[i];
-    const next = tokens[i + 1];
-    const pair =
-      token.kind === 'keyword' && next?.kind === 'keyword'
-        ? `${token.text} ${next.text}`.toLowerCase()
-        : '';
-    const clause = CLAUSE.has(pair)
-      ? pair
-      : token.kind === 'keyword' && CLAUSE.has(token.text.toLowerCase())
-        ? token.text.toLowerCase()
-        : '';
-    if (clause && out.trim() !== '') out = out.replace(/\s*$/, '') + '\n';
-    if (clause && pair) {
-      out += `${token.text.toUpperCase()} ${next.text.toUpperCase()}`;
-      i += 1;
-      continue;
-    }
-    if (clause) {
-      out += token.text.toUpperCase();
-      continue;
-    }
-    if (token.kind === 'keyword') {
-      out += token.text.toUpperCase();
-      continue;
-    }
-    out += token.text;
-  }
-  return out
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
 }
 
 export interface SqlBrowseTable {

@@ -1,6 +1,6 @@
 import { V1Error, v1Send, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
-import { formatReadOnlySql, type SqlBrowseTable } from '../sqlText';
+import type { SqlBrowseTable } from '../sqlText';
 import { awaitQueryRun, getQueryRows, getQuerySql } from './explore';
 
 /*
@@ -126,9 +126,21 @@ export const runSql = async (sql: string, limit = 500): Promise<SqlResult> => {
   };
 };
 
-/** There is no format endpoint. Indent clauses locally so the editor, not the warehouse, wraps. */
+/**
+ * There is no format endpoint: sql-formatter (MIT) lays the statement out here, keywords upper
+ * case, a clause per line, a subquery indented, strings and comments untouched. Loaded on first
+ * use with its PostgreSQL dialect only, so the workbench's bundle does not carry it. A statement
+ * it cannot read (another engine's syntax) is given back as written rather than failing.
+ */
 export const formatSql = async (sql: string): Promise<{ sql: string }> => {
-  return { sql: formatReadOnlySql(sql) };
+  const { formatDialect, postgresql } = await import('sql-formatter');
+  try {
+    return {
+      sql: formatDialect(sql.trim(), { dialect: postgresql, keywordCase: 'upper', tabWidth: 2 }),
+    };
+  } catch {
+    return { sql: sql.trim() };
+  }
 };
 
 /** Certified metrics, so a statement that names one can open that definition. */

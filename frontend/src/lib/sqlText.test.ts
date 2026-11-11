@@ -4,12 +4,10 @@ import { EditorState } from '@codemirror/state';
 import { describe, expect, it } from 'vitest';
 import {
   chartFromGrid,
-  formatReadOnlySql,
   mentionedMetric,
   sqlCompletionContext,
   sqlCompletionDefaults,
   sqlErrorLine,
-  sqlLines,
   sqlNumber,
   sqlBrowseTree,
   sqlSchemaTree,
@@ -18,18 +16,6 @@ import {
 } from './sqlText';
 
 describe('sql workbench text', () => {
-  it('keeps every character on its line', () => {
-    expect(
-      sqlLines('select a\nfrom t').map((line) => line.map((token) => token.text).join('')),
-    ).toEqual(['select a', 'from t']);
-  });
-
-  it('puts a clause on its own line without touching a string', () => {
-    expect(formatReadOnlySql("select a from t where name = 'from here'")).toBe(
-      "SELECT a\nFROM t\nWHERE name = 'from here'",
-    );
-  });
-
   it('reads a line number and a certified metric code', () => {
     expect(sqlErrorLine('syntax error at line 4')).toBe(4);
     expect(sqlErrorLine('lỗi ở dòng 2')).toBe(2);
