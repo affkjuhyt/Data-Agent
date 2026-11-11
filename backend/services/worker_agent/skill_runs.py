@@ -129,13 +129,9 @@ async def run_skill(event: Event) -> None:
         about = _About(row.id, row.name, run.started_at)
         principal, space, params = run.principal_id, run.data_space_id, dict(run.params or {})
     try:
-        kinds = [str(s.get("kind")) for s in steps if isinstance(s, dict)]
-        if category != "decomposition" or kinds != ["decompose"]:
-            raise RunFailed(
-                "Kỹ năng có bước mà worker chưa chạy được ("
-                + ", ".join(kinds or ["không có bước"])
-                + "); hiện chỉ chạy được bước decompose."
-            )
+        cannot = unrunnable(category, steps)
+        if cannot is not None:
+            raise RunFailed(cannot)
         result = await _decompose(event.org_id, run_id, principal, space, params)
     except RunFailed as exc:
         await _finish(event.org_id, run_id, about, status="failed", error=str(exc))
@@ -147,6 +143,19 @@ async def run_skill(event: Event) -> None:
         await _finish(event.org_id, run_id, about, status="failed", error="Lỗi khi chạy kỹ năng.")
         return
     await _finish(event.org_id, run_id, about, status="succeeded", result=result)
+
+
+def unrunnable(category: str, steps: list[Any]) -> str | None:
+    """Why this worker cannot run a version with these steps, or None when it can. The eval of a
+    version (skill_evals.py) asks before it runs any case, so it fails once, saying so."""
+    kinds = [str(s.get("kind")) for s in steps if isinstance(s, dict)]
+    if category == "decomposition" and kinds == ["decompose"]:
+        return None
+    return (
+        "Kỹ năng có bước mà worker chưa chạy được ("
+        + ", ".join(kinds or ["không có bước"])
+        + "); hiện chỉ chạy được bước decompose."
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -172,9 +181,10 @@ async def _finish(
             return
         run.status, run.result, run.error = status, result, error
         run.finished_at = datetime.datetime.now(datetime.UTC)
-        principal, space = run.principal_id, run.data_space_id
+        principal, space, caller = run.principal_id, run.data_space_id, run.caller_kind
     logger.info("skill run %s: %s", run_id, status if error is None else f"{status}: {error}")
-    if run.finished_at - about.started < NOTIFY_AFTER:
+    # A case of a version's eval is told once, with the eval's result (skill_evals.py).
+    if caller == "eval" or run.finished_at - about.started < NOTIFY_AFTER:
         return
     # The person has left the screen by now: tell them in the app, without the figures (the
     # notification body holds no data, notify.notification.body).

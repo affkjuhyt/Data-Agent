@@ -57,10 +57,12 @@ from services.worker_agent import (
     schema_scans,
     semantic_review,
     session_reports,
+    skill_evals,
     skill_runs,
     source_tests,
     tiles,
     uploads,
+    writeback_diffs,
 )
 from services.worker_agent.channels import gateway as channels
 from services.worker_agent.documents import extraction, indexed
@@ -145,6 +147,8 @@ HANDLERS: dict[str, Handler] = {
     **indexed.HANDLERS,
     **extraction.HANDLERS,
     **document_sync.HANDLERS,
+    **skill_evals.HANDLERS,
+    **writeback_diffs.HANDLERS,
     **product_use.HANDLERS,
     **monitor_backtests.HANDLERS,
 }
@@ -193,8 +197,12 @@ async def sources() -> list[EventSource]:
             types |= set(tiles.HANDLERS) | set(session_reports.HANDLERS)
         if schema == "skill":
             types |= {proposals.PUBLISH, proposals.SHARE} | set(skill_runs.HANDLERS)
+            # A version's :test (skill_evals.py, UC-03-04).
+            types |= set(skill_evals.HANDLERS)
         if schema == "pipeline":
             types |= {proposals.WRITEBACK} | set(pipelines.HANDLERS) | set(prep.HANDLERS)
+            # A writeback's preview diff (writeback_diffs.py, UC-06-04 step 2).
+            types |= set(writeback_diffs.HANDLERS)
         if schema == "ingest":
             types |= set(uploads.HANDLERS)
         if schema == "context":
