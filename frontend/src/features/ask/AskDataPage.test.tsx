@@ -21,13 +21,16 @@ vi.mock('../../lib/v1/questions', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/v1/questions')>();
   return {
     ...actual,
-    listConversations: vi.fn(async () => ({
-      items: [
+    // As the api: `q` searches every conversation, here an older one the first page does not hold.
+    listConversations: vi.fn(async (_size: number, q?: string) => {
+      const all = [
         { id: 'c-1', title: 'Doanh thu Internet 2013', last_question_at: null, updated_at: '2026-11-02T10:00:00Z' },
         { id: 'c-2', title: 'Tồn kho cuối kỳ', last_question_at: null, updated_at: '2026-11-01T10:00:00Z' },
-      ],
-      next_page_token: '',
-    })),
+        { id: 'c-9', title: 'Tồn kho năm 2011', last_question_at: null, updated_at: '2026-01-01T10:00:00Z' },
+      ];
+      const items = q ? all.filter((c) => c.title.toLowerCase().includes(q.toLowerCase())) : all.slice(0, 2);
+      return { items, next_page_token: '' };
+    }),
     saveAnswerToSession,
   };
 });
@@ -92,7 +95,10 @@ describe('AskDataPage', () => {
     wrap(<AskDataPage />);
     const panel = screen.getByRole('navigation', { name: 'Cuộc trò chuyện' });
     await within(panel).findByText('Tồn kho cuối kỳ');
+    expect(within(panel).queryByText('Tồn kho năm 2011')).not.toBeInTheDocument();
     fireEvent.change(within(panel).getByRole('searchbox', { name: 'Tìm cuộc trò chuyện' }), { target: { value: 'tồn' } });
+    // The search reaches a conversation older than the loaded ones.
+    expect(await within(panel).findByText('Tồn kho năm 2011')).toBeInTheDocument();
     expect(within(panel).queryByText('Doanh thu Internet 2013')).not.toBeInTheDocument();
     fireEvent.click(within(panel).getByText('Tồn kho cuối kỳ'));
     expect(navigate).toHaveBeenCalledWith('analysis', 'ASK', 'c-2');

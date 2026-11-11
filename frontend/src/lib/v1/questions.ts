@@ -87,9 +87,12 @@ export const getConversation = async (id: string) =>
   okAs<ConversationDetail>(api.GET('/v1/conversations/{id}', { params: { path: { id } } }));
 
 /** Recent conversations for this viewer in the current Data Space. */
-export const listConversations = async (pageSize = 8) =>
+/** `q` searches every conversation of the caller (qa/routes.py), not only the loaded page. */
+export const listConversations = async (pageSize = 8, q?: string) =>
   ok<Page<ConversationListItem>>(
-    api.GET('/v1/conversations', { params: { query: { page_size: pageSize } } }),
+    api.GET('/v1/conversations', {
+      params: { query: { page_size: pageSize, ...(q ? { q } : {}) } },
+    }),
   );
 
 /** The question's events after `lastEventId`; the server closes the stream after what it has. */

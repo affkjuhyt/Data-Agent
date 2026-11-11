@@ -4,9 +4,15 @@ import { listConversations } from '../../../lib/v1/questions';
 import { cn } from '../../../lib/utils';
 
 /*
- * The left panel of the chat: a new conversation, a search over the titles of the recent ones,
- * and the recent conversations themselves (GET /v1/conversations), newest first.
+ * The left panel of the chat: a new conversation, a search over every conversation (the api's
+ * `q`: filtering the 30 loaded ones said "Không có cuộc trò chuyện khớp" for an older one), and
+ * the recent conversations themselves (GET /v1/conversations), newest first.
  */
+
+const SEARCH_DELAY_MS = 250;
+
+const titled = (items: { id: string; title?: string | null }[]): RecentChat[] =>
+  items.map((c) => ({ id: c.id, title: c.title?.trim() || 'Hội thoại không tiêu đề' }));
 
 export interface RecentChat {
   id: string;
@@ -19,7 +25,7 @@ export function useRecentChats(refreshKey: unknown, pageSize = 30): RecentChat[]
     let live = true;
     listConversations(pageSize)
       .then((page) => {
-        if (live) setRecent(page.items.map((c) => ({ id: c.id, title: c.title?.trim() || 'Hội thoại không tiêu đề' })));
+        if (live) setRecent(titled(page.items));
       })
       .catch(() => {
         if (live) setRecent([]);
@@ -43,9 +49,31 @@ export function ConversationPanel({
   onOpen: (id: string) => void;
 }) {
   const [query, setQuery] = useState('');
-  const shown = query.trim()
-    ? recent.filter((c) => c.title.toLowerCase().includes(query.trim().toLowerCase()))
-    : recent;
+  const [found, setFound] = useState<RecentChat[] | null>(null);
+  const term = query.trim();
+  useEffect(() => {
+    if (!term) {
+      setFound(null);
+      return;
+    }
+    let live = true;
+    const timer = window.setTimeout(() => {
+      listConversations(30, term)
+        .then((page) => {
+          if (live) setFound(titled(page.items));
+        })
+        // Without the search, the loaded ones are filtered here rather than showing nothing.
+        .catch(() => {
+          if (live)
+            setFound(recent.filter((c) => c.title.toLowerCase().includes(term.toLowerCase())));
+        });
+    }, SEARCH_DELAY_MS);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [term, recent]);
+  const shown = term ? (found ?? []) : recent;
   return (
     <nav
       aria-label="Cuộc trò chuyện"
@@ -73,7 +101,11 @@ export function ConversationPanel({
         <span className="px-da-md text-muted-foreground da-overline">Gần đây</span>
         {shown.length === 0 ? (
           <p className="m-0 px-da-md text-muted-foreground da-caption">
-            {recent.length === 0 ? 'Chưa có cuộc trò chuyện nào.' : 'Không có cuộc trò chuyện khớp.'}
+            {term
+              ? found === null
+                ? 'Đang tìm…'
+                : 'Không có cuộc trò chuyện khớp.'
+              : 'Chưa có cuộc trò chuyện nào.'}
           </p>
         ) : (
           shown.map((c) => (
