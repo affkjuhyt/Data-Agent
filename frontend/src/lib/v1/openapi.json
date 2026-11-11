@@ -3534,6 +3534,56 @@
     "title": "BacktestResultView",
     "type": "object"
    },
+   "BacktestRow": {
+    "properties": {
+     "cover80_text": {
+      "title": "Cover80 Text",
+      "type": "string"
+     },
+     "cover95_text": {
+      "title": "Cover95 Text",
+      "type": "string"
+     },
+     "mase": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Mase"
+     },
+     "model": {
+      "title": "Model",
+      "type": "string"
+     },
+     "role": {
+      "enum": [
+       "baseline",
+       "candidate",
+       "selected"
+      ],
+      "title": "Role",
+      "type": "string"
+     },
+     "smape_text": {
+      "title": "Smape Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "model",
+     "mase",
+     "smape_text",
+     "cover80_text",
+     "cover95_text",
+     "role"
+    ],
+    "title": "BacktestRow",
+    "type": "object"
+   },
    "BacktestView": {
     "properties": {
      "baseline_metrics": {
@@ -5015,6 +5065,31 @@
      "insufficient"
     ],
     "title": "Calibration",
+    "type": "object"
+   },
+   "CanCreateCard": {
+    "properties": {
+     "allowed": {
+      "title": "Allowed",
+      "type": "boolean"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     }
+    },
+    "required": [
+     "allowed",
+     "reason"
+    ],
+    "title": "CanCreateCard",
     "type": "object"
    },
    "CertificationView": {
@@ -20164,6 +20239,172 @@
     "title": "ForecastJobView",
     "type": "object"
    },
+   "ForecastModelCreate": {
+    "description": "A series to train: a certified metric, cuts on dimensions it allows, month or quarter.",
+    "properties": {
+     "frequency": {
+      "enum": [
+       "month",
+       "quarter"
+      ],
+      "title": "Frequency",
+      "type": "string"
+     },
+     "horizon": {
+      "maximum": 24.0,
+      "minimum": 1.0,
+      "title": "Horizon",
+      "type": "integer"
+     },
+     "metric_code": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Metric Code",
+      "type": "string"
+     },
+     "scope": {
+      "additionalProperties": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "title": "Scope",
+      "type": "object"
+     }
+    },
+    "required": [
+     "metric_code",
+     "frequency",
+     "horizon"
+    ],
+    "title": "ForecastModelCreate",
+    "type": "object"
+   },
+   "ForecastModelCreated": {
+    "description": "The new model and the id of the training job queued with it.",
+    "properties": {
+     "backtest_mase": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Backtest Mase"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "current_version_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Current Version Id"
+     },
+     "data_space_id": {
+      "format": "uuid",
+      "title": "Data Space Id",
+      "type": "string"
+     },
+     "degraded": {
+      "default": false,
+      "title": "Degraded",
+      "type": "boolean"
+     },
+     "frequency": {
+      "title": "Frequency",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "job_id": {
+      "format": "uuid",
+      "title": "Job Id",
+      "type": "string"
+     },
+     "metric_code": {
+      "title": "Metric Code",
+      "type": "string"
+     },
+     "owner_id": {
+      "format": "uuid",
+      "title": "Owner Id",
+      "type": "string"
+     },
+     "retrain_cron": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Retrain Cron"
+     },
+     "rolling_mase": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rolling Mase"
+     },
+     "scope": {
+      "title": "Scope"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "data_space_id",
+     "metric_code",
+     "scope",
+     "frequency",
+     "owner_id",
+     "status",
+     "current_version_id",
+     "retrain_cron",
+     "created_at",
+     "updated_at",
+     "job_id"
+    ],
+    "title": "ForecastModelCreated",
+    "type": "object"
+   },
    "ForecastModelDetail": {
     "properties": {
      "backtest_mase": {
@@ -20406,6 +20647,194 @@
      "updated_at"
     ],
     "title": "ForecastModelView",
+    "type": "object"
+   },
+   "ForecastStat": {
+    "properties": {
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "tone": {
+      "enum": [
+       "success",
+       "warning",
+       "error",
+       "neutral",
+       "default"
+      ],
+      "title": "Tone",
+      "type": "string"
+     },
+     "value": {
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "label",
+     "value",
+     "note",
+     "tone"
+    ],
+    "title": "ForecastStat",
+    "type": "object"
+   },
+   "ForecastVariable": {
+    "properties": {
+     "correlation_text": {
+      "title": "Correlation Text",
+      "type": "string"
+     },
+     "future_value_text": {
+      "title": "Future Value Text",
+      "type": "string"
+     },
+     "lag_text": {
+      "title": "Lag Text",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "used",
+       "excluded"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "status_text": {
+      "title": "Status Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "source",
+     "lag_text",
+     "correlation_text",
+     "future_value_text",
+     "status",
+     "status_text"
+    ],
+    "title": "ForecastVariable",
+    "type": "object"
+   },
+   "ForecastWorkbench": {
+    "properties": {
+     "backtest": {
+      "items": {
+       "$ref": "#/components/schemas/BacktestRow"
+      },
+      "title": "Backtest",
+      "type": "array"
+     },
+     "backtest_note": {
+      "title": "Backtest Note",
+      "type": "string"
+     },
+     "can_create_card": {
+      "$ref": "#/components/schemas/CanCreateCard"
+     },
+     "forecast_model_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Forecast Model Id"
+     },
+     "job_id": {
+      "format": "uuid",
+      "title": "Job Id",
+      "type": "string"
+     },
+     "metric_name": {
+      "title": "Metric Name",
+      "type": "string"
+     },
+     "model_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model Id"
+     },
+     "next_version_label": {
+      "title": "Next Version Label",
+      "type": "string"
+     },
+     "series_stats": {
+      "items": {
+       "$ref": "#/components/schemas/ForecastStat"
+      },
+      "title": "Series Stats",
+      "type": "array"
+     },
+     "summary_text": {
+      "title": "Summary Text",
+      "type": "string"
+     },
+     "variables": {
+      "items": {
+       "$ref": "#/components/schemas/ForecastVariable"
+      },
+      "title": "Variables",
+      "type": "array"
+     },
+     "variables_note": {
+      "title": "Variables Note",
+      "type": "string"
+     },
+     "version_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Version Id"
+     }
+    },
+    "required": [
+     "job_id",
+     "metric_name",
+     "summary_text",
+     "series_stats",
+     "variables",
+     "variables_note",
+     "backtest",
+     "backtest_note",
+     "version_id",
+     "forecast_model_id",
+     "next_version_label",
+     "can_create_card",
+     "model_id"
+    ],
+    "title": "ForecastWorkbench",
     "type": "object"
    },
    "FormulaModelCreate": {
@@ -83759,6 +84188,150 @@
     ]
    }
   },
+  "/v1/forecast-jobs/{id}/workbench": {
+   "get": {
+    "operationId": "getForecastWorkbench",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ForecastWorkbench"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Xưởng của một việc dự báo: phiên bản, biến và backtest",
+    "tags": [
+     "Dự báo"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-15-02",
+     "UC-15-03"
+    ]
+   }
+  },
   "/v1/forecast-ledger": {
    "get": {
     "operationId": "listForecastLedger",
@@ -85326,6 +85899,147 @@
     "x-use-cases": [
      "UC-15-04",
      "UC-15-06"
+    ]
+   },
+   "post": {
+    "operationId": "createForecastModel",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ForecastModelCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ForecastModelCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Định nghĩa mô hình dự báo trên chỉ số đã chứng nhận và xếp hàng việc huấn luyện đầu; 201",
+    "tags": [
+     "Dự báo"
+    ],
+    "x-capability": [
+     "prepare_data",
+     "steward"
+    ],
+    "x-use-cases": [
+     "UC-15-02",
+     "UC-15-04"
     ]
    }
   },

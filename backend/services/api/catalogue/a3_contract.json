@@ -6921,6 +6921,17 @@
    ],
    "request_text": "reason"
   },
+  "GET /v1/forecast-jobs/{id}/workbench": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ForecastWorkbench: việc, phiên bản của việc, biến và bảng backtest (seasonal naive và ứng viên) như màn xưởng đọc",
+   "errors": [],
+   "request_text": "—"
+  },
   "GET /v1/forecast-models": {
    "group": "Dự báo",
    "groups": [
@@ -6935,6 +6946,35 @@
    "returns": "Danh sách ForecastModel. Kèm MASE cuốn chiếu và nhãn suy giảm",
    "errors": [],
    "request_text": "?metric_code, ?frequency, ?status"
+  },
+  "POST /v1/forecast-models": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "metric_code": true,
+    "scope": false,
+    "frequency": true,
+    "horizon": true
+   },
+   "query": [],
+   "returns": "201, ForecastModel kèm job_id. owner_id là người phụ trách chỉ số, status = active; việc đầu purpose = forecast, cutoff_at = now",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     409,
+     "conflict"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "metric_code*, scope, frequency*, horizon*"
   },
   "GET /v1/forecast-models/{id}": {
    "group": "Dự báo",

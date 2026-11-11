@@ -18,11 +18,15 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends, Path, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlglot import exp, parse_one
+from sqlglot.errors import ParseError
 
+from libs import forecast_release as release
 from libs.dataagent_db import uuid7
+from libs.dataagent_db.models import context, governance
 from libs.dataagent_db.models import forecast as fc
+from libs.dataagent_db.models import org as org_models
 from services.api.catalogue import endpoint
-from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -44,6 +48,8 @@ from services.api.modules.forecast.schemas import (
     AccuracyView,
     BacktestView,
     ForecastAccepted,
+    ForecastModelCreate,
+    ForecastModelCreated,
     ForecastModelDetail,
     ForecastModelView,
     Frequency,
@@ -184,19 +190,6 @@ async def get_version(
     return ModelVersionView.model_validate(row)
 
 
-async def _backtest(session: AsyncSession, row: fc.ModelVersion) -> fc.BacktestRun | None:
-    if row.backtest_id is not None:
-        return await session.get(fc.BacktestRun, row.backtest_id)
-    # Before the version points at one, its latest run is the one under way.
-    found: fc.BacktestRun | None = await session.scalar(
-        select(fc.BacktestRun)
-        .where(fc.BacktestRun.model_version_id == row.id)
-        .order_by(fc.BacktestRun.started_at.desc())
-        .limit(1)
-    )
-    return found
-
-
 @router.get(
     "/v1/forecast-model-versions/{id}/backtest",
     response_model=BacktestView,
@@ -209,7 +202,7 @@ async def get_backtest(
 ) -> BacktestView:
     async with transaction(ROLE, principal) as session:
         row, _ = await store.version(session, version_id, principal, data_space)
-        run = await _backtest(session, row)
+        run = await release.latest_backtest(session, row)
     if run is None:
         raise Problem(404, "not_found", "The version has no backtest yet.")
     return BacktestView.model_validate(run)
@@ -230,60 +223,12 @@ async def submit_version(
 ) -> ModelVersionView:
     async with transaction(ROLE, principal) as session:
         row, owner = await store.version(session, version_id, principal, data_space, lock=True)
-        if row.status != "draft":
-            raise Problem(409, "invalid_state", f"The version is {row.status}, not draft.")
-        if row.algorithm == "seasonal_naive":
-            # UC-15-03 E1: the baseline is answered with its label, never sent for release.
-            raise Problem(
-                422,
-                "business_rule_violated",
-                "The seasonal naive baseline is not submitted for release (BR-158).",
-            )
-        run = await _backtest(session, row)
-        if run is None or run.finished_at is None or run.mase >= 1:
-            mase = "none" if run is None else str(run.mase)
-            raise Problem(
-                422,
-                "business_rule_violated",
-                f"Release needs a finished backtest beating seasonal naive, MASE < 1; MASE is {mase} (BR-158).",
-            )
-        row.backtest_id = run.id
-        row.status = "pending_approval"
-        row.updated_by, row.updated_at = principal.user_id, store.now()
-        store.review_note(row, principal, "submit", body.note)
-        # Inbox opens the forecast_model HITL request for the metric owner (UC-15-04 trigger).
-        store.emit(
-            session,
-            principal,
-            "model_version",
-            row.id,
-            "forecast.model_version.submitted",
-            model_version_id=row.id,
-            model_id=owner.id,
-            data_space_id=owner.data_space_id,
-            hitl_kind="forecast_model",
-            assignee_id=owner.owner_id,
-            backtest_id=run.id,
-            status=row.status,
-        )
+        try:
+            await release.submit(session, row, owner, by=principal.user_id, note=body.note)
+        except release.SubmitRefused as exc:
+            raise Problem(exc.status, exc.code, str(exc)) from exc
         await session.flush()
         return ModelVersionView.model_validate(row)
-
-
-def _check_decider(row: fc.ModelVersion, owner: fc.ForecastModel, principal: Principal) -> bool:
-    """BR-158 / UC-15-04 E1: the metric owner decides, never whoever built the version, unless
-    the org allows it. True when the decider built the version (a self-approval)."""
-    built_it = two_people(
-        principal,
-        row.created_by,
-        message="Whoever built the version cannot decide on it (BR-158).",
-        code="policy_denied",
-    )
-    if owner.owner_id != principal.user_id:
-        raise Problem(
-            403, "policy_denied", "Only the metric owner decides on a forecast model (BR-158)."
-        )
-    return built_it
 
 
 @router.post(
@@ -303,70 +248,17 @@ async def approve_version(
 ) -> ModelVersionView:
     async with transaction(ROLE, principal) as session:
         row, owner = await store.version(session, version_id, principal, data_space, lock=True)
-        if row.status != "pending_approval":
-            raise Problem(
-                409, "invalid_state", f"The version is {row.status}, not pending_approval."
-            )
-        self_approved = _check_decider(row, owner, principal)
-        if owner.status == "retired":
-            # A retired model takes no new version (12/10/2026): approving would bring it back.
-            raise Problem(409, "invalid_state", "The model is retired; it takes no new version.")
-        now = store.now()
-        previous_id = owner.current_version_id
-        if previous_id is not None and previous_id != row.id:
-            old = await session.get(fc.ModelVersion, previous_id, with_for_update=True)
-            if old is not None and old.status in rules.SERVING_VERSION:
-                old.status = "retired"
-                old.updated_by, old.updated_at = principal.user_id, now
-                store.emit(
-                    session,
-                    principal,
-                    "model_version",
-                    old.id,
-                    "forecast.model_version.retired",
-                    model_version_id=old.id,
-                    model_id=owner.id,
-                    data_space_id=owner.data_space_id,
-                    status=old.status,
-                )
-                # One published version per model (partial unique index): retire first.
-                await session.flush()
-        row.status = "published"
-        row.approved_by, row.approved_at = principal.user_id, now
-        row.updated_by, row.updated_at = principal.user_id, now
-        store.review_note(row, principal, "approve", body.note)
-        previous_model_status = owner.status
-        owner.current_version_id = row.id
-        # A newly released version serves an active model, whatever its predecessor was (BR-160).
-        owner.status = "active"
-        owner.updated_by, owner.updated_at = principal.user_id, now
-        # ml-forecast recomputes the model's forecasts and monitors on this event (UC-15-04 step 4).
-        store.emit(
-            session,
-            principal,
-            "model_version",
-            row.id,
-            "forecast.model.published",
-            model_version_id=row.id,
-            model_id=owner.id,
-            data_space_id=owner.data_space_id,
-            previous_version_id=previous_id,
-            status=row.status,
-            approved_by=principal.user_id,
-        )
-        if previous_model_status != owner.status:
-            store.emit(
+        try:
+            self_approved = await release.approve(
                 session,
-                principal,
-                "forecast_model",
-                owner.id,
-                "forecast.model.status_changed",
-                model_id=owner.id,
-                data_space_id=owner.data_space_id,
-                previous_status=previous_model_status,
-                status=owner.status,
+                row,
+                owner,
+                by=principal.user_id,
+                note=body.note,
+                allow_self=principal.self_approval,
             )
-        await session.flush()
+        except release.ApproveRefused as exc:
+            raise Problem(exc.status, exc.code, str(exc)) from exc
         if self_approved:
             await record_self_approval(
                 principal,
@@ -392,29 +284,17 @@ async def reject_version(
 ) -> ModelVersionView:
     async with transaction(ROLE, principal) as session:
         row, owner = await store.version(session, version_id, principal, data_space, lock=True)
-        if row.status != "pending_approval":
-            raise Problem(
-                409, "invalid_state", f"The version is {row.status}, not pending_approval."
+        try:
+            self_decided = await release.reject(
+                session,
+                row,
+                owner,
+                by=principal.user_id,
+                reason=body.reason,
+                allow_self=principal.self_approval,
             )
-        # Approve and reject are one decision (UC-15-04 step 3) under one set of rules.
-        self_decided = _check_decider(row, owner, principal)
-        row.status = "rejected"
-        row.updated_by, row.updated_at = principal.user_id, store.now()
-        # AC-15-04-02: the reason stays with the decision.
-        store.review_note(row, principal, "reject", body.reason)
-        store.emit(
-            session,
-            principal,
-            "model_version",
-            row.id,
-            "forecast.model_version.rejected",
-            model_version_id=row.id,
-            model_id=owner.id,
-            data_space_id=owner.data_space_id,
-            status=row.status,
-            rejected_by=principal.user_id,
-        )
-        await session.flush()
+        except release.ApproveRefused as exc:
+            raise Problem(exc.status, exc.code, str(exc)) from exc
         if self_decided:
             await record_self_approval(
                 principal,
@@ -423,6 +303,279 @@ async def reject_version(
                 object_id=row.id,
             )
         return ModelVersionView.model_validate(row)
+
+
+def _in_force(version: context.MetricVersion, at: datetime.datetime) -> bool:
+    """The current definition is certified and its validity window covers `at`."""
+    return (
+        version.status == "certified"
+        and version.certified_at is not None
+        and version.certified_at <= at
+        and (version.valid_from is None or version.valid_from <= at)
+        and (version.valid_to is None or version.valid_to > at)
+    )
+
+
+def _policy_applies(
+    policy: governance.AccessPolicy,
+    principal: Principal,
+    role_ids: set[uuid.UUID],
+    group_ids: set[uuid.UUID],
+) -> bool:
+    """An empty applies_to covers everyone; otherwise the caller must be named."""
+    raw = policy.applies_to if isinstance(policy.applies_to, dict) else {}
+    users = {str(value) for value in raw.get("user_ids") or []}
+    roles = {str(value) for value in raw.get("role_ids") or []}
+    groups = {str(value) for value in raw.get("group_ids") or []}
+    # Defining a model is the person themselves, not an agent run.
+    actors = {str(value) for value in raw.get("actors") or []}
+    if actors and "person" not in actors:
+        return False
+    if not (users or roles or groups):
+        return True
+    return (
+        str(principal.user_id) in users
+        or bool(roles & {str(role) for role in role_ids})
+        or bool(groups & {str(group) for group in group_ids})
+    )
+
+
+def _column_names(expression: str) -> set[str] | None:
+    """Column names in `expression`, or None when it cannot be parsed (fail closed)."""
+    try:
+        return {column.name for column in parse_one(expression).find_all(exp.Column)}
+    except ParseError:
+        return None
+
+
+async def _policy_blocks(
+    session: AsyncSession,
+    principal: Principal,
+    data_space: uuid.UUID,
+    version: context.MetricVersion,
+) -> bool:
+    """A column or mask policy that applies to the caller covers a measure this metric reads.
+
+    The same rule as the semantic layer's blocked_metric_ids, limited to policies that apply
+    to this caller: a hidden table, or a masked column of a measure, means the caller may not
+    define a forecast on the metric.
+    """
+    names = _column_names(version.expression)
+    if names is None:
+        # Fail closed, but not as a permission denial — the formula itself cannot be checked.
+        raise Problem(
+            422,
+            "business_rule_violated",
+            "The metric formula cannot be checked.",
+        )
+    if not names:
+        return False
+    measures = (
+        await session.scalars(
+            select(context.SemanticMeasure).where(
+                context.SemanticMeasure.data_space_id == data_space,
+                context.SemanticMeasure.code.in_(names),
+            )
+        )
+    ).all()
+    if not measures:
+        return False
+    entities = {
+        row.id: row
+        for row in (
+            await session.scalars(
+                select(context.SemanticEntity).where(
+                    context.SemanticEntity.id.in_({measure.entity_id for measure in measures})
+                )
+            )
+        ).all()
+    }
+    dataset_ids = {
+        entity.primary_dataset_id
+        for measure in measures
+        if (entity := entities.get(measure.entity_id)) is not None
+    }
+    if not dataset_ids:
+        return False
+    policies = (
+        await session.scalars(
+            select(governance.AccessPolicy).where(
+                governance.AccessPolicy.data_space_id == data_space,
+                governance.AccessPolicy.status == "active",
+                governance.AccessPolicy.kind.in_(("column", "mask")),
+                governance.AccessPolicy.dataset_id.in_(dataset_ids),
+            )
+        )
+    ).all()
+    if not policies:
+        return False
+    role_ids = set(
+        (
+            await session.scalars(
+                select(org_models.UserRole.role_id).where(
+                    org_models.UserRole.user_id == principal.user_id
+                )
+            )
+        ).all()
+    )
+    group_ids = set(
+        (
+            await session.scalars(
+                select(org_models.UserGroupMember.group_id).where(
+                    org_models.UserGroupMember.user_id == principal.user_id
+                )
+            )
+        ).all()
+    )
+    for measure in measures:
+        entity = entities.get(measure.entity_id)
+        if entity is None:
+            continue
+        physical = _column_names(measure.expression)
+        for policy in policies:
+            if policy.dataset_id != entity.primary_dataset_id:
+                continue
+            if not _policy_applies(policy, principal, role_ids, group_ids):
+                continue
+            # A column policy hides the table the measure is read from.
+            if policy.kind == "column":
+                return True
+            masked = {column.lower() for column in policy.columns or []}
+            if physical is None or any(name.lower() in masked for name in physical):
+                return True
+    return False
+
+
+async def _usable_metric(
+    session: AsyncSession, principal: Principal, data_space: uuid.UUID, code: str
+) -> tuple[context.Metric, context.MetricVersion]:
+    """The metric the caller may forecast: active, current version certified and in force,
+    and not blocked by a column or mask policy that applies to the caller."""
+    metric = await session.scalar(
+        select(context.Metric).where(
+            context.Metric.org_id == principal.org_id,
+            context.Metric.data_space_id == data_space,
+            context.Metric.code == code,
+            context.Metric.status == "active",
+        )
+    )
+    if metric is None:
+        raise Problem(404, "not_found", "Metric not found.")
+    version = None
+    if metric.current_version is not None:
+        version = await session.scalar(
+            select(context.MetricVersion).where(
+                context.MetricVersion.metric_id == metric.id,
+                context.MetricVersion.version == metric.current_version,
+            )
+        )
+    if (
+        version is None
+        or not _in_force(version, store.now())
+        or await _policy_blocks(session, principal, data_space, version)
+    ):
+        raise Problem(403, "policy_denied", "You may not use this metric.")
+    return metric, version
+
+
+def _scope_refused(codes: list[str]) -> Problem:
+    named = ", ".join(codes)
+    return Problem(
+        422,
+        "business_rule_violated",
+        f"The metric does not allow the cut {named}.",
+        errors=[
+            FieldError(
+                field=f"scope.{code}",
+                code="not_allowed",
+                message=f"{code} is not a cut of this metric.",
+            )
+            for code in codes
+        ],
+    )
+
+
+async def _check_scope(
+    session: AsyncSession,
+    data_space: uuid.UUID,
+    version: context.MetricVersion,
+    scope: dict[str, list[str]],
+) -> None:
+    """Every scope key is a dimension the metric's current version allows."""
+    if not scope:
+        return
+    found = (
+        await session.scalars(
+            select(context.SemanticDimension).where(
+                context.SemanticDimension.data_space_id == data_space,
+                context.SemanticDimension.code.in_(list(scope)),
+            )
+        )
+    ).all()
+    by_code = {row.code: row.id for row in found}
+    allowed = set(version.allowed_dimensions or [])
+    refused = [code for code in scope if by_code.get(code) not in allowed]
+    if refused:
+        raise _scope_refused(refused)
+
+
+@router.post(
+    "/v1/forecast-models",
+    status_code=201,
+    response_model=ForecastModelCreated,
+    **endpoint("POST", "/v1/forecast-models", operation_id="createForecastModel"),
+)
+async def create_model(
+    body: ForecastModelCreate,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    response: Response,
+) -> ForecastModelCreated:
+    # Column and mask policies live in governance, which svc_forecast cannot read. svc_qa can,
+    # and it is the role that already decides whether a caller may use a metric.
+    async with transaction("svc_qa", principal) as reading:
+        metric, version = await _usable_metric(reading, principal, data_space, body.metric_code)
+        await _check_scope(reading, data_space, version, body.scope)
+        owner_id = metric.owner_id
+        metric_code = metric.code
+    async with transaction(ROLE, principal) as session:
+        existing = await session.scalar(
+            select(fc.ForecastModel.id).where(
+                fc.ForecastModel.org_id == principal.org_id,
+                fc.ForecastModel.data_space_id == data_space,
+                fc.ForecastModel.metric_code == metric_code,
+                fc.ForecastModel.frequency == body.frequency,
+                fc.ForecastModel.scope == body.scope,
+            )
+        )
+        if existing is not None:
+            raise Problem(409, "conflict", "A forecast model already covers this series.")
+        row = fc.ForecastModel(
+            id=uuid7(),
+            org_id=principal.org_id,
+            data_space_id=data_space,
+            metric_code=metric_code,
+            scope=body.scope,
+            frequency=body.frequency,
+            owner_id=owner_id,
+            status="active",
+            created_by=principal.user_id,
+        )
+        session.add(row)
+        job = jobs.new_job(
+            session,
+            principal,
+            data_space,
+            metric_code=metric_code,
+            frequency=body.frequency,
+            horizon=body.horizon,
+            scope=body.scope,
+            progress={"purpose": "forecast", "model_id": str(row.id)},
+        )
+        await session.flush()
+        await session.refresh(row)
+    response.headers["Location"] = f"/v1/forecast-models/{row.id}"
+    return ForecastModelCreated(**_model_view(row, {}).model_dump(), job_id=job.id)
 
 
 @router.post(
@@ -464,7 +617,7 @@ async def retrain_model(
         horizon = rules.DEFAULT_HORIZON[owner.frequency]
         if owner.current_version_id is not None:
             current = await session.get(fc.ModelVersion, owner.current_version_id)
-            run = await _backtest(session, current) if current else None
+            run = await release.latest_backtest(session, current) if current else None
             horizon = run.horizon if run else horizon
         progress: dict[str, object] = {"purpose": "retrain", "model_id": str(owner.id)}
         if body.training_to is not None:

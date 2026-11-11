@@ -1,4 +1,4 @@
-import { pathId, v1Send, type Page, api, ok } from './client';
+import { pathId, v1Events, v1Get, v1Send, V1Error, type Page, api, ok } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -214,12 +214,14 @@ function readJob(raw: DetailWire): ForecastJob {
 }
 
 /** A2: GET /v1/forecasts/{id} — the job, its progress and, once ready, its result. */
-export const getForecastJob = async (id: string) => {
-  const raw = await getDetail(id);
-  if ('intent_chips' in raw && Array.isArray((raw as unknown as ForecastJob).intent_chips))
-    return raw as unknown as ForecastJob;
-  return readJob(raw);
-};
+export const getForecastJob = async (id: string) => readJob(await getDetail(id));
+
+/**
+ * A2: GET /v1/forecasts/{id}/events. The server sends the job so far and closes; the page
+ * polls again with the last id while the job is still running.
+ */
+export const forecastEvents = (id: string, lastEventId?: string) =>
+  v1Events(`/forecasts/${pathId(id)}/events`, { lastEventId });
 
 /* ─── Xưởng dự báo (UC-15-02, UC-15-03) ───────────────────────────────── */
 
@@ -615,30 +617,53 @@ function readForecast(
   };
 }
 
-/**
- * A2 has no list of forecast jobs. The issued forecasts are the ledger's lines, each pointing at
- * the job that made it; a fuel price's line (scope.product_code) belongs to its own screen.
- */
-export async function listForecasts(): Promise<Page<{ id: string }>> {
-  const ledger = await ok<Page<Schemas['LedgerEntryView']>>(
-    api.GET('/v1/forecast-ledger', {
-      params: {
-        query: {
-          page_size: 50,
-        },
-      },
-    }),
-  );
-  const ids = new Set<string>();
-  for (const line of ledger.items) if (line.job_id && !productOf(line)) ids.add(line.job_id);
-  return { items: [...ids].map((id) => ({ id })), next_page_token: '' };
+/** A model and its latest predictions, the forecast the rail opens when no job is addressed. */
+export async function getModelForecast(modelId: string): Promise<Forecast> {
+  const [model, predictions] = await Promise.all([
+    ok<Schemas['ForecastModelDetail']>(
+      api.GET('/v1/forecast-models/{id}', { params: { path: { id: modelId } } }),
+    ),
+    ok<Schemas['PredictionPage']>(
+      api.GET('/v1/forecast-models/{id}/predictions', {
+        params: { path: { id: modelId }, query: { page_size: 50 } },
+      }),
+    ),
+  ]);
+  const version =
+    model.current_version ??
+    (predictions.model_version_id
+      ? await getVersion(predictions.model_version_id).catch(() => null)
+      : null);
+  const backtest = version ? await getBacktest(version.id).catch(() => null) : null;
+  const first = predictions.items[0];
+  const raw: DetailWire = {
+    id: model.id,
+    metric_code: model.metric_code,
+    frequency: model.frequency,
+    horizon: predictions.items.length || model.current_version?.n_points || 0,
+    status: 'ready',
+    cutoff_at: first?.cutoff_at ?? model.updated_at,
+    created_at: first?.created_at ?? model.created_at,
+    finished_at: null,
+    eta_at: null,
+    model_version_id: version?.id ?? null,
+    data_space_id: model.data_space_id,
+    requested_by: model.owner_id,
+    question_id: null,
+    agent_run_id: null,
+    notify_channels: [],
+    assumptions: predictions.assumptions ?? [],
+    scope: model.scope,
+    progress: {},
+    labels: predictions.labels ?? [],
+    predictions: predictions.items,
+  };
+  return readForecast(raw, version, backtest);
 }
 
 /** A2: GET /v1/forecasts/{id}, its model version and that version's backtest. */
 export async function getForecast(id: string): Promise<Forecast> {
   const raw = await getDetail(id);
-  if ('metric_name' in raw && Array.isArray((raw as unknown as Forecast).points))
-    return raw as unknown as Forecast;
   const versionId = raw.model_version_id;
   const [version, backtest] = versionId
     ? await Promise.all([getVersion(versionId), getBacktest(versionId).catch(() => null)])
@@ -812,14 +837,66 @@ const CANDIDATE_STATUS: Record<string, 'pending_review' | 'published' | 'rejecte
   rejected: 'rejected',
 };
 
+const maseText = (v: number | string | null | undefined) => {
+  const n = num(v);
+  return n === null || Number.isNaN(n) ? '—' : String(n.toFixed(2)).replace('.', ',');
+};
+
+/** One row for the version's rolling backtest: the horizon it was scored at. */
+function horizonRows(
+  backtest: Schemas['BacktestView'] | null,
+): NonNullable<ForecastModel['candidate']>['horizons'] {
+  if (!backtest) return [];
+  const base = record(backtest.baseline_metrics);
+  const metrics = record(backtest.metrics);
+  return [
+    {
+      horizon_label: `${backtest.horizon} kỳ`,
+      mase_text: maseText(backtest.mase),
+      baseline_text: maseText(base.mase as number | string | undefined),
+      cover80_text: shareText(metrics.coverage80),
+      cover95_text: shareText(metrics.coverage95),
+    },
+  ];
+}
+
+function accuracyRows(
+  items: Schemas['AccuracyView'][],
+  frequency: string,
+): NonNullable<ForecastModel['monitoring']>['rows'] {
+  return items.map((row) => {
+    const point = Number(row.point);
+    const actual = Number(row.actual);
+    return {
+      label: periodLabel(row.period, frequency),
+      forecast_text: formatOne(point),
+      actual_text: formatOne(actual),
+      error_text: formatSigned(actual - point),
+      inside95: row.in95,
+    };
+  });
+}
+
 /*
  * The model as "Mô hình dự báo" reads it. The candidate is the current version when it waits for
- * approval or was decided; its horizons and the monitoring rows are PROPOSAL (A2 serves them as
- * backtest and accuracy reads), so the figures are the model's rolling and backtest MASE.
+ * approval or was decided. Horizons are that version's backtest; the monitoring rows are the
+ * accuracy log. A screen fixture may still ride along under `display`.
  */
-function readModel(raw: ModelWire): ForecastModel {
+function readModel(
+  raw: ModelWire,
+  extras?: {
+    version?: VersionView | null;
+    accuracy?: Schemas['AccuracyView'][];
+    backtest?: Schemas['BacktestView'] | null;
+  },
+): ForecastModel {
   if (raw.display) return raw.display;
-  const version = 'current_version' in raw ? (raw.current_version ?? null) : null;
+  const version =
+    extras?.version !== undefined
+      ? extras.version
+      : 'current_version' in raw
+        ? (raw.current_version ?? null)
+        : null;
   const candidateStatus = version ? CANDIDATE_STATUS[version.status] : undefined;
   const degraded = 'degraded' in raw && raw.degraded === true;
   const mase = (v: number | string | null | undefined) =>
@@ -842,7 +919,7 @@ function readModel(raw: ModelWire): ForecastModel {
             version_label: `v${version.version}`,
             status: candidateStatus,
             card: cardOf(version),
-            horizons: [],
+            horizons: horizonRows(extras?.backtest ?? null),
             limitation: '',
             rejection_reason: null,
           }
@@ -867,22 +944,168 @@ function readModel(raw: ModelWire): ForecastModel {
               tone: 'default',
             },
           ],
-          rows: [],
+          rows: accuracyRows(extras?.accuracy ?? [], raw.frequency),
           note: '',
         }
       : null,
   };
 }
 
+export interface CertifiedMetricOption {
+  id: string;
+  code: string;
+  /** "Doanh thu · DOANH_THU" */
+  label: string;
+}
+
+export interface ForecastScopeDimension {
+  code: string;
+  label: string;
+  /** Members of the value index, read from the column profile that fills it. */
+  members: { code: string; label: string }[];
+}
+
+/** Certified metrics of the space: the only series a forecast model may be defined on. */
+export async function listCertifiedMetrics(): Promise<CertifiedMetricOption[]> {
+  const page = await ok<Page<Schemas['MetricView']>>(
+    api.GET('/v1/metrics', { params: { query: { certified: true, page_size: 100 } } }),
+  );
+  return page.items
+    .filter((metric) => metric.certified && metric.current_version !== null)
+    .map((metric) => {
+      const name = metric.display_name ?? metric.code;
+      return { id: metric.id, code: metric.code, label: `${name} · ${metric.code}` };
+    });
+}
+
+const COLUMN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** A dimension expression that is one column; the profile of that column fills the value index. */
+function columnOf(expression: string): string | null {
+  const column = expression.trim().replace(/^"|"$/g, '');
+  return COLUMN.test(column) ? column : null;
+}
+
+function profileMembers(values: unknown): { code: string; label: string }[] {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  const members: { code: string; label: string }[] = [];
+  for (const item of values) {
+    const code =
+      typeof item === 'string'
+        ? item
+        : typeof record(item).value === 'string'
+          ? (record(item).value as string)
+          : '';
+    if (!code || code === '***' || seen.has(code)) continue;
+    seen.add(code);
+    const label = typeof record(item).label === 'string' ? (record(item).label as string) : code;
+    members.push({ code, label });
+  }
+  return members;
+}
+
+/**
+ * The cuts a certified metric allows. Time dimensions are the frequency, not a scope. Each other
+ * dimension's members are the values indexed for it: the api does not list context.value_index,
+ * and that index is filled from the column profile, so the profile's values are the members.
+ */
+export async function forecastScope(metricId: string): Promise<ForecastScopeDimension[]> {
+  const detail = await ok<Schemas['MetricDetail']>(
+    api.GET('/v1/metrics/{id}', { params: { path: { id: metricId } } }),
+  );
+  const version =
+    detail.versions?.find((item) => item.version === detail.current_version) ??
+    detail.versions?.find((item) => item.status === 'certified');
+  const allowed = new Set(version?.allowed_dimensions ?? []);
+  if (allowed.size === 0) return [];
+  const entities = await ok<Page<Schemas['EntityView']>>(
+    api.GET('/v1/entities', { params: { query: { status: 'active', page_size: 100 } } }),
+  );
+  const details = await Promise.all(
+    entities.items.map((entity) =>
+      ok<Schemas['EntityDetail']>(
+        api.GET('/v1/entities/{key}', { params: { path: { key: entity.key } } }),
+      ).catch(() => null),
+    ),
+  );
+  const wanted = details.flatMap((entity) =>
+    (entity?.dimensions ?? []).flatMap((dimension) => {
+      if (dimension.is_time || !allowed.has(dimension.id)) return [];
+      const column = columnOf(dimension.expression);
+      const datasetId = entity?.primary_dataset?.id;
+      return column && datasetId ? [{ dimension, column, datasetId }] : [];
+    }),
+  );
+  const datasets = await Promise.all(
+    [...new Set(wanted.map((item) => item.datasetId))].map(async (id) => {
+      const dataset = await ok<Schemas['DatasetDetail']>(
+        api.GET('/v1/datasets/{id}', { params: { path: { id } } }),
+      ).catch(() => null);
+      return [id, dataset] as const;
+    }),
+  );
+  const byDataset = new Map(datasets);
+  return wanted.map(({ dimension, column, datasetId }) => {
+    const profile = byDataset
+      .get(datasetId)
+      ?.columns?.find((item) => item.name === column)?.profile;
+    return {
+      code: dimension.code,
+      label: dimension.name,
+      members: profileMembers(profile?.top_values),
+    };
+  });
+}
+
+export interface NewForecastModel {
+  metric_code: string;
+  frequency: 'month' | 'quarter';
+  horizon: number;
+  scope: Record<string, string[]>;
+}
+
+/** POST /v1/forecast-models — the model and the training job queued with it. */
+export const createForecastModel = async (model: NewForecastModel) =>
+  ok<Schemas['ForecastModelCreated']>(
+    api.POST('/v1/forecast-models', {
+      body: {
+        metric_code: model.metric_code,
+        frequency: model.frequency,
+        horizon: model.horizon,
+        scope: model.scope,
+      } satisfies Schemas['ForecastModelCreate'],
+    }),
+  );
+
 export const listForecastModels = async () => {
   const page = await ok<Page<ModelWire>>(
     api.GET('/v1/forecast-models', { params: { query: { page_size: 50 } } }),
   );
-  return { ...page, items: page.items.map(readModel) };
+  return { ...page, items: page.items.map((item) => readModel(item)) };
 };
 
-export const getForecastModel = async (id: string) =>
-  readModel(await ok<ModelWire>(api.GET('/v1/forecast-models/{id}', { params: { path: { id } } })));
+export const getForecastModel = async (id: string) => {
+  const raw = await ok<ModelWire>(
+    api.GET('/v1/forecast-models/{id}', { params: { path: { id } } }),
+  );
+  // Screen fixtures carry the card under display. The api never does: the card is the version,
+  // the horizon table is its backtest, and the period rows are the accuracy log.
+  if (raw.display) return raw.display;
+  const embedded = 'current_version' in raw ? (raw.current_version ?? null) : null;
+  const version =
+    embedded ??
+    (raw.current_version_id ? await getVersion(raw.current_version_id).catch(() => null) : null);
+  const [accuracy, backtest] = await Promise.all([
+    ok<Schemas['AccuracyPage']>(
+      api.GET('/v1/forecast-models/{id}/accuracy', {
+        params: { path: { id }, query: { page_size: 20 } },
+      }),
+    ).catch(() => null),
+    version ? getBacktest(version.id).catch(() => null) : Promise.resolve(null),
+  ]);
+  return readModel(raw, { version, accuracy: accuracy?.items ?? [], backtest });
+};
 
 /** Publishes the candidate; the published version before it is retired. */
 export const approveModelVersion = async (versionId: string) =>

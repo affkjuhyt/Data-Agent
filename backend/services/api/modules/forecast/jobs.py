@@ -8,14 +8,17 @@ points at the job. ml-forecast reads forecast.job.state_changed from the outbox.
 
 from __future__ import annotations
 
+import datetime
+import decimal
 import uuid
 from collections.abc import AsyncIterator
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import forecast_release as release
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import forecast as fc
 from services.api.catalogue import endpoint
@@ -25,6 +28,8 @@ from services.api.kernel.problems import Problem
 from services.api.kernel.sse import Event, event_stream, last_event_id
 from services.api.modules.forecast import rules, store
 from services.api.modules.forecast.schemas import (
+    BacktestRow,
+    CanCreateCard,
     DistributionItem,
     DistributionView,
     ForecastAccepted,
@@ -32,6 +37,9 @@ from services.api.modules.forecast.schemas import (
     ForecastCreate,
     ForecastDetail,
     ForecastJobView,
+    ForecastStat,
+    ForecastVariable,
+    ForecastWorkbench,
     PredictionView,
 )
 from services.api.modules.forecast.store import ROLE
@@ -40,25 +48,6 @@ router = APIRouter()
 
 JobId = Annotated[uuid.UUID, Path(alias="id")]
 _NO_CANCEL = ForecastCancel()
-
-
-def _job_event(
-    session: AsyncSession, principal: Principal, row: fc.ForecastJob, previous: str | None
-) -> None:
-    store.emit(
-        session,
-        principal,
-        "forecast_job",
-        row.id,
-        "forecast.job.state_changed",
-        job_id=row.id,
-        data_space_id=row.data_space_id,
-        question_id=row.question_id,
-        purpose=(row.progress or {}).get("purpose", "forecast"),
-        previous_status=previous,
-        status=row.status,
-        model_version_id=row.model_version_id,
-    )
 
 
 def new_job(
@@ -98,7 +87,7 @@ def new_job(
         created_by=principal.user_id,
     )
     session.add(row)
-    _job_event(session, principal, row, None)
+    release.job_changed(session, row, None)
     return row
 
 
@@ -228,6 +217,245 @@ async def get_forecast(
         return await _detail(session, row)
 
 
+# The studio screen reads this shape directly (frontend getForecastWorkbench). Keep the words
+# and the rows in step with that reader: it no longer rebuilds them once this route answers.
+_FREQUENCY = {"day": "ngày", "week": "tuần", "month": "tháng", "quarter": "quý"}
+_ALGORITHM = {
+    "naive": "Naive",
+    "seasonal_naive": "Seasonal naive",
+    "ets": "ETS",
+    "theta": "Theta",
+    "arima": "ARIMA",
+    "sarimax": "SARIMAX",
+    "lightgbm": "LightGBM",
+    "ensemble": "Ensemble",
+    "formula_mc": "formula_mc",
+}
+_FUTURE = {
+    "declared": "Giả định",
+    "forecast": "Dự báo riêng",
+    "own_forecast": "Dự báo riêng",
+    "known": "Biết trước",
+    "calendar": "Biết trước",
+}
+_SUBMITTED = frozenset({"pending_approval", "published", "degraded", "retired", "rejected"})
+_VARIABLES_NOTE = (
+    "Mọi biến căn theo thời điểm ghi nhận; biến chỉ có sau thời điểm cắt bị loại tự động (BR-157)."
+)
+
+
+def _num(value: object) -> float | None:
+    if isinstance(value, bool) or value is None or value == "":
+        return None
+    if isinstance(value, int | float | decimal.Decimal):
+        number = float(value)
+    elif isinstance(value, str):
+        try:
+            number = float(value)
+        except ValueError:
+            return None
+    else:
+        return None
+    return None if number != number else number  # NaN
+
+
+def _vi(value: float, places: int) -> str:
+    quant = decimal.Decimal(str(value)).quantize(decimal.Decimal(10) ** -places)
+    return f"{quant:.{places}f}".replace(".", ",")
+
+
+def _share(value: object) -> str:
+    number = _num(value)
+    if number is None:
+        return "—"
+    text = _vi(number * 100, 1)
+    if text.endswith(",0"):
+        text = text[:-2]
+    return f"{text}%"
+
+
+def _date_vn(value: datetime.date | datetime.datetime) -> str:
+    day = value.date() if isinstance(value, datetime.datetime) else value
+    return f"{day.day:02d}/{day.month:02d}/{day.year}"
+
+
+def _mapping(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return {str(key): item for key, item in value.items()}
+    return {}
+
+
+def _variables(features: object) -> list[ForecastVariable]:
+    if not isinstance(features, list):
+        return []
+    out: list[ForecastVariable] = []
+    for raw in features:
+        feature = _mapping(raw)
+        name = feature.get("name")
+        if not isinstance(name, str):
+            continue
+        future = feature.get("future_assumption")
+        future_text = future if isinstance(future, str) else ""
+        lag = feature.get("lag")
+        source = feature.get("source")
+        out.append(
+            ForecastVariable(
+                name=name,
+                source=source if isinstance(source, str) else "",
+                lag_text="—" if lag is None else str(lag),
+                correlation_text="—",
+                future_value_text=_FUTURE.get(future_text, future_text) if future_text else "—",
+                status="used",
+                status_text="Dùng",
+            )
+        )
+    return out
+
+
+def _backtest_rows(run: fc.BacktestRun, selected: str) -> list[BacktestRow]:
+    base = _mapping(run.baseline_metrics)
+    rows = [
+        BacktestRow(
+            model="Seasonal naive",
+            mase=_num(base.get("mase")) if base.get("mase") is not None else 1.0,
+            smape_text=_share(base.get("smape")),
+            cover80_text=_share(base.get("coverage80")),
+            cover95_text=_share(base.get("coverage95")),
+            role="baseline",
+        )
+    ]
+    candidates = run.candidates if isinstance(run.candidates, list) else []
+    for raw in candidates:
+        candidate = _mapping(raw)
+        code = next(
+            (
+                candidate[key]
+                for key in ("algorithm", "model", "name")
+                if isinstance(candidate.get(key), str)
+            ),
+            None,
+        )
+        if not isinstance(code, str) or code == "seasonal_naive":
+            continue
+        rows.append(
+            BacktestRow(
+                model=_ALGORITHM.get(code, code),
+                mase=_num(candidate.get("mase")),
+                smape_text=_share(candidate.get("smape")),
+                cover80_text=_share(candidate.get("coverage80")),
+                cover95_text=_share(candidate.get("coverage95")),
+                role="selected" if code == selected else "candidate",
+            )
+        )
+    if not any(row.role == "selected" for row in rows):
+        rows.append(
+            BacktestRow(
+                model=_ALGORITHM.get(selected, selected),
+                mase=_num(run.mase),
+                smape_text="—",
+                cover80_text="—",
+                cover95_text="—",
+                role="selected",
+            )
+        )
+    return rows
+
+
+def _workbench(
+    job: fc.ForecastJob, version: fc.ModelVersion | None, run: fc.BacktestRun | None
+) -> ForecastWorkbench:
+    mase = _num(run.mase) if run is not None else None
+    parts = [
+        f"Chuỗi {_FREQUENCY.get(job.frequency, job.frequency)}",
+        f"cắt tại {_date_vn(job.cutoff_at)}",
+        f"tầm {job.horizon} kỳ",
+    ]
+    if run is not None:
+        parts.append(f"backtest trên {len(run.cutoffs)} điểm cắt")
+    if version is None or run is None:
+        card = CanCreateCard(
+            allowed=False,
+            reason="Việc dự báo chưa có phiên bản mô hình đã qua backtest.",
+        )
+    elif mase is None or mase >= 1:
+        card = CanCreateCard(
+            allowed=False,
+            reason="Không mô hình nào thắng seasonal naive (MASE < 1), nên không có thẻ để duyệt.",
+        )
+    elif version.status == "draft":
+        card = CanCreateCard(allowed=True, reason=None)
+    else:
+        card = CanCreateCard(allowed=False, reason="Thẻ mô hình đã được gửi duyệt.")
+    stats: list[ForecastStat] = []
+    if version is not None:
+        points = "—" if version.n_points is None else f"{version.n_points} kỳ"
+        tone: Literal["success", "warning", "error", "neutral", "default"] = (
+            "success" if mase is not None and mase < 1 else "warning"
+        )
+        stats = [
+            ForecastStat(
+                label="Chuỗi huấn luyện",
+                value=points,
+                note=f"{_date_vn(version.training_from)} – {_date_vn(version.training_to)}",  # noqa: RUF001
+                tone="default",
+            ),
+            ForecastStat(
+                label="Biến ngoại sinh",
+                value=str(version.n_exog),
+                note="tối đa min(8, số kỳ / 12) (BR-172)",
+                tone="neutral",
+            ),
+            ForecastStat(
+                label="MASE backtest",
+                value="—" if mase is None else _vi(mase, 2),
+                note="phát hành khi < 1 (BR-158)",
+                tone=tone,
+            ),
+        ]
+    note = ""
+    if mase is not None:
+        note = (
+            f"MASE tổng hợp {_vi(mase, 2)} trên mọi điểm cắt và tầm; "
+            "khoảng dự báo theo sai số backtest từng bước tầm."
+        )
+    return ForecastWorkbench(
+        job_id=job.id,
+        metric_name=job.metric_code,
+        summary_text=" · ".join(parts),
+        series_stats=stats,
+        variables=_variables(version.features) if version is not None else [],
+        variables_note=_VARIABLES_NOTE,
+        backtest=_backtest_rows(run, version.algorithm) if version is not None and run else [],
+        backtest_note=note,
+        version_id=version.id if version is not None else None,
+        forecast_model_id=version.model_id if version is not None else None,
+        next_version_label=f"v{version.version}" if version is not None else "",
+        can_create_card=card,
+        model_id=(
+            version.model_id if version is not None and version.status in _SUBMITTED else None
+        ),
+    )
+
+
+@router.get(
+    "/v1/forecast-jobs/{id}/workbench",
+    response_model=ForecastWorkbench,
+    **endpoint("GET", "/v1/forecast-jobs/{id}/workbench", operation_id="getForecastWorkbench"),
+)
+async def get_workbench(
+    job_id: JobId, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> ForecastWorkbench:
+    async with transaction(ROLE, principal) as session:
+        row = await store.job(session, job_id, principal, data_space)
+        version = (
+            await session.get(fc.ModelVersion, row.model_version_id)
+            if row.model_version_id is not None
+            else None
+        )
+        run = await release.latest_backtest(session, version) if version is not None else None
+    return _workbench(row, version, run)
+
+
 def _events(row: fc.ForecastJob, detail: ForecastDetail) -> list[Event]:
     """The job so far as A1.6 events; numbered, so Last-Event-ID resumes after one."""
     ref = {"job_id": str(row.id)}
@@ -309,7 +537,7 @@ async def cancel_forecast(
         row.progress = {**(row.progress or {}), "cancelled_by": str(principal.user_id)} | (
             {"cancel_reason": body.reason.strip()} if body.reason and body.reason.strip() else {}
         )
-        _job_event(session, principal, row, previous)
+        release.job_changed(session, row, previous)
         await session.flush()
         return ForecastJobView.model_validate(row)
 

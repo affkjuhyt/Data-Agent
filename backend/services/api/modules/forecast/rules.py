@@ -29,8 +29,11 @@ ETA = {
     "month": datetime.timedelta(minutes=15),
     "quarter": datetime.timedelta(minutes=15),
 }
-# Retraining without a backtest to copy the horizon from: one season ahead.
-DEFAULT_HORIZON = {"day": 30, "week": 13, "month": 3, "quarter": 2}
+# Retraining without a backtest to copy the horizon from. Month is one seasonal
+# cycle (m = 12): forecast_model has no horizon column, and the DS-AW definitions
+# are untrained monthly models that train a year ahead. The create screen defaults
+# to the same 12.
+DEFAULT_HORIZON = {"day": 30, "week": 13, "month": 12, "quarter": 2}
 
 # The two inputs a price formula reads besides its parameters (D4.23 formula_model.formula).
 FORMULA_INPUTS = frozenset({"world_avg", "fx_rate"})

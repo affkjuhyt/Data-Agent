@@ -14,10 +14,13 @@ COPY backend/libs/sql_guard/ ./libs/sql_guard/
 COPY backend/libs/cron/ ./libs/cron/
 COPY backend/libs/clock/ ./libs/clock/
 COPY backend/libs/language/ ./libs/language/
+COPY backend/libs/forecast_release/ ./libs/forecast_release/
 COPY backend/libs/tabular/ ./libs/tabular/
 COPY backend/libs/source_drivers/ ./libs/source_drivers/
 COPY backend/libs/code_sandbox/ ./libs/code_sandbox/
 COPY backend/libs/pii/ ./libs/pii/
+# Only the client and the shapes are imported here; statsforecast stays in the ml-forecast image.
+COPY backend/libs/forecast_fit/ ./libs/forecast_fit/
 COPY backend/libs/contracts/ ./libs/contracts/
 COPY backend/libs/openbao/ ./libs/openbao/
 COPY backend/services/__init__.py ./services/__init__.py

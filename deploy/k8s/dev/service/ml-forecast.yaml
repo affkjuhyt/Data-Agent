@@ -1,0 +1,83 @@
+# ml-forecast (services/ml_forecast): fits the forecasts worker-agent asks for (libs/forecast_fit).
+# Stateless and built to hold nothing: no secret, no ConfigMap of the platform, no service account
+# token, a read-only root filesystem with an in-memory /tmp, a non-root user, every capability dropped.
+# Its NetworkPolicy (allow-ml-forecast) admits worker-agent on 8150 and lets nothing out.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ml-forecast
+  namespace: dataagent-service
+  labels: {app: ml-forecast, app.kubernetes.io/part-of: dataagent}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ml-forecast-env
+  namespace: dataagent-service
+  labels: {app: ml-forecast, app.kubernetes.io/part-of: dataagent}
+data:
+  # One fit at a time (the process also holds a lock): the pod is small; scale with replicas.
+  ML_FORECAST_CONCURRENCY: "1"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-forecast
+  namespace: dataagent-service
+  labels: {app: ml-forecast, app.kubernetes.io/part-of: dataagent}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: ml-forecast}}
+  template:
+    metadata:
+      labels: {app: ml-forecast, app.kubernetes.io/part-of: dataagent}
+    spec:
+      serviceAccountName: ml-forecast
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: ml-forecast
+        image: dataagent/ml-forecast:latest
+        imagePullPolicy: IfNotPresent
+        command: ["python", "-m", "services.ml_forecast.main"]
+        ports:
+        - {name: http, containerPort: 8150}
+        envFrom:
+        - configMapRef: {name: ml-forecast-env}
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 10
+        livenessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 30
+        resources:
+          requests: {cpu: 100m, memory: 256Mi}
+          limits: {cpu: "2", memory: 1Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+        - {name: tmp, mountPath: /tmp}
+      volumes:
+      - name: tmp
+        emptyDir: {medium: Memory, sizeLimit: 64Mi}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-forecast
+  namespace: dataagent-service
+  labels: {app: ml-forecast, app.kubernetes.io/part-of: dataagent}
+spec:
+  selector: {app: ml-forecast}
+  ports:
+  - {name: http, port: 8150, targetPort: 8150}

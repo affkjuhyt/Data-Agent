@@ -3250,6 +3250,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/forecast-jobs/{id}/workbench": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Xưởng của một việc dự báo: phiên bản, biến và backtest */
+        get: operations["getForecastWorkbench"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/forecast-ledger": {
         parameters: {
             query?: never;
@@ -3396,7 +3413,8 @@ export interface paths {
         /** Mô hình dự báo */
         get: operations["listForecastModels"];
         put?: never;
-        post?: never;
+        /** Định nghĩa mô hình dự báo trên chỉ số đã chứng nhận và xếp hàng việc huấn luyện đầu; 201 */
+        post: operations["createForecastModel"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8189,6 +8207,24 @@ export interface components {
              */
             window_to: string;
         };
+        /** BacktestRow */
+        BacktestRow: {
+            /** Cover80 Text */
+            cover80_text: string;
+            /** Cover95 Text */
+            cover95_text: string;
+            /** Mase */
+            mase: number | null;
+            /** Model */
+            model: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "baseline" | "candidate" | "selected";
+            /** Smape Text */
+            smape_text: string;
+        };
         /** BacktestView */
         BacktestView: {
             /** Baseline Metrics */
@@ -8673,6 +8709,13 @@ export interface components {
             n_scored: number;
             /** Product Code */
             product_code: string | null;
+        };
+        /** CanCreateCard */
+        CanCreateCard: {
+            /** Allowed */
+            allowed: boolean;
+            /** Reason */
+            reason: string | null;
         };
         /** CertificationView */
         CertificationView: {
@@ -13775,6 +13818,82 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * ForecastModelCreate
+         * @description A series to train: a certified metric, cuts on dimensions it allows, month or quarter.
+         */
+        ForecastModelCreate: {
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "month" | "quarter";
+            /** Horizon */
+            horizon: number;
+            /** Metric Code */
+            metric_code: string;
+            /** Scope */
+            scope?: {
+                [key: string]: string[];
+            };
+        };
+        /**
+         * ForecastModelCreated
+         * @description The new model and the id of the training job queued with it.
+         */
+        ForecastModelCreated: {
+            /** Backtest Mase */
+            backtest_mase?: number | string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Version Id */
+            current_version_id: string | null;
+            /**
+             * Data Space Id
+             * Format: uuid
+             */
+            data_space_id: string;
+            /**
+             * Degraded
+             * @default false
+             */
+            degraded: boolean;
+            /** Frequency */
+            frequency: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Metric Code */
+            metric_code: string;
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Retrain Cron */
+            retrain_cron: string | null;
+            /** Rolling Mase */
+            rolling_mase?: number | string | null;
+            /** Scope */
+            scope: unknown;
+            /** Status */
+            status: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** ForecastModelDetail */
         ForecastModelDetail: {
             /** Backtest Mase */
@@ -13873,6 +13992,71 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** ForecastStat */
+        ForecastStat: {
+            /** Label */
+            label: string;
+            /** Note */
+            note: string;
+            /**
+             * Tone
+             * @enum {string}
+             */
+            tone: "success" | "warning" | "error" | "neutral" | "default";
+            /** Value */
+            value: string;
+        };
+        /** ForecastVariable */
+        ForecastVariable: {
+            /** Correlation Text */
+            correlation_text: string;
+            /** Future Value Text */
+            future_value_text: string;
+            /** Lag Text */
+            lag_text: string;
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "used" | "excluded";
+            /** Status Text */
+            status_text: string;
+        };
+        /** ForecastWorkbench */
+        ForecastWorkbench: {
+            /** Backtest */
+            backtest: components["schemas"]["BacktestRow"][];
+            /** Backtest Note */
+            backtest_note: string;
+            can_create_card: components["schemas"]["CanCreateCard"];
+            /** Forecast Model Id */
+            forecast_model_id: string | null;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Metric Name */
+            metric_name: string;
+            /** Model Id */
+            model_id: string | null;
+            /** Next Version Label */
+            next_version_label: string;
+            /** Series Stats */
+            series_stats: components["schemas"]["ForecastStat"][];
+            /** Summary Text */
+            summary_text: string;
+            /** Variables */
+            variables: components["schemas"]["ForecastVariable"][];
+            /** Variables Note */
+            variables_note: string;
+            /** Version Id */
+            version_id: string | null;
         };
         /** FormulaModelCreate */
         FormulaModelCreate: {
@@ -49026,6 +49210,118 @@ export interface operations {
             };
         };
     };
+    getForecastWorkbench: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForecastWorkbench"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
     listForecastLedger: {
         parameters: {
             query?: {
@@ -49972,6 +50268,120 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_ForecastModelView_"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    createForecastModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForecastModelCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForecastModelCreated"];
                 };
             };
             /** @description Invalid request */

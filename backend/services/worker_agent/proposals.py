@@ -91,6 +91,7 @@ async def _open(
     eval_run_id: uuid.UUID | None,
     impact: dict[str, Any] | None = None,
     impact_level: str = "low",
+    assignee_id: uuid.UUID | None = None,
 ) -> uuid.UUID:
     pid = proposal_id(event)
     async with scoped_session("svc_inbox", event.org_id, proposed_by) as session:
@@ -117,6 +118,7 @@ async def _open(
                 # What the change reaches, counted when it is proposed (metric_changes.py).
                 impact=_plain(impact or {}),
                 impact_level=impact_level,
+                assignee_id=assignee_id,
                 created_by=proposed_by,
             )
             .on_conflict_do_nothing(index_elements=["id"])
@@ -124,7 +126,15 @@ async def _open(
         )
         if opened.scalar() is not None:
             _review_request(
-                event, pid, data_space_id, kind, title, proposed_by, impact_level, session
+                event,
+                pid,
+                data_space_id,
+                kind,
+                title,
+                proposed_by,
+                impact_level,
+                session,
+                assignee_id,
             )
     return pid
 
@@ -138,6 +148,7 @@ def _review_request(
     proposed_by: uuid.UUID,
     impact_level: str,
     session: Any,
+    assignee_id: uuid.UUID | None = None,
 ) -> None:
     """The approve_proposal request that puts the proposal in its reviewers' Cần bạn.
 
@@ -158,7 +169,9 @@ def _review_request(
             options=[],
             source_service="inbox",
             source_ref=pid,
-            assignee_capability="approve",
+            # A named assignee is that person (the metric owner). Otherwise anyone holding approve.
+            assignee_id=assignee_id,
+            assignee_capability=None if assignee_id is not None else "approve",
             created_by=proposed_by,
             updated_by=proposed_by,
         )
@@ -509,6 +522,7 @@ async def decided(event: Event) -> None:
         "schema_change",
         # OP-7: steward ack of a repeated Ask correction; apply changes nothing semantic.
         "feedback_fix",
+        "forecast_model",
         *semantic_review.KINDS,
         *reviews.KINDS,
     )
@@ -538,6 +552,10 @@ async def decided(event: Event) -> None:
     elif proposal["kind"] == "feedback_fix":
         # Memory stays personal recall; synonym/metric/example stay for a separate proposal.
         outcome = True
+    elif proposal["kind"] == "forecast_model":
+        from services.worker_agent import forecasting
+
+        outcome = await forecasting.apply(event, proposal)
     else:
         outcome = await _apply_writeback(event, proposal)
     accepted = event.payload.get("status") == "accepted"

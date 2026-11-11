@@ -15707,7 +15707,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page",
+     "comment": "metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page, forecast_model (công bố phiên bản mô hình dự báo, UC-15-04)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -15889,7 +15889,7 @@
    "constraints": [
     {
      "kind": "check",
-     "sql": "CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product'))"
+     "sql": "CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product','forecast_model'))"
     },
     {
      "kind": "check",

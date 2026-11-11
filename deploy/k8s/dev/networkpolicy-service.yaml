@@ -7,12 +7,12 @@ metadata:
   labels:
     app.kubernetes.io/part-of: dataagent
 spec:
-  # Every pod but the python-sandbox: NetworkPolicies only add, so this would open it too.
+  # Every pod but the python-sandbox and ml-forecast: NetworkPolicies only add, so this would open it too.
   podSelector:
     matchExpressions:
     - key: app
       operator: NotIn
-      values: [python-sandbox]
+      values: [python-sandbox, ml-forecast]
   policyTypes:
   - Ingress
   - Egress
@@ -46,4 +46,31 @@ spec:
     ports:
     - protocol: TCP
       port: 8140
+  egress: []
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ml-forecast
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  # The trainer's pod (services/ml_forecast): worker-agent may call it; it may call nothing, not
+  # even DNS. It holds no data and needs nothing, so it has nowhere to go.
+  podSelector:
+    matchLabels:
+      app: ml-forecast
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: worker-agent
+    ports:
+    - protocol: TCP
+      port: 8150
   egress: []

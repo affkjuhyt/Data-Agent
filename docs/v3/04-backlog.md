@@ -336,6 +336,15 @@ chỉ khi số công cụ vượt mức planner đọc được hết trong prom
 | AGC-20 | P2 | Deep analysis skill (OP-6): `deep_skill` khi `purpose=deep` (`/report`) hoặc `depth=deep`; không web search ngoài DS | S | doing — code sẵn, chờ commit |
 | AGC-21 | P1 | Correction memory steward gate (OP-7): feedback ≥3 → `feedback_fix`; decided ack, không ghi semantic | S | doing — code sẵn, chờ commit |
 
+### 3j. Dự báo thống kê (11/2026)
+
+Huấn luyện nằm ở khối `ml-forecast`; worker-agent đọc chuỗi và ghi phiên bản. DS-AW nhận hai định
+nghĩa chưa huấn luyện (không có phiên bản).
+
+| ID | Mức | Việc | Công sức | TT |
+| --- | --- | --- | --- | --- |
+| FC-01 | — | Dự báo thống kê trên DS-AW: dịch vụ `ml-forecast`, hai định nghĩa chưa huấn luyện (`DOANH_THU` tháng, và cùng chỉ số theo nhóm hàng Bikes), đường e2e huấn luyện, duyệt đề xuất và đọc 12 dự báo | M | done 21b7edfa: `services/ml_forecast`, seed `v3-adventureworks-seed.sql`, `tests/e2e/test_forecast_e2e.py` |
+
 ## 4. Quy tắc theo dõi
 
 - Thứ Sáu hằng tuần rà cột TT; việc trễ > 2 ngày thì cắt hoặc đổi người ngay trong tuần.

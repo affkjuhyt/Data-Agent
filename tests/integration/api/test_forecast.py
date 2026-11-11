@@ -1956,3 +1956,400 @@ async def test_a_retired_model_takes_no_new_version(fx: Fx) -> None:
             fx.one("SELECT status FROM forecast.forecast_model WHERE id = %s", fx.model)
             == "retired"
         )
+
+
+# ================================================================ defining a model (G2)
+
+
+def _define(**extra: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "metric_code": "gia_co_so_xang",
+        "scope": {},
+        "frequency": "month",
+        "horizon": 12,
+    }
+    body.update(extra)
+    return body
+
+
+def _count(fx: Fx, table: str) -> int:
+    return fx.one(f"SELECT count(*) FROM {table} WHERE org_id = %s", fx.org)
+
+
+def _blocked_metric(fx: Fx) -> str:
+    """A certified metric whose amount column a policy hides from the builder only."""
+    dataset = fx.seed.row(
+        "catalog.dataset",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        origin="derived",
+        schema_name="silver",
+        table_name="doanh_thu",
+        enabled=True,
+    )
+    entity = fx.seed.row(
+        "context.semantic_entity",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        code="doanh_thu",
+        name="Doanh thu",
+        primary_dataset_id=dataset,
+        key_columns=["id"],
+    )
+    fx.seed.row(
+        "context.semantic_measure",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        entity_id=entity,
+        code="doanh_thu",
+        name="Doanh thu",
+        expression="amount",
+        aggregation="sum",
+    )
+    metric = fx.seed.row(
+        "context.metric",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        code="doanh_thu_bi_chan",
+        owner_id=fx.users["owner"],
+        current_version=1,
+        status="active",
+    )
+    fx.seed.row(
+        "context.metric_version",
+        org_id=fx.org,
+        metric_id=metric,
+        version=1,
+        display_name="Doanh thu bị chặn",
+        expression="doanh_thu",
+        period_semantics="sum_over_period",
+        status="certified",
+        certified_by=fx.users["owner"],
+        certified_at="2026-01-01T00:00:00Z",
+        valid_from="2026-01-01T00:00:00Z",
+    )
+    fx.seed.row(
+        "governance.access_policy",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        dataset_id=dataset,
+        name="Ẩn doanh thu với người dựng",
+        kind="column",
+        applies_to=Json({"user_ids": [str(fx.users["builder"])]}),
+        columns=["amount"],
+        status="active",
+        simulated_at="2026-06-01T08:00:00Z",
+        activated_at="2026-06-01T09:00:00Z",
+        activated_by=fx.users["owner"],
+    )
+    return "doanh_thu_bi_chan"
+
+
+async def test_defining_a_model_queues_its_first_job(fx: Fx) -> None:
+    # Creating a model on a certified metric writes the model for the metric's owner and queues
+    # one forecast job, cut at now, with one state-changed event.
+    async with client(fx) as api:
+        before = datetime.datetime.now(datetime.UTC)
+        made = await api.post("/v1/forecast-models", json=_define(), headers=fx.headers("builder"))
+    assert made.status_code == 201, made.text
+    body = made.json()
+    assert body["metric_code"] == "gia_co_so_xang"
+    assert body["frequency"] == "month"
+    assert body["scope"] == {}
+    assert body["status"] == "active"
+    assert body["owner_id"] == str(fx.users["owner"])
+    assert body["owner_id"] != str(fx.users["builder"])
+    job = uuid.UUID(body["job_id"])
+    assert fx.one("SELECT status FROM forecast.forecast_job WHERE id = %s", job) == "queued"
+    assert fx.one("SELECT frequency FROM forecast.forecast_job WHERE id = %s", job) == "month"
+    assert fx.one("SELECT horizon FROM forecast.forecast_job WHERE id = %s", job) == 12
+    assert fx.one("SELECT metric_code FROM forecast.forecast_job WHERE id = %s", job) == (
+        "gia_co_so_xang"
+    )
+    progress = fx.one("SELECT progress FROM forecast.forecast_job WHERE id = %s", job)
+    assert progress["purpose"] == "forecast"
+    cutoff = fx.one("SELECT cutoff_at FROM forecast.forecast_job WHERE id = %s", job)
+    assert cutoff >= before - datetime.timedelta(seconds=5)
+    assert cutoff <= datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=5)
+    events = fx.events(job)
+    assert len(events) == 1
+    assert events[0][0] == "forecast.job.state_changed"
+    assert events[0][1]["status"] == "queued"
+    assert events[0][1]["purpose"] == "forecast"
+    assert (
+        fx.one(
+            "SELECT count(*) FROM forecast.forecast_job WHERE data_space_id = %s"
+            " AND metric_code = 'gia_co_so_xang' AND frequency = 'month'",
+            fx.space,
+        )
+        == 1
+    )
+
+
+async def test_a_model_for_a_metric_the_caller_may_not_use_is_refused(fx: Fx) -> None:
+    # The builder holds steward, but a column policy hides the metric's amount from them.
+    code = _blocked_metric(fx)
+    models, jobs, events = (
+        _count(fx, "forecast.forecast_model"),
+        _count(fx, "forecast.forecast_job"),
+        _count(fx, "forecast.outbox"),
+    )
+    async with client(fx) as api:
+        denied = await api.post(
+            "/v1/forecast-models",
+            json=_define(metric_code=code),
+            headers=fx.headers("builder"),
+        )
+    assert denied.status_code == 403, denied.text
+    assert denied.json()["code"] == "policy_denied"
+    assert _count(fx, "forecast.forecast_model") == models
+    assert _count(fx, "forecast.forecast_job") == jobs
+    assert _count(fx, "forecast.outbox") == events
+
+
+async def test_a_scope_on_a_cut_the_metric_does_not_allow_is_refused(fx: Fx) -> None:
+    # gia_co_so_xang's certified version allows no dimension, so san_pham is not a cut of it.
+    before = _count(fx, "forecast.forecast_model")
+    async with client(fx) as api:
+        refused = await api.post(
+            "/v1/forecast-models",
+            json=_define(scope={"san_pham": ["xang"]}),
+            headers=fx.headers("builder"),
+        )
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["code"] == "business_rule_violated"
+    assert "san_pham" in refused.text
+    assert _count(fx, "forecast.forecast_model") == before
+
+
+async def test_the_same_series_twice_is_a_conflict(fx: Fx) -> None:
+    # UNIQUE (data_space_id, metric_code, frequency, scope): the second definition does not queue.
+    dataset = fx.seed.row(
+        "catalog.dataset",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        origin="derived",
+        schema_name="silver",
+        table_name="hang",
+        enabled=True,
+    )
+    entity = fx.seed.row(
+        "context.semantic_entity",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        code="hang",
+        name="Hàng",
+        primary_dataset_id=dataset,
+        key_columns=["id"],
+    )
+    dimension = fx.seed.row(
+        "context.semantic_dimension",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        entity_id=entity,
+        code="nhom",
+        name="Nhóm",
+        expression="nhom",
+    )
+    # The certified version must allow the cut, or the first call is a 422 rather than a create.
+    fx.run(
+        "UPDATE context.metric_version SET allowed_dimensions = %s WHERE id = %s",
+        [dimension],
+        fx.metric_version,
+    )
+    body = _define(scope={"nhom": ["xe_dap"]}, horizon=6)
+    async with client(fx) as api:
+        first = await api.post("/v1/forecast-models", json=body, headers=fx.headers("owner"))
+        assert first.status_code == 201, first.text
+        second = await api.post("/v1/forecast-models", json=body, headers=fx.headers("owner"))
+    assert second.status_code == 409, second.text
+    assert second.json()["code"] == "conflict"
+    assert (
+        fx.one(
+            "SELECT count(*) FROM forecast.forecast_model WHERE data_space_id = %s"
+            " AND metric_code = 'gia_co_so_xang' AND frequency = 'month'",
+            fx.space,
+        )
+        == 1
+    )
+    assert (
+        fx.one(
+            "SELECT count(*) FROM forecast.forecast_job WHERE data_space_id = %s"
+            " AND metric_code = 'gia_co_so_xang' AND frequency = 'month'",
+            fx.space,
+        )
+        == 1
+    )
+
+
+async def test_the_workbench_shows_the_jobs_versions_and_backtests(fx: Fx) -> None:
+    # The studio shape getForecastWorkbench reads: the job's version, its variables and the
+    # backtest table (seasonal naive plus the chosen candidate).
+    version = fx.version(fx.model, 3, algorithm="ets", mase="0.72")
+    fx.run(
+        "UPDATE forecast.backtest_run SET candidates = %s, baseline_metrics = %s"
+        " WHERE model_version_id = %s",
+        Json(
+            [
+                {
+                    "algorithm": "ets",
+                    "mase": 0.72,
+                    "smape": 0.041,
+                    "coverage80": 0.83,
+                    "coverage95": 0.96,
+                }
+            ]
+        ),
+        Json({"mase": 1, "smape": 0.11, "coverage80": 0.70, "coverage95": 0.90}),
+        version,
+    )
+    job = fx.job(status="ready", version=version, who="builder", horizon=3)
+    async with client(fx) as api:
+        shown = await api.get(f"/v1/forecast-jobs/{job}/workbench", headers=fx.headers("analyst"))
+    assert shown.status_code == 200, shown.text
+    body = shown.json()
+    assert body["job_id"] == str(job)
+    assert body["metric_name"] == "so_du_huy_dong"
+    assert body["version_id"] == str(version)
+    assert body["forecast_model_id"] == str(fx.model)
+    assert body["next_version_label"] == "v3"
+    assert body["model_id"] is None
+    assert body["can_create_card"] == {"allowed": True, "reason": None}
+    assert any(stat["value"] == "72 kỳ" for stat in body["series_stats"])
+    names = {row["name"] for row in body["variables"]}
+    assert FEATURE in names
+    roles = {row["role"]: row for row in body["backtest"]}
+    assert roles["baseline"]["model"] == "Seasonal naive"
+    assert roles["selected"]["model"] == "ETS"
+    assert roles["selected"]["mase"] == 0.72
+    assert "backtest trên 6 điểm cắt" in body["summary_text"]
+
+
+def _forecast_proposal(fx: Fx, version: uuid.UUID, *, proposed_by: str) -> uuid.UUID:
+    return fx.seed.row(
+        "inbox.proposal",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        kind="forecast_model",
+        target_service="forecast",
+        target_ref=version,
+        title="Công bố mô hình dự báo",
+        proposed_by=fx.users[proposed_by],
+        assignee_id=fx.users["owner"],
+        status="pending_review",
+        diff=Json({}),
+    )
+
+
+async def test_accepting_the_proposal_publishes_the_version(fx: Fx) -> None:
+    """The metric owner holds steward, not approve, and that is enough for this kind."""
+    october = datetime.date(2026, 10, 1)
+    november = datetime.date(2026, 11, 1)
+    first = fx.prediction(fx.draft, october, experimental=True)
+    second = fx.prediction(fx.draft, november, point=110, experimental=True)
+    async with client(fx) as api:
+        await _submit(api, fx, fx.draft)
+        proposal = _forecast_proposal(fx, fx.draft, proposed_by="builder")
+        decided = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            json={"decision": "accept", "note": "Đạt"},
+            headers=fx.headers("owner"),
+        )
+    assert decided.status_code == 200, decided.text
+    assert fx.one("SELECT status FROM forecast.model_version WHERE id = %s", fx.draft) == (
+        "published"
+    )
+    assert fx.one(
+        "SELECT current_version_id FROM forecast.forecast_model WHERE id = %s", fx.model
+    ) == str(fx.draft)
+    assert fx.one("SELECT is_experimental FROM forecast.prediction WHERE id = %s", first) is False
+    assert fx.one("SELECT is_experimental FROM forecast.prediction WHERE id = %s", second) is False
+    assert fx.one("SELECT status FROM forecast.model_version WHERE id = %s", fx.published) == (
+        "retired"
+    )
+
+
+async def test_the_builder_approves_their_model_only_when_the_org_allows_it(
+    fx: Fx, self_approvals: Any
+) -> None:
+    """The worker proposes as model_version.created_by. When that person is the owner, the
+    switch-off refusal is the proposer's, and the switch-on log is both steps."""
+    by_owner = fx.version(fx.model, 3, created_by="owner")
+    async with client(fx) as api:
+        sent = await api.post(
+            f"/v1/forecast-model-versions/{by_owner}:submit", headers=fx.headers("owner")
+        )
+        assert sent.status_code == 200, sent.text
+        proposal = _forecast_proposal(fx, by_owner, proposed_by="owner")
+        refused = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            json={"decision": "accept"},
+            headers=fx.headers("owner"),
+        )
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["code"] == "forbidden"
+    assert "cannot review their own proposal" in refused.json()["detail"]
+    assert fx.one("SELECT status FROM forecast.model_version WHERE id = %s", by_owner) == (
+        "pending_approval"
+    )
+    assert fx.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "pending_review"
+    assert self_approvals(fx.org) == []
+
+    fx.seed.allow_self_approval(fx.org)
+    async with client(fx) as api:
+        approved = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            json={"decision": "accept"},
+            headers=fx.headers("owner"),
+        )
+    assert approved.status_code == 200, approved.text
+    assert fx.one("SELECT status FROM forecast.model_version WHERE id = %s", by_owner) == (
+        "published"
+    )
+    assert fx.one(
+        "SELECT current_version_id FROM forecast.forecast_model WHERE id = %s", fx.model
+    ) == str(by_owner)
+    assert self_approvals(fx.org) == ["proposal.review", "forecast_model.decide"]
+
+
+async def test_a_failed_publish_does_not_accept_the_proposal(fx: Fx) -> None:
+    """The decision and the publish are one outcome: a refused publish leaves the proposal pending."""
+    overfit = fx.version(fx.model, 4, mase="0.90", in_sample="0.30")
+    async with client(fx) as api:
+        await _submit(api, fx, overfit)
+        proposal = _forecast_proposal(fx, overfit, proposed_by="builder")
+        refused = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            json={"decision": "accept", "note": "Đạt"},
+            headers=fx.headers("owner"),
+        )
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["code"] == "business_rule_violated"
+    assert fx.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "pending_review"
+    assert fx.one("SELECT status FROM forecast.model_version WHERE id = %s", overfit) == (
+        "pending_approval"
+    )
+
+
+async def test_a_steward_cannot_decide_a_proposal_of_another_kind(fx: Fx) -> None:
+    """steward opens only a forecast_model proposal assigned to that person, not every proposal."""
+    proposal = fx.seed.row(
+        "inbox.proposal",
+        org_id=fx.org,
+        data_space_id=fx.space,
+        kind="synonym",
+        target_service="context",
+        title="Từ đồng nghĩa",
+        proposed_by=fx.users["builder"],
+        assignee_id=fx.users["steward"],
+        status="pending_review",
+        diff=Json({}),
+    )
+    async with client(fx) as api:
+        refused = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            json={"decision": "accept"},
+            headers=fx.headers("steward"),
+        )
+    assert refused.status_code == 403, refused.text
+    assert fx.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "pending_review"

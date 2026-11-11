@@ -33,6 +33,7 @@ from services.worker_agent import (
     derived,
     eval_runs,
     exports,
+    forecasting,
     hitl,
     liked,
     metric_changes,
@@ -138,6 +139,7 @@ HANDLERS: dict[str, Handler] = {
     **prep.HANDLERS,
     **quality.HANDLERS,
     **periods.HANDLERS,
+    **forecasting.HANDLERS,
     **indexed.HANDLERS,
     **extraction.HANDLERS,
     **product_use.HANDLERS,
@@ -219,6 +221,9 @@ async def sources() -> list[EventSource]:
             types |= set(monitor_backtests.HANDLERS)
         if schema == "period":
             types |= set(periods.HANDLERS)
+        if schema == "forecast":
+            # A queued job is trained here; a submitted version opens the owner's proposal.
+            types |= set(forecasting.HANDLERS)
         if schema == "conflict":
             types |= {reviews.AUTHORITY}
         if schema == "document":

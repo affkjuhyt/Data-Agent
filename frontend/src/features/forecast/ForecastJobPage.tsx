@@ -1,24 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
+import { LinkButton } from '../../components/shell/AppLink';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { Card } from '../../design-system/Card';
-import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { Radio } from '../../design-system/Radio';
 import { RunStep } from '../../design-system/RunStep';
 import { resolveHitl } from '../../lib/v1/api';
 import {
+  forecastEvents,
   getForecastJob,
   type ForecastAssumptionRequest,
   type ForecastJob,
   type ForecastJobStep,
 } from '../../lib/v1/forecast';
 import { useV1 } from '../../lib/v1/useV1';
+import { NoForecastModel } from './NoForecastModel';
 import { DataTable } from './parts';
-import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P15 · Hỏi đáp · Dự báo đang tổng hợp" (2391:14495, UC-15-01): a forecast question with no
@@ -39,11 +40,32 @@ const STEP_STATE: Record<
   pending: 'waiting',
 };
 
+/** The event stream's terminal status, when it has one. */
+function followedStatus(events: { event: string; data: string }[]): 'done' | 'failed' | null {
+  let outcome: 'done' | 'failed' | null = null;
+  for (const event of events) {
+    let status = '';
+    try {
+      status = String((JSON.parse(event.data || '{}') as { status?: string }).status ?? '');
+    } catch {
+      status = '';
+    }
+    if (event.event === 'error' || status === 'failed' || status === 'cancelled') outcome = 'failed';
+    else if (event.event === 'done' || event.event === 'result' || status === 'ready') outcome = 'done';
+  }
+  return outcome;
+}
+
 export default function ForecastJobPage() {
   const { routeId } = useAppState();
   const job = useV1(['getForecastJob', routeId], routeId ? () => getForecastJob(routeId) : null);
-  const running = job.data?.status === 'running';
+  const [followed, setFollowed] = useState<'done' | 'failed' | null>(null);
+  const running = job.data?.status === 'running' && followed === null;
   const { reload } = job;
+
+  useEffect(() => {
+    setFollowed(null);
+  }, [routeId]);
 
   useEffect(() => {
     if (!running) return;
@@ -51,19 +73,43 @@ export default function ForecastJobPage() {
     return () => window.clearInterval(timer);
   }, [running, reload]);
 
-  if (!routeId) {
-    return (
-      <div className="px-da-3xl pt-da-xl">
-        <EmptyState
-          icon="chat"
-          title="Chưa chọn câu hỏi dự báo"
-          description="Câu hỏi dự báo mở từ phiên làm việc hoặc từ thông báo khi dự báo xong."
-        />
-      </div>
-    );
-  }
+  // The job resource is the snapshot; /events is how the page hears that training finished.
+  useEffect(() => {
+    if (!routeId || !running) return;
+    let stop = false;
+    const read = async () => {
+      try {
+        const outcome = followedStatus(await forecastEvents(routeId));
+        if (!stop && outcome) setFollowed(outcome);
+      } catch {
+        // The interval above still reloads the job.
+      }
+    };
+    void read();
+    const timer = window.setInterval(() => void read(), POLL_MS);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [routeId, running]);
+
+  if (!routeId) return <NoForecastModel />;
+  const shown = job.data
+    ? followed
+      ? {
+          ...job.data,
+          status: followed,
+          forecast_id:
+            followed === 'done' ? (job.data.forecast_id ?? job.data.id) : job.data.forecast_id,
+          steps:
+            followed === 'done'
+              ? job.data.steps.map((step) => ({ ...step, state: 'done' as const }))
+              : job.data.steps,
+        }
+      : job.data
+    : undefined;
   return (
-    <AsyncRegion state={job} what="việc dự báo">
+    <AsyncRegion state={{ ...job, data: shown }} what="việc dự báo">
       {(j) => <JobBody job={j} onChanged={reload} />}
     </AsyncRegion>
   );

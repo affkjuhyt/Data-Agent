@@ -1798,7 +1798,7 @@ Trigger: trước INSERT: cấp entry\_no; assignee\_id null thì Eval service �
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
 | data\_space\_id | uuid, bắt buộc |  |
-| kind | text, bắt buộc | metric\_change, synonym, relationship, example, glossary, schema\_change, skill\_publish, source\_authority, writeback, document\_validity, feedback\_fix, data\_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge\_page |
+| kind | text, bắt buộc | metric\_change, synonym, relationship, example, glossary, schema\_change, skill\_publish, source\_authority, writeback, document\_validity, feedback\_fix, data\_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge\_page, forecast\_model (công bố phiên bản mô hình dự báo, UC-15-04) |
 | target\_service | text, bắt buộc | Dịch vụ sở hữu đối tượng, sẽ phát hành khi chấp nhận |
 | target\_ref | uuid | Đối tượng bị thay đổi |
 | title | text, bắt buộc |  |
@@ -1815,7 +1815,7 @@ Trigger: trước INSERT: cấp entry\_no; assignee\_id null thì Eval service �
 | expires\_at | timestamptz, bắt buộc, mặc định now() + interval '30 days' | Quá hạn chuyển expired (BR-29) |
 | applied\_at | timestamptz |  |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('metric\_change','synonym','relationship','example','glossary','schema\_change','skill\_publish','source\_authority','writeback','document\_validity','feedback\_fix','knowledge\_page','data\_product')); CHECK (impact\_level IN ('low','medium','high')); CHECK (status IN ('open','evaluating','pending\_review','accepted','applied','apply\_failed','rejected','expired','withdrawn')). Chỉ mục: (data\_space\_id, status) WHERE status IN ('open','evaluating','pending\_review'); (assignee\_id) WHERE status = 'pending\_review'.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('metric\_change','synonym','relationship','example','glossary','schema\_change','skill\_publish','source\_authority','writeback','document\_validity','feedback\_fix','knowledge\_page','data\_product','forecast\_model')); CHECK (impact\_level IN ('low','medium','high')); CHECK (status IN ('open','evaluating','pending\_review','accepted','applied','apply\_failed','rejected','expired','withdrawn')). Chỉ mục: (data\_space\_id, status) WHERE status IN ('open','evaluating','pending\_review'); (assignee\_id) WHERE status = 'pending\_review'.
 
 #### inbox.proposal\_review
 

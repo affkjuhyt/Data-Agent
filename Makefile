@@ -54,7 +54,7 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 # dev-tools image: an image naming a `/` is used as given, not looked up in the registry.
 IMAGE_REGISTRY ?= localhost:5001
 UNIT_SUITES ?= contracts:api api:api worker_agent:worker-agent worker_ingest:worker-ingest \
-               worker_document:worker-document crawler:crawler repo:$(DEV_TOOLS_IMAGE)
+               worker_document:worker-document crawler:crawler ml_forecast:ml-forecast repo:$(DEV_TOOLS_IMAGE)
 INTEGRATION_SUITES ?= api:api migrate:migrate worker_agent:worker-agent worker_ingest:worker-ingest \
                       worker_document:worker-document crawler:crawler
 PYTEST_ARGS ?=
@@ -272,8 +272,8 @@ deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 LOCAL_DATABASES = ["postgres","pgbouncer","redis","minio","kafka","openbao","qdrant","clickhouse"]
 LOCAL_DATABASE_WORKLOADS = ["redis","minio","kafka","openbao","qdrant","clickhouse"]
 
-deploy-local:  ## deploy the V3 local slice (api, worker-agent, worker-ingest, worker-document, python-sandbox, crawler, egress-proxy, temporal, web, migrate, gateway, litellm, mailpit)
+deploy-local:  ## deploy the V3 local slice (api, worker-agent, worker-ingest, worker-document, python-sandbox, ml-forecast, crawler, egress-proxy, temporal, web, migrate, gateway, litellm, mailpit)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml \
 		-e apply_jobs=true -e image_registry=$(IMAGE_REGISTRY) -e image_push=true \
 		-e '{"database_manifests":$(LOCAL_DATABASES),"database_workloads":$(LOCAL_DATABASE_WORKLOADS)}' \
-		-e '{"deploy_image_allowlist":["api","worker-agent","worker-ingest","worker-document","python-sandbox","crawler","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","worker-ingest","worker-document","python-sandbox","crawler","egress-proxy","temporal","frontend","kong","keycloak","prometheus","litellm","mailpit"],"service_workloads":["api","worker-agent","worker-ingest","worker-document","python-sandbox","crawler","egress-proxy","temporal","temporal-ui","frontend","kong","keycloak","prometheus","litellm","mailpit"]}'
+		-e '{"deploy_image_allowlist":["api","worker-agent","worker-ingest","worker-document","python-sandbox","ml-forecast","crawler","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","worker-ingest","worker-document","python-sandbox","ml-forecast","crawler","egress-proxy","temporal","frontend","kong","keycloak","prometheus","litellm","mailpit"],"service_workloads":["api","worker-agent","worker-ingest","worker-document","python-sandbox","ml-forecast","crawler","egress-proxy","temporal","temporal-ui","frontend","kong","keycloak","prometheus","litellm","mailpit"]}'

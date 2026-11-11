@@ -239,7 +239,7 @@ With `seed_demo: true` (the dev inventory's setting) the `db-init` Job loads:
 | Source | What |
 | --- | --- |
 | `deploy/docker/sql/v3-demo-seed.sql` | V3 demo organisation directory: `helios-engineer` (Data Engineer role) and `helios-viewer` (Viewer role: `ask` + `view_aggregate`, for the screen-audit harness). It opens no Data Space: the former `DS-DEMO` and the synthetic pilot `DS-BH` are archived on a cluster that still has them (their rows stay, hidden), DS-DEMO's membership is removed and the pilot's `workspace.pilot_*` tables are dropped. AdventureWorks is the only test data |
-| `deploy/docker/sql/v3-adventureworks-seed.sql` | `DS-AW` "AdventureWorks": the Data Space the product is tested on and its PostgreSQL source, the database `adventureworks_dw` read as `app_user` (OpenBao `demo-postgres`). Members: engineer, admin, and viewer (narrow capabilities). The data itself is loaded by `make adventureworks` (below); the schema scan, the semantic model (`deploy/docker/semantic/ds-aw.yaml` through `make semantic-import`) and the reviews are left to the product |
+| `deploy/docker/sql/v3-adventureworks-seed.sql` | `DS-AW` "AdventureWorks": the Data Space the product is tested on and its PostgreSQL source, the database `adventureworks_dw` read as `app_user` (OpenBao `demo-postgres`). Members: engineer, admin, and viewer (narrow capabilities). The data itself is loaded by `make adventureworks` (below); the schema scan, the semantic model (`deploy/docker/semantic/ds-aw.yaml` through `make semantic-import`) and the reviews are left to the product. It also registers two untrained forecast definitions (no version): company `DOANH_THU`, monthly, and the same metric scoped to product category Bikes (`nhom_hang` = `Bikes`) |
 | `deploy/docker/sql/v3-adventureworks-context.sql` | `DS-AW`: 28 verified queries (R1-08) and the eval set "Câu hỏi AdventureWorks" (R1-12, the 61 cases of `deploy/docker/eval/ds-aw-cases.yaml`, blind sheet `docs/v3/eval/ds-aw-blind-sheet.md`). Seeded before the scan: a verified query's tables resolve to the scanned datasets when it runs |
 | `deploy/docker/sql/v3-adventureworks-documents.sql` | `DS-AW`'s documents, two collections: Vietnamese business documents of the fictional Adventure Works Cycles (metric definitions and the decision that replaces them, promotions with the dates of `dim_promotion`, budget policy, call-centre procedure, a final and a contradicting preliminary quarterly report, a letter carrying a prompt injection) and the eight genuine AdventureWorks product manuals with an English return policy. The files are `deploy/docker/adventureworks-docs/`, put in `da-raw-docs` by `minio-init`; pages and chunks are generated with worker-document's own extractor and chunker by `make adventureworks-documents` (a stale seed fails the worker-document unit suite). `model/eval/cases/retrieval.jsonl` is scored over them (`make eval-retrieval`) |
 | `deploy/docker/sql/v3-agent-seed.sql` | `DS-AW`: four agents (biên gộp Internet, doanh thu theo kênh, tồn kho, điều phối), their runs (running, waiting for a person, failed, succeeded, one lead run with two delegated ones), a rolling deployment, one skill waiting for review and one suggestion; the figures in their narratives are AdventureWorksDW's. Re-applied, the runs move back into the last day so the operations screen stays populated. Read by `tests/integration/test_agent_screens_e2e.py` |
@@ -586,6 +586,52 @@ install only). When the pod is down the tool's step fails and the planner works 
 Check it: `kubectl -n dataagent-service exec deploy/worker-agent -- python -c "import asyncio,os;
 from libs.code_sandbox import client; print(asyncio.run(client.run(os.environ['AGENT_SANDBOX_URL'],
 'result = 1 + 1', {})))"`.
+
+## 10g. ml-forecast (the forecast trainer)
+
+Forecast fits (`libs/forecast_fit`: a rolling-origin backtest of naive, seasonal naive, ETS, Theta
+and ARIMA) run in the stateless `ml-forecast` pod (`services/ml_forecast`), not in worker-agent,
+whose image carries no statsforecast:
+
+- `deploy/k8s/*/service/ml-forecast.yaml`: no secret, ConfigMap of the platform or service account
+  token; read-only root filesystem, user 10001. Request 100m CPU and 256Mi, limit 1Gi; one fit at
+  a time (a lock in the process), so scale with replicas.
+- `allow-ml-forecast` (`networkpolicy-service.yaml`): ingress from worker-agent on 8150, no egress
+  (not even DNS); the broad allow policies exclude the pod.
+- worker-agent reads `FORECAST_SERVICE_URL`. `libs/forecast_fit/client.py` turns the service's 422
+  into the `ValueError` `fit` raised and anything else (timeout of 60 s, 5xx, a body of the wrong
+  shape or size) into `TrainerUnavailable("Dịch vụ dự báo không phản hồi")`. Unset, `fit_series`
+  fits in-process (tests and local runs; it needs statsforecast).
+
+**Training a forecast.** A definition is one `forecast.forecast_model` row: metric, scope,
+frequency, owner, and no version until a job finishes. DS-AW ships two, both untrained
+(`v3-adventureworks-seed.sql`): company revenue `DOANH_THU` monthly, and the same metric scoped
+to category Bikes. `forecast.forecast_model` has no horizon column. Defining a model
+(`POST /v1/forecast-models`, horizon 1–24) queues a job at that horizon. Retraining one that has
+no published version (`POST /v1/forecast-models/{id}:retrain`) uses the monthly default of 12,
+one seasonal cycle. The worker consumes `forecast.job.state_changed` with status `queued`, reads
+the series as the metric owner, and calls this pod.
+
+The job is `forecast.forecast_job`, read at `GET /v1/forecasts/{id}`. It moves
+`preparing` → `training` → `backtesting` → `ready`. A refusal (the series is too short, nothing
+beats seasonal naive) or a trainer error sets `failed`. The words are `progress.error` on that
+GET, and the `error` event of `GET /v1/forecasts/{id}/events`.
+
+**Approving it.** A version that beats seasonal naive is submitted and opens one inbox proposal
+(`kind` `forecast_model`) for the metric owner. `GET /v1/inbox?kind=approve_proposal` lists it;
+the request's `source_ref` is the proposal and `context.proposal_kind` is `forecast_model`.
+Accept with `POST /v1/proposals/{id}:decide` and `{"decision":"accept"}` (reject needs a note).
+Publishing retires the previous serving version and clears `is_experimental` on that version's
+predictions. The builder does not approve their own version unless the organisation allows
+self-approval. DS-AW does (`allow_self_approval` in the seed), so `helios-engineer` can accept a
+model they trained. The same publish is `POST /v1/forecast-model-versions/{id}:approve`.
+
+The path is `tests/e2e/test_forecast_e2e.py` (not the default `make e2e` file). It needs
+`E2E_PASS` and writes a version:
+
+```bash
+E2E_TESTS=tests/e2e/test_forecast_e2e.py make e2e
+```
 
 ## 11. LLM and model backend
 

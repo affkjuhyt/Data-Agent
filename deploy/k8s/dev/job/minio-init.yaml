@@ -17,7 +17,7 @@ metadata:
     app: minio-init
     app.kubernetes.io/part-of: dataagent
 data:
-  MINIO_BUCKETS: langfuse sandbox-audit da-results da-exports da-ingest da-raw-docs da-doc-derived
+  MINIO_BUCKETS: langfuse sandbox-audit da-results da-exports da-ingest da-raw-docs da-doc-derived da-forecast-models
   # Raw is immutable (S2-02, ADR-V2-21): object lock, settable only at bucket creation.
   # GOVERNANCE on dev so an operator can still clean it up; COMPLIANCE in production.
   RAW_RETENTION_MODE: GOVERNANCE
@@ -79,6 +79,11 @@ spec:
           printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject"],"Resource":["arn:aws:s3:::da-period-close/*"]}]}' > /tmp/worker-agent-period.json
           mc admin policy create local worker-agent-period-v1 /tmp/worker-agent-period.json
           mc admin policy attach local worker-agent-period-v1 --user worker-agent || mc admin user info local worker-agent
+          # A trained forecast version's fitted params (worker_agent/forecasting.py, artifact_key):
+          # worker-agent writes them under forecast/ and nothing else.
+          printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject"],"Resource":["arn:aws:s3:::da-forecast-models/forecast/*"]}]}' > /tmp/worker-agent-forecast.json
+          mc admin policy create local worker-agent-forecast-v1 /tmp/worker-agent-forecast.json
+          mc admin policy attach local worker-agent-forecast-v1 --user worker-agent || mc admin user info local worker-agent
           mc mb --ignore-existing --with-lock local/raw
           # BR-150: crawled originals are immutable and kept 400 days (crawl_page.retain_until).
           mc mb --ignore-existing --with-lock local/da-raw-crawl

@@ -3361,12 +3361,12 @@ CREATE TABLE inbox.proposal (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT proposal_pkey PRIMARY KEY (id),
-  CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product')),
+  CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product','forecast_model')),
   CHECK (impact_level IN ('low','medium','high')),
   CHECK (status IN ('open','evaluating','pending_review','accepted','applied','apply_failed','rejected','expired','withdrawn'))
 );
 COMMENT ON TABLE inbox.proposal IS 'Đề xuất thay đổi chờ duyệt: lớp ngữ cảnh, schema, kỹ năng, ghi ngược, hiệu lực văn bản. Use case: UC-01-05, UC-03-05, UC-04-03, UC-05-05, UC-06-04, UC-07-01, UC-07-02, UC-07-03, UC-07-05, UC-07-06.';
-COMMENT ON COLUMN inbox.proposal.kind IS 'metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page';
+COMMENT ON COLUMN inbox.proposal.kind IS 'metric_change, synonym, relationship, example, glossary, schema_change, skill_publish, source_authority, writeback, document_validity, feedback_fix, data_product (kích hoạt hoặc đổi phiên bản data product, UC-07-13), knowledge_page, forecast_model (công bố phiên bản mô hình dự báo, UC-15-04)';
 COMMENT ON COLUMN inbox.proposal.target_service IS 'Dịch vụ sở hữu đối tượng, sẽ phát hành khi chấp nhận';
 COMMENT ON COLUMN inbox.proposal.target_ref IS 'Đối tượng bị thay đổi';
 COMMENT ON COLUMN inbox.proposal.evidence IS 'Ví dụ 4 câu hỏi bị sửa giống nhau';
@@ -10306,6 +10306,8 @@ CREATE TRIGGER prediction_exog_guard
 -- D5.2: predictions are append-only. The generated grants already give svc_forecast only
 -- SELECT, INSERT on this "Bản ghi bất biến" table; the revoke states the exception explicitly.
 REVOKE UPDATE, DELETE ON forecast.prediction FROM svc_forecast;
+-- The experimental label comes off when the version is published (BR-158). Figures stay append-only.
+GRANT UPDATE (is_experimental) ON forecast.prediction TO svc_forecast;
 
 
 -- ═══ formula_model ═══
