@@ -27,13 +27,14 @@ import ssl
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from urllib.parse import urldefrag, urljoin, urlsplit
-from urllib.robotparser import RobotFileParser
+from urllib.parse import urljoin, urlsplit
 
 import certifi
 import httpcore
 import httpx
 from lxml import html
+from protego import Protego
+from w3lib.url import canonicalize_url
 
 from services.crawler.extract import html_text
 
@@ -43,6 +44,8 @@ MAX_PAGES = int(os.environ.get("CRAWLER_MAX_PAGES_PER_RUN", "200"))
 TIMEOUT = float(os.environ.get("CRAWLER_FETCH_TIMEOUT", "30"))
 BLOCKED = frozenset({403, 429})
 MAX_REDIRECTS = 5
+# The longest pause between two pages a robots.txt Crawl-delay may ask for (seconds).
+MAX_CRAWL_DELAY_S = 30.0
 # Names that resolve inside the cluster or the host. A source's domains never include them (the api
 # refuses them too); a public name that resolves to a private address is refused at request time.
 INTERNAL_SUFFIXES = ("localhost", ".localhost", ".local", ".internal", ".svc", ".cluster.local")
@@ -202,28 +205,41 @@ class Fetcher:
         self._domains = list(domains)
         # BR-149: the source's own limit, and never above one request per second to a domain.
         self._interval = max(1.0, 1.0 / rate_limit_rps if rate_limit_rps > 0 else 1.0)
-        self._robots: dict[str, RobotFileParser | None] = {}
+        # Per origin: its robots.txt read by Protego (RFC 9309: "*" and "$" in a path), or None
+        # when it has none. The standard library's parser knows neither and allowed what they ruled.
+        self._robots: dict[str, Protego | None] = {}
+        # Per origin: the pace its robots.txt asks for (Crawl-delay), when slower than ours.
+        self._delays: dict[str, float] = {}
 
     async def _allowed(self, url: str) -> bool:
         parts = urlsplit(url)
         origin = f"{parts.scheme}://{parts.netloc}"
         if origin not in self._robots:
-            parser: RobotFileParser | None = RobotFileParser()
+            parser: Protego | None = None
             await PACER.wait(origin, self._interval)
             try:
                 response, _ = await self._send(f"{origin}/robots.txt", None)
                 await response.aread()
                 if response.status_code in (401, 403):
-                    parser.disallow_all = True  # type: ignore[union-attr]
-                elif response.status_code >= 400:
-                    parser = None  # no robots.txt: everything is allowed
-                else:
-                    parser.parse(response.text.splitlines())  # type: ignore[union-attr]
+                    # A robots.txt behind a login reads as "keep out" (RFC 9309 2.3.1.3 says
+                    # unreachable may mean allowed; a refusal is taken as the site's answer).
+                    parser = Protego.parse("User-agent: *\nDisallow: /\n")
+                elif response.status_code < 400:
+                    parser = Protego.parse(response.text)
             except (httpx.HTTPError, OutOfScope):
                 parser = None
             self._robots[origin] = parser
+            delay = parser.crawl_delay(USER_AGENT) if parser is not None else None
+            if delay:
+                # Kept, but bounded: a robots.txt asking an hour between pages would hold a run
+                # open for days; MAX_CRAWL_DELAY_S is the most a run waits per page.
+                self._delays[origin] = min(float(delay), MAX_CRAWL_DELAY_S)
         robots = self._robots[origin]
-        return robots is None or robots.can_fetch(USER_AGENT, url)
+        return robots is None or robots.can_fetch(url, USER_AGENT)
+
+    def _pace(self, url: str) -> float:
+        parts = urlsplit(url)
+        return max(self._interval, self._delays.get(f"{parts.scheme}://{parts.netloc}", 0.0))
 
     async def _send(self, url: str, headers: dict[str, str] | None) -> tuple[httpx.Response, str]:
         """The final response and its URL; redirects are followed by hand so that each hop is
@@ -255,7 +271,7 @@ class Fetcher:
         """None when robots.txt forbids the page: no request is made at all."""
         if not await self._allowed(url):
             return None
-        await PACER.wait(url, self._interval)
+        await PACER.wait(url, self._pace(url))
         try:
             response, final = await self._send(url, headers)
             try:
@@ -286,12 +302,19 @@ def links(page: Fetched, domains: Iterable[str]) -> list[str]:
         doc = html.fromstring(html_text(page.content, page.content_type or ""), base_url=page.url)
     except ValueError:
         return []
-    seen: dict[str, None] = {}
+    seen: dict[str, str] = {}
     for href in doc.xpath("//a/@href"):
-        url = urldefrag(urljoin(page.url, str(href)))[0]
+        url = urljoin(page.url, str(href)).split("#", 1)[0]
         if urlsplit(url).scheme in ("http", "https") and in_domains(url, domains):
-            seen.setdefault(url, None)
-    return list(seen)
+            seen.setdefault(page_key(url), url)
+    return list(seen.values())
+
+
+def page_key(url: str) -> str:
+    """What makes two links one page: w3lib's canonical form (scheme and host case, default
+    port, percent-encoding, query order, no fragment). Only the key: the link is fetched as
+    written, since a site may read its query in order."""
+    return canonicalize_url(url)
 
 
 async def crawl(
@@ -305,7 +328,7 @@ async def crawl(
 ) -> tuple[list[Fetched], int]:
     """(pages fetched, requests refused by robots.txt). Breadth-first; one visit per URL."""
     queue = [(url, 0) for url in seeds if in_domains(url, domains)]
-    seen = {url for url, _ in queue}
+    seen = {page_key(url) for url, _ in queue}
     pages: list[Fetched] = []
     refused = 0
     while queue and len(pages) < MAX_PAGES:
@@ -317,8 +340,8 @@ async def crawl(
         pages.append(page)
         if follow and depth < max_depth:
             for link in links(page, domains):
-                if link not in seen:
-                    seen.add(link)
+                if page_key(link) not in seen:
+                    seen.add(page_key(link))
                     queue.append((link, depth + 1))
     return pages, refused
 

@@ -9,3 +9,6 @@ cssselect==1.2.0
 aioboto3==15.5.0
 # OpenBao: AppRole login and KV v2 reads (libs/openbao).
 hvac==2.4.0
+# robots.txt as RFC 9309 reads it (wildcards, Crawl-delay) and one key per page (fetch.py).
+protego==0.7.0
+w3lib==2.5.0

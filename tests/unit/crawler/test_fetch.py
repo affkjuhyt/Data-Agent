@@ -124,6 +124,49 @@ async def test_one_request_per_second_per_domain_whatever_the_source_asks(site: 
     assert all(later - earlier >= 0.95 for earlier, later in pairwise(times))
 
 
+async def test_robots_wildcards_are_read_as_rfc_9309_says(
+    site: Site, fast: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The standard library's parser has no "*" or "$": it allowed every PDF here.
+    robots = b"User-agent: *\nDisallow: /*.pdf$\n"
+    monkeypatch.setitem(SITE, "/robots.txt", (200, {"content-type": "text/plain"}, robots))
+    async with fetch.client() as http:
+        fetcher = fetch.Fetcher(http, domains=["localhost"], rate_limit_rps=1)
+        assert await fetcher.get(f"{site.base}/files/report.pdf") is None
+        assert await fetcher.get(f"{site.base}/b") is not None
+    assert not any(path.endswith(".pdf") for _, path in site.hits)
+
+
+async def test_a_crawl_delay_is_kept(
+    site: Site, fast: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    robots = b"User-agent: *\nCrawl-delay: 1.5\n"
+    monkeypatch.setitem(SITE, "/robots.txt", (200, {"content-type": "text/plain"}, robots))
+    async with fetch.client() as http:
+        fetcher = fetch.Fetcher(http, domains=["localhost"], rate_limit_rps=1)
+        for path in ("/a", "/b"):
+            await fetcher.get(f"{site.base}{path}")
+    pages = [t for t, path in site.hits if path in ("/a", "/b")]
+    assert len(pages) == 2 and pages[1] - pages[0] >= 1.45
+
+
+async def test_one_page_under_several_spellings_is_visited_once(
+    site: Site, fast: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    port = site.base.rsplit(":", 1)[1]
+    listing = (
+        f'<a href="/b?y=2&x=1">1</a><a href="/b?x=1&y=2">2</a>'
+        f'<a href="HTTP://LOCALHOST:{port}/b?x=1&y=2#top">3</a>'
+    ).encode()
+    monkeypatch.setitem(SITE, "/dups", (200, {"content-type": "text/html"}, listing))
+    async with fetch.client() as http:
+        fetcher = fetch.Fetcher(http, domains=["localhost"], rate_limit_rps=1)
+        pages, _ = await fetch.crawl(
+            fetcher, [f"{site.base}/dups"], ["localhost"], follow=True, max_depth=1
+        )
+    assert len([p for p in pages if "/b?" in p.url]) == 1
+
+
 def test_domains_cover_their_subdomains_only() -> None:
     assert fetch.in_domains("https://www.bank.example.vn/x", ["bank.example.vn"])
     assert not fetch.in_domains("https://evilbank.example.vn/x", ["bank.example.vn"])
