@@ -13,6 +13,7 @@ import { RefusalCard } from '../components/RefusalCard';
 import { VerifierBadge } from '../components/VerifierBadge';
 import { answerTrust } from '../trust';
 import type { AskMessage, Citation, ClarificationReply } from '../types';
+import type { TurnStep } from '../steps';
 import { AnswerBlocks } from './blocks/AnswerBlocks';
 import { StepTimeline } from './StepTimeline';
 import { TurnFooter } from './TurnFooter';
@@ -31,6 +32,18 @@ async function downloadAnswerXlsx(answerId: string) {
   if (job.download_url) window.location.assign(job.download_url);
 }
 
+function forecastIdOf(steps: TurnStep[] | undefined): string | null {
+  for (const step of steps ?? []) {
+    const id = step.detail?.forecast_id;
+    if (typeof id === 'string' && id) return id;
+    for (const child of step.children) {
+      const nested = child.detail?.forecast_id;
+      if (typeof nested === 'string' && nested) return nested;
+    }
+  }
+  return null;
+}
+
 const TRUST_DOT = { success: 'success', primary: 'primary', warning: 'warning', info: 'info', neutral: 'neutral' } as const;
 
 export function AssistantTurn({
@@ -46,6 +59,7 @@ export function AssistantTurn({
   onRetryRefusal,
   onRephrase,
   onOpenCitation,
+  onOpenForecast,
   onExportCsv,
   reported = false,
 }: {
@@ -63,6 +77,8 @@ export function AssistantTurn({
   onRetryRefusal?: () => void;
   onRephrase?: () => void;
   onOpenCitation?: (citation: Citation) => void;
+  /** Opens Forecast Studio / the job for what-if — not embedded in chat. */
+  onOpenForecast?: (forecastId: string) => void;
   onExportCsv?: (message: AskMessage) => void;
 }) {
   const running = message.status === 'streaming';
@@ -71,6 +87,7 @@ export function AssistantTurn({
   const [picked, setPicked] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const run = message.evidence?.runs[0] ?? null;
+  const forecastId = useMemo(() => forecastIdOf(message.steps), [message.steps]);
   // Every finished answer carries a trust label (invariant 14): the one the server gave, else the
   // one its runs and citations imply, down to "no evidence".
   const trust = useMemo(
@@ -137,6 +154,15 @@ export function AssistantTurn({
           {message.verification && <ConfidenceMeter verification={message.verification} />}
           {reported && <Badge tone="warning">Đang kiểm tra</Badge>}
           {message.verification && <VerifierBadge verification={message.verification} />}
+          {forecastId && onOpenForecast && (
+            <button
+              type="button"
+              onClick={() => onOpenForecast(forecastId)}
+              className="text-primary da-body-strong hover:underline"
+            >
+              Mở studio / kịch bản
+            </button>
+          )}
         </div>
       )}
 

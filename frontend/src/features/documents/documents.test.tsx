@@ -10,7 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { ToastProvider } from '../../design-system/Toast';
 import { createHandlers } from '../../mocks/handlers';
 import { CreateCollectionDialog } from './CollectionDialogs';
-import DocumentAnswerPage from './DocumentAnswerPage';
+import RedirectToAsk from '../ask/RedirectToAsk';
 import DocumentsPage from './DocumentsPage';
 import DocumentViewerPage from './DocumentViewerPage';
 import ExtractionSchemaPage from './ExtractionSchemaPage';
@@ -270,33 +270,10 @@ describe('ExtractionSchemaPage', () => {
   });
 });
 
-describe('DocumentAnswerPage', () => {
-  it('answers with citations and opens the cited passage', async () => {
-    wrap(<DocumentAnswerPage />);
-    fireEvent.change(await screen.findByRole('textbox'), {
-      target: { value: 'Khoản cơ cấu lại lần 2 phải xếp vào nhóm nợ nào?' },
-    });
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
-    expect(await screen.findByText(/tối thiểu vào nhóm 3/)).toBeInTheDocument();
-    expect(screen.getByText('Đã được thay thế bởi QĐ 845/2026')).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { name: '[1] TT 31/2024/TT-NHNN · Điều 10, khoản 3' }),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /QĐ 1120\/2023/ }));
-    expect(screen.getByText(/chỉ trích để nói điều đó/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Mở đoạn gốc' }));
-    expect(navigate).toHaveBeenCalledWith('data', 'DOCUMENT', 'doc-qd1120');
-  });
-
-  it('says so when nothing answers the question', async () => {
-    wrap(<DocumentAnswerPage />);
-    fireEvent.change(await screen.findByRole('textbox'), {
-      target: { value: 'Văn bản nào nói về giá vàng hôm nay?' },
-    });
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
-    expect(await screen.findByText(/Không tìm thấy đoạn nào trả lời/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Mở đoạn gốc' })).toBeNull();
+describe('DOC_ASK redirect', () => {
+  it('sends the legacy document ask URL to Ask', () => {
+    wrap(<RedirectToAsk />);
+    expect(navigate).toHaveBeenCalledWith('analysis', 'ASK');
   });
 });
 

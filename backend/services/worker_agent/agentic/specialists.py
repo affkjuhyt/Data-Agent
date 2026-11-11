@@ -65,16 +65,18 @@ NUMBERS = Specialist(
             "explain_change",
             "explore_sql",
             "analyze",
+            "forecast_metric",
         }
     ),
     when_to_use=(
-        "câu hỏi cần số / so sánh / xu hướng / xếp hạng trên chỉ số hoặc SQL khám phá; "
+        "câu hỏi cần số / so sánh / xu hướng / xếp hạng / dự báo trên chỉ số hoặc SQL khám phá; "
         "hoặc nhánh số của câu hybrid (song song với documents)"
     ),
     system=(
         "Bạn là chuyên gia số liệu trong Data Space. Chỉ dùng các công cụ số được liệt kê. "
         "Không tìm tài liệu, không viết câu trả lời cuối. Khi đủ số trên workspace, done=true "
-        "và summary mô tả dataset/con số đã có (không bịa số ngoài quan sát)."
+        "và summary mô tả dataset/con số đã có (không bịa số ngoài quan sát). "
+        "Câu hỏi dự báo / forecast: dùng forecast_metric (không bịa số dự báo bằng lời)."
     ),
 )
 
@@ -123,6 +125,9 @@ async def run(
         )
     transcript: list[str] = []
     datasets: list[str] = []
+    # Surface ids Ask needs on the lead step (e.g. forecast_id → "Mở studio"), not the full
+    # inner transcript.
+    forwarded: dict[str, Any] = {}
     system = (
         f"{specialist.system}\n\n# Công cụ được phép\n{_cards(tools, allow)}\n\n"
         "# Định dạng\n"
@@ -153,7 +158,11 @@ async def run(
                 True,
                 cut(summary),
                 datasets=list(dict.fromkeys(datasets)),
-                detail={"specialist": specialist.name, "inner_steps": len(transcript)},
+                detail={
+                    "specialist": specialist.name,
+                    "inner_steps": len(transcript),
+                    **forwarded,
+                },
             )
         name = (choice.tool or "").strip()
         if name not in allow:
@@ -176,6 +185,8 @@ async def run(
             transcript.append(f"- {name}: lỗi {type(exc).__name__}")
             continue
         datasets.extend(result.datasets)
+        if isinstance(result.detail.get("forecast_id"), str):
+            forwarded["forecast_id"] = result.detail["forecast_id"]
         note = choice.instruction.strip() or name
         transcript.append(f"- {name} ({note}): {cut(result.observation, 500)}")
         if result.clarify is not None:
@@ -183,7 +194,7 @@ async def run(
                 result.ok,
                 cut(result.observation),
                 datasets=list(dict.fromkeys(datasets)),
-                detail={"specialist": specialist.name},
+                detail={"specialist": specialist.name, **forwarded},
                 clarify=result.clarify,
                 failure=result.failure,
             )
@@ -192,7 +203,7 @@ async def run(
                 False,
                 cut(result.observation),
                 datasets=list(dict.fromkeys(datasets)),
-                detail={"specialist": specialist.name},
+                detail={"specialist": specialist.name, **forwarded},
                 failure="forbidden",
             )
     return ToolResult(
@@ -200,5 +211,5 @@ async def run(
         f"chuyên gia {specialist.name}: hết {specialist.max_inner_steps} bước trong mà chưa tóm tắt",
         datasets=list(dict.fromkeys(datasets)),
         failure="logic",
-        detail={"specialist": specialist.name, "transcript": transcript[-6:]},
+        detail={"specialist": specialist.name, "transcript": transcript[-6:], **forwarded},
     )

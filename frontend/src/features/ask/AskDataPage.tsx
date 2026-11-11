@@ -10,14 +10,15 @@
  * Questions go to POST /v1/questions and are followed on their stream (useQuestionStream). The
  * thread is durable on the server: `/analysis/ask/<conversation_id>` reopens it (R1-13).
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { useToast } from '../../design-system/Toast';
 import type { Feedback } from '../../lib/v1/answerReports';
 import { getExploreModel } from '../../lib/v1/explore';
 import { saveAnswerToSession } from '../../lib/v1/questions';
+import { listCollections } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
-import { starterQuestions } from '../../lib/sampleQuestion';
+import { documentStarterQuestions, starterQuestions } from '../../lib/sampleQuestion';
 import { ReceiptDrawer } from '../answer-receipt/AnswerReceiptPage';
 import { requestPage } from '../documents/focusPage';
 import { SaveToSessionDialog } from '../explore/SaveToSessionDialog';
@@ -29,6 +30,7 @@ import { ConversationPanel, useRecentChats } from './chat/ConversationPanel';
 import { EmptyChat } from './chat/EmptyChat';
 import { Thread } from './chat/Thread';
 import { AnswerTheme } from './components/AnswerTheme';
+import { CitationPassagePanel } from './components/CitationPassagePanel';
 import { ReportDialog } from './components/ReportDialog';
 import { csvFileName, downloadCsv, toCsv } from './exportCsv';
 import { useQuestionStream } from './hooks/useQuestionStream';
@@ -37,15 +39,21 @@ import type { AskMessage, Citation } from './types';
 export default function AskDataPage() {
   const { user, navigate, routeId } = useAppState();
   const toast = useToast();
-  // Starters from the Data Space's own certified metrics, not examples of another business.
+  // Starters from the Data Space's own certified metrics, plus document hints when collections exist.
   const model = useV1(['getExploreModel'], getExploreModel);
-  const starters = starterQuestions(model.data);
+  const collections = useV1(['listCollections'], listCollections);
+  const starters = useMemo(() => {
+    const metric = starterQuestions(model.data, 3);
+    const docs = documentStarterQuestions((collections.data?.items?.length ?? 0) > 0);
+    return [...metric, ...docs];
+  }, [model.data, collections.data]);
 
   const [reportFor, setReportFor] = useState<AskMessage | null>(null);
   const [receiptFor, setReceiptFor] = useState<string | null>(null);
   const [knowledgeFor, setKnowledgeFor] = useState<string | null>(null);
   const [sessionFor, setSessionFor] = useState<AskMessage | null>(null);
   const [reported, setReported] = useState<Record<string, Feedback>>({});
+  const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
 
   // The agent that answers is chosen by the system: POST /v1/questions has no agent field (A3).
   const {
@@ -120,6 +128,15 @@ export default function AskDataPage() {
   }, [routeId, ask]);
 
   const openCitation = (c: Citation) => {
+    if (c.type === 'document') {
+      setSelectedCitation(c);
+      return;
+    }
+    if (!c.doc_id) return;
+    requestPage(c.doc_id, c.page);
+    navigate('data', 'DOCUMENT', c.doc_id);
+  };
+  const openCitationViewer = (c: Citation) => {
     if (!c.doc_id) return;
     requestPage(c.doc_id, c.page);
     navigate('data', 'DOCUMENT', c.doc_id);
@@ -179,6 +196,7 @@ export default function AskDataPage() {
                 onAsk: ask,
                 onAnswerClarification: (id, reply) => void answerClarification(id, reply),
                 onOpenCitation: openCitation,
+                onOpenForecast: (forecastId) => navigate('analysis', 'FORECAST_JOB', forecastId),
                 onExportCsv: exportCsv,
               }}
             />
@@ -195,6 +213,11 @@ export default function AskDataPage() {
           </div>
         )}
       </section>
+      <CitationPassagePanel
+        citation={selectedCitation}
+        onOpen={openCitationViewer}
+        onClose={() => setSelectedCitation(null)}
+      />
 
       {/* The receipt opens over the conversation, so the turns stay. */}
       <ReceiptDrawer answerId={receiptFor} onClose={() => setReceiptFor(null)} />

@@ -95,7 +95,7 @@ const WatchCreatePage = React.lazy(() => import('./features/monitoring/WatchCrea
 const AlertPage = React.lazy(() => import('./features/monitoring/AlertPage'));
 const ReportSetupPage = React.lazy(() => import('./features/monitoring/ReportSetupPage'));
 const DigestPage = React.lazy(() => import('./features/monitoring/DigestPage'));
-const DocumentAnswerPage = React.lazy(() => import('./features/documents/DocumentAnswerPage'));
+const RedirectToAsk = React.lazy(() => import('./features/ask/RedirectToAsk'));
 const DocumentsPage = React.lazy(() => import('./features/documents/DocumentsPage'));
 const DocumentViewerPage = React.lazy(() => import('./features/documents/DocumentViewerPage'));
 const QualityQueuePage = React.lazy(() => import('./features/documents/QualityQueuePage'));
@@ -188,7 +188,8 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     // /analysis/receipt/<answer id>: an answer's receipt on its own page (shared link, notification);
     // from Hỏi đáp it opens as a drawer over the conversation.
     RECEIPT:         { render: () => <AnswerReceiptPage /> },
-    DOC_ASK:         { render: () => <DocumentAnswerPage /> },
+    // Legacy bookmark: document Q&A lives on Ask (search_documents / citations panel).
+    DOC_ASK:         { render: () => <RedirectToAsk /> },
     WATCH:           { render: () => <WatchListPage /> },
     WATCH_NEW:       { render: () => <WatchCreatePage /> },
     // /analysis/alerts opens the newest open alert, /analysis/alerts/<id> one alert.

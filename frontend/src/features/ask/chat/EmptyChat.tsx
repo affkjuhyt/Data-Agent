@@ -25,9 +25,10 @@ export function EmptyChat({
         <span className="inline-flex size-14 items-center justify-center rounded-2xl bg-accent text-primary">
           <Icon name="sparkles" size={16} />
         </span>
-        <h2 className="m-0 text-foreground da-heading-2">Xin chào {name}, bạn muốn khám phá dữ liệu nào?</h2>
+        <h2 className="m-0 text-foreground da-heading-2">Xin chào {name}, bạn muốn hỏi gì?</h2>
         <p className="m-0 text-muted-foreground da-body">
-          Hỏi bằng lời thường; agent chọn chỉ số, truy vấn và cho bạn xem từng bước nó làm.
+          Hỏi số liệu, tài liệu hay dự báo bằng lời thường; agent chọn chỉ số, văn bản hoặc mô hình và
+          cho bạn xem từng bước nó làm.
         </p>
       </div>
       {composer}

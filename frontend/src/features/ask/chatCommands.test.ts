@@ -19,10 +19,12 @@ describe('chat commands', () => {
   it('turns supported modes into explicit agent prompts', () => {
     expect(commandPrompt('sql', 'doanh thu 2026')).toContain('hiển thị SQL đã chạy');
     expect(commandPrompt('report', 'doanh thu 2026')).toContain('nội dung báo cáo');
+    expect(commandPrompt('forecast', 'DOANH_THU_INTERNET 3 tháng')).toContain('Dự báo');
   });
 
   it('provides a discoverable help message', () => {
     expect(commandHelp()).toContain('/chart');
+    expect(commandHelp()).toContain('/forecast');
     expect(commandHelp()).toContain('/new');
   });
 });

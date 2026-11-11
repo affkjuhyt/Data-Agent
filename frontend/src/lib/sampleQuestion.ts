@@ -48,3 +48,15 @@ export function starterQuestions(model: ExploreModel | null | undefined, count =
   });
   return out;
 }
+
+/**
+ * Document-oriented starters when the Data Space has at least one collection. Kept generic so a
+ * space never sees another industry's policy names; Ask's agentic path uses search_documents.
+ */
+export function documentStarterQuestions(hasCollections: boolean, count = 2): string[] {
+  if (!hasCollections) return [];
+  return [
+    'Quy định hoặc chính sách nào đang hiệu lực liên quan đến chủ đề này?',
+    'Trong tài liệu, định nghĩa hoặc điều khoản nào trả lời câu hỏi này?',
+  ].slice(0, count);
+}

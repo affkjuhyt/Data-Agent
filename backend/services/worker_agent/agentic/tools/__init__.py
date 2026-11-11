@@ -11,6 +11,7 @@ from services.worker_agent.agentic.tools.catalog import DescribeMetric, SearchCa
 from services.worker_agent.agentic.tools.coverage import DataCoverage
 from services.worker_agent.agentic.tools.documents import SearchDocuments
 from services.worker_agent.agentic.tools.explain import ExplainChange
+from services.worker_agent.agentic.tools.forecast import ForecastMetric
 from services.worker_agent.agentic.tools.query import ExploreSql, QueryMetric
 from services.worker_agent.agentic.tools.specialists import InvestigateDocuments, InvestigateNumbers
 
@@ -57,6 +58,7 @@ TOOLS: dict[str, Tool] = {
         ExploreSql(),
         *([Analyze()] if python_enabled() else []),
         SearchDocuments(),
+        ForecastMetric(),
         InvestigateNumbers(),
         InvestigateDocuments(),
         AskUser(),

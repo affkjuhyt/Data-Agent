@@ -1,4 +1,12 @@
-export type ChatCommandName = 'chart' | 'sql' | 'data' | 'report' | 'status' | 'help' | 'new';
+export type ChatCommandName =
+  | 'chart'
+  | 'sql'
+  | 'data'
+  | 'report'
+  | 'forecast'
+  | 'status'
+  | 'help'
+  | 'new';
 
 export interface ChatCommand {
   name: ChatCommandName;
@@ -12,6 +20,12 @@ export const CHAT_COMMANDS: readonly ChatCommand[] = [
   { name: 'sql', label: '/sql', description: 'Hiển thị SQL và kết quả đã chạy', argumentHint: 'Bạn muốn kiểm tra câu SQL nào…' },
   { name: 'data', label: '/data', description: 'Khám phá bảng và dữ liệu trong Data Space', argumentHint: 'Bạn muốn khám phá dữ liệu nào…' },
   { name: 'report', label: '/report', description: 'Chuẩn bị nội dung báo cáo từ câu hỏi', argumentHint: 'Báo cáo cần phân tích nội dung gì…' },
+  {
+    name: 'forecast',
+    label: '/forecast',
+    description: 'Dự báo chỉ số kèm khoảng tin cậy (studio what-if mở riêng)',
+    argumentHint: 'chỉ số và số kỳ, ví dụ DOANH_THU_INTERNET 3 tháng',
+  },
   { name: 'status', label: '/status', description: 'Xem trạng thái turn và queue hiện tại' },
   { name: 'help', label: '/help', description: 'Xem các lệnh chat có thể dùng' },
   { name: 'new', label: '/new', description: 'Bắt đầu hội thoại mới' },
@@ -38,6 +52,7 @@ export function commandPrompt(command: ChatCommandName, argument: string): strin
     sql: `Phân tích câu hỏi sau, đồng thời hiển thị SQL đã chạy và giải thích kết quả: ${subject}`,
     data: `Khám phá dữ liệu trong Data Space cho yêu cầu sau, gồm các chiều và kết quả phù hợp: ${subject}`,
     report: `Chuẩn bị nội dung báo cáo phân tích cho yêu cầu sau, gồm kết quả, biểu đồ và insight: ${subject}`,
+    forecast: `Dự báo ${subject}: dùng mô hình đã phát hành, trả mean và khoảng tin cậy 80%/95% theo kỳ; không what-if trong chat`,
   };
   return prompts[command as Exclude<ChatCommandName, 'status' | 'help' | 'new'>] ?? subject;
 }

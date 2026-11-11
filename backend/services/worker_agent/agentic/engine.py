@@ -971,7 +971,7 @@ def _checked(
     return block
 
 
-FETCHING = frozenset({"query_metric", "explore_sql", "search_documents"})
+FETCHING = frozenset({"query_metric", "explore_sql", "search_documents", "forecast_metric"})
 
 
 def _append_caveats(s: State) -> None:
@@ -996,6 +996,14 @@ def _append_caveats(s: State) -> None:
                     if ds.agreement_clear
                     else " Nên kiểm lại trước khi dùng: các cách viết" " chưa đồng thuận rõ."
                 )
+            )
+        elif ds.id in used and ds.tool == "forecast_metric":
+            reading = ds.reading or {}
+            algo = reading.get("algorithm") or "chưa rõ"
+            cutoff = reading.get("cutoff_at") or "?"
+            items.append(
+                f"{ds.title}: dự báo thăm dò (mean + khoảng 80%/95%), không phải chỉ số chuẩn; "
+                f"mô hình {algo}; cắt dữ liệu tại {cutoff}."
             )
         elif ds.id in used and ds.trust != "certified":
             items.append(f"{ds.title}: {TRUST_LABEL[ds.trust]}.")

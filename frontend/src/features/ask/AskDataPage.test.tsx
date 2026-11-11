@@ -85,7 +85,7 @@ describe('AskDataPage', () => {
 
   it('starts from a greeting, the starters and the recent chats, and asks what is typed', async () => {
     wrap(<AskDataPage />);
-    expect(screen.getByRole('heading', { name: /Xin chào Đỗ Hải Yến/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Xin chào Đỗ Hải Yến, bạn muốn hỏi gì/ })).toBeInTheDocument();
     expect(await screen.findAllByText('Doanh thu Internet 2013')).not.toHaveLength(0);
     const box = screen.getByRole('textbox', { name: 'Câu hỏi' });
     fireEvent.change(box, { target: { value: 'Tồn kho cuối năm 2013' } });

@@ -208,6 +208,21 @@ function Body({ step }: { step: TurnStep }) {
           </ul>
         </div>
       );
+    case 'forecast_metric':
+      return (
+        <Pairs
+          rows={[
+            ['Chỉ số', str(d.metric)],
+            ['Tần suất', str(d.frequency)],
+            ['Số kỳ', d.horizon !== undefined ? str(d.horizon) : ''],
+            ['Trạng thái', str(d.status)],
+            ['Mô hình', str(d.algorithm)],
+            ['Cắt dữ liệu', str(d.cutoff_at)],
+            ['Kết quả', d.row_count !== undefined ? `${str(d.row_count)} kỳ` : ''],
+            ['Mã việc', str(d.forecast_id)],
+          ]}
+        />
+      );
     case 'ask_user':
       return (
         <div className="flex flex-col gap-[2px] da-caption">
