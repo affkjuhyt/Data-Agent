@@ -465,6 +465,7 @@ def _gate_state(question: str, ws: Workspace, values: list[Any]) -> Any:
 def test_a_member_the_question_names_but_no_dataset_used_hands_the_question_back() -> None:
     from services.worker_agent.agentic import engine
     from services.worker_agent.understand.resolver import ValueEntry
+    from services.worker_agent.understand.value_retrieval import profile_supplements
 
     bikes = ValueEntry("nhom_hang", "Bikes", "Bikes")
     total = Workspace()
@@ -494,6 +495,29 @@ def test_a_member_the_question_names_but_no_dataset_used_hands_the_question_back
     assert (
         engine._dropped_members(
             _gate_state("Doanh thu Internet nhóm hàng Bikes năm 2013", filtered, [bikes])
+        )
+        == []
+    )
+
+    # Empty value_index: loader would merge column-profile top_values (RES-03).
+    from_profile = [
+        ValueEntry(dim, code, label)
+        for dim, code, label in profile_supplements(
+            [],
+            [
+                (
+                    "nhom_hang",
+                    [{"value": "Bikes", "count": 40}, {"value": "Components", "count": 20}],
+                )
+            ],
+        )
+    ]
+    assert engine._dropped_members(
+        _gate_state("Doanh thu Internet nhóm hàng Bikes năm 2013", total, from_profile)
+    ) == ["Bikes"]
+    assert (
+        engine._dropped_members(
+            _gate_state("Doanh thu Internet nhóm hàng Bikes năm 2013", total, [])
         )
         == []
     )
@@ -643,9 +667,10 @@ def test_explore_sql_bans_audited_sql_on_the_shared_context(
 
     async def fake_explore(*_a, refuse=(), **_k):  # type: ignore[no-untyped-def]
         calls["n"] += 1
-        assert fingerprint(bad_sql, "postgres") in {
-            fingerprint(s, "postgres") for s in refuse
-        } or calls["n"] == 1
+        assert (
+            fingerprint(bad_sql, "postgres") in {fingerprint(s, "postgres") for s in refuse}
+            or calls["n"] == 1
+        )
         return Exploration(
             decision="answer",
             confidence=1.0,
@@ -659,9 +684,7 @@ def test_explore_sql_bans_audited_sql_on_the_shared_context(
             models=["m"],
         )
 
-    monkeypatch.setattr(
-        "services.worker_agent.agentic.tools.query.explore", fake_explore
-    )
+    monkeypatch.setattr("services.worker_agent.agentic.tools.query.explore", fake_explore)
 
     async def fake_load_space(*_a, **_k):
         return types.SimpleNamespace(
@@ -669,9 +692,7 @@ def test_explore_sql_bans_audited_sql_on_the_shared_context(
             source_of={},
         )
 
-    monkeypatch.setattr(
-        "services.worker_agent.agentic.tools.query.load_space", fake_load_space
-    )
+    monkeypatch.setattr("services.worker_agent.agentic.tools.query.load_space", fake_load_space)
     monkeypatch.setattr(
         "services.worker_agent.agentic.tools.query.link",
         lambda *_a, **_k: types.SimpleNamespace(

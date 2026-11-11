@@ -12,6 +12,7 @@ from services.worker_agent.understand.value_retrieval import (
     dimension_column,
     index_entries,
     index_writes,
+    profile_supplements,
     sem_value_retrieval,
     similarity,
 )
@@ -109,6 +110,31 @@ def test_a_dimension_expression_names_its_column() -> None:
     assert dimension_column("branch") == "branch"
     assert dimension_column('"branch"') == "branch"
     assert dimension_column("SUM(qty_on_hand)") is None
+
+
+def test_empty_value_index_is_filled_from_column_profiles() -> None:
+    # RES-03: DS-AW has no value_index rows; column profiles still hold "Bikes".
+    added = profile_supplements(
+        [],
+        [
+            (
+                "nhom_hang",
+                [
+                    {"value": "Bikes", "count": 120},
+                    {"value": "Components", "count": 80},
+                    {"value": "100", "count": 3},
+                ],
+            )
+        ],
+    )
+    assert added == [
+        ("nhom_hang", "Bikes", "Bikes"),
+        ("nhom_hang", "Components", "Components"),
+    ]
+    assert profile_supplements(
+        [("nhom_hang", "Bikes")],
+        [("nhom_hang", [{"value": "Bikes", "count": 1}, {"value": "Accessories", "count": 2}])],
+    ) == [("nhom_hang", "Accessories", "Accessories")]
 
 
 def test_a_profile_fills_only_the_dimension_on_that_column() -> None:

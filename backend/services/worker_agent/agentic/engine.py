@@ -65,6 +65,7 @@ from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import analyst
 from services.worker_agent.understand.resolver import metric_words, quantity_words
 from services.worker_agent.understand.text import find_period, norm
+from services.worker_agent.understand.value_retrieval import sem_value_retrieval
 
 logger = logging.getLogger(__name__)
 
@@ -713,15 +714,16 @@ def _unnamed_quantity(s: State) -> list[str]:
 
 def _named_members(s: State) -> list[tuple[str, str, str]]:
     """The dimension members the question names, by label or approved synonym, as (dimension,
-    code, label): whole words, at least three letters, numbers left to the period reader."""
+    code, label). Uses value retrieval (exact then near match) over value_index and, when that is
+    empty, the column-profile supplements the loader added (RES-03)."""
     assert s.ctx is not None
     text = f" {norm(s.ctx.question)} "
     vocab = s.ctx.layer.vocabulary
     found: dict[tuple[str, str], str] = {}
-    for v in vocab.values:
-        label = norm(v.label)
-        if len(label) >= 3 and not label.replace(" ", "").isdigit() and f" {label} " in text:
-            found[(v.dimension_code, v.value_code)] = v.label
+    for hit in sem_value_retrieval(s.ctx.question, vocab.values):
+        if len(norm(hit.label)) < 3 or norm(hit.label).replace(" ", "").isdigit():
+            continue
+        found[(hit.dimension_code, hit.value_code)] = hit.label
     for phrase, target in vocab.synonyms.items():
         if target[0] == "value" and len(phrase) >= 3 and f" {phrase} " in text:
             found.setdefault((target[1], target[2]), phrase)

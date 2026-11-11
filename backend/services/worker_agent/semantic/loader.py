@@ -30,6 +30,7 @@ from services.worker_agent.understand.resolver import (
     ValueEntry,
     Vocabulary,
 )
+from services.worker_agent.understand.value_retrieval import dimension_column, profile_supplements
 
 
 @dataclass(frozen=True)
@@ -261,6 +262,63 @@ async def load(
             )
         )
     ).all()
+    # RES-03: when value_index is empty (or missing a member), use the column profile the scan
+    # already wrote — same source schema_scans uses to fill the index after a refresh.
+    indexed_entries = [
+        ValueEntry(dim_by_id[v.dimension_id].code, v.value_code, v.value_label)
+        for v in values
+        if v.dimension_id in dim_by_id
+    ]
+    profile_dims = [
+        d
+        for d in dims
+        if d.id in readable
+        and d.value_index_enabled
+        and not d.is_time
+        and entity_dataset.get(d.entity_id) is not None
+        and dimension_column(d.expression) is not None
+    ]
+    if profile_dims:
+        wanted_cols = {
+            (entity_dataset[d.entity_id], dimension_column(d.expression) or "")
+            for d in profile_dims
+        }
+        profile_rows = (
+            await session.execute(
+                select(
+                    catalog.ColumnMeta.dataset_id,
+                    catalog.ColumnMeta.name,
+                    catalog.ColumnProfile.top_values,
+                )
+                .join(
+                    catalog.ColumnProfile,
+                    catalog.ColumnProfile.column_id == catalog.ColumnMeta.id,
+                )
+                .where(
+                    catalog.ColumnMeta.dataset_id.in_({ds for ds, _ in wanted_cols}),
+                    catalog.ColumnMeta.removed_in_version.is_(None),
+                    catalog.ColumnMeta.pii_label.is_(None),
+                )
+            )
+        ).all()
+        top_by_col = {
+            (dataset_id, name): top
+            for dataset_id, name, top in profile_rows
+            if (dataset_id, name) in wanted_cols and top
+        }
+        by_code = {
+            d.code: top_by_col.get(
+                (entity_dataset[d.entity_id], dimension_column(d.expression) or "")
+            )
+            for d in profile_dims
+        }
+        indexed_entries.extend(
+            ValueEntry(dim, code, label)
+            for dim, code, label in profile_supplements(
+                [(v.dimension_code, v.value_code) for v in indexed_entries],
+                [(dim, top) for dim, top in by_code.items() if top is not None],
+            )
+        )
     synonyms = (
         await session.scalars(
             select(ctx.Synonym).where(
@@ -290,11 +348,7 @@ async def load(
             if m.id in version_rows
         ],
         dimensions=[DimensionEntry(d.id, d.code, d.name, d.is_time) for d in dims],
-        values=[
-            ValueEntry(dim_by_id[v.dimension_id].code, v.value_code, v.value_label)
-            for v in values
-            if v.dimension_id in dim_by_id
-        ],
+        values=indexed_entries,
         synonyms=targets,
         calendar=calendar,
     )

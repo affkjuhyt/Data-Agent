@@ -239,6 +239,28 @@ def index_entries(top_values: object) -> list[IndexEntry]:
     return entries
 
 
+def profile_supplements(
+    indexed: Sequence[tuple[str, str]],
+    profiles: Sequence[tuple[str, object]],
+) -> list[tuple[str, str, str]]:
+    """(dimension_code, value_code, label) from column profiles when value_index is empty or thin.
+
+    RES-03: DS-AW (and any space before a profile refresh writes value_index) still has
+    `catalog.column_profile.top_values`; those labels must feed `_named_members` so a dropped
+    filter ("Bikes") is caught before compose.
+    """
+    have = set(indexed)
+    out: list[tuple[str, str, str]] = []
+    for dimension_code, top_values in profiles:
+        for entry in index_entries(top_values):
+            key = (dimension_code, entry.value_code)
+            if key in have:
+                continue
+            have.add(key)
+            out.append((dimension_code, entry.value_code, entry.label))
+    return out
+
+
 def _categorical(value: str) -> bool:
     if value == "***" or not 2 <= len(value) <= 80:
         return False
