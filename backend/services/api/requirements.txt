@@ -27,3 +27,5 @@ charset-normalizer==3.5.2
 jsonschema==4.26.0
 # OpenBao: AppRole login, KV v2 and Transit (libs/openbao).
 hvac==2.4.0
+# Calendar-month arithmetic (relativedelta); already pulled in by pandas/botocore, pinned here.
+python-dateutil==2.9.0.post0

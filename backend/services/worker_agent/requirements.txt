@@ -30,3 +30,5 @@ charset-normalizer==3.5.2
 hvac==2.4.0
 # Where a model's quote occurs in a passage (documents/answer.quote_match).
 rapidfuzz==3.14.6
+# Calendar-month arithmetic (relativedelta); already pulled in by pandas/botocore, pinned here.
+python-dateutil==2.9.0.post0

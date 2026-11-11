@@ -43,6 +43,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from dateutil.relativedelta import relativedelta
 from sqlalchemy import String, cast, func, literal, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -98,8 +99,7 @@ def _today() -> datetime.date:
 def _months_before(today: datetime.date, count: int) -> c.Period:
     """The last `count` complete months before the month of `today`."""
     end = today.replace(day=1)
-    index = end.year * 12 + end.month - 1 - count
-    return c.Period(datetime.date(index // 12, index % 12 + 1, 1), end)
+    return c.Period(end - relativedelta(months=count), end)
 
 
 def _month_labels(window: c.Period) -> list[str]:

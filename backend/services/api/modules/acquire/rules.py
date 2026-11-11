@@ -4,12 +4,13 @@ what the CHECKs and triggers of routines/acquire.sql already refuse is not repea
 
 from __future__ import annotations
 
-import calendar
 import datetime
 import re
 import uuid
 from collections.abc import Iterable
 from urllib.parse import urlsplit
+
+from dateutil.relativedelta import relativedelta
 
 from services.api.kernel.problems import FieldError, Problem
 
@@ -108,10 +109,7 @@ def check_secret_ref(secret_ref: str, org_id: uuid.UUID) -> str:
 
 def add_months(moment: datetime.datetime, months: int) -> datetime.datetime:
     """Calendar months, clamped to the month's last day (10/10/2026 + 6 → 10/04/2027)."""
-    index = moment.month - 1 + months
-    year, month = moment.year + index // 12, index % 12 + 1
-    day = min(moment.day, calendar.monthrange(year, month)[1])
-    return moment.replace(year=year, month=month, day=day)
+    return moment + relativedelta(months=months)
 
 
 def legal_review_due(

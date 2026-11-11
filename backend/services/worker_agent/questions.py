@@ -36,6 +36,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from dateutil.relativedelta import relativedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -640,10 +641,7 @@ def _explained_months(u: Understanding) -> int | None:
         return None
     start, end = u.period.start, u.period.end
     for months in (1, 3):
-        index = start.year * 12 + start.month - 1 + months
-        if (months == 1 or start.month % 3 == 1) and end == datetime.date(
-            index // 12, index % 12 + 1, 1
-        ):
+        if (months == 1 or start.month % 3 == 1) and end == start + relativedelta(months=months):
             return months
     return None
 

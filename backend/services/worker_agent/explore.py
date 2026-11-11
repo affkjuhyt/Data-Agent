@@ -16,6 +16,8 @@ import unicodedata
 from collections.abc import Sequence
 from typing import Any
 
+from dateutil.relativedelta import relativedelta
+
 from libs.language import norm
 from services.worker_agent.answer.comparison import period_label
 from services.worker_agent.semantic.compiler import Period
@@ -38,8 +40,7 @@ def grain_of(period: Period) -> str:
 
 
 def _add_months(start: D, months: int) -> D:
-    total = start.year * 12 + start.month - 1 + months
-    return D(total // 12, total % 12 + 1, 1)
+    return (start + relativedelta(months=months)).replace(day=1)
 
 
 def bucket(start: D, grain: str) -> Period:

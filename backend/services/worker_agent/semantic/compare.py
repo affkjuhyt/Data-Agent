@@ -18,11 +18,11 @@ values (G5.15), recomputed on replay.
 
 from __future__ import annotations
 
-import calendar
 import datetime
 import hashlib
 from dataclasses import replace
 
+from dateutil.relativedelta import relativedelta
 from sqlglot import exp, parse_one
 
 from services.worker_agent.semantic.compiler import (
@@ -40,10 +40,8 @@ COMPARE_TO = (PREVIOUS_PERIOD, SAME_PERIOD_LAST_YEAR)
 
 
 def _add_months(day: datetime.date, months: int) -> datetime.date:
-    index = day.year * 12 + day.month - 1 + months
-    year, month = divmod(index, 12)
-    # 29/02 a year back is 28/02: the last day of the month, not an error.
-    return datetime.date(year, month + 1, min(day.day, calendar.monthrange(year, month + 1)[1]))
+    # 29/02 a year back is 28/02: relativedelta clamps to the month's last day, never an error.
+    return day + relativedelta(months=months)
 
 
 def _months_between(period: Period) -> int | None:
