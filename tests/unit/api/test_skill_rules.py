@@ -50,6 +50,16 @@ def test_a_schema_of_the_supported_keywords_passes() -> None:
             {"type": "object", "properties": {"e": {"enum": "north"}}},
             "params_schema.properties.e.enum",
         ),
+        # A subschema there would escape the keyword check (a "pattern" of catastrophic
+        # backtracking run on every run's parameters); the subset takes true or false only.
+        (
+            {"type": "object", "additionalProperties": {"type": "string", "pattern": "(a+)+$"}},
+            "params_schema.additionalProperties",
+        ),
+        (
+            {"type": "object", "properties": {"r": {"type": "array", "items": {"pattern": "x"}}}},
+            "params_schema.properties.r.items",
+        ),
     ],
 )
 def test_a_schema_the_runs_could_not_be_checked_against_is_refused(schema: Any, field: str) -> None:

@@ -81,6 +81,14 @@ def _unsupported(schema: Any, where: str) -> list[FieldError]:
     unknown = sorted(set(schema) - KEYWORDS)
     if unknown:
         errors.append(_error(where, f"Unsupported keywords: {', '.join(unknown)}."))
+    # Every subschema position is walked (properties, items); additionalProperties would be one
+    # more, outside the walk, so it is held to true or false. A subschema there could carry a
+    # keyword the subset refuses, such as a "pattern" that backtracks on every run's parameters.
+    extra = schema.get("additionalProperties")
+    if extra is not None and not isinstance(extra, bool):
+        errors.append(
+            _error(f"{where}.additionalProperties", "additionalProperties is true or false.")
+        )
     kind = schema.get("type")
     if isinstance(kind, str) and kind not in TYPES:
         errors.append(_error(f"{where}.type", f"type is one of {', '.join(TYPES)}."))
