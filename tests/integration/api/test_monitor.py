@@ -375,6 +375,10 @@ async def test_backtest_on_demand(mon: Org) -> None:
         for periods in (0, 37):
             refused = await api.post(url, json={"periods": periods}, headers=mon.headers("owner"))
             assert refused.status_code == 422
+        # The backtest reads the series as the monitor's owner (monitor_backtests.py): a colleague
+        # who may read the monitor may not make it run, as they may not change it.
+        colleague = await api.post(url, headers=mon.headers("colleague"))
+        assert colleague.status_code == 403, colleague.text
         default = await api.post(url, headers=mon.headers("owner"))
         assert default.status_code == 200, default.text
         assert default.json()["backtest"]["periods"] == 12

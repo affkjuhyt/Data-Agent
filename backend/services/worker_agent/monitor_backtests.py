@@ -220,7 +220,10 @@ async def _series(row: monitor.Monitor) -> tuple[Series, str]:
                 request, layer.layer, dialect=dialect_for_source(source.kind)
             )
         except (c.CompileError, SqlRejected) as exc:
-            raise Unjudgeable(f"Không biên dịch được {version.display_name}: {exc}") from exc
+            # The compiler's message can name tables and columns the monitor's readers may not
+            # see; it goes to the log, the result says only what failed.
+            logger.warning("backtest %s: %s did not compile: %s", row.id, version.display_name, exc)
+            raise Unjudgeable(f"Không biên dịch được {version.display_name}.") from exc
     outcome = await run_query(
         org_id=row.org_id,
         data_space_id=space,

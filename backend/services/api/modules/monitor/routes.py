@@ -262,6 +262,8 @@ async def backtest_monitor(
 ) -> MonitorView:
     async with transaction(ROLE, principal) as session:
         row = await _monitor(session, monitor_id, principal, data_space, lock=True)
+        # worker-agent runs the backtest's query as the owner: only the owner asks for it.
+        _owned(row, principal)
         row.backtest = rules.backtest_request(body.periods, now())
         row.updated_by, row.updated_at = principal.user_id, now()
         emit(
