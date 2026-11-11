@@ -23,3 +23,5 @@ sqlglot==25.24.5
 croniter==2.0.5
 # The code page of an uploaded CSV that is not UTF (libs/tabular.decode_text).
 charset-normalizer==3.5.2
+# A skill's parameter schema and the parameters a run brings (modules/skill/rules.py).
+jsonschema==4.26.0

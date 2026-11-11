@@ -1,16 +1,19 @@
 """Rules of the skill module that the database does not hold: the parameter schema a version
 declares and the parameters a run brings (A3 POST /v1/skills/{id}/runs, 422 validation_failed).
 
-The api image carries no JSON Schema library, so this reads the subset a skill's parameters use
-(UC-03-03 step 3: period, metric, dimension, threshold): object properties, required, enum,
-type, string format "date", minimum/maximum and array items. A schema using anything else is
-refused when the version is saved, so a run never meets a keyword it would silently skip.
+Both are checked by jsonschema (Draft 2020-12, with format checking). What a skill may declare
+is still held to the subset its parameters use (UC-03-03 step 3: period, metric, dimension,
+threshold): object properties, required, enum, type, string format "date", minimum/maximum and
+array items. A schema using anything else is refused when the version is saved, so a form or a
+run never meets a keyword the product does not draw or explain.
 """
 
 from __future__ import annotations
 
-import datetime
 from typing import Any
+
+from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.exceptions import ValidationError
 
 from services.api.kernel.problems import FieldError
 
@@ -63,83 +66,90 @@ def _error(field: str, message: str, code: str = "invalid") -> FieldError:
     return FieldError(field=field, code=code, message=message)
 
 
-def schema_errors(schema: Any, where: str = "params_schema") -> list[FieldError]:
-    """Why `schema` is not a parameter schema this module can check runs against."""
+def _path(where: str, path: Any) -> str:
+    out = where
+    for part in path:
+        out += f"[{part}]" if isinstance(part, int) else f".{part}"
+    return out
+
+
+def _unsupported(schema: Any, where: str) -> list[FieldError]:
+    """The product's subset: keywords outside it, at any depth, are refused by name."""
     if not isinstance(schema, dict):
-        return [_error(where, "A JSON Schema object is expected.")]
+        return []
     errors: list[FieldError] = []
     unknown = sorted(set(schema) - KEYWORDS)
     if unknown:
         errors.append(_error(where, f"Unsupported keywords: {', '.join(unknown)}."))
     kind = schema.get("type")
-    if kind is not None and kind not in TYPES:
+    if isinstance(kind, str) and kind not in TYPES:
         errors.append(_error(f"{where}.type", f"type is one of {', '.join(TYPES)}."))
-    if where == "params_schema" and kind != "object":
-        errors.append(_error(f"{where}.type", "The parameters of a skill are an object."))
-    properties = schema.get("properties", {})
-    if not isinstance(properties, dict):
-        errors.append(_error(f"{where}.properties", "properties is an object."))
-        properties = {}
-    for name, sub in properties.items():
-        errors.extend(schema_errors(sub, f"{where}.properties.{name}"))
-    required = schema.get("required", [])
-    if not isinstance(required, list) or not all(isinstance(r, str) for r in required):
-        errors.append(_error(f"{where}.required", "required is a list of property names."))
-    elif missing := sorted(set(required) - set(properties)):
-        errors.append(_error(f"{where}.required", f"Not declared: {', '.join(missing)}."))
-    if "enum" in schema and not isinstance(schema["enum"], list):
-        errors.append(_error(f"{where}.enum", "enum is a list."))
-    if "items" in schema:
-        errors.extend(schema_errors(schema["items"], f"{where}.items"))
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        for name, sub in properties.items():
+            errors.extend(_unsupported(sub, f"{where}.properties.{name}"))
+    errors.extend(_unsupported(schema.get("items"), f"{where}.items"))
     return errors
 
 
-def _type_ok(value: Any, kind: str) -> bool:
-    if kind == "integer":
-        return isinstance(value, int) and not isinstance(value, bool)
-    if kind == "number":
-        return isinstance(value, int | float) and not isinstance(value, bool)
-    if kind == "string":
-        return isinstance(value, str)
-    if kind == "boolean":
-        return isinstance(value, bool)
-    if kind == "array":
-        return isinstance(value, list)
-    return isinstance(value, dict)
+def schema_errors(schema: Any, where: str = "params_schema") -> list[FieldError]:
+    """Why `schema` is not a parameter schema this module can check runs against."""
+    if not isinstance(schema, dict):
+        return [_error(where, "A JSON Schema object is expected.")]
+    errors = _unsupported(schema, where)
+    if schema.get("type") != "object":
+        errors.append(_error(f"{where}.type", "The parameters of a skill are an object."))
+    # A valid schema by the meta-schema: a keyword's own value has the right type ("minimum": "0"
+    # would fail every run that compares to it), a type is one JSON Schema knows.
+    for problem in Draft202012Validator(Draft202012Validator.META_SCHEMA).iter_errors(schema):
+        field = _path(where, problem.absolute_path)
+        if not any(e.field == field for e in errors):
+            errors.append(_error(field, problem.message))
+    properties = schema.get("properties")
+    required = schema.get("required")
+    # JSON Schema allows a required name nothing declares; a skill's form could never ask it.
+    if (
+        isinstance(properties, dict)
+        and isinstance(required, list)
+        and (missing := sorted({r for r in required if isinstance(r, str)} - set(properties)))
+    ):
+        errors.append(_error(f"{where}.required", f"Not declared: {', '.join(missing)}."))
+    return errors
+
+
+# How each failed keyword reads to the caller, as `code`.
+_CODES = {"required": "missing", "additionalProperties": "extra"}
 
 
 def param_errors(schema: dict[str, Any], value: Any, where: str = "params") -> list[FieldError]:
     """Why `value` does not satisfy `schema` (a schema that passed `schema_errors`)."""
-    kind = schema.get("type")
-    if kind is not None and not _type_ok(value, kind):
-        return [_error(where, f"Expected {kind}.", "type")]
-    errors: list[FieldError] = []
-    if "enum" in schema and value not in schema["enum"]:
-        errors.append(_error(where, "Not one of the allowed values.", "enum"))
-    if schema.get("format") == "date" and isinstance(value, str):
-        try:
-            datetime.date.fromisoformat(value)
-        except ValueError:
-            errors.append(_error(where, "Expected a date YYYY-MM-DD.", "format"))
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        if "minimum" in schema and value < schema["minimum"]:
-            errors.append(_error(where, f"Below the minimum {schema['minimum']}.", "minimum"))
-        if "maximum" in schema and value > schema["maximum"]:
-            errors.append(_error(where, f"Above the maximum {schema['maximum']}.", "maximum"))
-    if isinstance(value, list) and isinstance(schema.get("items"), dict):
-        for i, item in enumerate(value):
-            errors.extend(param_errors(schema["items"], item, f"{where}[{i}]"))
-    if isinstance(value, dict):
-        properties: dict[str, Any] = schema.get("properties", {})
-        for name in schema.get("required", []):
-            if name not in value:
-                errors.append(_error(f"{where}.{name}", "Required.", "missing"))
-        for name, item in value.items():
-            if name in properties:
-                errors.extend(param_errors(properties[name], item, f"{where}.{name}"))
-            elif schema.get("additionalProperties") is False:
-                errors.append(_error(f"{where}.{name}", "Not a parameter of this skill.", "extra"))
-    return errors
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    found: list[FieldError] = []
+    for problem in validator.iter_errors(value):
+        found.extend(_param_errors(problem, where))
+    # A value of the wrong type says only that; its other checks mean nothing.
+    typed = {e.field for e in found if e.code == "type"}
+    return [e for e in found if e.code == "type" or e.field not in typed]
+
+
+def _param_errors(problem: ValidationError, where: str) -> list[FieldError]:
+    field = _path(where, problem.absolute_path)
+    keyword = str(problem.validator)
+    instance: Any = problem.instance
+    if keyword == "required" and isinstance(instance, dict):
+        return [
+            _error(f"{field}.{name}", "Required.", "missing")
+            for name in problem.validator_value
+            if name not in instance
+        ]
+    if keyword == "additionalProperties" and isinstance(instance, dict):
+        declared = problem.schema.get("properties", {})
+        return [
+            _error(f"{field}.{name}", "Not a parameter of this skill.", "extra")
+            for name in instance
+            if name not in declared
+        ]
+    return [_error(field, problem.message, _CODES.get(keyword, keyword))]
 
 
 def widens(current: str, requested: str) -> bool:
