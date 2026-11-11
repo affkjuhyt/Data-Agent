@@ -226,7 +226,8 @@ export const listGlossary = async () => {
   const page = await ok<Page<GlossaryWire>>(
     api.GET('/v1/terms', { params: { query: { view: 'glossary', page_size: 500 } } }),
   );
-  return { ...page, items: page.items.map(readGlossary) };
+  // A retired term is out of the glossary; it read as "draft" and was counted with the others.
+  return { ...page, items: page.items.filter((t) => t.status !== 'retired').map(readGlossary) };
 };
 
 /** GET /v1/unmapped-phrases: what the agent did not understand, the most asked first (UC-07-09). */

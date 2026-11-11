@@ -51,7 +51,11 @@ export const listCatalogMetrics = async () => {
       },
     }),
   );
-  return { ...page, items: page.items.map(readCatalogMetric) };
+  // A retired metric is no longer in the catalog (the agent does not answer from it).
+  return {
+    ...page,
+    items: page.items.filter((m) => m.status !== 'retired').map(readCatalogMetric),
+  };
 };
 
 /**

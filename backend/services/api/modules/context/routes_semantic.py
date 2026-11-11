@@ -135,7 +135,9 @@ async def _metric_views(session: AsyncSession, rows: list[context.Metric]) -> li
         shown = current or (mine[-1] if mine else None)
         view = MetricView.model_validate(row)
         view.display_name = shown.display_name if shown else None
-        view.certified = any(v.status == "certified" for v in mine)
+        # A retired metric (DELETE /v1/metrics/{id}) is not answered from any more: it does not
+        # read as certified however many of its versions were.
+        view.certified = row.status != "retired" and any(v.status == "certified" for v in mine)
         out.append(view)
     return out
 

@@ -329,8 +329,12 @@ export const listDatasets = async (): Promise<Page<Dataset>> => {
   );
   return { ...page, items: page.items.map(readDataset) };
 };
-export const listMetrics = () =>
-  ok<Page<Metric>>(api.GET('/v1/metrics', { params: { query: ALL } }));
+/** The Data Space's metrics in use: a retired one (DELETE /v1/metrics/{id} keeps the row) is not
+ *  counted or listed, as the agent does not answer from it. */
+export const listMetrics = async (): Promise<Page<Metric>> => {
+  const page = await ok<Page<Metric>>(api.GET('/v1/metrics', { params: { query: ALL } }));
+  return { ...page, items: page.items.filter((m) => m.status !== 'retired') };
+};
 export const listTerms = () =>
   ok<Page<GlossaryTerm>>(api.GET('/v1/terms', { params: { query: ALL } }));
 

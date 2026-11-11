@@ -405,6 +405,17 @@ async def test_metric_code_is_immutable_and_filed_metric_can_only_be_retired(ctx
         ctx.run("UPDATE context.metric SET in_filed_report = false WHERE id = %s", metric)
         retired = await api.delete(f"/v1/metrics/{metric}", headers=ctx.headers("steward"))
         assert retired.status_code == 204
+        # A retired metric does not read as certified, whatever its versions were.
+        ctx.run(
+            "UPDATE context.metric_version SET status = 'certified', certified_by = %s,"
+            " certified_at = now(), valid_from = coalesce(valid_from, now())"
+            " WHERE metric_id = %s AND version = 1",
+            ctx.users["steward"],
+            metric,
+        )
+        listed = await api.get("/v1/metrics?page_size=200", headers=ctx.headers("steward"))
+        row = next(m for m in listed.json()["items"] if m["id"] == str(metric))
+        assert row["status"] == "retired" and row["certified"] is False
     assert ctx.one("SELECT status FROM context.metric WHERE id = %s", metric) == "retired"
     assert (
         ctx.one(
