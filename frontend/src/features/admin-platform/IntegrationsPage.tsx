@@ -35,6 +35,7 @@ import {
 import { listDataSpaces } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
 import { formatExpiry, pct } from './format';
+import { DateField } from '../../design-system/DateField';
 
 /*
  * "P12 · Tích hợp · Client & sử dụng" (2306:20082, UC-12-01, UC-12-03, UC-12-04): the REST and
@@ -603,12 +604,12 @@ function AddDialog({
             ))}
           </fieldset>
           <Field label="Hạn dùng" hint="Tối đa 12 tháng (BR-144).">
-            <Input
-              type="date"
+            <DateField
+              label="Hạn dùng"
               value={expiresOn}
               min={isoDay(new Date())}
               max={monthsAhead(12)}
-              onChange={(e) => setExpiresOn(e.target.value)}
+              onChange={setExpiresOn}
             />
           </Field>
         </>

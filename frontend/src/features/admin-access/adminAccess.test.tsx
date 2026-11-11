@@ -3,6 +3,7 @@
  * matrix and members, deciding access requests, policies, the audit log and DSRs.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -423,7 +424,8 @@ describe('AuditPage', () => {
   it('says an export over 100.000 rows waits for a second person', async () => {
     wrap(<AuditPage />);
     await screen.findByText('Bị chặn: xem cột id_number');
-    fireEvent.change(screen.getByLabelText('Ngày'), { target: { value: '' } });
+    // No day: the export covers every day.
+    fireEvent.click(screen.getByRole('button', { name: 'Xoá ngày' }));
     fireEvent.click(screen.getByRole('button', { name: 'Xuất cho kiểm toán' }));
     expect(
       await screen.findByText(/Bản xuất 1\.240\.000 dòng vượt 100\.000 dòng trong ngày/),
@@ -504,9 +506,10 @@ describe('PrivacyPage', () => {
     fireEvent.change(within(dialog).getByPlaceholderText(/Số CCCD/), {
       target: { value: '001088012345' },
     });
-    fireEvent.change(within(dialog).getByLabelText('Ngày nhận'), {
-      target: { value: '2026-10-20' },
-    });
+    // The date is typed day, month, year (DateField), as a person would.
+    const user = userEvent.setup();
+    within(dialog).getAllByRole('spinbutton')[0].focus();
+    await user.keyboard('20102026');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo yêu cầu' }));
     const created = '0192f1a2-7c3d-7e4f-8a9b-000000000018';
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('admin', 'PRIVACY', created));

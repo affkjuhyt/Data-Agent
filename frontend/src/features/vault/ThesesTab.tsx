@@ -43,6 +43,7 @@ import {
   type ThesisCondition,
 } from './content';
 import { useVault, type Frame } from './VaultPage';
+import { DateField } from '../../design-system/DateField';
 
 /*
  * Tab Luận điểm (2425:15275, UC-16-01, UC-16-02): the leader's theses, the composer, the private
@@ -483,11 +484,11 @@ function Composer({
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
           />
-          <Input
-            aria-label="Thời điểm chấm"
-            type="datetime-local"
+          <DateField
+            label="Thời điểm chấm"
+            withTime
             value={due}
-            onChange={(e) => setDue(e.target.value)}
+            onChange={setDue}
             error={due && tooSoon ? 'Chấm sau hôm nay ít nhất 1 ngày (BR-188)' : undefined}
           />
         </div>

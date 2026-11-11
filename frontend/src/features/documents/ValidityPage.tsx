@@ -21,6 +21,7 @@ import {
 import { useV1 } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 import { HEAD_ROW, ROW, SidePanel } from './parts';
+import { DateField } from '../../design-system/DateField';
 
 /*
  * "P05 · Hiệu lực văn bản" (2300:19248, UC-05-05): the validity timeline of one document, what
@@ -240,7 +241,7 @@ function RelationDialog({
         <Select label="Văn bản thay thế" options={options} value={by} onChange={setBy} />
       </Field>
       <Field labelTone="muted" label="Hết hiệu lực từ">
-        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <DateField label="Hết hiệu lực từ" value={date} onChange={setDate} />
       </Field>
     </Dialog>
   );

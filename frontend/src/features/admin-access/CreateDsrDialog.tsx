@@ -5,6 +5,7 @@ import { Select } from '../../design-system/Select';
 import { createDsr, type DsrKind } from '../../lib/v1/adminAccess';
 import { addDays, dayMonth, isoDay } from './format';
 import { Dialog } from '../../design-system/Dialog';
+import { DateField } from '../../design-system/DateField';
 
 /*
  * "Hộp thoại · createDSR" (2095:8857): kind, subject, the day the request was received and the
@@ -98,13 +99,12 @@ export function CreateDsrDialog({
         />
       </Field>
       <Field label="Ngày nhận">
-        <Input
-          type="date"
-          aria-label="Ngày nhận"
+        <DateField
+          label="Ngày nhận"
           className="w-full"
           value={received}
           max={isoDay(new Date())}
-          onChange={(e) => setReceived(e.target.value)}
+          onChange={setReceived}
         />
       </Field>
       <Field label="Hạn">

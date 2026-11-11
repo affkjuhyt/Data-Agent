@@ -30,6 +30,7 @@ import {
 } from '../../lib/v1/adminAccess';
 import { useV1 } from '../../lib/v1/useV1';
 import { dayMonth, isoDay } from './format';
+import { DateField } from '../../design-system/DateField';
 
 /*
  * "P11 · Kiểm toán" (2306:19586, UC-11-03): the append-only audit log and the security events.
@@ -150,12 +151,12 @@ export default function AuditPage() {
                 value={outcome}
                 onChange={setOutcome}
               />
-              <Input
-                type="date"
-                aria-label="Ngày"
+              <DateField
+                label="Ngày"
+                clearable
                 value={date}
                 max={isoDay(new Date())}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={setDate}
                 className="w-[160px]"
               />
             </div>
