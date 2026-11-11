@@ -36,6 +36,7 @@ from services.worker_agent import (
     hitl,
     liked,
     metric_changes,
+    monitor_backtests,
     periods,
     pipelines,
     policy_backtests,
@@ -140,6 +141,7 @@ HANDLERS: dict[str, Handler] = {
     **indexed.HANDLERS,
     **extraction.HANDLERS,
     **product_use.HANDLERS,
+    **monitor_backtests.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -212,6 +214,9 @@ async def sources() -> list[EventSource]:
         if schema == "monitor":
             # Run now and the scheduler both request a report run here (report_runs.py).
             types |= set(report_runs.HANDLERS)
+            # A rule's backtest (monitor_backtests.py): this worker is the one consumer of
+            # monitor.created/updated, whose pending backtest it runs.
+            types |= set(monitor_backtests.HANDLERS)
         if schema == "period":
             types |= set(periods.HANDLERS)
         if schema == "conflict":
