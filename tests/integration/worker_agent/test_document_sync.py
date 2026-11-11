@@ -429,6 +429,28 @@ async def test_the_address_connected_to_is_the_one_checked() -> None:
         )
 
 
+async def test_an_ipv4_address_inside_an_ipv6_one_is_checked_as_ipv4() -> None:
+    # ::ffff:127.0.0.1 is loopback as an IPv4-mapped address, 2002:7f00:1:: its 6to4 form: read as
+    # IPv6 neither looked loopback, so they slipped past the check.
+    dns = Answers({"store.ngan-hang.vn": []})
+    resolver = sync.CheckedResolver(inner=dns)
+    for inside in (
+        "::ffff:127.0.0.1",
+        "::ffff:169.254.169.254",
+        "::ffff:10.43.0.10",
+        "2002:7f00:1::",
+    ):
+        dns.names["store.ngan-hang.vn"] = [inside]
+        with pytest.raises(OSError):
+            await resolver.resolve("store.ngan-hang.vn", 9000)
+    # The platform's MinIO is the same store under its mapped form.
+    dns.names["store.ngan-hang.vn"] = ["::ffff:10.20.0.9"]
+    with pytest.raises(OSError):
+        await sync.CheckedResolver(inner=dns, platform=frozenset({"10.20.0.9"})).resolve(
+            "store.ngan-hang.vn", 9000
+        )
+
+
 async def test_the_source_client_resolves_through_the_check() -> None:
     dns = Answers({"store.test": ["127.0.0.1"]})
     bucket = sync.S3Bucket(

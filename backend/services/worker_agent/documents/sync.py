@@ -172,8 +172,20 @@ REFUSED_NETWORKS = tuple(
 )
 
 
-def _refused_address(address: str) -> bool:
+def _canonical(address: str) -> str:
+    """The address as it is reached: an IPv4 address carried inside an IPv6 one (IPv4-mapped
+    ::ffff:a.b.c.d, 6to4 2002::/16, Teredo) is that IPv4 address. Read as IPv6, ::ffff:127.0.0.1
+    is neither loopback nor the platform's MinIO, and slipped past both checks."""
     ip = ipaddress.ip_address(address)
+    if isinstance(ip, ipaddress.IPv6Address):
+        embedded = ip.ipv4_mapped or ip.sixtofour or (ip.teredo[1] if ip.teredo else None)
+        if embedded is not None:
+            return str(embedded)
+    return str(ip)
+
+
+def _refused_address(address: str) -> bool:
+    ip = ipaddress.ip_address(_canonical(address))
     # Private ranges stay allowed: an on-premises MinIO on the bank's network is the usual store.
     # Loopback and link-local (the cloud metadata endpoint) would turn the sync into a way in.
     return (
@@ -191,7 +203,7 @@ async def _addresses(host: str, port: int) -> set[str]:
         infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError:
         return set()
-    return {str(info[4][0]) for info in infos}
+    return {_canonical(str(info[4][0])) for info in infos}
 
 
 async def check_endpoint(endpoint: str | None) -> None:
@@ -243,7 +255,7 @@ class CheckedResolver(AbstractResolver):
         answers = await self._inner.resolve(host, port, family)
         if self._platform is None:
             self._platform = await _platform_addresses()
-        found = {str(a["host"]) for a in answers}
+        found = {_canonical(str(a["host"])) for a in answers}
         if not found or any(_refused_address(a) for a in found) or found & self._platform:
             raise OSError(f"{host} resolves inside the platform; not connected")
         return list(answers)
