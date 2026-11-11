@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
@@ -45,17 +45,12 @@ const hhmm = (iso: string) =>
 export default function RunDetailPage() {
   const { routeId, navigate } = useAppState();
   const [view, setView] = useState<View>('simple');
+  // A run still going is read again every 5 s until it settles (paused while the tab is hidden).
   const run = useV1(
     ['getRun', 'technical', routeId],
     routeId ? () => getRun(routeId, 'technical') : null,
+    { refetchInterval: (data) => (data && LIVE.includes(data.status) ? POLL_MS : false) },
   );
-
-  const live = run.data ? LIVE.includes(run.data.status) : false;
-  useEffect(() => {
-    if (!live) return;
-    const timer = window.setInterval(run.reload, POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [live, run.reload]);
 
   return (
     <AsyncRegion state={run} what="lượt chạy">

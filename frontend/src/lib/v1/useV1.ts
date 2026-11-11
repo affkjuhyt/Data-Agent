@@ -21,22 +21,37 @@ export interface V1State<T> {
   reload: () => void;
 }
 
-interface V1Options {
+interface V1Options<T> {
   /** false drops the answer as soon as no screen shows it — for what is decrypted on this device. */
   cache?: boolean;
+  /**
+   * Poll: ms between reads, or a function of the last answer (false stops). TanStack Query pauses
+   * it while the tab is hidden and stops it with the screen, which a setInterval did not.
+   */
+  refetchInterval?: number | ((data: T | undefined) => number | false);
+  /** false: a new key starts empty instead of showing the previous key's answer meanwhile. */
+  keepPrevious?: boolean;
 }
 
 export function useV1<T>(
   key: QueryKey,
   load: (() => Promise<T>) | null,
-  options: V1Options = {},
+  options: V1Options<T> = {},
 ): V1State<T> {
   const query = useQuery(
     {
       queryKey: ['v1', currentDataSpace(), ...key],
       queryFn: load ?? skipToken,
-      placeholderData: keepPreviousData,
+      ...(options.keepPrevious === false ? {} : { placeholderData: keepPreviousData }),
       ...(options.cache === false ? { gcTime: 0 } : {}),
+      ...(options.refetchInterval === undefined
+        ? {}
+        : {
+            refetchInterval: (q: { state: { data: T | undefined } }) =>
+              typeof options.refetchInterval === 'function'
+                ? options.refetchInterval(q.state.data)
+                : (options.refetchInterval ?? false),
+          }),
     },
     queryClient,
   );
