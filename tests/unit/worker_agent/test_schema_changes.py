@@ -44,3 +44,28 @@ def test_a_removed_or_retyped_column_is_breaking() -> None:
     assert retyped.change == "breaking"
     assert retyped.retyped == [{"name": "du_no", "before": "numeric", "after": "varchar"}]
     assert sc.diff([_col("id", nullable=True)], [_col("id", nullable=False)]).change == "breaking"
+
+
+def test_a_renamed_column_is_guessed_with_confidence() -> None:
+    # AC-04-03-01: du_no → du_no_goc keeps type; proposal carries the guess.
+    before = [_col("id"), _col("du_no", "numeric")]
+    after = [_col("id"), _col("du_no_goc", "numeric")]
+    d = sc.diff(before, after)
+    assert d.change == "breaking"
+    assert d.renames == [
+        {
+            "from": "du_no",
+            "to": "du_no_goc",
+            "score": pytest.approx(sc.rename_score("du_no", "du_no_goc"), abs=0.01),
+            "normalized_type": "decimal",
+        }
+    ]
+    assert sc.references_column("SUM(du_no)", "du_no")
+    assert not sc.references_column("SUM(du_no_goc)", "du_no")
+    assert sc.unmapped_removals(d) == []
+
+
+def test_unmapped_removals_list_columns_without_a_rename_guess() -> None:
+    d = sc.diff([_col("id"), _col("x", "numeric")], [_col("id"), _col("y", "varchar")])
+    assert d.renames == []
+    assert sc.unmapped_removals(d) == ["x"]

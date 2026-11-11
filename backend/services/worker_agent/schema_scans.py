@@ -715,6 +715,8 @@ async def scan_schema(event: Event) -> None:
             _redact_personal(profiles, packs)
         relationship_proposals: list[dict[str, object]] = []
         breaking: list[schema_changes.Pending] = []
+        additive_notices: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
         value_samples: list[tuple[uuid.UUID, str, object]] = []
         now = datetime.datetime.now(datetime.UTC)
         async with scoped_session(ROLE, event.org_id, event.payload.get("requested_by")) as session:
@@ -723,93 +725,118 @@ async def scan_schema(event: Event) -> None:
             )
             datasets_by_name: dict[tuple[str, str], catalog.Dataset] = {}
             for item in found:
-                existing = await session.scalar(
-                    select(catalog.Dataset)
-                    .where(
-                        catalog.Dataset.org_id == event.org_id,
-                        catalog.Dataset.source_id == source_id,
-                        catalog.Dataset.schema_name == item["schema_name"],
-                        catalog.Dataset.table_name == item["table_name"],
-                        catalog.Dataset.deleted_at.is_(None),
-                    )
-                    .with_for_update()
-                )
-                dataset = existing or catalog.Dataset(
-                    id=uuid7(),
-                    org_id=event.org_id,
-                    source_id=source_id,
-                    data_space_id=source.data_space_id,
-                    origin="source",
-                    schema_name=str(item["schema_name"]),
-                    table_name=str(item["table_name"]),
-                    object_kind=str(item["object_kind"]),
-                    row_estimate=int(item["row_estimate"]),
-                    created_by=event.payload.get("requested_by"),
-                )
-                session.add(dataset)
-                await session.flush()
-                datasets_by_name[(str(item["schema_name"]), str(item["table_name"]))] = dataset
-                version = int(dataset.current_version or 1)
-                if existing is not None and run.kind == "schema":
-                    # UC-04-03: the table was read again; its structure may have moved.
-                    found_columns = cast(list[dict[str, Any]], item["columns"])
-                    d = schema_changes.diff(
-                        await schema_changes.current_columns(session, existing), found_columns
-                    )
-                    if d.change == "additive":
-                        await schema_changes.write_version(
-                            session,
-                            existing,
-                            found_columns,
-                            d,
-                            org_id=event.org_id,
-                            by=event.payload.get("requested_by"),
-                            scan_run_id=run_id,
-                            proposal_id=None,
-                            now=now,
-                        )
-                    elif d.change == "breaking":
-                        breaking.append(
-                            schema_changes.Pending(
-                                dataset_id=existing.id,
-                                data_space_id=existing.data_space_id,
-                                table=f"{item['schema_name']}.{item['table_name']}",
-                                from_version=version,
-                                columns=found_columns,
-                                diff=d,
+                table_label = f"{item['schema_name']}.{item['table_name']}"
+                try:
+                    # RES-22: one table that fails to write does not roll back the others.
+                    async with session.begin_nested():
+                        existing = await session.scalar(
+                            select(catalog.Dataset)
+                            .where(
+                                catalog.Dataset.org_id == event.org_id,
+                                catalog.Dataset.source_id == source_id,
+                                catalog.Dataset.schema_name == item["schema_name"],
+                                catalog.Dataset.table_name == item["table_name"],
+                                catalog.Dataset.deleted_at.is_(None),
                             )
+                            .with_for_update()
                         )
-                if existing is None:
-                    columns = item["columns"]
-                    schema_hash = schema_changes.schema_hash(cast(list[dict[str, Any]], columns))
-                    session.add(
-                        catalog.DatasetVersion(
+                        dataset = existing or catalog.Dataset(
                             id=uuid7(),
                             org_id=event.org_id,
-                            dataset_id=dataset.id,
-                            version=version,
-                            schema_hash=schema_hash,
-                            valid_from=now,
-                            scan_run_id=run_id,
+                            source_id=source_id,
+                            data_space_id=source.data_space_id,
+                            origin="source",
+                            schema_name=str(item["schema_name"]),
+                            table_name=str(item["table_name"]),
+                            object_kind=str(item["object_kind"]),
+                            row_estimate=int(item["row_estimate"]),
                             created_by=event.payload.get("requested_by"),
                         )
-                    )
-                    for column in columns:
-                        session.add(
-                            catalog.ColumnMeta(
-                                id=uuid7(),
-                                org_id=event.org_id,
-                                dataset_id=dataset.id,
-                                dataset_version=version,
-                                name=str(column["name"]),
-                                ordinal=int(column["ordinal"]),
-                                data_type=str(column["data_type"]),
-                                normalized_type=str(column["normalized_type"]),
-                                is_nullable=bool(column["is_nullable"]),
-                                is_key=bool(column.get("is_key", False)),
-                                created_by=event.payload.get("requested_by"),
-                            )
+                        session.add(dataset)
+                        await session.flush()
+                        datasets_by_name[(str(item["schema_name"]), str(item["table_name"]))] = (
+                            dataset
                         )
+                        version = int(dataset.current_version or 1)
+                        if existing is not None and run.kind == "schema":
+                            # UC-04-03: the table was read again; its structure may have moved.
+                            found_columns = cast(list[dict[str, Any]], item["columns"])
+                            d = schema_changes.diff(
+                                await schema_changes.current_columns(session, existing),
+                                found_columns,
+                            )
+                            if d.change == "additive":
+                                await schema_changes.write_version(
+                                    session,
+                                    existing,
+                                    found_columns,
+                                    d,
+                                    org_id=event.org_id,
+                                    by=event.payload.get("requested_by"),
+                                    scan_run_id=run_id,
+                                    proposal_id=None,
+                                    now=now,
+                                )
+                                additive_notices.append(
+                                    {
+                                        "dataset_id": existing.id,
+                                        "data_space_id": existing.data_space_id,
+                                        "table": table_label,
+                                        "added": [c["name"] for c in d.added],
+                                    }
+                                )
+                            elif d.change == "breaking":
+                                breaking.append(
+                                    schema_changes.Pending(
+                                        dataset_id=existing.id,
+                                        data_space_id=existing.data_space_id,
+                                        table=table_label,
+                                        from_version=version,
+                                        columns=found_columns,
+                                        diff=d,
+                                    )
+                                )
+                        if existing is None:
+                            columns = item["columns"]
+                            schema_hash = schema_changes.schema_hash(
+                                cast(list[dict[str, Any]], columns)
+                            )
+                            session.add(
+                                catalog.DatasetVersion(
+                                    id=uuid7(),
+                                    org_id=event.org_id,
+                                    dataset_id=dataset.id,
+                                    version=version,
+                                    schema_hash=schema_hash,
+                                    valid_from=now,
+                                    scan_run_id=run_id,
+                                    created_by=event.payload.get("requested_by"),
+                                )
+                            )
+                            for column in columns:
+                                session.add(
+                                    catalog.ColumnMeta(
+                                        id=uuid7(),
+                                        org_id=event.org_id,
+                                        dataset_id=dataset.id,
+                                        dataset_version=version,
+                                        name=str(column["name"]),
+                                        ordinal=int(column["ordinal"]),
+                                        data_type=str(column["data_type"]),
+                                        normalized_type=str(column["normalized_type"]),
+                                        is_nullable=bool(column["is_nullable"]),
+                                        is_key=bool(column.get("is_key", False)),
+                                        created_by=event.payload.get("requested_by"),
+                                    )
+                                )
+                except Exception as exc:  # noqa: BLE001 - one table must not fail the scan (RES-22)
+                    logger.warning(
+                        "schema scan of %s skipped (%s)", table_label, type(exc).__name__
+                    )
+                    skipped.append(
+                        {"table": table_label, "reason": f"{type(exc).__name__}: {exc}"[:240]}
+                    )
+                    continue
             if run.kind == "schema":
                 for item in found:
                     from_dataset = datasets_by_name.get(
@@ -897,9 +924,11 @@ async def scan_schema(event: Event) -> None:
                             and category_values
                         ):
                             value_samples.append((dataset.id, column.name, category_values))
+            scanned = len(found) - len(skipped)
             run.tables_total = len(found)
-            run.tables_scanned = len(found)
-            run.status = "succeeded"
+            run.tables_scanned = scanned
+            run.tables_skipped = skipped
+            run.status = "partial" if skipped else "succeeded"
             run.finished_at = now
             session.add(
                 catalog.Outbox(
@@ -911,9 +940,21 @@ async def scan_schema(event: Event) -> None:
                     payload={
                         "scan_run_id": str(run_id),
                         "source_id": str(source_id),
-                        "tables_scanned": len(found),
+                        "tables_scanned": scanned,
+                        "tables_skipped": len(skipped),
+                        "status": run.status,
                     },
                 )
+            )
+        for notice in additive_notices:
+            # AC-04-03-03: additive column → notification only, no proposal.
+            await schema_changes.notify_additive(
+                org_id=event.org_id,
+                user_id=event.payload.get("requested_by") or source.created_by,
+                data_space_id=notice["data_space_id"],
+                dataset_id=notice["dataset_id"],
+                table=notice["table"],
+                added=notice["added"],
             )
         if breaking:
             # UC-04-03 AC-07: a removed or retyped column waits for a person; the scan writes
