@@ -21,10 +21,14 @@ from __future__ import annotations
 
 import contextlib
 import decimal
+import functools
 import re
 import unicodedata
 from collections.abc import Iterator
 from contextvars import ContextVar
+
+from babel import Locale, UnknownLocaleError
+from babel.numbers import get_decimal_symbol, get_group_symbol
 
 _PUNCT = re.compile(r"[^\w%/]+")
 _SPACES = re.compile(r"\s+")
@@ -63,22 +67,21 @@ def use_locale(locale: str | None) -> Iterator[None]:
         _CURRENT.reset(token)
 
 
-# Languages that write a decimal comma and group thousands with a dot (or a space, for fr):
-# the rest write a decimal point and group with a comma.
-_COMMA_DECIMAL = frozenset(
-    "vi id de es it pt nl tr da nb sv fi pl cs ro ru uk el hr sl sk hu".split()
-)
-_SPACE_GROUP = frozenset("fr nb sv fi pl cs ru uk sk".split())
-
-
 def marks(locale: str | None) -> tuple[str, str]:
-    """(thousands separator, decimal mark) of a locale tag such as vi-VN, en-US, fr-FR."""
-    language = (locale or current_locale()).split("-")[0].lower()
-    if language in _SPACE_GROUP:
-        return "\u00a0", ","
-    if language in _COMMA_DECIMAL:
-        return ".", ","
-    return ",", "."
+    """(thousands separator, decimal mark) of a locale tag such as vi-VN, en-US, fr-FR, de-CH, as
+    CLDR writes them (Babel). Two hand-kept lists of decimal-comma languages disagreed (ro, hu, el
+    and others were a comma here and a point for the upload reader) and knew no region: de-CH and
+    es-MX write a decimal point. A tag Babel cannot read gets the plain "," and "."."""
+    return _marks(locale or current_locale())
+
+
+@functools.lru_cache(maxsize=256)
+def _marks(tag: str) -> tuple[str, str]:
+    try:
+        cldr = Locale.parse(tag, sep="-")
+    except (UnknownLocaleError, ValueError):
+        return ",", "."
+    return get_group_symbol(cldr), get_decimal_symbol(cldr)
 
 
 def number(

@@ -7,3 +7,5 @@ pymssql==2.3.7
 cryptography==50.0.2
 # OpenBao: AppRole login and KV v2 reads (libs/openbao).
 hvac==2.4.0
+# A locale's number marks as CLDR writes them (libs/language.marks, via libs/tabular).
+babel==2.18.0

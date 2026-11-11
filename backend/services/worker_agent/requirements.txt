@@ -34,3 +34,5 @@ rapidfuzz==3.14.6
 python-dateutil==2.9.0.post0
 # The document chunks' vectors in Qdrant (libs/vectors).
 qdrant-client==1.20.0
+# A locale's number marks as CLDR writes them (libs/language.marks, via libs/tabular).
+babel==2.18.0

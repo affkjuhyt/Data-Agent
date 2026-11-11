@@ -9,6 +9,7 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 COPY backend/libs/__init__.py ./libs/__init__.py
 COPY backend/libs/dataagent_db/ ./libs/dataagent_db/
 COPY backend/libs/tabular/ ./libs/tabular/
+COPY backend/libs/language/ ./libs/language/
 COPY backend/libs/source_drivers/ ./libs/source_drivers/
 COPY backend/libs/pii/ ./libs/pii/
 COPY backend/libs/openbao/ ./libs/openbao/

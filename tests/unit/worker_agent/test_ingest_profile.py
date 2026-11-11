@@ -48,3 +48,20 @@ def test_accept_language_names_the_locale_then_its_language_then_english() -> No
 def test_a_malformed_profile_is_refused(raw: object, why: str) -> None:
     with pytest.raises(ValueError, match=why):
         profile.validate(raw)
+
+
+@pytest.mark.parametrize(
+    ("locale", "mark"),
+    [
+        ("ro-RO", ","),
+        ("hu-HU", ","),
+        # Regional: Swiss German and Mexican Spanish write a decimal point, unlike de-DE and es-ES.
+        ("de-CH", "."),
+        ("es-MX", "."),
+        ("de-DE", ","),
+        ("en-GB", "."),
+    ],
+)
+def test_the_decimal_mark_follows_the_locale_as_cldr_writes_it(locale: str, mark: str) -> None:
+    # The upload reader and the answer writer take the same mark (libs/language.marks).
+    assert profile.resolve(locale).decimal_mark == mark

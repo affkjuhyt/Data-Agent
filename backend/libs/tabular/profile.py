@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from libs import pii
+from libs.language import marks as language_marks
 from libs.tabular import DateOrder
 
 # When neither a level nor the organization names a locale: the market the product ships to.
@@ -27,10 +28,6 @@ KEYS = frozenset({"locale", "decimal_mark", "date_order", "ocr_languages", "pii_
 
 _LOCALE = re.compile(r"^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 _TESSERACT = re.compile(r"^[a-z]{3}(?:_[a-z]+)?$")
-# Decimal comma by language (CLDR): the rest write a point.
-_DECIMAL_COMMA = frozenset(
-    {"vi", "de", "fr", "es", "it", "pt", "nl", "ru", "pl", "tr", "id", "da", "sv", "nb", "fi", "cs"}
-)
 # Month first by locale; everyone else writes the day first in a numeric date.
 _MONTH_FIRST = frozenset({"en-US", "en-PH", "en-CA"})
 _OCR = {
@@ -121,7 +118,8 @@ def resolve(org_locale: str | None, *levels: Mapping[str, Any] | None) -> Profil
     ocr = [_OCR[language]] if language in _OCR else []
     return Profile(
         locale=locale,
-        decimal_mark=merged.get("decimal_mark") or ("," if language in _DECIMAL_COMMA else "."),
+        # The locale's own mark (CLDR, libs/language.marks): the answer writer uses the same.
+        decimal_mark=merged.get("decimal_mark") or language_marks(locale)[1],
         date_order="mdy"
         if merged.get("date_order", "mdy" if locale in _MONTH_FIRST else "dmy") == "mdy"
         else "dmy",

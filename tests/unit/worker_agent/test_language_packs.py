@@ -140,9 +140,19 @@ def test_a_figure_reads_in_the_organisations_locale() -> None:
     value = decimal.Decimal("1234567.891")
     assert number(value, 2) == "1.234.567,89"  # vi-VN, the default
     assert number(value, 2, "en-US") == "1,234,567.89"
-    nbsp = chr(0xA0)
-    assert number(value, 0, "fr-FR") == f"1{nbsp}234{nbsp}568"
+    # CLDR's marks (Babel): French groups with a narrow no-break space, Swiss German with an
+    # apostrophe and a decimal point, Romanian with a dot and a comma.
+    assert number(value, 0, "fr-FR") == "1\u202f234\u202f568"
+    assert number(value, 2, "de-CH") == "1\u2019234\u2019567.89"
+    assert number(value, 2, "ro-RO") == "1.234.567,89"
     assert number(decimal.Decimal("-2.5"), 0, "en-US") == "-3"
+
+
+def test_a_locale_babel_does_not_know_writes_the_plain_marks() -> None:
+    from libs.language import marks
+
+    assert marks("xx-YY") == (",", ".")
+    assert marks("vi-VN") == (".", ",")
 
 
 def test_labels_refusals_and_numbers_follow_the_locale_of_the_work() -> None:
