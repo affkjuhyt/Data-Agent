@@ -878,25 +878,29 @@ function accuracyRows(
 }
 
 /*
- * The model as "Mô hình dự báo" reads it. The candidate is the current version when it waits for
- * approval or was decided. Horizons are that version's backtest; the monitoring rows are the
+ * The model as "Mô hình dự báo" reads it. The candidate is the version waiting for approval
+ * (pending_version: submit leaves current_version_id on the published one), else the current
+ * version. Horizons are the candidate's backtest; monitoring is the version in use and its
  * accuracy log. A screen fixture may still ride along under `display`.
  */
 function readModel(
   raw: ModelWire,
   extras?: {
     version?: VersionView | null;
+    current?: VersionView | null;
     accuracy?: Schemas['AccuracyView'][];
     backtest?: Schemas['BacktestView'] | null;
   },
 ): ForecastModel {
   if (raw.display) return raw.display;
-  const version =
-    extras?.version !== undefined
-      ? extras.version
+  const inUse =
+    extras?.current !== undefined
+      ? extras.current
       : 'current_version' in raw
         ? (raw.current_version ?? null)
         : null;
+  const pending = 'pending_version' in raw ? (raw.pending_version ?? null) : null;
+  const version = extras?.version !== undefined ? extras.version : (pending ?? inUse);
   const candidateStatus = version ? CANDIDATE_STATUS[version.status] : undefined;
   const degraded = 'degraded' in raw && raw.degraded === true;
   const mase = (v: number | string | null | undefined) =>
@@ -906,6 +910,7 @@ function readModel(
     metric_name: raw.metric_code,
     frequency_label: FREQUENCY[raw.frequency] ?? raw.frequency,
     status_text: [
+      inUse && inUse.id !== version?.id && `v${inUse.version} đang dùng`,
       version &&
         `v${version.version} ${candidateStatus === 'pending_review' ? 'chờ duyệt' : 'đang dùng'}`,
       degraded && 'suy giảm',
@@ -926,9 +931,9 @@ function readModel(
         : null,
     // BR-158 is the server's: the creator cannot decide, the call says so with 403.
     can_approve: { allowed: candidateStatus === 'pending_review', reason: null },
-    monitoring: version
+    monitoring: (inUse ?? version)
       ? {
-          version_label: `v${version.version}`,
+          version_label: `v${(inUse ?? version)?.version}`,
           status: degraded ? 'degraded' : raw.status === 'retired' ? 'retired' : 'published',
           stats: [
             {
@@ -1093,9 +1098,11 @@ export const getForecastModel = async (id: string) => {
   // the horizon table is its backtest, and the period rows are the accuracy log.
   if (raw.display) return raw.display;
   const embedded = 'current_version' in raw ? (raw.current_version ?? null) : null;
-  const version =
+  const current =
     embedded ??
     (raw.current_version_id ? await getVersion(raw.current_version_id).catch(() => null) : null);
+  // The version to decide comes first: a v2 submitted beside the published v1.
+  const version = ('pending_version' in raw ? raw.pending_version : null) ?? current;
   const [accuracy, backtest] = await Promise.all([
     ok<Schemas['AccuracyPage']>(
       api.GET('/v1/forecast-models/{id}/accuracy', {
@@ -1104,7 +1111,7 @@ export const getForecastModel = async (id: string) => {
     ).catch(() => null),
     version ? getBacktest(version.id).catch(() => null) : Promise.resolve(null),
   ]);
-  return readModel(raw, { version, accuracy: accuracy?.items ?? [], backtest });
+  return readModel(raw, { version, current, accuracy: accuracy?.items ?? [], backtest });
 };
 
 /** Publishes the candidate; the published version before it is retired. */

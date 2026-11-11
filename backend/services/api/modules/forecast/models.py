@@ -174,6 +174,13 @@ async def get_model(
         if row.current_version_id is not None:
             current = await session.get(fc.ModelVersion, row.current_version_id)
             out.current_version = ModelVersionView.model_validate(current) if current else None
+        pending = await session.scalar(
+            select(fc.ModelVersion)
+            .where(fc.ModelVersion.model_id == row.id, fc.ModelVersion.status == "pending_approval")
+            .order_by(fc.ModelVersion.version.desc())
+            .limit(1)
+        )
+        out.pending_version = ModelVersionView.model_validate(pending) if pending else None
     return out
 
 

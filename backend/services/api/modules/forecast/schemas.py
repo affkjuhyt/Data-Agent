@@ -170,6 +170,9 @@ class ForecastModelView(_View):
 
 class ForecastModelDetail(ForecastModelView):
     current_version: ModelVersionView | None = None
+    # The newest version submitted and waiting for approval: submit leaves current_version_id on
+    # the published one, so reading current_version alone never showed a candidate to decide.
+    pending_version: ModelVersionView | None = None
 
 
 class BacktestView(_View):

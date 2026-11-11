@@ -20477,6 +20477,16 @@
       "title": "Owner Id",
       "type": "string"
      },
+     "pending_version": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ModelVersionView"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "retrain_cron": {
       "anyOf": [
        {
@@ -60241,7 +60251,7 @@
   },
   "/v1/connectors": {
    "get": {
-    "description": "Return the safe connector catalogue and counts for this organisation.",
+    "description": "Return the safe connector catalogue and, per kind, the connected sources: those of the\nopen Data Space when the caller names one (the organisation's otherwise), not drafts or\narchived ones. Counting the whole organisation, drafts included, put \"Đã kết nối · 3\" over\na Data Space with no source.",
     "operationId": "listConnectors",
     "responses": {
      "200": {
@@ -104501,7 +104511,8 @@
      "Cần bạn và đánh giá"
     ],
     "x-capability": [
-     "approve"
+     "approve",
+     "steward"
     ],
     "x-use-cases": [
      "UC-07-03",

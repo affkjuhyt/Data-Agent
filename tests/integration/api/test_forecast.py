@@ -773,6 +773,11 @@ async def test_submitting_a_version_opens_the_owner_request(fx: Fx) -> None:
         assert sent["assignee_id"] == str(fx.users["owner"])
         assert sent["model_id"] == str(fx.model) and sent["backtest_id"] == body["backtest_id"]
 
+        # The model offers the submitted version to decide, whatever version is current.
+        model = await api.get(f"/v1/forecast-models/{fx.model}", headers=fx.headers("owner"))
+        assert model.status_code == 200, model.text
+        assert model.json()["pending_version"]["id"] == str(fx.draft)
+
         again = await api.post(
             f"/v1/forecast-model-versions/{fx.draft}:submit", headers=fx.headers("builder")
         )

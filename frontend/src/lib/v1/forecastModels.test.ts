@@ -56,6 +56,37 @@ describe('forecast models from the api', () => {
     expect(m.monitoring?.status).toBe('degraded');
   });
 
+  it('offers the submitted version beside the published one: submit leaves current on v1', async () => {
+    const v1 = {
+      id: 'mv-1',
+      version: 1,
+      status: 'published',
+      algorithm: 'ETS',
+      training_from: '2023-01-01',
+      training_to: '2026-06-30',
+      model_card: {},
+    };
+    server.use(
+      http.get('*/v1/forecast-models/:id', () =>
+        HttpResponse.json({
+          id: 'fm-1',
+          metric_code: 'GIA_XANG_RON95',
+          frequency: 'week',
+          status: 'active',
+          current_version_id: 'mv-1',
+          current_version: v1,
+          pending_version: { ...v1, id: 'mv-2', version: 2, status: 'pending_approval' },
+        }),
+      ),
+    );
+    const m = await getForecastModel('fm-1');
+    expect(m.status_text).toBe('v1 đang dùng · v2 chờ duyệt');
+    expect(m.candidate).toMatchObject({ version_id: 'mv-2', status: 'pending_review' });
+    expect(m.can_approve.allowed).toBe(true);
+    // Monitoring is about the version in use.
+    expect(m.monitoring?.version_label).toBe('v1');
+  });
+
   it('rejects with a reason', async () => {
     await rejectModelVersion('mv-7', 'Thiếu biến tỷ giá');
     expect(rejected).toEqual({ reason: 'Thiếu biến tỷ giá' });

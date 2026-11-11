@@ -1107,7 +1107,10 @@ export interface paths {
         };
         /**
          * Danh mục connector cho màn Kết nối dữ liệu (thêm 13/10/2026)
-         * @description Return the safe connector catalogue and counts for this organisation.
+         * @description Return the safe connector catalogue and, per kind, the connected sources: those of the
+         *     open Data Space when the caller names one (the organisation's otherwise), not drafts or
+         *     archived ones. Counting the whole organisation, drafts included, put "Đã kết nối · 3" over
+         *     a Data Space with no source.
          */
         get: operations["listConnectors"];
         put?: never;
@@ -13930,6 +13933,7 @@ export interface components {
              * Format: uuid
              */
             owner_id: string;
+            pending_version?: components["schemas"]["ModelVersionView"] | null;
             /** Retrain Cron */
             retrain_cron: string | null;
             /** Rolling Mase */
