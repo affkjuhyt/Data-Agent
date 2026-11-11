@@ -76,3 +76,15 @@ def test_each_event_type_has_one_handler() -> None:
             claimed.setdefault(event_type, []).append(module.__name__)
     assert {t: m for t, m in claimed.items() if len(m) > 1} == {}
     assert set(claimed) == set(main.HANDLERS)
+
+
+async def test_period_requests_the_inbox_answers_are_claimed_and_acknowledged() -> None:
+    """period.exception_requested and period.override_approval_requested are written beside the
+    hitl.requested that opens the request; the relay claims them so they do not sit unpublished in
+    period.outbox, and their handler does nothing (resolutions.py acts on the decision)."""
+    from services.worker_agent import main
+
+    for kind in ("period.exception_requested", "period.override_approval_requested"):
+        src = FakeSource([_event(kind)])
+        assert await run_once(src, main.HANDLERS) == 1
+        assert len(src.acked) == 1

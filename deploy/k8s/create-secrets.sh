@@ -50,7 +50,8 @@ kubectl -n dataagent-service create secret generic api-secrets \
 # source-authority and document-validity reviews as svc_conflict and svc_document (reviews.py); reads
 # the claims of an indexed document and opens the conflicts they show as svc_conflict
 # (documents/claims.py) and fills its collection's extraction schema as svc_document
-# (documents/extraction.py);
+# (documents/extraction.py); opens the access request a data product's use asks for as svc_org
+# (product_use.py);
 # answer exports go to MinIO as its own user, which may only write to da-exports (minio-init), never
 # with the root credentials.
 kubectl -n dataagent-service create secret generic worker-agent-secrets \
@@ -75,6 +76,7 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_NOTIFY="${DATAAGENT_DB_URL__SVC_NOTIFY}" \
   --from-literal=DATAAGENT_DB_URL__SVC_MONITOR="${DATAAGENT_DB_URL__SVC_MONITOR}" \
   --from-literal=DATAAGENT_DB_URL__SVC_GOVERNANCE="${DATAAGENT_DB_URL__SVC_GOVERNANCE}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_ORG="${DATAAGENT_DB_URL__SVC_ORG}" \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --from-literal=NOTIFY_VERIFICATION_SECRET="${NOTIFY_VERIFICATION_SECRET}" \
   --from-literal=MINIO_URL="${WORKER_AGENT_MINIO_URL}" \

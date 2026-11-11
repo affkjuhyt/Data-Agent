@@ -414,7 +414,8 @@ async def request_data_product_use(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
 ) -> dict[str, list[ProductUseRequestView]]:
-    """Create pending owner-space access requests for published products."""
+    """Create pending owner-space access requests for published products. svc_context may not
+    write org: worker-agent opens each request under the id answered here (product_use.py)."""
     if body.data_space_id != data_space:
         raise Problem(422, "validation_failed", "data_space_id must be the selected Data Space.")
     products = await published_products(principal, data_space, set(body.product_ids))
@@ -432,6 +433,7 @@ async def request_data_product_use(
                 "data_product.use_requested",
                 request_id=request_id,
                 product_id=row.id,
+                product_code=row.code,
                 owner_data_space_id=row.data_space_id,
                 requester_data_space_id=data_space,
                 requester_id=principal.user_id,

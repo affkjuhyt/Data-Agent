@@ -50,6 +50,8 @@ ROLE = "svc_period"
 CLOSE = "period.close_requested"
 PUBLISH = "period.publish_requested"
 PUBLISHED = "period.published"
+EXCEPTION_REQUESTED = "period.exception_requested"
+OVERRIDE_APPROVAL_REQUESTED = "period.override_approval_requested"
 BUCKET = os.environ.get("PERIOD_CLOSE_BUCKET", "da-period-close")
 SNAPSHOT_ROWS = 500_000
 
@@ -635,4 +637,15 @@ async def exception_decided(event: Event) -> None:
         await publish(org_id, ref)
 
 
-HANDLERS: dict[str, Handler] = {CLOSE: close_requested, PUBLISH: publish_requested}
+async def acknowledged(event: Event) -> None:
+    """Nothing to do: these requests are opened in the inbox by the hitl.requested the api writes
+    beside them, and the decision comes back through exception_decided. They are claimed only so
+    they do not sit unpublished in period.outbox."""
+
+
+HANDLERS: dict[str, Handler] = {
+    CLOSE: close_requested,
+    PUBLISH: publish_requested,
+    EXCEPTION_REQUESTED: acknowledged,
+    OVERRIDE_APPROVAL_REQUESTED: acknowledged,
+}

@@ -951,7 +951,9 @@ async def test_schema_test_is_queued_and_clears_the_previous_result(w: World) ->
         )
         approved = await c.post(f"/v1/crawl-schemas/{active}:test")
     assert r.status_code == 202, r.text
-    assert r.headers["Location"] == f"/v1/runs/{r.json()['id']}"
+    # No agent run is made for a test: the client re-reads the version, which gets its accuracy.
+    assert r.headers["Location"] == f"/v1/crawl-sources/{source}/schemas"
+    assert r.json()["id"] == str(draft) and r.json()["status"] == "testing"
     assert (
         w.one("SELECT status FROM acquire.crawl_schema_version WHERE id = %s", draft) == "testing"
     )
@@ -962,7 +964,7 @@ async def test_schema_test_is_queued_and_clears_the_previous_result(w: World) ->
         is None
     )
     event = w.event(draft, "acquire.schema.test_requested")
-    assert event["agent_run_id"] == r.json()["id"]
+    assert event["schema_version_id"] == str(draft)
     assert sorted(event["sample_page_ids"]) == sorted(str(p) for p in pages)
     assert foreign.status_code == 422, foreign.text
     assert approved.status_code == 409, approved.text

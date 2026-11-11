@@ -502,6 +502,8 @@ async def test_request_use_creates_owner_space_access_request(ds: Space) -> None
     assert event[0] == "data_product.use_requested"
     assert event[1]["request_id"] == request_id
     assert event[1]["owner_data_space_id"] == str(ds.other)
+    # worker-agent words the access request with it (product_use.py).
+    assert event[1]["product_code"]
 
 
 async def test_suspend_and_retire(ds: Space) -> None:

@@ -41,6 +41,7 @@ from services.worker_agent import (
     policy_backtests,
     prep,
     private,
+    product_use,
     proposals,
     quality,
     query_runs,
@@ -59,7 +60,7 @@ from services.worker_agent import (
     uploads,
 )
 from services.worker_agent.channels import gateway as channels
-from services.worker_agent.documents import indexed
+from services.worker_agent.documents import extraction, indexed
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 from services.worker_agent.providers.registry import ProviderRegistry
 from services.worker_agent.schedules import clock
@@ -137,6 +138,8 @@ HANDLERS: dict[str, Handler] = {
     **quality.HANDLERS,
     **periods.HANDLERS,
     **indexed.HANDLERS,
+    **extraction.HANDLERS,
+    **product_use.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -193,9 +196,13 @@ async def sources() -> list[EventSource]:
             # submitted data product.
             types |= set(metric_changes.HANDLERS) | set(semantic_review.HANDLERS)
             types |= {reviews.PRODUCT, proposals.KNOWLEDGE_SUBMITTED}
+            # The access request a data product's use asks for, opened as svc_org (product_use.py).
+            types |= set(product_use.HANDLERS)
         if schema == "document":
             # worker-document claims its own types from the same outbox; this is the ready one.
             types |= set(indexed.HANDLERS)
+            # A schema's test on sample documents (documents/extraction.py, BR-110).
+            types |= set(extraction.HANDLERS)
         if schema == "agent":
             # The one consumer of run.status_changed: the run executor (runs.py, ADR-37 stand-in).
             types |= set(runs.HANDLERS)

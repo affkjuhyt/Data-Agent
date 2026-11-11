@@ -1175,7 +1175,9 @@ async def test_schema(
         version.status = "testing"
         version.test_required_accuracy = None
         await session.flush()
-        agent_run_id = uuid7()
+        # The crawler tests the version (crawler/schema_tests.py) and writes its accuracy on the
+        # version itself. A2 says Location points at an agent_run, but no agent run is made for a
+        # test, so a client would poll a 404: it points at the versions list the screen re-reads.
         _emit(
             session,
             principal,
@@ -1185,11 +1187,12 @@ async def test_schema(
             schema_version_id=version.id,
             source_id=source.id,
             data_space_id=space,
-            agent_run_id=agent_run_id,
             sample_page_ids=version.sample_page_ids,
             status=version.status,
         )
-        return _accepted(response, f"/v1/runs/{agent_run_id}", agent_run_id, "queued")
+        return _accepted(
+            response, f"/v1/crawl-sources/{source.id}/schemas", version.id, version.status
+        )
 
 
 @router.post(

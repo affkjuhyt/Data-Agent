@@ -239,25 +239,27 @@ async def _store_pages(
     return readable, any(p.status in fetch.BLOCKED for p, _, _ in keyed)
 
 
-async def _stored_pages(org_id: uuid.UUID, source_id: uuid.UUID, store: RawStore) -> list[Page]:
-    """The latest original of each URL of the source still within its retention."""
+async def stored_pages(
+    org_id: uuid.UUID,
+    source_id: uuid.UUID,
+    store: RawStore,
+    page_ids: list[uuid.UUID] | None = None,
+) -> list[Page]:
+    """The latest original of each URL of the source still within its retention; with `page_ids`,
+    those pages of the source instead (a schema test's held-out sample)."""
     now = _now()
-    async with scoped_session(ROLE, org_id) as session:
-        rows = (
-            (
-                await session.execute(
-                    select(acquire.CrawlPage)
-                    .where(
-                        acquire.CrawlPage.source_id == source_id,
-                        acquire.CrawlPage.object_key.is_not(None),
-                    )
-                    .order_by(acquire.CrawlPage.url, acquire.CrawlPage.fetched_at.desc())
-                    .distinct(acquire.CrawlPage.url)
-                )
-            )
-            .scalars()
-            .all()
+    query = select(acquire.CrawlPage).where(
+        acquire.CrawlPage.source_id == source_id,
+        acquire.CrawlPage.object_key.is_not(None),
+    )
+    if page_ids is None:
+        query = query.order_by(acquire.CrawlPage.url, acquire.CrawlPage.fetched_at.desc()).distinct(
+            acquire.CrawlPage.url
         )
+    else:
+        query = query.where(acquire.CrawlPage.id.in_(page_ids)).order_by(acquire.CrawlPage.url)
+    async with scoped_session(ROLE, org_id) as session:
+        rows = (await session.execute(query)).scalars().all()
     pages = []
     for row in rows:
         if row.retain_until is not None and row.retain_until <= now:
@@ -370,7 +372,7 @@ async def handle(event: Event, store: RawStore, reader: Reader | None = None) ->
     source, schema = started
     try:
         if source["trigger"] == "retry":
-            pages, blocked = await _stored_pages(org_id, source["id"], store), False
+            pages, blocked = await stored_pages(org_id, source["id"], store), False
             async with scoped_session(ROLE, org_id) as session:
                 run = await session.get(acquire.CrawlRun, run_id, with_for_update=True)
                 assert run is not None

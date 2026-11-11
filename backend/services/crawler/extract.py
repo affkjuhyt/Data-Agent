@@ -174,7 +174,7 @@ def _locate(kind: str, row: Any, locator: str) -> str:
     return _text(_select(row, "." + locator if locator.startswith("/") else locator))
 
 
-def _out_of_domain(value: Any, constraints: dict[str, Any]) -> bool:
+def out_of_domain(value: Any, constraints: dict[str, Any]) -> bool:
     try:
         number_value = Decimal(str(value))
     except (InvalidOperation, ValueError):
@@ -209,7 +209,7 @@ def extract(
                 continue
             value, sure = typed(str(f.get("type") or "text"), raw, decimal_mark, date_order)
             values[f["name"]], confidence[f["name"]] = value, sure
-            if sure == 1.0 and _out_of_domain(value, f.get("value_constraints") or {}):
+            if sure == 1.0 and out_of_domain(value, f.get("value_constraints") or {}):
                 reasons.add("out_of_domain")
         overall = round(sum(confidence.values()) / len(confidence), 4) if confidence else 0.0
         if overall < LOW_CONFIDENCE:

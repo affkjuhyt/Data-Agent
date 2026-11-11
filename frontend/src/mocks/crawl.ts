@@ -826,8 +826,12 @@ export function createCrawlHandlers() {
       const entry = [...schemas.entries()].find(([, v]) => v.id === id);
       if (!entry) return problem(404, 'not_found', 'Không tìm thấy schema.');
       const [sourceId, schema] = entry;
+      // The api answers with the version itself: the crawler writes its accuracy there.
       if (verb === 'test')
-        return HttpResponse.json({ id: 'arun-test-' + Date.now() }, { status: 202 });
+        return HttpResponse.json(
+          { id: schema.id, status: 'testing', poll_after_ms: 2000 },
+          { status: 202, headers: { Location: `/v1/crawl-sources/${sourceId}/schemas` } },
+        );
       if (verb !== 'approve') return problem(404, 'not_found', 'Không có thao tác này.');
       if (!schema.test) return problem(409, 'invalid_state', 'Chưa chạy thử.');
       if (schema.test.required_correct_pct < 95)

@@ -10,6 +10,9 @@ decision (AC-05-06-05), not this record's.
 
 One record per document and schema version: a document already extracted with that version is
 not read again (AC-05-06-02, an older version's records stay as they are).
+
+A schema under test (extraction_schema.test_requested) is read the same way over sample documents,
+keeping no record: only each field's share of checked values, its sample_accuracy (BR-110).
 """
 
 from __future__ import annotations
@@ -18,21 +21,26 @@ import json
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import document
 from services.worker_agent.documents.answer import QUOTE_MATCH, quote_match
 from services.worker_agent.documents.claims import MAX_PASSAGE_CHARS, MAX_PASSAGES
+from services.worker_agent.events import Event, Handler
 from services.worker_agent.llm import Gateway, ModelUnavailable
 
 log = logging.getLogger(__name__)
 
 ROLE = "svc_document"
 UNCHECKED = 0.5
+TEST_REQUESTED = "extraction_schema.test_requested"
+# A test with no named sample reads the collection's latest ready documents, at most this many.
+SAMPLE_DOCUMENTS = 20
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
 SYSTEM = """Bạn điền các trường được cho từ các đoạn tài liệu tiếng Việt.
@@ -127,43 +135,62 @@ def record(
     return values, confidence, spans, "needs_review" if review else "extracted"
 
 
-async def extract_document(
-    gateway: Gateway | None, org_id: uuid.UUID, document_id: uuid.UUID
-) -> str | None:
-    """The new record's status, or None when nothing was extracted."""
+@dataclass
+class Reading:
+    document_id: uuid.UUID
+    schema_id: uuid.UUID
+    values: dict[str, Any]
+    confidence: dict[str, float]
+    spans: list[dict[str, Any]]
+    status: str
+
+
+async def read(
+    gateway: Gateway | None,
+    org_id: uuid.UUID,
+    document_id: uuid.UUID,
+    schema_id: uuid.UUID | None = None,
+) -> Reading | None:
+    """The fields of a ready document, by `schema_id` (a schema of its collection, whatever its
+    status: a schema under test is read too) or, when None, by the collection's active schema,
+    skipping a document already extracted with it. None when nothing was read."""
     if gateway is None:
         return None
-    async with scoped_session(ROLE, org_id) as session:
-        found = (
-            await session.execute(
-                select(document.Document, document.ExtractionSchema)
-                .join(
-                    document.Collection, document.Collection.id == document.Document.collection_id
-                )
-                .join(
-                    document.ExtractionSchema,
-                    document.ExtractionSchema.id == document.Collection.extraction_schema_id,
-                )
-                .where(
-                    document.Document.id == document_id,
-                    document.Document.status == "ready",
-                    document.ExtractionSchema.status == "active",
-                )
+    query = select(document.Document, document.ExtractionSchema).where(
+        document.Document.id == document_id, document.Document.status == "ready"
+    )
+    if schema_id is None:
+        query = (
+            query.join(
+                document.Collection, document.Collection.id == document.Document.collection_id
             )
-        ).first()
+            .join(
+                document.ExtractionSchema,
+                document.ExtractionSchema.id == document.Collection.extraction_schema_id,
+            )
+            .where(document.ExtractionSchema.status == "active")
+        )
+    else:
+        query = query.join(
+            document.ExtractionSchema,
+            document.ExtractionSchema.collection_id == document.Document.collection_id,
+        ).where(document.ExtractionSchema.id == schema_id)
+    async with scoped_session(ROLE, org_id) as session:
+        found = (await session.execute(query)).first()
         if found is None:
             return None
         doc, schema = found
-        done = await session.scalar(
-            select(func.count())
-            .select_from(document.ExtractedRecord)
-            .where(
-                document.ExtractedRecord.document_id == doc.id,
-                document.ExtractedRecord.extraction_schema_id == schema.id,
+        if schema_id is None:
+            done = await session.scalar(
+                select(func.count())
+                .select_from(document.ExtractedRecord)
+                .where(
+                    document.ExtractedRecord.document_id == doc.id,
+                    document.ExtractedRecord.extraction_schema_id == schema.id,
+                )
             )
-        )
-        if done:
-            return None
+            if done:
+                return None
         passages = list(
             (
                 await session.scalars(
@@ -187,17 +214,103 @@ async def extract_document(
         log.warning("extraction | document %s not read: %s", document_id, exc)
         return None
     values, confidence, spans, status = record(fields, reply.content, passages)
+    return Reading(doc.id, schema.id, values, confidence, spans, status)
+
+
+async def extract_document(
+    gateway: Gateway | None, org_id: uuid.UUID, document_id: uuid.UUID
+) -> str | None:
+    """The new record's status, or None when nothing was extracted."""
+    reading = await read(gateway, org_id, document_id)
+    if reading is None:
+        return None
     async with scoped_session(ROLE, org_id) as session:
         session.add(
             document.ExtractedRecord(
                 id=uuid7(),
                 org_id=org_id,
-                document_id=doc.id,
-                extraction_schema_id=schema.id,
-                values=values,
-                confidence=confidence,
-                source_spans=spans,
-                status=status,
+                document_id=reading.document_id,
+                extraction_schema_id=reading.schema_id,
+                values=reading.values,
+                confidence=reading.confidence,
+                source_spans=reading.spans,
+                status=reading.status,
             )
         )
-    return status
+    return reading.status
+
+
+# --- a schema's test on sample documents (POST /v1/extraction-schemas/{id}:test, BR-110) --------
+
+
+def sample_accuracy(
+    fields: list[dict[str, Any]], readings: list[Reading]
+) -> dict[str, dict[str, Any]]:
+    """Per field, the share of the documents read whose value passed the quote check (confidence
+    1; an unchecked value is 0.5, a missing one 0), with how many documents it was measured on."""
+    measured = len(readings)
+    return {
+        f["name"]: {
+            "accuracy": round(
+                sum(r.confidence.get(f["name"]) == 1.0 for r in readings) / measured, 4
+            ),
+            "documents": measured,
+        }
+        for f in fields
+    }
+
+
+async def test_requested(event: Event) -> None:
+    """The api moved the schema to testing and cleared its accuracy; this reads the sample
+    documents (the collection's latest ready ones when none were named) with that schema and
+    writes sample_accuracy, which activation checks against 95% per required field (BR-110). The
+    schema stays in testing, and no record is kept: it is not the collection's schema yet.
+
+    Like the crawler's test, this measures what the Verifier can point to in the document, not
+    labelled correctness: nobody has said what each sample should yield."""
+    # The gateway the questions use; read through the module so tests can replace it there.
+    from services.worker_agent import questions
+
+    org_id = event.org_id
+    schema_id = uuid.UUID(str(event.payload.get("extraction_schema_id") or event.aggregate_id))
+    async with scoped_session(ROLE, org_id) as session:
+        schema = await session.get(document.ExtractionSchema, schema_id)
+        # Activated, superseded or edited since, or already measured on a redelivery.
+        if schema is None or schema.status != "testing" or schema.sample_accuracy is not None:
+            return
+        named = [uuid.UUID(str(d)) for d in event.payload.get("sample_document_ids") or []]
+        ids = named or list(
+            (
+                await session.scalars(
+                    select(document.Document.id)
+                    .where(
+                        document.Document.collection_id == schema.collection_id,
+                        document.Document.status == "ready",
+                        document.Document.deleted_at.is_(None),
+                    )
+                    .order_by(document.Document.created_at.desc(), document.Document.id)
+                    .limit(SAMPLE_DOCUMENTS)
+                )
+            ).all()
+        )
+        fields = list(schema.fields or [])
+    gateway = questions.gateway()
+    readings = [r for d in ids if (r := await read(gateway, org_id, d, schema_id)) is not None]
+    if not readings or not fields:
+        # No model, no ready document or every reading failed: nothing was measured, so the
+        # schema keeps no accuracy and cannot be activated; testing it again asks again.
+        log.warning("extraction | schema %s test read no document", schema_id)
+        return
+    async with scoped_session(ROLE, org_id) as session:
+        await session.execute(
+            update(document.ExtractionSchema)
+            .where(
+                document.ExtractionSchema.id == schema_id,
+                document.ExtractionSchema.status == "testing",
+                document.ExtractionSchema.sample_accuracy.is_(None),
+            )
+            .values(sample_accuracy=sample_accuracy(fields, readings))
+        )
+
+
+HANDLERS: dict[str, Handler] = {TEST_REQUESTED: test_requested}
