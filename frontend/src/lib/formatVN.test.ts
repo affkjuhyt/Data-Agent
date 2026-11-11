@@ -27,6 +27,14 @@ describe('setNumberLocale', () => {
       expect(formatNumber(1284.5)).toBe('1,284.5');
       setNumberLocale('de-DE');
       expect(formatNumber(1284.5)).toBe('1.284,5');
+      // The marks are CLDR's (Intl), as the server's are (Babel): Swiss German writes a point,
+      // French groups with a narrow no-break space, Romanian a dot and a comma.
+      setNumberLocale('de-CH');
+      expect(formatNumber(1284.5)).toBe('1’284.5');
+      setNumberLocale('fr-FR');
+      expect(formatNumber(1284.5)).toBe('1\u202f284,5');
+      setNumberLocale('ro-RO');
+      expect(formatNumber(1284.5)).toBe('1.284,5');
       setNumberLocale('en-US', 'USD');
       expect(formatCurrency(1284)).toBe('$1,284');
       expect(formatDate(new Date(2026, 9, 31))).toBe('10/31/2026');

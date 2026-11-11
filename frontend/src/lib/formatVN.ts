@@ -12,8 +12,9 @@
  *   - compact form                → 1,28B · 12,5M · 3,2K
  *   - dates as dd/MM/yyyy, weeks start on Monday
  *
- * Implemented by hand rather than through Intl so the output is identical in
- * every runtime (Node without full ICU, older WebViews) and fully unit-testable.
+ * The layout is written here (grouping, compact suffixes, date order) so it stays the design's;
+ * the marks themselves come from Intl, i.e. CLDR, the same data the server's libs/language reads
+ * through Babel, so a figure reads the same on the screen and in an answer.
  */
 
 // The organisation's marks (GEN-41): vi-VN's until /v1/me says otherwise, set once by
@@ -30,25 +31,30 @@ const CURRENCY_SIGN: Record<string, string> = { VND: '₫', USD: '$', EUR: '€'
 // Numeric dates written month first (as libs/tabular.profile reads them).
 const MONTH_FIRST_LOCALES = new Set(['en-US', 'en-PH', 'en-CA']);
 
-// Languages that write a decimal comma (libs/language.marks says the same for the backend).
-const COMMA_DECIMAL = new Set(
-  'vi id de es it pt nl tr da nb sv fi pl cs ro ru uk el hr sl sk hu fr'.split(' '),
-);
-const SPACE_GROUP = new Set('fr nb sv fi pl cs ru uk sk'.split(' '));
+/** A locale's thousands separator and decimal mark as CLDR writes them (Intl); vi-VN's when the
+ *  runtime does not know the tag. Two hand-kept lists here and on the server used to disagree. */
+function marksOf(tag: string): [string, string] {
+  try {
+    const parts = new Intl.NumberFormat(tag).formatToParts(12345.6);
+    const group = parts.find((p) => p.type === 'group')?.value;
+    const decimal = parts.find((p) => p.type === 'decimal')?.value;
+    if (group && decimal) return [group, decimal];
+  } catch {
+    // An unknown tag: fall through to vi-VN's marks.
+  }
+  return ['.', ','];
+}
 
 /** Write numbers, dates and money the organisation's way: `locale`'s marks ("vi-VN" → 1.284,5;
  *  "en-US" → 1,284.5), its date order, and `currency`'s sign (₫ after the figure in a
  *  comma-decimal locale, $ before it otherwise). */
 export function setNumberLocale(locale: string | null | undefined, currency?: string | null): void {
   const tag = locale || 'vi-VN';
-  const language = tag.split('-')[0].toLowerCase();
   MONTH_FIRST = MONTH_FIRST_LOCALES.has(tag);
+  [GROUP, DECIMAL] = marksOf(tag);
   const code = (currency || 'VND').toUpperCase();
   CURRENCY = CURRENCY_SIGN[code] ?? code;
-  CURRENCY_FIRST = !COMMA_DECIMAL.has(language) && code !== 'VND';
-  if (SPACE_GROUP.has(language)) [GROUP, DECIMAL] = ['\u00a0', ','];
-  else if (COMMA_DECIMAL.has(language)) [GROUP, DECIMAL] = ['.', ','];
-  else [GROUP, DECIMAL] = [',', '.'];
+  CURRENCY_FIRST = DECIMAL !== ',' && code !== 'VND';
 }
 const DASH = '—';
 
