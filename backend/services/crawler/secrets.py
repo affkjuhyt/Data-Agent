@@ -7,26 +7,26 @@ same one, is refused before any call. The crawler's AppRole could not read it an
 
 from __future__ import annotations
 
-import os
+import asyncio
+import functools
 import re
-import time
 import uuid
 
-import httpx
+from libs.openbao import OpenBao, OpenBaoError, from_env
 
 
 class SecretUnavailable(RuntimeError):
     pass
 
 
-class Reader:
-    def __init__(self) -> None:
-        self.addr = os.environ.get("OPENBAO_ADDR", "").rstrip("/")
-        self.role_id = os.environ.get("OPENBAO_ROLE_ID", "")
-        self.secret_id = os.environ.get("OPENBAO_SECRET_ID", "")
-        self.token: str | None = None
-        self.expires = 0.0
+@functools.cache
+def _vault() -> OpenBao | None:
+    # One client per process: its AppRole login is reused across sources and runs. It never goes
+    # through the egress proxy (libs/openbao ignores the environment's proxy; OpenBao is in-cluster).
+    return from_env()
 
+
+class Reader:
     async def api_key(self, org_id: uuid.UUID, ref: str | None) -> str:
         parts = (ref or "").strip("/").split("/")
         if parts[:1] == ["secret"]:
@@ -39,27 +39,13 @@ class Reader:
             re.fullmatch(r"[A-Za-z0-9_.-]+", part) and part not in (".", "..") for part in parts
         ):
             raise SecretUnavailable("source secret_ref is invalid")
-        if not (self.addr and self.role_id and self.secret_id):
+        vault = _vault()
+        if vault is None:
             raise SecretUnavailable("OpenBao is not configured")
-        # OpenBao is in the cluster: never through the egress proxy.
-        async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
-            if not self.token or time.monotonic() >= self.expires:
-                login = await client.post(
-                    f"{self.addr}/v1/auth/approle/login",
-                    json={"role_id": self.role_id, "secret_id": self.secret_id},
-                )
-                if login.status_code != 200:
-                    raise SecretUnavailable("OpenBao login failed")
-                auth = login.json()["auth"]
-                self.token = str(auth["client_token"])
-                self.expires = time.monotonic() + max(int(auth.get("lease_duration", 60)) - 30, 30)
-            response = await client.get(
-                f"{self.addr}/v1/secret/data/{'/'.join(parts)}",
-                headers={"X-Vault-Token": self.token},
-            )
-        if response.status_code != 200:
-            raise SecretUnavailable("source secret could not be read")
-        values = response.json()["data"]["data"]
+        try:
+            values = await asyncio.to_thread(vault.read_kv, "/".join(parts))
+        except OpenBaoError as exc:
+            raise SecretUnavailable(f"source secret could not be read: {exc}") from exc
         key = values.get("api_key") or values.get("value")
         if not key:
             raise SecretUnavailable("source secret has no api_key")

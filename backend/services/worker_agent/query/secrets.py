@@ -10,14 +10,14 @@ A port, so tests and a cluster without OpenBao use another implementation.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
-import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-import httpx
+from libs.openbao import OpenBao, OpenBaoError
 
 
 class SecretUnavailable(RuntimeError):
@@ -63,40 +63,20 @@ def _credentials(data: dict[str, Any]) -> Credentials:
 
 
 class OpenBaoReader:
-    """KV v2 reads with an AppRole login (OPENBAO_ADDR, OPENBAO_ROLE_ID, OPENBAO_SECRET_ID)."""
+    """KV v2 reads with an AppRole login (OPENBAO_ADDR, OPENBAO_ROLE_ID, OPENBAO_SECRET_ID), through
+    libs/openbao: one login reused until its lease nearly ends, no redirect or proxy, no body in
+    an error."""
 
     def __init__(self, addr: str, role_id: str, secret_id: str, *, timeout: float = 5.0) -> None:
-        self._addr = addr.rstrip("/")
-        self._role_id, self._secret_id = role_id, secret_id
-        self._timeout = timeout
-        self._token: str | None = None
-        self._token_expires = 0.0
-
-    async def _login(self, client: httpx.AsyncClient) -> str:
-        if self._token and time.monotonic() < self._token_expires:
-            return self._token
-        r = await client.post(
-            f"{self._addr}/v1/auth/approle/login",
-            json={"role_id": self._role_id, "secret_id": self._secret_id},
-        )
-        if r.status_code != 200:
-            raise SecretUnavailable(f"OpenBao login failed ({r.status_code})")
-        auth = r.json()["auth"]
-        self._token = str(auth["client_token"])
-        # Renew a little before the lease ends rather than on the first 403.
-        self._token_expires = time.monotonic() + max(int(auth.get("lease_duration", 60)) - 30, 30)
-        return self._token
+        self._vault = OpenBao(addr, role_id=role_id, secret_id=secret_id, timeout=timeout)
 
     async def read(self, org_id: uuid.UUID, secret_ref: str) -> Credentials:
         path = _check_ref(org_id, secret_ref)
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            token = await self._login(client)
-            r = await client.get(
-                f"{self._addr}/v1/secret/data/{path}", headers={"X-Vault-Token": token}
-            )
-        if r.status_code != 200:
-            raise SecretUnavailable(f"the source's secret could not be read ({r.status_code})")
-        return _credentials(r.json()["data"]["data"])
+        try:
+            data = await asyncio.to_thread(self._vault.read_kv, path)
+        except OpenBaoError as exc:
+            raise SecretUnavailable(f"the source's secret could not be read: {exc}") from exc
+        return _credentials(data)
 
 
 class StaticReader:

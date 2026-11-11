@@ -10,6 +10,7 @@ from typing import Any, ClassVar
 
 import pytest
 
+from libs.openbao import OpenBao
 from services.api.kernel.problems import Problem
 from services.api.modules.exec.transit import OpenBaoTransit, transit_from_env
 
@@ -64,7 +65,7 @@ def bao() -> Iterator[str]:
 
 
 async def test_a_vault_key_is_created_once_and_its_public_half_read(bao: str) -> None:
-    transit = OpenBaoTransit(bao, "tok")
+    transit = OpenBaoTransit(OpenBao(bao, token="tok"))
     name = "exec-cond-0198a1b2-0000-7000-8000-000000000001-0198a1b2-0000-7000-8000-000000000002"
     first = await transit.create(name)
     again = await transit.create(name)
@@ -77,27 +78,32 @@ async def test_a_vault_key_is_created_once_and_its_public_half_read(bao: str) ->
 
 
 async def test_a_name_outside_the_routes_scheme_never_reaches_openbao(bao: str) -> None:
-    transit = OpenBaoTransit(bao, "tok")
+    transit = OpenBaoTransit(OpenBao(bao, token="tok"))
     with pytest.raises(Problem):
         await transit.create("../../sys/policy/root")
     assert _Bao.seen == []
 
 
 async def test_an_unreachable_or_wrong_key_is_503(bao: str) -> None:
-    down = OpenBaoTransit("http://127.0.0.1:9", "tok", timeout=1)
+    down = OpenBaoTransit(OpenBao("http://127.0.0.1:9", token="tok", timeout=1))
     with pytest.raises(Problem) as unreachable:
         await down.create("exec-cond-a")
     assert unreachable.value.status == 503
     _Bao.keys["exec-cond-b"] = {"type": "aes256-gcm96", "latest_version": 1}
     with pytest.raises(Problem) as wrong:
-        await OpenBaoTransit(bao, "tok").public_key("exec-cond-b", 1)
+        await OpenBaoTransit(OpenBao(bao, token="tok")).public_key("exec-cond-b", 1)
     assert wrong.value.status == 503
 
 
 def test_without_openbao_the_routes_keep_their_503(monkeypatch: pytest.MonkeyPatch) -> None:
+    from services.api.kernel import openbao
+
+    openbao.forget()
     monkeypatch.delenv("OPENBAO_ADDR", raising=False)
     monkeypatch.delenv("OPENBAO_TOKEN", raising=False)
     assert transit_from_env() is None
     monkeypatch.setenv("OPENBAO_ADDR", "http://openbao:8200")
     monkeypatch.setenv("OPENBAO_TOKEN", "tok")
+    openbao.forget()
     assert isinstance(transit_from_env(), OpenBaoTransit)
+    openbao.forget()

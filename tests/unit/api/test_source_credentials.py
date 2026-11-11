@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import uuid
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
+from libs.openbao import OpenBaoError
 from services.api.modules.catalog.schemas import SecretReference
 from services.api.modules.catalog.vault import SecretStoreError, put_account
 
@@ -35,73 +36,53 @@ def test_a_path_alone_is_unchanged() -> None:
     assert cred.username is None and cred.password is None
 
 
+class _Store:
+    """Stands in for the api's OpenBao (libs/openbao.OpenBao.write_kv)."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self.written: list[tuple[str, dict[str, Any]]] = []
+        self.fail = fail
+
+    def write_kv(self, path: str, data: dict[str, Any], *, mount: str = "secret") -> None:
+        if self.fail:
+            raise OpenBaoError("write secret: OpenBao answered 403")
+        self.written.append((f"{mount}/{path}", data))
+
+
 def test_put_account_sends_the_password_and_returns_only_the_path() -> None:
     org, source = uuid.uuid4(), uuid.uuid4()
-    seen: dict[str, object] = {}
-
-    class _Response:
-        status = 200
-
-        def __enter__(self) -> _Response:
-            return self
-
-        def __exit__(self, *_: object) -> None:
-            return None
-
-    def opener(request: object, timeout: float) -> _Response:
-        seen["url"] = request.full_url  # type: ignore[attr-defined]
-        seen["body"] = json.loads(request.data.decode())  # type: ignore[attr-defined]
-        seen["timeout"] = timeout
-        header = request.get_header("X-vault-token")  # type: ignore[attr-defined]
-        seen["token"] = header
-        return _Response()
-
-    import services.api.modules.catalog.vault as vault
-
-    original = vault.urllib.request.urlopen
-    vault.urllib.request.urlopen = opener  # type: ignore[assignment]
-    try:
-        ref = put_account(
-            org, source, "explorer", "", writeback=False, addr="http://openbao:8120", token="tok"
-        )
-    finally:
-        vault.urllib.request.urlopen = original  # type: ignore[assignment]
-
+    store = _Store()
+    ref = put_account(org, source, "explorer", "", writeback=False, vault=store)  # type: ignore[arg-type]
     prefix = f"secret/tenants/{org}/sources/{source}/account-"
-    assert ref.startswith(prefix) and ref != prefix
-    assert "explorer" not in ref and seen["token"] == "tok"
-    assert seen["body"] == {"data": {"user": "explorer", "password": ""}}
-    assert seen["url"] == f"http://openbao:8120/v1/secret/data/{ref.removeprefix('secret/')}"
+    assert ref.startswith(prefix) and ref != prefix and "explorer" not in ref
+    assert store.written == [(ref, {"user": "explorer", "password": ""})]
 
 
 def test_each_write_uses_a_new_path() -> None:
-    org, source = uuid.uuid4(), uuid.uuid4()
-
-    class _Response:
-        status = 200
-
-        def __enter__(self) -> _Response:
-            return self
-
-        def __exit__(self, *_: object) -> None:
-            return None
-
-    import services.api.modules.catalog.vault as vault
-
-    original = vault.urllib.request.urlopen
-    vault.urllib.request.urlopen = lambda *_a, **_k: _Response()  # type: ignore[assignment]
-    try:
-        first = put_account(
-            org, source, "explorer", "", writeback=False, addr="http://v", token="t"
-        )
-        second = put_account(
-            org, source, "explorer", "", writeback=False, addr="http://v", token="t"
-        )
-    finally:
-        vault.urllib.request.urlopen = original  # type: ignore[assignment]
+    org, source, store = uuid.uuid4(), uuid.uuid4(), _Store()
+    first = put_account(org, source, "explorer", "", writeback=False, vault=store)  # type: ignore[arg-type]
+    second = put_account(org, source, "explorer", "", writeback=False, vault=store)  # type: ignore[arg-type]
     assert first != second
 
 
-def test_put_account_without_a_token_does_not_call_the_store() -> None:
+def test_a_refused_write_is_said_without_the_password() -> None:
+    with pytest.raises(SecretStoreError) as caught:
+        put_account(
+            uuid.uuid4(),
+            uuid.uuid4(),
+            "explorer",
+            "hunter2",
+            writeback=False,
+            vault=_Store(fail=True),  # type: ignore[arg-type]
+        )
+    assert "hunter2" not in str(caught.value)
+
+
+def test_put_account_without_openbao_does_not_call_the_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.api.kernel import openbao
+
+    monkeypatch.setattr(openbao, "vault", lambda: None)
     with pytest.raises(SecretStoreError):
-        put_account(uuid.uuid4(), uuid.uuid4(), "explorer", "", writeback=False, addr="", token="")
+        put_account(uuid.uuid4(), uuid.uuid4(), "explorer", "", writeback=False)

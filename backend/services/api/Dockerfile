@@ -16,6 +16,7 @@ COPY backend/libs/cron/ ./libs/cron/
 COPY backend/libs/tabular/ ./libs/tabular/
 COPY backend/libs/pii/ ./libs/pii/
 COPY backend/libs/language/ ./libs/language/
+COPY backend/libs/openbao/ ./libs/openbao/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/api/ ./services/api/
 USER app

@@ -19,6 +19,7 @@ COPY backend/libs/source_drivers/ ./libs/source_drivers/
 COPY backend/libs/code_sandbox/ ./libs/code_sandbox/
 COPY backend/libs/pii/ ./libs/pii/
 COPY backend/libs/contracts/ ./libs/contracts/
+COPY backend/libs/openbao/ ./libs/openbao/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/worker_agent/ ./services/worker_agent/
 USER app

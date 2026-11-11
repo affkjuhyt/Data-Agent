@@ -7,3 +7,5 @@ certifi==2026.7.22
 lxml==5.3.0
 cssselect==1.2.0
 aioboto3==15.5.0
+# OpenBao: AppRole login and KV v2 reads (libs/openbao).
+hvac==2.4.0

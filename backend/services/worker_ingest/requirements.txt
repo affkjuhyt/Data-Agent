@@ -5,3 +5,5 @@ PyMySQL==1.1.1
 pymssql==2.3.7
 # PyMySQL needs it for MySQL 8 caching_sha2_password; the version worker-agent gets.
 cryptography==50.0.2
+# OpenBao: AppRole login and KV v2 reads (libs/openbao).
+hvac==2.4.0

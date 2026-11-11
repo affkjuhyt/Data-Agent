@@ -9,7 +9,6 @@ import hashlib
 import http.client
 import ipaddress
 import json
-import os
 import re
 import socket
 import ssl
@@ -150,11 +149,8 @@ _OPENER = urllib.request.build_opener(_NoRedirect)
 def _secret_value(secret_ref: str | None) -> str | None:
     if not secret_ref:
         return None
-    try:
-        token = openbao.token()
-    except openbao.VaultLoginError as exc:
-        raise _ProviderUnavailable("The provider secret could not be read from OpenBao.") from exc
-    if not token:
+    vault = openbao.vault()
+    if vault is None:
         raise _ProviderUnavailable("The API has no OpenBao resolver for this provider.")
     ref = secret_ref.strip().strip("/")
     parts = ref.split("/", 2)
@@ -164,19 +160,10 @@ def _secret_value(secret_ref: str | None) -> str | None:
         mount, path = parts[0], "/".join(parts[1:])
     else:
         raise _ProviderUnavailable("The provider secret_ref is not a KV path.")
-    base = os.environ.get("OPENBAO_ADDR", "http://openbao:8200").rstrip("/")
-    request = urllib.request.Request(
-        f"{base}/v1/{mount}/data/{path}",
-        headers={"X-Vault-Token": token, "Accept": "application/json"},
-    )
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:
-            payload = json.loads(response.read())
-    except (OSError, ValueError, urllib.error.URLError) as exc:
+        data = vault.read_kv(path, mount=mount)
+    except openbao.OpenBaoError as exc:
         raise _ProviderUnavailable("The provider secret could not be read from OpenBao.") from exc
-    data = payload.get("data", {}).get("data", {})
-    if not isinstance(data, dict):
-        raise _ProviderUnavailable("The provider secret has an invalid KV payload.")
     value = data.get("api_key") or data.get("token") or data.get("value")
     if not isinstance(value, str) or not value:
         raise _ProviderUnavailable("The provider secret has no supported credential field.")

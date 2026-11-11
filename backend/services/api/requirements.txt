@@ -25,3 +25,5 @@ croniter==2.0.5
 charset-normalizer==3.5.2
 # A skill's parameter schema and the parameters a run brings (modules/skill/rules.py).
 jsonschema==4.26.0
+# OpenBao: AppRole login, KV v2 and Transit (libs/openbao).
+hvac==2.4.0

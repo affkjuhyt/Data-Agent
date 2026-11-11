@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
 import uuid
 
 from libs.dataagent_db import uuid7
@@ -32,38 +29,20 @@ def put_account(
     password: str,
     *,
     writeback: bool,
-    addr: str | None = None,
-    token: str | None = None,
+    vault: openbao.OpenBao | None = None,
     version_id: uuid.UUID | None = None,
 ) -> str:
     """Store ``user`` and ``password`` and return the path the source row keeps.
 
-    ``password`` may be empty. The vault error body is discarded: a KV rejection can echo
-    the payload.
+    ``password`` may be empty. The store is the api's own AppRole, write-only on tenant source
+    paths (kernel/openbao.py); its errors never carry the payload (libs/openbao).
     """
-    addr = openbao.address() if addr is None else addr
-    if token is None:
-        # The api's own AppRole, write-only on tenant source paths (kernel/openbao.py).
-        try:
-            token = openbao.token() or ""
-        except openbao.VaultLoginError as exc:
-            raise SecretStoreError("the secret store is unavailable") from exc
-    if not addr or not token:
+    store = vault if vault is not None else openbao.vault()
+    if store is None:
         raise SecretStoreError("the secret store is not configured")
     ref = account_ref(org_id, source_id, version_id or uuid7(), writeback=writeback)
-    path = ref.removeprefix("secret/")
-    request = urllib.request.Request(
-        f"{addr.rstrip('/')}/v1/secret/data/{path}",
-        data=json.dumps({"data": {"user": username, "password": password}}).encode(),
-        method="POST",
-        headers={"X-Vault-Token": token, "Content-Type": "application/json"},
-    )
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:
-            if response.status >= 300:
-                raise SecretStoreError("the secret store rejected the account")
-    except urllib.error.HTTPError as exc:
-        raise SecretStoreError("the secret store rejected the account") from exc
-    except (OSError, TimeoutError) as exc:
-        raise SecretStoreError("the secret store is unavailable") from exc
+        store.write_kv(ref.removeprefix("secret/"), {"user": username, "password": password})
+    except openbao.OpenBaoError as exc:
+        raise SecretStoreError("the secret store rejected the account or is unavailable") from exc
     return ref
