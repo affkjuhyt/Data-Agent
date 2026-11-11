@@ -271,7 +271,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-09 | UC-03-01 | todo |  |
 | BR-10 | UC-03-01 | todo |  |
 | BR-11 | UC-03-02 | todo |  |
-| BR-12 | UC-03-05 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/skill/routes.py`, `backend/services/api/modules/skill/rules.py` +3 |
+| BR-12 | UC-03-05 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/skill/routes.py`, `backend/services/api/modules/skill/rules.py` +4 |
 | BR-13 | UC-03-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-14 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +12 |
 | BR-15 | UC-04-02 | todo |  |
@@ -284,7 +284,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-22 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/libs/sql_guard/__init__.py` +8 |
 | BR-23 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-24 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-25 | UC-06-04 | todo | `backend/services/api/modules/pipeline/routes.py` |
+| BR-25 | UC-06-04 | todo | `backend/services/api/modules/pipeline/routes.py`, `backend/services/worker_agent/writeback_diffs.py` |
 | BR-26 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-27 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-28 | UC-07-03, UC-07-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/libs/dataagent_db/models/inbox.py` +10 |
