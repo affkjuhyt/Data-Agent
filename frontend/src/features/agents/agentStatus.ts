@@ -10,7 +10,9 @@ type Tone = 'error' | 'warning' | 'neutral' | 'success' | 'idle';
 
 export function agentStatus(agent: AgentDef): { label: string; tone: Tone } {
   if (isLocked(agent)) return { label: 'Đã khoá', tone: 'neutral' };
-  if (agent.now?.tone === 'error') return { label: 'Lỗi', tone: 'error' };
+  // The api has no `now` sentence: an agent whose newest run failed is in error.
+  if (agent.now?.tone === 'error' || agent.last_run_status === 'failed')
+    return { label: 'Lỗi', tone: 'error' };
   if (agent.now?.tone === 'waiting' || agent.waiting_runs > 0)
     return { label: 'Chờ bạn', tone: 'warning' };
   if (agent.status === 'paused') return { label: 'Tạm dừng', tone: 'neutral' };
@@ -24,6 +26,8 @@ export function agentStatus(agent: AgentDef): { label: string; tone: Tone } {
  */
 export function nowOf(agent: AgentDef): NonNullable<AgentDef['now']> {
   if (agent.now) return agent.now;
+  if (agent.last_run_status === 'failed' && agent.waiting_runs === 0 && agent.active_runs === 0)
+    return { text: 'Lượt chạy gần nhất bị lỗi', tone: 'error' };
   if (agent.waiting_runs > 0)
     return { text: `${agent.waiting_runs} lượt chờ người quyết`, tone: 'waiting' };
   if (agent.active_runs > 0) return { text: `${agent.active_runs} lượt đang chạy`, tone: 'normal' };

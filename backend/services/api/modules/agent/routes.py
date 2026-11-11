@@ -502,6 +502,18 @@ async def _screen_agents(session: AsyncSession, items: list[AgentSummary]) -> No
         ).all()
     }
     spent = await spent_this_month(session, ids)
+    last_status = dict(
+        (
+            await session.execute(
+                select(agent.AgentRun.agent_id, agent.AgentRun.status)
+                .where(agent.AgentRun.agent_id.in_(ids), agent.AgentRun.is_test.is_(False))
+                .distinct(agent.AgentRun.agent_id)
+                .order_by(agent.AgentRun.agent_id, agent.AgentRun.created_at.desc())
+            )
+        )
+        .tuples()
+        .all()
+    )
     for item in items:
         current = (
             by_version.get((item.id, item.current_config_version))
@@ -520,6 +532,7 @@ async def _screen_agents(session: AsyncSession, items: list[AgentSummary]) -> No
         item.runs_7d = RunsWindow.model_validate(counted) if counted else None
         item.active_deployment_id = live.get(item.id)
         item.spent_this_month = spent.get(item.id, decimal.Decimal(0))
+        item.last_run_status = last_status.get(item.id)
 
 
 async def _screen_runs(session: AsyncSession, items: list[RunSummary]) -> None:

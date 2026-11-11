@@ -148,6 +148,8 @@ class AgentSummary(_Row):
     paused_reason: str | None
     monthly_budget: decimal.Decimal | None
     spent_this_month: decimal.Decimal
+    # Status of the newest production run: a failed one is the team table's "Lỗi".
+    last_run_status: str | None = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
     # GET /v1/agents: runs in progress and runs waiting for a person (A3).

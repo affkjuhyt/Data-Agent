@@ -220,6 +220,8 @@ async def test_list_agents_filters_and_pages(world: AgentWorld) -> None:
         assert by_id[first["id"]]["waiting_runs"] == 0
         # Spent this month is summed from production runs; a test run costs nothing here.
         assert by_id[first["id"]]["spent_this_month"] == "0"
+        # Only a test run so far: no production run to read as the agent's last.
+        assert by_id[first["id"]]["last_run_status"] is None
 
 
 # Proves AC-13-02-01, AC-13-02-04.
@@ -1094,7 +1096,9 @@ async def test_memories(world: AgentWorld, seed: Seed) -> None:
     ]
 
 
-async def test_list_says_the_goal_the_trigger_and_the_run_title(world: AgentWorld) -> None:
+async def test_list_says_the_goal_the_trigger_and_the_run_title(
+    world: AgentWorld, seed: Seed
+) -> None:
     async with client(world) as api:
         created = await new_agent(
             api,
@@ -1138,6 +1142,24 @@ async def test_list_says_the_goal_the_trigger_and_the_run_title(world: AgentWorl
         again = await api.get("/v1/agents", headers=owner_headers(world))
         item = next(row for row in again.json()["items"] if row["id"] == created["id"])
         assert item["runs_7d"] is None
+        assert item["last_run_status"] is None
+
+        # A production run that failed is the agent's last: the team table reads it as "Lỗi".
+        seed.row(
+            "agent.agent_run",
+            org_id=world.org,
+            agent_id=uuid.UUID(created["id"]),
+            config_version=1,
+            data_space_id=world.space,
+            trigger_kind="schedule",
+            status="failed",
+            stop_reason="error",
+            started_at=datetime.datetime.now(datetime.UTC),
+            finished_at=datetime.datetime.now(datetime.UTC),
+        )
+        failed = await api.get("/v1/agents", headers=owner_headers(world))
+        item = next(row for row in failed.json()["items"] if row["id"] == created["id"])
+        assert item["last_run_status"] == "failed"
 
 
 async def test_an_ask_turn_run_is_read_only_by_its_asker(world: AgentWorld, seed: Seed) -> None:

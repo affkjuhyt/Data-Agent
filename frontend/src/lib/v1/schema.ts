@@ -1750,7 +1750,8 @@ export interface paths {
         put?: never;
         /**
          * Xin quyền dùng sản phẩm dữ liệu của Data Space khác
-         * @description Create pending owner-space access requests for published products.
+         * @description Create pending owner-space access requests for published products. svc_context may not
+         *     write org: worker-agent opens each request under the id answered here (product_use.py).
          */
         post: operations["requestDataProductUse"];
         delete?: never;
@@ -7366,6 +7367,8 @@ export interface components {
             id: string;
             /** Kind */
             kind: string;
+            /** Last Run Status */
+            last_run_status?: string | null;
             /** Monthly Budget */
             monthly_budget: number | string | null;
             /** Name */
@@ -7544,6 +7547,8 @@ export interface components {
             id: string;
             /** Kind */
             kind: string;
+            /** Last Run Status */
+            last_run_status?: string | null;
             /** Monthly Budget */
             monthly_budget: number | string | null;
             /** Name */

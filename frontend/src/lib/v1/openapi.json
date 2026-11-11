@@ -1302,6 +1302,17 @@
       "title": "Kind",
       "type": "string"
      },
+     "last_run_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Run Status"
+     },
      "monthly_budget": {
       "anyOf": [
        {
@@ -1788,6 +1799,17 @@
      "kind": {
       "title": "Kind",
       "type": "string"
+     },
+     "last_run_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Run Status"
      },
      "monthly_budget": {
       "anyOf": [
@@ -66709,7 +66731,7 @@
   },
   "/v1/data-products:request-use": {
    "post": {
-    "description": "Create pending owner-space access requests for published products.",
+    "description": "Create pending owner-space access requests for published products. svc_context may not\nwrite org: worker-agent opens each request under the id answered here (product_use.py).",
     "operationId": "requestDataProductUse",
     "requestBody": {
      "content": {
