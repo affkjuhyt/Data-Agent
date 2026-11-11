@@ -1002,7 +1002,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | --- | --- | --- | --- | --- | --- |
 | AC-05-01-01 | Chính | Cho bộ sưu tập Văn bản pháp quy và tệp PDF quyết định lãi suất huy động / Khi AC04 tải lên và xác nhận số hiệu, ngày ban hành, ngày hiệu lực đã điền sẵn / Thì bản gốc ở MinIO, document có media pdf ở trạng thái receiv… | E2E, CSDL | todo | `tests/integration/api/test_document.py` |
 | AC-05-01-02 | Chính | Cho tệp đã nạp trước đó / Khi tải lại cùng tệp / Thì hệ thống báo trùng theo SHA-256 và không tạo document mới | API, CSDL | todo | `tests/integration/api/test_document.py` |
-| AC-05-01-03 | Thay thế | Cho document_source thư mục SMB có 1 tệp mới, 1 tệp đổi mã băm, 1 tệp bị xoá / Khi đến lịch đồng bộ / Thì 2 tệp được nạp và tệp bị xoá có trạng thái removed | CSDL | todo | `tests/integration/api/test_document.py` |
+| AC-05-01-03 | Thay thế | Cho document_source thư mục SMB có 1 tệp mới, 1 tệp đổi mã băm, 1 tệp bị xoá / Khi đến lịch đồng bộ / Thì 2 tệp được nạp và tệp bị xoá có trạng thái removed | CSDL | todo | `tests/integration/api/test_document.py`, `tests/integration/worker_agent/test_document_sync.py` |
 | AC-05-01-04 | Thay thế | Cho email có 2 tệp đính kèm / Khi nạp / Thì có 3 document (thân thư và 2 tệp) nối với cùng email_message | CSDL | todo |  |
 | AC-05-01-05 | Ngoại lệ | Cho PDF có mật khẩu hoặc tệp .rar / Khi tải / Thì bị từ chối kèm lý do | API | todo | `tests/integration/api/test_document.py` |
 | AC-05-01-06 | Ngoại lệ | Cho tệp 210 MB hoặc ghi âm 3 giờ 10 phút / Khi tải / Thì bị từ chối với yêu cầu tách tệp | API | todo | `tests/integration/api/test_document.py` |
