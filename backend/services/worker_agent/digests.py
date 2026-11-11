@@ -23,11 +23,11 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 
 from libs import language
 from libs.dataagent_db import scoped_session
-from libs.dataagent_db.models import catalog, inbox, monitor
+from libs.dataagent_db.models import catalog, inbox, monitor, org
 from services.worker_agent import questions
 from services.worker_agent.query.executor import run_query
 from services.worker_agent.query.scope import can_ask_data_space
@@ -205,20 +205,112 @@ async def alerts(
     return list(rows)
 
 
-async def waiting(org: uuid.UUID, owner: uuid.UUID) -> int:
-    """How many requests wait for the owner in "Cần bạn"."""
-    async with scoped_session("svc_notify", org, owner) as session:
-        return int(
-            await session.scalar(
-                select(func.count())
-                .select_from(inbox.HitlRequest)
+# Capabilities an org-wide role carries that a Data Space role cannot add (api
+# org/identity.py ORG_ONLY_CAPABILITIES).
+ORG_ONLY = frozenset({"admin", "compliance", "audit_read", "exec_vault"})
+# hitl_request states still waiting for a person (api inbox/routes.py PENDING).
+PENDING = ("open", "reassigned")
+
+
+def _valid(column: Any) -> Any:
+    return or_(column.is_(None), column > func.now())
+
+
+async def waiting(org_id: uuid.UUID, owner: uuid.UUID) -> int:
+    """How many requests wait for the owner in "Cần bạn", by its rule (api inbox _assigned_to):
+    assigned to them, to a group of theirs, or to a capability they hold where the request lives
+    (the Data Space's roles there, the organisation's for an org-wide request). Counting only
+    the ones assigned by name left out every request routed to a group or a capability."""
+    async with scoped_session("svc_notify", org_id, owner) as session:
+        group_ids = select(org.UserGroupMember.group_id).where(org.UserGroupMember.user_id == owner)
+        group_names = set(
+            (
+                await session.scalars(
+                    select(org.UserGroup.name).where(org.UserGroup.id.in_(group_ids))
+                )
+            ).all()
+        )
+        # Organisation-wide roles: assigned directly (and, when made from a group mapping, that
+        # mapping still active), or through an org-wide mapping of one of the owner's groups.
+        mappings = select(org.GroupMapping.id).where(
+            org.GroupMapping.status == "active", org.GroupMapping.data_space_id.is_(None)
+        )
+        org_roles = select(org.UserRole.role_id).where(
+            org.UserRole.user_id == owner,
+            _valid(org.UserRole.valid_until),
+            or_(org.UserRole.source != "group_mapping", org.UserRole.source_ref.in_(mappings)),
+        )
+        mapped = select(org.GroupMapping.role_id).where(
+            org.GroupMapping.group_id.in_(group_ids),
+            org.GroupMapping.data_space_id.is_(None),
+            org.GroupMapping.status == "active",
+        )
+        org_caps = frozenset(
+            (
+                await session.scalars(
+                    select(func.unnest(org.Role.capabilities))
+                    .where(or_(org.Role.id.in_(org_roles), org.Role.id.in_(mapped)))
+                    .distinct()
+                )
+            ).all()
+        )
+        member = org.DataSpaceMember
+        space_caps: dict[uuid.UUID, set[str]] = {}
+        for space_id, caps in (
+            await session.execute(
+                select(member.data_space_id, org.Role.capabilities)
+                .join(org.Role, org.Role.id == member.role_id)
                 .where(
-                    inbox.HitlRequest.assignee_id == owner,
-                    inbox.HitlRequest.status.in_(("open", "reassigned")),
+                    _valid(member.valid_until),
+                    or_(
+                        and_(
+                            member.principal_type.in_(("user", "agent")),
+                            member.principal_id == owner,
+                        ),
+                        and_(member.principal_type == "group", member.principal_id.in_(group_ids)),
+                    ),
                 )
             )
-            or 0
+        ).tuples():
+            space_caps.setdefault(space_id, set(org_caps)).update(set(caps or []) - ORG_ONLY)
+        held = set(org_caps).union(*space_caps.values()) if space_caps else set(org_caps)
+        hitl = inbox.HitlRequest
+        rows = (
+            (
+                await session.execute(
+                    select(
+                        hitl.data_space_id,
+                        hitl.assignee_id,
+                        hitl.assignee_group,
+                        hitl.assignee_capability,
+                    ).where(
+                        hitl.status.in_(PENDING),
+                        or_(
+                            hitl.assignee_id == owner,
+                            and_(
+                                hitl.assignee_id.is_(None),
+                                or_(
+                                    hitl.assignee_group.in_(group_names or {""}),
+                                    hitl.assignee_capability.in_(held or {""}),
+                                ),
+                            ),
+                        ),
+                    )
+                )
+            )
+            .tuples()
+            .all()
         )
+
+    def mine(space: uuid.UUID | None, who: Any, group: Any, capability: Any) -> bool:
+        if who is not None:
+            return bool(who == owner)
+        if group is not None:
+            return group in group_names
+        caps = org_caps if space is None else space_caps.get(space, set())
+        return capability in caps
+
+    return sum(1 for row in rows if mine(*row))
 
 
 def summary(shown: list[Kpi], fired: list[str], pending: int, as_of: datetime.date) -> list[str]:
