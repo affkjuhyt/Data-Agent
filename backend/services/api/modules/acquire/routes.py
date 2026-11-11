@@ -442,23 +442,22 @@ async def _summaries(
         .tuples()
         .all()
     )
-    pending = dict(
-        (
-            await session.execute(
-                select(R.source_id, func.count())
-                .select_from(E)
-                .join(R, R.id == E.run_id)
-                .where(
-                    R.source_id.in_(ids),
-                    E.status.in_(("pending", "flagged")),
-                    R.status.not_in(rules.CLOSED_RUN),
-                )
-                .group_by(R.source_id)
+    pending: dict[uuid.UUID, int] = {}
+    flagged: dict[uuid.UUID, int] = {}
+    for source_id, waiting, held in (
+        await session.execute(
+            select(R.source_id, func.count(), func.count().filter(E.status == "flagged"))
+            .select_from(E)
+            .join(R, R.id == E.run_id)
+            .where(
+                R.source_id.in_(ids),
+                E.status.in_(("pending", "flagged")),
+                R.status.not_in(rules.CLOSED_RUN),
             )
+            .group_by(R.source_id)
         )
-        .tuples()
-        .all()
-    )
+    ).tuples():
+        pending[source_id], flagged[source_id] = int(waiting), int(held)
     drifts = dict(
         (
             await session.execute(
@@ -492,7 +491,8 @@ async def _summaries(
         if view.last_published_at is not None:
             view.freshness_seconds = int((now - view.last_published_at).total_seconds())
         view.sample_accuracy = accuracy.get(row.id)
-        view.pending_review = int(pending.get(row.id, 0))
+        view.pending_review = pending.get(row.id, 0)
+        view.flagged_open = flagged.get(row.id, 0)
         view.open_drifts = int(drifts.get(row.id, 0))
         if row.id in errors:
             err = errors[row.id]

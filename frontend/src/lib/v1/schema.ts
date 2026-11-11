@@ -10188,6 +10188,11 @@ export interface components {
              * Format: uuid
              */
             data_space_id: string;
+            /**
+             * Flagged Open
+             * @default 0
+             */
+            flagged_open: number;
             /** Freshness Seconds */
             freshness_seconds?: number | null;
             /** Goal */
@@ -10346,6 +10351,11 @@ export interface components {
              * Format: uuid
              */
             data_space_id: string;
+            /**
+             * Flagged Open
+             * @default 0
+             */
+            flagged_open: number;
             /** Freshness Seconds */
             freshness_seconds?: number | null;
             /** Goal */

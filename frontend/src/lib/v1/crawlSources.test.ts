@@ -67,7 +67,7 @@ const server = setupServer(
   http.get('*/v1/crawl-sources', () =>
     HttpResponse.json({
       items: [
-        source('s-1', { pending_review: 3, sample_accuracy: '0.991' }),
+        source('s-1', { pending_review: 3, flagged_open: 2, sample_accuracy: '0.991' }),
         source('s-2', {
           consecutive_blocked: 3,
           last_fetch_error: { url: 'x', http_status: 403, fetched_at: '2026-10-07T00:00:00Z' },

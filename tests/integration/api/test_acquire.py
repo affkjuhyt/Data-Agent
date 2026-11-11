@@ -589,6 +589,7 @@ async def test_list_sources_shows_monitoring_columns_and_filters(w: World) -> No
     page = w.page(run, healthy)
     w.record(run, page, version, status="flagged", reasons=["outlier"])
     w.record(run, page, version, status="approved")
+    w.record(run, page, version, status="pending")
     w.source(space=w.other_space)
     async with w.client("owner") as c:
         everything = await c.get("/v1/crawl-sources")
@@ -598,7 +599,9 @@ async def test_list_sources_shows_monitoring_columns_and_filters(w: World) -> No
     items = {i["id"]: i for i in everything.json()["items"]}
     # The other Data Space's source is not listed.
     assert set(items) == {str(healthy), str(held)}
-    assert items[str(healthy)]["pending_review"] == 1
+    # Waiting: the flagged and the pending record; of those, the flagged one holds the run.
+    assert items[str(healthy)]["pending_review"] == 2
+    assert items[str(healthy)]["flagged_open"] == 1
     assert items[str(healthy)]["last_run_status"] == "in_review"
     assert float(items[str(healthy)]["sample_accuracy"]) == pytest.approx(0.96)
     assert items[str(healthy)]["has_issue"] is False

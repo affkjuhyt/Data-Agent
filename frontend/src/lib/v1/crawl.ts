@@ -37,6 +37,8 @@ export interface CrawlSource {
   last_run_text: string | null;
   sample_accuracy_pct: number | null;
   pending_review: number;
+  /** of those, flagged by a check: they hold their run's publication */
+  flagged_open: number;
   review_gate: ReviewGate;
   /** PROPOSAL: the open structure drift that quarantined the source, if any. */
   drift_id: string | null;
@@ -137,6 +139,7 @@ function readCrawlSource(
         ? null
         : Math.round(Number(raw.sample_accuracy) * 1000) / 10,
     pending_review: raw.pending_review ?? 0,
+    flagged_open: raw.flagged_open ?? 0,
     review_gate: raw.review_gate as ReviewGate,
     drift_id: driftId,
     review_run_id: reviewRunId,
@@ -248,9 +251,9 @@ export const getAcquireSummary = async (): Promise<AcquireSummary> => {
       : null,
     sample_text: sampled.length ? `trung bình ${sampled.length} nguồn có mẫu` : null,
     pending_records: items.reduce((n, s) => n + s.pending_review, 0),
-    blocking_records: runs.items
-      .filter((r) => r.status === 'in_review')
-      .reduce((n, r) => n + (r.records_flagged ?? 0), 0),
+    // Live: records_flagged is written once at extraction, so after a reviewer cleared them the
+    // KPI still said "40 mục chặn phát hành" while the pending count beside it was 0.
+    blocking_records: items.reduce((n, s) => n + s.flagged_open, 0),
     latest_dataset: latest,
   };
 };

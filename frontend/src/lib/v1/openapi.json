@@ -9621,6 +9621,11 @@
       "title": "Data Space Id",
       "type": "string"
      },
+     "flagged_open": {
+      "default": 0,
+      "title": "Flagged Open",
+      "type": "integer"
+     },
      "freshness_seconds": {
       "anyOf": [
        {
@@ -10206,6 +10211,11 @@
       "format": "uuid",
       "title": "Data Space Id",
       "type": "string"
+     },
+     "flagged_open": {
+      "default": 0,
+      "title": "Flagged Open",
+      "type": "integer"
      },
      "freshness_seconds": {
       "anyOf": [

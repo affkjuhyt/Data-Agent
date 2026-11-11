@@ -262,6 +262,8 @@ class CrawlSourceSummary(CrawlSourceView):
     freshness_seconds: int | None = None
     sample_accuracy: decimal.Decimal | None = None
     pending_review: int = 0
+    # Of those, the records a check flagged: what blocks a run's publication until someone decides.
+    flagged_open: int = 0
     open_drifts: int = 0
     last_run_cost: decimal.Decimal | None = None
     last_fetch_error: LastFetchError | None = None

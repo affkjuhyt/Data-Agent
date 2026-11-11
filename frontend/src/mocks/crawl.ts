@@ -36,6 +36,8 @@ function sourcesFixture(): CrawlSource[] {
     last_run_text,
     sample_accuracy_pct,
     pending_review,
+    // The mock's waiting records are all flagged ones (the review queue shows them as blocking).
+    flagged_open: pending_review,
     review_gate,
     drift_id: health === 'drift_quarantined' ? 'drift-fees-0710' : null,
     review_run_id: id === 'cs-deposit' ? 'crun-deposit-1010' : null,
@@ -589,6 +591,7 @@ const sourceWire = (v: CrawlSource) => ({
     v.health === 'paused' ? 'paused' : v.health === 'drift_quarantined' ? 'quarantined' : 'active',
   review_gate: v.review_gate,
   pending_review: v.pending_review,
+  flagged_open: v.flagged_open,
   display: v,
 });
 const schemaWire = (sourceId: string, v: CrawlSchemaVersion) => ({
@@ -908,6 +911,7 @@ export function createCrawlHandlers() {
         last_run_text: null,
         sample_accuracy_pct: null,
         pending_review: 0,
+        flagged_open: 0,
         review_gate: 'exceptions',
         drift_id: null,
         review_run_id: null,
