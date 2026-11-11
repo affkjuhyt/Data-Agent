@@ -1,8 +1,9 @@
 """What the document routes need from outside Postgres, behind small interfaces.
 
 The document object store uses the deployment's S3-compatible MinIO endpoint and the vector port
-the deployment's Qdrant, with the query embedded through LiteLLM. The secret port is still an
-explicit dependency whose default refuses; tests replace every port with a fake.
+the deployment's Qdrant, with the query embedded through LiteLLM. The secret port writes a
+document source's account to OpenBao with the api's AppRole, and refuses without one; tests
+replace every port with a fake.
 """
 
 from __future__ import annotations
@@ -16,8 +17,11 @@ from typing import TYPE_CHECKING, BinaryIO, Protocol
 
 if TYPE_CHECKING:
     from qdrant_client import AsyncQdrantClient
+import asyncio
+import re
 from urllib.parse import urlparse
 
+from services.api.kernel import openbao
 from services.api.kernel.problems import Problem
 
 # D4: originals in da-raw-docs (immutable, invariant 1), page images in da-doc-derived.
@@ -165,6 +169,32 @@ class UnconfiguredSecrets:
         raise _unavailable("The secret store")
 
 
+_SECRET_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
+
+
+class OpenBaoSecrets:
+    """A document source's account at secret/tenants/<org>/sources/<name>: the one subtree the
+    api's AppRole may write and never read (dataagent-api-policy), and the one worker-agent's
+    reader accepts for the organisation (query/secrets.py) when it syncs the source."""
+
+    def __init__(self, vault: openbao.OpenBao) -> None:
+        self._vault = vault
+
+    async def write(self, org_id: uuid.UUID, name: str, values: dict[str, str]) -> str:
+        segments = name.split("/")
+        if not all(_SECRET_SEGMENT.fullmatch(s) for s in segments):
+            raise ValueError("a secret name is plain segments")
+        path = f"tenants/{org_id}/sources/{name}"
+        try:
+            await asyncio.to_thread(self._vault.write_kv, path, dict(values))
+        except openbao.OpenBaoError as exc:
+            # libs/openbao's message never carries the payload; the values are not repeated.
+            raise Problem(
+                503, "source_unavailable", "The secret store refused the credentials."
+            ) from exc
+        return f"secret/{path}"
+
+
 class NoVectors:
     async def search(
         self, targets: list[VectorTarget], query: str, limit: int
@@ -242,7 +272,8 @@ def object_store() -> ObjectStore:
 
 
 def secret_store() -> SecretStore:
-    return _SECRETS
+    vault = openbao.vault()
+    return OpenBaoSecrets(vault) if vault is not None else _SECRETS
 
 
 def vector_search() -> VectorSearch:

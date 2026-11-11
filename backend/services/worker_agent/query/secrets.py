@@ -34,6 +34,11 @@ class Credentials:
 class SecretReader(Protocol):
     async def read(self, org_id: uuid.UUID, secret_ref: str) -> Credentials: ...
 
+    async def fields(self, org_id: uuid.UUID, secret_ref: str) -> dict[str, str]:
+        """Every field of the secret, for a key that is not a user and password (an API's
+        token); the same org check as read()."""
+        ...
+
 
 _SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
 
@@ -71,12 +76,15 @@ class OpenBaoReader:
         self._vault = OpenBao(addr, role_id=role_id, secret_id=secret_id, timeout=timeout)
 
     async def read(self, org_id: uuid.UUID, secret_ref: str) -> Credentials:
+        return _credentials(await self.fields(org_id, secret_ref))
+
+    async def fields(self, org_id: uuid.UUID, secret_ref: str) -> dict[str, str]:
         path = _check_ref(org_id, secret_ref)
         try:
             data = await asyncio.to_thread(self._vault.read_kv, path)
         except OpenBaoError as exc:
             raise SecretUnavailable(f"the source's secret could not be read: {exc}") from exc
-        return _credentials(data)
+        return {str(k): str(v) for k, v in data.items() if v is not None}
 
 
 class StaticReader:
@@ -86,10 +94,13 @@ class StaticReader:
         self._secrets = secrets
 
     async def read(self, org_id: uuid.UUID, secret_ref: str) -> Credentials:
+        return _credentials(await self.fields(org_id, secret_ref))
+
+    async def fields(self, org_id: uuid.UUID, secret_ref: str) -> dict[str, str]:
         _check_ref(org_id, secret_ref)
         if secret_ref not in self._secrets:
             raise SecretUnavailable("no credentials for this source")
-        return _credentials(self._secrets[secret_ref])
+        return {str(k): str(v) for k, v in self._secrets[secret_ref].items() if v is not None}
 
 
 def reader_from_env() -> SecretReader | None:

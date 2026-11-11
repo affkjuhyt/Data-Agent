@@ -51,6 +51,7 @@ from services.worker_agent import (
     replay,
     report_runs,
     resolutions,
+    rest_tries,
     reviews,
     runs,
     schema_scans,
@@ -63,6 +64,7 @@ from services.worker_agent import (
 )
 from services.worker_agent.channels import gateway as channels
 from services.worker_agent.documents import extraction, indexed
+from services.worker_agent.documents import sync as document_sync
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 from services.worker_agent.providers.registry import ProviderRegistry
 from services.worker_agent.schedules import clock
@@ -142,6 +144,7 @@ HANDLERS: dict[str, Handler] = {
     **forecasting.HANDLERS,
     **indexed.HANDLERS,
     **extraction.HANDLERS,
+    **document_sync.HANDLERS,
     **product_use.HANDLERS,
     **monitor_backtests.HANDLERS,
 }
@@ -207,6 +210,8 @@ async def sources() -> list[EventSource]:
             types |= set(indexed.HANDLERS)
             # A schema's test on sample documents (documents/extraction.py, BR-110).
             types |= set(extraction.HANDLERS)
+            # A document source's sync (documents/sync.py, UC-05-01 1a): object stores only.
+            types |= set(document_sync.HANDLERS)
         if schema == "agent":
             # The one consumer of run.status_changed: the run executor (runs.py, ADR-37 stand-in).
             types |= set(runs.HANDLERS)
@@ -247,6 +252,8 @@ async def run(stop: asyncio.Event) -> None:
     # UC-16-02's private questions come from Redis, not an outbox (BR-193: never in a table).
     redis = private.redis_from_env()
     private_loop = asyncio.create_task(private.run(redis, stop)) if redis is not None else None
+    # The REST connector's try waits on Redis too, answered while its form waits (rest_tries.py).
+    tries_loop = asyncio.create_task(rest_tries.run(redis, stop)) if redis is not None else None
     # Every schedule fires from Temporal (schedules/clock.py), not from this loop.
     schedules = asyncio.create_task(clock.serve(stop))
     while not stop.is_set():
@@ -261,6 +268,8 @@ async def run(stop: asyncio.Event) -> None:
                 await asyncio.wait_for(stop.wait(), timeout=POLL_SECONDS)
     if private_loop is not None:
         await private_loop
+    if tries_loop is not None:
+        await tries_loop
     await schedules
 
 

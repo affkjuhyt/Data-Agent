@@ -14,7 +14,6 @@ import asyncio
 import datetime
 import uuid
 from typing import Annotated, Any
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Path, Query, Response
 from sqlalchemy import Select, func, or_, select
@@ -42,6 +41,14 @@ from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.audit import record_self_approval
 from services.api.modules.catalog import rules
 from services.api.modules.catalog.public import dataset_visible, working_days
+from services.api.modules.catalog.rest_try import (
+    WAIT_SECONDS,
+    RequestRefused,
+    RestTries,
+    TriesBusy,
+    checked_request,
+    rest_tries,
+)
 from services.api.modules.catalog.schemas import (
     Accepted,
     ActivateRequest,
@@ -191,46 +198,65 @@ async def list_connectors(principal: CurrentPrincipal) -> Page[ConnectorView]:
 @router.post(
     "/v1/connectors/rest:try",
     response_model=RestTryResult,
-    status_code=202,
     **endpoint("POST", "/v1/connectors/rest:try", operation_id="tryRestConnector"),
 )
 async def try_rest_connector(
-    body: RestTryRequest, principal: CurrentPrincipal, space: CurrentDataSpace
+    body: RestTryRequest,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+    tries: Annotated[RestTries | None, Depends(rest_tries)],
 ) -> RestTryResult:
-    """Queue one REST request; the connector worker reads the secret and performs the call."""
-    request = body.request
-    url = request.get("url")
-    if not isinstance(url, str) or urlparse(url).scheme not in {"http", "https"}:
-        raise Problem(422, "validation_failed", "request.url must be an http(s) URL.")
-    safe_request = {
-        key: value for key, value in request.items() if key not in {"headers", "body", "payload"}
-    }
-    if isinstance(request.get("headers"), list):
-        safe_request["header_names"] = [
-            item.get("name")
-            for item in request["headers"]
-            if isinstance(item, dict) and isinstance(item.get("name"), str)
-        ]
-    try_id = uuid7()
+    """One real call of the request, made by the connector worker and answered here; nothing is
+    written. The worker reads the key from OpenBao and calls a public https address only, with
+    no redirect followed."""
+    try:
+        request = checked_request(body.request)
+    except RequestRefused as exc:
+        raise Problem(422, "validation_failed", str(exc)) from exc
+    ref = _checked_ref(request["secret_ref"], principal, "request")
     async with transaction(ROLE, principal) as session:
-        session.add(
-            _event(
-                principal,
-                "connector_try",
-                try_id,
-                "connector.rest_try_requested",
-                try_id=try_id,
-                data_space_id=space,
-                requested_by=principal.user_id,
-                request=safe_request,
+        # The key is sent to a host the caller types: it may not be a database account (it would
+        # leave as a bearer token), nor a key another Data Space's source uses.
+        users = (
+            await session.execute(
+                select(catalog.Source.kind, catalog.Source.data_space_id).where(
+                    catalog.Source.org_id == principal.org_id,
+                    catalog.Source.deleted_at.is_(None),
+                    or_(
+                        catalog.Source.secret_ref == ref,
+                        catalog.Source.writeback_secret_ref == ref,
+                    ),
+                )
             )
+        ).all()
+    if any(kind != "rest_api" or source_space != space for kind, source_space in users):
+        raise Problem(
+            422,
+            "validation_failed",
+            "secret_ref này là tài khoản của một nguồn khác; chọn khoá của REST API.",
         )
-    return RestTryResult(
-        status=202,
-        duration_ms=0,
-        body="Đã xếp hàng kiểm tra REST; connector worker sẽ trả kết quả vào cấu hình nguồn.",
-        mapping=[],
-    )
+    if tries is None:
+        raise Problem(503, "source_unavailable", "Chưa cấu hình Redis cho lần gọi thử.")
+    job = {
+        "id": str(uuid7()),
+        "org_id": str(principal.org_id),
+        "data_space_id": str(space),
+        "requested_by": str(principal.user_id),
+        "request": request,
+    }
+    try:
+        answer = await tries.run(job, WAIT_SECONDS)
+    except TriesBusy as exc:
+        raise Problem(503, "source_unavailable", "Đang có nhiều lần gọi thử; thử lại sau.") from exc
+    if answer is None:
+        raise Problem(
+            503, "source_unavailable", "Không có worker nào nhận lần gọi thử; thử lại sau."
+        )
+    if "ok" in answer:
+        return RestTryResult.model_validate(answer["ok"])
+    if "refused" in answer:
+        raise Problem(422, "business_rule_violated", str(answer["refused"]))
+    raise Problem(503, "source_unavailable", str(answer.get("failed") or "Gọi thử không được."))
 
 
 @router.get(

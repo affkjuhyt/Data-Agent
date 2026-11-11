@@ -222,10 +222,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Đồng bộ thư mục danh tính
-         * @description Queue an identity-directory refresh; the connector owns the external call.
-         */
+        /** Đồng bộ thư mục danh tính */
         post: operations["syncDirectory"];
         delete?: never;
         options?: never;
@@ -1132,7 +1129,9 @@ export interface paths {
         put?: never;
         /**
          * Xếp hàng kiểm tra một request REST không lưu bí mật
-         * @description Queue one REST request; the connector worker reads the secret and performs the call.
+         * @description One real call of the request, made by the connector worker and answered here; nothing is
+         *     written. The worker reads the key from OpenBao and calls a public https address only, with
+         *     no redirect followed.
          */
         post: operations["tryRestConnector"];
         delete?: never;
@@ -1516,9 +1515,9 @@ export interface paths {
         /**
          * Agent đề xuất nguồn thu thập từ mô tả mục tiêu, kèm kiểm robots.txt và điều khoản (thêm 12/10/2026)
          * @description UC-14-01: the agent proposes sources for a goal, with what robots.txt and the terms say.
-         *     Searching and checking take longer than a request, so this is the Agent Thu thập run's job:
-         *     the api reserves the run id and asks for it, and registers nothing. A proposal becomes a
-         *     source only through POST /v1/crawl-sources, by a person.
+         *     Searching and checking take longer than a request, so this is the Agent Thu thập run's job.
+         *     That run needs a web search, which the stack does not have: refused, nothing registered. A
+         *     proposal becomes a source only through POST /v1/crawl-sources, by a person.
          */
         post: operations["suggestCrawlSources"];
         delete?: never;
@@ -32731,7 +32730,7 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            202: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

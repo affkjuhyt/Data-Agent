@@ -237,31 +237,124 @@ async def test_connection_catalogue_and_secret_refs_require_admin_data(o: Org) -
     assert denied_refs.status_code == 403
 
 
-async def test_rest_try_queues_redacted_connector_request(o: Org) -> None:
-    async with client(o) as api:
+class FakeTries:
+    """worker-agent's side of the REST try channel: answers what it is told to."""
+
+    def __init__(self, answer: dict[str, Any] | None) -> None:
+        self.answer = answer
+        self.jobs: list[dict[str, Any]] = []
+
+    async def run(self, job: dict[str, Any], wait_seconds: float) -> dict[str, Any] | None:
+        self.jobs.append(job)
+        return self.answer
+
+
+def _try_client(o: Org, tries: FakeTries | None) -> httpx.AsyncClient:
+    from services.api.modules.catalog.rest_try import rest_tries
+
+    app = create_app(Settings(), token_verifier=Tokens(o))
+    app.dependency_overrides[rest_tries] = lambda: tries
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://api")
+
+
+def _try_body(o: Org, **request: Any) -> dict[str, Any]:
+    return {
+        "request": {
+            "url": "https://api.example.test/v1/cards",
+            "query": "page=1",
+            "auth": "bearer",
+            "secret_ref": f"secret/tenants/{o.org}/rest/cards",
+            "headers": [{"name": "Accept", "value": "application/json"}],
+            **request,
+        }
+    }
+
+
+RESULT = {
+    "status": 200,
+    "duration_ms": 182,
+    "body": '{\n  "data": []\n}',
+    "mapping": [{"path": "data[].card_id", "column": "card_id", "type": "text", "note": None}],
+}
+
+
+# UC-04-01: the try is the worker's real call, answered in the same request; nothing is kept.
+async def test_rest_try_answers_the_workers_real_call_and_keeps_nothing(o: Org) -> None:
+    tries = FakeTries({"ok": RESULT})
+    async with _try_client(o, tries) as api:
         response = await api.post(
-            "/v1/connectors/rest:try",
-            headers=o.headers("admin"),
-            json={
-                "request": {
-                    "url": "https://api.example.test/v1/data",
-                    "auth": "bearer",
-                    "secret_ref": f"secret/tenants/{o.org}/rest",
-                    "headers": [{"name": "Authorization", "value": "do-not-store"}],
-                }
-            },
+            "/v1/connectors/rest:try", headers=o.headers("admin"), json=_try_body(o)
         )
-    assert response.status_code == 202, response.text
-    assert response.json()["status"] == 202
-    event = o.one("SELECT event_type FROM catalog.outbox WHERE aggregate_type = 'connector_try'")
-    assert event == "connector.rest_try_requested"
-    assert (
-        o.one(
-            "SELECT payload->'request'->>'header_names' FROM catalog.outbox "
-            "WHERE aggregate_type = 'connector_try'"
+    assert response.status_code == 200, response.text
+    assert response.json() == RESULT
+    [job] = tries.jobs
+    assert job["org_id"] == str(o.org) and job["data_space_id"] == str(o.space)
+    assert job["requested_by"] == str(o.users["admin"])
+    assert job["request"] == {
+        "url": "https://api.example.test/v1/cards",
+        "query": "page=1",
+        "auth": "bearer",
+        "secret_ref": f"secret/tenants/{o.org}/rest/cards",
+        "headers": [{"name": "Accept", "value": "application/json"}],
+        "records_path": None,
+    }
+    assert o.one("SELECT count(*) FROM catalog.outbox WHERE org_id = %s", o.org) == 0
+
+
+async def test_rest_try_refuses_secrets_in_the_request_and_foreign_accounts(o: Org) -> None:
+    _source_row(o, secret_ref=f"secret/tenants/{o.org}/core-db")
+    rest = {"kind": "rest_api", "mode": "ingest"}
+    _source_row(o, o.other, **rest, secret_ref=f"secret/tenants/{o.org}/rest/other")
+    _source_row(o, **rest, secret_ref=f"secret/tenants/{o.org}/rest/cards")
+    tries = FakeTries({"ok": RESULT})
+    bad = [
+        _try_body(o, url="http://api.example.test/v1/cards"),
+        _try_body(o, headers=[{"name": "Authorization", "value": "Bearer do-not-send"}]),
+        _try_body(o, headers=[{"name": "Cookie", "value": "session=1"}]),
+        _try_body(o, secret_ref=f"secret/tenants/{uuid.uuid4()}/rest/cards"),
+        _try_body(o, secret_ref=f"secret/tenants/{o.org}/../providers/x"),
+        # A database account is never sent to an HTTP host as a token…
+        _try_body(o, secret_ref=f"secret/tenants/{o.org}/core-db"),
+        # …nor another Data Space's REST key.
+        _try_body(o, secret_ref=f"secret/tenants/{o.org}/rest/other"),
+        _try_body(o, auth="basic"),
+    ]
+    async with _try_client(o, tries) as api:
+        answers = [
+            await api.post("/v1/connectors/rest:try", headers=o.headers("admin"), json=body)
+            for body in bad
+        ]
+        denied = await api.post(
+            "/v1/connectors/rest:try", headers=o.headers("analyst"), json=_try_body(o)
         )
-        == '["Authorization"]'
-    )
+        allowed = await api.post(
+            "/v1/connectors/rest:try", headers=o.headers("admin"), json=_try_body(o)
+        )
+    assert [a.status_code for a in answers] == [422] * len(bad), [a.text for a in answers]
+    assert "do-not-send" not in "".join(a.text for a in answers)
+    assert denied.status_code == 403
+    # The REST source of this Data Space may be tried with its own key.
+    assert allowed.status_code == 200 and len(tries.jobs) == 1
+
+
+async def test_rest_try_says_why_when_the_worker_could_not_call(o: Org) -> None:
+    cases: list[tuple[FakeTries | None, int, str]] = [
+        (FakeTries({"refused": "Chỉ gọi được địa chỉ công khai qua https."}), 422, "công khai"),
+        (
+            FakeTries({"failed": "Không kết nối được tới API (ConnectTimeout)."}),
+            503,
+            "ConnectTimeout",
+        ),
+        (FakeTries(None), 503, "worker"),
+        (None, 503, "Redis"),
+    ]
+    for tries, status, said in cases:
+        async with _try_client(o, tries) as api:
+            response = await api.post(
+                "/v1/connectors/rest:try", headers=o.headers("admin"), json=_try_body(o)
+            )
+        assert response.status_code == status, response.text
+        assert said in response.json()["detail"]
 
 
 def _source_row(o: Org, space: uuid.UUID | None = None, **values: Any) -> uuid.UUID:

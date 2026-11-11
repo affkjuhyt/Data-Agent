@@ -1,8 +1,9 @@
 """A2 group Tài liệu: collections, documents, search, quality queue, extraction schemas.
 
-UC-05-01 to UC-05-06 (schema document). Preprocessing (the eight steps of UC-05-02), source
-syncs and extraction test runs are worker-ingest's: this module stores the original, writes the
-row and the event to document.outbox in the same transaction, and answers 202 (A1.6). A change
+UC-05-01 to UC-05-06 (schema document). Preprocessing (the eight steps of UC-05-02) is
+worker-document's, source syncs (object stores only) and extraction test runs worker-agent's:
+this module stores the original, writes the row and the event to document.outbox in the same
+transaction, and answers 202 (A1.6). A change
 of validity (UC-05-05) is proposed, never applied here: the reviewer decides in Cần bạn.
 """
 
@@ -43,7 +44,7 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.kernel.problems import Problem
+from services.api.kernel.problems import Problem, not_available
 from services.api.modules.document.ports import (
     DERIVED_BUCKET,
     RAW_BUCKET,
@@ -115,6 +116,8 @@ EMBED_MODEL = os.environ.get("DOCUMENT_EMBED_MODEL", "bge-m3")
 IMAGE_URL_TTL_SECONDS = 300
 # BR-110 / NFR-35: every required field at least 95% accurate on the sample.
 ACTIVATION_ACCURACY = decimal.Decimal("0.95")
+# The source kinds a worker syncs (worker-agent documents/sync.py); the others are refused at once.
+SYNCED_KINDS = frozenset({"object_store"})
 # Reciprocal rank fusion constant for the vector and keyword lists (UC-05-04 step 1).
 RRF_K = 60
 # Resolving a personal-data issue: AC03 (steward) or AC06 (compliance), UC-05-03 E1.
@@ -458,7 +461,12 @@ async def sync_document_source(
             raise Problem(404, "not_found", "Document source not found.")
         if row.status == "paused":
             raise Problem(409, "invalid_state", "The source is paused.")
-        # UC-05-01 1a: new or changed files are ingested, files gone at the source are removed.
+        if row.kind not in SYNCED_KINDS:
+            raise not_available(
+                "Chưa đồng bộ được nguồn loại này; hiện chỉ đồng bộ kho đối tượng (S3, MinIO)."
+            )
+        # UC-05-01 1a: new or changed files are ingested, files gone at the source are removed;
+        # worker-agent's documents/sync.py does it.
         session.add(
             _event(
                 principal,

@@ -1868,7 +1868,11 @@ interface ApiTryResult {
   mapping: ApiFieldMapping[];
 }
 
-/** Pending connector-worker action: POST /v1/connectors/rest:try — one call with the request. */
+/**
+ * POST /v1/connectors/rest:try — one real GET by the connector worker, answered in the same call
+ * (the key from OpenBao, public https only, no redirect). A refusal (422) or an unreachable API
+ * (503) comes back as an error whose message says why.
+ */
 export const tryApiRequest = (request: ApiRequest) =>
   okAs<ApiTryResult>(api.POST('/v1/connectors/rest:try', { body: { request } }));
 

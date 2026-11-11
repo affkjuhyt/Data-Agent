@@ -440,6 +440,14 @@ async def test_sync_now_asks_the_worker(ds: Space) -> None:
         "document.document_source",
         org_id=ds.org,
         collection_id=ds.laws,
+        kind="object_store",
+        location="s3://phap-che/quyet-dinh",
+        sync_cron="0 2 * * *",
+    )
+    smb = ds.seed.row(
+        "document.document_source",
+        org_id=ds.org,
+        collection_id=ds.laws,
         kind="smb_folder",
         location="smb://fileserver/phap-che",
         sync_cron="0 2 * * *",
@@ -466,6 +474,11 @@ async def test_sync_now_asks_the_worker(ds: Space) -> None:
 
         refused = await api.post(f"/v1/document-sources/{paused}:sync", headers=ds.headers("admin"))
         assert refused.status_code == 409
+        # Only object stores are synced by a worker; any other kind is refused at once, not
+        # queued for a 202 that never completes.
+        unwired = await api.post(f"/v1/document-sources/{smb}:sync", headers=ds.headers("admin"))
+        assert unwired.status_code == 501, unwired.text
+        assert unwired.json()["code"] == "not_available" and ds.events(smb) == []
         other = await api.post(
             f"/v1/document-sources/{source}:sync", headers=ds.headers("admin", ds.other)
         )
