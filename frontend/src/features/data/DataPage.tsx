@@ -58,8 +58,14 @@ export default function DataPage() {
     {
       icon: 'check' as const,
       title: 'Sẵn sàng dùng',
+      // Ready = enabled and not blocked by a quality check (catalog.dataset); the api sends no
+      // `certified`, and counting it read "0 bộ dữ liệu" whatever the catalog held.
       stat: datasets.data
-        ? `${datasets.data.items.filter((d) => d.certified).length} bộ dữ liệu`
+        ? `${
+            datasets.data.items.filter((d) =>
+              d.certified !== null ? d.certified : d.enabled && d.quality_state !== 'blocked',
+            ).length
+          } bộ dữ liệu`
         : null,
       text: 'Dùng trong Khám phá, dashboard và agent',
       link: 'Mở bộ dữ liệu →',
@@ -121,7 +127,10 @@ function SourceHealth({ sources, onFix }: { sources: Source[]; onFix: () => void
   const live = sources.filter((s) => s.status !== 'archived' && s.status !== 'draft');
   const late = live.filter((s) => s.status === 'needs_fix' || (s.late_by_minutes ?? 0) > 0);
   if (live.length === 0) return null;
-  const onTime = `${live.length - late.length}/${live.length} nguồn đúng lịch.`;
+  // "Đúng lịch" needs each source's lateness, which the api does not send (late_by_minutes is a
+  // PROPOSAL): without it the line says only what is known, that no source reports an error.
+  const timed = live.some((s) => s.late_by_minutes !== undefined && s.late_by_minutes !== null);
+  const onTime = `${live.length - late.length}/${live.length} nguồn ${timed ? 'đúng lịch' : 'không báo lỗi'}.`;
   if (late.length === 0) return <Notice tone="success">{onTime}</Notice>;
   const first = late[0];
   const since = first.last_refreshed_at
@@ -135,7 +144,8 @@ function SourceHealth({ sources, onFix }: { sources: Source[]; onFix: () => void
     : '';
   return (
     <Notice tone="warning" action={<Button onClick={onFix}>Sửa kết nối</Button>}>
-      {onTime} {first.name} ngừng cập nhật{since ? ` từ ${since}` : ''}
+      {onTime} {first.name} {first.status === 'needs_fix' ? 'cần sửa kết nối' : 'ngừng cập nhật'}
+      {since ? ` từ ${since}` : ''}
       {stale}.{late.length > 1 ? ` Còn ${late.length - 1} nguồn khác cần xem.` : ''}
     </Notice>
   );
