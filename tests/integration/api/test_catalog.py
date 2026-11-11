@@ -205,17 +205,25 @@ async def _create_source(api: httpx.AsyncClient, o: Org, **extra: Any) -> dict[s
 async def test_connection_picker_lists_catalogue_and_org_secret_refs_only(o: Org) -> None:
     _source_row(o, name="Core banking", secret_ref=f"secret/tenants/{o.org}/core")
     _source_row(o, space=o.other, name="Market data", secret_ref=f"secret/tenants/{o.org}/market")
+    # A draft is not connected yet.
+    _source_row(o, name="Nháp", status="draft", secret_ref=f"secret/tenants/{o.org}/draft")
     async with client(o) as api:
         connectors = await api.get("/v1/connectors", headers=o.headers("admin"))
         refs = await api.get("/v1/secret-refs", headers=o.headers("admin"))
 
     assert connectors.status_code == 200, connectors.text
     connector_items = connectors.json()["items"]
+    # The open Data Space's connected sources: not the other space's, not the draft.
+    by_code = {item["code"]: item for item in connector_items}
+    assert by_code["postgresql"]["connected_count"] == 1
     assert {item["code"] for item in connector_items} >= {"postgresql", "clickhouse", "snowflake"}
     assert all("password" not in str(item).lower() for item in connector_items)
 
     assert refs.status_code == 200, refs.text
-    assert {item["ref"] for item in refs.json()["items"]} == {f"secret/tenants/{o.org}/core"}
+    assert {item["ref"] for item in refs.json()["items"]} == {
+        f"secret/tenants/{o.org}/core",
+        f"secret/tenants/{o.org}/draft",
+    }
     assert all(set(item) == {"ref", "label"} for item in refs.json()["items"])
     assert "secret_value" not in refs.text
 

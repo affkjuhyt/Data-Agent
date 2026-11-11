@@ -155,14 +155,24 @@ def _now() -> datetime.datetime:
     **endpoint("GET", "/v1/connectors", operation_id="listConnectors"),
 )
 async def list_connectors(principal: CurrentPrincipal) -> Page[ConnectorView]:
-    """Return the safe connector catalogue and counts for this organisation."""
+    """Return the safe connector catalogue and, per kind, the connected sources: those of the
+    open Data Space when the caller names one (the organisation's otherwise), not drafts or
+    archived ones. Counting the whole organisation, drafts included, put "Đã kết nối · 3" over
+    a Data Space with no source."""
     source = catalog.Source
+    connected = [
+        source.org_id == principal.org_id,
+        source.deleted_at.is_(None),
+        source.status.not_in(("draft", "archived")),
+    ]
+    if principal.data_space_id is not None:
+        connected.append(source.data_space_id == principal.data_space_id)
     async with transaction(ROLE, principal) as session:
         counts = dict(
             (
                 await session.execute(
                     select(source.kind, func.count(source.id))
-                    .where(source.org_id == principal.org_id, source.deleted_at.is_(None))
+                    .where(*connected)
                     .group_by(source.kind)
                 )
             )
