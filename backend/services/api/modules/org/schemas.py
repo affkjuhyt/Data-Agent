@@ -29,6 +29,10 @@ class DataSpaceSummary(BaseModel):
     # Capabilities those roles grant in this Data Space, on top of the
     # organisation-wide ones.
     my_capabilities: list[str]
+    # The steward's display name and how many members (people, agents, groups) hold a valid
+    # membership: the admin list's "Người phụ trách" and "Thành viên".
+    steward_name: str | None = None
+    member_count: int = 0
 
 
 class RoleGrant(BaseModel):

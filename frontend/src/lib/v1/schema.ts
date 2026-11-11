@@ -10870,6 +10870,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Member Count
+             * @default 0
+             */
+            member_count: number;
             /** My Capabilities */
             my_capabilities: string[];
             /** My Roles */
@@ -10885,6 +10890,8 @@ export interface components {
              * Format: uuid
              */
             steward_id: string;
+            /** Steward Name */
+            steward_name?: string | null;
         };
         /** DataSpaceView */
         DataSpaceView: {
@@ -37211,6 +37218,8 @@ export interface operations {
     listMyDataSpaces: {
         parameters: {
             query?: {
+                /** @description mine: the spaces the caller can enter; org (admin): every space */
+                scope?: "mine" | "org";
                 page_size?: number;
                 page_token?: string;
                 /** @description A3's name for page_token */

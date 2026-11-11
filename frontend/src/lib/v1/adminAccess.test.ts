@@ -8,8 +8,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   decideAccessRequest,
   getAccessRequest,
+  getDataSpace,
   getDsr,
   listAccessRequests,
+  listDataSpaceSummaries,
   listDsr,
 } from './adminAccess';
 import type { components } from './schema';
@@ -140,5 +142,44 @@ describe('DSR for a compliance officer', () => {
     const page = await listDsr();
     expect(page.items.map((d) => d.handler_name)).toEqual(['u-linh']);
     expect((await getDsr(dsr.id)).code).toBe('DSR-000014');
+  });
+});
+
+describe('Data Spaces for the admin list', () => {
+  const space = (id: string, roles: number) => ({
+    id,
+    code: id.toUpperCase(),
+    name: id,
+    description: null,
+    status: 'active',
+    steward_id: 'u-1',
+    opened_at: null,
+    my_roles: Array.from({ length: roles }, () => ({ id: 'r', code: 'R', name: 'R' })),
+    my_capabilities: [],
+    steward_name: 'Hà',
+    member_count: 3,
+  });
+
+  it('asks for every space of the organisation, and for the own ones when that is refused', async () => {
+    const asked: (string | null)[] = [];
+    let admin = true;
+    server.use(
+      http.get('*/v1/data-spaces', ({ request }) => {
+        const scope = new URL(request.url).searchParams.get('scope');
+        asked.push(scope);
+        if (scope === 'org' && !admin) return forbidden();
+        return HttpResponse.json({
+          items: scope === 'org' ? [space('a', 1), space('b', 0)] : [space('a', 1)],
+          next_page_token: '',
+        });
+      }),
+    );
+    const all = await listDataSpaceSummaries();
+    expect(all.items.map((s) => s.id)).toEqual(['a', 'b']);
+    expect(all.items[1]).toMatchObject({ steward_name: 'Hà', member_count: 3, my_roles: [] });
+    expect((await getDataSpace('b')).id).toBe('b');
+    admin = false;
+    expect((await listDataSpaceSummaries()).items.map((s) => s.id)).toEqual(['a']);
+    expect(asked).toEqual(['org', 'org', 'org', 'mine']);
   });
 });

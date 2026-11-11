@@ -813,6 +813,8 @@ export function dataSpacesFixture(): DataSpace[] {
         { id: 'role-ac03', code: 'AC03', name: 'Người phụ trách dữ liệu' },
       ],
       my_capabilities: ['ask', 'steward', 'view_detail'],
+      steward_name: 'Trần Thu Hà',
+      member_count: 14,
     },
     {
       id: 'ds-ban-le',
@@ -824,6 +826,8 @@ export function dataSpacesFixture(): DataSpace[] {
       opened_at: '2026-09-15T08:00:00+07:00',
       my_roles: [{ id: 'role-ac01', code: 'AC01', name: 'Chuyên viên phân tích' }],
       my_capabilities: ['ask'],
+      steward_name: 'Trần Thu Hà',
+      member_count: 9,
     },
   ];
 }

@@ -293,6 +293,24 @@ async def test_list_my_data_spaces(world: World) -> None:
     assert body["next_page_token"] == ""
 
 
+async def test_an_admin_lists_every_space_of_the_organisation(world: World) -> None:
+    async with _client(world) as client:
+        everything = await client.get(
+            "/v1/data-spaces?scope=org", headers={"Authorization": "Bearer kc-alice"}
+        )
+        refused = await client.get(
+            "/v1/data-spaces?scope=org", headers={"Authorization": "Bearer kc-bob"}
+        )
+    assert everything.status_code == 200, everything.text
+    spaces = {s["code"]: s for s in everything.json()["items"]}
+    # Alice is not a member of DS-GOLD: it is listed to her as admin, with no role of hers there.
+    assert set(spaces) == {"DS-GOLD", "DS-OIL"}
+    assert spaces["DS-GOLD"]["my_roles"] == [] and spaces["DS-OIL"]["my_roles"] != []
+    assert spaces["DS-OIL"]["member_count"] >= 1
+    assert spaces["DS-OIL"]["steward_name"]
+    assert refused.status_code == 403, refused.text
+
+
 async def test_any_signed_in_user_lists_only_current_memberships(world: World) -> None:
     # A login is enough since d89c5000 (the Data Space picker comes before any capability); what a
     # user sees is still only where they are a member now: Bob's DS-GOLD membership has expired.

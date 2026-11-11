@@ -5,6 +5,7 @@ import { AgentChip } from '../../design-system/AgentChip';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Avatar } from '../../design-system/Avatar';
 import { Button } from '../../design-system/Button';
+import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { StatusDot } from '../../design-system/StatusDot';
 import {
@@ -41,8 +42,11 @@ export default function DataSpaceMembers({ id }: { id: string }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const space = useV1(['getDataSpace', id], () => getDataSpace(id));
-  const matrix = useV1(['getPermissions', id], () => getPermissions(id));
-  const members = useV1(['listMembers', id], () => listMembers(id));
+  // Members and the matrix are read inside the space (X-Data-Space), which needs a membership: an
+  // admin sees every space in the list, but one they do not belong to is managed by its steward.
+  const member = space.data ? space.data.my_roles.length > 0 : undefined;
+  const matrix = useV1(['getPermissions', id], member ? () => getPermissions(id) : null);
+  const members = useV1(['listMembers', id], member ? () => listMembers(id) : null);
   const pending = useV1(['listAccessRequests', { status: 'pending', data_space_id: id }, id], () =>
     listAccessRequests({ status: 'pending', data_space_id: id }),
   );
@@ -70,60 +74,79 @@ export default function DataSpaceMembers({ id }: { id: string }) {
           </>
         }
       />
-      <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col gap-da-md px-da-2xl py-da-xl">
-          <AsyncRegion state={matrix} what="ma trận quyền" skeletonRows={5}>
-            {(m) => (
-              <>
-                <MatrixTable matrix={m} />
-                <div className="flex gap-da-md max-[1279px]:flex-col">
-                  {[
-                    { title: 'Theo dòng', text: m.rules.row },
-                    { title: 'Theo cột', text: m.rules.column },
-                    { title: 'Agent', text: m.rules.agent },
-                  ].map((rule) => (
-                    <div
-                      key={rule.title}
-                      className="flex min-w-0 flex-1 flex-col gap-da-xs rounded-md border border-border bg-card px-da-lg py-da-md"
-                    >
-                      <span className="text-foreground da-body-strong">{rule.title}</span>
-                      <span className="text-muted-foreground da-caption">{rule.text}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
+      {space.error && (
+        <div className="px-da-2xl pt-da-xl">
+          <AsyncRegion state={space} what="Data Space">
+            {() => null}
           </AsyncRegion>
         </div>
-        <aside className="flex w-[340px] shrink-0 flex-col gap-da-md border-l border-border bg-card px-da-xl py-da-lg max-[1279px]:hidden">
-          <h2 className="text-foreground da-heading-3">
-            Thành viên
-            {space.data?.member_count != null ? ` · ${count(space.data.member_count)}` : ''}
-          </h2>
-          <AsyncRegion state={members} what="thành viên">
-            {(p) => (
-              <ul className="flex flex-col gap-da-md">
-                {p.items.map((m) => (
-                  <MemberRow key={m.id} member={m} />
-                ))}
-              </ul>
+      )}
+      {member === false && (
+        <div className="px-da-2xl pt-da-xl">
+          <EmptyState
+            title="Bạn không là thành viên của Data Space này"
+            description={`${space.data?.member_count ?? 0} thành viên. Thành viên và quyền do người phụ trách${
+              space.data?.steward_name ? ` ${space.data.steward_name}` : ''
+            } quản lý trong Data Space.`}
+          />
+        </div>
+      )}
+      {member !== false && !space.error && (
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col gap-da-md px-da-2xl py-da-xl">
+            <AsyncRegion state={matrix} what="ma trận quyền" skeletonRows={5}>
+              {(m) => (
+                <>
+                  <MatrixTable matrix={m} />
+                  <div className="flex gap-da-md max-[1279px]:flex-col">
+                    {[
+                      { title: 'Theo dòng', text: m.rules.row },
+                      { title: 'Theo cột', text: m.rules.column },
+                      { title: 'Agent', text: m.rules.agent },
+                    ].map((rule) => (
+                      <div
+                        key={rule.title}
+                        className="flex min-w-0 flex-1 flex-col gap-da-xs rounded-md border border-border bg-card px-da-lg py-da-md"
+                      >
+                        <span className="text-foreground da-body-strong">{rule.title}</span>
+                        <span className="text-muted-foreground da-caption">{rule.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </AsyncRegion>
+          </div>
+          <aside className="flex w-[340px] shrink-0 flex-col gap-da-md border-l border-border bg-card px-da-xl py-da-lg max-[1279px]:hidden">
+            <h2 className="text-foreground da-heading-3">
+              Thành viên
+              {space.data?.member_count != null ? ` · ${count(space.data.member_count)}` : ''}
+            </h2>
+            <AsyncRegion state={members} what="thành viên">
+              {(p) => (
+                <ul className="flex flex-col gap-da-md">
+                  {p.items.map((m) => (
+                    <MemberRow key={m.id} member={m} />
+                  ))}
+                </ul>
+              )}
+            </AsyncRegion>
+            {pending.data && pending.data.items.length > 0 && (
+              <button
+                type="button"
+                onClick={() => navigate('admin', 'ACCESS_REQUESTS')}
+                className="flex items-start gap-da-sm rounded-md border border-border px-da-md py-da-sm text-left hover:bg-subtle"
+              >
+                <Icon name="lock" className="text-warning" />
+                <span className="flex-1 text-foreground da-caption">
+                  {pending.data.items.length} yêu cầu quyền đang chờ:{' '}
+                  {pending.data.items.map((r) => r.queue_label).join(', ')}
+                </span>
+              </button>
             )}
-          </AsyncRegion>
-          {pending.data && pending.data.items.length > 0 && (
-            <button
-              type="button"
-              onClick={() => navigate('admin', 'ACCESS_REQUESTS')}
-              className="flex items-start gap-da-sm rounded-md border border-border px-da-md py-da-sm text-left hover:bg-subtle"
-            >
-              <Icon name="lock" className="text-warning" />
-              <span className="flex-1 text-foreground da-caption">
-                {pending.data.items.length} yêu cầu quyền đang chờ:{' '}
-                {pending.data.items.map((r) => r.queue_label).join(', ')}
-              </span>
-            </button>
-          )}
-        </aside>
-      </div>
+          </aside>
+        </div>
+      )}
       <MemberAddDialog
         open={adding}
         dataSpaceId={id}

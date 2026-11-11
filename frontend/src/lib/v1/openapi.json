@@ -11892,6 +11892,11 @@
       "title": "Id",
       "type": "string"
      },
+     "member_count": {
+      "default": 0,
+      "title": "Member Count",
+      "type": "integer"
+     },
      "my_capabilities": {
       "items": {
        "type": "string"
@@ -11930,6 +11935,17 @@
       "format": "uuid",
       "title": "Steward Id",
       "type": "string"
+     },
+     "steward_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Steward Name"
      }
     },
     "required": [
@@ -66801,6 +66817,22 @@
    "get": {
     "operationId": "listMyDataSpaces",
     "parameters": [
+     {
+      "description": "mine: the spaces the caller can enter; org (admin): every space",
+      "in": "query",
+      "name": "scope",
+      "required": false,
+      "schema": {
+       "default": "mine",
+       "description": "mine: the spaces the caller can enter; org (admin): every space",
+       "enum": [
+        "mine",
+        "org"
+       ],
+       "title": "Scope",
+       "type": "string"
+      }
+     },
      {
       "in": "query",
       "name": "page_size",

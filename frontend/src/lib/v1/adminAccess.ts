@@ -1,4 +1,4 @@
-import { V1Error, type Page, api, ok, okAs } from './client';
+import { V1Error, type Page, api, ok, okAs, pathId } from './client';
 import type { components } from './schema';
 import type { AppUser, DataSpace } from './types';
 
@@ -164,10 +164,10 @@ export const setSelfApproval = (on: boolean) =>
 
 /* ─── Data Space, thành viên và quyền (UC-11-08) ─────────────────────── */
 
-export interface DataSpaceSummary extends DataSpace {
-  /** PROPOSAL: steward display name (steward_id is the column); empty without it. */
+export interface DataSpaceSummary extends Omit<DataSpace, 'steward_name' | 'member_count'> {
+  /** The steward's display name; empty when the account is gone. */
   steward_name: string;
-  /** PROPOSAL: members counted over people, groups' people and agents; null without it. */
+  /** Valid memberships (a person, an agent or a group each count once). */
   member_count: number | null;
 }
 
@@ -260,18 +260,22 @@ export interface PermissionMatrix {
 export type PermissionView = Schemas['TableView'];
 export type PermissionSimulation = Schemas['PermissionSimulation'];
 
-type DataSpaceWire = DataSpace & Partial<Pick<DataSpaceSummary, 'steward_name' | 'member_count'>>;
-
-const readSummary = (raw: DataSpaceWire): DataSpaceSummary => ({
+const readSummary = (raw: DataSpace): DataSpaceSummary => ({
   ...raw,
   steward_name: raw.steward_name ?? '',
   member_count: raw.member_count ?? null,
 });
 
+/** Every Data Space of the organisation for an admin (scope=org); the caller's own otherwise
+ *  (scope=org answers 403 to a non-admin). Listing memberships only hid from an admin a space
+ *  they created with someone else as steward. */
 export const listDataSpaceSummaries = async () => {
-  const page = await ok<Page<DataSpaceWire>>(
-    api.GET('/v1/data-spaces', { params: { query: ALL } }),
-  );
+  const read = (scope: 'org' | 'mine') =>
+    ok<Page<DataSpace>>(api.GET('/v1/data-spaces', { params: { query: { ...ALL, scope } } }));
+  const page = await read('org').catch((error: unknown) => {
+    if (error instanceof V1Error && error.status === 403) return read('mine');
+    throw error;
+  });
   return { ...page, items: page.items.map(readSummary) };
 };
 
@@ -285,8 +289,10 @@ const codeOf = (name: string) =>
     .replace(/[^A-Z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 60) || 'DATA_SPACE';
-/** A2 has no GET /v1/data-spaces/{id}: one space is read from the spaces I am a member of. */
+/** A2 has no GET /v1/data-spaces/{id}: one space is read from the list (the organisation's for
+ *  an admin, the caller's own otherwise). */
 export const getDataSpace = async (id: string) => {
+  pathId(id);
   const space = (await listDataSpaceSummaries()).items.find((s) => s.id === id);
   if (!space) throw new V1Error(404, 'not_found', 'Không tìm thấy Data Space.');
   return space;
@@ -665,7 +671,9 @@ function readBacktest(raw: Schemas['BacktestResultView']): Backtest {
   return {
     window_days: Math.max(
       1,
-      Math.round((new Date(raw.window_to).getTime() - new Date(raw.window_from).getTime()) / DAY_MS),
+      Math.round(
+        (new Date(raw.window_to).getTime() - new Date(raw.window_from).getTime()) / DAY_MS,
+      ),
     ),
     affected_queries: raw.changed_result_count,
     total_queries: raw.matched_count,
