@@ -11,9 +11,10 @@ The derived table is read only when the platform materialised it for this datase
 request's Data Space (materialised_here); any other dataset row fails with one generic reason.
 Before either table is read, the requester's access is bound as the query executor binds it
 (_governed): a table they may not read, or see only part of under a row policy or row scope,
-refuses the preview, and every column a column or mask policy keeps from them is left out of the
-sample, as is every column labelled personal data (catalog column_meta.pii_label); the api
-strips the latter again when it answers.
+refuses the preview, and so does a derived table that writes a column a column or mask policy
+keeps from them: they choose the derived values, so the counts would tell them whether a guess at
+a hidden value was right. Every column labelled personal data (catalog column_meta.pii_label) is
+left out of the sample; the api strips it again when it answers.
 
 Both reads are read-only: the target through the source's read account (secret_ref, never the
 writeback account) in the drivers' read-only transaction (query.executor.driver_for), the derived
@@ -64,6 +65,10 @@ CALLER_KIND = "ad_hoc"
 NOT_MATERIALISED = (
     "Chỉ xem trước được từ bảng dẫn xuất mà nền tảng đã tạo trong Data Space này "
     "(kết quả pipeline hoặc bảng dẫn xuất đã lưu)."
+)
+WRITES_HIDDEN = (
+    "Bảng dẫn xuất ghi vào cột mà chính sách không cho bạn xem ở bảng đích; "
+    "xem trước cần đọc được mọi cột được ghi."
 )
 
 
@@ -156,9 +161,14 @@ async def _diff(org_id: uuid.UUID, requester: uuid.UUID, request_id: uuid.UUID) 
     new_table = Table(None, derived.schema_name, derived.table_name)
     old_table = Table(target_source, target.schema_name, target.table_name)
     # Both tables as the requester may read them, before a row of either is read.
-    hidden = pii | await _governed(org_id, requester, space, new_table)
-    hidden |= await _governed(org_id, requester, space, old_table)
+    governed = await _governed(org_id, requester, space, new_table)
+    governed |= await _governed(org_id, requester, space, old_table)
+    hidden = pii | governed
     new = await _read(org_id, requester, new_table, None)
+    # Compared, a hidden column is an oracle: the requester writes the derived value, and
+    # "unchanged" says it matched. Named by no column, as the requester may not see them.
+    if any(name.lower() in governed for name in new[0]):
+        raise PreviewFailed(WRITES_HIDDEN)
     by_lower = {c.name.lower(): c for c in target_columns}
     extra = [name for name in new[0] if name.lower() not in by_lower]
     if extra:
@@ -213,7 +223,8 @@ async def _governed(
     """The requester's access to `table`, through the query executor's own scope and policy
     binding (executor.bound_sql): a table they may not read refuses the preview, and so does one
     a row policy or a row scope shows them only part of (the rest would read as deletes). Returns
-    the lower-case columns a column or mask policy keeps from them, left out of the sample."""
+    the lower-case columns a column or mask policy keeps from them: a derived table may not write
+    one (WRITES_HIDDEN), and none reaches the sample."""
     from services.worker_agent.questions import _internal_workspace_source
 
     source = table.source or _internal_workspace_source(space, org_id)

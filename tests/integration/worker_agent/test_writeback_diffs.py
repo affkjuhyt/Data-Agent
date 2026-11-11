@@ -298,19 +298,17 @@ async def test_a_row_policy_on_the_target_refuses_the_preview(
 
 
 @pytest.mark.parametrize("kind", ["column", "mask"])
-async def test_a_column_or_mask_policy_keeps_the_column_out_of_the_sample(
+async def test_a_derived_table_writing_a_column_kept_from_the_requester_refuses_the_preview(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> None:
+    # The requester writes the derived table's values: counting "unchanged" against a column they
+    # may not read would tell them whether a guess at its value was right.
     bank = build(seed, warehouse, monkeypatch)
-    t = tables(bank, [(1, "HN", 100, "0901")], [(1, "SG", 150, "0901"), (2, "HP", 7, "0902")])
+    t = tables(bank, [(1, "HN", 100, "0901")], [(1, "HN", 100, "0901"), (2, "HP", 7, "0902")])
     extra = {"mask_method": "null"} if kind == "mask" else {}
     policy(bank, t.target_dataset, kind, columns=["balance"], **extra)
     made = request(bank, t.source, f"bank.{t.target}", t.derived)
     await drain()
     status, summary, _ = outcome(seed, made)
-    assert status == "previewed", summary
-    assert (summary["inserts"], summary["updates"]) == (1, 1)
-    assert "balance" not in json.dumps(summary["sample"])
-    assert summary["sample"]["updates"] == [
-        {"key": {"id": 1}, "before": {"region": "HN"}, "after": {"region": "SG"}}
-    ]
+    assert (status, summary) == ("failed", {"error": writeback_diffs.WRITES_HIDDEN})
+    assert "balance" not in json.dumps(summary)
