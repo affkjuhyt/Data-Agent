@@ -2,6 +2,7 @@
  * The v3.1 frame: top bar areas and counts, the ⌘K palette, the rail and the page header.
  */
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AREAS } from './areas';
 import { AppTopBar } from './AppTopBar';
@@ -70,23 +71,32 @@ describe('AppTopBar', () => {
 });
 
 describe('CommandPalette', () => {
-  it('filters by name or slash command and runs the selection on Enter', () => {
+  const field = () => screen.getByRole('textbox', { name: 'Lệnh' });
+
+  it('filters by name or slash command and runs the selection on Enter', async () => {
+    const user = userEvent.setup();
     const onNavigate = vi.fn();
     render(<CommandPalette open onClose={() => {}} onNavigate={onNavigate} />);
-    const input = screen.getByRole('combobox', { name: 'Lệnh' });
-    fireEvent.change(input, { target: { value: '/duyet' } });
+    await user.type(field(), '/duyet');
     expect(screen.getAllByRole('option')).toHaveLength(1);
-    fireEvent.keyDown(input, { key: 'Enter' });
+    await user.keyboard('{Enter}');
     expect(onNavigate).toHaveBeenCalledWith('needs-you', undefined);
   });
 
-  it('closes on Esc and says when nothing matches', () => {
+  it('finds a screen typed without its marks', async () => {
+    const user = userEvent.setup();
+    render(<CommandPalette open onClose={() => {}} onNavigate={() => {}} />);
+    await user.type(field(), 'trang chu');
+    expect(screen.getAllByRole('option').map((o) => o.textContent?.trim())).toEqual(['Trang chủ']);
+  });
+
+  it('closes on Esc and says when nothing matches', async () => {
+    const user = userEvent.setup();
     const onClose = vi.fn();
     render(<CommandPalette open onClose={onClose} onNavigate={() => {}} />);
-    const input = screen.getByRole('combobox', { name: 'Lệnh' });
-    fireEvent.change(input, { target: { value: 'zzz' } });
+    await user.type(field(), 'zzz');
     expect(screen.getByText('Không có lệnh nào khớp “zzz”.')).toBeInTheDocument();
-    fireEvent.keyDown(input, { key: 'Escape' });
+    await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
   });
 });
@@ -139,10 +149,20 @@ describe('railFor', () => {
   it('leaves out an item whose capability the viewer lacks, and an emptied group', async () => {
     const { railFor } = await import('./AppShell');
     const groups = [
-      { label: 'Phân tích', items: [{ id: 'ASK', label: 'Hỏi đáp' }, { id: 'VAULT', label: 'Kho riêng', requires: 'exec_vault' }] },
+      {
+        label: 'Phân tích',
+        items: [
+          { id: 'ASK', label: 'Hỏi đáp' },
+          { id: 'VAULT', label: 'Kho riêng', requires: 'exec_vault' },
+        ],
+      },
       { label: 'Riêng', items: [{ id: 'ONLY', label: 'Chỉ lãnh đạo', requires: 'exec_vault' }] },
     ];
     expect(railFor(groups, [])?.map((g) => g.items.map((i) => i.id))).toEqual([['ASK']]);
-    expect(railFor(groups, ['exec_vault'])?.flatMap((g) => g.items.map((i) => i.id))).toEqual(['ASK', 'VAULT', 'ONLY']);
+    expect(railFor(groups, ['exec_vault'])?.flatMap((g) => g.items.map((i) => i.id))).toEqual([
+      'ASK',
+      'VAULT',
+      'ONLY',
+    ]);
   });
 });
