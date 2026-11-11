@@ -161,7 +161,10 @@ describe('readArtifact', () => {
         figures: [
           { label: 'Bắc', value: '0.61', unit: '%', decimals: 2, query_run_id: 'qr-9' },
           { label: 'Nam', value: '-0.04', unit: '%', decimals: 2, display_state: 'shown' },
-          { label: 'Ẩn', value: '9', display_state: 'withheld' },
+          { label: 'Ẩn', value: '9', display_state: 'masked_stale' },
+          // Derived (a gap) and comparison-only figures are the text's, not more rows.
+          { label: 'Chênh lệch', value: '0.65', source: { expr: 'F1 - F2' } },
+          { label: 'Đã nộp', value: '0.5', comparison_only: true },
         ],
       } as unknown as components['schemas']['AnswerView'],
       'Nợ xấu tăng ở đâu?',
@@ -172,6 +175,8 @@ describe('readArtifact', () => {
     expect(artifact.table.rows).toEqual([
       ['Bắc', '0,61%'],
       ['Nam', '-0,04%'],
+      // A masked figure stays a row that says it is hidden.
+      ['Ẩn', 'Đã ẩn: dữ liệu quá hạn cập nhật'],
     ]);
     expect(artifact.chart?.bars.map((b) => b.tone)).toEqual(['normal', 'down']);
     expect(artifact.query_run_id).toBe('qr-9');

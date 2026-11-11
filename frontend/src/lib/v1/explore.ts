@@ -699,7 +699,14 @@ interface FigureWire {
   decimals?: unknown;
   display_state?: unknown;
   query_run_id?: unknown;
+  source?: { expr?: unknown } | null;
+  comparison_only?: unknown;
 }
+
+const HIDDEN: Record<string, string> = {
+  masked_stale: 'Đã ẩn: dữ liệu quá hạn cập nhật',
+  not_available: 'CHƯA CÓ',
+};
 
 function figureText(f: FigureWire): string {
   const value = numberOf(f.value);
@@ -715,9 +722,13 @@ function figureText(f: FigureWire): string {
 }
 
 export function readArtifact(answer: Schemas['AnswerView'], question: string | null): Artifact {
-  const figures = (Array.isArray(answer.figures) ? answer.figures : []).filter(
-    (f: FigureWire) => f.display_state === undefined || f.display_state === 'shown',
-  ) as FigureWire[];
+  // The result's rows only, as the Ask screen reads them (ask/dataAnswer.ts readFigures): a
+  // derived figure (a gap, a share: source.expr) and a comparison-only one are told in the text,
+  // not drawn as more bars or rows.
+  const rows = (Array.isArray(answer.figures) ? (answer.figures as FigureWire[]) : []).filter(
+    (f) => !(f.source && typeof f.source === 'object' && f.source.expr) && !f.comparison_only,
+  );
+  const figures = rows.filter((f) => f.display_state === undefined || f.display_state === 'shown');
   const check =
     typeof answer.number_check === 'object' && answer.number_check !== null
       ? (answer.number_check as Record<string, unknown>)
@@ -756,7 +767,13 @@ export function readArtifact(answer: Schemas['AnswerView'], question: string | n
     chart: bars.length > 1 ? { bars } : null,
     table: {
       columns: ['Chỉ tiêu', 'Giá trị'],
-      rows: figures.map((f) => [String(f.label ?? '—'), figureText(f)]),
+      // A masked or missing figure stays a row that says so, never silently dropped.
+      rows: rows.map((f) => [
+        String(f.label ?? '—'),
+        f.display_state === undefined || f.display_state === 'shown'
+          ? figureText(f)
+          : (HIDDEN[String(f.display_state)] ?? 'Đã ẩn'),
+      ]),
     },
     query_run_id:
       figures.map((f) => f.query_run_id).find((id): id is string => typeof id === 'string') ?? null,
