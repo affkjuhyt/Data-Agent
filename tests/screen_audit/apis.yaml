@@ -88,6 +88,8 @@ screens:
     primary_gets: ["/v1/answers/{id}"]
   analysis/FORECAST:
     primary_gets: ["/v1/forecast-models"]
+  analysis/FORECAST_MODEL_NEW:
+    primary_gets: ["/v1/metrics"]
   analysis/FORECAST_JOB:
     needs_id: true
     seed_id: a0000000-0000-0000-0000-000000aa1f04

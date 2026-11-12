@@ -31,8 +31,11 @@ def _patch(monkeypatch: pytest.MonkeyPatch, handle: Any) -> None:
 
 def _qdrant(searches: list[tuple[str, dict]]) -> Any:
     results = {
-        "doc_1": [{"id": str(A), "score": 0.71}, {"id": str(B), "score": 0.40}],
-        "doc_2": [{"id": str(C), "score": 0.90}],
+        "doc_1": [
+            {"id": str(A), "version": 0, "score": 0.71},
+            {"id": str(B), "version": 0, "score": 0.40},
+        ],
+        "doc_2": [{"id": str(C), "version": 0, "score": 0.90}],
     }
 
     def handle(request: httpx.Request) -> httpx.Response:
@@ -44,7 +47,8 @@ def _qdrant(searches: list[tuple[str, dict]]) -> Any:
         searches.append((name, body))
         if name not in results:
             return httpx.Response(404, json={})
-        return httpx.Response(200, json={"result": results[name]})
+        # qdrant-client asks POST /collections/{name}/points/query (libs/vectors.nearest).
+        return httpx.Response(200, json={"result": {"points": results[name]}})
 
     return handle
 
@@ -73,7 +77,7 @@ async def test_neighbours_across_collections_best_first_of_the_current_model(
     assert searches[0][1]["filter"] == {
         "must": [{"key": "embed_model", "match": {"value": "bge-m3"}}]
     }
-    assert searches[0][1]["vector"] == [0.1, 0.2]
+    assert searches[0][1]["query"] == {"nearest": [0.1, 0.2]}
 
 
 async def test_an_unreachable_index_costs_recall_not_the_request(

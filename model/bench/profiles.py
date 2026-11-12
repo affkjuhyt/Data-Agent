@@ -10,7 +10,7 @@ Prompt size is the whole story for time-to-first-token, and the six roles differ
 by more than an order of magnitude in it, so they cannot share one measurement:
 
     planner       catalogue-sized 400 out fast tier   question understanding
-    responder     figures-sized 600 out  main tier   the final answer
+    responder     figures-sized 2500 out main tier   the final answer
 
 The user turn varies per `variant` while the system prefix stays byte-identical,
 because that is the shape production sends and therefore the shape vLLM's prefix
@@ -266,9 +266,9 @@ def load() -> dict[str, Profile]:
         Profile("planner", "planner", "fast",
                 _PLANNER_SYSTEM, 400, 0.0,
                 _questions()),
-        # worker-agent narrator: max_tokens 600, temperature 0.
+        # worker-agent narrator: max_tokens 2500, temperature 0.
         Profile("responder", "responder", "main",
-                _RESPONDER_SYSTEM, 600, 0.0,
+                _RESPONDER_SYSTEM, 2500, 0.0,
                 _questions()),
     ]
     return {profile.name: profile for profile in profiles}

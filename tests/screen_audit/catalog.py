@@ -15,7 +15,7 @@ APIS_YAML = pathlib.Path(__file__).with_name("apis.yaml")
 FRONTEND_SRC = REPO / "frontend" / "src"
 
 _LAZY_IMPORT = re.compile(
-    r"const\s+(\w+)\s*=\s*React\.lazy\(\(\)\s*=>\s*import\('(\./features/[^']+)'\)\)"
+    r"const\s+(\w+)\s*=\s*React\.lazy\(\s*\(\)\s*=>\s*import\('(\./features/[^']+)'\),?\s*\)"
 )
 _REQUIRES = re.compile(
     r"\{\s*id:\s*'([A-Z][A-Z0-9_]*)'\s*,\s*label:\s*'[^']*'\s*,\s*requires:\s*'([^']+)'"
