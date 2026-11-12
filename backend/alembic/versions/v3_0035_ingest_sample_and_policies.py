@@ -47,7 +47,6 @@ DO $$ BEGIN
   END IF;
 END $$;
 GRANT SELECT, INSERT, UPDATE ON ingest.job_sample TO svc_ingest;
-GRANT SELECT, INSERT, UPDATE ON ingest.job_sample TO svc_api;
 
 ALTER TABLE ingest.ingestion_job
   ADD COLUMN IF NOT EXISTS retry_policy text NOT NULL DEFAULT 'backoff_3',

@@ -203,7 +203,7 @@ Dịch vụ: Connector service (catalog). 17 endpoint. Hai endpoint chứng nh�
 
 ### Nạp dữ liệu
 
-Dịch vụ: Ingestion service (ingest). 18 endpoint.
+Dịch vụ: Ingestion service (ingest). 20 endpoint.
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
@@ -215,6 +215,8 @@ Dịch vụ: Ingestion service (ingest). 18 endpoint.
 | POST | /v1/jobs/{id}:backfill | Nạp lại một khoảng | 04-06 | admin\_data |
 | GET | /v1/job-runs | Lượt chạy theo job | 04-09 | admin\_data |
 | GET | /v1/jobs/{id}/dlq | Bản ghi lỗi | 04-07 | admin\_data |
+| GET | /v1/job-samples/{id} | Mẫu dữ liệu của lần chạy thử job nạp | 04-06 | admin\_data |
+| POST | /v1/jobs/{id}:resolve-drift | Xử lý thay đổi cấu trúc: nhận cột mới, tạm dừng hoặc nạp lại toàn bộ | 04-09 | admin\_data |
 | POST | /v1/dlq/{id}:replay | Nạp lại bản ghi lỗi | 04-07 | admin\_data |
 | POST | /v1/dlq/{id}:discard | Bỏ bản ghi kèm lý do | 04-07 | admin\_data |
 | POST | /v1/uploads | Tải tệp CSV, Excel (multipart) | 04-08 | upload |
@@ -809,14 +811,16 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 
 | Endpoint | Gửi lên | Trả về | Lỗi riêng |
 | --- | --- | --- | --- |
-| POST /v1/sources/{id}/jobs | name\*, mode\*, source\_object\*, target\_dataset\_id, cursor\_column, schedule\_cron, freshness\_sla, dlq\_retention\_days, ?dry\_run | IngestionJob; ?dry\_run=true chạy thử cấu hình trên 1.000 dòng, không ghi, trả mẫu và lỗi (thêm 12/10/2026) | 422 validation\_failed (incremental thiếu cursor\_column) |
+| POST /v1/sources/{id}/jobs | name\*, mode\*, source\_object\*, target\_dataset\_id, cursor\_column, schedule\_cron, freshness\_sla, dlq\_retention\_days, retry\_policy, on\_schema\_change, on\_invalid\_record, skip\_today, merge\_key\_columns, ?dry\_run | IngestionJob; ?dry\_run=true chạy thử cấu hình trên 1.000 dòng, không ghi, trả mẫu và lỗi (thêm 12/10/2026) | 422 validation\_failed (incremental thiếu cursor\_column) |
 | GET /v1/jobs | ?status, ?source\_id | Danh sách IngestionJob. Kèm lượt chạy gần nhất, độ trễ, số bản ghi lỗi | — |
-| PATCH /v1/jobs/{id} | name, schedule\_cron, freshness\_sla, dlq\_retention\_days | IngestionJob | — |
+| PATCH /v1/jobs/{id} | name, schedule\_cron, freshness\_sla, dlq\_retention\_days, retry\_policy, on\_schema\_change, on\_invalid\_record, skip\_today, merge\_key\_columns | IngestionJob | — |
 | POST /v1/jobs/{id}:pause | reason\* | IngestionJob. BR-106 | — |
 | POST /v1/jobs/{id}:resume | — | IngestionJob | 409 invalid\_state (đang schema\_drift chưa duyệt) |
 | POST /v1/jobs/{id}:backfill | from\*, to\* | 202, Location tới job\_run | 422 business\_rule\_violated (khoảng quá giới hạn của nguồn) |
 | GET /v1/job-runs | ?job\_id, ?status, ?from, ?to | Danh sách JobRun | — |
 | GET /v1/jobs/{id}/dlq | ?status, ?error\_kind | Danh sách DlqRecord | — |
+| GET /v1/job-samples/{id} | — | IngestionJobDryRun: mẫu và lỗi của lần chạy thử do worker-ingest điền (thêm 12/11/2026) | 404 not\_found |
+| POST /v1/jobs/{id}:resolve-drift | action\* (accept\_additive, pause, rebuild\_full) | IngestionJob (thêm 12/11/2026) | 409 invalid\_state (job không ở schema\_drift) |
 | POST /v1/dlq/{id}:replay | — | 202, Location tới dlq\_record | 409 invalid\_state (đã khoá sau 3 lần lỗi) |
 | POST /v1/dlq/{id}:discard | reason\* | DlqRecord. BR-104 | — |
 | POST /v1/uploads | file\*, sheet | FileUpload. multipart/form-data; trả kết quả nhận dạng cấu trúc và kiểm tra | 413 payload\_too\_large; 422 validation\_failed (định dạng không hỗ trợ) |

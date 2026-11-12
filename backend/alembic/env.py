@@ -38,9 +38,18 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     engine = create_engine(config.get_main_option("sqlalchemy.url"))
-    with engine.begin() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
-        context.run_migrations()
+    # One transaction per revision: some revisions (v3_0002, v3_0006, …) open their own
+    # connection and create or grant to roles an earlier revision created. With every revision
+    # in one transaction, that connection waits on the uncommitted CREATE ROLE while the
+    # transaction waits on it, so a fresh database never got past v3_0002.
+    with engine.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            transaction_per_migration=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
     engine.dispose()
 
 

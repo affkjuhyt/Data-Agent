@@ -17,6 +17,10 @@ metadata:
     app: postgres
     app.kubernetes.io/part-of: dataagent
 data:
+  # The image's entrypoint names the superuser it creates on an empty volume after this; without
+  # it the role is `postgres`, and every DSN, Job and Keycloak, which log in as admin (pg_user),
+  # fail on a fresh install. dataagent-config dropped it on 01/11 as unread by code.
+  POSTGRES_USER: admin
   POSTGRES_HOST_AUTH_METHOD: scram-sha-256
   POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
   PGDATA: /var/lib/postgresql/data/pgdata

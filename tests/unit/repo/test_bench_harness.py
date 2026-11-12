@@ -48,7 +48,7 @@ def test_every_profile_loads_a_real_prompt_and_real_limits():
         # in the service, the benchmark is measuring a workload the product no
         # longer sends — so this test is the alarm, not documentation.
         ("planner", 400, 0.0),
-        ("responder", 600, 0.0),
+        ("responder", 2500, 0.0),
     ],
 )
 def test_profile_limits_match_the_call_sites(name, max_tokens, temperature):
@@ -60,7 +60,7 @@ def test_profile_limits_match_the_call_sites(name, max_tokens, temperature):
     ("name", "call_site", "max_tokens"),
     [
         ("planner", "understand/llm_reader.py", 400),
-        ("responder", "answer/narrator.py", 600),
+        ("responder", "answer/narrator.py", 2500),
     ],
 )
 def test_worker_agent_profiles_carry_the_prompt_the_call_site_sends(name, call_site, max_tokens):

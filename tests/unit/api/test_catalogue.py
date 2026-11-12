@@ -22,8 +22,9 @@ def test_snapshot_holds_all_of_a2() -> None:
     # item edit operations, less the 24 of the industry packs (group Gói ngành and the Error
     # Book's propose-to-pack), dropped on 01/11/2026, plus the question cancel and the
     # question steps and the organisation's self-approval switch (02/11/2026), plus defining
-    # a forecast model and its job workbench (05/11/2026).
-    assert len(data["endpoints"]) == 461
+    # a forecast model and its job workbench (05/11/2026), plus an ingestion job's dry-run
+    # sample and its schema-drift resolution (12/11/2026).
+    assert len(data["endpoints"]) == 463
     assert len(data["groups"]) == 21
     assert {e["group"] for e in data["endpoints"]} == set(data["groups"])
 
