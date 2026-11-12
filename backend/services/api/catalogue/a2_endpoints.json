@@ -1266,6 +1266,30 @@
   },
   {
    "group": "Nạp dữ liệu",
+   "method": "GET",
+   "path": "/v1/job-samples/{id}",
+   "summary": "Mẫu dữ liệu của lần chạy thử job nạp",
+   "use_cases": [
+    "04-06"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "POST",
+   "path": "/v1/jobs/{id}:resolve-drift",
+   "summary": "Xử lý thay đổi cấu trúc: nhận cột mới, tạm dừng hoặc nạp lại toàn bộ",
+   "use_cases": [
+    "04-09"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
    "method": "POST",
    "path": "/v1/dlq/{id}:replay",
    "summary": "Nạp lại bản ghi lỗi",

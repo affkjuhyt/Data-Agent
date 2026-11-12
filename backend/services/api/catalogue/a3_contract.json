@@ -1594,7 +1594,12 @@
     "cursor_column": false,
     "schedule_cron": false,
     "freshness_sla": false,
-    "dlq_retention_days": false
+    "dlq_retention_days": false,
+    "retry_policy": false,
+    "on_schema_change": false,
+    "on_invalid_record": false,
+    "skip_today": false,
+    "merge_key_columns": false
    },
    "query": [
     "dry_run"
@@ -1606,7 +1611,7 @@
      "validation_failed"
     ]
    ],
-   "request_text": "name*, mode*, source_object*, target_dataset_id, cursor_column, schedule_cron, freshness_sla, dlq_retention_days, ?dry_run"
+   "request_text": "name*, mode*, source_object*, target_dataset_id, cursor_column, schedule_cron, freshness_sla, dlq_retention_days, retry_policy, on_schema_change, on_invalid_record, skip_today, merge_key_columns, ?dry_run"
   },
   "GET /v1/jobs": {
    "group": "Nạp dữ liệu",
@@ -1631,12 +1636,17 @@
     "name": false,
     "schedule_cron": false,
     "freshness_sla": false,
-    "dlq_retention_days": false
+    "dlq_retention_days": false,
+    "retry_policy": false,
+    "on_schema_change": false,
+    "on_invalid_record": false,
+    "skip_today": false,
+    "merge_key_columns": false
    },
    "query": [],
    "returns": "IngestionJob",
    "errors": [],
-   "request_text": "name, schedule_cron, freshness_sla, dlq_retention_days"
+   "request_text": "name, schedule_cron, freshness_sla, dlq_retention_days, retry_policy, on_schema_change, on_invalid_record, skip_today, merge_key_columns"
   },
   "POST /v1/jobs/{id}:pause": {
    "group": "Nạp dữ liệu",
@@ -1715,6 +1725,40 @@
    "returns": "Danh sách DlqRecord",
    "errors": [],
    "request_text": "?status, ?error_kind"
+  },
+  "GET /v1/job-samples/{id}": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "IngestionJobDryRun: mẫu và lỗi của lần chạy thử do worker-ingest điền (thêm 12/11/2026)",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/jobs/{id}:resolve-drift": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {
+    "action": true
+   },
+   "query": [],
+   "returns": "IngestionJob (thêm 12/11/2026)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "action* (accept_additive, pause, rebuild_full)"
   },
   "POST /v1/dlq/{id}:replay": {
    "group": "Nạp dữ liệu",
