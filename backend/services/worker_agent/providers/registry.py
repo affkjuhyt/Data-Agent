@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from services.worker_agent.providers.base import DataProvider
+
+if TYPE_CHECKING:
+    from services.worker_agent.providers.relational import SourceLoader
+    from services.worker_agent.query.secrets import SecretReader
 
 
 class ProviderNotFound(LookupError):
@@ -41,7 +46,12 @@ class ProviderRegistry:
         return tuple(self._providers)
 
     @classmethod
-    def build_default(cls, *, secrets=None, source_loader=None) -> ProviderRegistry:
+    def build_default(
+        cls,
+        *,
+        secrets: SecretReader | None = None,
+        source_loader: SourceLoader | None = None,
+    ) -> ProviderRegistry:
         """Build the built-in registry for one worker process."""
 
         from services.worker_agent.providers.relational import RelationalProvider
