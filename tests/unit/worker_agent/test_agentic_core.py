@@ -334,6 +334,8 @@ def test_a_metric_that_does_not_measure_what_was_asked_hands_the_question_back()
     asyncio.run(engine.compose(asked_customers))
     assert asked_customers.handed_back
     assert engine._unnamed_quantity(state("Vì sao số lượng bán Internet năm 2013 giảm")) == []
+    # "Cơ cấu" folds to "co cau": how to read the quantity, not one the catalogue lacks.
+    assert engine._unnamed_quantity(state("Cơ cấu số lượng bán Internet năm 2013")) == []
 
 
 def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql() -> None:
@@ -365,6 +367,72 @@ def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql()
     assert "explore_sql" not in done.observation
     assert "không tự tính" in done.observation
     assert done.detail["unnamed"] == ["khach", "hang", "mua"]
+
+
+def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypatch) -> None:
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic.tools.query import QueryMetric, QueryMetricArgs
+    from services.worker_agent.semantic import compiler as c
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    revenue = MetricEntry(uuid.uuid4(), "DOANH_THU_INTERNET", "Doanh thu Internet", True)
+    region = types.SimpleNamespace(
+        dimension_id=uuid.uuid4(), code="vung", name="Vùng", is_time=False
+    )
+    colour = types.SimpleNamespace(
+        dimension_id=uuid.uuid4(), code="mau_sac", name="Màu", is_time=False
+    )
+    day = types.SimpleNamespace(
+        dimension_id=uuid.uuid4(), code="ngay_dat", name="Ngày", is_time=True
+    )
+    layer = types.SimpleNamespace(
+        vocabulary=types.SimpleNamespace(
+            metrics=[revenue],
+            synonyms={},
+            dimensions=[region, colour, day],
+            values=[],
+            calendar=clock.DEFAULT,
+        ),
+        versions={
+            revenue.metric_id: types.SimpleNamespace(allowed_dimension_ids={region.dimension_id})
+        },
+        blocked_metric_ids=set(),
+        layer=object(),
+    )
+    ctx = types.SimpleNamespace(
+        layer=layer,
+        question="Doanh thu Internet theo tháng",
+        today=datetime.date(2026, 11, 3),
+        period_moves={},
+    )
+    compiled: list[c.Request] = []
+
+    def refuse(request, *_a, **_k):
+        compiled.append(request)
+        raise c.CompileError("NO_JOIN_PATH", "stop here")
+
+    monkeypatch.setattr(c, "compile_metric", refuse)
+    by_month = QueryMetricArgs(
+        metric="DOANH_THU_INTERNET", grain="month", group_by=["thang_tai_chinh", "vung"]
+    )
+    asyncio.run(QueryMetric().run(ctx, by_month))  # type: ignore[arg-type]
+    # The made-up month cut is the grain's job: it never reaches the compiler, the real cut does.
+    assert compiled and compiled[0].group_by == ["vung"]
+
+    refused = asyncio.run(
+        QueryMetric().run(
+            ctx, QueryMetricArgs(metric="DOANH_THU_INTERNET", grain="month", group_by=["mau_sac"])
+        )  # type: ignore[arg-type]
+    )
+    assert not refused.ok and refused.failure == "arguments"
+    # The refusal says how to ask again, so the replan has something to change.
+    assert (
+        "dùng grain" in refused.observation and "các chiều được phép: vung" in refused.observation
+    )
 
 
 def test_explore_sql_refuses_a_quantity_no_metric_in_the_catalogue_names() -> None:

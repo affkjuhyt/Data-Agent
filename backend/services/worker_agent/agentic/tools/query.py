@@ -5,6 +5,7 @@ executor, so row and column policies apply and every run is recorded (invariant 
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import Any, Literal
 
@@ -34,6 +35,8 @@ from services.worker_agent.understand.resolver import metric_words, quantity_wor
 
 ROLE = "svc_qa"
 QUERYABLE = ("active", "testing")
+# Dimension codes that name a part of the calendar, as a model writes them when it makes one up.
+_CALENDAR_PART = re.compile(r"^(ngay|tuan|thang|quy|nam|day|week|month|quarter|year)(_|$)")
 
 _COLUMN_LABEL = {
     "base_value": "{metric} (kỳ so sánh)",
@@ -154,16 +157,27 @@ class QueryMetric(Tool):
             for d in ctx.layer.vocabulary.dimensions
             if d.dimension_id in version.allowed_dimension_ids or d.is_time
         }
-        bad = [g for g in [*args.group_by, *args.filters] if g not in allowed]
+        # A grain already cuts the period by day, month, quarter or year. A code the catalogue does
+        # not have that names a calendar part ("thang_tai_chinh", made up beside nam_tai_chinh)
+        # only asks for that cut again, so it is dropped rather than failing the reading.
+        known = {d.code for d in ctx.layer.vocabulary.dimensions}
+        calendar = [
+            g for g in args.group_by if args.grain and g not in known and _CALENDAR_PART.match(g)
+        ]
+        group_by = [g for g in args.group_by if g not in calendar]
+        bad = [g for g in [*group_by, *args.filters] if g not in allowed]
         if bad:
+            cuts = ", ".join(sorted(allowed - {d.code for d in vocab.dimensions if d.is_time}))
             return ToolResult(
                 False,
-                f"chỉ số {args.metric} không cho chia/lọc theo {bad}; xem describe_metric",
+                f"chỉ số {args.metric} không cho chia/lọc theo {bad}; chia theo thời gian thì dùng"
+                f" grain (day, week, month, quarter, year), không đưa vào group_by; các chiều"
+                f" được phép: {cuts}",
                 failure="arguments",
             )
         request = c.Request(
             version,
-            group_by=list(args.group_by),
+            group_by=group_by,
             filters={k: list(v) for k, v in args.filters.items()},
             period=period,
             grain=args.grain,
@@ -237,7 +251,7 @@ class QueryMetric(Tool):
             )
             for col in compiled.columns
         ]
-        cut_names = ", ".join(names.get(g, g) for g in args.group_by)
+        cut_names = ", ".join(names.get(g, g) for g in group_by)
         title = args.title or (entry.name + (f" theo {cut_names}" if cut_names else ""))
         if moved is not None:
             title = f"{title} ({coverage.iso(moved[1])})"
@@ -260,11 +274,13 @@ class QueryMetric(Tool):
             reading={
                 "metric": args.metric,
                 "metric_id": str(entry.metric_id),
-                "group_by": list(args.group_by),
+                "group_by": group_by,
                 "filters": {k: list(v) for k, v in args.filters.items()},
             },
         )
         detail["dataset"] = ds.id
+        if calendar:
+            detail["dropped_group_by"] = calendar
         said = (
             f"Kỳ {coverage.iso(moved[0])} không có dữ liệu; đã đọc kỳ đầy đủ gần nhất"
             f" {coverage.iso(moved[1])} thay thế.\n"
