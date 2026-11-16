@@ -192,7 +192,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | EV-01 | P0 | 1 | CLI thu NYC 311 (S3) + manifest sha256 + Parquet/tháng + drift audit | — (snapshot format tạm JSON→Parquet; chuyển `libs/snapshot` ở tuần 4) | DE | M | manifest tái lập 2 lần giống nhau | todo |
 | EV-08 | P0 | 1 | Cột mới `eval.eval_item` + loader YAML | — | DB | S | — | todo |
-| EV-10 | P0 | 1 | Sửa `halves` thật + `dense_ok_rate`/`rerank_ok_rate` (gộp DI-14) | — | AI | S | báo cáo keyword-only không ghi `dense: true` | todo |
+| EV-10 | P0 | 1 | Sửa `halves` thật + `dense_ok_rate`/`rerank_ok_rate` (gộp DI-14) | — | AI | S | báo cáo keyword-only không ghi `dense: true` | done (phần halves; gate đọc truy hồi ở EV-12) |
 | EV-03 | P0 | 5 | Data Space DS-311 (nạp có version, `ds-311.yaml` 15–20 metric, value_index) | EV-01, DF-02, AE-14 (hoặc metric đơn giản trước) | DE/AI | M | 17 metric reconcile với SQL tay | todo |
 | EV-05 | P0 | 6 | 60 case 311 (24/16/15/5) + SQL vàng | EV-03 | QA/AI | M | mỗi case fail đúng lý do trước | todo |
 | EV-09 | P0 | 7 | Tier `golden` qua `POST /v1/questions` thật; chấm theo rubric | AE-06, EV-05 | AI | M | report có `answer_id` mỗi case | todo |
