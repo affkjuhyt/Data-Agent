@@ -77,9 +77,6 @@ screens:
     needs_id: true
     seed_id: a0000000-0000-0000-0000-000000aa1f15
     primary_gets: ["/v1/session-reports/{id}"]
-  analysis/VAULT:
-    # /v1/me always 200; theses require exec_vault (rail + A2).
-    primary_gets: ["/v1/exec/theses"]
   analysis/EXPLORE:
     primary_gets: ["/v1/metrics", "/v1/entities"]
   analysis/ARTIFACT:
@@ -100,8 +97,6 @@ screens:
     needs_id: true
     seed_id: a0000000-0000-0000-0000-000000aa1f01
     primary_gets: ["/v1/forecast-models/{id}"]
-  analysis/FUEL_FORECAST:
-    primary_gets: ["/v1/formula-models"]
   analysis/FORECAST_LEDGER:
     primary_gets: ["/v1/forecast-ledger"]
   analysis/RECEIPT:

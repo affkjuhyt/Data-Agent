@@ -16,7 +16,7 @@ import {
   getLatestLintRun,
   listOpenFindings,
   resolveFinding,
-  runKnowledgeLint,
+  KNOWLEDGE_COMPOSER_PENDING,
   type FindingAction,
   type FindingKind,
   type KnowledgeFinding,
@@ -91,12 +91,6 @@ export default function KnowledgeReviewPage() {
     shown.find((f) => f.kind === 'contradiction') ??
     shown[0];
 
-  const lint = useV1Mutation(runKnowledgeLint, {
-    onSuccess: () =>
-      toast({ tone: 'info', message: 'Đang rà soát; phát hiện mới hiện ở đây khi xong.' }),
-    onError: (e) => toast({ tone: 'error', message: `Không chạy được: ${e.message}` }),
-  });
-
   return (
     <div className="flex min-h-full flex-col">
       <PageHeader
@@ -122,9 +116,12 @@ export default function KnowledgeReviewPage() {
             <Tooltip content="Màn đặt lịch rà soát đang được làm.">
               <Button disabled>Lịch rà soát</Button>
             </Tooltip>
-            <Button kind="primary" loading={lint.pending} onClick={() => lint.run()}>
-              Chạy rà soát ngay
-            </Button>
+            {/* A lint run is a knowledge run, which the api refuses with 501 for now (PL-03). */}
+            <Tooltip content={KNOWLEDGE_COMPOSER_PENDING}>
+              <Button kind="primary" disabled>
+                Chạy rà soát ngay
+              </Button>
+            </Tooltip>
           </>
         }
       />

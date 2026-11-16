@@ -62,7 +62,6 @@ const GlossaryPage = React.lazy(() => import('./features/semantics/GlossaryPage'
 const ContextEvalPage = React.lazy(() => import('./features/semantics/ContextEvalPage'));
 const AnswerProductsPage = React.lazy(() => import('./features/answer-products/AnswerProductsPage'));
 const ErrorBookPage = React.lazy(() => import('./features/error-book/ErrorBookPage'));
-const VaultPage = React.lazy(() => import('./features/vault/VaultPage'));
 const DecisionRulePage = React.lazy(() => import('./features/rules/DecisionRulePage'));
 const ProfilePage = React.lazy(() => import('./features/admin-platform/ProfilePage'));
 const NotificationsPage = React.lazy(() => import('./features/admin-platform/NotificationsPage'));
@@ -87,7 +86,6 @@ const CreateForecastModelPage = React.lazy(
 const ForecastJobPage = React.lazy(() => import('./features/forecast/ForecastJobPage'));
 const ForecastStudioPage = React.lazy(() => import('./features/forecast/ForecastStudioPage'));
 const ForecastModelPage = React.lazy(() => import('./features/forecast/ForecastModelPage'));
-const FuelForecastPage = React.lazy(() => import('./features/forecast/FuelForecastPage'));
 const ForecastLedgerPage = React.lazy(() => import('./features/forecast/ForecastLedgerPage'));
 const AnswerReceiptPage = React.lazy(() => import('./features/answer-receipt/AnswerReceiptPage'));
 const WatchListPage = React.lazy(() => import('./features/monitoring/WatchListPage'));
@@ -171,8 +169,9 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     SESSIONS:  { render: () => <SessionsPage /> },
     // /analysis/report/<id>, under "Phiên làm việc"; Cần bạn report_publish cards open it.
     REPORT:    { render: () => <ReportReviewPage /> },
-    // P16 Kho riêng: the executive vault, four tabs on one page.
-    VAULT:     { render: () => <VaultPage /> },
+    // P16 Kho riêng (VAULT) and P15 the fuel price forecast (FUEL_FORECAST) have no route: the
+    // actions they exist for answer 501 (a thesis publication, a pre-period bulletin) until their
+    // workers do (docs/blueprint/STRATEGY.md §6, PL-03).
     EXPLORE:         { render: () => <ExplorePage /> },
     // /analysis/artifact/<id>: an answer's or notebook's artifact, full screen.
     ARTIFACT:        { render: () => <ArtifactPage /> },
@@ -182,8 +181,7 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     FORECAST_JOB:    { render: () => <ForecastJobPage /> },
     FORECAST_STUDIO: { render: () => <ForecastStudioPage /> },
     FORECAST_MODEL:  { render: () => <ForecastModelPage /> },
-    // P15 formula forecast (fuel price) and the forecast ledger; under "Dự báo".
-    FUEL_FORECAST:   { render: () => <FuelForecastPage /> },
+    // The forecast ledger, under "Dự báo".
     FORECAST_LEDGER: { render: () => <ForecastLedgerPage /> },
     // /analysis/receipt/<answer id>: an answer's receipt on its own page (shared link, notification);
     // from Hỏi đáp it opens as a drawer over the conversation.

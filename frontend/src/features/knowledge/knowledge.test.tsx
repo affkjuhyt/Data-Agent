@@ -1,12 +1,13 @@
 /**
  * Trang tri thức against the v1 mock: the index and its filters, the page with system-filled
- * figures and its claims, the version tab, and recompiling.
+ * figures and its claims, the version tab, and recompiling held back until a composer exists.
  */
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
 import { setDataSpace } from '../../lib/v1/client';
+import { recompileKnowledgePage } from '../../lib/v1/knowledge';
 import { createHandlers } from '../../mocks/handlers';
 import KnowledgePageView from './KnowledgePageView';
 
@@ -61,21 +62,19 @@ describe('KnowledgePageView', () => {
     expect(navigate).toHaveBeenCalledWith('data', 'KNOWLEDGE', 'kp-casa');
   });
 
-  it('lists versions and recompiles on request', async () => {
-    // A run belongs to a Data Space (KnowledgeRunCreate.data_space_id): the chosen one is sent.
+  it('lists versions and offers no recompile while the api has no composer', async () => {
     setDataSpace('ds-thi-truong');
     page();
     fireEvent.click(await screen.findByRole('tab', { name: /Phiên bản/ }));
     expect(await screen.findByText(/Biểu phí tháng 10/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Biên soạn lại' }));
-    expect(await screen.findByText(/Đang biên soạn lại/)).toBeInTheDocument();
+    // POST /v1/knowledge-runs answers 501 until a page composer exists (PL-03).
+    expect(screen.getByRole('button', { name: 'Biên soạn lại' })).toHaveAttribute('aria-disabled', 'true');
     setDataSpace(null);
   });
 
-  it('asks for a Data Space before recompiling from the whole organisation', async () => {
+  it('asks for a Data Space before a knowledge run from the whole organisation', () => {
+    // A run belongs to a Data Space (KnowledgeRunCreate.data_space_id), kept for the composer.
     setDataSpace(null);
-    page();
-    fireEvent.click(await screen.findByRole('button', { name: 'Biên soạn lại' }));
-    expect(await screen.findByText(/Chọn một Data Space trước/)).toBeInTheDocument();
+    expect(() => recompileKnowledgePage('kp-casa')).toThrow(/Chọn một Data Space trước/);
   });
 });

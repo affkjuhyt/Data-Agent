@@ -23,7 +23,6 @@ import { ReceiptDrawer } from '../answer-receipt/AnswerReceiptPage';
 import { requestPage } from '../documents/focusPage';
 import { handOffToExplore } from '../explore/handoff';
 import { SaveToSessionDialog } from '../explore/SaveToSessionDialog';
-import { SaveToKnowledgeDialog } from '../knowledge/SaveToKnowledgeDialog';
 import { layoutForCommand } from './answerLayout';
 import { commandHelp, commandPrompt, parseChatInput } from './chatCommands';
 import { ChatComposer } from './chat/ChatComposer';
@@ -59,7 +58,6 @@ export default function AskDataPage() {
 
   const [reportFor, setReportFor] = useState<AskMessage | null>(null);
   const [receiptFor, setReceiptFor] = useState<string | null>(null);
-  const [knowledgeFor, setKnowledgeFor] = useState<string | null>(null);
   const [sessionFor, setSessionFor] = useState<AskMessage | null>(null);
   const [reported, setReported] = useState<Record<string, Feedback>>({});
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
@@ -200,7 +198,8 @@ export default function AskDataPage() {
                 onRetry: (id) => void retry(id),
                 onReport: (m) => setReportFor(m),
                 onReceipt: (answerId) => setReceiptFor(answerId),
-                onSaveKnowledge: (answerId) => setKnowledgeFor(answerId),
+                // No "Lưu vào tri thức": the api answers it with 501 until a page composer exists
+                // (PL-03, lib/v1/knowledge.ts KNOWLEDGE_COMPOSER_PENDING).
                 onSaveSession: (m) => setSessionFor(m),
                 onAsk: ask,
                 onAnswerClarification: (id, reply) => void answerClarification(id, reply),
@@ -234,7 +233,6 @@ export default function AskDataPage() {
 
       {/* The receipt opens over the conversation, so the turns stay. */}
       <ReceiptDrawer answerId={receiptFor} onClose={() => setReceiptFor(null)} />
-      {knowledgeFor && <SaveToKnowledgeDialog answerId={knowledgeFor} onClose={() => setKnowledgeFor(null)} />}
       {sessionFor?.answerId && (
         <SaveToSessionDialog
           onClose={() => setSessionFor(null)}
