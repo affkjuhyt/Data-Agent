@@ -1209,6 +1209,28 @@ def _failed(failure: str) -> Any:
     return ToolResult(False, f"lỗi {failure}", failure=failure)  # type: ignore[arg-type]
 
 
+def test_the_executor_is_not_handed_the_plans_invalid_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import types
+
+    w = _step_world(monkeypatch, ["ok"])
+    asked: list[str] = []
+
+    async def json_chat(_role: str, _system: str, user: str, *_a: Any, **_k: Any) -> Any:
+        asked.append(user)
+        return types.SimpleNamespace(content=w.engine.ExecutorReply(args={"n": 7}))
+
+    w.state.model = types.SimpleNamespace(json_chat=json_chat)
+    step = w.state.plan.steps[0]
+    # As the planner wrote "analysis": "luy_ke": a value outside the schema.
+    step.args = {"n": "luy_ke"}
+    result = asyncio.run(w.engine._run_step(w.state, step))
+    assert result.ok and w.runs == [7]
+    assert "luy_ke" not in asked[0]
+    assert "Đã bỏ các tham số kế hoạch sai schema: n" in asked[0]
+
+
 def test_wrong_arguments_are_written_again_with_the_error(monkeypatch: pytest.MonkeyPatch) -> None:
     w = _step_world(monkeypatch, [_failed("arguments"), "ok"])
     result = asyncio.run(w.engine._run_step(w.state, w.state.plan.steps[0]))
