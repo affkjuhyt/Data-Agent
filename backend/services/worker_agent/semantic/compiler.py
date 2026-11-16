@@ -409,6 +409,7 @@ def _at_grain(
         return exp.Concat(
             expressions=[exp.Literal.string("FY"), _at_grain(moved, dim, calendar_grain)],
             safe=True,
+            coalesce=True,
         )
     if grain == "week":
         template = _WEEK_START.get(dialect)
@@ -450,7 +451,9 @@ def _at_grain(
             for q in range(1, 5)
         ]
     )
-    return exp.Concat(expressions=[part(1, 4, "%Y"), quarter], safe=True)
+    # coalesce=True is CONCAT's own NULL handling; without it sqlglot 30 writes PostgreSQL's
+    # `||`, which turns the whole label NULL when one part is, and moves the row to another group.
+    return exp.Concat(expressions=[part(1, 4, "%Y"), quarter], safe=True, coalesce=True)
 
 
 def _table_names(layer: Layer) -> dict[uuid.UUID, str]:

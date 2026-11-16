@@ -24,10 +24,9 @@ def test_the_steps_ctes_lead_the_statement(dialect: str) -> None:
     # One WITH, at the top; no subquery holds one.
     assert sql.startswith("WITH s0 AS (")
     assert not any(
-        isinstance(sub.this, exp.Select) and sub.this.args.get("with")
-        for sub in tree.find_all(exp.Subquery)
+        isinstance(sub.this, exp.Select) and sub.this.ctes for sub in tree.find_all(exp.Subquery)
     )
-    assert [cte.alias for cte in tree.args["with"].expressions] == ["s0", "s1", "da_inner_query"]
+    assert [cte.alias for cte in tree.ctes] == ["s0", "s1", "da_inner_query"]
 
 
 def test_a_preview_on_sql_server_is_top_not_limit() -> None:

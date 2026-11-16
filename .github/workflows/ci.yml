@@ -235,7 +235,7 @@ jobs:
         # the REAL metric compiler (sqlparse) — no model, no warehouse, no stack —
         # which is what lets it gate every pull request instead of being a
         # nightly nobody reads.
-        run: pip install sqlparse sqlglot==25.24.5
+        run: pip install sqlparse sqlglot==30.31.0
       - name: Run offline evaluation
         run: python -m model.eval.run --tier offline --out eval-report.json
       - name: Gate on thresholds (BLOCKING)

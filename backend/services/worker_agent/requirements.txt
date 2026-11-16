@@ -7,7 +7,7 @@ PyMySQL==1.1.1
 pymssql==2.3.7
 redis>=5.0
 # The read-only guard parses SQL per source dialect; OpenBao is read over HTTP (query/).
-sqlglot==25.24.5
+sqlglot==30.31.0
 # The scheduler fires on libs/cron, the reading the api validated: the same pin.
 croniter==2.0.5
 httpx==0.27.2
