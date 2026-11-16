@@ -1054,7 +1054,18 @@ export function createForecastHandlers() {
         stale_forecast: null,
       };
     }
-    return HttpResponse.json(asJobDetail(currentJob));
+    // What A2 does not carry rides under display: the studio's workbench and each fuel's
+    // overlay (lib/v1/forecast.ts reads display.workbench and display.fuel). Serving the job
+    // alone left the studio and the fuel screens without them.
+    const detail = asJobDetail(currentJob);
+    return HttpResponse.json({
+      ...detail,
+      display: {
+        ...detail.display,
+        workbench: bench,
+        fuel: Object.fromEntries(FUELS.map((fuel) => [fuel.key, fuelDisplay(fuel)])),
+      },
+    });
   };
 
   const saveForecast = (next: Forecast) => {
