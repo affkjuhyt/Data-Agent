@@ -56,6 +56,18 @@ def named_cut(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> str 
     return best.code if best else None
 
 
+_TWO_YEARS = re.compile(r"\bnam ((?:19|20)\d{2}) (?:va|voi|so voi|,) (?:nam )?((?:19|20)\d{2})\b")
+
+
+def two_years(question: str) -> tuple[int, int] | None:
+    """The two adjacent years a question compares ("năm 2012 và 2013"), earlier first."""
+    m = _TWO_YEARS.search(norm(question))
+    if m is None:
+        return None
+    a, b = sorted((int(m.group(1)), int(m.group(2))))
+    return (a, b) if b - a == 1 else None
+
+
 _COLUMN_LABEL = {
     "base_value": "{metric} (kỳ so sánh)",
     "share": "Tỷ trọng",
@@ -144,6 +156,21 @@ class QueryMetric(Tool):
             cut = named_cut(ctx.question, vocab, set(version.allowed_dimension_ids))
             if cut is not None:
                 args = args.model_copy(update={"group_by": [*args.group_by, cut]})
+        # Which year each side of a two-year comparison is, to name its columns.
+        side_labels: dict[str, str] = {}
+        years = two_years(ctx.question)
+        if years and args.compare_to is None and not times_all & set(args.group_by):
+            # "So sánh doanh thu theo vùng năm 2012 và 2013" was read as one period summed over
+            # both years, or as 2012 alone, and answered "no data for 2012" (16/11). Two adjacent
+            # years are the later one against the same period a year before.
+            earlier, later = years
+            args = args.model_copy(
+                update={"period": str(later), "compare_to": "same_period_last_year", "grain": None}
+            )
+            side_labels = {
+                "value": f"{entry.name} {later}",
+                "base_value": f"{entry.name} {earlier}",
+            }
         # A quantity the question asks that no certified metric of the catalogue names ("khách
         # hàng" where only units sold exist): no reading of this one will answer it.
         catalogue: set[str] = set()
@@ -294,6 +321,7 @@ class QueryMetric(Tool):
                 names[code] = GRAIN_LABELS[args.grain].capitalize()
         columns = [
             names.get(col)
+            or side_labels.get(col)
             or (
                 entry.name
                 if col == "value"
@@ -305,6 +333,8 @@ class QueryMetric(Tool):
             names.get(g, g).lower() if g in times else names.get(g, g) for g in group_by
         )
         title = args.title or (entry.name + (f" theo {cut_names}" if cut_names else ""))
+        if side_labels:
+            title = f"{title}: {years[0]} và {years[1]}" if years else title
         if moved is not None:
             title = f"{title} ({coverage.iso(moved[1])})"
             detail["period_moved"] = {

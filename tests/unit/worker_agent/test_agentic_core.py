@@ -152,6 +152,16 @@ def test_the_cut_a_question_names_is_found_by_its_full_name() -> None:
     assert named_cut("Doanh thu theo vùng năm 2013", vocab, allowed) is None
 
 
+def test_two_adjacent_years_are_read_as_a_comparison() -> None:
+    from services.worker_agent.agentic.tools.query import two_years
+
+    assert two_years("So sánh doanh thu theo vùng năm 2012 và 2013.") == (2012, 2013)
+    assert two_years("Doanh thu năm 2013 so với năm 2012") == (2012, 2013)
+    # Not two adjacent years, or not years at all: left to the planner.
+    assert two_years("Doanh thu năm 2010 và 2013") is None
+    assert two_years("Doanh thu tháng 8/2013 và 8/2012") is None
+
+
 def test_a_charts_one_line_reading_is_computed_from_its_rows() -> None:
     months = ["2013-01", "2013-06", "2013-12"]
     assert (
