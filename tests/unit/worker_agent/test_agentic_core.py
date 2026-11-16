@@ -276,16 +276,18 @@ def test_a_quantity_no_metric_measures_is_asked_back_with_the_closest_metrics() 
     from services.worker_agent.agentic import clarify_policy
     from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
 
-    buyers, revenue = uuid.uuid4(), uuid.uuid4()
+    buyers, revenue, orders = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     layer = SimpleNamespace(
         vocabulary=Vocabulary(
             metrics=[
                 MetricEntry(buyers, "SO_KHACH_HANG", "Số khách hàng mua qua Internet", True),
                 MetricEntry(revenue, "DOANH_THU", "Doanh thu", True),
+                # Shares no quantity word with "khách hàng rời bỏ": never offered for it.
+                MetricEntry(orders, "SO_DON_INTERNET", "Số đơn Internet", True),
             ],
             dimensions=[DimensionEntry(uuid.uuid4(), "nhom_san_pham", "Nhóm sản phẩm")],
         ),
-        versions={buyers: object(), revenue: object()},
+        versions={buyers: object(), revenue: object(), orders: object()},
         blocked_metric_ids=frozenset(),
     )
     ask = clarify_policy.unnamed_quantity(

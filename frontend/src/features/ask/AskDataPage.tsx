@@ -16,7 +16,7 @@ import { useToast } from '../../design-system/Toast';
 import type { Feedback } from '../../lib/v1/answerReports';
 import { getExploreModel } from '../../lib/v1/explore';
 import { saveAnswerToSession } from '../../lib/v1/questions';
-import { listCollections } from '../../lib/v1/sources';
+import { listCollections, listDocuments } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { documentStarterQuestions, starterQuestions } from '../../lib/sampleQuestion';
 import { ReceiptDrawer } from '../answer-receipt/AnswerReceiptPage';
@@ -40,14 +40,22 @@ import type { AskMessage, Citation } from './types';
 export default function AskDataPage() {
   const { user, navigate, routeId } = useAppState();
   const toast = useToast();
-  // Starters from the Data Space's own certified metrics, plus document hints when collections exist.
+  // Starters from the Data Space's own certified metrics, plus one named document of each of the
+  // first two collections (E5: a starter names what it asks about).
   const model = useV1(['getExploreModel'], getExploreModel);
   const collections = useV1(['listCollections'], listCollections);
+  const shelfIds = (collections.data?.items ?? []).slice(0, 2).map((c) => c.id);
+  const firstDocuments = useV1(
+    ['starterDocuments', ...shelfIds],
+    shelfIds.length
+      ? () => Promise.all(shelfIds.map((id) => listDocuments(id).then((page) => page.items[0]?.title ?? '')))
+      : null,
+  );
   const starters = useMemo(() => {
     const metric = starterQuestions(model.data, 3);
-    const docs = documentStarterQuestions((collections.data?.items?.length ?? 0) > 0);
+    const docs = documentStarterQuestions(Array.isArray(firstDocuments.data) ? firstDocuments.data : []);
     return [...metric, ...docs];
-  }, [model.data, collections.data]);
+  }, [model.data, firstDocuments.data]);
 
   const [reportFor, setReportFor] = useState<AskMessage | null>(null);
   const [receiptFor, setReceiptFor] = useState<string | null>(null);

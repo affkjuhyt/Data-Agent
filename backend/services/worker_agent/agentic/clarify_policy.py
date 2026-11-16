@@ -9,6 +9,7 @@ interpretations would change metric, period, or scope.
 
 from __future__ import annotations
 
+import datetime
 import re
 from dataclasses import dataclass
 from typing import Literal
@@ -17,6 +18,7 @@ from services.worker_agent.agentic import plan as p
 from services.worker_agent.agentic.tools.base import Clarify
 from services.worker_agent.semantic.loader import SpaceLayer
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.resolver import metric_words, quantity_words
 from services.worker_agent.understand.text import norm
 
 Audience = Literal["executive", "analyst"]
@@ -97,6 +99,22 @@ UNNAMED_OPTIONS = 4
 _TRAILING = re.compile(r"[?.!,;:]+$")
 
 
+def _closest(question: str, layer: SpaceLayer) -> list[str]:
+    """The certified metrics that share a quantity word with the question, closest first.
+    Matched on every word, "Khách hàng rời bỏ là bao nhiêu?" was offered "Số đơn Internet" and
+    "Tồn kho" beside "Số khách hàng mua qua Internet" (17/11): only "khách hàng" says what is asked."""
+    vocab = layer.vocabulary
+    asked = set(quantity_words(question, vocab, today=datetime.date.today()))
+    by_code = {m.code: m for m in vocab.metrics}
+    return [
+        m["name"]
+        for m in analyst.search_metrics(layer, question)
+        if m["certified"]
+        and m["metric"] in by_code
+        and metric_words(by_code[m["metric"]], vocab) & asked
+    ]
+
+
 def _members(tokens: list[str]) -> set[str]:
     """Words written as names inside the sentence ("nhóm Bikes", "Mountain-200"): members the
     catalogue's value list may not hold, never quantities. "Doanh thu nhóm Bikes năm 2013" was
@@ -132,7 +150,7 @@ def unnamed_quantity(
     first, last = at[0], at[-1]
     phrase = _TRAILING.sub("", " ".join(tokens[first : last + 1]))
     end = m.group(0) if (m := _TRAILING.search(tokens[last])) else ""
-    found = [m["name"] for m in analyst.search_metrics(layer, question) if m["certified"]]
+    found = _closest(question, layer)
 
     def asked_with(name: str) -> str:
         said = name if first == 0 else name[:1].lower() + name[1:]
@@ -158,7 +176,7 @@ def nothing_read(
     named = {w for w in _members(question.split()) if not w.isdigit()}
     if named:
         return None
-    found = [m["name"] for m in analyst.search_metrics(layer, question) if m["certified"]]
+    found = _closest(question, layer)
     if not found:
         return None
     when = f" {period}" if period else ""

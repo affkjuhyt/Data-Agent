@@ -44,4 +44,11 @@ describe('ClarificationCard (E4)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mở lại' }));
     expect(screen.getByTestId('clarification-card')).toBeInTheDocument();
   });
+
+  it('is one read-only line once answered: nothing can be picked again', () => {
+    const onAnswer = vi.fn();
+    render(<ClarificationCard clarification={card} answered="Số đơn Internet là bao nhiêu?" onAnswer={onAnswer} />);
+    expect(screen.getByTestId('clarification-answered')).toHaveTextContent('Đã chọn: Số đơn Internet là bao nhiêu?');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
 });

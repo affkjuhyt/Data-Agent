@@ -29,10 +29,14 @@ interface Pick {
 
 export function ClarificationCard({
   clarification,
+  answered,
   disabled,
   onAnswer,
 }: {
   clarification: Clarification;
+  /** What the reader answered it with: the card is then one read-only line, so nothing can be
+   *  picked again (it stayed clickable after "Xác nhận" once the turn was read back). */
+  answered?: string;
   disabled?: boolean;
   onAnswer: (reply: ClarificationReply) => void;
 }) {
@@ -67,15 +71,28 @@ export function ClarificationCard({
     if (pick.custom) setOtherOpen(prev => ({ ...prev, [index]: false }));
   };
 
-  const answered = questions.every((_, i) => picked[i]);
+  const complete = questions.every((_, i) => picked[i]);
   const confirm = () => {
-    if (disabled || !answered) return;
+    if (disabled || !complete) return;
     const sent = reply(picked);
     setPicked({});
     setOtherOpen({});
     setDrafts({});
     onAnswer(sent);
   };
+
+  if (answered !== undefined) {
+    const asked = questions.map((q) => q.text).filter(Boolean).join(' ');
+    return (
+      <div data-testid="clarification-answered" className="flex flex-col gap-[2px] rounded-md border border-border px-da-md py-da-sm">
+        {asked && <p className="m-0 text-muted-foreground da-caption">{asked}</p>}
+        <p className="m-0 inline-flex items-center gap-da-xs text-foreground da-body-small">
+          <Icon name="check" size={14} className="text-success" />
+          Đã chọn: {answered}
+        </p>
+      </div>
+    );
+  }
 
   if (skipped) {
     return (
@@ -197,7 +214,7 @@ export function ClarificationCard({
         </button>
         <button
           type="button"
-          disabled={disabled || !answered}
+          disabled={disabled || !complete}
           onClick={confirm}
           className="rounded-md bg-primary px-da-md py-[5px] text-primary-foreground da-body-small hover:bg-primary-hover disabled:bg-subtle disabled:text-muted-foreground"
         >

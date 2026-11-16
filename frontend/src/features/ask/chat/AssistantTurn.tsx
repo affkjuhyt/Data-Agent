@@ -63,8 +63,11 @@ export function AssistantTurn({
   onOpenForecast,
   onExportCsv,
   onOpenExplore,
+  answeredWith,
   reported = false,
 }: {
+  /** The question that answered this turn's question back: the card is then read only. */
+  answeredWith?: string;
   message: AskMessage;
   busy: boolean;
   /** The reader reported this answer: it shows "Đang kiểm tra" until it is reviewed. */
@@ -122,6 +125,7 @@ export function AssistantTurn({
           {message.content && <MarkdownContent text={message.content} />}
           <ClarificationCard
             clarification={message.clarification}
+            answered={answeredWith}
             disabled={busy}
             onAnswer={(reply) => onAnswerClarification(message.id, reply)}
           />
@@ -182,7 +186,9 @@ export function AssistantTurn({
 
       {finished && !message.refusal && !!message.suggestions?.length && (
         <div className="flex flex-wrap gap-da-sm" aria-label="Hỏi tiếp">
-          {message.suggestions.map((q) => (
+          {/* E5: each once, at most three, whichever path wrote them (the governed path's own
+              suggestions were four). */}
+          {[...new Set(message.suggestions)].slice(0, 3).map((q) => (
             <button
               key={q}
               type="button"
