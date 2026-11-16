@@ -9,10 +9,15 @@ interpretations would change metric, period, or scope.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
 from services.worker_agent.agentic import plan as p
+from services.worker_agent.agentic.tools.base import Clarify
+from services.worker_agent.semantic.loader import SpaceLayer
+from services.worker_agent.understand import analyst
+from services.worker_agent.understand.text import norm
 
 Audience = Literal["executive", "analyst"]
 
@@ -85,6 +90,47 @@ def apply(
         )
 
     return plan.model_copy(update={"clarification": clarification, "options": options})
+
+
+# A quantity no certified metric measures is asked back with this many metrics to choose from.
+UNNAMED_OPTIONS = 4
+_TRAILING = re.compile(r"[?.!,;:]+$")
+
+
+def unnamed_quantity(
+    question: str, unnamed: list[str], layer: SpaceLayer, *, max_options: int = UNNAMED_OPTIONS
+) -> Clarify | None:
+    """The question back when it asks a quantity no certified metric measures ("Khách hàng rời
+    bỏ là bao nhiêu?", E4): the closest metrics as options, each the question again with that
+    metric in place of the quantity, so a pick is asked as it reads. It used to be refused, or
+    answered with another quantity the planner swapped in. None when the unnamed words are a
+    cut's or a member's (the reading missed a cut, not a metric) or the question cannot be split."""
+    vocab = layer.vocabulary
+    cut_words: set[str] = set()
+    for d in vocab.dimensions:
+        cut_words |= set(norm(d.name).split())
+    for v in vocab.values:
+        cut_words |= set(norm(v.label).split())
+    wanted = set(unnamed)
+    if not wanted or wanted <= cut_words:
+        return None
+    tokens = question.split()
+    at = [i for i, t in enumerate(tokens) if norm(_TRAILING.sub("", t)) in wanted]
+    if not at:
+        return None
+    first, last = at[0], at[-1]
+    phrase = _TRAILING.sub("", " ".join(tokens[first : last + 1]))
+    end = m.group(0) if (m := _TRAILING.search(tokens[last])) else ""
+    found = [m["name"] for m in analyst.search_metrics(layer, question) if m["certified"]]
+
+    def asked_with(name: str) -> str:
+        said = name if first == 0 else name[:1].lower() + name[1:]
+        return " ".join([*tokens[:first], said + end, *tokens[last + 1 :]])
+
+    return Clarify(
+        f"Chưa có chỉ số chuẩn nào đo “{phrase}”. Bạn muốn xem chỉ số nào dưới đây?",
+        [asked_with(name) for name in found[:max_options]],
+    )
 
 
 def join_thought(existing: str, note: str) -> str:

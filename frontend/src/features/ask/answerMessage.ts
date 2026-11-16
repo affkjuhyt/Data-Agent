@@ -100,10 +100,11 @@ export function fromAnswer(answer: Answer): Partial<AskMessage> {
   // The dynamic agent offers its choices as follow-ups: each one is asked as it is clicked.
   const suggestions = (answer.follow_ups ?? []).filter((q): q is string => typeof q === 'string');
   if (answer.kind === 'clarification') {
+    // E4: the question back and its choices in one card (choose, or "Khác…", then Xác nhận);
+    // they were the text above an empty box and chips under it.
     return {
-      content: answer.text,
-      clarification: { kind: 'followup', questions: [{ text: '' }] },
-      ...(suggestions.length > 0 && { suggestions }),
+      content: '',
+      clarification: { kind: 'followup', questions: [{ text: answer.text, options: suggestions }] },
     };
   }
   const citations = citationsOf(answer);

@@ -512,6 +512,27 @@ async def act(s: State) -> None:
         # way to the same data (invariant 13). Steps that depend on it are skipped.
         if not result.ok and s.failed is None and result.failure != "forbidden":
             s.failed = step
+    _ask_for_unnamed(s, results)
+
+
+def _ask_for_unnamed(s: State, results: list[ToolResult]) -> None:
+    """A step refused for a quantity no certified metric measures, nothing read yet: the turn asks
+    which metric was meant (E4) while its clarify budget lasts, rather than replanning toward
+    another quantity or refusing (q8 "Khách hàng rời bỏ là bao nhiêu?")."""
+    assert s.ctx is not None
+    if s.clarify is not None or s.ctx.ws.datasets:
+        return
+    # Once per conversation: asked again after an answer to it, it would ask the same again.
+    if s.prior_clarify_rounds > 0:
+        return
+    for result in results:
+        unnamed = (result.detail or {}).get("unnamed")
+        if result.ok or not unnamed:
+            continue
+        ask = clarify_policy.unnamed_quantity(s.ctx.question, list(unnamed), s.ctx.layer)
+        if ask is not None:
+            s.clarify, s.failed = ask, None
+            return
 
 
 async def _run_step(s: State, step: p.PlanStep) -> ToolResult:

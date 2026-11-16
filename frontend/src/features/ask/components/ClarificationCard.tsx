@@ -8,10 +8,12 @@
  * the user's own answer — a question without options shows the box directly.
  * What happens on answer depends on `clarification.kind` — see types.ts.
  *
- * One answer per question is collected and the reply goes out once the last
- * one is given — answering only the first used to leave the others to be asked
- * again. A pick is sent as `{reason, value}` so the backend writes it straight
- * onto the slots; an "Other" answer is free text and travels as text only.
+ * One answer per question is collected and the reply goes out on "Xác nhận" once
+ * every question has one (E4) — a pick only marks the choice, so a misclick is not
+ * a question sent. "Bỏ qua" folds the card without asking anything: the reader can
+ * ask again in their own words. A pick is sent as `{reason, value}` so the backend
+ * writes it straight onto the slots; an "Other" answer is free text and travels as
+ * text only.
  */
 import { useState } from 'react';
 import { Icon } from '../../../design-system/Icon';
@@ -42,6 +44,7 @@ export function ClarificationCard({
   const [picked, setPicked] = useState<Record<number, Pick>>({});
   const [otherOpen, setOtherOpen] = useState<Record<number, boolean>>({});
   const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const [skipped, setSkipped] = useState(false);
 
   const labelOf = (p: Pick) => (p.custom ? p.value : optionLabel(p.value));
 
@@ -60,17 +63,30 @@ export function ClarificationCard({
 
   const choose = (index: number, pick: Pick) => {
     if (disabled) return;
-    const next = { ...picked, [index]: pick };
-    if (questions.every((_, i) => next[i])) {
-      setPicked({});
-      setOtherOpen({});
-      setDrafts({});
-      onAnswer(reply(next));
-      return;
-    }
-    setPicked(next);
+    setPicked(prev => ({ ...prev, [index]: pick }));
     if (pick.custom) setOtherOpen(prev => ({ ...prev, [index]: false }));
   };
+
+  const answered = questions.every((_, i) => picked[i]);
+  const confirm = () => {
+    if (disabled || !answered) return;
+    const sent = reply(picked);
+    setPicked({});
+    setOtherOpen({});
+    setDrafts({});
+    onAnswer(sent);
+  };
+
+  if (skipped) {
+    return (
+      <p className="m-0 flex items-center gap-da-sm text-muted-foreground da-caption" data-testid="clarification-skipped">
+        Đã bỏ qua câu hỏi lại; bạn có thể hỏi lại theo cách khác.
+        <button type="button" className="text-primary hover:underline" onClick={() => setSkipped(false)}>
+          Mở lại
+        </button>
+      </p>
+    );
+  }
 
   const submitDraft = (index: number) => {
     const text = (drafts[index] ?? '').trim();
@@ -169,6 +185,25 @@ export function ClarificationCard({
           </div>
         );
       })}
+
+      <div className="flex justify-end gap-da-sm">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setSkipped(true)}
+          className="rounded-md px-da-md py-[5px] text-muted-foreground da-body-small hover:bg-subtle hover:text-foreground disabled:opacity-50"
+        >
+          Bỏ qua
+        </button>
+        <button
+          type="button"
+          disabled={disabled || !answered}
+          onClick={confirm}
+          className="rounded-md bg-primary px-da-md py-[5px] text-primary-foreground da-body-small hover:bg-primary-hover disabled:bg-subtle disabled:text-muted-foreground"
+        >
+          Xác nhận
+        </button>
+      </div>
     </div>
   );
 }

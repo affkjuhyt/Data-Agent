@@ -230,6 +230,40 @@ def test_a_merge_of_two_readings_is_named_by_what_each_read() -> None:
     assert merged_names(cols, "result = something(d1, d2)", ws.datasets) is None
 
 
+def test_a_quantity_no_metric_measures_is_asked_back_with_the_closest_metrics() -> None:
+    import uuid
+
+    from services.worker_agent.agentic import clarify_policy
+    from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
+
+    buyers, revenue = uuid.uuid4(), uuid.uuid4()
+    layer = SimpleNamespace(
+        vocabulary=Vocabulary(
+            metrics=[
+                MetricEntry(buyers, "SO_KHACH_HANG", "Số khách hàng mua qua Internet", True),
+                MetricEntry(revenue, "DOANH_THU", "Doanh thu", True),
+            ],
+            dimensions=[DimensionEntry(uuid.uuid4(), "nhom_san_pham", "Nhóm sản phẩm")],
+        ),
+        versions={buyers: object(), revenue: object()},
+        blocked_metric_ids=frozenset(),
+    )
+    ask = clarify_policy.unnamed_quantity(
+        "Khách hàng rời bỏ là bao nhiêu?", ["khach", "hang", "roi", "bo"], layer
+    )
+    assert ask is not None
+    assert ask.question == (
+        "Chưa có chỉ số chuẩn nào đo “Khách hàng rời bỏ”. Bạn muốn xem chỉ số nào dưới đây?"
+    )
+    # Each option is the question again with a metric in place of the quantity.
+    assert ask.options == ["Số khách hàng mua qua Internet là bao nhiêu?"]
+    # A cut's words are a missed cut, not a missing metric: no question back.
+    assert (
+        clarify_policy.unnamed_quantity("Cơ cấu theo nhóm sản phẩm", ["nhom", "san", "pham"], layer)
+        is None
+    )
+
+
 def test_the_live_timeline_says_what_each_step_found_from_its_data() -> None:
     import uuid
 
