@@ -740,6 +740,29 @@ def _catalogue_words(vocab: Any) -> set[str]:
     return named
 
 
+def _ask_for_unnamed_question(s: State) -> bool:
+    """Nothing read, and the question asks a quantity no certified metric names: ask which metric
+    was meant (E4) instead of writing an answer from no data. The planner of q8 ("Khách hàng rời
+    bỏ là bao nhiêu?") searched the catalogue and values and never ran a reading, so the check of
+    a refused reading (_ask_for_unnamed) never saw it."""
+    assert s.ctx is not None and s.plan is not None
+    if s.ctx.ws.datasets or s.clarify is not None or s.prior_clarify_rounds > 0:
+        return False
+    if s.plan.mode != "analyze":
+        return False
+    vocab = getattr(s.ctx.layer, "vocabulary", None)
+    if vocab is None:
+        return False
+    words = unnamed(
+        quantity_words(s.ctx.question, vocab, today=s.ctx.today), _catalogue_words(vocab)
+    )
+    ask = clarify_policy.unnamed_quantity(s.ctx.question, words, s.ctx.layer) if words else None
+    if ask is None:
+        return False
+    s.clarify = ask
+    return True
+
+
 def _unnamed_quantity(s: State) -> list[str]:
     """The question's quantity words no certified metric covers (invariant 3 / RES-04).
 
@@ -842,6 +865,8 @@ async def _gate(s: State, target: str, detail: dict[str, Any], feedback: str) ->
 async def compose(s: State) -> None:
     assert s.ctx is not None and s.plan is not None
     ws = s.ctx.ws
+    if _ask_for_unnamed_question(s):
+        return
     try:
         s.signals = await signals.read(s.ctx)
     except Exception:
