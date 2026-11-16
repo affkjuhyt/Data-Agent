@@ -203,3 +203,33 @@ async def test_a_steward_sees_the_expired_claims_of_the_page_they_keep(wiki: Wik
     assert got.status_code == 200, got.text
     # The keeper sees the expired claim too (the page marks it "Hết hạn"); BR-161 is for readers.
     assert {c["anchor"] for c in got.json()["claims"]} == {"c1", "c2"}
+
+
+async def test_a_knowledge_run_is_refused_until_the_page_composer_exists(wiki: Wiki) -> None:
+    # knowledge_run.requested had no worker: a run waited queued forever. Refused at once, after
+    # the request's own checks, with no run written.
+    async with client(wiki) as api:
+        wrong = await api.post(
+            "/v1/knowledge-runs",
+            json={"kind": "ingest", "data_space_id": str(uuid.uuid4())},
+            headers=wiki.headers("author"),
+        )
+        assert wrong.status_code == 422
+        run = await api.post(
+            "/v1/knowledge-runs",
+            json={"kind": "lint", "data_space_id": str(wiki.space)},
+            headers=wiki.headers("author"),
+        )
+        assert run.status_code == 501, run.text
+        assert run.json()["code"] == "not_available"
+        missing = await api.post(
+            "/v1/knowledge-pages:from-answer",
+            json={"answer_id": str(uuid.uuid4())},
+            headers=wiki.headers("author"),
+        )
+        assert missing.status_code == 404
+    with wiki.seed.conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM context.knowledge_run WHERE org_id = %s", (str(wiki.org),)
+        )
+        assert cur.fetchone()[0] == 0

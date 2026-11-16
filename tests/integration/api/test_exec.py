@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import datetime
+import json
 import os
 import uuid
 from dataclasses import dataclass, field
@@ -355,6 +356,34 @@ def seed_thesis(
     if committed_at is not None:
         values["committed_at"] = committed_at
     return w.seed.row("exec.thesis", **values)
+
+
+def seed_publication(w: World, thesis: dict[str, Any], owner: uuid.UUID) -> uuid.UUID:
+    """A publication pending review, written as the admin: the api refuses to create one while no
+    worker drafts the hypothesis page (exec.publication.requested had no handler)."""
+    body = publication_body(w)
+    return w.seed.row(
+        "exec.publication",
+        org_id=w.org,
+        thesis_id=thesis["id"],
+        owner_id=owner,
+        title=body["title"],
+        statement_public=body["statement_public"],
+        ref_kind=body["ref_kind"],
+        metric_ref=body["metric_ref"],
+        scope=json.dumps(body["scope"]),
+        period_label=body["period_label"],
+        comparator=body["comparator"],
+        threshold=body["threshold"],
+        unit=body["unit"],
+        due_at=thesis["due_at"],
+        attribution=body["attribution"],
+        attribution_label=body["attribution_label"],
+        target_data_space_id=w.space,
+        status="pending_review",
+        created_by=owner,
+        updated_by=owner,
+    )
 
 
 def seed_batch(w: World, thesis: uuid.UUID, owner: uuid.UUID, batch_no: int) -> None:
@@ -1066,8 +1095,9 @@ async def test_private_question_limits_and_a_busy_local_model(w: World) -> None:
 # ─── publications ───
 
 
-@pytest.mark.req("AC-16-05-01")
-async def test_publication_goes_to_the_callers_data_space_for_review(w: World) -> None:
+async def test_publishing_a_thesis_is_refused_until_the_page_drafter_exists(w: World) -> None:
+    # exec.publication.requested had no worker: the publication waited in pending_review for a
+    # hypothesis page nothing drafts. Refused at once, after its checks, with nothing written.
     async with client(w) as api:
         await make_vault(api, w, "leader")
         thesis = await make_thesis(api, w, "leader")
@@ -1075,41 +1105,12 @@ async def test_publication_goes_to_the_callers_data_space_for_review(w: World) -
         made = await api.post(
             f"/v1/exec/theses/{thesis['id']}/publications", json=publication_body(w), headers=h
         )
-        assert made.status_code == 202, made.text
-        pid = made.json()["id"]
-        assert made.json()["status"] == "pending_review"
-        assert made.headers["Location"] == f"/v1/exec/publications/{pid}"
-        assert w.one("SELECT status FROM exec.publication WHERE id = %s", pid) == "pending_review"
-        assert (
-            str(
-                w.one(
-                    "SELECT due_at = %s::timestamptz FROM exec.publication WHERE id = %s",
-                    thesis["due_at"],
-                    pid,
-                )
-            )
-            == "True"
-        )
-        events = w.events(pid)
-        assert [e[0] for e in events] == ["exec.publication.requested"]
-        assert events[0][1]["target_data_space_id"] == str(w.space)
-        assert events[0][1]["thesis_id"] == thesis["id"]
-
-        fetched = await api.get(f"/v1/exec/publications/{pid}", headers=w.headers("leader"))
-        assert fetched.status_code == 200
-        assert fetched.json()["attribution"] == "role_only"
-        assert fetched.json()["confidence_public"] is None
-        assert fetched.json()["knowledge_page_id"] is None
+        assert made.status_code == 501, made.text
+        assert made.json()["code"] == "not_available"
+        assert w.one("SELECT count(*) FROM exec.publication WHERE org_id = %s", w.org) == 0
+        assert "exec.publication.requested" not in [e for e, _ in w.events(thesis["id"])]
         detail = await api.get(f"/v1/exec/theses/{thesis['id']}", headers=w.headers("leader"))
-        assert detail.json()["publication_id"] == pid
-
-        # One open publication per thesis.
-        again = await api.post(
-            f"/v1/exec/theses/{thesis['id']}/publications", json=publication_body(w), headers=h
-        )
-        assert again.status_code == 409 and again.json()["code"] == "conflict"
-        other = await api.get(f"/v1/exec/publications/{pid}", headers=w.headers("leader2"))
-        assert other.status_code == 404
+        assert detail.json()["publication_id"] is None
 
 
 async def test_publication_only_into_a_data_space_the_leader_belongs_to(w: World) -> None:
@@ -1171,12 +1172,7 @@ async def test_withdrawn_publication_emits_once(w: World) -> None:
         await make_vault(api, w, "leader")
         await make_vault(api, w, "leader2")
         thesis = await make_thesis(api, w, "leader")
-        made = await api.post(
-            f"/v1/exec/theses/{thesis['id']}/publications",
-            json=publication_body(w),
-            headers=w.headers("leader", w.space),
-        )
-        pid = made.json()["id"]
+        pid = str(seed_publication(w, thesis, w.users["leader"]))
         h = w.headers("leader")
         foreign = await api.post(
             f"/v1/exec/publications/{pid}:withdraw", headers=w.headers("leader2")

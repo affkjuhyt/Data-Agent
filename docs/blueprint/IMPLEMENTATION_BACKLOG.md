@@ -73,7 +73,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | ID | Ưu tiên | Tuần | Việc | Phụ thuộc | Vai | CS | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | PL-01 | P0 | 1 | Nâng `sqlglot` → 30.x (PoC-5) | — | BE | S | 3 suite guard/sqlgen/compiler xanh | done c77fd7be |
-| PL-03 | P0 | 1 | 3 sự kiện mồ côi → 501 `UNSUPPORTED`; ẩn vault/knowledge-compile/`Fuel*` | — | BE/FE | S | không còn 202 im | todo |
+| PL-03 | P0 | 1 | 3 sự kiện mồ côi → 501 `UNSUPPORTED`; ẩn vault/knowledge-compile/`Fuel*` | — | BE/FE | S | không còn 202 im | doing: backend xong (501 `not_available` theo quy ước kernel, không ghi gì); còn ẩn nút ở FE |
 | PL-07 | P0 | 1 | Tắt Kafka/ClickHouse/Langfuse ở local; pin tag image | — | DevOps | S | `make e2e` xanh, 3 pod biến mất | todo |
 | PL-02 | P0 | 3 | Outbox `attempts/last_error/dead_at`; savepoint mỗi sự kiện; dead-letter + notify | — | BE/DB | M | handler lỗi không chặn lô; 5 lần → dead | todo |
 | PL-04 | P0 | 3 | Backup đủ 6 kho + restore drill | — | DevOps | M | drill ≤ 60 phút, e2e xanh sau khôi phục | todo |

@@ -1005,7 +1005,6 @@ async def create_publication(
     thesis_id: IdPath,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
-    response: Response,
 ) -> Accepted:
     # svc_exec reads nothing outside schema exec, so the target is checked through the caller's
     # X-Data-Space: the identity resolver (svc_org) admits only a Data Space of the caller's
@@ -1029,51 +1028,11 @@ async def create_publication(
             raise Problem(
                 409, "invalid_state", f"A {thesis.status} thesis cannot be published (BR-194)."
             )
-        publication = vaultdb.Publication(
-            id=uuid7(),
-            org_id=principal.org_id,
-            thesis_id=thesis.id,
-            owner_id=principal.user_id,
-            title=body.title,
-            statement_public=body.statement_public,
-            ref_kind=body.ref_kind,
-            metric_ref=body.metric_ref,
-            scope=body.scope,
-            period_label=body.period_label,
-            comparator=body.comparator,
-            threshold=body.threshold,
-            threshold_hi=body.threshold_hi,
-            unit=body.unit,
-            due_at=thesis.due_at,
-            attribution=body.attribution,
-            attribution_label=body.attribution_label,
-            confidence_public=body.confidence_public,
-            rationale_public=body.rationale_public,
-            target_data_space_id=body.target_data_space_id,
-            created_by=principal.user_id,
-            updated_by=principal.user_id,
+        # No worker takes exec.publication.requested (the hypothesis page drafter is deferred,
+        # docs/blueprint/STRATEGY.md §6): refused before anything is written, not a 202 that waits.
+        raise not_available(
+            "Chưa có bộ soạn trang giả thuyết, nên luận điểm chưa công bố được vào Data Space."
         )
-        session.add(publication)
-        await session.flush()
-        # The workflow checks the published condition against cond_ct (purpose validate), then the
-        # Context service drafts the hypothesis page and its review proposal (BR-194).
-        session.add(
-            _event(
-                principal,
-                "publication",
-                publication.id,
-                "exec.publication.requested",
-                publication_id=publication.id,
-                thesis_id=thesis.id,
-                owner_id=principal.user_id,
-                workflow_id=thesis.workflow_id,
-                target_data_space_id=body.target_data_space_id,
-                status="pending_review",
-            )
-        )
-        await session.flush()
-    response.headers["Location"] = f"/v1/exec/publications/{publication.id}"
-    return Accepted(id=publication.id, status="pending_review", poll_after_ms=2_000)
 
 
 async def _publication(

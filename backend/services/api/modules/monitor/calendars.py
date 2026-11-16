@@ -12,7 +12,7 @@ import datetime
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, Path, Query, Response
+from fastapi import APIRouter, Body, Depends, Path, Query
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +30,7 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.kernel.problems import Problem
+from services.api.kernel.problems import Problem, not_available
 from services.api.modules.monitor.schemas import (
     Accepted,
     BulletinState,
@@ -49,7 +49,6 @@ from services.api.modules.monitor.schemas import (
     SubscriptionView,
 )
 from services.api.modules.monitor.support import (
-    POLL_AFTER_MS,
     ROLE,
     check_work_calendar,
     emit,
@@ -499,11 +498,8 @@ async def run_bulletin(
     event_id: EventId,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
-    response: Response,
     body: Annotated[RunBulletin, Body()] = _NO_REASON,
 ) -> Accepted:
-    reason = (body.reason or "").strip() or None
-    at = now()
     async with transaction(ROLE, principal) as session:
         event = await _event(session, event_id, principal, data_space)
         if event.status in FINAL:
@@ -514,46 +510,11 @@ async def run_bulletin(
             .where(monitor.EventBulletin.event_id == event.id, monitor.EventBulletin.kind == "pre")
             .with_for_update()
         )
-        manual = {
-            "reason": reason,
-            "requested_by": str(principal.user_id),
-            "requested_at": at.isoformat(),
-        }
-        if bulletin is None:
-            bulletin = monitor.EventBulletin(
-                id=uuid7(),
-                org_id=principal.org_id,
-                event_id=event.id,
-                kind="pre",
-                status="preparing",
-                content={"manual_run": manual},
-            )
-            session.add(bulletin)
-        elif bulletin.status == "preparing":
+        # No worker takes event_bulletin.requested (the forecast agent's bulletin is deferred,
+        # docs/blueprint/STRATEGY.md §6): refused after the state checks, before a bulletin is
+        # written or re-issued.
+        if bulletin is not None and bulletin.status == "preparing":
             raise Problem(
                 409, "invalid_state", "The pre-period bulletin is already being prepared."
             )
-        else:
-            # UNIQUE (event_id, kind) keeps one pre bulletin per period: a manual run re-issues it.
-            bulletin.status, bulletin.sent_at = "preparing", None
-            bulletin.ledger_entry_ids, bulletin.gate_result = [], {}
-            bulletin.content, bulletin.recipients_count = {"manual_run": manual}, 0
-        await session.flush()
-        # The forecast agent runs, writes the ledger entries (issued_via = bulletin) and sends.
-        emit(
-            session,
-            principal,
-            "event_bulletin",
-            bulletin.id,
-            "event_bulletin.requested",
-            bulletin_id=bulletin.id,
-            event_id=event.id,
-            calendar_id=event.calendar_id,
-            data_space_id=data_space,
-            kind="pre",
-            trigger="manual",
-            status=bulletin.status,
-            requested_by=principal.user_id,
-        )
-    response.headers["Location"] = f"/v1/event-bulletins/{bulletin.id}"
-    return Accepted(id=bulletin.id, status=bulletin.status, poll_after_ms=POLL_AFTER_MS)
+        raise not_available("Chưa có bộ soạn bản tin trước kỳ, nên chưa chạy được bản tin này.")
