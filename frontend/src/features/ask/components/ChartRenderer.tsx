@@ -72,10 +72,23 @@ export function ChartRenderer({
   const barCells = (i: number) =>
     picked ? spec.data.map((row, j) => <Cell key={j} fill={colors[i % colors.length]} fillOpacity={dimmed(row)} />) : null;
 
+  // Every member of a short category axis is labelled: recharts dropped the ones that would
+  // overlap, so "United Kingdom" had a bar and no name. Long names lean instead.
+  const fewMembers = spec.data.length <= 24;
+  const longNames = fewMembers && spec.data.length > 6 && spec.data.some((row) => String(row[spec.x_key] ?? '').length > 9);
   const axes = (numericX = false) => (
     <>
       <CartesianGrid strokeDasharray="3 3" stroke={grid} vertical={false} />
-      <XAxis dataKey={spec.x_key} type={numericX ? 'number' : 'category'} stroke={axis} fontSize={12} axisLine={false} tickLine={false} />
+      <XAxis
+        dataKey={spec.x_key}
+        type={numericX ? 'number' : 'category'}
+        stroke={axis}
+        fontSize={12}
+        axisLine={false}
+        tickLine={false}
+        {...(!numericX && fewMembers && { interval: 0 })}
+        {...(!numericX && longNames && { angle: -25, textAnchor: 'end', height: 56 })}
+      />
       <YAxis stroke={axis} fontSize={12} axisLine={false} tickLine={false} tickFormatter={tickFormatter} width={72} />
       <Tooltip contentStyle={tooltipStyle} formatter={(v: unknown) => valueFormatter(v)} />
       {(spec.series?.length ?? spec.y_keys.length) > 1 && (

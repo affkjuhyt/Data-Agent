@@ -333,8 +333,21 @@ class QueryMetric(Tool):
             names.get(g, g).lower() if g in times else names.get(g, g) for g in group_by
         )
         title = args.title or (entry.name + (f" theo {cut_names}" if cut_names else ""))
-        if side_labels:
-            title = f"{title}: {years[0]} và {years[1]}" if years else title
+        rows = [list(r) for r in outcome.rows]
+        if side_labels and years:
+            # "Doanh thu theo vùng bán hàng, 2012 so với 2013": a cut's name lowercased inside the
+            # sentence, and the earlier year first, so the chart reads left to right in time.
+            title = args.title or (
+                f"{entry.name} theo {cut_names[:1].lower()}{cut_names[1:]}, "
+                f"{years[0]} so với {years[1]}"
+            )
+            cols = list(compiled.columns)
+            if "value" in cols and "base_value" in cols:
+                order = list(range(len(cols)))
+                v, base = cols.index("value"), cols.index("base_value")
+                order[v], order[base] = base, v
+                columns = [columns[i] for i in order]
+                rows = [[r[i] for i in order] for r in rows]
         if moved is not None:
             title = f"{title} ({coverage.iso(moved[1])})"
             detail["period_moved"] = {
@@ -344,7 +357,7 @@ class QueryMetric(Tool):
         ds = ctx.ws.add(
             title=title,
             columns=columns,
-            rows=[list(r) for r in outcome.rows],
+            rows=rows,
             trust="certified" if compiled.certified else "exploratory",
             query_run_ids=[str(outcome.query_run_id)],
             metric_version_ids=[str(compiled.metric_version_id)],

@@ -116,6 +116,46 @@ def chart_insight(
     return f"{high[0]} cao nhất, {low[0]} thấp nhất."
 
 
+def _side_name(label: str, other: str) -> str:
+    """What sets a series apart from the other: "2012" of "Doanh thu 2012" beside "Doanh thu
+    2013"; the whole label when they share no leading words."""
+    a, b = label.split(), other.split()
+    shared = 0
+    while shared < min(len(a), len(b)) - 1 and a[shared] == b[shared]:
+        shared += 1
+    return " ".join(a[shared:]) or label
+
+
+def comparison_insight(
+    x_values: list[Any],
+    before: list[float | None],
+    after: list[float | None],
+    labels: tuple[str, str],
+) -> str | None:
+    """A two-series bar chart of members (2012 beside 2013 per region) read as the change from the
+    first series to the second: who rose most and who fell most, or rose least. Its highest member
+    of the first series alone said nothing about the comparison drawn."""
+    changes = [
+        (x, (a - b) / b * 100)
+        for x, b, a in zip(x_values, before, after, strict=False)
+        if a is not None and b is not None and b > 0
+    ]
+    if len(changes) < 2:
+        return None
+    up = max(changes, key=lambda c: c[1])
+    down = min(changes, key=lambda c: c[1])
+
+    def sign(p: float) -> str:
+        # A fall is said in words ("giảm nhiều nhất (31,3%)"), so only a rise carries a sign.
+        return f"{'+' if p >= 0 else ''}{_pct(p)}%"
+
+    base = _side_name(labels[0], labels[1])
+    first = f"So với {base}, {up[0]} tăng mạnh nhất ({sign(up[1])})"
+    if down[1] < 0:
+        return f"{first}, {down[0]} giảm nhiều nhất ({sign(down[1])})."
+    return f"{first}, {down[0]} tăng ít nhất ({sign(down[1])})."
+
+
 def chart_fits(chart_type: str, x_kind: str, measures: list[list[float | None]], rows: int) -> bool:
     role = CHART_ROLES.get(chart_type)
     if role is None:
@@ -354,7 +394,11 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
             spec["series"] = [
                 {"key": c, "type": "bar" if i == 0 else "line"} for i, c in enumerate(y)
             ]
-        insight = chart_insight(chart_type, _x_kind(x, x_values), x_values, measures[0])
+        x_kind = _x_kind(x, x_values)
+        if len(y) == 2 and x_kind == "category" and chart_type in ("bar", "composed"):
+            insight = comparison_insight(x_values, measures[0], measures[1], (y[0], y[1]))
+        else:
+            insight = chart_insight(chart_type, x_kind, x_values, measures[0])
         # The other types the same rows fit: the chart's switcher offers them (chart adjustment).
         return {
             **base,

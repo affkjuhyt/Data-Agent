@@ -175,6 +175,11 @@ def test_a_charts_one_line_reading_is_computed_from_its_rows() -> None:
     assert b.chart_insight("bar", "category", ["A", "B", "C"], [3.0, None, 1.0]) == (
         "A cao nhất, C thấp nhất."
     )
+    # Two series side by side are read as the change from the first to the second.
+    regions = ["Australia", "Northeast", "Canada"]
+    assert b.comparison_insight(
+        regions, [100.0, 300.0, 200.0], [270.0, 206.0, 220.0], ("Doanh thu 2012", "Doanh thu 2013")
+    ) == ("So với 2012, Australia tăng mạnh nhất (+170,0%), Northeast giảm nhiều nhất (31,3%).")
 
 
 def test_a_sentence_with_an_untraced_number_is_dropped_and_tags_are_filled() -> None:
