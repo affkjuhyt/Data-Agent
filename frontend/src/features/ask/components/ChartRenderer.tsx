@@ -33,9 +33,9 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
 
   // A click anywhere over a category of a cartesian chart picks it, not only on the mark: a line's
   // point is a few pixels wide.
+  // By the hovered label: on the dev cluster a click's activeIndex was 0 wherever it landed.
   const pickAt = (state: MouseHandlerDataParam) => {
-    const row = spec.data[Number(state.activeIndex)];
-    if (onPick && row) onPick(String(row[spec.x_key] ?? ''));
+    if (onPick && state.activeLabel !== undefined && state.activeLabel !== null) onPick(String(state.activeLabel));
   };
   const clickable = onPick ? { onClick: pickAt, style: { cursor: 'pointer' } } : {};
 
@@ -148,7 +148,8 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
   return (
     <figure className="m-0 flex flex-col gap-da-md rounded-md border border-border bg-card px-da-xl py-da-lg">
       {spec.title && <figcaption className="text-foreground da-body-strong">{spec.title}</figcaption>}
-      <div className="h-[220px] w-full">
+      {/* recharts 3 makes the chart focusable; a click drew the browser's focus ring around it. */}
+      <div className="h-[220px] w-full [&_.recharts-surface]:outline-none [&_.recharts-wrapper]:outline-none">
         <ResponsiveContainer width="100%" height="100%">
           {body}
         </ResponsiveContainer>

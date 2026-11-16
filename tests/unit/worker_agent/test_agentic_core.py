@@ -157,6 +157,12 @@ def test_a_sentence_with_an_untraced_number_is_dropped_and_tags_are_filled() -> 
     assert checked.numbers == 1
     unknown = verify.fill("Tổng là {{F999}}.", known, allowed)
     assert unknown.text == "" and unknown.dropped == 1
+    from services.worker_agent.agentic import engine
+
+    # What is left of a callout whose only sentence was dropped is not drawn as an empty box; a
+    # sentence that leads into a chart is kept.
+    assert engine._label_only("**Lưu ý:**") and engine._label_only("Lưu ý:")
+    assert not engine._label_only("Dưới đây là xu hướng doanh thu theo tháng:")
 
 
 def test_the_graph_routes_on_the_state_and_always_ends() -> None:

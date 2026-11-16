@@ -966,6 +966,13 @@ async def _reviewed(s: State, user: str, drafts: list[b.BlockDraft]) -> list[b.B
     return revised or drafts
 
 
+def _label_only(text: str) -> bool:
+    """A lead-in and nothing after it ("Lưu ý:"): what is left of a callout whose sentence was
+    dropped for an untraced number, drawn as an empty warning box on the dev cluster."""
+    bare = text.strip().strip("*_#> ").strip()
+    return bare.endswith(":") and len(bare.split()) <= 3
+
+
 def _checked(
     s: State, d: b.BlockDraft, known: dict[str, verify.Fact], allowed: set[str]
 ) -> dict[str, Any] | None:
@@ -975,7 +982,7 @@ def _checked(
         checked = verify.fill(verify.repair_citations(d.content, cited), known, allowed)
         s.numbers += checked.numbers
         s.dropped_sentences += checked.dropped
-        if not checked.text.strip():
+        if not checked.text.strip() or _label_only(checked.text):
             return None
         d = d.model_copy(update={"content": checked.text})
     if d.type == "insights":

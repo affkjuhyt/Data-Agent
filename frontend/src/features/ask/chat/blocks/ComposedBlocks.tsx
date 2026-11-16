@@ -323,7 +323,8 @@ const RENDERERS: Record<string, (block: Block, ctx: Ctx) => ReactNode> = {
   chart: (b, ctx) => <ChartBlock block={b} ctx={ctx} />,
   table: (b, ctx) => <TableBlock block={b} ctx={ctx} />,
   insights: (b, ctx) => <Insights block={b} ctx={ctx} />,
-  callout: (b, ctx) => <Callout block={b} ctx={ctx} />,
+  // A callout with a heading and nothing under it ("Lưu ý:" alone) was drawn as an empty box.
+  callout: (b, ctx) => (str(b.content).trim() ? <Callout block={b} ctx={ctx} /> : null),
   code: (b) => <CodeBlock block={b} />,
   caveats: (b) => <CaveatsBlock items={arr<unknown>(b.items).map(String)} />,
   // The next questions are drawn under the answer from the answer's follow_ups.
