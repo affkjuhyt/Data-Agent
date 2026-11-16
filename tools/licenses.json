@@ -1,0 +1,26 @@
+{
+  "_doc": "PL-15 licence policy for tools/licenses.py. forbidden / review: regular expressions matched (case-insensitively) against a package's declared licence. exceptions: '<ecosystem>:<name>' -> why a person judged it fine; it then counts as allowed whatever it declares.",
+  "forbidden": [
+    "AGPL",
+    "Affero",
+    "SSPL",
+    "Server Side Public",
+    "Elastic License",
+    "ELv2",
+    "BUSL",
+    "Business Source",
+    "Commons Clause",
+    "Confluent Community",
+    "NonCommercial",
+    "\\bNC\\b",
+    "CC-BY-NC"
+  ],
+  "review": [
+    "(?<!L)GPL",
+    "General Public License(?!.*Lesser)",
+    "EUPL",
+    "OSL",
+    "CDDL"
+  ],
+  "exceptions": {}
+}

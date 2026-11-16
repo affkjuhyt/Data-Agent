@@ -112,6 +112,21 @@ frontend-lint:  ## tsc --noEmit
 frontend-test:  ## vitest
 	npm --workspace frontend run test
 
+# PL-15: every package the service images and the frontend ship, with its licence; fails on a
+# forbidden one (tools/licenses.json). Scans the images last built (make deploy-local builds
+# them), so rerun after a requirements change and commit THIRD-PARTY-NOTICES.md with it.
+LICENSE_IMAGES = api worker-agent worker-ingest worker-document crawler ml-forecast python-sandbox
+.PHONY: licenses
+
+licenses:  ## write THIRD-PARTY-NOTICES.md from the service images and the npm lock; fail on a forbidden licence
+	@out=$$(mktemp -d); trap 'rm -rf "$$out"' EXIT; \
+	for s in $(LICENSE_IMAGES); do \
+	  docker run --rm --entrypoint python -v "$(PWD)/tools:/tools:ro" "$(IMAGE_REGISTRY)/dataagent/$${s}:latest" \
+	    -I /tools/licenses.py scan --component "$$s" > "$$out/$$s.json" || exit 1; \
+	done; \
+	python3 tools/licenses.py npm --lock package-lock.json --component frontend > "$$out/frontend.json"; \
+	python3 tools/licenses.py report "$$out"/*.json --notices THIRD-PARTY-NOTICES.md
+
 ci: lint type test frontend-lint frontend-test design-audit  ## everything CI runs, locally
 
 # The serving benchmark talks to the GPU host over the LAN and, for

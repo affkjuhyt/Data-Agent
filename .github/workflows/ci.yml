@@ -134,6 +134,12 @@ jobs:
         run: pip install ${{ matrix.pre }}
       - name: Install the service and the test tooling
         run: pip install ${{ matrix.install }} -r requirements-test.txt
+      - name: Licences (PL-15)
+        # What this service's requirements install, the test tooling included: no package may
+        # carry a forbidden licence (tools/licenses.json). `make licenses` writes the notices.
+        run: |
+          python tools/licenses.py scan --component ${{ matrix.suite }} > "$RUNNER_TEMP/licences.json"
+          python tools/licenses.py report "$RUNNER_TEMP/licences.json"
       - name: Run the suite
         # Per-suite coverage is only one service's share of the tree, so the
         # threshold is enforced on the combined report (coverage job below).
@@ -259,10 +265,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Pinned: Node's ICU data formats numbers and dates, and the floating "20" changed
+          # them under the tests (formatVN, 16/11/2026). Keep in step with the dev machines.
+          node-version: "20.19.4"
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - name: Licences (PL-15)
+        # The packages the frontend ships (the lock's non-dev entries).
+        run: |
+          python3 tools/licenses.py npm --lock package-lock.json --component frontend > "$RUNNER_TEMP/licences.json"
+          python3 tools/licenses.py report "$RUNNER_TEMP/licences.json"
 
   frontend-test:
     name: Frontend · vitest
@@ -271,7 +284,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Pinned: Node's ICU data formats numbers and dates, and the floating "20" changed
+          # them under the tests (formatVN, 16/11/2026). Keep in step with the dev machines.
+          node-version: "20.19.4"
           cache: npm
       - run: npm ci
       - run: npm run test:coverage
@@ -322,7 +337,9 @@ jobs:
         run: vulture || true
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Pinned: Node's ICU data formats numbers and dates, and the floating "20" changed
+          # them under the tests (formatVN, 16/11/2026). Keep in step with the dev machines.
+          node-version: "20.19.4"
           cache: npm
       - run: npm ci
       - name: Dead code · TypeScript (knip · report)

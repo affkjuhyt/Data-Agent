@@ -85,7 +85,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | PL-12 | P1 | 13 | `LLM_PRICES` local > 0; `max_cost_per_run` nổ; ngân sách theo org | AE-02 | BE | S | lượt vượt → `BUDGET_EXCEEDED` | todo |
 | PL-06 | P1 | 13 | OTel → collector → Tempo; cờ `enable_observability_stack` | PL-05 | DevOps/BE | M | 1 câu = 1 trace xuyên | todo |
 | PL-14 | P1 | 14 | HA tối thiểu: api ×2, worker-agent ×2, PDB, probes | PL-02 | DevOps | S | giết 1 pod không hỏng câu đang chạy | todo |
-| PL-15 | P1 | 14 | `THIRD-PARTY-NOTICES.md` + CI chặn giấy phép cấm | — | DevOps | S | CI đỏ khi thêm AGPL/ELv2 | todo |
+| PL-15 | P1 | 14 | `THIRD-PARTY-NOTICES.md` + CI chặn giấy phép cấm | — | DevOps | S | CI đỏ khi thêm AGPL/ELv2 | done (`make licenses`, `tools/licenses.py`, bước Licences trong CI; 17/11: 543 gói, 0 cấm, 0 cần xem, 0 không khai) |
 | PL-16 | P2 | — | Thực thi theo danh tính người hỏi (gộp với AE-17) | AE-17 | BE | M | — | todo |
 
 ### 3.2 Data Foundation (DF) — [DATA_PIPELINE_SPEC.md](DATA_PIPELINE_SPEC.md) §9
