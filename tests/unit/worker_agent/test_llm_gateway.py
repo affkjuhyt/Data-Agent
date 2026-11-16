@@ -49,7 +49,8 @@ class Server:
                     ],
                     "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
                 }
-                data = json.dumps(body if status == 200 else {"error": {"message": "busy"}})
+                error = {"error": {"message": content or "busy"}}
+                data = json.dumps(body if status == 200 else error)
                 self.send_response(status)
                 self.send_header("content-type", "application/json")
                 # The SDK honours this, so a retried 429 does not wait its default backoff.
@@ -159,3 +160,39 @@ async def test_each_call_lands_on_the_turns_trace_without_its_content(server: Se
         "ModelHTTPError 500",
     )
     assert trace.tokens == 15
+
+
+async def test_a_call_over_the_context_window_asks_half_the_output_again(server: Server) -> None:
+    # vLLM's refusal through LiteLLM, as the reporter got it for a long "so sánh theo vùng" prompt.
+    refused = (
+        "ContextWindowExceededError: This model's maximum context length is 16384 tokens. However,"
+        " you requested 8192 output tokens and your prompt contains at least 8193 input tokens"
+    )
+
+    def asked() -> list[Any]:
+        return [b.get("max_tokens") or b.get("max_completion_tokens") for b in server.bodies]
+
+    server.script = [(400, refused), (200, '{"sql": "SELECT 1"}')]
+    reply = await LiteLLMGateway(server.url, "k").json_chat(
+        "responder", "rules", "q", Draft, max_tokens=8192
+    )
+    assert reply.content.sql == "SELECT 1" and asked() == [8192, 4096]
+    server.bodies.clear()
+    server.script = [(400, refused), (400, refused), (200, '{"sql": "SELECT 2"}')]
+    reply = await LiteLLMGateway(server.url, "k").json_chat(
+        "text_to_sql", "rules", "q", Draft, max_tokens=4096
+    )
+    assert reply.content.sql == "SELECT 2" and asked() == [4096, 2048, 1024]
+    # Below a useful answer it is not asked again, and another 400 is not retried at all.
+    server.bodies.clear()
+    server.script = [(400, refused)]
+    with pytest.raises(ModelUnavailable):
+        await LiteLLMGateway(server.url, "k").json_chat(
+            "text_to_sql", "rules", "q", Draft, max_tokens=1500
+        )
+    server.script = [(400, "invalid schema")]
+    with pytest.raises(ModelUnavailable):
+        await LiteLLMGateway(server.url, "k").json_chat(
+            "responder", "rules", "q", Draft, max_tokens=8192
+        )
+    assert len(server.bodies) == 2
