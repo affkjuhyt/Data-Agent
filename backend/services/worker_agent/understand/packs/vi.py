@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import re
 
@@ -20,6 +21,17 @@ def _quarter_number(word: str) -> int:
 
 
 def periods(t: str, folded: str, today: datetime.date, cal: clock.Calendar) -> FoundPeriod | None:
+    """The period, with an "end of" in front of it read as part of it: "Tồn kho cuối tháng
+    12/2013" names the month (a balance is read on its last day anyway), and a "cuối" left behind
+    was taken for a quantity no metric names (RES-04), which refused the question. "đầu" is not
+    taken the same way: folded it is also "dầu" (oil), a quantity a question may well name."""
+    found = _periods(t, folded, today, cal)
+    if found is not None and re.search(rf"\bcuoi {re.escape(found.span)}\b", t):
+        return dataclasses.replace(found, span=f"cuoi {found.span}")
+    return found
+
+
+def _periods(t: str, folded: str, today: datetime.date, cal: clock.Calendar) -> FoundPeriod | None:
     year_of = lambda y: int(y) if y else today.year  # noqa: E731
 
     # A fiscal year or quarter first: "quý 1 năm tài chính 2026" is not the calendar's quarter 1.

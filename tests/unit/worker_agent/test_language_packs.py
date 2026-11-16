@@ -19,6 +19,7 @@ from services.worker_agent.understand.resolver import (
     MetricEntry,
     ValueEntry,
     Vocabulary,
+    quantity_words,
     understand,
 )
 from services.worker_agent.understand.text import find_knowledge_hint, find_period
@@ -174,3 +175,26 @@ def test_labels_refusals_and_numbers_follow_the_locale_of_the_work() -> None:
     assert found is not None and found.label == "tháng 9/2026"
     assert Refusal.of(ErrorCode.ACCESS_DENIED).message.startswith("Bạn không có quyền")
     assert number(decimal.Decimal("1234.5"), 1) == "1.234,5"
+
+
+STOCK = MetricEntry(uuid.uuid4(), "TON_KHO", "Tồn kho", certified=True)
+OIL = MetricEntry(uuid.uuid4(), "GIA_DAU", "Giá dầu", certified=True)
+STOCK_VOCAB = Vocabulary(metrics=[STOCK, OIL], dimensions=[])
+
+
+def test_the_end_of_a_period_is_part_of_the_period() -> None:
+    # 16/11/2026: "cuối" was left over, read as a quantity no metric names (RES-04), and both
+    # DS-AW stock questions were refused on the agentic path.
+    found = find_period("Tồn kho cuối tháng 12/2013", TODAY)
+    assert found is not None and found.span == "cuoi thang 12/2013"
+    assert (found.start, found.end) == (datetime.date(2013, 12, 1), datetime.date(2014, 1, 1))
+    words = quantity_words("Giá trị tồn kho cuối tháng 6/2014", STOCK_VOCAB, today=TODAY)
+    assert "cuoi" not in words
+    assert quantity_words("Tồn kho cuối năm 2013", STOCK_VOCAB, today=TODAY) == ["ton", "kho"]
+
+
+def test_the_start_of_a_period_does_not_swallow_oil() -> None:
+    # Folded, "đầu" (start) is "dầu" (oil): it is never taken into the period.
+    found = find_period("Giá dầu tháng 12/2013", TODAY)
+    assert found is not None and found.span == "thang 12/2013"
+    assert quantity_words("Giá dầu tháng 12/2013", STOCK_VOCAB, today=TODAY) == ["gia", "dau"]
