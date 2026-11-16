@@ -11,9 +11,9 @@ from collections.abc import Iterable
 # a ranking, a trend or a comparison is the agent's to plan, not a metric to be named.
 ANALYSIS_WORDS = frozenset(
     "co vi sao tai giam tang top cao thap nhat xu huong bien dong phan tich nguyen nhan ty trong "
-    "luy ke so sanh chenh lech tong trung binh nhieu it hon bao tri dong gop anh huong "
+    "luy ke so sanh chenh lech tong trung binh nhieu it hon bao tri dong gop anh huong cau chiem "
     "why how trend compare increase decrease highest lowest total average share top rank change "
-    "growth drop rise".split()
+    "growth drop rise breakdown mix composition".split()
 )
 
 

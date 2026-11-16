@@ -5,6 +5,7 @@ executor, so row and column policies apply and every run is recorded (invariant 
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import Any, Literal
 
@@ -29,11 +30,14 @@ from services.worker_agent.sqlgen.run import explore
 from services.worker_agent.sqlgen.schema import link
 from services.worker_agent.sqlgen.space import load_space
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.grain import find_grain
 from services.worker_agent.understand.packs.base import iso_answer
 from services.worker_agent.understand.resolver import metric_words, quantity_words
 
 ROLE = "svc_qa"
 QUERYABLE = ("active", "testing")
+# Dimension codes that name a part of the calendar, as a model writes them when it makes one up.
+_CALENDAR_PART = re.compile(r"^(ngay|tuan|thang|quy|nam|day|week|month|quarter|year)(_|$)")
 
 _COLUMN_LABEL = {
     "base_value": "{metric} (kỳ so sánh)",
@@ -154,16 +158,45 @@ class QueryMetric(Tool):
             for d in ctx.layer.vocabulary.dimensions
             if d.dimension_id in version.allowed_dimension_ids or d.is_time
         }
-        bad = [g for g in [*args.group_by, *args.filters] if g not in allowed]
+        # A grain already cuts the period by day, month, quarter or year. A code the catalogue does
+        # not have that names a calendar part ("thang_tai_chinh", made up beside nam_tai_chinh)
+        # only asks for that cut again, so it is dropped rather than failing the reading.
+        known = {d.code for d in ctx.layer.vocabulary.dimensions}
+        calendar = [
+            g for g in args.group_by if args.grain and g not in known and _CALENDAR_PART.match(g)
+        ]
+        group_by = [g for g in args.group_by if g not in calendar]
+        times = {d.code for d in vocab.dimensions if d.is_time}
+        if args.grain and not times & set(group_by) and find_grain(ctx.question):
+            # The catalogue the planner reads lists no time dimension, so "theo tháng" arrives as
+            # a grain alone, which the compiler would ignore and answer with one total. The cut is
+            # along the metric's own time, as the governed path makes it (BR-80). Only when the
+            # question asks a cut along time: the model also sets a grain unasked ("cơ cấu theo
+            # nhóm" with grain=month), and cutting that by month split each group into months.
+            try:
+                time_cut = c.time_dimension_of(version, ctx.layer.layer)
+            except c.CompileError:
+                time_cut = None
+            if time_cut is None:
+                return ToolResult(
+                    False,
+                    f"chỉ số {args.metric} không có chiều thời gian để chia theo {args.grain}",
+                    failure="logic",
+                )
+            group_by.append(time_cut.code)
+        bad = [g for g in [*group_by, *args.filters] if g not in allowed]
         if bad:
+            cuts = ", ".join(sorted(allowed - {d.code for d in vocab.dimensions if d.is_time}))
             return ToolResult(
                 False,
-                f"chỉ số {args.metric} không cho chia/lọc theo {bad}; xem describe_metric",
+                f"chỉ số {args.metric} không cho chia/lọc theo {bad}; chia theo thời gian thì dùng"
+                f" grain (day, week, month, quarter, year), không đưa vào group_by; các chiều"
+                f" được phép: {cuts}",
                 failure="arguments",
             )
         request = c.Request(
             version,
-            group_by=list(args.group_by),
+            group_by=group_by,
             filters={k: list(v) for k, v in args.filters.items()},
             period=period,
             grain=args.grain,
@@ -237,7 +270,7 @@ class QueryMetric(Tool):
             )
             for col in compiled.columns
         ]
-        cut_names = ", ".join(names.get(g, g) for g in args.group_by)
+        cut_names = ", ".join(names.get(g, g) for g in group_by)
         title = args.title or (entry.name + (f" theo {cut_names}" if cut_names else ""))
         if moved is not None:
             title = f"{title} ({coverage.iso(moved[1])})"
@@ -260,11 +293,13 @@ class QueryMetric(Tool):
             reading={
                 "metric": args.metric,
                 "metric_id": str(entry.metric_id),
-                "group_by": list(args.group_by),
+                "group_by": group_by,
                 "filters": {k: list(v) for k, v in args.filters.items()},
             },
         )
         detail["dataset"] = ds.id
+        if calendar:
+            detail["dropped_group_by"] = calendar
         said = (
             f"Kỳ {coverage.iso(moved[0])} không có dữ liệu; đã đọc kỳ đầy đủ gần nhất"
             f" {coverage.iso(moved[1])} thay thế.\n"

@@ -30,6 +30,8 @@ ChartType = Literal["bar", "line", "area", "pie", "scatter", "composed"]
 # Chart types the client draws; anything else falls back to bar.
 CHART_TYPES = {"bar", "line", "area", "pie", "scatter", "composed", "radar", "radialBar"}
 MAX_CHART_POINTS = 120
+# A KPI label that says it is a total (normalised words, both languages).
+_TOTAL = re.compile(r"\b(t[oổ]ng|total|overall)\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -219,6 +221,20 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
         items = []
         for k in draft.kpis:
             ds = _dataset(ws, k.dataset)
+            if len(ds.rows) > 1:
+                # A row of a many-row result taken by its index, or called a total, was shown as
+                # "Tổng doanh thu 2013" over one month's running total: every figure was traced,
+                # its name was not. A total is a reading without the cut, one row.
+                if not k.match_column:
+                    raise BlockError(
+                        f"dataset {ds.id} có {len(ds.rows)} dòng: chỉ rõ dòng của kpi"
+                        f" '{k.label}' bằng match_column và match_value"
+                    )
+                if _TOTAL.search(k.label):
+                    raise BlockError(
+                        f"kpi '{k.label}' gọi một dòng của {ds.id} là tổng; tổng là truy vấn"
+                        " chỉ số không chia (một dòng), hoặc bỏ kpi này"
+                    )
             row = _row(ds, k)
             value = number(row[ds.columns.index(_column(ds, k.column))])
             item: dict[str, Any] = {

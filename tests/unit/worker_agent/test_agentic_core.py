@@ -93,6 +93,19 @@ def test_a_chart_and_a_kpi_take_their_figures_from_the_dataset() -> None:
         "b2",
     )
     assert kpi["items"][0]["value"] == 250000.0
+    # A row of a many-row result is named, never taken by index, and never called a total.
+    for draft in (
+        b.KpiDraft(label="Doanh thu", dataset="d1", column="Doanh thu", row=1),
+        b.KpiDraft(
+            label="Tổng doanh thu 2013",
+            dataset="d1",
+            column="Doanh thu",
+            match_column="Vùng",
+            match_value="Pacific",
+        ),
+    ):
+        with pytest.raises(b.BlockError):
+            b.materialize(b.BlockDraft(type="kpi", kpis=[draft]), ws, "b2")
     with pytest.raises(b.BlockError):
         b.materialize(b.BlockDraft(type="table", dataset="d9"), ws, "b3")
     with pytest.raises(b.BlockError):
@@ -334,6 +347,8 @@ def test_a_metric_that_does_not_measure_what_was_asked_hands_the_question_back()
     asyncio.run(engine.compose(asked_customers))
     assert asked_customers.handed_back
     assert engine._unnamed_quantity(state("Vì sao số lượng bán Internet năm 2013 giảm")) == []
+    # "Cơ cấu" folds to "co cau": how to read the quantity, not one the catalogue lacks.
+    assert engine._unnamed_quantity(state("Cơ cấu số lượng bán Internet năm 2013")) == []
 
 
 def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql() -> None:
@@ -365,6 +380,83 @@ def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql()
     assert "explore_sql" not in done.observation
     assert "không tự tính" in done.observation
     assert done.detail["unnamed"] == ["khach", "hang", "mua"]
+
+
+def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypatch) -> None:
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic.tools.query import QueryMetric, QueryMetricArgs
+    from services.worker_agent.semantic import compiler as c
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    revenue = MetricEntry(uuid.uuid4(), "DOANH_THU_INTERNET", "Doanh thu Internet", True)
+    region = types.SimpleNamespace(
+        dimension_id=uuid.uuid4(), code="vung", name="Vùng", is_time=False
+    )
+    colour = types.SimpleNamespace(
+        dimension_id=uuid.uuid4(), code="mau_sac", name="Màu", is_time=False
+    )
+    day = types.SimpleNamespace(
+        dimension_id=uuid.uuid4(), code="ngay_dat", name="Ngày", is_time=True
+    )
+    layer = types.SimpleNamespace(
+        vocabulary=types.SimpleNamespace(
+            metrics=[revenue],
+            synonyms={},
+            dimensions=[region, colour, day],
+            values=[],
+            calendar=clock.DEFAULT,
+        ),
+        versions={
+            revenue.metric_id: types.SimpleNamespace(allowed_dimension_ids={region.dimension_id})
+        },
+        blocked_metric_ids=set(),
+        layer=object(),
+    )
+    ctx = types.SimpleNamespace(
+        layer=layer,
+        question="Doanh thu Internet theo tháng",
+        today=datetime.date(2026, 11, 3),
+        period_moves={},
+    )
+    compiled: list[c.Request] = []
+
+    def refuse(request, *_a, **_k):
+        compiled.append(request)
+        raise c.CompileError("NO_JOIN_PATH", "stop here")
+
+    monkeypatch.setattr(c, "compile_metric", refuse)
+    monkeypatch.setattr(c, "time_dimension_of", lambda *_a: day)
+    by_month = QueryMetricArgs(
+        metric="DOANH_THU_INTERNET", grain="month", group_by=["thang_tai_chinh", "vung"]
+    )
+    asyncio.run(QueryMetric().run(ctx, by_month))  # type: ignore[arg-type]
+    # The made-up month cut never reaches the compiler; the month is cut along the metric's own
+    # time, which the catalogue the planner reads does not list.
+    assert compiled and compiled[0].group_by == ["vung", "ngay_dat"]
+    # A grain the model set unasked ("cơ cấu … theo vùng") adds no month cut to the groups.
+    ctx.question = "Cơ cấu doanh thu Internet theo vùng năm 2013"
+    asyncio.run(
+        QueryMetric().run(
+            ctx, QueryMetricArgs(metric="DOANH_THU_INTERNET", grain="month", group_by=["vung"])
+        )  # type: ignore[arg-type]
+    )
+    assert compiled[-1].group_by == ["vung"]
+    ctx.question = "Doanh thu Internet theo tháng"
+
+    refused = asyncio.run(
+        QueryMetric().run(
+            ctx, QueryMetricArgs(metric="DOANH_THU_INTERNET", grain="month", group_by=["mau_sac"])
+        )  # type: ignore[arg-type]
+    )
+    assert not refused.ok and refused.failure == "arguments"
+    # The refusal says how to ask again, so the replan has something to change.
+    assert (
+        "dùng grain" in refused.observation and "các chiều được phép: vung" in refused.observation
+    )
 
 
 def test_explore_sql_refuses_a_quantity_no_metric_in_the_catalogue_names() -> None:
@@ -507,6 +599,8 @@ def test_caveats_carry_the_sql_vote_and_leave_out_a_failed_computation() -> None
         ),
     )
     state.composition = [{"type": "kpi", "id": "b1", "items": [{"dataset": "d1"}]}]
+    # Draft sentences the number check dropped are the timeline's, not the reader's caveat.
+    state.dropped_sentences = 2
     engine._append_caveats(state)
     caveats = state.composition[-1]["items"]
     assert caveats == [
@@ -1115,6 +1209,28 @@ def _failed(failure: str) -> Any:
     return ToolResult(False, f"lỗi {failure}", failure=failure)  # type: ignore[arg-type]
 
 
+def test_the_executor_is_not_handed_the_plans_invalid_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import types
+
+    w = _step_world(monkeypatch, ["ok"])
+    asked: list[str] = []
+
+    async def json_chat(_role: str, _system: str, user: str, *_a: Any, **_k: Any) -> Any:
+        asked.append(user)
+        return types.SimpleNamespace(content=w.engine.ExecutorReply(args={"n": 7}))
+
+    w.state.model = types.SimpleNamespace(json_chat=json_chat)
+    step = w.state.plan.steps[0]
+    # As the planner wrote "analysis": "luy_ke": a value outside the schema.
+    step.args = {"n": "luy_ke"}
+    result = asyncio.run(w.engine._run_step(w.state, step))
+    assert result.ok and w.runs == [7]
+    assert "luy_ke" not in asked[0]
+    assert "Đã bỏ các tham số kế hoạch sai schema: n" in asked[0]
+
+
 def test_wrong_arguments_are_written_again_with_the_error(monkeypatch: pytest.MonkeyPatch) -> None:
     w = _step_world(monkeypatch, [_failed("arguments"), "ok"])
     result = asyncio.run(w.engine._run_step(w.state, w.state.plan.steps[0]))
@@ -1194,3 +1310,15 @@ def test_a_series_longer_than_a_chart_holds_is_a_table_not_a_cut_chart() -> None
     # A line of the first 120 days would end in May with nothing saying the rest is missing.
     assert block["type"] == "table"
     assert block["row_count"] == 200
+
+
+def test_the_reporter_lays_out_by_question_and_names_no_internals() -> None:
+    from services.worker_agent.agentic import prompts
+
+    # The one recipe every baseline answer followed (conclusion, evidence, insights, caveat) is gone.
+    assert "mở bằng kết luận, rồi" not in prompts.REPORTER
+    for rule in ("- Một con số: kpi", "- Xu hướng", "- Vì sao", "mã dataset (d1, d2)"):
+        assert rule in prompts.REPORTER
+    assert "thuật ngữ nội bộ" in prompts.REVIEW_ANSWER
+    # "theo tháng" is a grain; a running total or a comparison is not added unasked.
+    assert "không tự thêm" in prompts.EXECUTOR

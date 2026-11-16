@@ -49,6 +49,9 @@ describe('AnswerBlocks', () => {
     expect(screen.getAllByRole('region', { name: /Kết quả/ })).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'SQL đã chạy' })).toBeInTheDocument();
     const caveats = screen.getByRole('note', { name: 'Lưu ý' });
+    // Closed until asked: the count shows, the items open on a click.
+    expect(within(caveats).queryByText('Số liệu Khám phá.')).not.toBeInTheDocument();
+    fireEvent.click(within(caveats).getByRole('button', { name: /Lưu ý \(1\)/ }));
     expect(within(caveats).getByText('Số liệu Khám phá.')).toBeInTheDocument();
   });
 

@@ -440,11 +440,18 @@ async def _arguments(s: State, step: p.PlanStep, error: str) -> Any:
     """The tool's arguments: the planner's own when they validate and the step needs nothing
     computed from earlier results; else written by the executor model."""
     tool = TOOLS[step.tool]
-    if not error and step.tool != "analyze":
+    planned, dropped = step.args, []
+    if step.tool != "analyze":
         try:
-            return tool.Args.model_validate(step.args)
-        except ValidationError:
-            pass
+            valid = tool.Args.model_validate(step.args)
+            if not error:
+                return valid
+        except ValidationError as exc:
+            # The planner's invalid fields ("analysis": "luy_ke", a period as compare_to) were
+            # handed to the executor as the plan's arguments, and it wrote them back three times.
+            # It gets the fields that validate, and the names of those left out.
+            dropped = sorted({str(e["loc"][0]) for e in exc.errors() if e.get("loc")})
+            planned = {k: v for k, v in step.args.items() if k not in dropped}
     # A tool that reads a metric gets the catalogue, where its description says how it may be
     # read ("chỉ có nghĩa khi tách theo tài khoản") and what it may be cut by (AGC-09).
     catalog = (
@@ -453,8 +460,14 @@ async def _arguments(s: State, step: p.PlanStep, error: str) -> Any:
     user = (
         f"{catalog}{_situation(s)}\n\n{_progress(s)}\n\n"
         f"<step id={step.id} tool={step.tool}>\n{step.instruction}\nTham số kế hoạch: "
-        f"{json.dumps(step.args, ensure_ascii=False)}\n</step>\n\n"
-        f"Schema tham số: {json.dumps(tool.schema(), ensure_ascii=False)}"
+        f"{json.dumps(planned, ensure_ascii=False)}\n</step>\n\n"
+        + (
+            f"Đã bỏ các tham số kế hoạch sai schema: {', '.join(dropped)}; viết lại chúng chỉ khi"
+            " câu hỏi cần, đúng schema.\n\n"
+            if dropped
+            else ""
+        )
+        + f"Schema tham số: {json.dumps(tool.schema(), ensure_ascii=False)}"
         + (f"\n\nLần trước lỗi: {error}" if error else "")
     )
     reply = await s.model.json_chat(
@@ -1023,8 +1036,8 @@ def _append_caveats(s: State) -> None:
         if ds.id in used and ds.truncated:
             items.append(f"{ds.title}: kết quả bị cắt bớt, chỉ hiển thị một phần.")
     items += s.signals.caveats
-    if s.dropped_sentences:
-        items.append(f"Đã bỏ {s.dropped_sentences} câu có số không truy được nguồn.")
+    # Sentences the number check dropped are not said here: they were the draft's, the reader
+    # never saw them, and the count stays in number_check and on the write_answer step.
     # A failed step is said only when it was to fetch data and nothing fetched with that tool
     # afterwards: a computation that failed, or a query a later one replaced, is on the timeline
     # and casts no doubt on figures that were all traced.
