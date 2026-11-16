@@ -214,6 +214,21 @@
   }
 }
 
+/* A line that arrives on a live list (the agent's reasoning while a turn runs) fades in. */
+@keyframes da-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.da-reveal {
+  animation: da-reveal 200ms ease-out both;
+}
+
 /* "Chuyển động": hover/focus 120 ms, popover 150 ms, drawer/dialog 200 ms; reduced motion → 0. */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -309,17 +309,19 @@
     "dimensions": false,
     "filters": false,
     "as_of": false,
-    "compare": false
+    "compare": false,
+    "period": false,
+    "grain": false
    },
    "query": [],
-   "returns": "QueryRun. Khám phá theo chỉ số không qua mô hình ngôn ngữ; semantic compiler sinh SQL trực tiếp",
+   "returns": "QueryRun. Khám phá theo chỉ số không qua mô hình ngôn ngữ; semantic compiler sinh SQL trực tiếp; period (ISO: 2013, 2013-Q3, 2013-09, khoảng) và grain (day, week, month, quarter, year: chia theo thời gian của chính chỉ số khi chưa có chiều thời gian)",
    "errors": [
     [
      422,
      "business_rule_violated"
     ]
    ],
-   "request_text": "metric_ids*, dimensions, filters, as_of, compare"
+   "request_text": "metric_ids*, dimensions, filters, as_of, compare, period, grain"
   },
   "GET /v1/answers/{id}/receipt": {
    "group": "Hỏi đáp",

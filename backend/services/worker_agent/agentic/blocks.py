@@ -85,6 +85,140 @@ def _x_kind(column: str, values: list[Any]) -> str:
     return "category"
 
 
+# Years only: a ranked axis of 4-digit codes (product 1234) is not reordered.
+_ISO_TIME = re.compile(r"^((?:19|20)\d{2})(?:-(\d{1,2})(?:-(\d{1,2}))?|-?q([1-4]))?$", re.I)
+_LOCAL_TIME = re.compile(r"^(?:q([1-4])|t?(\d{1,2}))[/-]((?:19|20)\d{2})$", re.I)
+
+
+def time_order(value: Any) -> tuple[int, int, int] | None:
+    """Where a member of a time axis falls ("2013-05", "2013-Q2", "05/2013", "Q2/2013"), or None
+    for one that is not a period."""
+    text = str(value).strip() if value is not None else ""
+    if m := _ISO_TIME.match(text):
+        month = int(m.group(2) or 0) or int(m.group(4) or 0) * 3
+        return int(m.group(1)), month, int(m.group(3) or 0)
+    if m := _LOCAL_TIME.match(text):
+        return int(m.group(3)), int(m.group(1) or 0) * 3 or int(m.group(2)), 0
+    return None
+
+
+def _pct(value: float) -> str:
+    return f"{abs(value):,.1f}".replace(",", " ").replace(".", ",").replace(" ", ".")
+
+
+def chart_insight(
+    chart_type: str, x_kind: str, x_values: list[Any], values: list[float | None]
+) -> str | None:
+    """One line under a chart's title (E2), computed here from the drawn rows, never by the
+    model: over time the change from the first to the last point and where it peaked; a share
+    chart its largest part; a bar chart its highest and lowest member. Names and percentages only,
+    so no figure is written twice in two formats."""
+    points = [(x, v) for x, v in zip(x_values, values, strict=False) if v is not None]
+    if len(points) < 2:
+        return None
+    high = max(points, key=lambda p: p[1])
+    low = min(points, key=lambda p: p[1])
+    if x_kind == "time":
+        (first_x, first), (last_x, last) = points[0], points[-1]
+        line = f"Từ {first_x} đến {last_x}"
+        if first > 0:
+            change = (last - first) / first * 100
+            line += f" {'tăng' if change >= 0 else 'giảm'} {_pct(change)}%"
+        return f"{line}; cao nhất {high[0]}, thấp nhất {low[0]}."
+    if chart_type == "pie":
+        total = sum(v for _, v in points)
+        if total > 0 and low[1] >= 0:
+            return f"{high[0]} lớn nhất, chiếm {_pct(high[1] / total * 100)}% tổng."
+        return None
+    return f"{high[0]} cao nhất, {low[0]} thấp nhất."
+
+
+def _side_name(label: str, other: str) -> str:
+    """What sets a series apart from the other: "2012" of "Doanh thu 2012" beside "Doanh thu
+    2013"; the whole label when they share no leading words."""
+    a, b = label.split(), other.split()
+    shared = 0
+    while shared < min(len(a), len(b)) - 1 and a[shared] == b[shared]:
+        shared += 1
+    # "tháng 3/2013", not "3/2013": the word that says which kind of period stays.
+    if shared and a[shared - 1].lower() in ("tháng", "quý", "năm"):
+        shared -= 1
+    return " ".join(a[shared:]) or label
+
+
+def comparison_insight(
+    x_values: list[Any],
+    before: list[float | None],
+    after: list[float | None],
+    labels: tuple[str, str],
+) -> str | None:
+    """A two-series bar chart of members (2012 beside 2013 per region) read as the change from the
+    first series to the second: who rose most and who fell most, or rose least. Its highest member
+    of the first series alone said nothing about the comparison drawn."""
+    changes = [
+        (x, (a - b) / b * 100)
+        for x, b, a in zip(x_values, before, after, strict=False)
+        if a is not None and b is not None and b > 0
+    ]
+    if len(changes) < 2:
+        return None
+    up = max(changes, key=lambda c: c[1])
+    down = min(changes, key=lambda c: c[1])
+
+    def sign(p: float) -> str:
+        # A fall is said in words ("giảm nhiều nhất (31,3%)"), so only a rise carries a sign.
+        return f"{'+' if p >= 0 else ''}{_pct(p)}%"
+
+    base = _side_name(labels[0], labels[1])
+    first = f"So với {base}, {up[0]} tăng mạnh nhất ({sign(up[1])})"
+    if down[1] < 0:
+        return f"{first}, {down[0]} giảm nhiều nhất ({sign(down[1])})."
+    return f"{first}, {down[0]} tăng ít nhất ({sign(down[1])})."
+
+
+def series_insight(
+    x_values: list[Any], measures: list[list[float | None]], labels: list[str]
+) -> str | None:
+    """Several series over time, each read from its first to its last point ("Từ 2013-01 đến
+    2013-12: 2012 tăng 40,0%, 2013 tăng 118,5%."); the first series alone described only itself."""
+    if len(labels) < 2 or len(labels) > 3:
+        return None
+    names = (
+        [_side_name(labels[0], labels[1]), _side_name(labels[1], labels[0])]
+        if len(labels) == 2
+        else labels
+    )
+    parts, span = [], None
+    for name, values in zip(names, measures, strict=False):
+        points = [(x, v) for x, v in zip(x_values, values, strict=False) if v is not None]
+        if len(points) < 2 or points[0][1] <= 0:
+            continue
+        change = (points[-1][1] - points[0][1]) / points[0][1] * 100
+        parts.append(f"{name} {'tăng' if change >= 0 else 'giảm'} {_pct(change)}%")
+        span = span or (points[0][0], points[-1][0])
+    if not parts or span is None:
+        return None
+    return f"Từ {span[0]} đến {span[1]}: {', '.join(parts)}."
+
+
+# The period a series is named by, at its end: "Doanh thu 2012", "Doanh thu 2013-05",
+# "Doanh thu 2013-Q3", "Doanh thu Q3/2013", "Doanh thu tháng 3/2013", "Doanh thu quý 3/2013".
+_SERIES_PERIOD = re.compile(
+    r"(?:(?:Q|quý\s?)([1-4])[/ ]|(\d{1,2})/)?((?:19|20)\d{2})(?:-(?:Q([1-4])|(\d{1,2})))?\)?$",
+    re.IGNORECASE,
+)
+
+
+def period_key(label: str) -> tuple[int, int] | None:
+    """Where a series named by a period falls in time, to draw the earlier one first."""
+    m = _SERIES_PERIOD.search(label.strip())
+    if m is None:
+        return None
+    quarter = m.group(1) or m.group(4)
+    month = m.group(2) or m.group(5)
+    return int(m.group(3)), int(quarter) * 3 if quarter else int(month or 0)
+
+
 def chart_fits(chart_type: str, x_kind: str, measures: list[list[float | None]], rows: int) -> bool:
     role = CHART_ROLES.get(chart_type)
     if role is None:
@@ -179,12 +313,32 @@ def _row(ds: Dataset, k: KpiDraft) -> list[Any]:
     return ds.rows[k.row]
 
 
+def _explore(ds: Dataset) -> dict[str, Any] | None:
+    """The reading Khám phá can open again: a certified metric's, by its id and dimension codes.
+    Khám phá lists only certified metrics, so another dataset has nothing to open there."""
+    r = ds.reading
+    if not r or ds.trust != "certified" or not r.get("metric_id"):
+        return None
+    return {
+        "metric_id": r["metric_id"],
+        "group_by": list(r.get("group_by", [])),
+        "filters": dict(r.get("filters", {})),
+        "cuts": dict(r.get("cuts", {})),
+        "time_cuts": list(r.get("time_cuts", [])),
+        # K1: Khám phá reads a period and a grain too.
+        "period": r.get("period"),
+        "grain": r.get("grain"),
+    }
+
+
 def _source(ds: Dataset) -> dict[str, Any]:
+    explore = _explore(ds)
     return {
         "dataset": ds.id,
         "trust": ds.trust,
         "trust_label": TRUST_LABEL[ds.trust],
         "query_run_ids": ds.query_run_ids,
+        **({"explore": explore} if explore else {}),
     }
 
 
@@ -277,11 +431,23 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
         ][:3]
         if not y:
             raise BlockError(f"dataset {ds.id} không có cột số để vẽ")
+        keys = [period_key(c) for c in y]
+        timed = len(y) > 1 and all(keys) and len(set(keys)) == len(keys)
+        if timed:
+            # Series named by periods are drawn earlier first: "Doanh thu 2013" came before
+            # "Doanh thu 2012" in the legend and the bars when the model listed them that way.
+            y = [c for _, c in sorted(zip(keys, y, strict=True))]
+        # A time axis is drawn in time order: a reading ranked by value ("top_desc") drew its
+        # months 12, 6, 10… and its line read "Từ 2013-12 đến 2013-02 giảm 58,8%" (16/11).
+        rows = ds.rows
+        order = [time_order(plain(r[ds.columns.index(x)])) for r in rows]
+        if rows and all(k is not None for k in order):
+            rows = [r for _, r in sorted(zip(order, rows, strict=True), key=lambda p: p[0])]
         # Fitted on every row, not the first MAX_CHART_POINTS: a chart of the first 120 days of a
         # year drew a line that stopped in May with nothing saying the rest was missing.
-        x_values = [plain(r[ds.columns.index(x)]) for r in ds.rows]
-        measures = [[number(r[ds.columns.index(c)]) for r in ds.rows] for c in y]
-        fits = fitting_charts(_x_kind(x, x_values), measures, len(ds.rows))
+        x_values = [plain(r[ds.columns.index(x)]) for r in rows]
+        measures = [[number(r[ds.columns.index(c)]) for r in rows] for c in y]
+        fits = fitting_charts(_x_kind(x, x_values), measures, len(rows))
         if not fits:
             # No chart fits these rows (one row, too many members or points): they are shown as a
             # table, which says how many rows there are.
@@ -290,7 +456,7 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
             )
         chart_type = draft.chart_type if draft.chart_type in fits else fits[0]
         data = []
-        for r in ds.rows:
+        for r in rows:
             point: dict[str, Any] = {x: plain(r[ds.columns.index(x)])}
             for c in y:
                 point[c] = number(r[ds.columns.index(c)])
@@ -306,6 +472,23 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
             spec["series"] = [
                 {"key": c, "type": "bar" if i == 0 else "line"} for i, c in enumerate(y)
             ]
+        x_kind = _x_kind(x, x_values)
+        insight: str | None = None
+        if len(y) == 1:
+            insight = chart_insight(chart_type, x_kind, x_values, measures[0])
+        elif x_kind == "time":
+            insight = series_insight(x_values, measures, y)
+        elif len(y) == 2 and timed and chart_type == "bar":
+            # Two periods of one quantity side by side; other pairs (revenue beside a margin)
+            # have no change between them to read, and get no line rather than a wrong one.
+            insight = comparison_insight(x_values, measures[0], measures[1], (y[0], y[1]))
         # The other types the same rows fit: the chart's switcher offers them (chart adjustment).
-        return {**base, "spec": spec, "alternatives": fits, "unit": ds.unit, **_source(ds)}
+        return {
+            **base,
+            "spec": spec,
+            "alternatives": fits,
+            "unit": ds.unit,
+            **({"insight": insight} if insight else {}),
+            **_source(ds),
+        }
     raise BlockError(f"không biết block {t}")

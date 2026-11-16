@@ -423,10 +423,11 @@ export function useQuestionStream() {
   const answerClarification = useCallback(
     async (id: string, reply: ClarificationReply) => {
       if (!reply.text.trim()) return;
-      patch(id, (m) => ({ ...m, clarification: undefined }));
+      // The card stays and reads "Đã chọn: …" once the answer is in the thread (Thread's
+      // answeredWith); cleared here, the turn's blocks drew its options again as live chips.
       await send(reply.text);
     },
-    [patch, send],
+    [send],
   );
 
   /** "Hỏi lại": the same question again, as a new turn of the conversation (C6). */

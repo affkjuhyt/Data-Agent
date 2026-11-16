@@ -12,7 +12,9 @@ import { RunSql } from '../RunSql';
 
 /*
  * The answer's result as one card: the chart or its table (a toggle), and a toolbar —
- * "Khám phá" opens the SQL that ran (design C8), "Xem" the card full size, "Bộ lọc n" the
+ * "Mở trong Khám phá" puts its reading on Khám phá's shelves (E3), "SQL" opens the SQL that ran
+ * (design C8, first labelled "Khám phá", renamed so the two do not share a name), "Xem" the card
+ * full size, "Bộ lọc n" the
  * filters the answer applied, read-only (C7: changing one is a follow-up question, so no
  * un-governed figure appears inside an answer), and "…" for CSV and saving to a session.
  */
@@ -30,8 +32,15 @@ export function ResultCard({
   onExportCsv,
   onSaveToSession,
   onPick,
+  onOpenExplore,
+  selected,
+  subtitle,
 }: {
+  /** The point picked on the chart, kept marked on it (E3). */
+  selected?: string | null;
   title: string;
+  /** One line under the title: the reading the server computed from the drawn rows (E2). */
+  subtitle?: string;
   chart: ChartSpec | null;
   columns: string[];
   rows: Record<string, unknown>[];
@@ -42,6 +51,8 @@ export function ResultCard({
   onSaveToSession?: () => void;
   /** A bar or point picked on the chart: the member to drill into (DrillPicker). */
   onPick?: (category: string) => void;
+  /** Absent when the result is not a certified metric's: Khám phá has nothing else to open. */
+  onOpenExplore?: () => void;
 }) {
   const [view, setView] = useState<View>(chart ? 'chart' : 'table');
   const [full, setFull] = useState(false);
@@ -55,7 +66,7 @@ export function ResultCard({
   const body = (big: boolean) =>
     view === 'chart' && chart ? (
       <div className={big ? 'h-[480px]' : 'h-[280px]'}>
-        <ChartRenderer spec={chart} onPick={onPick} />
+        <ChartRenderer spec={chart} onPick={onPick} selected={selected} />
       </div>
     ) : (
       <DataGrid columns={columns} rows={rows} rowCount={rowCount} title={title} pageSize={big ? 20 : 8} />
@@ -83,9 +94,14 @@ export function ResultCard({
             ))}
           </div>
         )}
+        {onOpenExplore && (
+          <button type="button" className={toolButton} onClick={onOpenExplore}>
+            <Icon name="compare" size={14} /> Mở trong Khám phá
+          </button>
+        )}
         {queryRunId && (
           <button type="button" className={toolButton} onClick={() => setExplore(true)}>
-            <Icon name="search" size={14} /> Khám phá
+            <Icon name="search" size={14} /> SQL
           </button>
         )}
         <button type="button" className={toolButton} onClick={() => setFull(true)}>
@@ -111,6 +127,7 @@ export function ResultCard({
         )}
         {menu.length > 0 && <Menu label="Thêm thao tác với kết quả" items={menu} />}
       </header>
+      {subtitle && <p className="m-0 text-muted-foreground da-body-small">{subtitle}</p>}
       {body(false)}
       <Dialog open={full} title={title} size="lg" onClose={() => setFull(false)}>
         {body(true)}

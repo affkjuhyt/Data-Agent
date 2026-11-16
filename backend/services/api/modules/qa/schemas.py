@@ -432,6 +432,14 @@ class ExploreQueryCreate(_Body):
     as_of: datetime.date | None = None
     # A comparison the compiler adds as a second period, e.g. previous_period.
     compare: str | None = Field(default=None, max_length=64)
+    # K1: the period read ("2013", "2013-Q3", "2013-09", "2013-01-01/2013-07-01", end exclusive)
+    # and the grain a time cut is read at; with a grain and no time cut, the metric's own time.
+    period: str | None = Field(
+        default=None,
+        max_length=32,
+        pattern=r"^\d{4}(-Q[1-4]|-\d{2})?$|^\d{4}-\d{2}-\d{2}/\d{4}-\d{2}-\d{2}$",
+    )
+    grain: Literal["day", "week", "month", "quarter", "year"] | None = None
 
 
 class RowFilter(_Body):

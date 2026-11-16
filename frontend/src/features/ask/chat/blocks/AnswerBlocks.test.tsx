@@ -87,13 +87,13 @@ describe('AnswerBlocks', () => {
     expect(order[0]).toBe('sql');
   });
 
-  it('opens the SQL that ran from Khám phá, and hides Khám phá without a query run', async () => {
+  it('opens the SQL that ran, and hides SQL without a query run', async () => {
     const { unmount } = render(<AnswerBlocks message={message()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Khám phá' }));
+    fireEvent.click(screen.getByRole('button', { name: 'SQL' }));
     expect(await screen.findByText('SELECT sum(sales) FROM fact')).toBeInTheDocument();
     unmount();
     render(<AnswerBlocks message={message({ blocks: message().blocks!.filter((b) => b.type !== 'sql') })} />);
-    expect(screen.queryByRole('button', { name: 'Khám phá' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'SQL' })).not.toBeInTheDocument();
   });
 
   it('exports the table as CSV from the card menu', () => {

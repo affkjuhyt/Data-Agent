@@ -42,6 +42,7 @@ from services.worker_agent.agentic import (
     clarify_policy,
     deep_skill,
     memory,
+    narrate,
     operator_view,
     present_gate,
     prompts,
@@ -413,7 +414,8 @@ async def plan(s: State) -> None:
         s.plan = _bind_clarify(s, s.plan)
         step.detail = {
             "goal": s.plan.goal,
-            "thought": s.plan.thought,
+            # Shown while the turn runs: the plan's reasoning, its codes said as names.
+            "thought": narrate.reader(s.plan.thought, _vocab(s)),
             "mode": s.plan.mode,
             "steps": p.view(s.plan),
         }
@@ -510,6 +512,27 @@ async def act(s: State) -> None:
         # way to the same data (invariant 13). Steps that depend on it are skipped.
         if not result.ok and s.failed is None and result.failure != "forbidden":
             s.failed = step
+    _ask_for_unnamed(s, results)
+
+
+def _ask_for_unnamed(s: State, results: list[ToolResult]) -> None:
+    """A step refused for a quantity no certified metric measures, nothing read yet: the turn asks
+    which metric was meant (E4) while its clarify budget lasts, rather than replanning toward
+    another quantity or refusing (q8 "Khách hàng rời bỏ là bao nhiêu?")."""
+    assert s.ctx is not None
+    if s.clarify is not None or s.ctx.ws.datasets:
+        return
+    # Once per conversation: asked again after an answer to it, it would ask the same again.
+    if s.prior_clarify_rounds > 0:
+        return
+    for result in results:
+        unnamed = (result.detail or {}).get("unnamed")
+        if result.ok or not unnamed:
+            continue
+        ask = clarify_policy.unnamed_quantity(s.ctx.question, list(unnamed), s.ctx.layer)
+        if ask is not None:
+            s.clarify, s.failed = ask, None
+            return
 
 
 async def _run_step(s: State, step: p.PlanStep) -> ToolResult:
@@ -553,7 +576,12 @@ async def _run_step(s: State, step: p.PlanStep) -> ToolResult:
             else:
                 break
         assert result is not None
-        handle.detail = {**result.detail, "args": _shown_args(step)}
+        handle.detail = {
+            **result.detail,
+            "args": _shown_args(step),
+            # What the step found, said from its result for the live timeline (narrate.py).
+            "said": narrate.said(tool.name, result, s.ctx.ws, _vocab(s)),
+        }
         if not result.ok:
             handle.status, handle.summary = "failed", result.observation[:200]
     return result
@@ -571,6 +599,11 @@ async def _run_tool(s: State, tool: Tool, ctx: ToolContext, args: Any) -> ToolRe
     except Exception as exc:  # a tool's failure is feedback for the planner
         logger.exception("question %s: tool %s failed", s.question_id, tool.name)
         return ToolResult(False, f"công cụ lỗi: {type(exc).__name__}")
+
+
+def _vocab(s: State) -> Any:
+    """The Data Space's words, to say codes as names on the timeline; None when there are none."""
+    return getattr(getattr(s.ctx, "layer", None), "vocabulary", None)
 
 
 def _shown_args(step: p.PlanStep) -> dict[str, Any]:
@@ -607,7 +640,7 @@ async def replan(s: State) -> None:
         ask = prompts.REPLAN.format(
             failed=failed.id, why=failed.observation[:500], next_id=len(s.plan.steps) + 1
         )
-        why = failed.observation[:160]
+        why = narrate.reader(failed.observation.split(";")[0], _vocab(s))[:160]
     else:
         ask = prompts.REPLAN_CHECK.format(why=feedback, next_id=len(s.plan.steps) + 1)
         why = str(feedback)[:160]
@@ -634,7 +667,10 @@ async def replan(s: State) -> None:
             # The failed step stays on the record, after the ones that are done.
             rebuilt.steps.insert(len(done), failed.model_copy())
         s.plan = _bind_clarify(s, rebuilt)
-        handle.detail = {"steps": p.view(s.plan)}
+        handle.detail = {
+            "steps": p.view(s.plan),
+            "thought": narrate.reader(new.thought, _vocab(s)),
+        }
 
 
 # Tools that only look up or read one governed figure: a plan made of them alone is a simple
@@ -702,6 +738,37 @@ def _catalogue_words(vocab: Any) -> set[str]:
     for m in vocab.metrics:
         named |= metric_words(m, vocab)
     return named
+
+
+def _ask_for_unnamed_question(s: State) -> bool:
+    """Nothing read, and the question asks a quantity no certified metric names: ask which metric
+    was meant (E4) instead of writing an answer from no data. The planner of q8 ("Khách hàng rời
+    bỏ là bao nhiêu?") searched the catalogue and values and never ran a reading, so the check of
+    a refused reading (_ask_for_unnamed) never saw it."""
+    assert s.ctx is not None and s.plan is not None
+    if s.ctx.ws.datasets or s.clarify is not None or s.prior_clarify_rounds > 0:
+        return False
+    # A turn that tried the data (steps ran), whatever plan a replan left: q8's replan left no
+    # step at all, in "answer" mode. A greeting runs no step and is not asked back.
+    if s.step_runs == 0:
+        return False
+    vocab = getattr(s.ctx.layer, "vocabulary", None)
+    if vocab is None:
+        return False
+    words = unnamed(
+        quantity_words(s.ctx.question, vocab, today=s.ctx.today), _catalogue_words(vocab)
+    )
+    ask = clarify_policy.unnamed_quantity(s.ctx.question, words, s.ctx.layer) if words else None
+    if ask is None and not s.ctx.period_moves:
+        # Nothing read and no period to blame (a period with no data is moved, AGC-10, not asked).
+        found = s.ctx.period
+        ask = clarify_policy.nothing_read(
+            s.ctx.question, s.ctx.layer, found.label if found else None
+        )
+    if ask is None:
+        return False
+    s.clarify = ask
+    return True
 
 
 def _unnamed_quantity(s: State) -> list[str]:
@@ -806,6 +873,8 @@ async def _gate(s: State, target: str, detail: dict[str, Any], feedback: str) ->
 async def compose(s: State) -> None:
     assert s.ctx is not None and s.plan is not None
     ws = s.ctx.ws
+    if _ask_for_unnamed_question(s):
+        return
     try:
         s.signals = await signals.read(s.ctx)
     except Exception:
@@ -853,7 +922,13 @@ async def compose(s: State) -> None:
     allowed = verify.allowed_numbers(
         s.ctx.question, ws, [c["source"] for c in ws.citations] + periods
     )
-    async with turn_trace.stepping("write_answer", title="Soạn câu trả lời", target="") as handle:
+    async with turn_trace.stepping(
+        "write_answer",
+        title="Soạn câu trả lời",
+        # Live: what the answer is written from (a count read "7 bảng" where the reader saw two
+        # steps: the analysis of a change keeps a table per cut it tried).
+        target="từ số liệu đã đọc" if s.ctx and s.ctx.ws.datasets else "",
+    ) as handle:
         drafts: list[b.BlockDraft] = []
         errors: list[str] = []
         for _ in range(2):
@@ -884,7 +959,10 @@ async def compose(s: State) -> None:
             block = _checked(s, d, known, allowed)
             if block is None:
                 continue
-            made += 1
+            # The next questions say nothing about this one: an answer of them alone was drawn as
+            # an empty turn (every sentence dropped for an untraced number, no dataset).
+            if block["type"] != "follow_ups":
+                made += 1
             await publish(
                 str(s.question_id), "block", {"question_id": str(s.question_id), "block": block}
             )
@@ -911,6 +989,21 @@ async def compose(s: State) -> None:
                 )
             if not ws.datasets:
                 s.refused = "Chưa tìm được dữ liệu để trả lời câu hỏi này."
+                if s.composition:
+                    # Its next questions are kept, so the refusal is said in a block of its own.
+                    block = {
+                        "type": "callout",
+                        "id": f"b{len(s.composition) + 1}",
+                        "composed": True,
+                        "tone": "warning",
+                        "content": s.refused,
+                    }
+                    s.composition.insert(0, block)
+                    await publish(
+                        str(s.question_id),
+                        "block",
+                        {"question_id": str(s.question_id), "block": block},
+                    )
         handle.detail = {
             "blocks": [x["type"] for x in s.composition],
             "dropped_sentences": s.dropped_sentences,
@@ -966,6 +1059,53 @@ async def _reviewed(s: State, user: str, drafts: list[b.BlockDraft]) -> list[b.B
     return revised or drafts
 
 
+def _label_only(text: str) -> bool:
+    """A lead-in and nothing after it ("Lưu ý:"): what is left of a callout whose sentence was
+    dropped for an untraced number, drawn as an empty warning box on the dev cluster."""
+    bare = text.strip().strip("*_#> ").strip()
+    return bare.endswith(":") and len(bare.split()) <= 3
+
+
+# At most this many next questions under an answer (E5).
+MAX_FOLLOW_UPS = 3
+
+
+_GRAIN_WORDS = ("ngay", "tuan", "thang", "quy", "nam")
+_BY = re.compile(r"\btheo (?:tung |cac )?(.+)")
+
+
+def _cut_exists(key: str, cuts: list[str]) -> bool:
+    """A next question cut "theo X" names a cut there is: a dimension's name or a grain. "Biến
+    động doanh thu theo từng dịch vụ Internet" named none (17/11)."""
+    m = _BY.search(key)
+    if m is None:
+        return True
+    after = m.group(1)
+    return after.split(" ", 1)[0] in _GRAIN_WORDS or any(after.startswith(c) for c in cuts if c)
+
+
+def runnable_follow_ups(items: list[str], question: str, vocab: Any) -> list[str]:
+    """The next questions worth a chip (E5): each once, not the question just asked, and naming a
+    metric of the catalogue, so a click asks something the data answers on its own. The model
+    also offered "Liệu có cần thu thập dữ liệu bổ sung cho kỳ này không?" (17/11)."""
+    names = [norm(m.name) for m in getattr(vocab, "metrics", [])] if vocab is not None else []
+    cuts = [norm(d.name) for d in getattr(vocab, "dimensions", [])] if vocab is not None else []
+    seen = {norm(question)}
+    kept: list[str] = []
+    for item in items:
+        text = item.strip()
+        key = norm(text)
+        if not text or key in seen:
+            continue
+        if names and not any(f" {n} " in f" {key} " for n in names):
+            continue
+        if cuts and not _cut_exists(key, cuts):
+            continue
+        seen.add(key)
+        kept.append(text)
+    return kept[:MAX_FOLLOW_UPS]
+
+
 def _checked(
     s: State, d: b.BlockDraft, known: dict[str, verify.Fact], allowed: set[str]
 ) -> dict[str, Any] | None:
@@ -975,9 +1115,14 @@ def _checked(
         checked = verify.fill(verify.repair_citations(d.content, cited), known, allowed)
         s.numbers += checked.numbers
         s.dropped_sentences += checked.dropped
-        if not checked.text.strip():
+        if not checked.text.strip() or _label_only(checked.text):
             return None
         d = d.model_copy(update={"content": checked.text})
+    if d.type == "follow_ups":
+        kept_questions = runnable_follow_ups(d.items, s.ctx.question, _vocab(s))
+        if not kept_questions:
+            return None
+        d = d.model_copy(update={"items": kept_questions})
     if d.type == "insights":
         kept = []
         for item in d.insights:

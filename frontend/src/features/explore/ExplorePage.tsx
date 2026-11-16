@@ -31,6 +31,7 @@ import { useV1 } from '../../lib/v1/useV1';
 import { cn } from '../../lib/utils';
 import { ExplainPanel } from './ExplainPanel';
 import { FieldList, type FieldRef } from './FieldList';
+import { clearHandoff, pendingHandoff, shelvesOf } from './handoff';
 import { ResultChart, ValueTable, type ChartKind } from './ResultChart';
 import { SaveToSessionDialog } from './SaveToSessionDialog';
 import { Shelves, type ShelfState } from './Shelves';
@@ -83,7 +84,12 @@ function Explorer({ model: base }: { model: ExploreModel }) {
   const [mode, setMode] = useState<Mode>('drag');
   const [question, setQuestion] = useState('');
   const [interpreting, setInterpreting] = useState(false);
-  const [shelves, setShelves] = useState<ShelfState>(EMPTY);
+  // Opened from an answer's "Mở trong Khám phá": its reading starts on the shelves.
+  const [opened] = useState(() => {
+    const handoff = pendingHandoff();
+    return handoff && { handoff, result: shelvesOf(handoff, base) };
+  });
+  const [shelves, setShelves] = useState<ShelfState>(opened?.result?.shelves ?? EMPTY);
   // A3 lists no values of a dimension: the filter offers the values results have shown so far.
   const [seen, setSeen] = useState<Record<string, string[]>>({});
   const model = useMemo(
@@ -108,7 +114,20 @@ function Explorer({ model: base }: { model: ExploreModel }) {
   const askRef = useRef<HTMLInputElement>(null);
   const seq = useRef(0);
 
-  const ready = shelves.metric_ids.length > 0 && shelves.dimension_ids.length > 0;
+  // A metric and a cut: a dimension, or a grain along the metric's own time (K1).
+  const ready = shelves.metric_ids.length > 0 && (shelves.dimension_ids.length > 0 || !!shelves.grain);
+  // The years the first metric has data in, for the period picker: one small reading by year.
+  const firstMetric = shelves.metric_ids[0];
+  const yearsRead = useV1(
+    ['exploreYears', firstMetric],
+    firstMetric
+      ? () =>
+          runExploreQuery({ metric_ids: [firstMetric], dimension_ids: [], filters: [], grain: 'year' }, base).then(
+            (r) => [...new Set(r.rows.map((row) => row.key.slice(0, 4)).filter((y) => /^\d{4}$/.test(y)))].sort(),
+          )
+      : null,
+  );
+  const years = Array.isArray(yearsRead.data) ? yearsRead.data : [];
   const queryKey = JSON.stringify(shelves);
 
   useEffect(() => {
@@ -136,6 +155,22 @@ function Explorer({ model: base }: { model: ExploreModel }) {
       .finally(() => mine === seq.current && setRunning(false));
     // shelves are captured through queryKey.
   }, [queryKey, base, ready, tick]);
+
+  const told = useRef(false);
+  useEffect(() => {
+    clearHandoff();
+    if (!opened || told.current) return;
+    told.current = true;
+    if (!opened.result)
+      toast({ tone: 'error', message: 'Chỉ số của câu trả lời không có trong Khám phá (chưa chứng nhận hoặc bạn không có quyền).' });
+    else if (opened.result.left.length)
+      toast({
+        tone: 'info',
+        message: opened.result.left.every((code) => opened.handoff.time_cuts.includes(code))
+          ? 'Khám phá chưa chia theo tháng hay quý, nên chiều thời gian của câu trả lời chưa được đưa sang.'
+          : `Khám phá không có chiều ${opened.result.left.join(', ')} của câu trả lời, nên chưa đưa sang.`,
+      });
+  }, [opened, toast]);
 
   const explanation = useV1(
     ['getExploreExplanation', result?.id, running],
@@ -208,11 +243,11 @@ function Explorer({ model: base }: { model: ExploreModel }) {
   const downloadCsv = () => {
     if (!result) return;
     const header = [result.category_label, ...result.series.map((s) => s.label)];
-    if (result.series.length > 1) header.push('Thay đổi');
+    if (result.has_delta) header.push('Thay đổi');
     const lines = [
       header.map(csvCell).join(','),
       ...result.rows.map((r) =>
-        [r.label, ...r.values, ...(result.series.length > 1 ? [r.delta] : [])]
+        [r.label, ...r.values, ...(result.has_delta ? [r.delta] : [])]
           .map(csvCell)
           .join(','),
       ),
@@ -236,14 +271,13 @@ function Explorer({ model: base }: { model: ExploreModel }) {
         metric_ids: filled.metric_ids,
         dimension_ids: filled.dimension_ids,
         filters: filled.filters,
+        period: filled.period ?? null,
+        grain: filled.grain ?? null,
       });
       setMode('drag');
-      toast({
-        tone: 'success',
-        message: 'Agent đã điền kệ từ câu hỏi — kiểm tra trước khi dùng số.',
-      });
+      toast({ tone: 'success', message: 'Đã điền kệ từ câu hỏi — kiểm tra trước khi dùng số.' });
     } catch (e) {
-      toast({ tone: 'error', message: `Agent chưa hiểu câu hỏi: ${(e as Error).message}` });
+      toast({ tone: 'error', message: (e as Error).message });
     } finally {
       setInterpreting(false);
     }
@@ -371,7 +405,7 @@ function Explorer({ model: base }: { model: ExploreModel }) {
           </Button>
         </div>
 
-        <Shelves model={model} state={shelves} onChange={setShelves} />
+        <Shelves model={model} state={shelves} onChange={setShelves} years={years} />
 
         {!ready ? (
           <p className="rounded-lg border border-dashed border-border-strong px-da-xl py-da-2xl text-center text-muted-foreground da-body">

@@ -1,11 +1,13 @@
-import { useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { BlockBoundary } from '../../../../design-system/ErrorBoundaries';
 import { Icon, type IconName } from '../../../../design-system/Icon';
 import { formatNumber } from '../../../../lib/formatVN';
 import { MarkdownContent } from '../../components/MarkdownContent';
+import type { ExploreHandoff } from '../../../explore/handoff';
 import { csvFileName, downloadCsv, toCsv } from '../../exportCsv';
 import type { AnswerBlockView, ChartSpec, Citation } from '../../types';
 import { CaveatsBlock } from './CaveatsBlock';
+import { filterQuestion, periodOf, PointMenu, whyQuestion } from './PointMenu';
 import { ResultCard } from './ResultCard';
 
 /*
@@ -34,12 +36,28 @@ type Ctx = {
   onOpenCitation?: (citation: Citation) => void;
   onExportCsv?: () => void;
   onSaveToSession?: () => void;
+  /** A follow-up question from a block (a chart's point menu); absent while the agent is busy. */
+  onAsk?: (question: string) => void;
+  onOpenExplore?: (handoff: ExploreHandoff) => void;
+  /** The question this answer answers: a chart point's filter narrows it. */
+  question?: string;
 };
 type Block = Record<string, unknown>;
 
+/** Whether the answer's blocks carry more than one trust label. When they all say the same, the
+ *  answer's own trust line says it once (it read "Theo chỉ số chuẩn" under every block and again
+ *  under the answer); a block's own note only tells blocks of different trust apart. */
+const MixedTrust = createContext(true);
+
+const trustLabels = (blocks: Block[]) =>
+  new Set(
+    blocks.flatMap((b) => [str(b.trust_label), ...arr<Block>(b.items).map((i) => str(i.trust_label))]).filter(Boolean),
+  );
+
 function TrustNote({ block }: { block: Block }) {
+  const mixed = useContext(MixedTrust);
   const label = str(block.trust_label);
-  if (!label) return null;
+  if (!label || !mixed) return null;
   const tone = block.trust === 'certified' ? 'text-success' : 'text-warning';
   return (
     <span className="inline-flex items-center gap-da-xs text-muted-foreground da-caption">
@@ -84,6 +102,21 @@ function Kpis({ block }: { block: Block }) {
   );
 }
 
+/** The reading Khám phá can open again (blocks._explore): only a certified metric's carries one. */
+function exploreOf(block: Block, ctx: Ctx): (() => void) | undefined {
+  const e = block.explore as Block | undefined;
+  if (!ctx.onOpenExplore || !e || !str(e.metric_id)) return undefined;
+  const handoff: ExploreHandoff = {
+    metric_id: str(e.metric_id),
+    group_by: arr<string>(e.group_by),
+    filters: (e.filters && typeof e.filters === 'object' ? e.filters : {}) as Record<string, string[]>,
+    time_cuts: arr<string>(e.time_cuts),
+    period: str(e.period) || null,
+    grain: (str(e.grain) || null) as ExploreHandoff['grain'],
+  };
+  return () => ctx.onOpenExplore!(handoff);
+}
+
 const CHART_LABEL: Record<string, string> = {
   line: 'Đường',
   bar: 'Cột',
@@ -99,17 +132,47 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
   // redraws the chart from its own data, nothing is asked again (WrenAI's chart adjustment).
   const alternatives = arr<string>(block.alternatives).filter((t) => t in CHART_LABEL);
   const [chosen, setChosen] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  // Points the reader left out of this chart (E3 "Loại bỏ điểm này"): hidden here, not re-read.
+  const [hidden, setHidden] = useState<string[]>([]);
+  // A pick is let go by a click outside the chart and its menu, or by Esc.
+  const area = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (picked === null) return;
+    const away = (e: MouseEvent) => {
+      if (area.current && !area.current.contains(e.target as Node)) setPicked(null);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setPicked(null);
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [picked]);
   if (!spec || !Array.isArray(spec.data)) return null;
   const type = (chosen ?? spec.chart_type) as ChartSpec['chart_type'];
+  const title = spec.title || str(block.title) || 'Biểu đồ';
+  const measure = spec.y_keys[0] ?? '';
+  const categoryOf = (row: Record<string, unknown>) => String(row[spec.x_key] ?? '');
+  const data = hidden.length ? spec.data.filter((row) => !hidden.includes(categoryOf(row))) : spec.data;
+  const points = data.map((row) => ({
+    category: categoryOf(row),
+    value: num(row[measure]),
+    series: spec.y_keys.map((k) => ({ name: k, value: num(row[k]) })),
+  }));
+  const timeAxis = points.length > 0 && periodOf(points[0].category) !== null;
+  const ask = ctx.onAsk;
   const shown: ChartSpec = {
     ...spec,
+    data,
     chart_type: type,
     ...(type === 'composed' && {
       series: spec.y_keys.map((key, i) => ({ key, type: i === 0 ? ('bar' as const) : ('line' as const) })),
     }),
   };
   return (
-    <div className="flex flex-col gap-da-xs">
+    <div ref={area} className="flex flex-col gap-da-xs">
       {alternatives.length > 1 && (
         <div role="group" aria-label="Kiểu biểu đồ" className="flex flex-wrap gap-da-xs">
           {alternatives.map((t) => (
@@ -129,15 +192,49 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
       )}
       <ResultCard
         key={type}
-        title={spec.title || str(block.title) || 'Biểu đồ'}
-        chart={shown}
+        title={title}
+        // The reading was computed over every row: with points left out it no longer describes
+        // the chart, so it waits until they are back.
+        subtitle={(!hidden.length && str(block.insight)) || undefined}
+        // The card's header carries the title: drawn again inside the chart it showed twice.
+        chart={{ ...shown, title: '' }}
         columns={[spec.x_key, ...spec.y_keys]}
-        rows={spec.data}
-        rowCount={spec.data.length}
+        rows={data}
+        rowCount={data.length}
         reading={[]}
         queryRunId={arr<string>(block.query_run_ids)[0] ?? null}
         onExportCsv={blockCsv(ctx, spec.title || str(block.title) || 'bieu-do', [spec.x_key, ...spec.y_keys], spec.data)}
         onSaveToSession={ctx.onSaveToSession}
+        onOpenExplore={exploreOf(block, ctx)}
+        // A second click on the picked point lets it go.
+        onPick={(c) => setPicked((p) => (p === c ? null : c))}
+        selected={picked}
+      />
+      {hidden.length > 0 && (
+        <p className="m-0 flex flex-wrap items-center gap-da-sm text-muted-foreground da-caption">
+          Đã ẩn {hidden.join(', ')}.
+          <button type="button" className="text-primary hover:underline" onClick={() => setHidden([])}>
+            Hiện lại
+          </button>
+        </p>
+      )}
+      <PointMenu
+        axis={spec.x_key}
+        measure={measure}
+        unit={str(block.unit) || undefined}
+        points={points}
+        picked={picked}
+        onPick={setPicked}
+        onFilter={ask && ((c) => ask(filterQuestion(measure, ctx.question || title, spec.x_key, c)))}
+        onExclude={
+          points.length > 1
+            ? (c) => {
+                setHidden((h) => [...h, c]);
+                setPicked(null);
+              }
+            : undefined
+        }
+        onWhy={ask && ((c) => ask(whyQuestion(measure, spec.x_key, points, c, timeAxis)))}
       />
       <TrustNote block={block} />
     </div>
@@ -162,6 +259,7 @@ function TableBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
           arr<Record<string, unknown>>(block.rows),
         )}
         onSaveToSession={ctx.onSaveToSession}
+        onOpenExplore={exploreOf(block, ctx)}
       />
       <TrustNote block={block} />
     </div>
@@ -258,7 +356,8 @@ const RENDERERS: Record<string, (block: Block, ctx: Ctx) => ReactNode> = {
   chart: (b, ctx) => <ChartBlock block={b} ctx={ctx} />,
   table: (b, ctx) => <TableBlock block={b} ctx={ctx} />,
   insights: (b, ctx) => <Insights block={b} ctx={ctx} />,
-  callout: (b, ctx) => <Callout block={b} ctx={ctx} />,
+  // A callout with a heading and nothing under it ("Lưu ý:" alone) was drawn as an empty box.
+  callout: (b, ctx) => (str(b.content).trim() ? <Callout block={b} ctx={ctx} /> : null),
   code: (b) => <CodeBlock block={b} />,
   caveats: (b) => <CaveatsBlock items={arr<unknown>(b.items).map(String)} />,
   // The next questions are drawn under the answer from the answer's follow_ups.
@@ -281,6 +380,7 @@ function ComposedBlock({ block, index, ctx }: { block: Block; index: number; ctx
 
 export function ComposedBlocks({ blocks, ...ctx }: { blocks: AnswerBlockView[] } & Ctx) {
   return (
+    <MixedTrust.Provider value={trustLabels(blocks as Block[]).size > 1}>
     <div className="flex flex-col gap-da-lg">
       {blocks.map((raw, i) => {
         const block = raw as Block;
@@ -291,5 +391,6 @@ export function ComposedBlocks({ blocks, ...ctx }: { blocks: AnswerBlockView[] }
         );
       })}
     </div>
+    </MixedTrust.Provider>
   );
 }

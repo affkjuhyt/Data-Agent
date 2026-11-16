@@ -279,9 +279,9 @@ describe('useQuestionStream', () => {
     });
     await waitFor(() => expect(result.current.messages[1].status).toBe('done'));
     const back = result.current.messages[1];
-    expect(back.content).toBe(asked);
+    // E4: the question back and its choices are the card's, not text above an empty box.
     expect(back.answerId).toBe('answer-ask-back');
-    expect(back.clarification).toEqual({ kind: 'followup', questions: [{ text: '' }] });
+    expect(back.clarification).toEqual({ kind: 'followup', questions: [{ text: asked, options: [] }] });
   });
 });
 

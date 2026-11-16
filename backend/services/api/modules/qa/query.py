@@ -105,17 +105,37 @@ async def explore_query(
             v.metric_id: v for v in versions if v.version == metrics[v.metric_id].current_version
         }
         # UC-01-04 E1, BR-81: a dimension (to split by or to filter on) must be one every chosen
-        # metric allows; the compiler would refuse it later, so refuse it now.
+        # metric allows; the compiler would refuse it later, so refuse it now. A time dimension is
+        # always allowed (the compiler reads it at a grain), as the agent's readings allow it.
         wanted = set(body.dimensions) | {f.dimension_id for f in body.filters}
+        named = (
+            {
+                d.id: d
+                for d in (
+                    await session.scalars(
+                        select(context.SemanticDimension).where(
+                            context.SemanticDimension.id.in_(wanted)
+                        )
+                    )
+                ).all()
+            }
+            if wanted
+            else {}
+        )
         for metric_id, metric in metrics.items():
             version = current.get(metric_id)
             allowed = set(version.allowed_dimensions or []) if version else set()
-            bad = sorted(str(d) for d in wanted - allowed)
+            bad = [d for d in wanted - allowed if not (d in named and named[d].is_time)]
             if version is None or bad:
+                # K3: said for the reader, by names, never by ids.
+                cuts = ", ".join(
+                    sorted(named[d].name if d in named else "một chiều đã xoá" for d in bad)
+                )
                 raise Problem(
                     422,
                     "business_rule_violated",
-                    f"Metric {metric.code} cannot be split or filtered by dimension {', '.join(bad)}.",
+                    f"Chỉ số {version.display_name if version else metric.code} không chia hoặc lọc "
+                    f"được theo {cuts or 'chiều đã chọn'}.",
                 )
         run = query_models.QueryRun(
             id=uuid7(),
@@ -154,6 +174,8 @@ async def explore_query(
                 "filters": [f.model_dump() for f in body.filters],
                 "as_of": body.as_of,
                 "compare": body.compare,
+                "period": body.period,
+                "grain": body.grain,
                 "status": "queued",
             },
         )

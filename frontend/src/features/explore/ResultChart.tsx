@@ -13,6 +13,7 @@ import {
 import { Segmented } from '../../design-system/Segmented';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import type { ExploreResult, ExploreRow } from '../../lib/v1/explore';
+import { formatCompact } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
 import { formatDelta, formatValue } from './format';
 
@@ -82,6 +83,13 @@ export function ResultChart({
     row.values
       .map((x, i) => `${result.series[i]?.label}: ${formatValue(x, result.unit)}`)
       .join(', ');
+  // K3: every member of a short axis is labelled (recharts dropped the ones that would overlap),
+  // long names lean; axis amounts are compact ("28,3 tr") — written in full they lost their first
+  // digits to the axis width ("0.000.000" for 30.000.000). The tooltip keeps the full figure.
+  const few = data.length <= 24;
+  const longNames = few && data.length > 6 && result.rows.some((r) => r.label.length > 9);
+  const tick = (v: number) =>
+    result.unit === 'percent' || Math.abs(v) < 10_000 ? formatValue(v, result.unit) : formatCompact(v);
   const axes = (
     <>
       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -91,14 +99,16 @@ export function ResultChart({
         fontSize={12}
         axisLine={false}
         tickLine={false}
+        {...(few && { interval: 0 })}
+        {...(longNames && { angle: -25, textAnchor: 'end', height: 56 })}
       />
       <YAxis
         stroke="var(--muted-foreground)"
         fontSize={12}
         axisLine={false}
         tickLine={false}
-        width={64}
-        tickFormatter={(v: number) => formatValue(v, result.unit)}
+        width={72}
+        tickFormatter={tick}
       />
       <Tooltip
         contentStyle={TOOLTIP}
@@ -217,7 +227,7 @@ export function ResultChart({
 
 /* "Bảng giá trị" (2143:15894): the category, one column per series, and the change. */
 export function ValueTable({ result, bare = false }: { result: ExploreResult; bare?: boolean }) {
-  const hasDelta = result.series.length > 1;
+  const hasDelta = result.has_delta;
   const view = useTableView(result.rows, {
     search: (row) =>
       `${row.label} ${row.values.map((value) => formatValue(value, result.unit)).join(' ')} ${hasDelta ? formatDelta(row.delta, result.unit) : ''}`,

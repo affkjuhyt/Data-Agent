@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Badge } from '../../../design-system/Badge';
 import { StatusDot } from '../../../design-system/StatusDot';
 import { exportAnswer } from '../../../lib/v1/exports';
+import type { ExploreHandoff } from '../../explore/handoff';
 import { hasReceipt } from '../answerMessage';
 import { ClarificationCard } from '../components/ClarificationCard';
 import { ConfidenceMeter } from '../components/ConfidenceMeter';
@@ -19,10 +20,10 @@ import { StepTimeline } from './StepTimeline';
 import { TurnFooter } from './TurnFooter';
 
 /*
- * One turn of the agent, top to bottom: what it did (StepTimeline), then its answer — a refusal
- * card, a question back, or the answer's blocks — the "why" decomposition it proposes, the
- * trust label every finished answer carries (invariant 14), the next questions it offers, and
- * the footer.
+ * One turn of the agent, top to bottom: its answer — a refusal card, a question back, or the
+ * answer's blocks — the "why" decomposition it proposes, one line on what it did (StepTimeline,
+ * the only line while it runs), the trust label every finished answer carries (invariant 14),
+ * the next questions it offers, and the footer.
  */
 
 /** UC-01-06 Xuất: the server builds the file (POST /v1/answers/{id}/exports) and hands back a
@@ -61,8 +62,12 @@ export function AssistantTurn({
   onOpenCitation,
   onOpenForecast,
   onExportCsv,
+  onOpenExplore,
+  answeredWith,
   reported = false,
 }: {
+  /** The question that answered this turn's question back: the card is then read only. */
+  answeredWith?: string;
   message: AskMessage;
   busy: boolean;
   /** The reader reported this answer: it shows "Đang kiểm tra" until it is reviewed. */
@@ -80,6 +85,8 @@ export function AssistantTurn({
   /** Opens Forecast Studio / the job for what-if — not embedded in chat. */
   onOpenForecast?: (forecastId: string) => void;
   onExportCsv?: (message: AskMessage) => void;
+  /** "Mở trong Khám phá" on a chart or table of the answer (E3). */
+  onOpenExplore?: (handoff: ExploreHandoff) => void;
 }) {
   const running = message.status === 'streaming';
   const finished = !running && message.status !== 'error';
@@ -95,15 +102,22 @@ export function AssistantTurn({
     [message.trust, message.evidence, message.citations],
   );
 
+  // E1: one line on what the agent did. While it runs it is all there is; once the turn ends the
+  // answer leads and the line sits under it.
+  const timeline = (
+    <StepTimeline
+      steps={message.steps ?? []}
+      running={running}
+      durationMs={message.durationMs}
+      recorded={message.stepsRecorded !== false}
+      // "Đang chờ làm rõ từ người hỏi" is no longer so once the question back is answered.
+      operatorWhy={message.clarification && answeredWith !== undefined ? undefined : message.operatorWhy}
+    />
+  );
+
   return (
     <article className="flex flex-col gap-da-md" aria-label="Câu trả lời của agent">
-      <StepTimeline
-        steps={message.steps ?? []}
-        running={running}
-        durationMs={message.durationMs}
-        recorded={message.stepsRecorded !== false}
-        operatorWhy={message.operatorWhy}
-      />
+      {running && timeline}
 
       {message.refusal ? (
         <RefusalCard refusal={message.refusal} onRetry={onRetryRefusal} onRephrase={onRephrase} disabled={busy} />
@@ -112,6 +126,7 @@ export function AssistantTurn({
           {message.content && <MarkdownContent text={message.content} />}
           <ClarificationCard
             clarification={message.clarification}
+            answered={answeredWith}
             disabled={busy}
             onAnswer={(reply) => onAnswerClarification(message.id, reply)}
           />
@@ -123,6 +138,8 @@ export function AssistantTurn({
           onExportCsv={onExportCsv ? () => onExportCsv(message) : undefined}
           onSaveToSession={onSaveSession ? () => onSaveSession(message) : undefined}
           onPick={message.drill && finished && !busy ? setPicked : undefined}
+          onAsk={finished && !busy ? onAsk : undefined}
+          onOpenExplore={onOpenExplore}
         />
       ) : (
         message.content && (
@@ -144,6 +161,8 @@ export function AssistantTurn({
       )}
 
       {message.proposal && finished && <DecompositionCard proposal={message.proposal} />}
+
+      {!running && timeline}
 
       {finished && !message.refusal && !message.clarification && (message.content || hasBlocks) && (
         <div className="flex flex-wrap items-center gap-da-md">
@@ -168,7 +187,9 @@ export function AssistantTurn({
 
       {finished && !message.refusal && !!message.suggestions?.length && (
         <div className="flex flex-wrap gap-da-sm" aria-label="Hỏi tiếp">
-          {message.suggestions.map((q) => (
+          {/* E5: each once, at most three, whichever path wrote them (the governed path's own
+              suggestions were four). */}
+          {[...new Set(message.suggestions)].slice(0, 3).map((q) => (
             <button
               key={q}
               type="button"

@@ -110,7 +110,7 @@ describe('AskDataPage', () => {
     messages = conversation;
     wrap(<AskDataPage />);
     expect(screen.getByText('Doanh thu Internet năm 2013 là bao nhiêu?', { selector: 'p' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Đã làm trong 2,4 giây/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /· 2,4 giây/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Doanh thu Internet năm 2013 theo quý' }));
     expect(send).toHaveBeenCalledWith('Doanh thu Internet năm 2013 theo quý');
   });

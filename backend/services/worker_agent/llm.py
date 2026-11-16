@@ -46,6 +46,21 @@ THINKING_ROLES = frozenset({"responder", "orchestrator-planner"})
 # Thinking + a long JSON answer needs headroom beyond the old 20s JSON-only timeout.
 THINKING_TIMEOUT_S = 120.0
 _THINK_BLOCK = re.compile(r"<think>\s*.*?\s*</think>\s*", re.DOTALL | re.IGNORECASE)
+# A prompt and the output asked of it that overflow the model's window (vLLM's max_model_len): the
+# reporter asked 8192 of a 16384 window and a long prompt was refused with HTTP 400. The refusal
+# gives only a lower bound of the prompt ("at least N input tokens"), so the output is halved and
+# asked again, down to this.
+MIN_OUTPUT_TOKENS = 1024
+_CONTEXT_WINDOW = re.compile(r"maximum context length|ContextWindowExceeded", re.IGNORECASE)
+
+
+def _fitting_output(exc: ModelUnavailable, asked: int) -> int | None:
+    """Half the output asked, when the gateway refused the call for its context window and half is
+    still a useful answer; None otherwise."""
+    cause = exc.__cause__
+    if cause is None or not _CONTEXT_WINDOW.search(str(cause)) or asked // 2 < MIN_OUTPUT_TOKENS:
+        return None
+    return asked // 2
 
 
 @dataclass(frozen=True)
@@ -127,10 +142,31 @@ class LiteLLMGateway:
         temperature: float = 0.0,
     ) -> Reply[T]:
         """`temperature` above 0 only where several samples are wanted (N-version SQL)."""
-        if role in THINKING_ROLES:
-            return await self._json_chat_thinking(
-                role, system, user, output, max_tokens=max_tokens, temperature=temperature
-            )
+        while True:
+            try:
+                if role in THINKING_ROLES:
+                    return await self._json_chat_thinking(
+                        role, system, user, output, max_tokens=max_tokens, temperature=temperature
+                    )
+                return await self._json_chat_constrained(
+                    role, system, user, output, max_tokens=max_tokens, temperature=temperature
+                )
+            except ModelUnavailable as exc:
+                smaller = _fitting_output(exc, max_tokens)
+                if smaller is None:
+                    raise
+                max_tokens = smaller
+
+    async def _json_chat_constrained(
+        self,
+        role: str,
+        system: str,
+        user: str,
+        output: type[T],
+        *,
+        max_tokens: int,
+        temperature: float,
+    ) -> Reply[T]:
         started = time.monotonic()
         try:
             result = await self._agent(role, output).run(

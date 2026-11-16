@@ -277,6 +277,12 @@ def metric_words(metric: MetricEntry, vocab: Vocabulary) -> set[str]:
     return named
 
 
+# A period written as one word ("3/2013", "q4/2012", "2013-08"): find_period takes the first period
+# out of the question; a second one ("tháng 8/2013 với tháng 3/2013") was left and refused as a
+# quantity no metric measures. A date names no quantity.
+_DATE_WORD = re.compile(r"^(?:q?\d{1,2}[/-])?\d{4}(?:[/-]\d{1,2})?$")
+
+
 def quantity_words(
     question: str,
     vocab: Vocabulary,
@@ -305,7 +311,11 @@ def quantity_words(
     return [
         w
         for w in text.split()
-        if len(w) > 1 and w not in _FILLER and not w.isdigit() and w not in chosen
+        if len(w) > 1
+        and w not in _FILLER
+        and not w.isdigit()
+        and not _DATE_WORD.match(w)
+        and w not in chosen
     ]
 
 

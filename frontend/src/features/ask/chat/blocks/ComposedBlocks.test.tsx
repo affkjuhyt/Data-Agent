@@ -37,14 +37,153 @@ describe('ComposedBlocks', () => {
         id: 'c1',
         composed: true,
         alternatives: ['line', 'bar'],
+        insight: 'Từ 2013-01 đến 2013-02 tăng 100,0%; cao nhất 2013-02, thấp nhất 2013-01.',
         spec: { chart_type: 'line', title: 'Doanh thu', x_key: 'Tháng', y_keys: ['v'], data: [{ Tháng: '2013-01', v: 1 }, { Tháng: '2013-02', v: 2 }] },
       },
     ] as unknown as AnswerBlockView[];
     render(<ComposedBlocks blocks={chart} />);
+    // E2: the title once, in the card's header, and the server's one-line reading under it.
+    expect(screen.getAllByText('Doanh thu')).toHaveLength(1);
+    expect(screen.getByText(/tăng 100,0%; cao nhất 2013-02/)).toBeInTheDocument();
     const group = screen.getByRole('group', { name: 'Kiểu biểu đồ' });
     expect(group).toHaveTextContent('Đường');
     fireEvent.click(screen.getByRole('button', { name: 'Cột' }));
     expect(screen.getByRole('button', { name: 'Cột' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // E3: a point of the chart, picked from the keyboard list (a click on the chart picks the same).
+  const monthly = [
+    {
+      type: 'chart',
+      id: 'c2',
+      composed: true,
+      trust: 'certified',
+      insight: 'Từ 2013-01 đến 2013-03 tăng 200,0%; cao nhất 2013-03, thấp nhất 2013-01.',
+      explore: { metric_id: 'm-1', group_by: ['ngay_dat_hang'], filters: { nam: ['2013'] }, cuts: { Tháng: 'ngay_dat_hang' }, time_cuts: ['ngay_dat_hang'], period: '2013', grain: 'month' },
+      spec: {
+        chart_type: 'line',
+        title: 'Doanh thu theo tháng',
+        x_key: 'Tháng',
+        y_keys: ['Doanh thu Internet'],
+        data: [
+          { Tháng: '2013-01', 'Doanh thu Internet': 1 },
+          { Tháng: '2013-02', 'Doanh thu Internet': 2 },
+          { Tháng: '2013-03', 'Doanh thu Internet': 3 },
+        ],
+      },
+    },
+  ] as unknown as AnswerBlockView[];
+  const pick = (month: string) =>
+    fireEvent.change(screen.getByRole('combobox', { name: 'Chọn điểm theo tháng' }), { target: { value: month } });
+
+  it('asks a follow-up that filters on a point, or asks why it stands out', () => {
+    const onAsk = vi.fn();
+    render(<ComposedBlocks blocks={monthly} onAsk={onAsk} />);
+    pick('2013-02');
+    // A month is said as a question says a period, which the agent reads as one.
+    fireEvent.click(screen.getByRole('button', { name: /Lọc theo giá trị này/ }));
+    expect(onAsk).toHaveBeenLastCalledWith('Doanh thu Internet tháng 2/2013');
+    fireEvent.click(screen.getByRole('button', { name: /Phân tích vì sao/ }));
+    expect(onAsk).toHaveBeenLastCalledWith('Vì sao Doanh thu Internet tháng 2/2013 tăng so với tháng 1/2013?');
+    pick('2013-03');
+    fireEvent.click(screen.getByRole('button', { name: /Phân tích vì sao/ }));
+    expect(onAsk).toHaveBeenLastCalledWith('Vì sao Doanh thu Internet tháng 3/2013 cao nhất?');
+  });
+
+  it('narrows the question the chart answered to a member of a category axis', () => {
+    const onAsk = vi.fn();
+    const pie = [
+      {
+        type: 'chart',
+        id: 'c3',
+        composed: true,
+        spec: {
+          chart_type: 'pie',
+          title: 'Cơ cấu doanh thu',
+          x_key: 'Nhóm sản phẩm',
+          y_keys: ['Doanh thu'],
+          data: [{ 'Nhóm sản phẩm': 'Bikes', 'Doanh thu': 9 }, { 'Nhóm sản phẩm': 'Clothing', 'Doanh thu': 1 }],
+        },
+      },
+    ] as unknown as AnswerBlockView[];
+    render(<ComposedBlocks blocks={pie} onAsk={onAsk} question="Cơ cấu doanh thu theo nhóm sản phẩm năm 2013." />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Chọn điểm theo nhóm sản phẩm' }), { target: { value: 'Bikes' } });
+    fireEvent.click(screen.getByRole('button', { name: /Lọc theo giá trị này/ }));
+    expect(onAsk).toHaveBeenLastCalledWith('Cơ cấu doanh thu theo nhóm sản phẩm năm 2013, chỉ xét nhóm sản phẩm Bikes');
+  });
+
+  it('hides a left-out point and its reading until shown again; no follow-up while busy', () => {
+    render(<ComposedBlocks blocks={monthly} />);
+    pick('2013-02');
+    expect(screen.queryByRole('button', { name: /Lọc theo giá trị này/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Loại bỏ điểm này/ }));
+    expect(screen.getByText('Đã ẩn 2013-02.')).toBeInTheDocument();
+    expect(screen.queryByText(/tăng 200,0%/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '2013-02' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Hiện lại' }));
+    expect(screen.getByText(/tăng 200,0%/)).toBeInTheDocument();
+  });
+
+  it('lets a picked point go on a click outside the chart or Esc, and shows every series of it', () => {
+    const twoYears = [
+      {
+        type: 'chart',
+        id: 'c4',
+        composed: true,
+        spec: {
+          chart_type: 'bar',
+          title: 'Doanh thu theo vùng',
+          x_key: 'Vùng',
+          y_keys: ['Doanh thu 2012', 'Doanh thu 2013'],
+          data: [
+            { Vùng: 'France', 'Doanh thu 2012': 2, 'Doanh thu 2013': 4 },
+            { Vùng: 'Canada', 'Doanh thu 2012': 5, 'Doanh thu 2013': 6 },
+          ],
+        },
+      },
+    ] as unknown as AnswerBlockView[];
+    render(
+      <div>
+        <p>ngoài</p>
+        <ComposedBlocks blocks={twoYears} />
+      </div>,
+    );
+    const list = screen.getByRole('combobox', { name: 'Chọn điểm theo vùng' });
+    fireEvent.change(list, { target: { value: 'France' } });
+    expect(screen.getByRole('toolbar', { name: 'Điểm France' })).toHaveTextContent('Doanh thu 2012 2 · Doanh thu 2013 4');
+    fireEvent.mouseDown(screen.getByText('ngoài'));
+    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
+    fireEvent.change(list, { target: { value: 'Canada' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
+  });
+
+  it('says a block\'s trust only when the answer mixes trusts', () => {
+    const table = (id: string, trust: string, label: string) => ({
+      type: 'table', id, composed: true, title: id, columns: ['a'], rows: [{ a: 1 }], row_count: 1, trust, trust_label: label,
+    });
+    const { unmount } = render(
+      <ComposedBlocks blocks={[table('t1', 'certified', 'Theo chỉ số chuẩn'), table('t2', 'certified', 'Theo chỉ số chuẩn')] as never} />,
+    );
+    // All the same: the answer's own trust line says it once.
+    expect(screen.queryByText('Theo chỉ số chuẩn')).not.toBeInTheDocument();
+    unmount();
+    render(<ComposedBlocks blocks={[table('t1', 'certified', 'Theo chỉ số chuẩn'), table('t2', 'exploratory', 'Khám phá')] as never} />);
+    expect(screen.getByText('Theo chỉ số chuẩn')).toBeInTheDocument();
+  });
+
+  it('opens a certified reading in Khám phá', () => {
+    const onOpenExplore = vi.fn();
+    render(<ComposedBlocks blocks={monthly} onOpenExplore={onOpenExplore} />);
+    fireEvent.click(screen.getByRole('button', { name: /Mở trong Khám phá/ }));
+    expect(onOpenExplore).toHaveBeenCalledWith({
+      metric_id: 'm-1',
+      group_by: ['ngay_dat_hang'],
+      filters: { nam: ['2013'] },
+      time_cuts: ['ngay_dat_hang'],
+      period: '2013',
+      grain: 'month',
+    });
   });
 });
 

@@ -172,10 +172,18 @@ export type ExploreFilter = {
   values: string[];
 };
 
+export type Grain = 'day' | 'week' | 'month' | 'quarter' | 'year';
+
+const GRAIN_LABEL: Record<Grain, string> = { day: 'Ngày', week: 'Tuần', month: 'Tháng', quarter: 'Quý', year: 'Năm' };
+
 interface ExploreQueryInput {
   metric_ids: string[];
   dimension_ids: string[];
   filters: ExploreFilter[];
+  /** K1: the period read ("2013", "2013-Q3", "2013-09"); none reads every period. */
+  period?: string | null;
+  /** K1: the grain of a time cut; with no time dimension on the shelf, the metric's own time. */
+  grain?: Grain | null;
 }
 
 const unitOf = (unit: string | null | undefined): Unit =>
@@ -286,6 +294,9 @@ export interface ExploreResult {
   /** The dimension of the categories (columns of the chart, rows of the table). */
   category_label: string;
   category_dimension_id: string | null;
+  /** Whether the series are periods, so a row's change from the first to the last means
+   *  something ("Thay đổi"). */
+  has_delta: boolean;
   series: { key: string; label: string }[];
   rows: ExploreRow[];
   unit: Unit;
@@ -332,9 +343,17 @@ export function readExploreResult(
     .map((id) => model.metrics.find((m) => m.id === id))
     .filter((m): m is ExploreMetric => m !== undefined);
   const metricByCode = new Map(chosen.map((m) => [m.code, m]));
-  const categoryAt = dimAt[0] ?? -1;
+  // A cut along time the worker added for a grain (none on the shelf) is the axis, the shelf's
+  // cut its series: "Doanh thu theo vùng, theo tháng" reads month by month.
+  const shelfTime = input.dimension_ids.some((id) => model.dimensions.find((d) => d.id === id)?.is_time);
+  const addedTime = input.grain && !shelfTime ? dimAt.find((i) => dimensionOf(names[i])?.is_time) : undefined;
+  const ordered = addedTime === undefined ? dimAt : [addedTime, ...dimAt.filter((i) => i !== addedTime)];
+  const categoryAt = ordered[0] ?? -1;
   const several = chosen.length > 1;
-  const memberAt = dimAt[1] ?? -1;
+  const memberAt = ordered[1] ?? -1;
+  // K3: "Thay đổi" (last series less first) says something only when the series are periods; for
+  // product groups it was a difference between Bikes and Accessories.
+  const periodSeries = !several && memberAt >= 0 && !!dimensionOf(names[memberAt])?.is_time;
   const seriesAt = several ? metricAt : memberAt;
   const SEP = ' · ';
 
@@ -376,27 +395,33 @@ export function readExploreResult(
       label: key,
       short_label: key,
       values: list,
-      delta: list.length > 1 && first !== null && last !== null ? last - first : null,
+      delta: periodSeries && list.length > 1 && first !== null && last !== null ? last - first : null,
     };
   });
 
   const category = categoryAt >= 0 ? dimensionOf(names[categoryAt]) : undefined;
-  const categoryLabel = category?.label ?? (categoryAt >= 0 ? names[categoryAt] : 'Tổng');
+  // K3: a time cut read at a grain is named by the grain ("theo tháng"), not by the date it is
+  // read from ("theo ngày đặt hàng (internet)").
+  const grainLabel = input.grain ? GRAIN_LABEL[input.grain] : null;
+  const categoryLabel =
+    (category?.is_time && grainLabel) || category?.label || (categoryAt >= 0 ? names[categoryAt] : 'Tổng');
   const metricText = chosen.map((m) => m.label).join(', ');
+  // "Q2 so với Q3" when the series are periods; ten regions were listed "Australia so với Canada
+  // so với …" and the title was cut.
   const seriesText =
-    series.length > 1 && chosen.length === 1
-      ? ` · ${series.map((s) => s.label).join(' so với ')}`
-      : '';
+    periodSeries && series.length > 1 ? ` · ${series.map((s) => s.label).join(' so với ')}` : '';
+  const periodText = input.period ? ` · ${/^\d{4}$/.test(input.period) ? `năm ${input.period}` : input.period}` : '';
   const seconds =
     run.duration_ms !== null && run.duration_ms !== undefined
       ? ` · ${(run.duration_ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giây`
       : '';
   return {
     id: run.id,
-    title: `${metricText} theo ${categoryLabel.toLowerCase()}${seriesText}`,
+    title: `${metricText} theo ${categoryLabel.toLowerCase()}${seriesText}${periodText}`,
     subtitle_text: `${chosen.map((m) => `${m.code}${m.version ? ` v${m.version}` : ''}`).join(', ')}${seconds}`,
     category_label: categoryLabel,
     category_dimension_id: category?.id ?? null,
+    has_delta: periodSeries && series.length > 1,
     series,
     rows,
     unit: chosen[0]?.unit ?? 'count',
@@ -434,7 +459,11 @@ export async function runExploreQuery(
         metric_ids: input.metric_ids,
         dimensions: input.dimension_ids,
         filters: input.filters,
-      } satisfies Schemas['ExploreQueryCreate'],
+        ...(input.period ? { period: input.period } : {}),
+        ...(input.grain ? { grain: input.grain } : {}),
+        // period and grain are in the api's ExploreQueryCreate (K1); schema.ts is regenerated
+        // (make api-types) once the drift-resolve schemas no longer collide (lib/v1/sources.ts).
+      } satisfies Schemas['ExploreQueryCreate'] & { period?: string; grain?: Grain },
     }),
   );
   const run = await awaitQueryRun(accepted);
@@ -567,75 +596,81 @@ export async function getExploreExplanation(
   return { headline: headline ?? '', body };
 }
 
-/* ─── Hỏi bằng lời: câu hỏi purpose explore, kệ điền từ chip cách hiểu ─── */
+/* ─── Hỏi bằng lời: kệ điền từ câu hỏi, đọc theo luật (K2) ─────────────── */
 
 type QuestionView = Schemas['QuestionView'];
 
-const UNDERSTOOD_END = new Set(['answered', 'refused', 'failed', 'clarifying', 'cancelled']);
+/** Lower case, no diacritics, "đ" as "d", punctuation as spaces: how a question and a label are
+ *  compared. */
+const fold = (text: string) =>
+  text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^\p{L}\p{N}/ ]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-/**
- * "Hỏi bằng lời": POST /v1/questions {purpose: explore}; the plan's chips (what the system
- * understood: metric, dimension, filter "code=value") fill the shelves for the viewer to check.
- * 422 when no chip names a metric of the model.
- */
-export async function interpretQuestion(
-  question: string,
-  model: ExploreModel,
-  { intervalMs = 500, timeoutMs = 30_000 } = {},
-): Promise<ExploreQueryInput> {
-  const accepted = await ok<Schemas['QuestionAccepted']>(
-    api.POST('/v1/questions', {
-      body: {
-        text: question,
-        purpose: 'explore',
-        knowledge_mode: 'latest',
-        stream: false,
-      } satisfies Schemas['QuestionCreate'],
-    }),
-  );
-  const deadline = Date.now() + timeoutMs;
-  let view = await ok<QuestionView>(
-    api.GET('/v1/questions/{id}', { params: { path: { id: accepted.question_id } } }),
-  );
-  while (!view.plan && !UNDERSTOOD_END.has(view.status)) {
-    if (Date.now() > deadline) throw new V1Error(504, 'timeout', 'Agent đọc câu hỏi quá lâu.');
-    await sleep(Math.max(intervalMs, accepted.poll_after_ms ?? 0));
-    view = await ok<QuestionView>(
-      api.GET('/v1/questions/{id}', { params: { path: { id: accepted.question_id } } }),
-    );
+const GRAIN_OF: Record<string, Grain> = { ngay: 'day', tuan: 'week', thang: 'month', quy: 'quarter', nam: 'year' };
+const TIME_WORD = /^(nam|quy|thang|tuan|ngay|ky)( |$)/;
+const YEAR = '((?:19|20)\\d{2})';
+
+/** What a question asks, read by rule against the shelves' own model: its metrics (the longest
+ *  names first, so "doanh thu internet" is not read as "doanh thu"), the cuts it names after
+ *  "theo" (in full, or by their first words: "theo vùng" is "Vùng bán hàng"), a grain ("theo
+ *  tháng") and a period ("năm 2013", "quý 3/2013", "tháng 8/2013"; two quarters or months of a
+ *  year are the year by quarter or month). */
+export function readQuestion(question: string, model: ExploreModel): ExploreQueryInput {
+  let text = ` ${fold(question)} `;
+  const metric_ids: string[] = [];
+  for (const m of [...model.metrics].sort((a, b) => fold(b.label).length - fold(a.label).length)) {
+    const name = ` ${fold(m.label)} `;
+    if (text.includes(name)) {
+      metric_ids.push(m.id);
+      text = text.replace(name, ' ');
+    }
   }
-  const chips = (Array.isArray(view.plan?.chips) ? view.plan.chips : []) as {
-    kind?: unknown;
-    value?: unknown;
-  }[];
-  const of = (kind: string) =>
-    chips
-      .filter((c) => c.kind === kind && typeof c.value === 'string')
-      .map((c) => c.value as string);
-  const metric_ids = of('metric')
-    .map((code) => model.metrics.find((m) => m.code === code)?.id)
-    .filter((id): id is string => id !== undefined);
   if (metric_ids.length === 0)
-    throw new V1Error(422, 'not_understood', 'Agent không nhận ra chỉ số nào trong câu hỏi.');
-  const dimensionId = (code: string) => model.dimensions.find((d) => d.code === code)?.id;
-  const dimension_ids = of('dimension')
-    .map(dimensionId)
-    .filter((id): id is string => id !== undefined);
-  const filters = new Map<string, string[]>();
-  for (const chip of of('filter')) {
-    const [code, ...rest] = chip.split('=');
-    const id = dimensionId(code);
-    if (id && rest.length) filters.set(id, [...(filters.get(id) ?? []), rest.join('=')]);
+    throw new V1Error(422, 'not_understood', 'Chưa nhận ra chỉ số nào trong câu; hãy nêu tên một chỉ số ở cột bên trái.');
+  const fits = (d: ExploreDimension) => !d.is_time && !TIME_WORD.test(fold(d.label)) && !metric_ids.some((id) => d.incompatible_metric_ids.includes(id));
+  const cuts = model.dimensions.filter(fits).sort((a, b) => fold(b.label).length - fold(a.label).length);
+  const dimension_ids: string[] = [];
+  for (const d of cuts) {
+    const name = ` ${fold(d.label)} `;
+    if (text.includes(name) && !dimension_ids.includes(d.id)) {
+      dimension_ids.push(d.id);
+      text = text.replace(name, ' ');
+    }
   }
-  return {
-    metric_ids,
-    dimension_ids,
-    filters: [...filters].map(([dimension_id, values]) => ({
-      dimension_id,
-      op: values.length === 1 ? 'eq' : 'in',
-      values,
-    })),
-  };
+  for (const m of text.matchAll(/ theo (?:tung |cac )?([a-z ]+?)(?= (?:nam|quy|thang|va|voi|so|trong|cua)\b| \d| $)/g)) {
+    const said = m[1].trim();
+    if (!said || TIME_WORD.test(said)) continue;
+    const by = cuts
+      .filter((d) => fold(d.label).startsWith(said) && !dimension_ids.includes(d.id))
+      .sort((a, b) => a.label.length - b.label.length)[0];
+    if (by) dimension_ids.push(by.id);
+  }
+  const grainSaid = /(?:theo|tung|moi|hang|cac) (ngay|tuan|thang|quy|nam)(?! ?\d)/.exec(text);
+  let grain: Grain | null = grainSaid ? GRAIN_OF[grainSaid[1]] : null;
+  const year = new RegExp(`(?:nam )?\\b${YEAR}\\b`).exec(text)?.[1] ?? null;
+  const months = [...text.matchAll(new RegExp(`thang (\\d{1,2})(?:/${YEAR})?`, 'g'))];
+  const quarters = [...text.matchAll(new RegExp(`(?:quy |q)([1-4])(?:/${YEAR})?\\b`, 'g'))];
+  let period: string | null = year;
+  if (quarters.length > 1 || months.length > 1) {
+    grain = grain ?? (quarters.length > 1 ? 'quarter' : 'month');
+  } else if (quarters.length === 1 && (quarters[0][2] ?? year)) {
+    period = `${quarters[0][2] ?? year}-Q${quarters[0][1]}`;
+  } else if (months.length === 1 && (months[0][2] ?? year)) {
+    period = `${months[0][2] ?? year}-${months[0][1].padStart(2, '0')}`;
+  }
+  return { metric_ids, dimension_ids, filters: [], period, grain };
+}
+
+/** "Hỏi bằng lời" fills the shelves from the question at once (K2): it ran a whole agent turn
+ *  (12–98 s, a conversation left in Hỏi đáp, 3 questions of 5 understood nothing). */
+export async function interpretQuestion(question: string, model: ExploreModel): Promise<ExploreQueryInput> {
+  return readQuestion(question, model);
 }
 
 /* ─── Lưu kết quả vào phiên (P02) ───────────────────────────────────────── */
@@ -815,9 +850,11 @@ export interface DataSpaceChoice {
   scope_text: string | null;
   /** view = read-only role (grey dot), analyst = may ask and run (blue dot). */
   role_kind: 'analyst' | 'viewer' | null;
-  source_count: number;
-  metric_count: number;
-  agent_count: number;
+  /** null when the list does not say: shown as nothing, not as 0 (the picker read "0 nguồn ·
+   *  0 chỉ số · 0 agent" for a space with 1 source, 18 metrics and 4 agents). */
+  source_count: number | null;
+  metric_count: number | null;
+  agent_count: number | null;
   /** "hôm nay 08:40", "03/10"; null = never used. */
   last_used_text: string | null;
   /** The owner to ask, for a space without access. */
@@ -845,9 +882,9 @@ export const getMyDataSpaces = async (): Promise<MyDataSpaces> => {
       role_label: space.my_roles[0]?.name ?? null,
       scope_text: null,
       role_kind: space.my_capabilities.includes('ask') ? ('analyst' as const) : ('viewer' as const),
-      source_count: 0,
-      metric_count: 0,
-      agent_count: 0,
+      source_count: null,
+      metric_count: null,
+      agent_count: null,
       last_used_text: space.id === defaultId ? 'gần đây' : null,
       owner_name: null,
       request_pending: false,

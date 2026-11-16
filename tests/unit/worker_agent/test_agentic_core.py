@@ -4,6 +4,7 @@ runs, blocks take their data from datasets, every number in the text is traced, 
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -66,6 +67,14 @@ def _ws() -> Workspace:
 
 def test_a_chart_and_a_kpi_take_their_figures_from_the_dataset() -> None:
     ws = _ws()
+    ws.datasets["d1"].reading = {
+        "metric": "DT",
+        "metric_id": "m-1",
+        "group_by": ["vung"],
+        "filters": {"nam": ["2013"]},
+        "cuts": {"Vùng": "vung"},
+        "time_cuts": [],
+    }
     chart = b.materialize(
         b.BlockDraft(type="chart", dataset="d1", chart_type="bar", x="Vùng", y=["Doanh thu"]),
         ws,
@@ -76,6 +85,13 @@ def test_a_chart_and_a_kpi_take_their_figures_from_the_dataset() -> None:
         {"Vùng": "Pacific", "Doanh thu": 250000.0},
     ]
     assert chart["trust"] == "certified"
+    assert chart["insight"] == "Europe cao nhất, Pacific thấp nhất."
+    # What Khám phá opens again: a certified metric's reading only.
+    assert chart["explore"]["metric_id"] == "m-1"
+    assert chart["explore"]["cuts"] == {"Vùng": "vung"}
+    ws.datasets["d1"].trust = "exploratory"
+    assert "explore" not in b.materialize(b.BlockDraft(type="table", dataset="d1"), ws, "t")
+    ws.datasets["d1"].trust = "certified"
     kpi = b.materialize(
         b.BlockDraft(
             type="kpi",
@@ -112,6 +128,341 @@ def test_a_chart_and_a_kpi_take_their_figures_from_the_dataset() -> None:
         b.materialize(b.BlockDraft(type="chart", dataset="d1", x="Năm"), ws, "b4")
 
 
+def test_the_cut_a_question_names_is_found_by_its_full_name() -> None:
+    import uuid
+
+    from services.worker_agent.agentic.tools.query import named_cut
+    from services.worker_agent.understand.resolver import DimensionEntry, Vocabulary
+
+    ids = [uuid.uuid4() for _ in range(4)]
+    vocab = Vocabulary(
+        metrics=[],
+        dimensions=[
+            DimensionEntry(ids[0], "san_pham", "Sản phẩm"),
+            DimensionEntry(ids[1], "nhom_san_pham", "Nhóm sản phẩm"),
+            DimensionEntry(ids[2], "vung", "Vùng bán hàng"),
+            DimensionEntry(ids[3], "ngay", "Ngày đặt hàng", is_time=True),
+        ],
+    )
+    allowed = set(ids)
+    q = "Cơ cấu doanh thu theo nhóm sản phẩm năm 2013."
+    assert named_cut(q, vocab, allowed) == "nhom_san_pham"
+    # A cut the metric does not allow, or one named only in part ("theo vùng"), is left alone.
+    assert named_cut(q, vocab, {ids[0]}) is None
+    assert named_cut("Doanh thu theo vùng năm 2013", vocab, allowed) is None
+
+
+def test_two_periods_of_one_kind_are_read_side_by_side() -> None:
+    import datetime
+
+    from services.worker_agent.agentic.tools.query import side_by_side, two_periods
+
+    months = two_periods("So sánh doanh thu tháng 8/2013 với tháng 3/2013")
+    assert months is not None
+    assert [label for _, label in months] == ["tháng 3/2013", "tháng 8/2013"]
+    assert months[0][0].start == datetime.date(2013, 3, 1)
+    assert months[0][0].end == datetime.date(2013, 4, 1)
+    quarters = two_periods("Doanh thu quý 4/2012 so với quý 3/2013 theo vùng")
+    assert quarters is not None and quarters[1][0].end == datetime.date(2013, 10, 1)
+    years = two_periods("So sánh doanh thu theo vùng năm 2011 và 2013")
+    assert years is not None and [label for _, label in years] == ["2011", "2013"]
+    # Adjacent years are one comparison (two_years); one period is no comparison.
+    assert two_periods("So sánh doanh thu năm 2012 và 2013") is None
+    assert two_periods("Doanh thu tháng 8/2013") is None
+    # The second period of a comparison is a date, never a quantity no metric measures.
+    from services.worker_agent.understand.resolver import Vocabulary, quantity_words
+
+    words = quantity_words(
+        "So sánh doanh thu tháng 8/2013 với tháng 3/2013",
+        Vocabulary(metrics=[], dimensions=[]),
+        today=datetime.date(2014, 1, 15),
+    )
+    assert "3/2013" not in words
+    columns, rows = side_by_side(
+        ["vung", "value"],
+        ["Vùng", "Doanh thu"],
+        [["Europe", 1.0], ["Canada", 2.0]],
+        [["Europe", 3.0], ["Pacific", 4.0]],
+        ("Doanh thu 2011", "Doanh thu 2013"),
+    )
+    assert columns == ["Vùng", "Doanh thu 2011", "Doanh thu 2013"]
+    # A member one period lacks is empty there, not dropped.
+    assert rows == [["Europe", 1.0, 3.0], ["Canada", 2.0, None], ["Pacific", None, 4.0]]
+
+
+def test_two_adjacent_years_are_read_as_a_comparison() -> None:
+    from services.worker_agent.agentic.tools.query import two_years
+
+    assert two_years("So sánh doanh thu theo vùng năm 2012 và 2013.") == (2012, 2013)
+    assert two_years("Doanh thu năm 2013 so với năm 2012") == (2012, 2013)
+    # Not two adjacent years, or not years at all: left to the planner.
+    assert two_years("Doanh thu năm 2010 và 2013") is None
+    assert two_years("Doanh thu tháng 8/2013 và 8/2012") is None
+
+
+def test_series_named_by_periods_are_drawn_earlier_first_and_read_together() -> None:
+    ws = Workspace()
+    ws.add(
+        title="Doanh thu theo vùng",
+        columns=["Vùng", "Doanh thu 2013", "Doanh thu 2012"],
+        rows=[["Europe", 300, 100], ["Pacific", 150, 200]],
+        trust="derived",
+    )
+    chart = b.materialize(b.BlockDraft(type="chart", dataset="d1", chart_type="bar"), ws, "c")
+    assert chart["spec"]["y_keys"] == ["Doanh thu 2012", "Doanh thu 2013"]
+    assert chart["insight"] == (
+        "So với 2012, Europe tăng mạnh nhất (+200,0%), Pacific giảm nhiều nhất (25,0%)."
+    )
+    months = ["2013-01", "2013-12"]
+    assert b.series_insight(months, [[10.0, 14.0], [10.0, 5.0]], ["Internet", "Đại lý"]) == (
+        "Từ 2013-01 đến 2013-12: Internet tăng 40,0%, Đại lý giảm 50,0%."
+    )
+    # A reading ranked by value is drawn along time, and read from its first month.
+    ws.add(
+        title="Doanh thu theo tháng",
+        columns=["Tháng", "Doanh thu"],
+        rows=[["2013-12", 18], ["2013-01", 9], ["2013-06", 16]],
+        trust="certified",
+    )
+    line = b.materialize(b.BlockDraft(type="chart", dataset="d2", chart_type="line"), ws, "c3")
+    assert [p["Tháng"] for p in line["spec"]["data"]] == ["2013-01", "2013-06", "2013-12"]
+    assert line["insight"].startswith("Từ 2013-01 đến 2013-12 tăng 100,0%")
+    assert b.time_order("Q2/2013") == (2013, 6, 0) and b.time_order("1234") is None
+    assert b.period_key("Doanh thu tháng 3/2013") == (2013, 3)
+    assert b.period_key("Doanh thu quý 3/2013") == (2013, 9)
+    # Two quantities side by side have no change between them to read: no line, not a wrong one.
+    ws.add(
+        title="Doanh thu và biên",
+        columns=["Vùng", "Doanh thu", "Biên lợi nhuận"],
+        rows=[["Europe", 300, 0.4], ["Pacific", 150, 0.3]],
+        trust="derived",
+    )
+    assert "insight" not in b.materialize(
+        b.BlockDraft(type="chart", dataset="d3", chart_type="bar"), ws, "c2"
+    )
+
+
+def test_a_merge_of_two_readings_is_named_by_what_each_read() -> None:
+    from services.worker_agent.agentic.tools.analyze import merged_names
+
+    ws = Workspace()
+    for year in ("2012", "2013"):
+        ws.add(
+            title="Doanh thu theo vùng",
+            columns=["Vùng", "Doanh thu"],
+            rows=[["Europe", 1]],
+            trust="certified",
+            reading={"metric": "DT", "metric_name": "Doanh thu", "period": year},
+        )
+    cols = ["Vùng", "Doanh thu_x", "Doanh thu_y"]
+    assert merged_names(cols, "result = d2.merge(d1, on='Vùng')", ws.datasets) == {
+        "Doanh thu_x": "Doanh thu 2013",
+        "Doanh thu_y": "Doanh thu 2012",
+    }
+    # Through the code's names for the frames (the 4B model wrote df_2011 = d1, 16/11).
+    aliased = "df_2012 = d1\ndf_2013 = d2.copy()\nresult = pd.merge(df_2012, df_2013, on='Vùng')"
+    assert merged_names(cols, aliased, ws.datasets) == {
+        "Doanh thu_x": "Doanh thu 2012",
+        "Doanh thu_y": "Doanh thu 2013",
+    }
+    assert merged_names(["Vùng", "Doanh thu"], "result = d1", ws.datasets) == {}
+    # Sides that cannot be told apart are the model's to name.
+    assert merged_names(cols, "result = something(d1, d2)", ws.datasets) is None
+
+
+def test_a_quantity_no_metric_measures_is_asked_back_with_the_closest_metrics() -> None:
+    import uuid
+
+    from services.worker_agent.agentic import clarify_policy
+    from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
+
+    buyers, revenue, orders = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    layer = SimpleNamespace(
+        vocabulary=Vocabulary(
+            metrics=[
+                MetricEntry(buyers, "SO_KHACH_HANG", "Số khách hàng mua qua Internet", True),
+                MetricEntry(revenue, "DOANH_THU", "Doanh thu", True),
+                # Shares one word of "khách hàng" (a synonym's "hàng"), the customers two: not
+                # offered beside them.
+                MetricEntry(orders, "SO_DON_HANG", "Số đơn hàng Internet", True),
+            ],
+            dimensions=[DimensionEntry(uuid.uuid4(), "nhom_san_pham", "Nhóm sản phẩm")],
+        ),
+        versions={buyers: object(), revenue: object(), orders: object()},
+        blocked_metric_ids=frozenset(),
+    )
+    ask = clarify_policy.unnamed_quantity(
+        "Khách hàng rời bỏ là bao nhiêu?", ["khach", "hang", "roi", "bo"], layer
+    )
+    assert ask is not None
+    assert ask.question == (
+        "Chưa có chỉ số chuẩn nào đo “Khách hàng rời bỏ”. Bạn muốn xem chỉ số nào dưới đây?"
+    )
+    # Each option is the question again with a metric in place of the quantity.
+    assert ask.options == ["Số khách hàng mua qua Internet là bao nhiêu?"]
+    # Read nothing, nothing stands out: the closest metrics, asked with the question's period.
+    fallback = clarify_policy.nothing_read("Khách hàng rời bỏ năm 2013?", layer, "năm 2013")
+    assert fallback is not None
+    assert fallback.options == ["Số khách hàng mua qua Internet năm 2013 là bao nhiêu?"]
+    # A question naming a member read nothing for the member: no metrics offered in its place.
+    assert clarify_policy.nothing_read("Doanh thu nhóm Bikes năm 2013?", layer, "năm 2013") is None
+    # A member written as a name is not a quantity.
+    assert (
+        clarify_policy.unnamed_quantity("Doanh thu nhóm Bikes năm 2013?", ["bikes"], layer) is None
+    )
+    # A cut's words are a missed cut, not a missing metric: no question back.
+    assert (
+        clarify_policy.unnamed_quantity("Cơ cấu theo nhóm sản phẩm", ["nhom", "san", "pham"], layer)
+        is None
+    )
+
+
+def test_a_turn_that_read_nothing_asks_back_before_writing() -> None:
+    import datetime
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import MetricEntry, Vocabulary
+
+    buyers = uuid.uuid4()
+    vocab = Vocabulary(
+        metrics=[MetricEntry(buyers, "SO_KHACH_HANG", "Số khách hàng mua qua Internet", True)],
+        dimensions=[],
+    )
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+            ws=Workspace(),
+            question="Khách hàng rời bỏ là bao nhiêu?",
+            today=datetime.date(2014, 1, 15),
+            layer=types.SimpleNamespace(
+                vocabulary=vocab, versions={buyers: object()}, blocked_metric_ids=frozenset()
+            ),
+            period=None,
+            period_moves={},
+        ),
+        # q8: two steps ran (catalogue, values), then a replan left no step, in "answer" mode.
+        plan=_plan().model_copy(update={"mode": "answer"}),
+    )
+    assert not engine._ask_for_unnamed_question(state)  # nothing tried: a greeting
+    state.step_runs = 2
+    assert engine._ask_for_unnamed_question(state)
+    assert state.clarify is not None
+    assert state.clarify.options == ["Số khách hàng mua qua Internet là bao nhiêu?"]
+
+
+def test_next_questions_are_kept_once_and_only_when_they_name_a_metric() -> None:
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
+
+    vocab = Vocabulary(
+        metrics=[MetricEntry(uuid.uuid4(), "DOANH_THU_INTERNET", "Doanh thu Internet", True)],
+        dimensions=[DimensionEntry(uuid.uuid4(), "vung", "Vùng bán hàng")],
+    )
+    offered = [
+        "Biến động doanh thu Internet theo từng dịch vụ Internet",
+        "Doanh thu Internet theo quý năm 2013",
+        "Doanh thu Internet theo quý năm 2013?",
+        "Liệu có cần thu thập dữ liệu bổ sung cho kỳ này không?",
+        "Doanh thu Internet năm 2013 là bao nhiêu?",
+        "So sánh doanh thu Internet 2013 với 2012",
+        "Doanh thu Internet theo vùng bán hàng năm 2013",
+        "Doanh thu Internet theo nhóm sản phẩm năm 2013",
+    ]
+    assert engine.runnable_follow_ups(
+        offered, "Doanh thu Internet năm 2013 là bao nhiêu?", vocab
+    ) == [
+        "Doanh thu Internet theo quý năm 2013",
+        "So sánh doanh thu Internet 2013 với 2012",
+        "Doanh thu Internet theo vùng bán hàng năm 2013",
+    ]
+
+
+def test_the_live_timeline_says_what_each_step_found_from_its_data() -> None:
+    import uuid
+
+    from services.worker_agent.agentic import narrate
+    from services.worker_agent.agentic.tools.base import ToolResult
+    from services.worker_agent.understand.resolver import MetricEntry, Vocabulary
+
+    vocab = Vocabulary(
+        metrics=[MetricEntry(uuid.uuid4(), "DOANH_THU_INTERNET", "Doanh thu Internet", True)],
+        dimensions=[],
+    )
+    # The planner's thought for a reader: names, not codes; titles, not step ids.
+    assert narrate.reader("Bước s2 lỗi, đọc lại DOANH_THU_INTERNET theo tháng", vocab) == (
+        "bước trước lỗi, đọc lại Doanh thu Internet theo tháng"
+    )
+    ws = _ws()
+    found = ToolResult(True, "…", ["d1"])
+    assert narrate.said("query_metric", found, ws, vocab) == (
+        "Doanh thu theo vùng: 2 dòng; cao nhất Europe (1.500.000,50)."
+    )
+    refused = ToolResult(
+        False, "không chỉ số chuẩn nào đo 'khach hang'; không tự tính", failure="logic"
+    )
+    assert narrate.said("query_metric", refused, ws, vocab) == (
+        "Không chỉ số chuẩn nào đo 'khach hang'"
+    )
+    # A comparison's base period is not its value: the first measure after the cut is.
+    ws.add(
+        title="Doanh thu tháng 12/2013",
+        columns=["Nhóm vùng", "Doanh thu", "Doanh thu (kỳ so sánh)"],
+        rows=[["Europe", 500, 90], ["North America", 900, 40]],
+        trust="certified",
+    )
+    compared = ToolResult(True, "…", ["d2"])
+    assert narrate.said("query_metric", compared, ws, vocab).endswith(
+        "cao nhất North America (900)."
+    )
+    # Two periods side by side: the latest is the one said, by its name.
+    ws.add(
+        title="Doanh thu theo vùng",
+        columns=["Vùng", "Doanh thu 2012", "Doanh thu 2013"],
+        rows=[["Southwest", 85, 97], ["Canada", 57, 62]],
+        trust="certified",
+    )
+    two = ToolResult(True, "…", ["d3"])
+    assert narrate.said("query_metric", two, ws, vocab).endswith(
+        "cao nhất Southwest (Doanh thu 2013: 97)."
+    )
+    crashed = ToolResult(False, "code lỗi: NameError: x", failure="arguments")
+    assert narrate.said("analyze", crashed, ws, vocab).startswith("Tham số chưa đúng")
+    coverage = ToolResult(
+        True,
+        "…",
+        detail={"metric": "Doanh thu", "first": "2010-12", "last": "2014-01", "partial_last": True},
+    )
+    assert narrate.said("data_coverage", coverage, ws, vocab) == (
+        "Doanh thu có số từ 2010-12 đến 2014-01, kỳ cuối chưa đủ."
+    )
+
+
+def test_a_charts_one_line_reading_is_computed_from_its_rows() -> None:
+    months = ["2013-01", "2013-06", "2013-12"]
+    assert (
+        b.chart_insight("line", "time", months, [857689.91, 1643177.78, 1874360.29])
+        == "Từ 2013-01 đến 2013-12 tăng 118,5%; cao nhất 2013-12, thấp nhất 2013-01."
+    )
+    shares = b.chart_insight("pie", "category", ["Bikes", "Clothing"], [42302193.5, 1202657.7])
+    assert shares == "Bikes lớn nhất, chiếm 97,2% tổng."
+    # One point says nothing; a missing value is left out, not read as zero.
+    assert b.chart_insight("line", "time", ["2013-01"], [1.0]) is None
+    assert b.chart_insight("bar", "category", ["A", "B", "C"], [3.0, None, 1.0]) == (
+        "A cao nhất, C thấp nhất."
+    )
+    # Two series side by side are read as the change from the first to the second.
+    regions = ["Australia", "Northeast", "Canada"]
+    assert b.comparison_insight(
+        regions, [100.0, 300.0, 200.0], [270.0, 206.0, 220.0], ("Doanh thu 2012", "Doanh thu 2013")
+    ) == ("So với 2012, Australia tăng mạnh nhất (+170,0%), Northeast giảm nhiều nhất (31,3%).")
+
+
 def test_a_sentence_with_an_untraced_number_is_dropped_and_tags_are_filled() -> None:
     ws = _ws()
     known = verify.facts(ws, "vi")
@@ -127,6 +478,12 @@ def test_a_sentence_with_an_untraced_number_is_dropped_and_tags_are_filled() -> 
     assert checked.numbers == 1
     unknown = verify.fill("Tổng là {{F999}}.", known, allowed)
     assert unknown.text == "" and unknown.dropped == 1
+    from services.worker_agent.agentic import engine
+
+    # What is left of a callout whose only sentence was dropped is not drawn as an empty box; a
+    # sentence that leads into a chart is kept.
+    assert engine._label_only("**Lưu ý:**") and engine._label_only("Lưu ý:")
+    assert not engine._label_only("Dưới đây là xu hướng doanh thu theo tháng:")
 
 
 def test_the_graph_routes_on_the_state_and_always_ends() -> None:
@@ -365,7 +722,7 @@ def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql()
         vocabulary=types.SimpleNamespace(
             metrics=[units], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
         ),
-        versions={units.metric_id: object()},
+        versions={units.metric_id: SimpleNamespace(allowed_dimension_ids=[])},
         blocked_metric_ids=set(),
     )
     ctx = types.SimpleNamespace(

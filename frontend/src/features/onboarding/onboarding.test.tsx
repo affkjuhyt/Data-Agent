@@ -31,7 +31,9 @@ describe('DataSpacePicker', () => {
       await screen.findByRole('heading', { name: 'Chào Hải Yến, chọn Data Space để bắt đầu' }),
     ).toBeInTheDocument();
     expect(await screen.findAllByText('Người phụ trách dữ liệu')).not.toHaveLength(0);
-    expect(screen.getAllByText(/0 nguồn · 0 chỉ số · 0 agent.*Chưa dùng/)).not.toHaveLength(0);
+    // The list says no counts: none are shown, rather than "0 nguồn · 0 chỉ số · 0 agent".
+    expect(screen.getAllByText(/^Chưa dùng$/)).not.toHaveLength(0);
+    expect(screen.queryByText(/0 nguồn/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Mở Rủi ro tín dụng' }));
     expect(onOpen).toHaveBeenCalledWith({ id: 'ds-rui-ro-tin-dung', name: 'Rủi ro tín dụng' });
