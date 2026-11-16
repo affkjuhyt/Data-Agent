@@ -267,6 +267,17 @@ def test_the_live_timeline_says_what_each_step_found_from_its_data() -> None:
     assert narrate.said("query_metric", compared, ws, vocab).endswith(
         "cao nhất North America (900)."
     )
+    # Two periods side by side: the latest is the one said, by its name.
+    ws.add(
+        title="Doanh thu theo vùng",
+        columns=["Vùng", "Doanh thu 2012", "Doanh thu 2013"],
+        rows=[["Southwest", 85, 97], ["Canada", 57, 62]],
+        trust="certified",
+    )
+    two = ToolResult(True, "…", ["d3"])
+    assert narrate.said("query_metric", two, ws, vocab).endswith(
+        "cao nhất Southwest (Doanh thu 2013: 97)."
+    )
     crashed = ToolResult(False, "code lỗi: NameError: x", failure="arguments")
     assert narrate.said("analyze", crashed, ws, vocab).startswith("Tham số chưa đúng")
     coverage = ToolResult(

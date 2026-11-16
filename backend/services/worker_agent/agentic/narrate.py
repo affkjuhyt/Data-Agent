@@ -9,6 +9,7 @@ import logging
 import re
 from typing import Any
 
+from services.worker_agent.agentic.blocks import period_key
 from services.worker_agent.agentic.tools.base import ToolResult
 from services.worker_agent.agentic.verify import show
 from services.worker_agent.agentic.workspace import Dataset, Workspace, number, plain
@@ -50,9 +51,13 @@ def _highlight(ds: Dataset) -> str:
         return ""
     # The first measure after the cut: the reading's own value. The last column was the base
     # period of a comparison and said "cao nhất North America (37.119,84)" of December (16/11).
-    measure = next(
-        (i for i in range(1, len(ds.columns)) if number(ds.rows[0][i]) is not None), None
-    )
+    measures = [i for i in range(1, len(ds.columns)) if number(ds.rows[0][i]) is not None]
+    # Measures named by periods ("Doanh thu 2012", "Doanh thu 2013"): the latest is the one read.
+    keyed = [(k, i) for i in measures if (k := period_key(ds.columns[i])) is not None]
+    named = len(keyed) > 1 and len(keyed) == len(measures)
+    if named:
+        measures = [max(keyed)[1]]
+    measure = measures[0] if measures else None
     if measure is None or number(ds.rows[0][0]) is not None:
         return ""
     best: tuple[Any, float] | None = None
@@ -62,7 +67,8 @@ def _highlight(ds: Dataset) -> str:
             best = (plain(row[0]), value)
     if best is None or len(ds.rows) < 2:
         return ""
-    return f"; cao nhất {best[0]} ({show(best[1])})"
+    said = f"{ds.columns[measure]}: {show(best[1])}" if named else show(best[1])
+    return f"; cao nhất {best[0]} ({said})"
 
 
 def _dataset_line(ds: Dataset) -> str:
