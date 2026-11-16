@@ -79,11 +79,13 @@ def decode_text(
 def _likely_code_page(content: bytes, language: str) -> str:
     from charset_normalizer import from_bytes
 
-    found = [match.encoding for match in from_bytes(content, cp_isolation=list(_CODE_PAGES))]
+    found: list[str] = [
+        match.encoding for match in from_bytes(content, cp_isolation=list(_CODE_PAGES))
+    ]
     if not found:
         raise ValueError("The file is not text in a known encoding.")
     preferred = _LANGUAGE_CODE_PAGE.get(language)
-    return preferred if preferred in found else found[0]
+    return preferred if preferred is not None and preferred in found else found[0]
 
 
 def csv_rows(

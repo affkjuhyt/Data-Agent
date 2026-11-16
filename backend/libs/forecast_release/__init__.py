@@ -111,7 +111,9 @@ def review_note(row: fc.ModelVersion, by: uuid.UUID, action: str, text: str | No
 
 async def latest_backtest(session: AsyncSession, row: fc.ModelVersion) -> fc.BacktestRun | None:
     if row.backtest_id is not None:
-        return await session.get(fc.BacktestRun, row.backtest_id)
+        # Typed: CI's strict pass over the libs runs without SQLAlchemy installed (Any).
+        pinned: fc.BacktestRun | None = await session.get(fc.BacktestRun, row.backtest_id)
+        return pinned
     # Before the version points at one, its latest run is the one under way.
     found: fc.BacktestRun | None = await session.scalar(
         select(fc.BacktestRun)
@@ -202,7 +204,7 @@ def may_decide(
         raise ApproveRefused(
             403, "policy_denied", "Only the metric owner decides on a forecast model (BR-158)."
         )
-    return by == row.created_by
+    return bool(by == row.created_by)
 
 
 async def locked(
@@ -256,7 +258,7 @@ async def approve(
     """
     if idempotent and row.status == "published" and model.current_version_id == row.id:
         await _clear_experimental(session, row.id)
-        return row.created_by == by
+        return bool(row.created_by == by)
     if row.status != "pending_approval":
         raise ApproveRefused(
             409, "invalid_state", f"The version is {row.status}, not pending_approval."
@@ -334,7 +336,7 @@ async def reject(
 ) -> bool:
     """Send a pending version back as rejected. True when `by` built it. The caller holds the lock."""
     if idempotent and row.status == "rejected":
-        return row.created_by == by
+        return bool(row.created_by == by)
     if row.status != "pending_approval":
         raise ApproveRefused(
             409, "invalid_state", f"The version is {row.status}, not pending_approval."

@@ -164,7 +164,9 @@ def capped(tree: exp.Expr, dialect: str, limit: int) -> str:
     way and writes another (a literal whose escaping it misreads) fails here instead of reaching
     the source in a form nobody inspected."""
     wrapped = exp.select("*").from_(exp.Subquery(this=tree, alias="_q")).limit(limit)
-    sql = wrapped.sql(dialect=dialect)
+    # Typed here: CI's strict pass over the libs runs without sqlglot installed, where every
+    # exp.* is Any and returning it from a `-> str` function is an error.
+    sql: str = wrapped.sql(dialect=dialect)
     again = check_read_only(sql, dialect)
     if again.sql(dialect=dialect) != sql:
         raise SqlRejected("the SQL does not read back as itself")
