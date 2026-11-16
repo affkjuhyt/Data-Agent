@@ -240,8 +240,10 @@ jobs:
         # (libs/sql_guard, sqlglot, pinned as the api and worker-agent pin it) and
         # the REAL metric compiler (sqlparse) — no model, no warehouse, no stack —
         # which is what lets it gate every pull request instead of being a
-        # nightly nobody reads.
-        run: pip install sqlparse sqlglot==30.31.0
+        # nightly nobody reads. The SQL scorer reads questions with worker-agent's
+        # own understand layer, which imports babel (libs/language) and dateutil
+        # (semantic/compare): both pinned as worker-agent pins them.
+        run: pip install sqlparse sqlglot==30.31.0 babel==2.18.0 python-dateutil==2.9.0.post0
       - name: Run offline evaluation
         run: python -m model.eval.run --tier offline --out eval-report.json
       - name: Gate on thresholds (BLOCKING)
