@@ -162,9 +162,14 @@ function Choices({
               </div>
               <p className="text-muted-foreground da-caption">
                 {space.access === 'member'
-                  ? `${space.source_count} nguồn · ${space.metric_count} chỉ số · ${space.agent_count} agent  ·  ${
-                      space.last_used_text ? `Dùng gần nhất: ${space.last_used_text}` : 'Chưa dùng'
-                    }`
+                  ? [
+                      space.source_count !== null ? `${space.source_count} nguồn` : null,
+                      space.metric_count !== null ? `${space.metric_count} chỉ số` : null,
+                      space.agent_count !== null ? `${space.agent_count} agent` : null,
+                      space.last_used_text ? `Dùng gần nhất: ${space.last_used_text}` : 'Chưa dùng',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
                   : `Người phụ trách: ${space.owner_name ?? '—'}`}
               </p>
             </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { BlockBoundary } from '../../../../design-system/ErrorBoundaries';
 import { Icon, type IconName } from '../../../../design-system/Icon';
 import { formatNumber } from '../../../../lib/formatVN';
@@ -44,9 +44,20 @@ type Ctx = {
 };
 type Block = Record<string, unknown>;
 
+/** Whether the answer's blocks carry more than one trust label. When they all say the same, the
+ *  answer's own trust line says it once (it read "Theo chỉ số chuẩn" under every block and again
+ *  under the answer); a block's own note only tells blocks of different trust apart. */
+const MixedTrust = createContext(true);
+
+const trustLabels = (blocks: Block[]) =>
+  new Set(
+    blocks.flatMap((b) => [str(b.trust_label), ...arr<Block>(b.items).map((i) => str(i.trust_label))]).filter(Boolean),
+  );
+
 function TrustNote({ block }: { block: Block }) {
+  const mixed = useContext(MixedTrust);
   const label = str(block.trust_label);
-  if (!label) return null;
+  if (!label || !mixed) return null;
   const tone = block.trust === 'certified' ? 'text-success' : 'text-warning';
   return (
     <span className="inline-flex items-center gap-da-xs text-muted-foreground da-caption">
@@ -367,6 +378,7 @@ function ComposedBlock({ block, index, ctx }: { block: Block; index: number; ctx
 
 export function ComposedBlocks({ blocks, ...ctx }: { blocks: AnswerBlockView[] } & Ctx) {
   return (
+    <MixedTrust.Provider value={trustLabels(blocks as Block[]).size > 1}>
     <div className="flex flex-col gap-da-lg">
       {blocks.map((raw, i) => {
         const block = raw as Block;
@@ -377,5 +389,6 @@ export function ComposedBlocks({ blocks, ...ctx }: { blocks: AnswerBlockView[] }
         );
       })}
     </div>
+    </MixedTrust.Provider>
   );
 }

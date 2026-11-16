@@ -1066,6 +1066,29 @@ def _label_only(text: str) -> bool:
     return bare.endswith(":") and len(bare.split()) <= 3
 
 
+# At most this many next questions under an answer (E5).
+MAX_FOLLOW_UPS = 3
+
+
+def runnable_follow_ups(items: list[str], question: str, vocab: Any) -> list[str]:
+    """The next questions worth a chip (E5): each once, not the question just asked, and naming a
+    metric of the catalogue, so a click asks something the data answers on its own. The model
+    also offered "Liệu có cần thu thập dữ liệu bổ sung cho kỳ này không?" (17/11)."""
+    names = [norm(m.name) for m in getattr(vocab, "metrics", [])] if vocab is not None else []
+    seen = {norm(question)}
+    kept: list[str] = []
+    for item in items:
+        text = item.strip()
+        key = norm(text)
+        if not text or key in seen:
+            continue
+        if names and not any(f" {n} " in f" {key} " for n in names):
+            continue
+        seen.add(key)
+        kept.append(text)
+    return kept[:MAX_FOLLOW_UPS]
+
+
 def _checked(
     s: State, d: b.BlockDraft, known: dict[str, verify.Fact], allowed: set[str]
 ) -> dict[str, Any] | None:
@@ -1078,6 +1101,11 @@ def _checked(
         if not checked.text.strip() or _label_only(checked.text):
             return None
         d = d.model_copy(update={"content": checked.text})
+    if d.type == "follow_ups":
+        kept_questions = runnable_follow_ups(d.items, s.ctx.question, _vocab(s))
+        if not kept_questions:
+            return None
+        d = d.model_copy(update={"items": kept_questions})
     if d.type == "insights":
         kept = []
         for item in d.insights:

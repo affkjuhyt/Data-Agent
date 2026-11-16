@@ -815,9 +815,11 @@ export interface DataSpaceChoice {
   scope_text: string | null;
   /** view = read-only role (grey dot), analyst = may ask and run (blue dot). */
   role_kind: 'analyst' | 'viewer' | null;
-  source_count: number;
-  metric_count: number;
-  agent_count: number;
+  /** null when the list does not say: shown as nothing, not as 0 (the picker read "0 nguồn ·
+   *  0 chỉ số · 0 agent" for a space with 1 source, 18 metrics and 4 agents). */
+  source_count: number | null;
+  metric_count: number | null;
+  agent_count: number | null;
   /** "hôm nay 08:40", "03/10"; null = never used. */
   last_used_text: string | null;
   /** The owner to ask, for a space without access. */
@@ -845,9 +847,9 @@ export const getMyDataSpaces = async (): Promise<MyDataSpaces> => {
       role_label: space.my_roles[0]?.name ?? null,
       scope_text: null,
       role_kind: space.my_capabilities.includes('ask') ? ('analyst' as const) : ('viewer' as const),
-      source_count: 0,
-      metric_count: 0,
-      agent_count: 0,
+      source_count: null,
+      metric_count: null,
+      agent_count: null,
       last_used_text: space.id === defaultId ? 'gần đây' : null,
       owner_name: null,
       request_pending: false,

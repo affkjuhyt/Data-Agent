@@ -311,6 +311,34 @@ def test_a_turn_that_read_nothing_asks_back_before_writing() -> None:
     assert state.clarify.options == ["Số khách hàng mua qua Internet là bao nhiêu?"]
 
 
+def test_next_questions_are_kept_once_and_only_when_they_name_a_metric() -> None:
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import MetricEntry, Vocabulary
+
+    vocab = Vocabulary(
+        metrics=[MetricEntry(uuid.uuid4(), "DOANH_THU_INTERNET", "Doanh thu Internet", True)],
+        dimensions=[],
+    )
+    offered = [
+        "Doanh thu Internet theo quý năm 2013",
+        "Doanh thu Internet theo quý năm 2013?",
+        "Liệu có cần thu thập dữ liệu bổ sung cho kỳ này không?",
+        "Doanh thu Internet năm 2013 là bao nhiêu?",
+        "So sánh doanh thu Internet 2013 với 2012",
+        "Doanh thu Internet theo vùng năm 2013",
+        "Doanh thu Internet theo nhóm sản phẩm năm 2013",
+    ]
+    assert engine.runnable_follow_ups(
+        offered, "Doanh thu Internet năm 2013 là bao nhiêu?", vocab
+    ) == [
+        "Doanh thu Internet theo quý năm 2013",
+        "So sánh doanh thu Internet 2013 với 2012",
+        "Doanh thu Internet theo vùng năm 2013",
+    ]
+
+
 def test_the_live_timeline_says_what_each_step_found_from_its_data() -> None:
     import uuid
 

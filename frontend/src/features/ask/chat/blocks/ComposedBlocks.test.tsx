@@ -158,6 +158,20 @@ describe('ComposedBlocks', () => {
     expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
   });
 
+  it('says a block\'s trust only when the answer mixes trusts', () => {
+    const table = (id: string, trust: string, label: string) => ({
+      type: 'table', id, composed: true, title: id, columns: ['a'], rows: [{ a: 1 }], row_count: 1, trust, trust_label: label,
+    });
+    const { unmount } = render(
+      <ComposedBlocks blocks={[table('t1', 'certified', 'Theo chỉ số chuẩn'), table('t2', 'certified', 'Theo chỉ số chuẩn')] as never} />,
+    );
+    // All the same: the answer's own trust line says it once.
+    expect(screen.queryByText('Theo chỉ số chuẩn')).not.toBeInTheDocument();
+    unmount();
+    render(<ComposedBlocks blocks={[table('t1', 'certified', 'Theo chỉ số chuẩn'), table('t2', 'exploratory', 'Khám phá')] as never} />);
+    expect(screen.getByText('Theo chỉ số chuẩn')).toBeInTheDocument();
+  });
+
   it('opens a certified reading in Khám phá', () => {
     const onOpenExplore = vi.fn();
     render(<ComposedBlocks blocks={monthly} onOpenExplore={onOpenExplore} />);
