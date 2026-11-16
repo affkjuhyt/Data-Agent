@@ -255,6 +255,12 @@ kubectl -n dataagent-service create secret generic postgres-backup-secrets \
   --from-literal=PGPASSWORD="${POSTGRES_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# PL-04: store-backup mirrors every MinIO bucket, so it reads with the root login.
+kubectl -n dataagent-service create secret generic store-backup-secrets \
+  --from-literal=MINIO_ROOT_USER="${MINIO_ROOT_USER}" \
+  --from-literal=MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 kubectl -n dataagent-database create secret generic postgres-restore-secrets \
   --from-literal=PGPASSWORD="${POSTGRES_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -

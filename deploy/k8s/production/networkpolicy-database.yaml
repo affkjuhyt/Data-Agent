@@ -312,6 +312,13 @@ spec:
   - Ingress
   ingress:
   - from:
+    # PL-04: store-backup mirrors MinIO and snapshots Qdrant.
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: store-backup
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -431,6 +438,13 @@ spec:
   - Ingress
   ingress:
   - from:
+    # PL-04: store-backup mirrors MinIO and snapshots Qdrant.
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: store-backup
     - namespaceSelector:
         matchLabels:
           name: dataagent-service

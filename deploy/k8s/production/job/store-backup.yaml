@@ -1,0 +1,148 @@
+---
+# PL-04: the stores postgres-backup does not cover. MinIO (documents, ingested files, exports)
+# is mirrored; each Qdrant collection is snapshotted. OpenBao is not here yet: its `file`
+# storage has no snapshot API (RUNBOOK §9a). One image does both: the pinned MinIO image carries
+# mc, curl and jq.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: store-backup
+  namespace: dataagent-service
+  labels:
+    app: store-backup
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: store-backup-env
+  namespace: dataagent-service
+  labels:
+    app: store-backup
+    app.kubernetes.io/part-of: dataagent
+data:
+  MINIO_URL: http://minio.dataagent-database.svc.cluster.local:8360
+  QDRANT_URL: http://qdrant.dataagent-database.svc.cluster.local:8330
+  BACKUP_RETENTION_DAYS: '7'
+  # mc writes its alias file here; the image's home is not writable.
+  MC_CONFIG_DIR: /tmp/.mc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: store-backups
+  namespace: dataagent-service
+  labels:
+    app: store-backups
+    app.kubernetes.io/part-of: dataagent
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: store-backup
+  namespace: dataagent-service
+  labels:
+    app: store-backup
+    app.kubernetes.io/part-of: dataagent
+spec:
+  # Half an hour after postgres-backup, so the two do not read the disk at once.
+  schedule: 30 */6 * * *
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: store-backup
+            app.kubernetes.io/part-of: dataagent
+        spec:
+          restartPolicy: OnFailure
+          # The Bitnami image runs as 1001; the volume is made its group's.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            fsGroup: 1001
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          automountServiceAccountToken: false
+          containers:
+          - name: store-backup
+            image: bitnamilegacy/minio:2024.12.18-debian-12-r0
+            command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              # Wait for the stores the way postgres-backup waits for PostgreSQL: a run that starts
+              # during a restart should take its backup late rather than not at all.
+              waited=0
+              until mc alias set store "${MINIO_URL}" "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 \
+                    && curl -fsS "${QDRANT_URL}/readyz" >/dev/null; do
+                waited=$((waited + 5))
+                if [ "${waited}" -gt 600 ]; then echo "[backup] stores not ready after 10 min"; exit 1; fi
+                sleep 5
+              done
+
+              # MinIO: one mirror, without --remove: an object deleted (or overwritten by
+              # mistake) in MinIO keeps its last copy here until the mirror is reset by hand.
+              mkdir -p /backups/minio
+              mc mirror --overwrite --preserve --quiet store /backups/minio
+              echo "[backup] ok minio $(du -sh /backups/minio | cut -f1)"
+
+              # Qdrant: a snapshot per collection, downloaded, then removed from Qdrant's own disk.
+              ts=$(date +%Y%m%d_%H%M%S)
+              dir=/backups/qdrant/${ts}
+              mkdir -p "${dir}"
+              for c in $(curl -fsS "${QDRANT_URL}/collections" | jq -r '.result.collections[].name'); do
+                snap=$(curl -fsS -X POST "${QDRANT_URL}/collections/${c}/snapshots?wait=true" | jq -r '.result.name')
+                curl -fsS -o "${dir}/${c}.snapshot" "${QDRANT_URL}/collections/${c}/snapshots/${snap}"
+                curl -fsS -X DELETE "${QDRANT_URL}/collections/${c}/snapshots/${snap}?wait=true" >/dev/null
+                # A snapshot is a tar archive; one that does not list is not a backup.
+                tar -tf "${dir}/${c}.snapshot" >/dev/null
+                echo "[backup] ok qdrant ${c} $(du -h "${dir}/${c}.snapshot" | cut -f1)"
+              done
+              find /backups/qdrant -mindepth 1 -maxdepth 1 -type d -mtime +"${BACKUP_RETENTION_DAYS}" -exec rm -rf {} +
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              privileged: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            volumeMounts:
+            - name: backups
+              mountPath: /backups
+            - name: tmp
+              mountPath: /tmp
+            envFrom:
+            - configMapRef:
+                name: store-backup-env
+            - secretRef:
+                name: store-backup-secrets
+          volumes:
+          - name: backups
+            persistentVolumeClaim:
+              claimName: store-backups
+          - name: tmp
+            emptyDir: {}
+          enableServiceLinks: false
+          serviceAccountName: store-backup

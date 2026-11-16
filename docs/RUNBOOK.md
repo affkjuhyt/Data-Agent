@@ -389,6 +389,37 @@ du -sh /data/registry-backups
   `journalctl -t disk-alert`) and `backup-registry.sh` (daily registry backup).
   Install lines are in each script's header.
 
+## 9a. Backups (PL-04)
+
+Two CronJobs in `dataagent-service`, applied by the deploy (`k8s_setup`, `apply_maintenance_jobs`):
+
+| Job | When | What | Where |
+| --- | --- | --- | --- |
+| `postgres-backup` | every 6 h at :00 | `pg_dump` of each database in `BACKUP_DATABASES` (`dataagent` with the `keycloak` schema, `dataagent_audit`, `temporal`, `temporal_visibility`, `litellm`; production adds `langfuse`), each checked for the completion marker, plus the roles without their passwords (`pg_dumpall --globals-only`) | PVC `postgres-backups`: `dumps/dump_<db>_<ts>.sql.gz`, `dumps/roles_<ts>.sql.gz`, 7 days |
+| `store-backup` | every 6 h at :30 | MinIO: every bucket mirrored without `--remove`, so an object deleted in MinIO keeps its last copy; Qdrant: a snapshot of each collection, checked as a tar archive, then removed from Qdrant | PVC `store-backups`: `minio/<bucket>/…`, `qdrant/<ts>/<collection>.snapshot`, 7 days |
+
+Each waits up to 10 minutes for its stores, so a run that starts during a restart or a deploy
+takes its backup late instead of failing. A database or collection that fails fails the run
+(`kubectl -n dataagent-service get jobs`) and keeps the earlier files. The demo warehouses
+`adventureworks_dw` and `tlc_trips` are not backed up: `make adventureworks` and `make tlc` reload
+them from their pinned sources.
+
+Not covered yet: **OpenBao**. Its `file` storage has no snapshot API; the raft migration (also
+needed before OpenBao 2.7, which dropped `file`) comes first. Its unseal keys live outside the
+cluster (`.openbao-keys.json` beside the deploy's `secrets.env`): keep a copy of that file.
+**Alerting** on a failed run is not wired either (no kube-state-metrics); check the Jobs.
+
+Run one now: `kubectl -n dataagent-service create job --from=cronjob/<name> <name>-manual`.
+
+Restore:
+
+- **A database**: the suspended `postgres-restore` Job (`DUMP_FILE`, `TARGET_DB`) verifies the dump
+  before it drops anything; see `deploy/k8s/README.md`. On a new server load `roles_<ts>` first.
+  Then run the `migrate` Job before scaling the writers up.
+- **MinIO**: from a pod that mounts `store-backups`, `mc mirror /backups/minio/<bucket> store/<bucket>`.
+- **Qdrant**: upload a snapshot,
+  `curl -X POST "$QDRANT/collections/<name>/snapshots/upload?priority=snapshot" -F snapshot=@<file>`.
+
 ## 10. Database migrations (Alembic)
 
 In the cluster, migrations run as the `migrate` Job: rebuild the image and run

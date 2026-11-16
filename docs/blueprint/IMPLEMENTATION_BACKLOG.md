@@ -76,7 +76,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | PL-03 | P0 | 1 | 3 sự kiện mồ côi → 501 `UNSUPPORTED`; ẩn vault/knowledge-compile/`Fuel*` | — | BE/FE | S | không còn 202 im | doing: backend xong (501 `not_available` theo quy ước kernel, không ghi gì); còn ẩn nút ở FE |
 | PL-07 | P0 | 1 | Tắt Kafka/ClickHouse/Langfuse ở local; pin tag image | — | DevOps | S | `make e2e` xanh, 3 pod biến mất | todo |
 | PL-02 | P0 | 3 | Outbox `attempts/last_error/dead_at`; savepoint mỗi sự kiện; dead-letter + notify | — | BE/DB | M | handler lỗi không chặn lô; 5 lần → dead | todo |
-| PL-04 | P0 | 3 | Backup đủ 6 kho + restore drill | — | DevOps | M | drill ≤ 60 phút, e2e xanh sau khôi phục | todo |
+| PL-04 | P0 | 3 | Backup đủ 6 kho + restore drill | — | DevOps | M | drill ≤ 60 phút, e2e xanh sau khôi phục | doing: Postgres đủ 5 DB + roles, bỏ `\|\| true`; MinIO mirror; Qdrant snapshot; chạy thật trên cụm 17/11 (RUNBOOK §9a). Còn OpenBao (cần chuyển raft), cảnh báo job lỗi, restore drill |
 | PL-05 | P0 | 4 | `/metrics` Prometheus api + 3 worker; dashboard | — | BE/DevOps | M | p50/p95 câu hỏi trên dashboard | todo |
 | PL-08 | P0 | 4 | Idempotency/rate-limit fail-closed khi mất Redis; pin redis | — | BE | S | không Redis → 503 | todo |
 | PL-09 | P0 | 4 | Cross-org sweep tự sinh theo schema/vai | — | QA/DB | M | 184 bảng × role, 0 rò | todo |

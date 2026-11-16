@@ -375,8 +375,38 @@ class TestBackupsAreVerifiedNotAssumed:
         """A run started while PostgreSQL restarted (03/11 and 16/11) failed at once and spent its
         two retries within a minute, so no backup was taken that slot."""
         script = self._script(K8S_DIR / env / "job" / "postgres-backup.yaml", "postgres-backup")
-        assert "pg_isready" in script
-        assert script.index("pg_isready") < script.index("pg_dump")
+        assert script.index("until pg_isready") < script.index("pg_dump --format")
+
+    @pytest.mark.parametrize("env", ["dev", "production"])
+    def test_every_database_the_stack_writes_is_dumped_and_a_failure_shows(self, env):
+        """PL-04: only `dataagent` was dumped, and `|| true` let a dump that died look fine."""
+        path = K8S_DIR / env / "job" / "postgres-backup.yaml"
+        script = self._script(path, "postgres-backup")
+        listed = next(
+            d["data"]["BACKUP_DATABASES"].split()
+            for d in _docs(path)
+            if d.get("kind") == "ConfigMap"
+        )
+        assert {"dataagent", "dataagent_audit", "temporal", "temporal_visibility"} <= set(listed)
+        code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+        assert "|| true" not in code and "set -o pipefail" in code
+        assert "for db in ${BACKUP_DATABASES}" in script and "exit 1" in script
+
+    @pytest.mark.parametrize("env", ["dev", "production"])
+    def test_the_object_and_vector_stores_are_backed_up(self, env):
+        """PL-04: MinIO and Qdrant had no backup at all."""
+        script = self._script(K8S_DIR / env / "job" / "store-backup.yaml", "store-backup")
+        code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+        assert "mc mirror" in code and "--remove" not in code
+        assert "/snapshots" in script and "tar -tf" in script
+
+    def test_store_backup_may_reach_the_stores_it_reads(self):
+        allowed = {
+            d["metadata"]["name"]: yaml.dump(d)
+            for d in _docs(MANIFEST_DIR / "networkpolicy-database.yaml")
+        }
+        for policy in ("allow-minio", "allow-qdrant"):
+            assert "app: store-backup" in allowed[policy], policy
 
     @pytest.mark.parametrize("env", ["dev", "production"])
     def test_squid_keeps_no_pid_file(self, env):
