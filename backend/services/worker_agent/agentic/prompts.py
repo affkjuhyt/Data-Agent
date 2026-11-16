@@ -136,7 +136,8 @@ Bạn là chuyên viên thực hiện một bước của kế hoạch phân tí
 - Với analyze: code pandas chạy thẳng ở mức ngoài cùng (không def, không return), mỗi dataset là
   một DataFrame tên đúng mã (d1, d2…), dùng đúng tên cột đã thấy; dòng cuối gán kết quả vào biến
   result, ví dụ: result = d1.groupby("Vùng")["Doanh thu"].sum().reset_index(). Không đọc file,
-  mạng, không vẽ.
+  mạng, không vẽ. Ghép hai dataset có cột trùng tên thì đặt suffixes theo nội dung, ví dụ
+  merge(d2, on="Vùng", suffixes=(" 2011", " 2013")), không để "_x"/"_y".
 - Nếu lần trước lỗi, sửa đúng nguyên nhân lỗi.
 
 Trả về JSON: {{"args": {{...tham số đúng schema của công cụ...}}}}"""

@@ -85,6 +85,23 @@ def _x_kind(column: str, values: list[Any]) -> str:
     return "category"
 
 
+# Years only: a ranked axis of 4-digit codes (product 1234) is not reordered.
+_ISO_TIME = re.compile(r"^((?:19|20)\d{2})(?:-(\d{1,2})(?:-(\d{1,2}))?|-?q([1-4]))?$", re.I)
+_LOCAL_TIME = re.compile(r"^(?:q([1-4])|t?(\d{1,2}))[/-]((?:19|20)\d{2})$", re.I)
+
+
+def time_order(value: Any) -> tuple[int, int, int] | None:
+    """Where a member of a time axis falls ("2013-05", "2013-Q2", "05/2013", "Q2/2013"), or None
+    for one that is not a period."""
+    text = str(value).strip() if value is not None else ""
+    if m := _ISO_TIME.match(text):
+        month = int(m.group(2) or 0) or int(m.group(4) or 0) * 3
+        return int(m.group(1)), month, int(m.group(3) or 0)
+    if m := _LOCAL_TIME.match(text):
+        return int(m.group(3)), int(m.group(1) or 0) * 3 or int(m.group(2)), 0
+    return None
+
+
 def _pct(value: float) -> str:
     return f"{abs(value):,.1f}".replace(",", " ").replace(".", ",").replace(" ", ".")
 
@@ -412,11 +429,17 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
             # Series named by periods are drawn earlier first: "Doanh thu 2013" came before
             # "Doanh thu 2012" in the legend and the bars when the model listed them that way.
             y = [c for _, c in sorted(zip(keys, y, strict=True))]
+        # A time axis is drawn in time order: a reading ranked by value ("top_desc") drew its
+        # months 12, 6, 10… and its line read "Từ 2013-12 đến 2013-02 giảm 58,8%" (16/11).
+        rows = ds.rows
+        order = [time_order(plain(r[ds.columns.index(x)])) for r in rows]
+        if rows and all(k is not None for k in order):
+            rows = [r for _, r in sorted(zip(order, rows, strict=True), key=lambda p: p[0])]
         # Fitted on every row, not the first MAX_CHART_POINTS: a chart of the first 120 days of a
         # year drew a line that stopped in May with nothing saying the rest was missing.
-        x_values = [plain(r[ds.columns.index(x)]) for r in ds.rows]
-        measures = [[number(r[ds.columns.index(c)]) for r in ds.rows] for c in y]
-        fits = fitting_charts(_x_kind(x, x_values), measures, len(ds.rows))
+        x_values = [plain(r[ds.columns.index(x)]) for r in rows]
+        measures = [[number(r[ds.columns.index(c)]) for r in rows] for c in y]
+        fits = fitting_charts(_x_kind(x, x_values), measures, len(rows))
         if not fits:
             # No chart fits these rows (one row, too many members or points): they are shown as a
             # table, which says how many rows there are.
@@ -425,7 +448,7 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
             )
         chart_type = draft.chart_type if draft.chart_type in fits else fits[0]
         data = []
-        for r in ds.rows:
+        for r in rows:
             point: dict[str, Any] = {x: plain(r[ds.columns.index(x)])}
             for c in y:
                 point[c] = number(r[ds.columns.index(c)])

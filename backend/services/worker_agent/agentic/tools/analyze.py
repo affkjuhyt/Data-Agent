@@ -25,8 +25,24 @@ def mode() -> str:
 
 
 _SUFFIXED = re.compile(r"^(.+)_(x|y)$")
-# Which dataset is the left of a merge, which the right: "d1.merge(d2" or "merge(d1, d2".
-_MERGE = re.compile(r"\b(d\d+)\s*\.\s*merge\(\s*(d\d+)\b|\bmerge\(\s*(d\d+)\s*,\s*(d\d+)\b")
+# Which frame is the left of a merge, which the right: "pd.merge(a, b" (tried first, so "pd" is
+# not read as the left frame), "a.merge(b" or "merge(a, b".
+_MERGE = re.compile(
+    r"\b(?:pd|pandas)\s*\.\s*merge\(\s*(\w+)\s*,\s*(\w+)\b"
+    r"|\b(\w+)\s*\.\s*merge\(\s*(\w+)\b"
+    r"|\bmerge\(\s*(\w+)\s*,\s*(\w+)\b"
+)
+# "df_2011 = d1", "a = d2.copy()", "b = d1[d1['x'] > 0]": a name for a dataset's frame.
+_ALIAS = re.compile(r"^\s*(\w+)\s*=\s*(\w+)\b", re.MULTILINE)
+
+
+def _dataset_of(name: str, aliases: dict[str, str]) -> str:
+    """The dataset a frame's name comes from, through the code's aliases."""
+    for _ in range(5):
+        if name not in aliases:
+            break
+        name = aliases[name]
+    return name
 
 
 def _side(ds: Dataset, other: Dataset) -> str | None:
@@ -43,7 +59,8 @@ def merged_names(
 ) -> dict[str, str] | None:
     """New names for the "<name>_x"/"<name>_y" columns pandas gives a merge of two readings of one
     metric ("Doanh thu_x" → "Doanh thu 2012"), from what each side read; {} when there are none,
-    None when the two sides cannot be told apart, for the model to name them itself."""
+    None when the two sides cannot be told apart (the columns are then kept: a wrong year on a
+    series is worse than pandas' suffix, and refusing the result lost the chart, 16/11)."""
     pairs = {m.group(1) for c in columns if (m := _SUFFIXED.match(c))}
     pairs = {stem for stem in pairs if f"{stem}_x" in columns and f"{stem}_y" in columns}
     if not pairs:
@@ -51,7 +68,8 @@ def merged_names(
     found = _MERGE.search(code)
     if found is None:
         return None
-    left, right = [g for g in found.groups() if g][:2]
+    aliases = {a: b for a, b in _ALIAS.findall(code) if a != b}
+    left, right = (_dataset_of(g, aliases) for g in [g for g in found.groups() if g][:2])
     if left not in datasets or right not in datasets:
         return None
     names = (_side(datasets[left], datasets[right]), _side(datasets[right], datasets[left]))
@@ -120,16 +138,8 @@ class Analyze(Tool):
                 detail={"error": done.error},
                 failure="arguments",
             )
-        renamed = merged_names(list(done.columns), args.code, ctx.ws.datasets)
-        if renamed is None:
-            # "Doanh thu_x"/"Doanh thu_y" reached the chart's legend (16/11): which is which is
-            # the model's to say when the readings do not.
-            return ToolResult(
-                False,
-                "kết quả có cột hậu tố _x/_y của pandas merge; đặt tên cột theo nội dung, "
-                "ví dụ merge(..., suffixes=(' 2012', ' 2013')) hoặc rename",
-                failure="arguments",
-            )
+        # "Doanh thu_x"/"Doanh thu_y" reached the chart's legend (16/11).
+        renamed = merged_names(list(done.columns), args.code, ctx.ws.datasets) or {}
         sources = [ctx.ws.datasets[i] for i in inputs]
         units = {s.unit for s in sources if s.unit}
         ds = ctx.ws.add(

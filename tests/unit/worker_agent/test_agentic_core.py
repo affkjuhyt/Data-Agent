@@ -179,6 +179,17 @@ def test_series_named_by_periods_are_drawn_earlier_first_and_read_together() -> 
     assert b.series_insight(months, [[10.0, 14.0], [10.0, 5.0]], ["Internet", "Đại lý"]) == (
         "Từ 2013-01 đến 2013-12: Internet tăng 40,0%, Đại lý giảm 50,0%."
     )
+    # A reading ranked by value is drawn along time, and read from its first month.
+    ws.add(
+        title="Doanh thu theo tháng",
+        columns=["Tháng", "Doanh thu"],
+        rows=[["2013-12", 18], ["2013-01", 9], ["2013-06", 16]],
+        trust="certified",
+    )
+    line = b.materialize(b.BlockDraft(type="chart", dataset="d2", chart_type="line"), ws, "c3")
+    assert [p["Tháng"] for p in line["spec"]["data"]] == ["2013-01", "2013-06", "2013-12"]
+    assert line["insight"].startswith("Từ 2013-01 đến 2013-12 tăng 100,0%")
+    assert b.time_order("Q2/2013") == (2013, 6, 0) and b.time_order("1234") is None
     # Two quantities side by side have no change between them to read: no line, not a wrong one.
     ws.add(
         title="Doanh thu và biên",
@@ -187,7 +198,7 @@ def test_series_named_by_periods_are_drawn_earlier_first_and_read_together() -> 
         trust="derived",
     )
     assert "insight" not in b.materialize(
-        b.BlockDraft(type="chart", dataset="d2", chart_type="bar"), ws, "c2"
+        b.BlockDraft(type="chart", dataset="d3", chart_type="bar"), ws, "c2"
     )
 
 
@@ -207,6 +218,12 @@ def test_a_merge_of_two_readings_is_named_by_what_each_read() -> None:
     assert merged_names(cols, "result = d2.merge(d1, on='Vùng')", ws.datasets) == {
         "Doanh thu_x": "Doanh thu 2013",
         "Doanh thu_y": "Doanh thu 2012",
+    }
+    # Through the code's names for the frames (the 4B model wrote df_2011 = d1, 16/11).
+    aliased = "df_2012 = d1\ndf_2013 = d2.copy()\nresult = pd.merge(df_2012, df_2013, on='Vùng')"
+    assert merged_names(cols, aliased, ws.datasets) == {
+        "Doanh thu_x": "Doanh thu 2012",
+        "Doanh thu_y": "Doanh thu 2013",
     }
     assert merged_names(["Vùng", "Doanh thu"], "result = d1", ws.datasets) == {}
     # Sides that cannot be told apart are the model's to name.
