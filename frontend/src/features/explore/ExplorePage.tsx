@@ -271,14 +271,13 @@ function Explorer({ model: base }: { model: ExploreModel }) {
         metric_ids: filled.metric_ids,
         dimension_ids: filled.dimension_ids,
         filters: filled.filters,
+        period: filled.period ?? null,
+        grain: filled.grain ?? null,
       });
       setMode('drag');
-      toast({
-        tone: 'success',
-        message: 'Agent đã điền kệ từ câu hỏi — kiểm tra trước khi dùng số.',
-      });
+      toast({ tone: 'success', message: 'Đã điền kệ từ câu hỏi — kiểm tra trước khi dùng số.' });
     } catch (e) {
-      toast({ tone: 'error', message: `Agent chưa hiểu câu hỏi: ${(e as Error).message}` });
+      toast({ tone: 'error', message: (e as Error).message });
     } finally {
       setInterpreting(false);
     }
