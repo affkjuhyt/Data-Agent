@@ -256,6 +256,17 @@ def test_the_live_timeline_says_what_each_step_found_from_its_data() -> None:
     assert narrate.said("query_metric", refused, ws, vocab) == (
         "Không chỉ số chuẩn nào đo 'khach hang'"
     )
+    # A comparison's base period is not its value: the first measure after the cut is.
+    ws.add(
+        title="Doanh thu tháng 12/2013",
+        columns=["Nhóm vùng", "Doanh thu", "Doanh thu (kỳ so sánh)"],
+        rows=[["Europe", 500, 90], ["North America", 900, 40]],
+        trust="certified",
+    )
+    compared = ToolResult(True, "…", ["d2"])
+    assert narrate.said("query_metric", compared, ws, vocab).endswith(
+        "cao nhất North America (900)."
+    )
     crashed = ToolResult(False, "code lỗi: NameError: x", failure="arguments")
     assert narrate.said("analyze", crashed, ws, vocab).startswith("Tham số chưa đúng")
     coverage = ToolResult(

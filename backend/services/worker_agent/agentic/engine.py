@@ -868,12 +868,12 @@ async def compose(s: State) -> None:
     allowed = verify.allowed_numbers(
         s.ctx.question, ws, [c["source"] for c in ws.citations] + periods
     )
-    tables = len(s.ctx.ws.datasets) if s.ctx else 0
     async with turn_trace.stepping(
         "write_answer",
         title="Soạn câu trả lời",
-        # Live: what the answer is written from.
-        target=f"từ {tables} bảng số đã đọc" if tables else "",
+        # Live: what the answer is written from (a count read "7 bảng" where the reader saw two
+        # steps: the analysis of a change keeps a table per cut it tried).
+        target="từ số liệu đã đọc" if s.ctx and s.ctx.ws.datasets else "",
     ) as handle:
         drafts: list[b.BlockDraft] = []
         errors: list[str] = []

@@ -48,7 +48,13 @@ def _highlight(ds: Dataset) -> str:
     (1.874.360,29)"."""
     if len(ds.columns) < 2 or not ds.rows:
         return ""
-    measure = len(ds.columns) - 1
+    # The first measure after the cut: the reading's own value. The last column was the base
+    # period of a comparison and said "cao nhất North America (37.119,84)" of December (16/11).
+    measure = next(
+        (i for i in range(1, len(ds.columns)) if number(ds.rows[0][i]) is not None), None
+    )
+    if measure is None or number(ds.rows[0][0]) is not None:
+        return ""
     best: tuple[Any, float] | None = None
     for row in ds.rows:
         value = number(row[measure])
