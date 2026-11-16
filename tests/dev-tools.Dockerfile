@@ -13,7 +13,8 @@ COPY backend/services/crawler/requirements.txt /tmp/reqs/crawler.txt
 # It is also the base of the `repo` unit suite (tests/unit/repo: manifests, Ansible, model/),
 # which reads YAML (PyYAML pinned here rather than left to arrive through uvicorn[standard])
 # and runs model/eval's offline tier (the metric compiler's sqlparse pin; sqlglot comes from
-# the api's requirements).
+# the api's requirements). pyarrow reads the TLC trip Parquet files for `make tlc`.
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -q ruff==0.6.9 mypy==2.4.0 import-linter==2.1 pyyaml==6.0.3 sqlparse==0.5.1 \
+      pyarrow==26.0.1 \
       -r /tmp/reqs/api.txt -r /tmp/reqs/worker_agent.txt -r /tmp/reqs/crawler.txt

@@ -204,6 +204,25 @@ adventureworks: dev-tools  ## load AdventureWorksDW into the cluster's PostgreSQ
 	@$(AW_LOAD) sql --cache /cache --reader "$(AW_READER)" | $(AW_PSQL) -d "$(AW_DATABASE)"
 	@$(AW_PSQL) -d "$(AW_DATABASE)" -tAc "SELECT 'fact_internet_sales rows: ' || count(*) FROM fact_internet_sales"
 
+# NYC TLC Trip Record Data, the real dataset of DS-TLC (tests/e2e/tlc, EV-01): the Parquet months,
+# zone table and data dictionaries pinned by sha256 in sources.json, loaded as published (bad rows
+# included) into their own database, readable by TLC_READER. Rerunning reloads it in one
+# transaction; the cache keeps the ~170 MB download. nyc.gov terms: internal evaluation only.
+TLC_CACHE ?= $(HOME)/.cache/dataagent/tlc
+TLC_DATABASE ?= tlc_trips
+TLC_READER ?= app_user
+TLC_LOAD = docker run --rm -i -v "$(PWD)/tests/e2e/tlc:/tlc:ro" -v "$(TLC_CACHE):/cache" \
+	$(DEV_TOOLS_IMAGE) python -I /tlc/load.py
+.PHONY: tlc
+
+tlc: dev-tools  ## load the NYC TLC trip snapshot into the cluster's PostgreSQL (TLC_DATABASE, TLC_READER)
+	@mkdir -p "$(TLC_CACHE)" && $(TLC_LOAD) fetch --cache /cache
+	@$(AW_PSQL) -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$(TLC_DATABASE)'" | grep -q 1 || \
+	  $(AW_PSQL) -d postgres -c 'CREATE DATABASE "$(TLC_DATABASE)"'
+	@$(AW_PSQL) -d postgres -c 'GRANT CONNECT ON DATABASE "$(TLC_DATABASE)" TO "$(TLC_READER)"'
+	@$(TLC_LOAD) sql --cache /cache --reader "$(TLC_READER)" | $(AW_PSQL) -d "$(TLC_DATABASE)"
+	@$(AW_PSQL) -d "$(TLC_DATABASE)" -tAc "SELECT source_file || ': ' || count(*) FROM (SELECT source_file FROM yellow_trip UNION ALL SELECT source_file FROM green_trip) t GROUP BY source_file ORDER BY source_file"
+
 # The document corpus of DS-AW (tests/e2e/adventureworks/documents.py): the files of
 # deploy/docker/adventureworks-docs/ read by worker-document's own extractor and chunker, written as
 # the db-init seed. Rerun after editing a file or the pipeline; a stale seed fails the unit tests.
