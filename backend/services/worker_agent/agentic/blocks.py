@@ -85,6 +85,37 @@ def _x_kind(column: str, values: list[Any]) -> str:
     return "category"
 
 
+def _pct(value: float) -> str:
+    return f"{abs(value):,.1f}".replace(",", " ").replace(".", ",").replace(" ", ".")
+
+
+def chart_insight(
+    chart_type: str, x_kind: str, x_values: list[Any], values: list[float | None]
+) -> str | None:
+    """One line under a chart's title (E2), computed here from the drawn rows, never by the
+    model: over time the change from the first to the last point and where it peaked; a share
+    chart its largest part; a bar chart its highest and lowest member. Names and percentages only,
+    so no figure is written twice in two formats."""
+    points = [(x, v) for x, v in zip(x_values, values, strict=False) if v is not None]
+    if len(points) < 2:
+        return None
+    high = max(points, key=lambda p: p[1])
+    low = min(points, key=lambda p: p[1])
+    if x_kind == "time":
+        (first_x, first), (last_x, last) = points[0], points[-1]
+        line = f"Từ {first_x} đến {last_x}"
+        if first > 0:
+            change = (last - first) / first * 100
+            line += f" {'tăng' if change >= 0 else 'giảm'} {_pct(change)}%"
+        return f"{line}; cao nhất {high[0]}, thấp nhất {low[0]}."
+    if chart_type == "pie":
+        total = sum(v for _, v in points)
+        if total > 0 and low[1] >= 0:
+            return f"{high[0]} lớn nhất, chiếm {_pct(high[1] / total * 100)}% tổng."
+        return None
+    return f"{high[0]} cao nhất, {low[0]} thấp nhất."
+
+
 def chart_fits(chart_type: str, x_kind: str, measures: list[list[float | None]], rows: int) -> bool:
     role = CHART_ROLES.get(chart_type)
     if role is None:
@@ -306,6 +337,14 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
             spec["series"] = [
                 {"key": c, "type": "bar" if i == 0 else "line"} for i, c in enumerate(y)
             ]
+        insight = chart_insight(chart_type, _x_kind(x, x_values), x_values, measures[0])
         # The other types the same rows fit: the chart's switcher offers them (chart adjustment).
-        return {**base, "spec": spec, "alternatives": fits, "unit": ds.unit, **_source(ds)}
+        return {
+            **base,
+            "spec": spec,
+            "alternatives": fits,
+            "unit": ds.unit,
+            **({"insight": insight} if insight else {}),
+            **_source(ds),
+        }
     raise BlockError(f"không biết block {t}")

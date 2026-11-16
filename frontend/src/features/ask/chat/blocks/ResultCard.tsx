@@ -30,8 +30,11 @@ export function ResultCard({
   onExportCsv,
   onSaveToSession,
   onPick,
+  subtitle,
 }: {
   title: string;
+  /** One line under the title: the reading the server computed from the drawn rows (E2). */
+  subtitle?: string;
   chart: ChartSpec | null;
   columns: string[];
   rows: Record<string, unknown>[];
@@ -111,6 +114,7 @@ export function ResultCard({
         )}
         {menu.length > 0 && <Menu label="Thêm thao tác với kết quả" items={menu} />}
       </header>
+      {subtitle && <p className="m-0 text-muted-foreground da-body-small">{subtitle}</p>}
       {body(false)}
       <Dialog open={full} title={title} size="lg" onClose={() => setFull(false)}>
         {body(true)}

@@ -130,7 +130,9 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
       <ResultCard
         key={type}
         title={spec.title || str(block.title) || 'Biểu đồ'}
-        chart={shown}
+        subtitle={str(block.insight) || undefined}
+        // The card's header carries the title: drawn again inside the chart it showed twice.
+        chart={{ ...shown, title: '' }}
         columns={[spec.x_key, ...spec.y_keys]}
         rows={spec.data}
         rowCount={spec.data.length}

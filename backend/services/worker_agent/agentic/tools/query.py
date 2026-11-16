@@ -30,7 +30,7 @@ from services.worker_agent.sqlgen.run import explore
 from services.worker_agent.sqlgen.schema import link
 from services.worker_agent.sqlgen.space import load_space
 from services.worker_agent.understand import analyst
-from services.worker_agent.understand.grain import find_grain
+from services.worker_agent.understand.grain import GRAIN_LABELS, find_grain
 from services.worker_agent.understand.packs.base import iso_answer
 from services.worker_agent.understand.resolver import metric_words, quantity_words
 
@@ -261,6 +261,11 @@ class QueryMetric(Tool):
                 failure="transient" if is_transient(outcome.status, outcome.error) else "logic",
             )
         names = {d.code: d.name for d in ctx.layer.vocabulary.dimensions}
+        if args.grain in GRAIN_LABELS:
+            # A time cut read at a grain is that grain ("Tháng"), not the date column it is read
+            # from ("Ngày đặt hàng (Internet)"): it names the chart's axis and its title.
+            for code in times & set(group_by):
+                names[code] = GRAIN_LABELS[args.grain].capitalize()
         columns = [
             names.get(col)
             or (
@@ -270,7 +275,9 @@ class QueryMetric(Tool):
             )
             for col in compiled.columns
         ]
-        cut_names = ", ".join(names.get(g, g) for g in group_by)
+        cut_names = ", ".join(
+            names.get(g, g).lower() if g in times else names.get(g, g) for g in group_by
+        )
         title = args.title or (entry.name + (f" theo {cut_names}" if cut_names else ""))
         if moved is not None:
             title = f"{title} ({coverage.iso(moved[1])})"

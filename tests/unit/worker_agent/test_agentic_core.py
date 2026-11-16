@@ -76,6 +76,7 @@ def test_a_chart_and_a_kpi_take_their_figures_from_the_dataset() -> None:
         {"Vùng": "Pacific", "Doanh thu": 250000.0},
     ]
     assert chart["trust"] == "certified"
+    assert chart["insight"] == "Europe cao nhất, Pacific thấp nhất."
     kpi = b.materialize(
         b.BlockDraft(
             type="kpi",
@@ -110,6 +111,21 @@ def test_a_chart_and_a_kpi_take_their_figures_from_the_dataset() -> None:
         b.materialize(b.BlockDraft(type="table", dataset="d9"), ws, "b3")
     with pytest.raises(b.BlockError):
         b.materialize(b.BlockDraft(type="chart", dataset="d1", x="Năm"), ws, "b4")
+
+
+def test_a_charts_one_line_reading_is_computed_from_its_rows() -> None:
+    months = ["2013-01", "2013-06", "2013-12"]
+    assert (
+        b.chart_insight("line", "time", months, [857689.91, 1643177.78, 1874360.29])
+        == "Từ 2013-01 đến 2013-12 tăng 118,5%; cao nhất 2013-12, thấp nhất 2013-01."
+    )
+    shares = b.chart_insight("pie", "category", ["Bikes", "Clothing"], [42302193.5, 1202657.7])
+    assert shares == "Bikes lớn nhất, chiếm 97,2% tổng."
+    # One point says nothing; a missing value is left out, not read as zero.
+    assert b.chart_insight("line", "time", ["2013-01"], [1.0]) is None
+    assert b.chart_insight("bar", "category", ["A", "B", "C"], [3.0, None, 1.0]) == (
+        "A cao nhất, C thấp nhất."
+    )
 
 
 def test_a_sentence_with_an_untraced_number_is_dropped_and_tags_are_filled() -> None:

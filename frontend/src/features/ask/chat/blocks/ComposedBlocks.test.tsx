@@ -37,10 +37,14 @@ describe('ComposedBlocks', () => {
         id: 'c1',
         composed: true,
         alternatives: ['line', 'bar'],
+        insight: 'Từ 2013-01 đến 2013-02 tăng 100,0%; cao nhất 2013-02, thấp nhất 2013-01.',
         spec: { chart_type: 'line', title: 'Doanh thu', x_key: 'Tháng', y_keys: ['v'], data: [{ Tháng: '2013-01', v: 1 }, { Tháng: '2013-02', v: 2 }] },
       },
     ] as unknown as AnswerBlockView[];
     render(<ComposedBlocks blocks={chart} />);
+    // E2: the title once, in the card's header, and the server's one-line reading under it.
+    expect(screen.getAllByText('Doanh thu')).toHaveLength(1);
+    expect(screen.getByText(/tăng 100,0%; cao nhất 2013-02/)).toBeInTheDocument();
     const group = screen.getByRole('group', { name: 'Kiểu biểu đồ' });
     expect(group).toHaveTextContent('Đường');
     fireEvent.click(screen.getByRole('button', { name: 'Cột' }));
