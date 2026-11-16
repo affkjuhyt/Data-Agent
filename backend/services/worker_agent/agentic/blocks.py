@@ -140,6 +140,9 @@ def _side_name(label: str, other: str) -> str:
     shared = 0
     while shared < min(len(a), len(b)) - 1 and a[shared] == b[shared]:
         shared += 1
+    # "tháng 3/2013", not "3/2013": the word that says which kind of period stays.
+    if shared and a[shared - 1].lower() in ("tháng", "quý", "năm"):
+        shared -= 1
     return " ".join(a[shared:]) or label
 
 
@@ -199,9 +202,10 @@ def series_insight(
 
 
 # The period a series is named by, at its end: "Doanh thu 2012", "Doanh thu 2013-05",
-# "Doanh thu 2013-Q3", "Doanh thu Q3/2013".
+# "Doanh thu 2013-Q3", "Doanh thu Q3/2013", "Doanh thu tháng 3/2013", "Doanh thu quý 3/2013".
 _SERIES_PERIOD = re.compile(
-    r"(?:Q([1-4])[/ ])?((?:19|20)\d{2})(?:-(?:Q([1-4])|(\d{1,2})))?\)?$", re.IGNORECASE
+    r"(?:(?:Q|quý\s?)([1-4])[/ ]|(\d{1,2})/)?((?:19|20)\d{2})(?:-(?:Q([1-4])|(\d{1,2})))?\)?$",
+    re.IGNORECASE,
 )
 
 
@@ -210,8 +214,9 @@ def period_key(label: str) -> tuple[int, int] | None:
     m = _SERIES_PERIOD.search(label.strip())
     if m is None:
         return None
-    quarter = m.group(1) or m.group(3)
-    return int(m.group(2)), int(quarter) * 3 if quarter else int(m.group(4) or 0)
+    quarter = m.group(1) or m.group(4)
+    month = m.group(2) or m.group(5)
+    return int(m.group(3)), int(quarter) * 3 if quarter else int(month or 0)
 
 
 def chart_fits(chart_type: str, x_kind: str, measures: list[list[float | None]], rows: int) -> bool:

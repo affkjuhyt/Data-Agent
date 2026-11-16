@@ -152,6 +152,35 @@ def test_the_cut_a_question_names_is_found_by_its_full_name() -> None:
     assert named_cut("Doanh thu theo vùng năm 2013", vocab, allowed) is None
 
 
+def test_two_periods_of_one_kind_are_read_side_by_side() -> None:
+    import datetime
+
+    from services.worker_agent.agentic.tools.query import side_by_side, two_periods
+
+    months = two_periods("So sánh doanh thu tháng 8/2013 với tháng 3/2013")
+    assert months is not None
+    assert [label for _, label in months] == ["tháng 3/2013", "tháng 8/2013"]
+    assert months[0][0].start == datetime.date(2013, 3, 1)
+    assert months[0][0].end == datetime.date(2013, 4, 1)
+    quarters = two_periods("Doanh thu quý 4/2012 so với quý 3/2013 theo vùng")
+    assert quarters is not None and quarters[1][0].end == datetime.date(2013, 10, 1)
+    years = two_periods("So sánh doanh thu theo vùng năm 2011 và 2013")
+    assert years is not None and [label for _, label in years] == ["2011", "2013"]
+    # Adjacent years are one comparison (two_years); one period is no comparison.
+    assert two_periods("So sánh doanh thu năm 2012 và 2013") is None
+    assert two_periods("Doanh thu tháng 8/2013") is None
+    columns, rows = side_by_side(
+        ["vung", "value"],
+        ["Vùng", "Doanh thu"],
+        [["Europe", 1.0], ["Canada", 2.0]],
+        [["Europe", 3.0], ["Pacific", 4.0]],
+        ("Doanh thu 2011", "Doanh thu 2013"),
+    )
+    assert columns == ["Vùng", "Doanh thu 2011", "Doanh thu 2013"]
+    # A member one period lacks is empty there, not dropped.
+    assert rows == [["Europe", 1.0, 3.0], ["Canada", 2.0, None], ["Pacific", None, 4.0]]
+
+
 def test_two_adjacent_years_are_read_as_a_comparison() -> None:
     from services.worker_agent.agentic.tools.query import two_years
 
@@ -190,6 +219,8 @@ def test_series_named_by_periods_are_drawn_earlier_first_and_read_together() -> 
     assert [p["Tháng"] for p in line["spec"]["data"]] == ["2013-01", "2013-06", "2013-12"]
     assert line["insight"].startswith("Từ 2013-01 đến 2013-12 tăng 100,0%")
     assert b.time_order("Q2/2013") == (2013, 6, 0) and b.time_order("1234") is None
+    assert b.period_key("Doanh thu tháng 3/2013") == (2013, 3)
+    assert b.period_key("Doanh thu quý 3/2013") == (2013, 9)
     # Two quantities side by side have no change between them to read: no line, not a wrong one.
     ws.add(
         title="Doanh thu và biên",

@@ -4,6 +4,8 @@ executor, so row and column policies apply and every run is recorded (invariant 
 
 from __future__ import annotations
 
+import dataclasses
+import datetime
 import json
 import re
 import uuid
@@ -66,6 +68,65 @@ def two_years(question: str) -> tuple[int, int] | None:
         return None
     a, b = sorted((int(m.group(1)), int(m.group(2))))
     return (a, b) if b - a == 1 else None
+
+
+_MONTH = re.compile(r"\bthang (\d{1,2})[/-]((?:19|20)\d{2})\b")
+_QUARTER = re.compile(r"\b(?:quy |q)([1-4])[/-]((?:19|20)\d{2})\b")
+_ANY_YEARS = re.compile(r"\bnam ((?:19|20)\d{2}) (?:va|voi|so voi|,) (?:nam )?((?:19|20)\d{2})\b")
+
+Side = tuple[c.Period, str]
+
+
+def _months_on(day: datetime.date, months: int) -> datetime.date:
+    index = day.year * 12 + day.month - 1 + months
+    return datetime.date(index // 12, index % 12 + 1, 1)
+
+
+def two_periods(question: str) -> tuple[Side, Side] | None:
+    """Two periods of one kind a question compares — months ("tháng 8/2013 với tháng 3/2013"),
+    quarters ("quý 3/2013 so với quý 4/2012") or years ("năm 2011 và 2013") — earlier first, each
+    with the words it is said by. Adjacent years are two_years' (read as one comparison)."""
+    text = norm(question)
+    found: list[Side] = []
+    for m, y in dict.fromkeys(_MONTH.findall(text)):
+        if 1 <= int(m) <= 12:
+            start = datetime.date(int(y), int(m), 1)
+            found.append((c.Period(start, _months_on(start, 1)), f"tháng {int(m)}/{y}"))
+    if len(found) != 2:
+        found = []
+        for q, y in dict.fromkeys(_QUARTER.findall(text)):
+            start = datetime.date(int(y), 3 * int(q) - 2, 1)
+            found.append((c.Period(start, _months_on(start, 3)), f"quý {q}/{y}"))
+    if len(found) != 2:
+        found = []
+        years = _ANY_YEARS.search(text)
+        if years and years.group(1) != years.group(2) and two_years(question) is None:
+            for y in (int(years.group(1)), int(years.group(2))):
+                found.append((c.Period(datetime.date(y, 1, 1), datetime.date(y + 1, 1, 1)), str(y)))
+    if len(found) != 2:
+        return None
+    a, b = sorted(found, key=lambda s: s[0].start)
+    return a, b
+
+
+def side_by_side(
+    codes: list[str],
+    labels: list[str],
+    rows_a: list[list[Any]],
+    rows_b: list[list[Any]],
+    names: tuple[str, str],
+) -> tuple[list[str], list[list[Any]]]:
+    """Two readings of one metric, one per period, as one table: the cuts, then each period's
+    value ("Doanh thu 2011", "Doanh thu 2013"). A member one period lacks is empty there."""
+    value = codes.index("value")
+    keys = [i for i in range(len(codes)) if i != value]
+    merged: dict[tuple[Any, ...], list[Any]] = {}
+    for row in rows_a:
+        merged[tuple(row[i] for i in keys)] = [row[value], None]
+    for row in rows_b:
+        merged.setdefault(tuple(row[i] for i in keys), [None, None])[1] = row[value]
+    columns = [labels[i] for i in keys] + list(names)
+    return columns, [[*key, *values] for key, values in merged.items()]
 
 
 _COLUMN_LABEL = {
@@ -171,6 +232,19 @@ class QueryMetric(Tool):
                 "value": f"{entry.name} {later}",
                 "base_value": f"{entry.name} {earlier}",
             }
+        # Two periods of one kind compared, other than two adjacent years ("tháng 8/2013 với tháng
+        # 3/2013", "năm 2011 và 2013"): read once per period and set side by side here. The planner
+        # read them twice and merged them in Python, which the 4B model wrote broken (16/11).
+        pair: tuple[Side, Side] | None = None
+        if (
+            not side_labels
+            and args.compare_to is None
+            and args.analysis is None
+            and not times_all & set(args.group_by)
+        ):
+            pair = two_periods(ctx.question)
+            if pair is not None:
+                args = args.model_copy(update={"period": None, "grain": None})
         # A quantity the question asks that no certified metric of the catalogue names ("khách
         # hàng" where only units sold exist): no reading of this one will answer it.
         catalogue: set[str] = set()
@@ -206,6 +280,8 @@ class QueryMetric(Tool):
             move = ctx.period_moves.get(args.metric)
             if move is not None and period.start < move[0].end and move[0].start < period.end:
                 moved, period = (period, move[1]), move[1]
+        if pair is not None:
+            period = pair[0][0]
         allowed = {
             d.code
             for d in ctx.layer.vocabulary.dimensions
@@ -334,6 +410,49 @@ class QueryMetric(Tool):
         )
         title = args.title or (entry.name + (f" theo {cut_names}" if cut_names else ""))
         rows = [list(r) for r in outcome.rows]
+        query_runs = [str(outcome.query_run_id)]
+        if pair is not None:
+            second = dataclasses.replace(request, period=pair[1][0])
+            try:
+                compiled_b = c.compile_metric(second, ctx.layer.layer, dialect=dialect)
+            except (c.CompileError, SqlRejected) as exc:
+                return ToolResult(
+                    False, f"không compile được kỳ {pair[1][1]}: {exc}", failure="logic"
+                )
+            outcome_b = await run_query(
+                org_id=ctx.org_id,
+                data_space_id=ctx.space_id,
+                principal_id=ctx.user_id,
+                caller_kind="question",
+                caller_id=ctx.question_id,
+                source=source,
+                sql=compiled_b.sql,
+                secrets=_secrets(),
+                metric_version_ids=[compiled_b.metric_version_id],
+                as_of=ctx.as_of,
+            )
+            if not outcome_b.ok:
+                return ToolResult(
+                    False,
+                    f"truy vấn kỳ {pair[1][1]} lỗi ở nguồn",
+                    detail=detail,
+                    failure="transient"
+                    if is_transient(outcome_b.status, outcome_b.error)
+                    else "logic",
+                )
+            columns, rows = side_by_side(
+                list(compiled.columns),
+                columns,
+                rows,
+                [list(r) for r in outcome_b.rows],
+                (f"{entry.name} {pair[0][1]}", f"{entry.name} {pair[1][1]}"),
+            )
+            query_runs.append(str(outcome_b.query_run_id))
+            title = args.title or (
+                entry.name
+                + (f" theo {cut_names[:1].lower()}{cut_names[1:]}" if cut_names else "")
+                + f", {pair[0][1]} so với {pair[1][1]}"
+            )
         if side_labels and years:
             # "Doanh thu theo vùng bán hàng, 2012 so với 2013": a cut's name lowercased inside the
             # sentence, and the earlier year first, so the chart reads left to right in time.
@@ -359,7 +478,7 @@ class QueryMetric(Tool):
             columns=columns,
             rows=rows,
             trust="certified" if compiled.certified else "exploratory",
-            query_run_ids=[str(outcome.query_run_id)],
+            query_run_ids=query_runs,
             metric_version_ids=[str(compiled.metric_version_id)],
             step_id=ctx.step_id,
             tool=self.name,
@@ -372,7 +491,11 @@ class QueryMetric(Tool):
                 # What sets this reading apart from another of the same metric: a merge of the two
                 # in run_python names its columns by them, not by pandas' "_x"/"_y".
                 "metric_name": entry.name,
-                "period": coverage.iso(period) if period is not None else None,
+                "period": f"{pair[0][1]} và {pair[1][1]}"
+                if pair is not None
+                else coverage.iso(period)
+                if period is not None
+                else None,
                 "group_by": group_by,
                 "filters": {k: list(v) for k, v in args.filters.items()},
                 # Which column is which cut: a point picked on the chart names its column's label,
@@ -394,7 +517,7 @@ class QueryMetric(Tool):
             if moved is not None
             else ""
         )
-        if not outcome.rows:
+        if not rows:
             return ToolResult(
                 True,
                 f"{said}{ds.id}: 0 dòng (không có dữ liệu cho kỳ/bộ lọc này)",
