@@ -314,11 +314,14 @@ def test_the_command_line_exports_and_dry_runs(
     assert [m["name"] for m in exported["metrics"]] == ["DU_NO", "NPL_RATIO"]
 
 
-async def test_the_adventureworks_model_imports_whole(seed: Seed) -> None:
-    # deploy/docker/semantic/ds-aw.yaml, the model DS-AW is tested with, on AdventureWorksDW's
-    # tables as a scan of the source catalogues them.
+@pytest.mark.parametrize(
+    ("file", "database"), [("ds-aw.yaml", "adventureworks_dw"), ("ds-tlc.yaml", "tlc_trips")]
+)
+async def test_the_demo_models_import_whole(seed: Seed, file: str, database: str) -> None:
+    # deploy/docker/semantic/: the models DS-AW (AdventureWorksDW) and DS-TLC (the NYC TLC trip
+    # records) are tested with, on their tables as a scan of the source catalogues them.
     space = Space(seed)
-    text = (pathlib.Path(__file__).parents[3] / "deploy/docker/semantic/ds-aw.yaml").read_text(
+    text = (pathlib.Path(__file__).parents[3] / "deploy/docker/semantic" / file).read_text(
         encoding="utf-8"
     )
     model = yaml.safe_load(text)
@@ -326,9 +329,9 @@ async def test_the_adventureworks_model_imports_whole(seed: Seed) -> None:
         "catalog.source",
         org_id=space.org,
         data_space_id=space.id,
-        name="AdventureWorksDW",
+        name=database,
         kind="postgresql",
-        database_name="adventureworks_dw",
+        database_name=database,
         secret_ref=f"secret/tenants/{space.org}/demo-postgres",
     )
     for sm in model["semantic_models"]:

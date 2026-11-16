@@ -178,10 +178,13 @@ def months(prefix: str) -> list[str]:
 
 
 def _create(table: str, columns: list[tuple[str, str, str]]) -> str:
+    # A trip record has no key of its own (two identical rows are two trips as far as anyone can
+    # tell); the semantic model needs one, so the load numbers the rows in file order.
     body = ",\n".join(f"    {c} {t}" for c, t, _ in columns)
     return (
         f"DROP TABLE IF EXISTS {table} CASCADE;\n"
-        f"CREATE TABLE {table} (\n{body},\n    source_file text NOT NULL\n);\n"
+        f"CREATE TABLE {table} (\n    trip_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n"
+        f"{body},\n    source_file text NOT NULL\n);\n"
     )
 
 

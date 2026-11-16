@@ -1,0 +1,286 @@
+# Semantic model of the Data Space "NYC Taxi" (DS-TLC, deploy/docker/sql/v3-tlc-seed.sql) over the
+# NYC TLC trip records as `make tlc` loads them (tests/e2e/tlc: schema public of the database
+# tlc_trips, snapshot TLC-2024Q1). Format: services/api/modules/context/semantic_yaml.py.
+#
+# The tables have to be catalogued first (scan the source), then:
+#   make semantic-import SEMANTIC_ORG=a0000000-0000-0000-0000-000000000001 SEMANTIC_SPACE=DS-TLC \
+#        SEMANTIC_AS=helios-engineer SEMANTIC_FILE=deploy/docker/semantic/ds-tlc.yaml SEMANTIC_APPLY=1
+# which writes relationships pending review and metrics as drafts; approving them is the
+# product's own review step.
+#
+# Choices the data leaves open and a question can trip on:
+#   - Two fleets, two facts. Yellow cabs (2024) and green street-hail cabs (2023 and 2024) are
+#     separate files with separate columns; SO_CHUYEN adds both, each counted on its own table,
+#     every other metric says which fleet it reads.
+#   - The time of a trip is its pickup. The files hold a few trips whose pickup is outside the
+#     file's month (back to 2002 in January 2024): a period reads the pickup, never the file.
+#   - The rows are as published: negative totals (refunds, voids) and zero distances stay in
+#     the sums, as they do in the TLC's own monthly figures. A question about "valid" trips needs
+#     a definition the model does not make up.
+#   - tip_amount holds card tips only: cash tips are not recorded. The tip rate is therefore read
+#     on card payments only (TY_LE_TIP_THE); a tip rate over every payment would be wrong, not
+#     just low.
+#   - A trip has two zones, pickup and dropoff. Only the pickup zone is joined: two keys to
+#     taxi_zone are two equally short join paths, which the compiler refuses rather than guess.
+#     "Where trips go" is not answerable from this model.
+#   - payment_type 0 (Flex Fare) with no rate code is a 2024 dictionary entry; ~140 000 yellow
+#     trips of January 2024 carry it and most of their other codes are null.
+version: 1
+semantic_models:
+  - name: chuyen_xe_vang
+    label: Chuyến taxi vàng
+    description: Một chuyến taxi vàng (yellow cab) như TLC công bố.
+    model: public.yellow_trip
+    primary_key: [trip_id]
+    dimensions:
+      - {name: gio_don_vang, label: Thời điểm đón (taxi vàng), type: time, expr: tpep_pickup_datetime}
+    measures:
+      - {name: so_chuyen_vang, label: Số chuyến taxi vàng, agg: count, expr: trip_id, unit: chuyến}
+      - {name: doanh_thu_vang, label: Tổng tiền thu taxi vàng, agg: sum, expr: total_amount, unit: USD}
+      - {name: tien_cuoc_vang, label: Tiền cước taxi vàng, agg: sum, expr: fare_amount, unit: USD}
+      - {name: tien_tip_vang, label: Tiền tip taxi vàng, agg: sum, expr: tip_amount, unit: USD}
+      - {name: quang_duong_vang, label: Tổng quãng đường taxi vàng, agg: sum, expr: trip_distance, unit: dặm}
+      - {name: so_khach_vang, label: Số hành khách taxi vàng, agg: sum, expr: passenger_count, unit: khách}
+      - {name: phu_phi_un_tac_vang, label: Phụ phí ùn tắc taxi vàng, agg: sum, expr: congestion_surcharge, unit: USD}
+      - {name: phi_san_bay_vang, label: Phí sân bay taxi vàng, agg: sum, expr: airport_fee, unit: USD}
+  - name: chuyen_xe_xanh
+    label: Chuyến taxi xanh
+    description: Một chuyến taxi xanh (green cab, đón khách ngoài Manhattan) như TLC công bố.
+    model: public.green_trip
+    primary_key: [trip_id]
+    dimensions:
+      - {name: gio_don_xanh, label: Thời điểm đón (taxi xanh), type: time, expr: lpep_pickup_datetime}
+    measures:
+      - {name: so_chuyen_xanh, label: Số chuyến taxi xanh, agg: count, expr: trip_id, unit: chuyến}
+      - {name: doanh_thu_xanh, label: Tổng tiền thu taxi xanh, agg: sum, expr: total_amount, unit: USD}
+      - {name: tien_cuoc_xanh, label: Tiền cước taxi xanh, agg: sum, expr: fare_amount, unit: USD}
+      - {name: tien_tip_xanh, label: Tiền tip taxi xanh, agg: sum, expr: tip_amount, unit: USD}
+      - {name: quang_duong_xanh, label: Tổng quãng đường taxi xanh, agg: sum, expr: trip_distance, unit: dặm}
+  - name: khu_don
+    label: Khu đón khách
+    description: Một khu taxi của TLC (taxi zone), nơi đồng hồ bắt đầu tính tiền.
+    model: public.taxi_zone
+    primary_key: [location_id]
+    dimensions:
+      - {name: quan_don, label: Quận đón khách, type: categorical, expr: borough}
+      - {name: khu_vuc_don, label: Khu đón khách, type: categorical, expr: zone}
+      - {name: vung_dich_vu_don, label: Vùng dịch vụ (điểm đón), type: categorical, expr: service_zone}
+  - name: hinh_thuc_thanh_toan
+    label: Hình thức thanh toán
+    model: public.payment_type_code
+    primary_key: [code]
+    dimensions:
+      - {name: thanh_toan, label: Hình thức thanh toán, type: categorical, expr: name}
+  - name: ma_gia_cuoc
+    label: Mã giá cước
+    model: public.rate_code
+    primary_key: [code]
+    dimensions:
+      - {name: gia_cuoc, label: Mã giá cước, type: categorical, expr: name}
+  - name: nha_cung_cap
+    label: Nhà cung cấp công nghệ
+    model: public.vendor
+    primary_key: [code]
+    dimensions:
+      - {name: hang_cong_nghe, label: Nhà cung cấp công nghệ, type: categorical, expr: name}
+  - name: kieu_goi_xe
+    label: Kiểu gọi xe
+    model: public.trip_type_code
+    primary_key: [code]
+    dimensions:
+      - {name: cach_goi_xe, label: Kiểu gọi xe (taxi xanh), type: categorical, expr: name}
+relationships:
+  - {from: public.yellow_trip, from_columns: [pu_location_id], to: public.taxi_zone, to_columns: [location_id], cardinality: many_to_one}
+  - {from: public.yellow_trip, from_columns: [payment_type], to: public.payment_type_code, to_columns: [code], cardinality: many_to_one}
+  - {from: public.yellow_trip, from_columns: [ratecode_id], to: public.rate_code, to_columns: [code], cardinality: many_to_one}
+  - {from: public.yellow_trip, from_columns: [vendor_id], to: public.vendor, to_columns: [code], cardinality: many_to_one}
+  - {from: public.green_trip, from_columns: [pu_location_id], to: public.taxi_zone, to_columns: [location_id], cardinality: many_to_one}
+  - {from: public.green_trip, from_columns: [payment_type], to: public.payment_type_code, to_columns: [code], cardinality: many_to_one}
+  - {from: public.green_trip, from_columns: [ratecode_id], to: public.rate_code, to_columns: [code], cardinality: many_to_one}
+  - {from: public.green_trip, from_columns: [vendor_id], to: public.vendor, to_columns: [code], cardinality: many_to_one}
+  - {from: public.green_trip, from_columns: [trip_type], to: public.trip_type_code, to_columns: [code], cardinality: many_to_one}
+metrics:
+  # Both fleets: each counted on its own table, then added.
+  - name: SO_CHUYEN
+    label: Số chuyến taxi
+    description: Số chuyến taxi vàng và taxi xanh, theo thời điểm đón; gồm cả chuyến có tiền âm hoặc quãng đường 0.
+    expr: so_chuyen_vang + so_chuyen_xanh
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: chuyến
+    decimals: 0
+    direction: neutral
+    additivity: full
+    dimensions: [quan_don, khu_vuc_don, vung_dich_vu_don, thanh_toan, gia_cuoc, hang_cong_nghe]
+  # Yellow cabs.
+  - name: SO_CHUYEN_VANG
+    label: Số chuyến taxi vàng
+    description: Số chuyến taxi vàng theo thời điểm đón, như TLC công bố.
+    expr: so_chuyen_vang
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: chuyến
+    decimals: 0
+    direction: neutral
+    additivity: full
+    dimensions: [quan_don, khu_vuc_don, vung_dich_vu_don, thanh_toan, gia_cuoc, hang_cong_nghe]
+  - name: DOANH_THU_VANG
+    label: Tổng tiền thu taxi vàng
+    description: >-
+      Tổng total_amount của các chuyến taxi vàng: cước, phụ phí, thuế, phí cầu đường và tip trả bằng
+      thẻ. Không gồm tip tiền mặt. Gồm cả dòng âm (hoàn tiền, huỷ).
+    expr: doanh_thu_vang
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [quan_don, khu_vuc_don, vung_dich_vu_don, thanh_toan, gia_cuoc, hang_cong_nghe]
+  - name: CUOC_TB_VANG
+    label: Tiền thu bình quân một chuyến taxi vàng
+    description: Tổng tiền thu chia số chuyến, tính trên tổng (không lấy trung bình của các nhóm).
+    expr: doanh_thu_vang / so_chuyen_vang
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 2
+    direction: neutral
+    dimensions: [quan_don, khu_vuc_don, thanh_toan, gia_cuoc, hang_cong_nghe]
+  - name: QUANG_DUONG_TB_VANG
+    label: Quãng đường bình quân một chuyến taxi vàng
+    description: Tổng quãng đường (dặm, theo đồng hồ) chia số chuyến; gồm cả chuyến quãng đường 0.
+    expr: quang_duong_vang / so_chuyen_vang
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: dặm
+    decimals: 2
+    direction: neutral
+    dimensions: [quan_don, khu_vuc_don, thanh_toan, gia_cuoc, hang_cong_nghe]
+  - name: TY_LE_TIP_THE_VANG
+    label: Tỷ lệ tip trên cước (thanh toán thẻ, taxi vàng)
+    description: >-
+      Tiền tip chia tiền cước, chỉ các chuyến trả bằng thẻ: tip tiền mặt không được ghi lại, nên
+      một tỷ lệ trên mọi chuyến sẽ sai chứ không chỉ thấp.
+    expr: tien_tip_vang / tien_cuoc_vang * 100
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: "%"
+    decimals: 1
+    direction: neutral
+    dimensions: [quan_don, khu_vuc_don, gia_cuoc, hang_cong_nghe]
+    filters: [{dimension: thanh_toan, op: "=", values: [Credit card]}]
+  - name: SO_KHACH_VANG
+    label: Số hành khách taxi vàng
+    description: Tổng số hành khách do tài xế nhập; để trống ở một phần chuyến (không tính).
+    expr: so_khach_vang
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: khách
+    decimals: 0
+    direction: neutral
+    additivity: full
+    dimensions: [quan_don, khu_vuc_don, thanh_toan, hang_cong_nghe]
+  - name: PHU_PHI_UN_TAC_VANG
+    label: Phụ phí ùn tắc taxi vàng
+    description: Tổng phụ phí ùn tắc của bang New York thu trên các chuyến taxi vàng.
+    expr: phu_phi_un_tac_vang
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    direction: neutral
+    additivity: full
+    dimensions: [quan_don, khu_vuc_don, vung_dich_vu_don]
+  - name: PHI_SAN_BAY_VANG
+    label: Phí sân bay taxi vàng
+    description: Tổng phí đón khách tại sân bay LaGuardia và JFK trên các chuyến taxi vàng.
+    expr: phi_san_bay_vang
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    direction: neutral
+    additivity: full
+    dimensions: [quan_don, khu_vuc_don, vung_dich_vu_don]
+  # Green cabs.
+  - name: SO_CHUYEN_XANH
+    label: Số chuyến taxi xanh
+    description: Số chuyến taxi xanh theo thời điểm đón, như TLC công bố.
+    expr: so_chuyen_xanh
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: chuyến
+    decimals: 0
+    direction: neutral
+    additivity: full
+    dimensions: [quan_don, khu_vuc_don, vung_dich_vu_don, thanh_toan, gia_cuoc, hang_cong_nghe, cach_goi_xe]
+  - name: DOANH_THU_XANH
+    label: Tổng tiền thu taxi xanh
+    description: Tổng total_amount của các chuyến taxi xanh; không gồm tip tiền mặt, gồm cả dòng âm.
+    expr: doanh_thu_xanh
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: USD
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [quan_don, khu_vuc_don, vung_dich_vu_don, thanh_toan, gia_cuoc, hang_cong_nghe, cach_goi_xe]
+  - name: QUANG_DUONG_TB_XANH
+    label: Quãng đường bình quân một chuyến taxi xanh
+    description: Tổng quãng đường (dặm) chia số chuyến taxi xanh.
+    expr: quang_duong_xanh / so_chuyen_xanh
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: dặm
+    decimals: 2
+    direction: neutral
+    dimensions: [quan_don, khu_vuc_don, thanh_toan, cach_goi_xe]
+  - name: TY_LE_TIP_THE_XANH
+    label: Tỷ lệ tip trên cước (thanh toán thẻ, taxi xanh)
+    description: Tiền tip chia tiền cước, chỉ các chuyến taxi xanh trả bằng thẻ.
+    expr: tien_tip_xanh / tien_cuoc_xanh * 100
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: "%"
+    decimals: 1
+    direction: neutral
+    dimensions: [quan_don, khu_vuc_don, cach_goi_xe]
+    filters: [{dimension: thanh_toan, op: "=", values: [Credit card]}]
+
+# Other ways people ask: the metrics and cuts in Vietnamese and English, and the Vietnamese names of
+# the published English values. Imported pending_review; a value synonym matches once the profile
+# scan has filled the value index.
+synonyms:
+  - {phrase: số cuốc xe, metric: SO_CHUYEN}
+  - {phrase: số chuyến xe, metric: SO_CHUYEN}
+  - {phrase: trips, metric: SO_CHUYEN}
+  - {phrase: number of trips, metric: SO_CHUYEN}
+  - {phrase: yellow cab trips, metric: SO_CHUYEN_VANG}
+  - {phrase: green cab trips, metric: SO_CHUYEN_XANH}
+  - {phrase: doanh thu taxi vàng, metric: DOANH_THU_VANG}
+  - {phrase: yellow taxi revenue, metric: DOANH_THU_VANG}
+  - {phrase: doanh thu taxi xanh, metric: DOANH_THU_XANH}
+  - {phrase: green taxi revenue, metric: DOANH_THU_XANH}
+  - {phrase: giá cuốc trung bình, metric: CUOC_TB_VANG}
+  - {phrase: average fare, metric: CUOC_TB_VANG}
+  - {phrase: average trip distance, metric: QUANG_DUONG_TB_VANG}
+  - {phrase: quãng đường trung bình, metric: QUANG_DUONG_TB_VANG}
+  - {phrase: tỷ lệ tiền boa, metric: TY_LE_TIP_THE_VANG}
+  - {phrase: tip rate, metric: TY_LE_TIP_THE_VANG}
+  - {phrase: congestion surcharge, metric: PHU_PHI_UN_TAC_VANG}
+  - {phrase: airport fee, metric: PHI_SAN_BAY_VANG}
+  - {phrase: borough, dimension: quan_don}
+  - {phrase: quận, dimension: quan_don}
+  - {phrase: pickup zone, dimension: khu_vuc_don}
+  - {phrase: khu vực đón, dimension: khu_vuc_don}
+  - {phrase: payment type, dimension: thanh_toan}
+  - {phrase: rate code, dimension: gia_cuoc}
+  - {phrase: vendor, dimension: hang_cong_nghe}
+  - {phrase: trả bằng thẻ, dimension: thanh_toan, value: Credit card}
+  - {phrase: thẻ tín dụng, dimension: thanh_toan, value: Credit card}
+  - {phrase: tiền mặt, dimension: thanh_toan, value: Cash}
+  - {phrase: sân bay JFK, dimension: gia_cuoc, value: JFK}
+  - {phrase: Newark, dimension: gia_cuoc, value: Newark}
+  - {phrase: gọi qua tổng đài, dimension: cach_goi_xe, value: Dispatch}
+  - {phrase: vẫy xe, dimension: cach_goi_xe, value: Street-hail}
