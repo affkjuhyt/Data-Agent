@@ -79,7 +79,7 @@ describe('AssistantTurn', () => {
 
   it('while running shows the open timeline and no footer', () => {
     render(<AssistantTurn message={{ ...base, status: 'streaming', blocks: [], content: '' }} busy {...handlers()} />);
-    expect(screen.getByRole('button', { name: 'Hiểu câu hỏi…' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Đang suy luận/ })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.queryByRole('button', { name: 'Hỏi lại' })).not.toBeInTheDocument();
   });
 });

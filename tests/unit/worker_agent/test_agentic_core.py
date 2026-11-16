@@ -230,6 +230,44 @@ def test_a_merge_of_two_readings_is_named_by_what_each_read() -> None:
     assert merged_names(cols, "result = something(d1, d2)", ws.datasets) is None
 
 
+def test_the_live_timeline_says_what_each_step_found_from_its_data() -> None:
+    import uuid
+
+    from services.worker_agent.agentic import narrate
+    from services.worker_agent.agentic.tools.base import ToolResult
+    from services.worker_agent.understand.resolver import MetricEntry, Vocabulary
+
+    vocab = Vocabulary(
+        metrics=[MetricEntry(uuid.uuid4(), "DOANH_THU_INTERNET", "Doanh thu Internet", True)],
+        dimensions=[],
+    )
+    # The planner's thought for a reader: names, not codes; titles, not step ids.
+    assert narrate.reader("Bước s2 lỗi, đọc lại DOANH_THU_INTERNET theo tháng", vocab) == (
+        "bước trước lỗi, đọc lại Doanh thu Internet theo tháng"
+    )
+    ws = _ws()
+    found = ToolResult(True, "…", ["d1"])
+    assert narrate.said("query_metric", found, ws, vocab) == (
+        "Doanh thu theo vùng: 2 dòng; cao nhất Europe (1.500.000,50)."
+    )
+    refused = ToolResult(
+        False, "không chỉ số chuẩn nào đo 'khach hang'; không tự tính", failure="logic"
+    )
+    assert narrate.said("query_metric", refused, ws, vocab) == (
+        "Không chỉ số chuẩn nào đo 'khach hang'"
+    )
+    crashed = ToolResult(False, "code lỗi: NameError: x", failure="arguments")
+    assert narrate.said("analyze", crashed, ws, vocab).startswith("Tham số chưa đúng")
+    coverage = ToolResult(
+        True,
+        "…",
+        detail={"metric": "Doanh thu", "first": "2010-12", "last": "2014-01", "partial_last": True},
+    )
+    assert narrate.said("data_coverage", coverage, ws, vocab) == (
+        "Doanh thu có số từ 2010-12 đến 2014-01, kỳ cuối chưa đủ."
+    )
+
+
 def test_a_charts_one_line_reading_is_computed_from_its_rows() -> None:
     months = ["2013-01", "2013-06", "2013-12"]
     assert (

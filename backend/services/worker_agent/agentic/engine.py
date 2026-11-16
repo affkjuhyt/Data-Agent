@@ -42,6 +42,7 @@ from services.worker_agent.agentic import (
     clarify_policy,
     deep_skill,
     memory,
+    narrate,
     operator_view,
     present_gate,
     prompts,
@@ -413,7 +414,8 @@ async def plan(s: State) -> None:
         s.plan = _bind_clarify(s, s.plan)
         step.detail = {
             "goal": s.plan.goal,
-            "thought": s.plan.thought,
+            # Shown while the turn runs: the plan's reasoning, its codes said as names.
+            "thought": narrate.reader(s.plan.thought, _vocab(s)),
             "mode": s.plan.mode,
             "steps": p.view(s.plan),
         }
@@ -553,7 +555,12 @@ async def _run_step(s: State, step: p.PlanStep) -> ToolResult:
             else:
                 break
         assert result is not None
-        handle.detail = {**result.detail, "args": _shown_args(step)}
+        handle.detail = {
+            **result.detail,
+            "args": _shown_args(step),
+            # What the step found, said from its result for the live timeline (narrate.py).
+            "said": narrate.said(tool.name, result, s.ctx.ws, _vocab(s)),
+        }
         if not result.ok:
             handle.status, handle.summary = "failed", result.observation[:200]
     return result
@@ -571,6 +578,11 @@ async def _run_tool(s: State, tool: Tool, ctx: ToolContext, args: Any) -> ToolRe
     except Exception as exc:  # a tool's failure is feedback for the planner
         logger.exception("question %s: tool %s failed", s.question_id, tool.name)
         return ToolResult(False, f"công cụ lỗi: {type(exc).__name__}")
+
+
+def _vocab(s: State) -> Any:
+    """The Data Space's words, to say codes as names on the timeline; None when there are none."""
+    return getattr(getattr(s.ctx, "layer", None), "vocabulary", None)
 
 
 def _shown_args(step: p.PlanStep) -> dict[str, Any]:
@@ -607,7 +619,7 @@ async def replan(s: State) -> None:
         ask = prompts.REPLAN.format(
             failed=failed.id, why=failed.observation[:500], next_id=len(s.plan.steps) + 1
         )
-        why = failed.observation[:160]
+        why = narrate.reader(failed.observation.split(";")[0], _vocab(s))[:160]
     else:
         ask = prompts.REPLAN_CHECK.format(why=feedback, next_id=len(s.plan.steps) + 1)
         why = str(feedback)[:160]
@@ -634,7 +646,10 @@ async def replan(s: State) -> None:
             # The failed step stays on the record, after the ones that are done.
             rebuilt.steps.insert(len(done), failed.model_copy())
         s.plan = _bind_clarify(s, rebuilt)
-        handle.detail = {"steps": p.view(s.plan)}
+        handle.detail = {
+            "steps": p.view(s.plan),
+            "thought": narrate.reader(new.thought, _vocab(s)),
+        }
 
 
 # Tools that only look up or read one governed figure: a plan made of them alone is a simple
@@ -853,7 +868,13 @@ async def compose(s: State) -> None:
     allowed = verify.allowed_numbers(
         s.ctx.question, ws, [c["source"] for c in ws.citations] + periods
     )
-    async with turn_trace.stepping("write_answer", title="Soạn câu trả lời", target="") as handle:
+    tables = len(s.ctx.ws.datasets) if s.ctx else 0
+    async with turn_trace.stepping(
+        "write_answer",
+        title="Soạn câu trả lời",
+        # Live: what the answer is written from.
+        target=f"từ {tables} bảng số đã đọc" if tables else "",
+    ) as handle:
         drafts: list[b.BlockDraft] = []
         errors: list[str] = []
         for _ in range(2):

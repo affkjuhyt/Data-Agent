@@ -48,13 +48,43 @@ describe('StepTimeline', () => {
     expect(screen.getByText('AdventureWorksDW cho: Doanh thu Internet')).toBeInTheDocument();
   });
 
-  it('while the turn runs says the step it is on, the list closed until asked', () => {
-    const now = [steps[0], step({ stepId: 's2', seq: 2, title: 'Truy vấn chỉ số', target: 'Doanh thu Internet theo tháng', status: 'running', durationMs: null })];
-    render(<StepTimeline steps={now} running recorded />);
-    const line = screen.getByRole('button', { name: 'Truy vấn chỉ số: Doanh thu Internet theo tháng…' });
-    expect(line).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(line);
-    expect(screen.getByText('Hiểu câu hỏi')).toBeInTheDocument();
+  it('while the turn runs shows its reasoning open: the plan, what each step found, what comes next', () => {
+    const now = [
+      step({
+        stepId: 'p', seq: 1, action: 'plan', title: 'Lập kế hoạch',
+        detail: {
+          thought: 'Cần số theo tháng để thấy tháng 12 nổi bật.',
+          steps: [
+            { id: 's1', title: 'Lấy doanh thu Internet theo tháng', status: 'done' },
+            { id: 's2', title: 'Tìm nguyên nhân tháng 12', status: 'pending' },
+          ],
+        },
+      }),
+      step({
+        stepId: 'q', seq: 2, action: 'query', title: 'Truy vấn chỉ số', target: 'Lấy doanh thu Internet theo tháng',
+        detail: { said: 'Doanh thu Internet theo tháng: 12 dòng; cao nhất 2013-12 (1.874.360,29).' },
+      }),
+    ];
+    const { rerender } = render(<StepTimeline steps={now} running recorded />);
+    const header = screen.getByRole('button', { name: /^Đang suy luận/ });
+    expect(header).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Cần số theo tháng để thấy tháng 12 nổi bật.')).toBeInTheDocument();
+    expect(screen.getByText(/12 dòng; cao nhất 2013-12/)).toBeInTheDocument();
+    // The planned step no step has run for yet.
+    expect(screen.getByText('Tìm nguyên nhân tháng 12')).toBeInTheDocument();
+    // The answer arrives: the account folds to one line.
+    rerender(<StepTimeline steps={now} running={false} durationMs={21000} recorded />);
+    expect(screen.getByRole('button', { name: /^Đã thực hiện 2 bước · 21 giây/ })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('says why a plan was changed', () => {
+    const changed = step({
+      stepId: 'r', seq: 3, action: 'replan', title: 'Điều chỉnh kế hoạch', target: 'Không chỉ số chuẩn nào đo khách hàng',
+      detail: { thought: 'Đổi sang đếm số khách hàng mua qua Internet.', steps: [] },
+    });
+    render(<StepTimeline steps={[changed]} running recorded />);
+    expect(screen.getByText(/Điều chỉnh vì: Không chỉ số chuẩn nào đo khách hàng/)).toBeInTheDocument();
+    expect(screen.getByText('Đổi sang đếm số khách hàng mua qua Internet.')).toBeInTheDocument();
   });
 
   it('counts the failed steps on the folded line', () => {
@@ -106,7 +136,7 @@ describe('StepTimeline', () => {
     render(<StepTimeline steps={failed} running={false} durationMs={100} recorded />);
     fireEvent.click(screen.getByRole('button', { name: /Đã thực hiện/ }));
     const row = screen.getByRole('listitem');
-    expect(within(row).getByText('Chưa truy vấn được nguồn Kho.')).toBeInTheDocument();
+    expect(within(row).getByText(/Chưa truy vấn được nguồn Kho\./)).toBeInTheDocument();
     expect(within(row).getByLabelText('Lỗi')).toBeInTheDocument();
   });
 
