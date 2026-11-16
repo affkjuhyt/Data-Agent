@@ -125,7 +125,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | AE-05 | P0 | 7 | `receipts.py` chung; `answer.sealed`; nới `answer_receipt.data_product_id` nullable | AE-04, AL-01 | BE/DB | M | 61/61 câu có receipt | todo |
 | AE-06 | P0 | 7 | `GET /v1/answers/{id}` envelope; SSE; A2; `make api-types`; FE `trust.ts` | AE-04 | BE/FE | M | FE không map chuỗi tiếng Việt | todo |
 | AE-08 | P0 | 7 | `static_check` + `qualify(on_qualify)` + EXPLAIN dry-run | PL-01 | BE | S | `TABLE_OUT_OF_SCOPE` bắt được | todo |
-| AE-09 | P0 | 7 | NULL/0 theo coverage ở `present_gate` + `_no_value` | — | AI | S | 2 câu tồn kho DS-AW xanh | todo |
+| AE-09 | P0 | 7 | NULL/0 theo coverage ở `present_gate` + `_no_value` | — | AI | S | 2 câu tồn kho DS-AW xanh | blocked: 16/11 tái hiện phần tất định trên AW thật — coverage của TON_KHO, GIA_TRI_TON_KHO có tháng 12/2013 và 6/2014, không cắt kỳ; lỗi nằm ở lượt agentic, cần trace lượt chạy thật trước khi sửa |
 | AE-10 | P0 | 8 | `clarify_policy.py` chung; mọi đường ra Clarify qua `apply` | AE-03 | AI | S | executive ≤ 1 vòng/3 lựa chọn | todo |
 | AE-11 | P1 | 11 | `ConversationSlots` cả hai đường + `rewrite_for_retrieval` | AE-01 | AI/BE | M | 30 case multi-turn kế thừa ≥ 90 % | todo |
 | AE-12 | P1 | 12 | Verified fuzzy + tile reuse | — | BE | S | ≥ 18/20 khớp, 0 khớp sai | todo |

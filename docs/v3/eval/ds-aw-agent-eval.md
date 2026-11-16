@@ -80,3 +80,12 @@ Two rules were narrowed on that run: a filtered slice is not held to every table
 it does not allow holds nothing (aw045: "doanh số" is a revenue synonym, Trade Sales a finance
 account). Not measured yet: the same 20 items through `make agent-eval` with the served model (the
 local cluster's workers wait on migration v3_0035, 16/11/2026).
+
+## The two stock misses of 12/11/2026 are not coverage's (16/11/2026)
+
+"Tồn kho cuối tháng 12/2013" and "Giá trị tồn kho cuối tháng 6/2014" failed on the agentic engine
+only. Compiling TON_KHO and GIA_TRI_TON_KHO by month on the real AdventureWorksDW and reading them
+with `semantic/coverage.py`: both cover 2013-12 and 2014-06 (43 months, the last one not cut off),
+so `query_metric` reads the asked month and moves nothing. The miss is in the agentic turn (plan,
+tool choice or reporter); `present_gate.no_figure` is not shown to be the cause. AE-09 waits for a
+turn trace of these two items from a live run before anything in the gate changes.
