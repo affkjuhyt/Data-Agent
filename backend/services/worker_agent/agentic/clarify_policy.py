@@ -106,13 +106,15 @@ def _closest(question: str, layer: SpaceLayer) -> list[str]:
     vocab = layer.vocabulary
     asked = set(quantity_words(question, vocab, today=datetime.date.today()))
     by_code = {m.code: m for m in vocab.metrics}
-    return [
-        m["name"]
+    scored = [
+        (len(metric_words(by_code[m["metric"]], vocab) & asked), m["name"])
         for m in analyst.search_metrics(layer, question)
-        if m["certified"]
-        and m["metric"] in by_code
-        and metric_words(by_code[m["metric"]], vocab) & asked
+        if m["certified"] and m["metric"] in by_code
     ]
+    # Only the best-matched: folded, "hàng" of "khách hàng" is also the "hàng" of a synonym of
+    # "Số đơn Internet" ("đơn hàng") and "Tồn kho" ("hàng tồn"), one word against two.
+    best = max((score for score, _ in scored), default=0)
+    return [name for score, name in scored if best and score == best]
 
 
 def _members(tokens: list[str]) -> set[str]:

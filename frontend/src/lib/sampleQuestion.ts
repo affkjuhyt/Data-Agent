@@ -11,6 +11,16 @@ import type { ExploreMetric, ExploreModel } from './v1/explore';
 
 const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
+// A cut along time read as a member list: "Top 5 năm tài chính có …" (17/11). Time is asked as
+// "theo tháng" / "theo quý" instead.
+const TIME_LABEL = /^(năm|quý|tháng|tuần|ngày|kỳ)(?=\s|$)/i;
+
+/** The first cut of a metric that is not along time. */
+const cutOf = (model: ExploreModel | null | undefined, metric: ExploreMetric) =>
+  model?.dimensions.find(
+    (d) => metric.allowed_dimension_ids.includes(d.id) && !d.is_time && !TIME_LABEL.test(d.label),
+  );
+
 /** The certified metrics, those cut by the most dimensions first: the list's own order put the
  *  narrowest ones ("Số tài chính ngân sách", "Sự cố trên 100 cuộc gọi") first. */
 function startingMetrics(model: ExploreModel | null | undefined): ExploreMetric[] {
@@ -29,7 +39,7 @@ export function sampleQuestion(
   if (!metric) {
     return shape === 'compare_quarter' ? 'so sánh một chỉ số theo quý' : 'một chỉ số theo tháng';
   }
-  const dimension = model?.dimensions.find((d) => metric.allowed_dimension_ids.includes(d.id));
+  const dimension = cutOf(model, metric);
   const by = dimension ? ` theo ${dimension.label.toLowerCase()}` : ' theo tháng';
   return shape === 'compare_quarter' ? `so sánh ${lower(metric.label)} theo quý` : `${lower(metric.label)}${by}`;
 }
@@ -44,7 +54,7 @@ export function starterQuestions(model: ExploreModel | null | undefined, count =
   return startingMetrics(model)
     .slice(0, count)
     .map((metric, index) => {
-      const dimension = model?.dimensions.find((d) => metric.allowed_dimension_ids.includes(d.id));
+      const dimension = cutOf(model, metric);
       const name = metric.label;
       const by = dimension ? dimension.label.toLowerCase() : null;
       const shapes = [

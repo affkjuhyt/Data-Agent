@@ -282,8 +282,9 @@ def test_a_quantity_no_metric_measures_is_asked_back_with_the_closest_metrics() 
             metrics=[
                 MetricEntry(buyers, "SO_KHACH_HANG", "Số khách hàng mua qua Internet", True),
                 MetricEntry(revenue, "DOANH_THU", "Doanh thu", True),
-                # Shares no quantity word with "khách hàng rời bỏ": never offered for it.
-                MetricEntry(orders, "SO_DON_INTERNET", "Số đơn Internet", True),
+                # Shares one word of "khách hàng" (a synonym's "hàng"), the customers two: not
+                # offered beside them.
+                MetricEntry(orders, "SO_DON_HANG", "Số đơn hàng Internet", True),
             ],
             dimensions=[DimensionEntry(uuid.uuid4(), "nhom_san_pham", "Nhóm sản phẩm")],
         ),

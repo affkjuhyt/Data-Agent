@@ -51,3 +51,16 @@ describe('documentStarterQuestions', () => {
     expect(documentStarterQuestions([])).toEqual([]);
   });
 });
+
+describe('starter cuts', () => {
+  it('never cuts by time as if it were a list of members', () => {
+    const timed = {
+      metrics: [{ id: 'm1', label: 'Doanh thu', code: 'DT', certified: true, allowed_dimension_ids: ['t', 'd1'] }],
+      dimensions: [
+        { id: 't', code: 'nam_tai_chinh', label: 'Năm tài chính', is_time: false },
+        { id: 'd1', code: 'vung', label: 'Vùng bán hàng', is_time: false },
+      ],
+    } as unknown as ExploreModel;
+    expect(starterQuestions(timed)).toEqual(['Doanh thu theo vùng bán hàng']);
+  });
+});
