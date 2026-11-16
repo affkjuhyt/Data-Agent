@@ -31,6 +31,17 @@ GOOD = [
     "SELECT l.branch_code, COUNT(l.branch_code) AS n FROM bank.loan AS l "
     "WHERE l.as_of_date = '2026-09-30' GROUP BY l.branch_code ORDER BY 1",
 ]
+# Six ways of writing that disagree: two agree, four read something else. Each reads the day the
+# question names; one that read no date would be sent back by the audit (AE-07 R3) instead.
+ON_THE_DAY = "WHERE as_of_date = DATE '2026-09-30'"
+DIFFERING = [
+    GOOD[0],
+    GOOD[1],
+    f"SELECT branch_code, SUM(balance) FROM bank.loan {ON_THE_DAY} GROUP BY branch_code",
+    f"SELECT product_code, COUNT(*) FROM bank.loan {ON_THE_DAY} GROUP BY product_code",
+    f"SELECT COUNT(*) FROM bank.loan {ON_THE_DAY}",
+    f"SELECT MAX(balance) FROM bank.loan {ON_THE_DAY}",
+]
 
 
 @pytest.fixture
@@ -152,15 +163,7 @@ async def test_candidates_that_disagree_give_no_number_and_ask_back(
     seed: Seed, credit: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     bank = build(seed, credit, monkeypatch)
-    differing = [
-        GOOD[0],
-        GOOD[1],
-        "SELECT branch_code, SUM(balance) FROM bank.loan GROUP BY branch_code",
-        "SELECT product_code, COUNT(*) FROM bank.loan GROUP BY product_code",
-        "SELECT COUNT(*) FROM bank.loan",
-        "SELECT MAX(balance) FROM bank.loan",
-    ]
-    q = asked(bank, Script(differing), monkeypatch)
+    q = asked(bank, Script(DIFFERING), monkeypatch)
     await drain()
     status, kind, text, figures, *_ = answer_of(seed, q)
     assert (status, kind, figures) == ("clarifying", "clarification", [])
@@ -351,15 +354,7 @@ async def test_a_partial_metric_the_tables_cannot_answer_still_asks_back(
 
     monkeypatch.setattr(llm_reader, "read", partial)
     bank = build(seed, credit, monkeypatch)
-    differing = [
-        GOOD[0],
-        GOOD[1],
-        "SELECT branch_code, SUM(balance) FROM bank.loan GROUP BY branch_code",
-        "SELECT product_code, COUNT(*) FROM bank.loan GROUP BY product_code",
-        "SELECT COUNT(*) FROM bank.loan",
-        "SELECT MAX(balance) FROM bank.loan",
-    ]
-    q = asked(bank, Script(differing), monkeypatch)
+    q = asked(bank, Script(DIFFERING), monkeypatch)
     await drain()
     status, kind, text, *_ = answer_of(seed, q)
     # The ways of writing disagree: no number, and the question back is the metric suggested,
