@@ -66,6 +66,14 @@ def _ws() -> Workspace:
 
 def test_a_chart_and_a_kpi_take_their_figures_from_the_dataset() -> None:
     ws = _ws()
+    ws.datasets["d1"].reading = {
+        "metric": "DT",
+        "metric_id": "m-1",
+        "group_by": ["vung"],
+        "filters": {"nam": ["2013"]},
+        "cuts": {"Vùng": "vung"},
+        "time_cuts": [],
+    }
     chart = b.materialize(
         b.BlockDraft(type="chart", dataset="d1", chart_type="bar", x="Vùng", y=["Doanh thu"]),
         ws,
@@ -77,6 +85,12 @@ def test_a_chart_and_a_kpi_take_their_figures_from_the_dataset() -> None:
     ]
     assert chart["trust"] == "certified"
     assert chart["insight"] == "Europe cao nhất, Pacific thấp nhất."
+    # What Khám phá opens again: a certified metric's reading only.
+    assert chart["explore"]["metric_id"] == "m-1"
+    assert chart["explore"]["cuts"] == {"Vùng": "vung"}
+    ws.datasets["d1"].trust = "exploratory"
+    assert "explore" not in b.materialize(b.BlockDraft(type="table", dataset="d1"), ws, "t")
+    ws.datasets["d1"].trust = "certified"
     kpi = b.materialize(
         b.BlockDraft(
             type="kpi",

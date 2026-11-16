@@ -3,9 +3,11 @@ import { BlockBoundary } from '../../../../design-system/ErrorBoundaries';
 import { Icon, type IconName } from '../../../../design-system/Icon';
 import { formatNumber } from '../../../../lib/formatVN';
 import { MarkdownContent } from '../../components/MarkdownContent';
+import type { ExploreHandoff } from '../../../explore/handoff';
 import { csvFileName, downloadCsv, toCsv } from '../../exportCsv';
 import type { AnswerBlockView, ChartSpec, Citation } from '../../types';
 import { CaveatsBlock } from './CaveatsBlock';
+import { filterQuestion, PointMenu, whyQuestion } from './PointMenu';
 import { ResultCard } from './ResultCard';
 
 /*
@@ -34,6 +36,9 @@ type Ctx = {
   onOpenCitation?: (citation: Citation) => void;
   onExportCsv?: () => void;
   onSaveToSession?: () => void;
+  /** A follow-up question from a block (a chart's point menu); absent while the agent is busy. */
+  onAsk?: (question: string) => void;
+  onOpenExplore?: (handoff: ExploreHandoff) => void;
 };
 type Block = Record<string, unknown>;
 
@@ -84,6 +89,22 @@ function Kpis({ block }: { block: Block }) {
   );
 }
 
+/** The reading Khám phá can open again (blocks._explore): only a certified metric's carries one. */
+function exploreOf(block: Block, ctx: Ctx): (() => void) | undefined {
+  const e = block.explore as Block | undefined;
+  if (!ctx.onOpenExplore || !e || !str(e.metric_id)) return undefined;
+  const handoff: ExploreHandoff = {
+    metric_id: str(e.metric_id),
+    group_by: arr<string>(e.group_by),
+    filters: (e.filters && typeof e.filters === 'object' ? e.filters : {}) as Record<string, string[]>,
+    time_cuts: arr<string>(e.time_cuts),
+  };
+  return () => ctx.onOpenExplore!(handoff);
+}
+
+// A member of a time axis: "2013", "2013-05", "2013-05-01", "Q2/2013".
+const TIME_MEMBER = /^(\d{4}([-/]\d{1,2}){0,2}|Q\d[/ ]\d{4})$/;
+
 const CHART_LABEL: Record<string, string> = {
   line: 'Đường',
   bar: 'Cột',
@@ -99,10 +120,21 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
   // redraws the chart from its own data, nothing is asked again (WrenAI's chart adjustment).
   const alternatives = arr<string>(block.alternatives).filter((t) => t in CHART_LABEL);
   const [chosen, setChosen] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  // Points the reader left out of this chart (E3 "Loại bỏ điểm này"): hidden here, not re-read.
+  const [hidden, setHidden] = useState<string[]>([]);
   if (!spec || !Array.isArray(spec.data)) return null;
   const type = (chosen ?? spec.chart_type) as ChartSpec['chart_type'];
+  const title = spec.title || str(block.title) || 'Biểu đồ';
+  const measure = spec.y_keys[0] ?? '';
+  const categoryOf = (row: Record<string, unknown>) => String(row[spec.x_key] ?? '');
+  const data = hidden.length ? spec.data.filter((row) => !hidden.includes(categoryOf(row))) : spec.data;
+  const points = data.map((row) => ({ category: categoryOf(row), value: num(row[measure]) }));
+  const timeAxis = points.length > 0 && TIME_MEMBER.test(points[0].category);
+  const ask = ctx.onAsk;
   const shown: ChartSpec = {
     ...spec,
+    data,
     chart_type: type,
     ...(type === 'composed' && {
       series: spec.y_keys.map((key, i) => ({ key, type: i === 0 ? ('bar' as const) : ('line' as const) })),
@@ -129,17 +161,47 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
       )}
       <ResultCard
         key={type}
-        title={spec.title || str(block.title) || 'Biểu đồ'}
-        subtitle={str(block.insight) || undefined}
+        title={title}
+        // The reading was computed over every row: with points left out it no longer describes
+        // the chart, so it waits until they are back.
+        subtitle={(!hidden.length && str(block.insight)) || undefined}
         // The card's header carries the title: drawn again inside the chart it showed twice.
         chart={{ ...shown, title: '' }}
         columns={[spec.x_key, ...spec.y_keys]}
-        rows={spec.data}
-        rowCount={spec.data.length}
+        rows={data}
+        rowCount={data.length}
         reading={[]}
         queryRunId={arr<string>(block.query_run_ids)[0] ?? null}
         onExportCsv={blockCsv(ctx, spec.title || str(block.title) || 'bieu-do', [spec.x_key, ...spec.y_keys], spec.data)}
         onSaveToSession={ctx.onSaveToSession}
+        onOpenExplore={exploreOf(block, ctx)}
+        onPick={setPicked}
+      />
+      {hidden.length > 0 && (
+        <p className="m-0 flex flex-wrap items-center gap-da-sm text-muted-foreground da-caption">
+          Đã ẩn {hidden.join(', ')}.
+          <button type="button" className="text-primary hover:underline" onClick={() => setHidden([])}>
+            Hiện lại
+          </button>
+        </p>
+      )}
+      <PointMenu
+        axis={spec.x_key}
+        measure={measure}
+        unit={str(block.unit) || undefined}
+        points={points}
+        picked={picked}
+        onPick={setPicked}
+        onFilter={ask && ((c) => ask(filterQuestion(title, spec.x_key, c)))}
+        onExclude={
+          points.length > 1
+            ? (c) => {
+                setHidden((h) => [...h, c]);
+                setPicked(null);
+              }
+            : undefined
+        }
+        onWhy={ask && ((c) => ask(whyQuestion(measure, spec.x_key, points, c, timeAxis)))}
       />
       <TrustNote block={block} />
     </div>
@@ -164,6 +226,7 @@ function TableBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
           arr<Record<string, unknown>>(block.rows),
         )}
         onSaveToSession={ctx.onSaveToSession}
+        onOpenExplore={exploreOf(block, ctx)}
       />
       <TrustNote block={block} />
     </div>

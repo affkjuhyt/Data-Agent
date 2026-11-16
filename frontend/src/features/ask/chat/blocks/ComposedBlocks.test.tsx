@@ -50,6 +50,68 @@ describe('ComposedBlocks', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cột' }));
     expect(screen.getByRole('button', { name: 'Cột' })).toHaveAttribute('aria-pressed', 'true');
   });
+
+  // E3: a point of the chart, picked from the keyboard list (a click on the chart picks the same).
+  const monthly = [
+    {
+      type: 'chart',
+      id: 'c2',
+      composed: true,
+      trust: 'certified',
+      insight: 'Từ 2013-01 đến 2013-03 tăng 200,0%; cao nhất 2013-03, thấp nhất 2013-01.',
+      explore: { metric_id: 'm-1', group_by: ['ngay_dat_hang'], filters: { nam: ['2013'] }, cuts: { Tháng: 'ngay_dat_hang' }, time_cuts: ['ngay_dat_hang'] },
+      spec: {
+        chart_type: 'line',
+        title: 'Doanh thu theo tháng',
+        x_key: 'Tháng',
+        y_keys: ['Doanh thu Internet'],
+        data: [
+          { Tháng: '2013-01', 'Doanh thu Internet': 1 },
+          { Tháng: '2013-02', 'Doanh thu Internet': 2 },
+          { Tháng: '2013-03', 'Doanh thu Internet': 3 },
+        ],
+      },
+    },
+  ] as unknown as AnswerBlockView[];
+  const pick = (month: string) =>
+    fireEvent.change(screen.getByRole('combobox', { name: 'Chọn điểm theo tháng' }), { target: { value: month } });
+
+  it('asks a follow-up that filters on a point, or asks why it stands out', () => {
+    const onAsk = vi.fn();
+    render(<ComposedBlocks blocks={monthly} onAsk={onAsk} />);
+    pick('2013-02');
+    fireEvent.click(screen.getByRole('button', { name: /Lọc theo giá trị này/ }));
+    expect(onAsk).toHaveBeenLastCalledWith('Doanh thu theo tháng, chỉ xét tháng 2013-02');
+    fireEvent.click(screen.getByRole('button', { name: /Phân tích vì sao/ }));
+    expect(onAsk).toHaveBeenLastCalledWith('Vì sao Doanh thu Internet tháng 2013-02 tăng so với 2013-01?');
+    pick('2013-03');
+    fireEvent.click(screen.getByRole('button', { name: /Phân tích vì sao/ }));
+    expect(onAsk).toHaveBeenLastCalledWith('Vì sao Doanh thu Internet tháng 2013-03 cao nhất?');
+  });
+
+  it('hides a left-out point and its reading until shown again; no follow-up while busy', () => {
+    render(<ComposedBlocks blocks={monthly} />);
+    pick('2013-02');
+    expect(screen.queryByRole('button', { name: /Lọc theo giá trị này/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Loại bỏ điểm này/ }));
+    expect(screen.getByText('Đã ẩn 2013-02.')).toBeInTheDocument();
+    expect(screen.queryByText(/tăng 200,0%/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '2013-02' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Hiện lại' }));
+    expect(screen.getByText(/tăng 200,0%/)).toBeInTheDocument();
+  });
+
+  it('opens a certified reading in Khám phá', () => {
+    const onOpenExplore = vi.fn();
+    render(<ComposedBlocks blocks={monthly} onOpenExplore={onOpenExplore} />);
+    fireEvent.click(screen.getByRole('button', { name: /Mở trong Khám phá/ }));
+    expect(onOpenExplore).toHaveBeenCalledWith({
+      metric_id: 'm-1',
+      group_by: ['ngay_dat_hang'],
+      filters: { nam: ['2013'] },
+      time_cuts: ['ngay_dat_hang'],
+    });
+  });
 });
 
 describe('ComposedBlocks: a block that cannot be drawn', () => {

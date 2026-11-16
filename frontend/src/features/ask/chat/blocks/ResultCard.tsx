@@ -12,7 +12,9 @@ import { RunSql } from '../RunSql';
 
 /*
  * The answer's result as one card: the chart or its table (a toggle), and a toolbar —
- * "Khám phá" opens the SQL that ran (design C8), "Xem" the card full size, "Bộ lọc n" the
+ * "Mở trong Khám phá" puts its reading on Khám phá's shelves (E3), "SQL" opens the SQL that ran
+ * (design C8, first labelled "Khám phá", renamed so the two do not share a name), "Xem" the card
+ * full size, "Bộ lọc n" the
  * filters the answer applied, read-only (C7: changing one is a follow-up question, so no
  * un-governed figure appears inside an answer), and "…" for CSV and saving to a session.
  */
@@ -30,6 +32,7 @@ export function ResultCard({
   onExportCsv,
   onSaveToSession,
   onPick,
+  onOpenExplore,
   subtitle,
 }: {
   title: string;
@@ -45,6 +48,8 @@ export function ResultCard({
   onSaveToSession?: () => void;
   /** A bar or point picked on the chart: the member to drill into (DrillPicker). */
   onPick?: (category: string) => void;
+  /** Absent when the result is not a certified metric's: Khám phá has nothing else to open. */
+  onOpenExplore?: () => void;
 }) {
   const [view, setView] = useState<View>(chart ? 'chart' : 'table');
   const [full, setFull] = useState(false);
@@ -86,9 +91,14 @@ export function ResultCard({
             ))}
           </div>
         )}
+        {onOpenExplore && (
+          <button type="button" className={toolButton} onClick={onOpenExplore}>
+            <Icon name="compare" size={14} /> Mở trong Khám phá
+          </button>
+        )}
         {queryRunId && (
           <button type="button" className={toolButton} onClick={() => setExplore(true)}>
-            <Icon name="search" size={14} /> Khám phá
+            <Icon name="search" size={14} /> SQL
           </button>
         )}
         <button type="button" className={toolButton} onClick={() => setFull(true)}>

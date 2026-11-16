@@ -8,6 +8,7 @@ import {
   Pie, PieChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, RadialBar,
   RadialBarChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis,
 } from 'recharts';
+import type { MouseHandlerDataParam } from 'recharts';
 import { formatCompact, formatNumber } from '../../../lib/formatVN';
 import type { ChartSpec } from '../types';
 import { chartColor } from './AnswerTheme';
@@ -17,7 +18,8 @@ import { chartColor } from './AnswerTheme';
 const tickFormatter = (v: unknown) => (typeof v === 'number' ? (Math.abs(v) >= 10_000 ? formatCompact(v) : formatNumber(v)) : String(v ?? ''));
 const valueFormatter = (v: unknown) => (typeof v === 'number' ? formatNumber(v) : String(v ?? ''));
 
-/** `onPick`: a bar clicked, by its category (the answer's "Đi sâu", UC-01-04). */
+/** `onPick`: a point clicked — a bar, a point of a line or area, a slice — by its category on the
+ *  x axis (the answer's "Đi sâu", UC-01-04, and the chat's point menu, E3). */
 export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (category: string) => void }) {
   const colors = Array.from({ length: 6 }, (_, i) => chartColor(i));
   const grid = 'var(--border)';
@@ -28,6 +30,14 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
   };
 
   if (!Array.isArray(spec?.data) || spec.data.length === 0) return null;
+
+  // A click anywhere over a category of a cartesian chart picks it, not only on the mark: a line's
+  // point is a few pixels wide.
+  const pickAt = (state: MouseHandlerDataParam) => {
+    const row = spec.data[Number(state.activeIndex)];
+    if (onPick && row) onPick(String(row[spec.x_key] ?? ''));
+  };
+  const clickable = onPick ? { onClick: pickAt, style: { cursor: 'pointer' } } : {};
 
   const axes = (numericX = false) => (
     <>
@@ -45,14 +55,14 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
     switch (spec.chart_type) {
       case 'line':
         return (
-          <LineChart data={spec.data}>
+          <LineChart data={spec.data} {...clickable}>
             {axes()}
             {spec.y_keys.map((k, i) => <Line key={k} type="monotone" dataKey={k} stroke={colors[i % colors.length]} strokeWidth={2} dot={false} />)}
           </LineChart>
         );
       case 'area':
         return (
-          <AreaChart data={spec.data}>
+          <AreaChart data={spec.data} {...clickable}>
             {axes()}
             {spec.y_keys.map((k, i) => <Area key={k} type="monotone" dataKey={k} stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.2} />)}
           </AreaChart>
@@ -61,7 +71,14 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
         return (
           <PieChart>
             <Tooltip contentStyle={tooltipStyle} formatter={(v: unknown) => valueFormatter(v)} />
-            <Pie data={spec.data} dataKey={spec.y_keys[0]} nameKey={spec.x_key} outerRadius={80}>
+            <Pie
+              data={spec.data}
+              dataKey={spec.y_keys[0]}
+              nameKey={spec.x_key}
+              outerRadius={80}
+              cursor={onPick ? 'pointer' : undefined}
+              onClick={onPick ? (entry: { payload?: Record<string, unknown> }) => onPick(String(entry.payload?.[spec.x_key] ?? '')) : undefined}
+            >
               {spec.data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
             </Pie>
           </PieChart>
@@ -99,7 +116,7 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
       case 'composed':
         if (spec.series) {
           return (
-            <ComposedChart data={spec.data}>
+            <ComposedChart data={spec.data} {...clickable}>
               {axes()}
               {spec.series.map((s, i) => {
                 const color = colors[i % colors.length];
@@ -120,18 +137,9 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
       case 'bar':
       default:
         return (
-          <BarChart data={spec.data}>
+          <BarChart data={spec.data} {...clickable}>
             {axes()}
-            {spec.y_keys.map((k, i) => (
-              <Bar
-                key={k}
-                dataKey={k}
-                fill={colors[i % colors.length]}
-                radius={[2, 2, 0, 0]}
-                cursor={onPick ? 'pointer' : undefined}
-                onClick={onPick ? (entry: { payload?: Record<string, unknown> }) => onPick(String(entry.payload?.[spec.x_key] ?? '')) : undefined}
-              />
-            ))}
+            {spec.y_keys.map((k, i) => <Bar key={k} dataKey={k} fill={colors[i % colors.length]} radius={[2, 2, 0, 0]} />)}
           </BarChart>
         );
     }

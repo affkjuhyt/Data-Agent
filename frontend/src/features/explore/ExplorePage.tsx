@@ -31,6 +31,7 @@ import { useV1 } from '../../lib/v1/useV1';
 import { cn } from '../../lib/utils';
 import { ExplainPanel } from './ExplainPanel';
 import { FieldList, type FieldRef } from './FieldList';
+import { clearHandoff, pendingHandoff, shelvesOf } from './handoff';
 import { ResultChart, ValueTable, type ChartKind } from './ResultChart';
 import { SaveToSessionDialog } from './SaveToSessionDialog';
 import { Shelves, type ShelfState } from './Shelves';
@@ -83,7 +84,12 @@ function Explorer({ model: base }: { model: ExploreModel }) {
   const [mode, setMode] = useState<Mode>('drag');
   const [question, setQuestion] = useState('');
   const [interpreting, setInterpreting] = useState(false);
-  const [shelves, setShelves] = useState<ShelfState>(EMPTY);
+  // Opened from an answer's "Mở trong Khám phá": its reading starts on the shelves.
+  const [opened] = useState(() => {
+    const handoff = pendingHandoff();
+    return handoff && { handoff, result: shelvesOf(handoff, base) };
+  });
+  const [shelves, setShelves] = useState<ShelfState>(opened?.result?.shelves ?? EMPTY);
   // A3 lists no values of a dimension: the filter offers the values results have shown so far.
   const [seen, setSeen] = useState<Record<string, string[]>>({});
   const model = useMemo(
@@ -136,6 +142,22 @@ function Explorer({ model: base }: { model: ExploreModel }) {
       .finally(() => mine === seq.current && setRunning(false));
     // shelves are captured through queryKey.
   }, [queryKey, base, ready, tick]);
+
+  const told = useRef(false);
+  useEffect(() => {
+    clearHandoff();
+    if (!opened || told.current) return;
+    told.current = true;
+    if (!opened.result)
+      toast({ tone: 'error', message: 'Chỉ số của câu trả lời không có trong Khám phá (chưa chứng nhận hoặc bạn không có quyền).' });
+    else if (opened.result.left.length)
+      toast({
+        tone: 'info',
+        message: opened.result.left.every((code) => opened.handoff.time_cuts.includes(code))
+          ? 'Khám phá chưa chia theo tháng hay quý, nên chiều thời gian của câu trả lời chưa được đưa sang.'
+          : `Khám phá không có chiều ${opened.result.left.join(', ')} của câu trả lời, nên chưa đưa sang.`,
+      });
+  }, [opened, toast]);
 
   const explanation = useV1(
     ['getExploreExplanation', result?.id, running],

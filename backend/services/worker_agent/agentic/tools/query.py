@@ -302,6 +302,14 @@ class QueryMetric(Tool):
                 "metric_id": str(entry.metric_id),
                 "group_by": group_by,
                 "filters": {k: list(v) for k, v in args.filters.items()},
+                # Which column is which cut: a point picked on the chart names its column's label,
+                # Khám phá needs the dimension (ComposedBlocks' point menu, "Mở trong Khám phá").
+                "cuts": {
+                    label: code
+                    for label, code in zip(columns, compiled.columns, strict=False)
+                    if code in group_by
+                },
+                "time_cuts": sorted(times & set(group_by)),
             },
         )
         detail["dataset"] = ds.id

@@ -21,6 +21,7 @@ import { useV1 } from '../../lib/v1/useV1';
 import { documentStarterQuestions, starterQuestions } from '../../lib/sampleQuestion';
 import { ReceiptDrawer } from '../answer-receipt/AnswerReceiptPage';
 import { requestPage } from '../documents/focusPage';
+import { handOffToExplore } from '../explore/handoff';
 import { SaveToSessionDialog } from '../explore/SaveToSessionDialog';
 import { SaveToKnowledgeDialog } from '../knowledge/SaveToKnowledgeDialog';
 import { layoutForCommand } from './answerLayout';
@@ -198,6 +199,10 @@ export default function AskDataPage() {
                 onOpenCitation: openCitation,
                 onOpenForecast: (forecastId) => navigate('analysis', 'FORECAST_JOB', forecastId),
                 onExportCsv: exportCsv,
+                onOpenExplore: (handoff) => {
+                  handOffToExplore(handoff);
+                  navigate('analysis', 'EXPLORE');
+                },
               }}
             />
           )}

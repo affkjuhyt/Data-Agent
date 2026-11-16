@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Badge } from '../../../design-system/Badge';
 import { StatusDot } from '../../../design-system/StatusDot';
 import { exportAnswer } from '../../../lib/v1/exports';
+import type { ExploreHandoff } from '../../explore/handoff';
 import { hasReceipt } from '../answerMessage';
 import { ClarificationCard } from '../components/ClarificationCard';
 import { ConfidenceMeter } from '../components/ConfidenceMeter';
@@ -61,6 +62,7 @@ export function AssistantTurn({
   onOpenCitation,
   onOpenForecast,
   onExportCsv,
+  onOpenExplore,
   reported = false,
 }: {
   message: AskMessage;
@@ -80,6 +82,8 @@ export function AssistantTurn({
   /** Opens Forecast Studio / the job for what-if — not embedded in chat. */
   onOpenForecast?: (forecastId: string) => void;
   onExportCsv?: (message: AskMessage) => void;
+  /** "Mở trong Khám phá" on a chart or table of the answer (E3). */
+  onOpenExplore?: (handoff: ExploreHandoff) => void;
 }) {
   const running = message.status === 'streaming';
   const finished = !running && message.status !== 'error';
@@ -129,6 +133,8 @@ export function AssistantTurn({
           onExportCsv={onExportCsv ? () => onExportCsv(message) : undefined}
           onSaveToSession={onSaveSession ? () => onSaveSession(message) : undefined}
           onPick={message.drill && finished && !busy ? setPicked : undefined}
+          onAsk={finished && !busy ? onAsk : undefined}
+          onOpenExplore={onOpenExplore}
         />
       ) : (
         message.content && (

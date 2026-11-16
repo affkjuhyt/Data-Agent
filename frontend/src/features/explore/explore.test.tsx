@@ -13,6 +13,7 @@ import { createHandlers } from '../../mocks/handlers';
 import ArtifactPage from './ArtifactPage';
 import ExplorePage from './ExplorePage';
 import { filterText, formatDelta, formatValue } from './format';
+import { handOffToExplore } from './handoff';
 
 const navigate = vi.fn();
 let routeId: string | undefined;
@@ -184,6 +185,15 @@ describe('ExplorePage', () => {
     await waitFor(() => expect(within(shelf('Chỉ số')).getByText('Dư nợ')).toBeInTheDocument());
     expect(within(shelf('Chiều')).getByText('Chi nhánh')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Kéo thả' })).toBeChecked();
+  });
+
+  it('starts from an answer opened in Khám phá, without the cut read at a grain', async () => {
+    handOffToExplore({ metric_id: 'exp-npl-ratio', group_by: ['vung', 'thang'], filters: {}, time_cuts: ['thang'] });
+    wrap(<ExplorePage />);
+    await waitFor(() => expect(within(shelf('Chỉ số')).getByText('Nợ xấu (%)')).toBeInTheDocument());
+    expect(within(shelf('Chiều')).getByText('Vùng')).toBeInTheDocument();
+    expect(within(shelf('Chiều')).queryByText('Tháng')).not.toBeInTheDocument();
+    expect(await screen.findByText(/chưa chia theo tháng hay quý/)).toBeInTheDocument();
   });
 
   it('opens the metric definition for "Vì sao số này?"', async () => {

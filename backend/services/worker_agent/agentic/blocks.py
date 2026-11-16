@@ -210,12 +210,29 @@ def _row(ds: Dataset, k: KpiDraft) -> list[Any]:
     return ds.rows[k.row]
 
 
+def _explore(ds: Dataset) -> dict[str, Any] | None:
+    """The reading Khám phá can open again: a certified metric's, by its id and dimension codes.
+    Khám phá lists only certified metrics, so another dataset has nothing to open there."""
+    r = ds.reading
+    if not r or ds.trust != "certified" or not r.get("metric_id"):
+        return None
+    return {
+        "metric_id": r["metric_id"],
+        "group_by": list(r.get("group_by", [])),
+        "filters": dict(r.get("filters", {})),
+        "cuts": dict(r.get("cuts", {})),
+        "time_cuts": list(r.get("time_cuts", [])),
+    }
+
+
 def _source(ds: Dataset) -> dict[str, Any]:
+    explore = _explore(ds)
     return {
         "dataset": ds.id,
         "trust": ds.trust,
         "trust_label": TRUST_LABEL[ds.trust],
         "query_run_ids": ds.query_run_ids,
+        **({"explore": explore} if explore else {}),
     }
 
 

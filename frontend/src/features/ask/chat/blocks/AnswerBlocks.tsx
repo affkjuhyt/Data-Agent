@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { ExploreHandoff } from '../../../explore/handoff';
 import { responseOrder, type ResponseSection } from '../../answerLayout';
 import { CitationPanel } from '../../components/CitationPanel';
 import { MarkdownContent } from '../../components/MarkdownContent';
@@ -39,12 +40,17 @@ export function AnswerBlocks({
   onExportCsv,
   onSaveToSession,
   onPick,
+  onAsk,
+  onOpenExplore,
 }: {
   message: AskMessage;
   onOpenCitation?: (citation: Citation) => void;
   onExportCsv?: () => void;
   onSaveToSession?: () => void;
   onPick?: (category: string) => void;
+  /** A follow-up from a composed block (a chart's point menu). */
+  onAsk?: (question: string) => void;
+  onOpenExplore?: (handoff: ExploreHandoff) => void;
 }) {
   const blocks: AnswerBlockView[] = message.blocks ?? [];
   // An answer the dynamic agent composed is drawn in the order it chose, block by block.
@@ -56,6 +62,8 @@ export function AnswerBlocks({
         onOpenCitation={onOpenCitation}
         onExportCsv={onExportCsv}
         onSaveToSession={onSaveToSession}
+        onAsk={onAsk}
+        onOpenExplore={onOpenExplore}
       />
     );
   }
