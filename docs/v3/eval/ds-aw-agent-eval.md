@@ -89,3 +89,35 @@ with `semantic/coverage.py`: both cover 2013-12 and 2014-06 (43 months, the last
 so `query_metric` reads the asked month and moves nothing. The miss is in the agentic turn (plan,
 tool choice or reporter); `present_gate.no_figure` is not shown to be the cause. AE-09 waits for a
 turn trace of these two items from a live run before anything in the gate changes.
+
+## Live runs after the Phase 0 fixes (16/11/2026)
+
+`make agent-eval … --engines agentic,governed --limit 20` on the local cluster, the same 20 items as
+12/11. Three runs, each after a deploy: main at bc177e32 (sqlglot 30, AE-07 rules), 0ad096a8
+("cuối" read as part of a period), 33cb5869 (a "none" argument read as null).
+
+| run | agentic passed | governed passed | agentic tokens | agentic seconds |
+| --- | --- | --- | --- | --- |
+| 12/11 (9e503407, before) | 17 | 20 | 22 626 | 16.1 |
+| bc177e32 | 15 | 20 | 21 658 | 12.7 |
+| 0ad096a8 | 14 | 20 | 23 551 | 13.4 |
+| 33cb5869 | 14 | 20 | 23 243 | 12.8 |
+
+None of the agentic misses went through `explore_sql`, so the AE-07 rules did not touch them; the
+run-to-run spread on the same code is ±2 items (planner variance). What the turn traces showed and
+what was fixed:
+
+- Both stock items were refused by the RES-04 check: "cuối" in "cuối tháng 12/2013" was left over
+  after the period was read and taken for a quantity no metric names. Fixed in the vi pack
+  (0ad096a8); `query_metric` now reads TON_KHO for 2013-12.
+- "Giá trị tồn kho cuối tháng 6/2014" then failed on `analysis: "none"` written by the planner;
+  fixed (33cb5869). The agent now answers 23 603 975.57, the gold value.
+- Both stock items still fail the scorer: the planner adds what was not asked (a same-period
+  comparison, a Python trend, explain_change) and the answer carries extra figures, or only tables
+  with no sentence. "Số đơn Internet năm 2013" answers the gold 21 289 and fails the same way.
+  "Doanh thu tháng 6/2013" and "Giá trị đơn bình quân" fail on planner choices (a Python step that
+  errors; a fiscal-year cut with two date paths).
+
+Reading: on single-metric questions the agentic engine now gets the numbers right and loses on
+over-answering, at 43× the governed path's tokens. This is the case for AE-01 (governed-first
+router, ADR-50), not for more fixes in the agent's planning.

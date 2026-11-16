@@ -117,7 +117,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 
 | ID | Ưu tiên | Tuần | Việc | Phụ thuộc | Vai | CS | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| AE-07 | P0 | 2 (PoC-3) → 6 | `sqlgen/audit_rules.py` R1–R5 cả hai đường | — | AI/BE | S | PoC-3: sai bảng 2/20 → 0; từ chối sai ≤ +5 | doing: luật + test xong; offline 0/48 từ chối sai, 4/4 lỗi đã ghi bị chặn; còn đo `agent-eval` với model |
+| AE-07 | P0 | 2 (PoC-3) → 6 | `sqlgen/audit_rules.py` R1–R5 cả hai đường | — | AI/BE | S | PoC-3: sai bảng 2/20 → 0; từ chối sai ≤ +5 | done 8cb8670e: offline 0/48 từ chối sai, 4/4 lỗi đã ghi bị chặn; 16/11 chạy thật: không câu sai nào đi qua explore_sql (ds-aw-agent-eval.md) |
 | AE-01 | P0 | 5 | `router.py` governed-first + classify tất định | — | BE/AI | M | 20 câu DS-AW đầu → governed | todo |
 | AE-03 | P0 | 5 | `audience` từ api theo vai | — | BE | S | 422 khi client gửi | todo |
 | AE-02 | P0 | 6 | `agentic/budget.py`; partial compose | AE-01 | BE | S | agentic p95 ≤ 60 s; `used_tokens` ghi | todo |
@@ -125,7 +125,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | AE-05 | P0 | 7 | `receipts.py` chung; `answer.sealed`; nới `answer_receipt.data_product_id` nullable | AE-04, AL-01 | BE/DB | M | 61/61 câu có receipt | todo |
 | AE-06 | P0 | 7 | `GET /v1/answers/{id}` envelope; SSE; A2; `make api-types`; FE `trust.ts` | AE-04 | BE/FE | M | FE không map chuỗi tiếng Việt | todo |
 | AE-08 | P0 | 7 | `static_check` + `qualify(on_qualify)` + EXPLAIN dry-run | PL-01 | BE | S | `TABLE_OUT_OF_SCOPE` bắt được | todo |
-| AE-09 | P0 | 7 | NULL/0 theo coverage ở `present_gate` + `_no_value` | — | AI | S | 2 câu tồn kho DS-AW xanh | blocked: 16/11 tái hiện phần tất định trên AW thật — coverage của TON_KHO, GIA_TRI_TON_KHO có tháng 12/2013 và 6/2014, không cắt kỳ; lỗi nằm ở lượt agentic, cần trace lượt chạy thật trước khi sửa |
+| AE-09 | P0 | 7 | NULL/0 theo coverage ở `present_gate` + `_no_value` | — | AI | S | 2 câu tồn kho DS-AW xanh | done 0ad096a8, 33cb5869: nguyên nhân thật là "cuối" bị RES-04 coi là đại lượng và tham số "none"; số đã đúng, còn trượt vì agent trả thừa (chuyển sang AE-01) |
 | AE-10 | P0 | 8 | `clarify_policy.py` chung; mọi đường ra Clarify qua `apply` | AE-03 | AI | S | executive ≤ 1 vòng/3 lựa chọn | todo |
 | AE-11 | P1 | 11 | `ConversationSlots` cả hai đường + `rewrite_for_retrieval` | AE-01 | AI/BE | M | 30 case multi-turn kế thừa ≥ 90 % | todo |
 | AE-12 | P1 | 12 | Verified fuzzy + tile reuse | — | BE | S | ≥ 18/20 khớp, 0 khớp sai | todo |
