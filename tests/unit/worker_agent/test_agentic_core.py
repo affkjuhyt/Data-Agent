@@ -272,6 +272,43 @@ def test_a_quantity_no_metric_measures_is_asked_back_with_the_closest_metrics() 
     )
 
 
+def test_a_turn_that_read_nothing_asks_back_before_writing() -> None:
+    import datetime
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import MetricEntry, Vocabulary
+
+    buyers = uuid.uuid4()
+    vocab = Vocabulary(
+        metrics=[MetricEntry(buyers, "SO_KHACH_HANG", "Số khách hàng mua qua Internet", True)],
+        dimensions=[],
+    )
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+            ws=Workspace(),
+            question="Khách hàng rời bỏ là bao nhiêu?",
+            today=datetime.date(2014, 1, 15),
+            layer=types.SimpleNamespace(
+                vocabulary=vocab, versions={buyers: object()}, blocked_metric_ids=frozenset()
+            ),
+            period=None,
+            period_moves={},
+        ),
+        # q8: two steps ran (catalogue, values), then a replan left no step, in "answer" mode.
+        plan=_plan().model_copy(update={"mode": "answer"}),
+    )
+    assert not engine._ask_for_unnamed_question(state)  # nothing tried: a greeting
+    state.step_runs = 2
+    assert engine._ask_for_unnamed_question(state)
+    assert state.clarify is not None
+    assert state.clarify.options == ["Số khách hàng mua qua Internet là bao nhiêu?"]
+
+
 def test_the_live_timeline_says_what_each_step_found_from_its_data() -> None:
     import uuid
 
