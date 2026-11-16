@@ -15,7 +15,7 @@ import re
 import unicodedata
 import uuid
 from collections import Counter
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Response
 from sqlalchemy import and_, func, literal, or_, select, tuple_
@@ -58,6 +58,7 @@ from services.api.modules.pipeline.schemas import (
     MartCreate,
     MartPatch,
     MaterializeRequest,
+    OnFailure,
     OutputDraft,
     PipelineCreate,
     PipelineDetail,
@@ -908,7 +909,8 @@ async def get_pipeline_schedule(
         trigger_on_job_id=row.trigger_on_job_id,
         depends_on_pipeline_ids=list(row.depends_on_pipeline_ids or []),
         no_overlap=row.no_overlap,
-        on_failure=row.on_failure,
+        # The column's CHECK holds it to OnFailure's values.
+        on_failure=cast(OnFailure, row.on_failure),
     )
 
 
@@ -1007,6 +1009,7 @@ async def get_lineage(
                 links[e.id] = e
         touches_space = any(e.data_space_id == data_space for e in links.values())
         if not touches_space:
+            in_space: uuid.UUID | None = None
             if root[0] == "dataset":
                 in_space = await session.scalar(
                     select(catalog.Dataset.id).where(
@@ -1015,8 +1018,8 @@ async def get_lineage(
                         catalog.Dataset.data_space_id == data_space,
                     )
                 )
-            else:
-                in_space = root[0] == "source" and await session.scalar(
+            elif root[0] == "source":
+                in_space = await session.scalar(
                     select(catalog.Source.id).where(
                         catalog.Source.id == object_id,
                         catalog.Source.org_id == principal.org_id,

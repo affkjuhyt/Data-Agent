@@ -169,7 +169,7 @@ PERSONAL_SHARE = 0.5
 
 
 def _redact_personal(
-    profiles: dict[tuple[str, str, str], dict[str, object]], packs: tuple[str, ...]
+    profiles: dict[tuple[str, str, str], dict[str, Any]], packs: tuple[str, ...]
 ) -> None:
     """A column whose sampled values hold personal data (libs/pii, by the space's country packs)
     keeps its counts only, whatever its name says: "ma_kh" of national ids is masked, an
@@ -348,7 +348,7 @@ def _json_rows(body: str) -> list[dict[str, Any]]:
 
 async def _scan_clickhouse(
     source: catalog.Source, tables: list[str] | None
-) -> list[dict[str, object]]:
+) -> list[dict[str, Any]]:
     credentials = await secrets().read(source.org_id, source.secret_ref)
     schemas = _clickhouse_schemas(source)
     url = _clickhouse_url(source)
@@ -381,7 +381,7 @@ async def _scan_clickhouse(
         described = await _clickhouse_sql(client, url, schemas[0], columns_sql, auth)
     if listed.status_code >= 400 or described.status_code >= 400:
         raise RuntimeError("clickhouse catalog request failed")
-    columns_by_table: dict[tuple[str, str], list[dict[str, object]]] = {}
+    columns_by_table: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in _json_rows(described.text):
         key = (str(row["database"]), str(row["table"]))
         data_type = str(row["type"])
@@ -408,7 +408,7 @@ async def _scan_clickhouse(
     ]
 
 
-async def _scan_source(source: catalog.Source, tables: list[str] | None) -> list[dict[str, object]]:
+async def _scan_source(source: catalog.Source, tables: list[str] | None) -> list[dict[str, Any]]:
     if source.kind == "clickhouse":
         return await _scan_clickhouse(source, tables)
     credentials = await secrets().read(source.org_id, source.secret_ref)
@@ -499,7 +499,7 @@ async def _scan_source(source: catalog.Source, tables: list[str] | None) -> list
     primary_keys = {
         (str(row["schema_name"]), str(row["table_name"]), str(row["attname"])) for row in keys
     }
-    grouped: dict[tuple[str, str], dict[str, object]] = {}
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
     for row in rows:
         key = (str(row["schema_name"]), str(row["table_name"]))
         table = grouped.setdefault(
@@ -530,9 +530,9 @@ async def _scan_source(source: catalog.Source, tables: list[str] | None) -> list
         )
     for row in foreign_keys:
         key = (str(row["child_schema"]), str(row["child_table"]))
-        table = grouped.get(key)
-        if table is not None:
-            table["foreign_keys"].append(
+        child = grouped.get(key)
+        if child is not None:
+            child["foreign_keys"].append(
                 {
                     "child_column": str(row["child_column"]),
                     "parent_schema": str(row["parent_schema"]),
@@ -554,8 +554,8 @@ COLUMNS_PER_SCAN = 100
 
 
 async def _profile_pg_table(
-    conn: Any, table: dict[str, object]
-) -> dict[tuple[str, str, str], dict[str, object]]:
+    conn: Any, table: dict[str, Any]
+) -> dict[tuple[str, str, str], dict[str, Any]]:
     schema_name, table_name = str(table["schema_name"]), str(table["table_name"])
     table_sql = _quote_identifier(schema_name, table_name)
     estimate = int(cast(Any, table.get("row_estimate")) or 0)
@@ -595,11 +595,11 @@ async def _profile_pg_table(
                 "lo": row[f"lo{i}"],
                 "hi": row[f"hi{i}"],
             }
-    profiles: dict[tuple[str, str, str], dict[str, object]] = {}
+    profiles: dict[tuple[str, str, str], dict[str, Any]] = {}
     for name, column_sql, binary in exprs:
         s = stats[name]
         category = s["distinct"] <= MAX_CATEGORY_CARDINALITY and not binary
-        values: list[dict[str, object]] = []
+        values: list[dict[str, Any]] = []
         if not _is_sensitive_column(name) and not binary:
             top = await conn.fetch(
                 f"""
@@ -632,8 +632,8 @@ async def _profile_pg_table(
 
 
 async def _profile_source(
-    source: catalog.Source, tables: list[dict[str, object]]
-) -> dict[tuple[str, str, str], dict[str, object]]:
+    source: catalog.Source, tables: list[dict[str, Any]]
+) -> dict[tuple[str, str, str], dict[str, Any]]:
     """Profile current source tables with bounded aggregates, never returning raw rows."""
     credentials = await secrets().read(source.org_id, source.secret_ref)
     if source.kind == "clickhouse":
@@ -663,7 +663,7 @@ async def _profile_source(
         statement_cache_size=0,
         server_settings={"application_name": "dataagent-schema-profile"},
     )
-    profiles: dict[tuple[str, str, str], dict[str, object]] = {}
+    profiles: dict[tuple[str, str, str], dict[str, Any]] = {}
     timeout_ms = min(int(source.query_timeout_s or 120), 300) * 1000
     try:
         await conn.execute(f"SET statement_timeout = {timeout_ms}")
@@ -713,7 +713,7 @@ async def scan_schema(event: Event) -> None:
             async with scoped_session(ROLE, event.org_id) as session:
                 packs = (await ingest_profile.load(session, source.data_space_id)).pii_packs
             _redact_personal(profiles, packs)
-        relationship_proposals: list[dict[str, object]] = []
+        relationship_proposals: list[dict[str, Any]] = []
         breaking: list[schema_changes.Pending] = []
         additive_notices: list[dict[str, Any]] = []
         skipped: list[dict[str, str]] = []
@@ -872,17 +872,17 @@ async def scan_schema(event: Event) -> None:
                             )
             else:
                 for item in found:
-                    dataset = datasets_by_name.get(
+                    profiled = datasets_by_name.get(
                         (str(item["schema_name"]), str(item["table_name"]))
                     )
-                    if dataset is None:
+                    if profiled is None:
                         continue
                     # Every column the current version has, whichever version recorded it
                     # (ColumnMeta.dataset_version is the first version with the column).
                     columns = (
                         await session.scalars(
                             schema_changes.live_columns(
-                                dataset.id, int(dataset.current_version or 1)
+                                profiled.id, int(profiled.current_version or 1)
                             )
                         )
                     ).all()
@@ -923,7 +923,7 @@ async def scan_schema(event: Event) -> None:
                             and isinstance(category_values, list)
                             and category_values
                         ):
-                            value_samples.append((dataset.id, column.name, category_values))
+                            value_samples.append((profiled.id, column.name, category_values))
             scanned = len(found) - len(skipped)
             run.tables_total = len(found)
             run.tables_scanned = scanned
@@ -967,7 +967,7 @@ async def scan_schema(event: Event) -> None:
                 RELATIONSHIP_ROLE, event.org_id, event.payload.get("requested_by")
             ) as relation_session:
                 for proposal in relationship_proposals:
-                    existing = (
+                    recorded = (
                         await relation_session.scalars(
                             select(context.Relationship).where(
                                 context.Relationship.org_id == event.org_id,
@@ -980,7 +980,7 @@ async def scan_schema(event: Event) -> None:
                     if any(
                         relation.from_columns == proposal["from_columns"]
                         and relation.to_columns == proposal["to_columns"]
-                        for relation in existing
+                        for relation in recorded
                     ):
                         continue
                     relation = context.Relationship(

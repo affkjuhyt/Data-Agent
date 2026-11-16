@@ -13,7 +13,7 @@ import logging
 import os
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, BinaryIO, Protocol
+from typing import TYPE_CHECKING, Any, BinaryIO, Protocol
 
 if TYPE_CHECKING:
     from qdrant_client import AsyncQdrantClient
@@ -92,7 +92,7 @@ class MinioObjectStore:
         self._key = parsed.username
         self._secret = parsed.password
 
-    def _client(self):
+    def _client(self) -> Any:
         import aioboto3
         from botocore.config import Config
 
@@ -140,11 +140,13 @@ class MinioObjectStore:
 
         try:
             async with self._client() as client:
-                return await client.generate_presigned_url(
+                # Typed: aioboto3 is untyped, so what it returns is Any to mypy.
+                url: str = await client.generate_presigned_url(
                     "get_object",
                     Params={"Bucket": bucket, "Key": key},
                     ExpiresIn=ttl_seconds,
                 )
+                return url
         except (BotoCoreError, ClientError) as exc:
             raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
 
@@ -154,7 +156,8 @@ class MinioObjectStore:
         try:
             async with self._client() as client:
                 response = await client.get_object(Bucket=bucket, Key=key)
-                return await response["Body"].read()
+                data: bytes = await response["Body"].read()
+                return data
         except ClientError as exc:
             # A missing original is the document's fault, not the store's: 404, not 503.
             if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:

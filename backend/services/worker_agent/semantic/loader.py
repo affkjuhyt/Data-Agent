@@ -190,10 +190,11 @@ async def load(
     measures_by_code = {m.code: m for m in measures}
     blocked_metric_ids: set[uuid.UUID] = set()
     for metric_id, version in version_rows.items():
+        columns: list[exp.Column]
         try:
-            columns = parse_one(version.expression).find_all(exp.Column)
+            columns = list(parse_one(version.expression).find_all(exp.Column))
         except ParseError:
-            columns = ()
+            columns = []
         restricted = False
         for column in columns:
             measure = measures_by_code.get(column.name)
@@ -218,7 +219,6 @@ async def load(
                 break
         if restricted:
             blocked_metric_ids.add(metric_id)
-    blocked_metric_ids = frozenset(blocked_metric_ids)
     column_types = {
         (col.dataset_id, col.name): col.normalized_type
         for col in (
@@ -375,4 +375,6 @@ async def load(
         ),
         calendar=calendar,
     )
-    return SpaceLayer(vocabulary, layer, versions, version_rows, datasets, blocked_metric_ids)
+    return SpaceLayer(
+        vocabulary, layer, versions, version_rows, datasets, frozenset(blocked_metric_ids)
+    )

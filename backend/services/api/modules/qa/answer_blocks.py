@@ -20,10 +20,15 @@ def _json(value: Any) -> Any:
     )
 
 
+def _mapping(value: Any) -> dict[str, Any]:
+    """The value when it is a JSON object, else an empty one (stored JSON is not checked)."""
+    return value if isinstance(value, dict) else {}
+
+
 def _figure_rows(figures: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for figure in figures:
-        dimensions = figure.get("dimensions") if isinstance(figure.get("dimensions"), dict) else {}
+        dimensions = _mapping(figure.get("dimensions"))
         row = {str(key): _json(value) for key, value in dimensions.items()}
         row["value"] = _json(figure.get("value"))
         if figure.get("unit") is not None:
@@ -39,7 +44,7 @@ def _caveats(answer: Any, figures: list[dict[str, Any]]) -> list[str]:
     check = answer.number_check if isinstance(getattr(answer, "number_check", None), dict) else {}
     # What the worker left out of the answer and said so (a cut the metric does not allow).
     items += [str(note) for note in check.get("notes") or [] if note]
-    verification = check.get("verification") if isinstance(check.get("verification"), dict) else {}
+    verification = _mapping(check.get("verification"))
     for item in verification.get("checks") or []:
         if isinstance(item, dict) and item.get("passed") is False and item.get("detail"):
             items.append(str(item["detail"]))
@@ -78,7 +83,7 @@ def blocks_of(answer: Any) -> list[dict[str, Any]]:
     for index, figure in enumerate(figures):
         if figure.get("value") is None:
             continue
-        dimensions = figure.get("dimensions") if isinstance(figure.get("dimensions"), dict) else {}
+        dimensions = _mapping(figure.get("dimensions"))
         blocks.append(
             {
                 "type": "metric",

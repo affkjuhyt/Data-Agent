@@ -14,7 +14,7 @@ import json
 import re
 import uuid
 from collections.abc import AsyncIterator
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from sqlalchemy import func, select, text
@@ -357,7 +357,9 @@ async def get_question_steps(
     )
     steps = []
     for row in turn.steps:
-        view = row.output["_view"]
+        # turn_steps keeps only the steps whose output is an object with a `_view`.
+        output = cast(dict[str, Any], row.output)
+        view = output["_view"]
         steps.append(
             TurnStepView(
                 step_id=str(view.get("step_id") or f"s{row.seq}"),
@@ -369,7 +371,7 @@ async def get_question_steps(
                 status=STEP_STATUS.get(row.status, "done"),  # type: ignore[arg-type]
                 started_at=row.started_at,
                 duration_ms=row.duration_ms,
-                detail=_without_sql(row.output.get("detail")),
+                detail=_without_sql(output.get("detail")),
                 summary=row.summary,
                 parent=view.get("parent"),
             )

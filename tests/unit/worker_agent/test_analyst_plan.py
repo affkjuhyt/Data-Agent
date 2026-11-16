@@ -15,7 +15,7 @@ def test_build_analysis_plan_is_not_metric_first() -> None:
         metric_version_id="metric-v1",
         metric_name="Doanh số",
         group_by=["region"],
-        filters=[],
+        filters={},
         period=(datetime.date(2025, 1, 1), datetime.date(2025, 3, 31)),
         top_n=None,
         top_desc=None,

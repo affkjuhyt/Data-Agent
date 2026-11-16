@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import decimal
 import uuid
 from typing import Any
 
@@ -169,7 +170,7 @@ async def run_eval(event: Event) -> None:
                 )
             ).all()
         )
-        baseline = {}
+        baseline: dict[uuid.UUID, bool] = {}
         baseline_rate = None
         if run.baseline_run_id:
             baseline_rate = await session.scalar(
@@ -184,7 +185,9 @@ async def run_eval(event: Event) -> None:
                             evaluation.EvalResult.eval_item_id, evaluation.EvalResult.passed
                         ).where(evaluation.EvalResult.eval_run_id == run.baseline_run_id)
                     )
-                ).all()
+                )
+                .tuples()
+                .all()
             )
         # A nightly run has no person who asked for it: each item is answered as the one who last
         # wrote it, so a steward of narrower scope cannot have the Data Space steward's rights
@@ -301,7 +304,8 @@ async def run_eval(event: Event) -> None:
             failed,
             refusals,
         )
-        run.pass_rate = passed / len(items) if items else 0
+        # numeric column: written as a Decimal, as it is read back.
+        run.pass_rate = decimal.Decimal(str(passed / len(items))) if items else decimal.Decimal(0)
         run.regressions, run.status, run.finished_at = (
             regressions,
             "completed",

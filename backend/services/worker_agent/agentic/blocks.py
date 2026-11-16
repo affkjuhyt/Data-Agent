@@ -439,15 +439,16 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
             y = [c for _, c in sorted(zip(keys, y, strict=True))]
         # A time axis is drawn in time order: a reading ranked by value ("top_desc") drew its
         # months 12, 6, 10… and its line read "Từ 2013-12 đến 2013-02 giảm 58,8%" (16/11).
-        rows = ds.rows
-        order = [time_order(plain(r[ds.columns.index(x)])) for r in rows]
-        if rows and all(k is not None for k in order):
-            rows = [r for _, r in sorted(zip(order, rows, strict=True), key=lambda p: p[0])]
+        points = ds.rows
+        order = [time_order(plain(r[ds.columns.index(x)])) for r in points]
+        if points and all(k is not None for k in order):
+            keyed = [(k, r) for k, r in zip(order, points, strict=True) if k is not None]
+            points = [r for _, r in sorted(keyed, key=lambda p: p[0])]
         # Fitted on every row, not the first MAX_CHART_POINTS: a chart of the first 120 days of a
         # year drew a line that stopped in May with nothing saying the rest was missing.
-        x_values = [plain(r[ds.columns.index(x)]) for r in rows]
-        measures = [[number(r[ds.columns.index(c)]) for r in rows] for c in y]
-        fits = fitting_charts(_x_kind(x, x_values), measures, len(rows))
+        x_values = [plain(r[ds.columns.index(x)]) for r in points]
+        measures = [[number(r[ds.columns.index(c)]) for r in points] for c in y]
+        fits = fitting_charts(_x_kind(x, x_values), measures, len(points))
         if not fits:
             # No chart fits these rows (one row, too many members or points): they are shown as a
             # table, which says how many rows there are.
@@ -456,7 +457,7 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
             )
         chart_type = draft.chart_type if draft.chart_type in fits else fits[0]
         data = []
-        for r in rows:
+        for r in points:
             point: dict[str, Any] = {x: plain(r[ds.columns.index(x)])}
             for c in y:
                 point[c] = number(r[ds.columns.index(c)])
