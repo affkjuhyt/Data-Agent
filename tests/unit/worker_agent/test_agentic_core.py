@@ -894,6 +894,11 @@ def test_explore_sql_bans_audited_sql_on_the_shared_context(
         )
 
     monkeypatch.setattr("services.worker_agent.agentic.tools.query.explore", fake_explore)
+    # The catalogue rules (AE-07) read a whole SpaceLayer this test does not build; the explore
+    # they would feed is faked above, so they have nothing to check here.
+    monkeypatch.setattr(
+        "services.worker_agent.sqlgen.audit_rules.context_for", lambda *_a, **_k: None
+    )
 
     async def fake_load_space(*_a, **_k):
         return types.SimpleNamespace(

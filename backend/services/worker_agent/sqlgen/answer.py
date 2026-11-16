@@ -36,7 +36,8 @@ from services.worker_agent.providers.registry import ProviderRegistry
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.query.secrets import SecretReader
-from services.worker_agent.sqlgen import verified
+from services.worker_agent.semantic.loader import load as load_layer
+from services.worker_agent.sqlgen import audit_rules, verified
 from services.worker_agent.sqlgen.run import Exploration, explore
 from services.worker_agent.sqlgen.schema import Linked, link
 from services.worker_agent.sqlgen.space import load_space
@@ -183,6 +184,12 @@ async def answer_by_sql(
         space_id, text = conversation.data_space_id, question.text
         space = await load_space(session, space_id, user_id)
         linked = link(text, space.schema)
+        # The catalogue's hold on the statement (AE-07): a metric the question names, its values
+        # and its period. Read here because the governed path tries SQL only after its own reading.
+        rules = None
+        if linked.tables and audit_rules.enabled():
+            today = question.as_of or clock.today(await clock.space_zone(session, space_id))
+            rules = audit_rules.context_for(text, await load_layer(session, space_id), today=today)
         if not linked.tables:
             return False
         linked, src = _keep_one_source(linked, space.source_of)
@@ -229,7 +236,13 @@ async def answer_by_sql(
         chips=[{"kind": "source", "label": source.name}],
     ) as written:
         e = await explore(
-            gateway, text, linked, dialect_of(source.kind), space.schema.examples, run_sql
+            gateway,
+            text,
+            linked,
+            dialect_of(source.kind),
+            space.schema.examples,
+            run_sql,
+            audit=rules,
         )
         written.detail = {
             "candidates": len(e.tried),

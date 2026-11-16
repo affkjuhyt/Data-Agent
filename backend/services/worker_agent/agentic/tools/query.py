@@ -23,6 +23,7 @@ from services.worker_agent.llm import ModelUnavailable
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.semantic import analysis, compare, coverage
 from services.worker_agent.semantic import compiler as c
+from services.worker_agent.sqlgen import audit_rules
 from services.worker_agent.sqlgen.answer import _keep_one_source
 from services.worker_agent.sqlgen.check import fingerprint
 from services.worker_agent.sqlgen.generate import schema_text
@@ -427,6 +428,12 @@ class ExploreSql(Tool):
             )
 
         dialect = dialect_of(source.kind)
+        # The catalogue's hold on the statement (AE-07): checked before it runs, unlike _audit.
+        rules = (
+            audit_rules.context_for(args.question or ctx.question, ctx.layer, today=ctx.today)
+            if audit_rules.enabled()
+            else None
+        )
         # One semantic-audit miss → ban that SQL and try explore once more this step (RES-02);
         # a second miss goes back to the planner with the ban kept on the turn.
         last_reason = ""
@@ -439,6 +446,7 @@ class ExploreSql(Tool):
                 space.schema.examples,
                 run_sql,
                 refuse=tuple(ctx.refused_sql),
+                audit=rules,
             )
             for name in e.models:
                 ctx.models.append({"task": "text_to_sql", "model_name": name, "tokens": e.tokens})
@@ -449,6 +457,9 @@ class ExploreSql(Tool):
                 "query_run_id": str(e.query_run_id) if e.query_run_id else None,
                 "refused": len(ctx.refused_sql),
             }
+            rejected = [p for t in e.tried if t.get("status") == "rejected" for p in t["problems"]]
+            if rejected:
+                detail["audit_rules"] = sorted(set(rejected))[:5]
             if e.decision == "failed" or e.query_run_id is None:
                 if last_reason:
                     return ToolResult(

@@ -117,7 +117,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 
 | ID | Ưu tiên | Tuần | Việc | Phụ thuộc | Vai | CS | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| AE-07 | P0 | 2 (PoC-3) → 6 | `sqlgen/audit_rules.py` R1–R5 cả hai đường | — | AI/BE | S | PoC-3: sai bảng 2/20 → 0; từ chối sai ≤ +5 | todo |
+| AE-07 | P0 | 2 (PoC-3) → 6 | `sqlgen/audit_rules.py` R1–R5 cả hai đường | — | AI/BE | S | PoC-3: sai bảng 2/20 → 0; từ chối sai ≤ +5 | doing: luật + test xong; offline 0/48 từ chối sai, 4/4 lỗi đã ghi bị chặn; còn đo `agent-eval` với model |
 | AE-01 | P0 | 5 | `router.py` governed-first + classify tất định | — | BE/AI | M | 20 câu DS-AW đầu → governed | todo |
 | AE-03 | P0 | 5 | `audience` từ api theo vai | — | BE | S | 422 khi client gửi | todo |
 | AE-02 | P0 | 6 | `agentic/budget.py`; partial compose | AE-01 | BE | S | agentic p95 ≤ 60 s; `used_tokens` ghi | todo |

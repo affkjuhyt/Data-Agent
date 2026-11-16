@@ -58,3 +58,25 @@ make agent-eval AGENT_EVAL_ORG=… AGENT_EVAL_AS=… AGENT_EVAL_ARGS="--engines 
 Watch for kind-1 misses from the baseline (quota as revenue, gross profit as margin, unfiltered
 channel). A refused SQL must not win again in the same turn; the timeline step detail shows
 `audit` and `refused`.
+
+## AE-07 catalogue rules for exploratory SQL (PoC-3, 16/11/2026)
+
+`sqlgen/audit_rules.py` holds a statement to the metric the deterministic reading of the question
+names (its tables, all of them when nothing is filtered, its measure columns, its division, its
+distinct counts) and to the question's own filter values and period, before the statement runs;
+on both paths (`answer_by_sql` and `explore_sql`). `SQL_AUDIT_RULES=off` turns it off.
+
+Measured offline, no model (`tests/integration/worker_agent/test_adventureworks_audit_rules.py`, the
+real AdventureWorksDW and `ds-aw.yaml`):
+
+| | result |
+| --- | --- |
+| reference SQL of the eval set refused (false refusals) | 0 / 48 |
+| questions the rules held to a metric | 42 / 48 |
+| recorded misses refused on the real model (quota for revenue, one channel for both, gross profit for margin, order lines for orders) | 4 / 4 |
+
+Two rules were narrowed on that run: a filtered slice is not held to every table of its metric
+(aw020: Components are sold to resellers only), and a reading that cuts a metric along a dimension
+it does not allow holds nothing (aw045: "doanh số" is a revenue synonym, Trade Sales a finance
+account). Not measured yet: the same 20 items through `make agent-eval` with the served model (the
+local cluster's workers wait on migration v3_0035, 16/11/2026).
