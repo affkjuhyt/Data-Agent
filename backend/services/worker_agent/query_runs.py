@@ -159,7 +159,7 @@ async def _explore(
 _OPS = {"eq": exp.EQ, "ne": exp.NEQ, "gt": exp.GT, "gte": exp.GTE, "lt": exp.LT, "lte": exp.LTE}
 
 
-def _literal(value: Any) -> exp.Expression:
+def _literal(value: Any) -> exp.Expr:
     if isinstance(value, bool):
         return exp.Boolean(this=value)
     if isinstance(value, int | float):
@@ -167,7 +167,7 @@ def _literal(value: Any) -> exp.Expression:
     return exp.Literal.string(str(value))
 
 
-def _condition(f: dict[str, Any]) -> exp.Expression:
+def _condition(f: dict[str, Any]) -> exp.Expr:
     column = exp.column(str(f["column"]), quoted=True)
     op, value = f.get("op", "eq"), f.get("value")
     if op == "in":

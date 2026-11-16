@@ -30,7 +30,7 @@ DIALECTS = {
     "databricks": "databricks",
 }
 
-_WRITES: tuple[type[exp.Expression], ...] = (
+_WRITES: tuple[type[exp.Expr], ...] = (
     exp.Insert,
     exp.Update,
     exp.Delete,
@@ -116,7 +116,7 @@ def dialect_of(source_kind: str) -> str:
         raise SqlRejected(f"no SQL dialect for a {source_kind} source") from exc
 
 
-def check_read_only(sql: str, dialect: str) -> exp.Expression:
+def check_read_only(sql: str, dialect: str) -> exp.Expr:
     """The parsed statement when it is one read-only query; SqlRejected otherwise."""
     try:
         statements = [s for s in sqlglot.parse(sql, read=dialect) if s is not None]
@@ -155,7 +155,7 @@ def check_read_only(sql: str, dialect: str) -> exp.Expression:
     return tree
 
 
-def capped(tree: exp.Expression, dialect: str, limit: int) -> str:
+def capped(tree: exp.Expr, dialect: str, limit: int) -> str:
     """The query wrapped so the source returns at most `limit` rows: one more than shown tells the
     executor the result was truncated.
 
@@ -171,7 +171,7 @@ def capped(tree: exp.Expression, dialect: str, limit: int) -> str:
     return sql
 
 
-def tables_of(tree: exp.Expression, dialect: str) -> set[tuple[str | None, str]]:
+def tables_of(tree: exp.Expr, dialect: str) -> set[tuple[str | None, str]]:
     """The (schema, table) pairs a checked query reads; schema None when it is not written.
 
     A CTE's name is not a table, but only where that CTE is visible: names are resolved scope by
@@ -235,7 +235,7 @@ def read_only_problem(sql: str) -> str | None:
     return reasons[0]
 
 
-def _expression(expression: str, dialect: str) -> exp.Expression:
+def _expression(expression: str, dialect: str) -> exp.Expr:
     """One SQL expression (a metric's or a measure's), parsed; ValueError when it is not one."""
     try:
         trees = [tree for tree in sqlglot.parse(expression, read=dialect) if tree is not None]

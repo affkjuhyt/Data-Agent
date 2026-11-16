@@ -157,7 +157,7 @@ FILTER_OPS = (
     "is_null",
     "is_not_null",
 )
-_COMPARISONS: dict[str, type[exp.Expression]] = {
+_COMPARISONS: dict[str, type[exp.Expr]] = {
     "=": exp.EQ,
     "!=": exp.NEQ,
     "<": exp.LT,
@@ -213,9 +213,9 @@ def check_filter(f: Filter) -> None:
         )
 
 
-def _condition(expr: exp.Expression, f: Filter) -> exp.Expression:
+def _condition(expr: exp.Expr, f: Filter) -> exp.Expr:
     if f.op in ("in", "not_in"):
-        cond: exp.Expression = exp.In(this=expr, expressions=[_literal(v) for v in f.values])
+        cond: exp.Expr = exp.In(this=expr, expressions=[_literal(v) for v in f.values])
         return exp.not_(cond) if f.op == "not_in" else cond
     if f.op == "between":
         low, high = f.values
@@ -267,13 +267,13 @@ def _table(t: Table, alias: str) -> exp.Table:
 
 def _measures(
     metric: MetricVersion, layer: Layer
-) -> tuple[exp.Expression, dict[str, exp.Expression], dict[uuid.UUID, list[str]]]:
+) -> tuple[exp.Expr, dict[str, exp.Expr], dict[uuid.UUID, list[str]]]:
     """The metric's expression, each measure's aggregate, and the measure codes of each entity."""
     try:
         tree = parse_one(metric.expression)
     except ParseError as exc:
         raise CompileError("CONTRACT_MISMATCH", "the metric's expression does not parse") from exc
-    measures: dict[str, exp.Expression] = {}
+    measures: dict[str, exp.Expr] = {}
     by_entity: dict[uuid.UUID, list[str]] = {}
     for column in tree.find_all(exp.Column):
         measure = layer.measures.get(column.name)
@@ -296,11 +296,11 @@ def _measures(
     return tree, measures, by_entity
 
 
-def _swap(tree: exp.Expression, by_code: Mapping[str, exp.Expression]) -> exp.Expression:
+def _swap(tree: exp.Expr, by_code: Mapping[str, exp.Expr]) -> exp.Expr:
     """The expression with each measure code replaced. Matched by name: transform() works on a
     copy, so nodes found earlier are not the ones it visits; the expression names only measures."""
 
-    def swap(node: exp.Expression) -> exp.Expression:
+    def swap(node: exp.Expr) -> exp.Expr:
         if isinstance(node, exp.Column) and node.name in by_code:
             return exp.paren(by_code[node.name].copy(), copy=False)
         return node
@@ -308,10 +308,10 @@ def _swap(tree: exp.Expression, by_code: Mapping[str, exp.Expression]) -> exp.Ex
     return tree.transform(swap)
 
 
-def _safe_division(tree: exp.Expression) -> exp.Expression:
+def _safe_division(tree: exp.Expr) -> exp.Expr:
     """Every division of the metric's expression by NULLIF(denominator, 0)."""
 
-    def guard(node: exp.Expression) -> exp.Expression:
+    def guard(node: exp.Expr) -> exp.Expr:
         if isinstance(node, exp.Div) and not isinstance(node.expression, exp.Nullif):
             node.set(
                 "expression",
@@ -322,7 +322,7 @@ def _safe_division(tree: exp.Expression) -> exp.Expression:
     return tree.transform(guard)
 
 
-def _qualify(expression: str, alias: str) -> exp.Expression:
+def _qualify(expression: str, alias: str) -> exp.Expr:
     """A dimension's column expression, with its bare columns bound to the table alias."""
     tree = parse_one(expression)
     for column in tree.find_all(exp.Column):
@@ -331,7 +331,7 @@ def _qualify(expression: str, alias: str) -> exp.Expression:
     return tree
 
 
-def _literal(value: object) -> exp.Expression:
+def _literal(value: object) -> exp.Expr:
     if isinstance(value, bool):
         return exp.Boolean(this=value)
     if isinstance(value, int | float):
@@ -378,12 +378,12 @@ def fiscal_shift(cal: clock.Calendar) -> int:
 
 
 def _at_grain(
-    when: exp.Expression,
+    when: exp.Expr,
     dim: Dimension,
     grain: str,
     cal: clock.Calendar = clock.DEFAULT,
     dialect: str = "postgres",
-) -> exp.Expression:
+) -> exp.Expr:
     """A time value at a grain, as text that orders like the periods: '2026-09', '2026-Q3'.
 
     A date is formatted (TO_CHAR, DATE_FORMAT, FORMAT… per dialect); ISO text is cut. A quarter is
@@ -423,7 +423,7 @@ def _at_grain(
         )
         return exp.TimeToStr(this=first, format=exp.Literal.string("%Y-%m-%d"))
 
-    def part(start: int, length: int, fmt: str) -> exp.Expression:
+    def part(start: int, length: int, fmt: str) -> exp.Expr:
         if dim.value_type == "string":
             return exp.Substring(
                 this=when.copy(),
@@ -514,7 +514,7 @@ def _reaches(layer: Layer, entity: uuid.UUID, code: str) -> bool:
     return True
 
 
-def _on(join: Join, from_alias: str, alias: str) -> exp.Expression:
+def _on(join: Join, from_alias: str, alias: str) -> exp.Expr:
     return exp.and_(
         *(
             exp.EQ(
@@ -556,7 +556,7 @@ def _side(
     request: Request,
     layer: Layer,
     entity: uuid.UUID,
-    outputs: Sequence[tuple[str, exp.Expression]],
+    outputs: Sequence[tuple[str, exp.Expr]],
     grain: str,
     by_day: bool,
     shared: bool = False,
@@ -636,7 +636,7 @@ def _side(
                 column.set("table", exp.to_identifier("t0"))
 
     select = exp.select()
-    group: list[exp.Expression] = []
+    group: list[exp.Expr] = []
     time_cut: Dimension | None = None
     for code in request.group_by:
         dim = dimension(code)
@@ -655,7 +655,7 @@ def _side(
     for name, expr in outputs:
         select = select.select(exp.alias_(expr, name, quoted=True))
 
-    conditions: list[exp.Expression] = []
+    conditions: list[exp.Expr] = []
     if request.knowledge_at is not None:
         if base.history_kind not in {"temporal", "scd2"} or not base.knowledge_time_col:
             raise CompileError(
@@ -699,14 +699,14 @@ def _side(
                 hop_table = tables[join.to_dataset_id]
                 l_joins.append((hop_table, f"l{hop + 1}", join, "l" if hop == 0 else f"l{hop}"))
             l_alias = l_joins[-1][1] if l_joins else "l"
-    in_range: exp.Expression | None = None
-    in_range_of_l: exp.Expression | None = None
+    in_range: exp.Expr | None = None
+    in_range_of_l: exp.Expr | None = None
     if request.period is not None:
         if time_dim is None:
             raise CompileError("NO_DATA_FOR_PERIOD", "the metric's table has no time dimension")
         when = _qualify(time_dim.expression, alias_for(time_dim))
-        start: exp.Expression
-        end: exp.Expression
+        start: exp.Expr
+        end: exp.Expr
         if time_dim.value_type == "string":
             start, end = (exp.Literal.string(b) for b in _text_bounds(request.period))
         else:
@@ -789,7 +789,7 @@ def _groups(
     return groups
 
 
-def _ordered(select: exp.Select, request: Request, dims: Sequence[exp.Expression]) -> exp.Select:
+def _ordered(select: exp.Select, request: Request, dims: Sequence[exp.Expr]) -> exp.Select:
     if not dims:
         return select
     if request.top_n is not None:
