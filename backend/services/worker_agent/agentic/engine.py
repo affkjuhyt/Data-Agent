@@ -748,7 +748,9 @@ def _ask_for_unnamed_question(s: State) -> bool:
     assert s.ctx is not None and s.plan is not None
     if s.ctx.ws.datasets or s.clarify is not None or s.prior_clarify_rounds > 0:
         return False
-    if s.plan.mode != "analyze":
+    # A turn that tried the data (steps ran), whatever mode a replan left it in: q8's replan
+    # turned "analyze" into "answer". A greeting plans no step and is not asked back.
+    if not s.plan.steps:
         return False
     vocab = getattr(s.ctx.layer, "vocabulary", None)
     if vocab is None:

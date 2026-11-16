@@ -257,6 +257,10 @@ def test_a_quantity_no_metric_measures_is_asked_back_with_the_closest_metrics() 
     )
     # Each option is the question again with a metric in place of the quantity.
     assert ask.options == ["Số khách hàng mua qua Internet là bao nhiêu?"]
+    # A member written as a name is not a quantity.
+    assert (
+        clarify_policy.unnamed_quantity("Doanh thu nhóm Bikes năm 2013?", ["bikes"], layer) is None
+    )
     # A cut's words are a missed cut, not a missing metric: no question back.
     assert (
         clarify_policy.unnamed_quantity("Cơ cấu theo nhóm sản phẩm", ["nhom", "san", "pham"], layer)

@@ -111,10 +111,18 @@ def unnamed_quantity(
         cut_words |= set(norm(d.name).split())
     for v in vocab.values:
         cut_words |= set(norm(v.label).split())
-    wanted = set(unnamed)
+    tokens = question.split()
+    # A word written as a name inside the sentence ("nhóm Bikes", "Mountain-200") is a member the
+    # catalogue's value list does not hold, not a quantity: "Doanh thu nhóm Bikes năm 2013" was
+    # asked back as if "Bikes" were a metric (17/11).
+    members = {
+        norm(_TRAILING.sub("", t))
+        for i, t in enumerate(tokens)
+        if (i > 0 and t[:1].isupper()) or any(ch.isdigit() for ch in t)
+    }
+    wanted = set(unnamed) - members
     if not wanted or wanted <= cut_words:
         return None
-    tokens = question.split()
     at = [i for i, t in enumerate(tokens) if norm(_TRAILING.sub("", t)) in wanted]
     if not at:
         return None
