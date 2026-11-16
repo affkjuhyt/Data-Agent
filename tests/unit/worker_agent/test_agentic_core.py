@@ -1327,3 +1327,26 @@ def test_the_reporter_lays_out_by_question_and_names_no_internals() -> None:
     assert "thuật ngữ nội bộ" in prompts.REVIEW_ANSWER
     # "theo tháng" is a grain; a running total or a comparison is not added unasked.
     assert "không tự thêm" in prompts.EXECUTOR
+
+
+def test_a_null_written_as_text_leaves_an_optional_query_argument_out() -> None:
+    # 16/11/2026: the planner wrote analysis "none" and the stock question was never read.
+    from services.worker_agent.agentic.tools.query import QueryMetricArgs
+
+    args = QueryMetricArgs.model_validate(
+        {
+            "metric": "GIA_TRI_TON_KHO",
+            "period": "2014-06",
+            "analysis": "none",
+            "compare_to": "Null",
+            "grain": "",
+            "top_n": "none",
+        }
+    )
+    assert (args.analysis, args.compare_to, args.grain, args.top_n) == (None, None, None, None)
+    assert args.period == "2014-06"
+    # A real value is still held to the schema.
+    with pytest.raises(ValueError):
+        QueryMetricArgs.model_validate({"metric": "X", "analysis": "average"})
+    # The metric is not optional: "none" stays a (wrong) code, not a missing one.
+    assert QueryMetricArgs.model_validate({"metric": "none"}).metric == "none"

@@ -9,7 +9,7 @@ import re
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session
@@ -71,6 +71,23 @@ class QueryMetricArgs(BaseModel):
         default=None, description="tỷ trọng trên tổng / luỹ kế, hoặc null"
     )
     title: str | None = Field(default=None, description="tên ngắn của bảng kết quả")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _null_words(cls, data: Any) -> Any:
+        """The planner writes "none" or "null" as text for an optional argument it means to leave
+        out; on 16/11/2026 `analysis: "none"` failed the schema, the step failed, and a stock
+        question the catalogue answers was never read."""
+        if not isinstance(data, dict):
+            return data
+        return {
+            k: None if k in _OPTIONAL and isinstance(v, str) and v.strip().lower() in _NULLS else v
+            for k, v in data.items()
+        }
+
+
+_NULLS = frozenset({"", "none", "null", "nil"})
+_OPTIONAL = frozenset({"period", "grain", "top_n", "compare_to", "analysis", "title"})
 
 
 async def _source_for(ctx: ToolContext, dataset_id: uuid.UUID) -> catalog.Source | None:
