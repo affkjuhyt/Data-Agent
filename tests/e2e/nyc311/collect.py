@@ -38,6 +38,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import time
 import urllib.error
@@ -57,6 +58,9 @@ PAGE_SIZE = 50_000
 RETRIES = 5
 USER_AGENT = "DataAgent-eval/1.0 (NYC 311 snapshot for internal evaluation)"
 TERMS = "to be confirmed"
+MONTH = re.compile(r"\d{4}-\d{2}")
+SNAPSHOT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+_DAY = datetime.timedelta(days=1)
 
 
 class Refused(Exception):
@@ -156,8 +160,15 @@ def _gzip(lines: Sequence[str]) -> bytes:
     return buf.getvalue()
 
 
+def _checked(snapshot: str) -> str:
+    """The id names a directory and a manifest file: no separators, no dots in front."""
+    if not SNAPSHOT_ID.fullmatch(snapshot):
+        raise Refused(f"snapshot id {snapshot!r}: letters, digits, '.', '_' and '-' only")
+    return snapshot
+
+
 def _work(snapshot: str, cache: pathlib.Path) -> pathlib.Path:
-    path = cache / snapshot
+    path = cache / _checked(snapshot)
     (path / "pages").mkdir(parents=True, exist_ok=True)
     return path
 
@@ -198,6 +209,7 @@ def finish(
     *,
     manifests: pathlib.Path,
 ) -> dict[str, Any]:
+    _checked(snapshot)
     rows: dict[str, dict[str, Any]] = {}
     duplicates = 0
     newest = ""
@@ -215,7 +227,15 @@ def finish(
     for key in sorted(rows, key=lambda k: (len(k), k)):
         row = canonical(rows[key])
         hashes.append(f"{key}\t{row_hash(row)}")
-        month = str(row.get("created_date", ""))[:7] or "unknown"
+        # The month names a file, and it comes from the portal: anything but YYYY-MM inside the
+        # window (a path, a malformed date) refuses the pull rather than becoming a snapshot.
+        month = str(row.get("created_date", ""))[:7]
+        if not MONTH.fullmatch(month) or not (
+            window.start.isoformat()[:7] <= month <= (window.end - _DAY).isoformat()[:7]
+        ):
+            raise Refused(
+                f"row {key} has created_date {row.get('created_date')!r}, outside the window"
+            )
         by_month.setdefault(month, []).append(
             json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         )
@@ -275,6 +295,7 @@ def drift(
     now: Callable[[], datetime.datetime] = lambda: datetime.datetime.now(datetime.timezone.utc),  # noqa: UP017 (runs on 3.10 hosts)
 ) -> dict[str, Any]:
     """How many rows of the snapshot's window the source changed since it was pulled."""
+    _checked(snapshot)
     manifest = json.loads((manifests / f"nyc311-{snapshot}.manifest.json").read_text())
     window = Window(
         datetime.date.fromisoformat(manifest["window"]["created_date_from"]),

@@ -206,3 +206,27 @@ def test_throttling_is_retried_and_a_refusal_is_not(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(collect.urllib.request, "urlopen", forbidden)
     with pytest.raises(collect.Refused, match="403"):
         collect.http_fetch(None, sleep=slept.append)(collect.SOURCE, {})
+
+
+@pytest.mark.parametrize(
+    "created", ["../../../tmp/evil", "2024-12-31T23:00:00.000", "2025-1x-01T00:00:00", ""]
+)
+def test_a_row_whose_month_is_not_in_the_window_refuses_the_pull(
+    tmp_path: pathlib.Path, created: str
+) -> None:
+    # The month names a file and comes from the portal: never a path, never outside the window.
+    rows = [*ROWS, _row(99, 1, created_date=created)]
+    with pytest.raises(collect.Refused, match="outside the window"):
+        _pull(tmp_path, Portal(rows))
+    assert not (tmp_path / "cache" / "S3-TEST" / "data").exists()
+    assert not (tmp_path / "manifests").exists()
+
+
+@pytest.mark.parametrize("snapshot", ["../x", "a/b", ".hidden", "", "S3 2025"])
+def test_a_snapshot_id_that_is_not_a_plain_name_is_refused(
+    tmp_path: pathlib.Path, snapshot: str
+) -> None:
+    with pytest.raises(collect.Refused, match="snapshot id"):
+        collect.pull(snapshot, WINDOW, Portal(ROWS), cache=tmp_path / "cache")
+    with pytest.raises(collect.Refused, match="snapshot id"):
+        collect.drift(snapshot, Portal(ROWS), cache=tmp_path / "cache", manifests=tmp_path)
