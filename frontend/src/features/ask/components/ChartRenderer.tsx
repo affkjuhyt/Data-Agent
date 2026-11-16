@@ -2,7 +2,7 @@
  * Renders one chart_spec from the Visualization node. Eight chart types, all
  * fed from real result rows — the node never invents data, so neither can this.
  */
-import type React from 'react';
+import { useState, type CSSProperties } from 'react';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, LineChart,
   Pie, PieChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, RadialBar,
@@ -33,10 +33,12 @@ export function ChartRenderer({
   const colors = Array.from({ length: 6 }, (_, i) => chartColor(i));
   const grid = 'var(--border)';
   const axis = 'var(--muted-foreground)';
-  const tooltipStyle: React.CSSProperties = {
+  const tooltipStyle: CSSProperties = {
     background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
     boxShadow: 'var(--shadow-md)', fontSize: 12, color: 'var(--foreground)',
   };
+  // The leave count remounts the tooltip, which then goes back to the picked point.
+  const [left, setLeft] = useState(0);
 
   if (!Array.isArray(spec?.data) || spec.data.length === 0) return null;
 
@@ -46,9 +48,17 @@ export function ChartRenderer({
   const pickAt = (state: MouseHandlerDataParam) => {
     if (onPick && state.activeLabel !== undefined && state.activeLabel !== null) onPick(String(state.activeLabel));
   };
-  const clickable = onPick ? { onClick: pickAt, style: { cursor: 'pointer' } } : {};
+  // accessibilityLayer off: it made the chart focusable, and a click drew the browser's black
+  // focus ring around the plot; the point list beside the chart is the keyboard's way in.
+  const clickable = {
+    accessibilityLayer: false,
+    ...(onPick && { onClick: pickAt, onMouseLeave: () => setLeft((n) => n + 1), style: { cursor: 'pointer' } }),
+  };
 
-  const picked = selected == null ? undefined : spec.data.find((row) => String(row[spec.x_key] ?? '') === selected);
+  const pickedIndex = selected == null ? -1 : spec.data.findIndex((row) => String(row[spec.x_key] ?? '') === selected);
+  const picked = pickedIndex < 0 ? undefined : spec.data[pickedIndex];
+  // The picked point's values stay shown, not only while the pointer is over it.
+  const pinned = picked ? { key: `${selected}-${left}`, active: true, defaultIndex: pickedIndex } : {};
   const dimmed = (row: Record<string, unknown>) => (picked && row !== picked ? 0.35 : 1);
   const marker = picked && (
     <>
@@ -90,7 +100,7 @@ export function ChartRenderer({
         {...(!numericX && longNames && { angle: -25, textAnchor: 'end', height: 56 })}
       />
       <YAxis stroke={axis} fontSize={12} axisLine={false} tickLine={false} tickFormatter={tickFormatter} width={72} />
-      <Tooltip contentStyle={tooltipStyle} formatter={(v: unknown) => valueFormatter(v)} />
+      <Tooltip contentStyle={tooltipStyle} formatter={(v: unknown) => valueFormatter(v)} {...pinned} />
       {(spec.series?.length ?? spec.y_keys.length) > 1 && (
         <Legend iconType="square" iconSize={10} wrapperStyle={{ fontSize: 12, color: axis }} />
       )}
@@ -117,8 +127,8 @@ export function ChartRenderer({
         );
       case 'pie':
         return (
-          <PieChart>
-            <Tooltip contentStyle={tooltipStyle} formatter={(v: unknown) => valueFormatter(v)} />
+          <PieChart accessibilityLayer={false} onMouseLeave={() => setLeft((n) => n + 1)}>
+            <Tooltip contentStyle={tooltipStyle} formatter={(v: unknown) => valueFormatter(v)} {...pinned} />
             <Pie
               data={spec.data}
               dataKey={spec.y_keys[0]}
@@ -182,7 +192,7 @@ export function ChartRenderer({
         }
         // fall through to bar when series are missing
         return (
-          <BarChart data={spec.data}>
+          <BarChart data={spec.data} accessibilityLayer={false}>
             {axes()}
             {spec.y_keys.map((k, i) => <Bar key={k} dataKey={k} fill={colors[i % colors.length]} radius={[2, 2, 0, 0]} />)}
           </BarChart>
@@ -206,7 +216,7 @@ export function ChartRenderer({
     <figure className="m-0 flex flex-col gap-da-md rounded-md border border-border bg-card px-da-xl py-da-lg">
       {spec.title && <figcaption className="text-foreground da-body-strong">{spec.title}</figcaption>}
       {/* recharts 3 makes the chart focusable; a click drew the browser's focus ring around it. */}
-      <div className="h-[220px] w-full [&_.recharts-surface]:outline-none [&_.recharts-wrapper]:outline-none">
+      <div className="h-[220px] w-full [&_*:focus]:outline-none">
         <ResponsiveContainer width="100%" height="100%">
           {body}
         </ResponsiveContainer>

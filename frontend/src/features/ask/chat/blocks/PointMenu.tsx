@@ -11,6 +11,8 @@ import { formatNumber } from '../../../../lib/formatVN';
 export interface Point {
   category: string;
   value: number | null;
+  /** Every series at this point, when the chart draws more than one (2012 beside 2013). */
+  series?: { name: string; value: number | null }[];
 }
 
 /** A member of a time axis said the way a question says a period ("2013-05" → "tháng 5/2013"),
@@ -110,13 +112,15 @@ export function PointMenu({
         >
           <span className="text-foreground da-body-small">
             <span className="text-muted-foreground">{axis}</span> {point.category}
-            {point.value !== null && (
-              <>
-                {' · '}
-                {measure} {formatNumber(point.value)}
-                {unit ? ` ${unit}` : ''}
-              </>
-            )}
+            {(point.series && point.series.length > 1 ? point.series : [{ name: measure, value: point.value }])
+              .filter((s) => s.value !== null)
+              .map((s) => (
+                <span key={s.name}>
+                  {' · '}
+                  {s.name} {formatNumber(s.value!)}
+                  {unit ? ` ${unit}` : ''}
+                </span>
+              ))}
           </span>
           <span className="flex-1" />
           {onFilter && (

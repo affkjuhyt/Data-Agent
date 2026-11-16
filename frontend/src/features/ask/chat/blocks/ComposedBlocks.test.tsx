@@ -124,6 +124,40 @@ describe('ComposedBlocks', () => {
     expect(screen.getByText(/tăng 200,0%/)).toBeInTheDocument();
   });
 
+  it('lets a picked point go on a click outside the chart or Esc, and shows every series of it', () => {
+    const twoYears = [
+      {
+        type: 'chart',
+        id: 'c4',
+        composed: true,
+        spec: {
+          chart_type: 'bar',
+          title: 'Doanh thu theo vùng',
+          x_key: 'Vùng',
+          y_keys: ['Doanh thu 2012', 'Doanh thu 2013'],
+          data: [
+            { Vùng: 'France', 'Doanh thu 2012': 2, 'Doanh thu 2013': 4 },
+            { Vùng: 'Canada', 'Doanh thu 2012': 5, 'Doanh thu 2013': 6 },
+          ],
+        },
+      },
+    ] as unknown as AnswerBlockView[];
+    render(
+      <div>
+        <p>ngoài</p>
+        <ComposedBlocks blocks={twoYears} />
+      </div>,
+    );
+    const list = screen.getByRole('combobox', { name: 'Chọn điểm theo vùng' });
+    fireEvent.change(list, { target: { value: 'France' } });
+    expect(screen.getByRole('toolbar', { name: 'Điểm France' })).toHaveTextContent('Doanh thu 2012 2 · Doanh thu 2013 4');
+    fireEvent.mouseDown(screen.getByText('ngoài'));
+    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
+    fireEvent.change(list, { target: { value: 'Canada' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
+  });
+
   it('opens a certified reading in Khám phá', () => {
     const onOpenExplore = vi.fn();
     render(<ComposedBlocks blocks={monthly} onOpenExplore={onOpenExplore} />);

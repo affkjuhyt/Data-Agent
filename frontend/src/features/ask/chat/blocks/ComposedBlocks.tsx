@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { BlockBoundary } from '../../../../design-system/ErrorBoundaries';
 import { Icon, type IconName } from '../../../../design-system/Icon';
 import { formatNumber } from '../../../../lib/formatVN';
@@ -122,13 +122,32 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
   const [picked, setPicked] = useState<string | null>(null);
   // Points the reader left out of this chart (E3 "Loại bỏ điểm này"): hidden here, not re-read.
   const [hidden, setHidden] = useState<string[]>([]);
+  // A pick is let go by a click outside the chart and its menu, or by Esc.
+  const area = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (picked === null) return;
+    const away = (e: MouseEvent) => {
+      if (area.current && !area.current.contains(e.target as Node)) setPicked(null);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setPicked(null);
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [picked]);
   if (!spec || !Array.isArray(spec.data)) return null;
   const type = (chosen ?? spec.chart_type) as ChartSpec['chart_type'];
   const title = spec.title || str(block.title) || 'Biểu đồ';
   const measure = spec.y_keys[0] ?? '';
   const categoryOf = (row: Record<string, unknown>) => String(row[spec.x_key] ?? '');
   const data = hidden.length ? spec.data.filter((row) => !hidden.includes(categoryOf(row))) : spec.data;
-  const points = data.map((row) => ({ category: categoryOf(row), value: num(row[measure]) }));
+  const points = data.map((row) => ({
+    category: categoryOf(row),
+    value: num(row[measure]),
+    series: spec.y_keys.map((k) => ({ name: k, value: num(row[k]) })),
+  }));
   const timeAxis = points.length > 0 && periodOf(points[0].category) !== null;
   const ask = ctx.onAsk;
   const shown: ChartSpec = {
@@ -140,7 +159,7 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
     }),
   };
   return (
-    <div className="flex flex-col gap-da-xs">
+    <div ref={area} className="flex flex-col gap-da-xs">
       {alternatives.length > 1 && (
         <div role="group" aria-label="Kiểu biểu đồ" className="flex flex-wrap gap-da-xs">
           {alternatives.map((t) => (
@@ -174,7 +193,8 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
         onExportCsv={blockCsv(ctx, spec.title || str(block.title) || 'bieu-do', [spec.x_key, ...spec.y_keys], spec.data)}
         onSaveToSession={ctx.onSaveToSession}
         onOpenExplore={exploreOf(block, ctx)}
-        onPick={setPicked}
+        // A second click on the picked point lets it go.
+        onPick={(c) => setPicked((p) => (p === c ? null : c))}
         selected={picked}
       />
       {hidden.length > 0 && (
