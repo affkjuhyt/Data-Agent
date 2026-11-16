@@ -11,3 +11,5 @@ hvac==2.4.0
 babel==2.18.0
 # DLQ payloads in MinIO (same stack as worker-agent uploads).
 aioboto3==13.2.0
+# PL-05: /metrics (libs/metrics).
+prometheus-client==0.26.0

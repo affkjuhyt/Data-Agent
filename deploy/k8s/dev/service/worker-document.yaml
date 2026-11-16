@@ -12,6 +12,8 @@ metadata:
   name: worker-document-env
   namespace: dataagent-service
 data:
+  # PL-05: the port libs/metrics serves /metrics on (the Service below).
+  METRICS_PORT: '8293'
   WORKER_DOCUMENT_POLL_SECONDS: "1"
   WORKER_DOCUMENT_BATCH: "4"
   DOCUMENT_RAW_BUCKET: da-raw-docs
@@ -37,6 +39,10 @@ spec:
         image: dataagent/worker-document:latest
         imagePullPolicy: IfNotPresent
         command: ["python", "-m", "services.worker_document.main"]
+        # PL-05: /metrics for Prometheus (libs/metrics); nothing else listens here.
+        ports:
+        - containerPort: 8293
+          name: metrics
         envFrom:
         - configMapRef: {name: dataagent-config}
         - configMapRef: {name: worker-document-env}
@@ -56,3 +62,20 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       enableServiceLinks: false
       serviceAccountName: worker-document
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-document
+  namespace: dataagent-service
+  labels:
+    app: worker-document
+    app.kubernetes.io/part-of: dataagent
+spec:
+  # PL-05: Prometheus' way in; the worker serves nothing but its metrics.
+  selector:
+    app: worker-document
+  ports:
+  - name: metrics
+    port: 8293
+    targetPort: 8293

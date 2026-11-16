@@ -65,5 +65,5 @@ cm "$SVC" keycloak-realm "${REALM[@]}"
 cm "$SVC" keycloak-scripts --from-file=$K/keycloak/setup-audience-mappers.sh
 cm "$SVC" kong-scripts     --from-file=$K/kong/kong-setup.sh
 cm "$SVC" litellm-config   --from-file=config.yaml=$K/litellm/config.yaml
-cm "$SVC" prometheus-config --from-file=$K/monitoring/prometheus.yml
+cm "$SVC" prometheus-config --from-file=$K/monitoring/prometheus.yml --from-file=$K/monitoring/rules.yml
 

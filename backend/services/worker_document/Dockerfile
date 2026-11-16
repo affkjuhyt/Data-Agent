@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr \
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 COPY backend/libs/__init__.py ./libs/__init__.py
 COPY backend/libs/dataagent_db/ ./libs/dataagent_db/
+COPY backend/libs/metrics/ ./libs/metrics/
 COPY backend/libs/tabular/ ./libs/tabular/
 COPY backend/libs/language/ ./libs/language/
 COPY backend/libs/pii/ ./libs/pii/

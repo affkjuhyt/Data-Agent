@@ -18,6 +18,8 @@ metadata:
     app: worker-ingest
     app.kubernetes.io/part-of: dataagent
 data:
+  # PL-05: the port libs/metrics serves /metrics on (the Service below).
+  METRICS_PORT: '8292'
   OTEL_SERVICE_NAME: worker-ingest
   WORKER_INGEST_POLL_SECONDS: "0.5"
   WORKER_INGEST_BATCH: "10"
@@ -75,6 +77,10 @@ spec:
         image: dataagent/worker-ingest:latest
         imagePullPolicy: IfNotPresent
         command: ["python", "-m", "services.worker_ingest.main"]
+        # PL-05: /metrics for Prometheus (libs/metrics); nothing else listens here.
+        ports:
+        - containerPort: 8292
+          name: metrics
         envFrom:
         - configMapRef: {name: dataagent-config}
         - configMapRef: {name: worker-ingest-env}
@@ -87,3 +93,20 @@ spec:
           capabilities: {drop: [ALL]}
       enableServiceLinks: false
       serviceAccountName: worker-ingest
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-ingest
+  namespace: dataagent-service
+  labels:
+    app: worker-ingest
+    app.kubernetes.io/part-of: dataagent
+spec:
+  # PL-05: Prometheus' way in; the worker serves nothing but its metrics.
+  selector:
+    app: worker-ingest
+  ports:
+  - name: metrics
+    port: 8292
+    targetPort: 8292

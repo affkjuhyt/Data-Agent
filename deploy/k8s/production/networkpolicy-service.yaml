@@ -554,3 +554,35 @@ spec:
     - protocol: TCP
       port: 8150
   egress: []
+---
+# PL-05: Prometheus reads the api's and the workers' /metrics, and nothing else reaches those ports
+# of the workers.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values: [api, worker-agent, worker-ingest, worker-document]
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 8290
+      protocol: TCP
+    - port: 8291
+      protocol: TCP
+    - port: 8292
+      protocol: TCP
+    - port: 8293
+      protocol: TCP

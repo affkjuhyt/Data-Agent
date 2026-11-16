@@ -232,6 +232,24 @@ provider currently enabled for AdventureWorks and delegates to the existing scop
 added without changing question/SSE response shapes; the envelope keeps query-run provenance,
 trust, warnings, truncation, and JSON-safe values.
 
+### Metrics (PL-05)
+
+Prometheus (`prometheus` in `dataagent-service`, port 8400) scrapes the api's `/metrics` (port
+8290, outside /v1, so not through Kong) and each worker's (worker-agent 8291, worker-ingest 8292,
+worker-document 8293) every 5 s; `deploy/docker/monitoring/rules.yml` records the numbers below once
+a minute. `kubectl -n dataagent-service port-forward deploy/prometheus 8400` and open
+http://localhost:8400:
+
+| Query | What |
+| --- | --- |
+| `dataagent:question_seconds:p50_5m`, `…:p95_5m` | the time of a question: worker-agent's `question.received`, from claim to answer (the poll wait aside) |
+| `dataagent:http_request_seconds:p95_5m` | the api's p95 per route template |
+| `dataagent:http_5xx:ratio_5m` | the api's share of 5xx |
+| `dataagent:events_error:ratio_5m` | the share of outbox events a handler failed, per worker and type |
+| `time() - dataagent_worker_last_poll_timestamp_seconds` | seconds since a worker last finished a pass: a growing value is a stuck loop |
+
+Labels are route templates, event types and outcomes, never an id (`libs/metrics`).
+
 ## 5. Demo data
 
 With `seed_demo: true` (the dev inventory's setting) the `db-init` Job loads:

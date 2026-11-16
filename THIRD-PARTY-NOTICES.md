@@ -474,9 +474,8 @@ exceptions: tools/licenses.json.
 | multidict | 7.2.1 | Apache-2.0 | worker-ingest | pypi |
 | narwhals | 2.28.0 | MIT | ml-forecast | pypi |
 | nexus-rpc | 1.4.0 | MIT | worker-agent | pypi |
-| numpy | 2.5.5 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | api | pypi |
+| numpy | 2.5.5 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | api, worker-document | pypi |
 | numpy | 2.1.3 | BSD License | ml-forecast, python-sandbox, worker-agent | pypi |
-| numpy | 2.5.4 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | worker-document | pypi |
 | openai | 3.51.0 | Apache-2.0 | worker-agent | pypi |
 | openpyxl | 3.1.5 | MIT License | api, worker-agent | pypi |
 | opentelemetry-api | 1.45.2 | Apache-2.0 | worker-agent | pypi |
@@ -486,6 +485,7 @@ exceptions: tools/licenses.json.
 | pdfminer.six | 20260107 | MIT | worker-document | pypi |
 | pillow | 13.0.0 | MIT-CMU | worker-document | pypi |
 | portalocker | 4.4.2 | BSD-3-Clause | api, worker-agent, worker-document | pypi |
+| prometheus_client | 0.26.0 | Apache-2.0 AND BSD-2-Clause | api, worker-agent, worker-document, worker-ingest | pypi |
 | propcache | 0.5.4 | Apache-2.0 | api, crawler, worker-agent, worker-document, worker-ingest | pypi |
 | Protego | 0.7.0 | BSD-3-Clause | crawler | pypi |
 | protobuf | 7.36.2 | 3-Clause BSD License | api, worker-agent, worker-document | pypi |

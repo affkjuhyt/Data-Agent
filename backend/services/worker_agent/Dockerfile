@@ -10,6 +10,7 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 # The V3 ORM and the wire contracts (Plan IR, coded refusals) are the only libs it needs.
 COPY backend/libs/__init__.py ./libs/__init__.py
 COPY backend/libs/dataagent_db/ ./libs/dataagent_db/
+COPY backend/libs/metrics/ ./libs/metrics/
 COPY backend/libs/sql_guard/ ./libs/sql_guard/
 COPY backend/libs/cron/ ./libs/cron/
 COPY backend/libs/clock/ ./libs/clock/

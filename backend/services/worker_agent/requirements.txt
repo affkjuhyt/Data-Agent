@@ -36,3 +36,5 @@ python-dateutil==2.9.0.post0
 qdrant-client==1.20.0
 # A locale's number marks as CLDR writes them (libs/language.marks, via libs/tabular).
 babel==2.18.0
+# PL-05: /metrics (libs/metrics).
+prometheus-client==0.26.0
