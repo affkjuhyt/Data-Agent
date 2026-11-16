@@ -369,6 +369,10 @@ class QueryMetric(Tool):
             reading={
                 "metric": args.metric,
                 "metric_id": str(entry.metric_id),
+                # What sets this reading apart from another of the same metric: a merge of the two
+                # in run_python names its columns by them, not by pandas' "_x"/"_y".
+                "metric_name": entry.name,
+                "period": coverage.iso(period) if period is not None else None,
                 "group_by": group_by,
                 "filters": {k: list(v) for k, v in args.filters.items()},
                 # Which column is which cut: a point picked on the chart names its column's label,

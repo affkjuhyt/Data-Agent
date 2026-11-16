@@ -4,11 +4,13 @@ anomaly flags, anything pandas does. The model writes the code; the sandbox runs
 from __future__ import annotations
 
 import os
+import re
 
 from pydantic import BaseModel, Field
 
 from libs.code_sandbox import client, local
 from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResult
+from services.worker_agent.agentic.workspace import Dataset
 
 
 def mode() -> str:
@@ -20,6 +22,46 @@ def mode() -> str:
     if chosen == "service" and not os.environ.get("AGENT_SANDBOX_URL", "").strip():
         return "off"
     return chosen if chosen in ("service", "local") else "off"
+
+
+_SUFFIXED = re.compile(r"^(.+)_(x|y)$")
+# Which dataset is the left of a merge, which the right: "d1.merge(d2" or "merge(d1, d2".
+_MERGE = re.compile(r"\b(d\d+)\s*\.\s*merge\(\s*(d\d+)\b|\bmerge\(\s*(d\d+)\s*,\s*(d\d+)\b")
+
+
+def _side(ds: Dataset, other: Dataset) -> str | None:
+    """What sets a dataset apart from the other it was merged with: its period, else its metric."""
+    mine, theirs = ds.reading or {}, other.reading or {}
+    for key in ("period", "metric_name"):
+        if mine.get(key) and theirs.get(key) and mine[key] != theirs[key]:
+            return str(mine[key])
+    return None
+
+
+def merged_names(
+    columns: list[str], code: str, datasets: dict[str, Dataset]
+) -> dict[str, str] | None:
+    """New names for the "<name>_x"/"<name>_y" columns pandas gives a merge of two readings of one
+    metric ("Doanh thu_x" → "Doanh thu 2012"), from what each side read; {} when there are none,
+    None when the two sides cannot be told apart, for the model to name them itself."""
+    pairs = {m.group(1) for c in columns if (m := _SUFFIXED.match(c))}
+    pairs = {stem for stem in pairs if f"{stem}_x" in columns and f"{stem}_y" in columns}
+    if not pairs:
+        return {}
+    found = _MERGE.search(code)
+    if found is None:
+        return None
+    left, right = [g for g in found.groups() if g][:2]
+    if left not in datasets or right not in datasets:
+        return None
+    names = (_side(datasets[left], datasets[right]), _side(datasets[right], datasets[left]))
+    if not all(names):
+        return None
+    renamed: dict[str, str] = {}
+    for stem in pairs:
+        renamed[f"{stem}_x"] = f"{stem} {names[0]}"
+        renamed[f"{stem}_y"] = f"{stem} {names[1]}"
+    return renamed
 
 
 class AnalyzeArgs(BaseModel):
@@ -78,11 +120,21 @@ class Analyze(Tool):
                 detail={"error": done.error},
                 failure="arguments",
             )
+        renamed = merged_names(list(done.columns), args.code, ctx.ws.datasets)
+        if renamed is None:
+            # "Doanh thu_x"/"Doanh thu_y" reached the chart's legend (16/11): which is which is
+            # the model's to say when the readings do not.
+            return ToolResult(
+                False,
+                "kết quả có cột hậu tố _x/_y của pandas merge; đặt tên cột theo nội dung, "
+                "ví dụ merge(..., suffixes=(' 2012', ' 2013')) hoặc rename",
+                failure="arguments",
+            )
         sources = [ctx.ws.datasets[i] for i in inputs]
         units = {s.unit for s in sources if s.unit}
         ds = ctx.ws.add(
             title=args.title,
-            columns=done.columns,
+            columns=[renamed.get(c, c) for c in done.columns],
             rows=done.rows,
             trust="derived",
             query_run_ids=[r for s in sources for r in s.query_run_ids],

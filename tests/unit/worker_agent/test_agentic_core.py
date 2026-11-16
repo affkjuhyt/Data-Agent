@@ -162,6 +162,57 @@ def test_two_adjacent_years_are_read_as_a_comparison() -> None:
     assert two_years("Doanh thu tháng 8/2013 và 8/2012") is None
 
 
+def test_series_named_by_periods_are_drawn_earlier_first_and_read_together() -> None:
+    ws = Workspace()
+    ws.add(
+        title="Doanh thu theo vùng",
+        columns=["Vùng", "Doanh thu 2013", "Doanh thu 2012"],
+        rows=[["Europe", 300, 100], ["Pacific", 150, 200]],
+        trust="derived",
+    )
+    chart = b.materialize(b.BlockDraft(type="chart", dataset="d1", chart_type="bar"), ws, "c")
+    assert chart["spec"]["y_keys"] == ["Doanh thu 2012", "Doanh thu 2013"]
+    assert chart["insight"] == (
+        "So với 2012, Europe tăng mạnh nhất (+200,0%), Pacific giảm nhiều nhất (25,0%)."
+    )
+    months = ["2013-01", "2013-12"]
+    assert b.series_insight(months, [[10.0, 14.0], [10.0, 5.0]], ["Internet", "Đại lý"]) == (
+        "Từ 2013-01 đến 2013-12: Internet tăng 40,0%, Đại lý giảm 50,0%."
+    )
+    # Two quantities side by side have no change between them to read: no line, not a wrong one.
+    ws.add(
+        title="Doanh thu và biên",
+        columns=["Vùng", "Doanh thu", "Biên lợi nhuận"],
+        rows=[["Europe", 300, 0.4], ["Pacific", 150, 0.3]],
+        trust="derived",
+    )
+    assert "insight" not in b.materialize(
+        b.BlockDraft(type="chart", dataset="d2", chart_type="bar"), ws, "c2"
+    )
+
+
+def test_a_merge_of_two_readings_is_named_by_what_each_read() -> None:
+    from services.worker_agent.agentic.tools.analyze import merged_names
+
+    ws = Workspace()
+    for year in ("2012", "2013"):
+        ws.add(
+            title="Doanh thu theo vùng",
+            columns=["Vùng", "Doanh thu"],
+            rows=[["Europe", 1]],
+            trust="certified",
+            reading={"metric": "DT", "metric_name": "Doanh thu", "period": year},
+        )
+    cols = ["Vùng", "Doanh thu_x", "Doanh thu_y"]
+    assert merged_names(cols, "result = d2.merge(d1, on='Vùng')", ws.datasets) == {
+        "Doanh thu_x": "Doanh thu 2013",
+        "Doanh thu_y": "Doanh thu 2012",
+    }
+    assert merged_names(["Vùng", "Doanh thu"], "result = d1", ws.datasets) == {}
+    # Sides that cannot be told apart are the model's to name.
+    assert merged_names(cols, "result = something(d1, d2)", ws.datasets) is None
+
+
 def test_a_charts_one_line_reading_is_computed_from_its_rows() -> None:
     months = ["2013-01", "2013-06", "2013-12"]
     assert (

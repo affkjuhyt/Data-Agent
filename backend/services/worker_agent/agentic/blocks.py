@@ -156,6 +156,47 @@ def comparison_insight(
     return f"{first}, {down[0]} tăng ít nhất ({sign(down[1])})."
 
 
+def series_insight(
+    x_values: list[Any], measures: list[list[float | None]], labels: list[str]
+) -> str | None:
+    """Several series over time, each read from its first to its last point ("Từ 2013-01 đến
+    2013-12: 2012 tăng 40,0%, 2013 tăng 118,5%."); the first series alone described only itself."""
+    if len(labels) < 2 or len(labels) > 3:
+        return None
+    names = (
+        [_side_name(labels[0], labels[1]), _side_name(labels[1], labels[0])]
+        if len(labels) == 2
+        else labels
+    )
+    parts, span = [], None
+    for name, values in zip(names, measures, strict=False):
+        points = [(x, v) for x, v in zip(x_values, values, strict=False) if v is not None]
+        if len(points) < 2 or points[0][1] <= 0:
+            continue
+        change = (points[-1][1] - points[0][1]) / points[0][1] * 100
+        parts.append(f"{name} {'tăng' if change >= 0 else 'giảm'} {_pct(change)}%")
+        span = span or (points[0][0], points[-1][0])
+    if not parts or span is None:
+        return None
+    return f"Từ {span[0]} đến {span[1]}: {', '.join(parts)}."
+
+
+# The period a series is named by, at its end: "Doanh thu 2012", "Doanh thu 2013-05",
+# "Doanh thu 2013-Q3", "Doanh thu Q3/2013".
+_SERIES_PERIOD = re.compile(
+    r"(?:Q([1-4])[/ ])?((?:19|20)\d{2})(?:-(?:Q([1-4])|(\d{1,2})))?\)?$", re.IGNORECASE
+)
+
+
+def period_key(label: str) -> tuple[int, int] | None:
+    """Where a series named by a period falls in time, to draw the earlier one first."""
+    m = _SERIES_PERIOD.search(label.strip())
+    if m is None:
+        return None
+    quarter = m.group(1) or m.group(3)
+    return int(m.group(2)), int(quarter) * 3 if quarter else int(m.group(4) or 0)
+
+
 def chart_fits(chart_type: str, x_kind: str, measures: list[list[float | None]], rows: int) -> bool:
     role = CHART_ROLES.get(chart_type)
     if role is None:
@@ -365,6 +406,12 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
         ][:3]
         if not y:
             raise BlockError(f"dataset {ds.id} không có cột số để vẽ")
+        keys = [period_key(c) for c in y]
+        timed = len(y) > 1 and all(keys) and len(set(keys)) == len(keys)
+        if timed:
+            # Series named by periods are drawn earlier first: "Doanh thu 2013" came before
+            # "Doanh thu 2012" in the legend and the bars when the model listed them that way.
+            y = [c for _, c in sorted(zip(keys, y, strict=True))]
         # Fitted on every row, not the first MAX_CHART_POINTS: a chart of the first 120 days of a
         # year drew a line that stopped in May with nothing saying the rest was missing.
         x_values = [plain(r[ds.columns.index(x)]) for r in ds.rows]
@@ -395,10 +442,15 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
                 {"key": c, "type": "bar" if i == 0 else "line"} for i, c in enumerate(y)
             ]
         x_kind = _x_kind(x, x_values)
-        if len(y) == 2 and x_kind == "category" and chart_type in ("bar", "composed"):
-            insight = comparison_insight(x_values, measures[0], measures[1], (y[0], y[1]))
-        else:
+        insight: str | None = None
+        if len(y) == 1:
             insight = chart_insight(chart_type, x_kind, x_values, measures[0])
+        elif x_kind == "time":
+            insight = series_insight(x_values, measures, y)
+        elif len(y) == 2 and timed and chart_type == "bar":
+            # Two periods of one quantity side by side; other pairs (revenue beside a margin)
+            # have no change between them to read, and get no line rather than a wrong one.
+            insight = comparison_insight(x_values, measures[0], measures[1], (y[0], y[1]))
         # The other types the same rows fit: the chart's switcher offers them (chart adjustment).
         return {
             **base,
