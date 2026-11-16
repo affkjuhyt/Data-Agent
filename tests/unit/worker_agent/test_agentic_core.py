@@ -261,6 +261,8 @@ def test_a_quantity_no_metric_measures_is_asked_back_with_the_closest_metrics() 
     fallback = clarify_policy.nothing_read("Khách hàng rời bỏ năm 2013?", layer, "năm 2013")
     assert fallback is not None
     assert fallback.options == ["Số khách hàng mua qua Internet năm 2013 là bao nhiêu?"]
+    # A question naming a member read nothing for the member: no metrics offered in its place.
+    assert clarify_policy.nothing_read("Doanh thu nhóm Bikes năm 2013?", layer, "năm 2013") is None
     # A member written as a name is not a quantity.
     assert (
         clarify_policy.unnamed_quantity("Doanh thu nhóm Bikes năm 2013?", ["bikes"], layer) is None

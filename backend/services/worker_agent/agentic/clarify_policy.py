@@ -97,6 +97,17 @@ UNNAMED_OPTIONS = 4
 _TRAILING = re.compile(r"[?.!,;:]+$")
 
 
+def _members(tokens: list[str]) -> set[str]:
+    """Words written as names inside the sentence ("nhóm Bikes", "Mountain-200"): members the
+    catalogue's value list may not hold, never quantities. "Doanh thu nhóm Bikes năm 2013" was
+    asked back as if "Bikes" were a metric (17/11)."""
+    return {
+        norm(_TRAILING.sub("", t))
+        for i, t in enumerate(tokens)
+        if (i > 0 and t[:1].isupper()) or any(ch.isdigit() for ch in _TRAILING.sub("", t))
+    } - {""}
+
+
 def unnamed_quantity(
     question: str, unnamed: list[str], layer: SpaceLayer, *, max_options: int = UNNAMED_OPTIONS
 ) -> Clarify | None:
@@ -112,15 +123,7 @@ def unnamed_quantity(
     for v in vocab.values:
         cut_words |= set(norm(v.label).split())
     tokens = question.split()
-    # A word written as a name inside the sentence ("nhóm Bikes", "Mountain-200") is a member the
-    # catalogue's value list does not hold, not a quantity: "Doanh thu nhóm Bikes năm 2013" was
-    # asked back as if "Bikes" were a metric (17/11).
-    members = {
-        norm(_TRAILING.sub("", t))
-        for i, t in enumerate(tokens)
-        if (i > 0 and t[:1].isupper()) or any(ch.isdigit() for ch in t)
-    }
-    wanted = set(unnamed) - members
+    wanted = set(unnamed) - _members(tokens)
     if not wanted or wanted <= cut_words:
         return None
     at = [i for i, t in enumerate(tokens) if norm(_TRAILING.sub("", t)) in wanted]
@@ -149,6 +152,12 @@ def nothing_read(
     two words are fillers ("rồi") and whose first two a metric names, so only its meaning — not
     its words — has no metric. The closest certified metrics are offered, each asked with the
     question's period; None when there is none to offer."""
+    # A question naming a member read nothing because the member was not found, not the metric:
+    # offering metrics would drop the member ("Doanh thu nhóm Bikes năm 2013" → "Doanh thu năm
+    # 2013 là bao nhiêu?"). A year is digits, not a member.
+    named = {w for w in _members(question.split()) if not w.isdigit()}
+    if named:
+        return None
     found = [m["name"] for m in analyst.search_metrics(layer, question) if m["certified"]]
     if not found:
         return None
