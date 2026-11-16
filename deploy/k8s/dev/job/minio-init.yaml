@@ -93,6 +93,12 @@ spec:
           mc admin policy create local crawler-raw /tmp/crawler-raw.json
           mc admin user add local crawler "$CRAWLER_MINIO_PASSWORD"
           mc admin policy attach local crawler-raw --user crawler || mc admin user info local crawler
+          # PL-04: store-backup lists and reads every bucket, nothing else (MinIO's own `readonly`
+          # policy cannot list, which a mirror needs).
+          printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListAllMyBuckets","s3:ListBucket","s3:GetBucketLocation","s3:GetObject"],"Resource":["arn:aws:s3:::*"]}]}' > /tmp/store-backup.json
+          mc admin policy create local store-backup-read /tmp/store-backup.json
+          mc admin user add local store-backup "$STORE_BACKUP_MINIO_PASSWORD"
+          mc admin policy attach local store-backup-read --user store-backup || mc admin user info local store-backup
           mc retention set --default "$RAW_RETENTION_MODE" "${RAW_RETENTION_DAYS}d" local/raw
           # The documents of DS-AW: 06-v3-adventureworks-documents.sql registers them under
           # adventureworks/<collection folder>/ in da-raw-docs.

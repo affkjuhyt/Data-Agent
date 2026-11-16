@@ -77,7 +77,7 @@ spec:
               # Wait for the stores the way postgres-backup waits for PostgreSQL: a run that starts
               # during a restart should take its backup late rather than not at all.
               waited=0
-              until mc alias set store "${MINIO_URL}" "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 \
+              until mc alias set store "${MINIO_URL}" "${STORE_BACKUP_MINIO_USER}" "${STORE_BACKUP_MINIO_PASSWORD}" >/dev/null 2>&1 \
                     && curl -fsS "${QDRANT_URL}/readyz" >/dev/null; do
                 waited=$((waited + 5))
                 if [ "${waited}" -gt 600 ]; then echo "[backup] stores not ready after 10 min"; exit 1; fi

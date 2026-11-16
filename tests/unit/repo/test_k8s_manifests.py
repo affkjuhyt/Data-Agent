@@ -399,6 +399,8 @@ class TestBackupsAreVerifiedNotAssumed:
         code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
         assert "mc mirror" in code and "--remove" not in code
         assert "/snapshots" in script and "tar -tf" in script
+        # Its own read-only MinIO user, never root (security review of 17/11).
+        assert "MINIO_ROOT" not in script and "STORE_BACKUP_MINIO_USER" in script
 
     def test_store_backup_may_reach_the_stores_it_reads(self):
         allowed = {
