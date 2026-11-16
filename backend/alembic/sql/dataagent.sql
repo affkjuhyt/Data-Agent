@@ -110,8 +110,8 @@ GRANT query_read TO svc_skill;
 GRANT org_read TO svc_document;
 GRANT catalog_read TO svc_document;
 GRANT catalog_read TO svc_pipeline;
-GRANT context_read TO svc_pipeline;
 GRANT org_read TO svc_pipeline;
+GRANT context_read TO svc_pipeline;
 GRANT catalog_read TO svc_ingest;
 GRANT org_read TO svc_ingest;
 GRANT catalog_read TO svc_acquire;
@@ -5290,6 +5290,11 @@ CREATE TABLE ingest.ingestion_job (
   paused_reason text,
   paused_at timestamptz,
   consecutive_failures smallint NOT NULL DEFAULT 0,
+  retry_policy text NOT NULL DEFAULT 'backoff_3',
+  on_schema_change text NOT NULL DEFAULT 'accept_new_columns',
+  on_invalid_record text NOT NULL DEFAULT 'quarantine_30d',
+  skip_today boolean NOT NULL DEFAULT false,
+  merge_key_columns text[],
   deleted_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
@@ -5299,7 +5304,10 @@ CREATE TABLE ingest.ingestion_job (
   CHECK (mode IN ('full','incremental','cdc')),
   CHECK (mode <> 'incremental' OR cursor_column IS NOT NULL),
   CHECK (status IN ('draft','active','paused','failing','schema_drift')),
-  CHECK (status <> 'paused' OR paused_reason IS NOT NULL)
+  CHECK (status <> 'paused' OR paused_reason IS NOT NULL),
+  CHECK (retry_policy IN ('backoff_3','once','none')),
+  CHECK (on_schema_change IN ('accept_new_columns','pause_and_ask','continue_and_notify')),
+  CHECK (on_invalid_record IN ('quarantine_30d','skip_and_log','stop'))
 );
 COMMENT ON TABLE ingest.ingestion_job IS 'Job nạp dữ liệu từ một nguồn về vùng dữ liệu: toàn phần, gia tăng hoặc CDC. Use case: UC-04-06, UC-04-07, UC-04-09.';
 COMMENT ON COLUMN ingest.ingestion_job.source_id IS 'logic → catalog.source';
@@ -5311,7 +5319,41 @@ COMMENT ON COLUMN ingest.ingestion_job.freshness_sla IS 'Trễ quá hạn thì n
 COMMENT ON COLUMN ingest.ingestion_job.dlq_retention_days IS 'BR-57';
 COMMENT ON COLUMN ingest.ingestion_job.status IS 'draft, active, paused, failing, schema_drift';
 COMMENT ON COLUMN ingest.ingestion_job.paused_reason IS 'Bắt buộc khi tạm dừng (BR-106)';
+COMMENT ON COLUMN ingest.ingestion_job.retry_policy IS 'backoff_3, once, none (RES-19)';
+COMMENT ON COLUMN ingest.ingestion_job.on_schema_change IS 'accept_new_columns, pause_and_ask, continue_and_notify';
+COMMENT ON COLUMN ingest.ingestion_job.on_invalid_record IS 'quarantine_30d, skip_and_log, stop';
+COMMENT ON COLUMN ingest.ingestion_job.skip_today IS 'RES-17: bỏ ngày UTC hiện tại';
+COMMENT ON COLUMN ingest.ingestion_job.merge_key_columns IS 'RES-17: khoá upsert khi incremental hoặc CDC';
 COMMENT ON COLUMN ingest.ingestion_job.deleted_at IS 'Xoá mềm';
+
+CREATE TABLE ingest.job_sample (
+  id uuid NOT NULL,
+  org_id uuid NOT NULL,
+  data_space_id uuid NOT NULL,
+  source_id uuid NOT NULL,
+  principal_id uuid NOT NULL,
+  name text NOT NULL,
+  mode text NOT NULL,
+  source_object text NOT NULL,
+  cursor_column text,
+  status text NOT NULL DEFAULT 'running',
+  sample jsonb NOT NULL DEFAULT '[]',
+  errors jsonb NOT NULL DEFAULT '[]',
+  note text,
+  error text,
+  finished_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT job_sample_pkey PRIMARY KEY (id),
+  CHECK (status IN ('running','succeeded','failed')),
+  CHECK (mode IN ('full','incremental','cdc'))
+);
+COMMENT ON TABLE ingest.job_sample IS 'Lần chạy thử một job sắp tạo: worker-ingest đọc mẫu dòng và lỗi từ nguồn, không tạo job (thêm 11/11/2026, revision v3_0035). Use case: UC-04-06.';
+COMMENT ON COLUMN ingest.job_sample.source_id IS 'logic → catalog.source';
+COMMENT ON COLUMN ingest.job_sample.principal_id IS 'Người yêu cầu chạy thử';
+COMMENT ON COLUMN ingest.job_sample.mode IS 'full, incremental, cdc';
+COMMENT ON COLUMN ingest.job_sample.status IS 'running, succeeded, failed';
+COMMENT ON COLUMN ingest.job_sample.sample IS 'Mẫu dòng đọc được';
+COMMENT ON COLUMN ingest.job_sample.errors IS 'Lỗi theo dòng';
 
 CREATE TABLE ingest.job_run (
   id uuid NOT NULL,
@@ -7312,6 +7354,8 @@ ALTER TABLE pipeline.writeback_request ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON pipeline.writeback_request USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE ingest.ingestion_job ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON ingest.ingestion_job USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+ALTER TABLE ingest.job_sample ENABLE ROW LEVEL SECURITY;
+CREATE POLICY org_isolation ON ingest.job_sample USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE ingest.job_run ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON ingest.job_run USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE ingest.dlq_record ENABLE ROW LEVEL SECURITY;
@@ -7723,6 +7767,8 @@ GRANT USAGE ON SCHEMA ingest TO svc_ingest, ingest_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ingest.outbox TO svc_ingest;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ingest.ingestion_job TO svc_ingest;
 GRANT SELECT ON ingest.ingestion_job TO ingest_read;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ingest.job_sample TO svc_ingest;
+GRANT SELECT ON ingest.job_sample TO ingest_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ingest.job_run TO svc_ingest;
 GRANT SELECT ON ingest.job_run TO ingest_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ingest.dlq_record TO svc_ingest;

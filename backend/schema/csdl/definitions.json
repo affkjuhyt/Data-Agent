@@ -166,9 +166,9 @@
   {
    "name": "ingest",
    "owner_service": "Ingestion service",
-   "content": "Job nạp, lượt chạy, bản ghi lỗi, tải tệp, quy tắc và kết quả chất lượng",
+   "content": "Job nạp, lượt chạy, lần chạy thử, bản ghi lỗi, tải tệp, quy tắc và kết quả chất lượng",
    "modules": "P04, P06",
-   "table_count": 6,
+   "table_count": 7,
    "database": "dataagent",
    "intro": ""
   },
@@ -295,7 +295,8 @@
   ],
   "svc_pipeline": [
    "catalog",
-   "org"
+   "org",
+   "context"
   ],
   "svc_ingest": [
    "catalog",
@@ -25065,6 +25066,61 @@
      "pii": false
     },
     {
+     "name": "retry_policy",
+     "type": "text",
+     "not_null": true,
+     "default": "'backoff_3'",
+     "unique": false,
+     "comment": "backoff_3, once, none (RES-19)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "on_schema_change",
+     "type": "text",
+     "not_null": true,
+     "default": "'accept_new_columns'",
+     "unique": false,
+     "comment": "accept_new_columns, pause_and_ask, continue_and_notify",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "on_invalid_record",
+     "type": "text",
+     "not_null": true,
+     "default": "'quarantine_30d'",
+     "unique": false,
+     "comment": "quarantine_30d, skip_and_log, stop",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "skip_today",
+     "type": "boolean",
+     "not_null": true,
+     "default": "false",
+     "unique": false,
+     "comment": "RES-17: bỏ ngày UTC hiện tại",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "merge_key_columns",
+     "type": "text[]",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "RES-17: khoá upsert khi incremental hoặc CDC",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "deleted_at",
      "type": "timestamptz",
      "not_null": false,
@@ -25100,6 +25156,191 @@
     {
      "kind": "check",
      "sql": "CHECK (status <> 'paused' OR paused_reason IS NOT NULL)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (retry_policy IN ('backoff_3','once','none'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (on_schema_change IN ('accept_new_columns','pause_and_ask','continue_and_notify'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (on_invalid_record IN ('quarantine_30d','skip_and_log','stop'))"
+    }
+   ],
+   "indexes": [],
+   "partition": null,
+   "immutable": false,
+   "notes": []
+  },
+  {
+   "schema": "ingest",
+   "name": "job_sample",
+   "qualified": "ingest.job_sample",
+   "description": "Lần chạy thử một job sắp tạo: worker-ingest đọc mẫu dòng và lỗi từ nguồn, không tạo job (thêm 11/11/2026, revision v3_0035). Use case: UC-04-06.",
+   "use_cases": [
+    "UC-04-06"
+   ],
+   "columns": [
+    {
+     "name": "data_space_id",
+     "type": "uuid",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "source_id",
+     "type": "uuid",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "logic → catalog.source",
+     "fk": null,
+     "logic_ref": "catalog.source",
+     "pii": false
+    },
+    {
+     "name": "principal_id",
+     "type": "uuid",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Người yêu cầu chạy thử",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "mode",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "full, incremental, cdc",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "source_object",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "cursor_column",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "not_null": true,
+     "default": "'running'",
+     "unique": false,
+     "comment": "running, succeeded, failed",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "sample",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'[]'",
+     "unique": false,
+     "comment": "Mẫu dòng đọc được",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "errors",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'[]'",
+     "unique": false,
+     "comment": "Lỗi theo dòng",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "error",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "finished_at",
+     "type": "timestamptz",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    }
+   ],
+   "common_columns": [
+    "id",
+    "org_id",
+    "created_at"
+   ],
+   "constraints": [
+    {
+     "kind": "check",
+     "sql": "CHECK (status IN ('running','succeeded','failed'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (mode IN ('full','incremental','cdc'))"
     }
    ],
    "indexes": [],
