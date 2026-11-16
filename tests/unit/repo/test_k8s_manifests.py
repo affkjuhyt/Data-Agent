@@ -370,6 +370,25 @@ class TestBackupsAreVerifiedNotAssumed:
         assert "gzip -t" in script
         assert "PostgreSQL database dump complete" in script
 
+    @pytest.mark.parametrize("env", ["dev", "production"])
+    def test_the_dump_waits_for_postgres(self, env):
+        """A run started while PostgreSQL restarted (03/11 and 16/11) failed at once and spent its
+        two retries within a minute, so no backup was taken that slot."""
+        script = self._script(K8S_DIR / env / "job" / "postgres-backup.yaml", "postgres-backup")
+        assert "pg_isready" in script
+        assert script.index("pg_isready") < script.index("pg_dump")
+
+    @pytest.mark.parametrize("env", ["dev", "production"])
+    def test_squid_keeps_no_pid_file(self, env):
+        """/tmp outlives a container restart; the restarted Squid read its predecessor's PID file,
+        took itself for a second instance and exited, in a loop (16/11, 35 restarts)."""
+        conf = next(
+            d["data"]["squid.conf"]
+            for d in _docs(K8S_DIR / env / "service" / "egress-proxy.yaml")
+            if d.get("kind") == "ConfigMap"
+        )
+        assert re.search(r"^\s*pid_filename none\s*$", conf, re.M)
+
     def test_the_restore_verifies_before_it_drops(self):
         """Ordering is the whole point: verifying after the DROP means finding
         out the archive is truncated with the database already gone."""

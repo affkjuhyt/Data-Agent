@@ -53,7 +53,10 @@ data:
     pinger_enable off
     access_log stdio:/dev/stdout
     cache_log stdio:/dev/stderr
-    pid_filename /tmp/squid.pid
+    # No PID file: /tmp is an emptyDir that outlives a container restart, so a restarted Squid
+    # (PID 1 again) found its predecessor's file naming PID 1, took itself for a second instance
+    # and exited ("Squid is already running"), in a loop. Nothing here signals Squid by its PID.
+    pid_filename none
     coredump_dir /tmp
 ---
 apiVersion: apps/v1
