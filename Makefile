@@ -300,6 +300,14 @@ nyc311-snapshot: dev-tools  ## pull NYC 311 into a fixed snapshot (NYC311_SNAPSH
 nyc311-drift: dev-tools  ## count the NYC 311 rows the portal changed since a snapshot (NYC311_SNAPSHOT)
 	@$(NYC311_RUN) drift --cache /cache --snapshot "$(NYC311_SNAPSHOT)"
 
+# PL-04: the latest backups (RUNBOOK §9a) restored into throwaway pods of the current kubectl
+# context and compared with the live stores; nothing live is written. Standard library + kubectl,
+# so it runs on the host. RESTORE_DRILL_ARGS: --keep leaves the pods.
+.PHONY: restore-drill
+
+restore-drill:  ## restore the latest backups into throwaway pods and compare them with the live stores
+	@python3 tests/ops/restore_drill.py $(RESTORE_DRILL_ARGS)
+
 # R1-06: a Data Space's semantic model as YAML, read and written in the api pod with its
 # svc_context credentials. SEMANTIC_ORG is the organisation's id; an import is a dry run unless
 # SEMANTIC_APPLY=1, and approves nothing (relationships and metric versions wait for review).

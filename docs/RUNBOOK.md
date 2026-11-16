@@ -411,6 +411,14 @@ cluster (`.openbao-keys.json` beside the deploy's `secrets.env`): keep a copy of
 
 Run one now: `kubectl -n dataagent-service create job --from=cronjob/<name> <name>-manual`.
 
+**Restore drill**: `make restore-drill` restores the latest backups into throwaway pods (label
+`app=restore-drill`, one at a time) and compares them with the live stores; nothing live is
+written. 17/11/2026 on the dev cluster: 68.8 s in all. Postgres 13.5 s, every live table present,
+`dataagent` (365 tables, 72 561 rows) and `dataagent_audit` equal row for row. Temporal's and
+LiteLLM's busy tables differed by a row or two, written after the dump. MinIO 44.8 s, every
+bucket's objects equal. Qdrant's three collections restored (all three are empty, live too). A
+drill that overwrites the live cluster is the next step, deliberately by hand.
+
 Restore:
 
 - **A database**: the suspended `postgres-restore` Job (`DUMP_FILE`, `TARGET_DB`) verifies the dump
