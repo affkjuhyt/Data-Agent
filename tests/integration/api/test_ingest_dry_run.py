@@ -36,22 +36,41 @@ async def test_dry_run_answers_the_would_be_job_and_records_nothing(ds: Space) -
         "target_dataset_id": str(ds.dataset),
     }
     async with client(ds) as api:
+        # Since 11/11/2026 (25b5482e) worker-ingest samples the source for real: the dry run is
+        # accepted, recorded as a sample request (ingest.job_sample + outbox), and polled.
         tried = await api.post(
             url, params={"dry_run": "true"}, json=body, headers=ds.headers("engineer")
         )
-        assert tried.status_code == 200, tried.text
-        job = tried.json()
-        assert job["dry_run"] is True
-        assert job["mode"] == "incremental" and job["cursor_column"] == "updated_since"
-        assert job["source_id"] == str(ds.source) and job["data_space_id"] == str(ds.space)
-        # The table's defaults apply as on a create, and BR-56 inherits the source's deadline.
-        assert job["status"] == "active" and job["dlq_retention_days"] == 30
-        assert job["freshness_sla"] == "PT1H"
-        # The sample is worker-ingest's; the api says so rather than inventing rows.
-        assert job["sample"] == [] and job["errors"] == []
-        assert "worker-ingest" in job["note"]
-        assert _jobs(ds) == 0 and _events(ds) == 0
-        assert ds.events(job["id"]) == []
+        assert tried.status_code == 202, tried.text
+        accepted = tried.json()
+        assert accepted["status"] == "running" and accepted["poll_after_ms"] > 0
+        sample = accepted["id"]
+        # No job: only the request for a sample, which is what worker-ingest consumes.
+        assert _jobs(ds) == 0 and _events(ds) == 1
+        [(kind, payload)] = ds.events(sample)
+        assert kind == "ingestion_job.sample_requested"
+        assert payload["mode"] == "incremental" and payload["cursor_column"] == "updated_since"
+        assert payload["source_id"] == str(ds.source)
+
+        # Until the worker has read the source the api has no rows to show, and invents none.
+        waiting = await api.get(f"/v1/job-samples/{sample}", headers=ds.headers("engineer"))
+        assert waiting.status_code == 200, waiting.text
+        assert waiting.json()["status"] == "running" and waiting.json()["sample"] == []
+        assert waiting.json()["poll_after_ms"] > 0
+        with ds.seed.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE ingest.job_sample SET status = 'succeeded', finished_at = now(),"
+                ' sample = \'[{"ky_han": "12T", "lai_suat": 4.7}]\' WHERE id = %s',
+                (sample,),
+            )
+        ready = await api.get(f"/v1/job-samples/{sample}", headers=ds.headers("engineer"))
+        assert ready.json()["status"] == "succeeded" and ready.json()["poll_after_ms"] == 0
+        assert ready.json()["sample"] == [{"ky_han": "12T", "lai_suat": 4.7}]
+        # Another Data Space does not see the sample.
+        elsewhere = await api.get(
+            f"/v1/job-samples/{sample}", headers=ds.headers("engineer", ds.other)
+        )
+        assert elsewhere.status_code == 404
 
         # The same body without dry_run creates the job, as before.
         made = await api.post(url, json=body, headers=ds.headers("engineer"))
