@@ -119,7 +119,7 @@ jobs:
             python: "3.12"
             install: >-
               -r backend/services/api/requirements.txt -r backend/services/worker_agent/requirements.txt
-              pyyaml==6.0.3 sqlparse==0.5.1
+              pyyaml==6.0.3 sqlparse==0.5.1 pyarrow==26.0.1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -12,7 +12,7 @@
 | Use case (tab 8) | 115 | 13 UC đủ tiêu chí bắt buộc | todo 13, partial 88, done 8, blocked 1, na 5 |
 | Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 337 có test nhắc mã AC | todo 739, na 39 |
 | Endpoint A2 (tab 4) | 462 (A2 ghi 463 dòng; POST /v1/data-products ở hai nhóm) | 462 được `api` phục vụ | — |
-| Bảng (tab 3/3b) | 207 trong DDL | DDL sinh từ thiết kế | — |
+| Bảng (tab 3/3b) | 208 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 157 có mã nhắc tới | todo 188, na 7 |
 | Màn hình (SCR) | 75 | 15 có mã nhắc tới | todo 72, na 3 |
 | ADR (tab 6) | 48 | — | todo 45, partial 1, done 2 |
@@ -315,7 +315,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-53 | UC-02-04, UC-02-07 | todo | `backend/services/api/modules/workspace/routes.py` |
 | BR-54 | UC-02-07 | todo |  |
 | BR-55 | UC-04-06 | todo |  |
-| BR-56 | UC-04-06, UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +5 |
+| BR-56 | UC-04-06, UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +4 |
 | BR-57 | UC-04-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/ingest.py` +3 |
 | BR-58 | UC-04-08 | todo | `backend/services/api/modules/ingest/routes.py` |
 | BR-59 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/libs/dataagent_db/models/qa.py` +8 |
