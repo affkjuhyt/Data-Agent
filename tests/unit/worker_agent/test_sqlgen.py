@@ -137,10 +137,23 @@ def test_the_vote_follows_the_design_thresholds(agreeing: int, decision: str) ->
         "SELECT to_jsonb(l) FROM workspace.credit_loan AS l",
         "SELECT l FROM workspace.credit_loan AS l",
         "SELECT row_to_json(credit_loan) FROM workspace.credit_loan",
+        # PostgreSQL folds unquoted names: L is the alias l.
+        "SELECT L FROM workspace.credit_loan AS l",
+        "SELECT COUNT(L) FROM workspace.credit_loan AS l",
+        # The alias is a column name of another table, not of the one it names: still the row.
+        "SELECT code FROM workspace.credit_loan AS code",
+        "SELECT b FROM workspace.credit_loan AS l JOIN workspace.branch AS b "
+        "ON l.branch_code = b.code",
+        "SELECT x.l FROM (SELECT l FROM workspace.credit_loan AS l) AS x",
     ],
 )
 def test_a_whole_row_is_never_read(sql: str) -> None:
     assert problems(sql, CHECKED, "postgres"), sql
+
+
+def test_an_alias_named_like_its_own_column_reads_that_column() -> None:
+    sql = "SELECT branch_code FROM workspace.credit_loan AS branch_code"
+    assert problems(sql, CHECKED, "postgres") == []
 
 
 def test_count_star_is_still_a_count() -> None:

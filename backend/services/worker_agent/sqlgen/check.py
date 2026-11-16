@@ -69,21 +69,21 @@ def problems(sql: str, linked: Linked, dialect: str) -> list[str]:
     for star in tree.find_all(exp.Star):
         if not isinstance(star.parent, exp.Count):
             return ["Không dùng SELECT * hay bảng.*; hãy nêu rõ các cột cần lấy."]
-    # A bare table name or alias used as a column is the whole row as a record in PostgreSQL
-    # (`SELECT l FROM t AS l`): every column again, shown or not. sqlglot 25 happened to reject
-    # it as an unknown column; sqlglot 30 qualifies it as the row, so it is refused here.
-    known = {c.name for t in linked.tables for c in t.columns}
-    rows = {t.alias_or_name for t in tree.find_all(exp.Table)} - known
-    for col in tree.find_all(exp.Column):
-        if not col.table and col.name in rows:
-            return ["Không dùng SELECT * hay bảng.*; hãy nêu rõ các cột cần lấy."]
     mapping: dict[str, dict[str, dict[str, str]]] = {}
     for t in linked.tables:
         mapping.setdefault(t.schema, {})[t.name] = {
             c.name: _TYPES.get(c.kind, "TEXT") for c in t.columns
         }
     try:
-        qualify(tree.copy(), schema=mapping, dialect=dialect, validate_qualify_columns=True)
+        qualified = qualify(
+            tree.copy(), schema=mapping, dialect=dialect, validate_qualify_columns=True
+        )
     except OptimizeError as exc:
         return [f"Cột không có trong bảng: {exc}. Chỉ dùng các cột đã liệt kê."]
+    # A table or its alias used as a value is the whole row as a record in PostgreSQL
+    # (`SELECT l FROM t AS l`, `ROW_TO_JSON(l)`, `COUNT(L)`): every column again, shown or not.
+    # sqlglot 25 rejected it as an unknown column by accident; sqlglot 30 resolves it, per scope
+    # and with the dialect's case folding, to a TableColumn, which is what is refused here.
+    if qualified.find(exp.TableColumn):
+        return ["Không dùng SELECT * hay bảng.*; hãy nêu rõ các cột cần lấy."]
     return []
