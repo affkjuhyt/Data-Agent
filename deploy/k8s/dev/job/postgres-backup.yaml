@@ -69,6 +69,14 @@ spec:
             - -c
             - |
               set -eu
+              # A run that starts while PostgreSQL restarts (a cluster restart, a deploy: the failed runs of
+              # 03/11 and 16/11) failed at once and spent its two retries within a minute. Wait for it.
+              waited=0
+              until pg_isready -q -t 5; do
+                waited=$((waited + 10))
+                if [ "$waited" -gt 600 ]; then echo "[backup] postgres not ready after 10 min"; exit 1; fi
+                sleep 5
+              done
               mkdir -p /backups/dumps
               ts=$(date +%Y%m%d_%H%M%S)
               dump=/backups/dumps/dump_${ts}.sql.gz
