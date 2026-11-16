@@ -141,6 +141,24 @@ def unnamed_quantity(
     )
 
 
+def nothing_read(
+    question: str, layer: SpaceLayer, period: str | None, *, max_options: int = UNNAMED_OPTIONS
+) -> Clarify | None:
+    """The question back when the turn tried the data and read nothing, and no word of the
+    question stands out as unknown: "Khách hàng rời bỏ" folds to "khach hang roi bo", whose last
+    two words are fillers ("rồi") and whose first two a metric names, so only its meaning — not
+    its words — has no metric. The closest certified metrics are offered, each asked with the
+    question's period; None when there is none to offer."""
+    found = [m["name"] for m in analyst.search_metrics(layer, question) if m["certified"]]
+    if not found:
+        return None
+    when = f" {period}" if period else ""
+    return Clarify(
+        "Chưa có chỉ số chuẩn nào đo đúng điều bạn hỏi. Bạn muốn xem chỉ số nào dưới đây?",
+        [f"{name}{when} là bao nhiêu?" for name in found[:max_options]],
+    )
+
+
 def join_thought(existing: str, note: str) -> str:
     existing = (existing or "").strip()
     return f"{existing} {note}".strip() if existing else note

@@ -759,6 +759,12 @@ def _ask_for_unnamed_question(s: State) -> bool:
         quantity_words(s.ctx.question, vocab, today=s.ctx.today), _catalogue_words(vocab)
     )
     ask = clarify_policy.unnamed_quantity(s.ctx.question, words, s.ctx.layer) if words else None
+    if ask is None and not s.ctx.period_moves:
+        # Nothing read and no period to blame (a period with no data is moved, AGC-10, not asked).
+        found = s.ctx.period
+        ask = clarify_policy.nothing_read(
+            s.ctx.question, s.ctx.layer, found.label if found else None
+        )
     if ask is None:
         return False
     s.clarify = ask
