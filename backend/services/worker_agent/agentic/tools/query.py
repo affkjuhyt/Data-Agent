@@ -165,6 +165,22 @@ class QueryMetric(Tool):
             g for g in args.group_by if args.grain and g not in known and _CALENDAR_PART.match(g)
         ]
         group_by = [g for g in args.group_by if g not in calendar]
+        times = {d.code for d in vocab.dimensions if d.is_time}
+        if args.grain and not times & set(group_by):
+            # The catalogue the planner reads lists no time dimension, so "theo tháng" arrives as
+            # a grain alone, which the compiler would ignore and answer with one total. The cut is
+            # along the metric's own time, as the governed path makes it (BR-80).
+            try:
+                time_cut = c.time_dimension_of(version, ctx.layer.layer)
+            except c.CompileError:
+                time_cut = None
+            if time_cut is None:
+                return ToolResult(
+                    False,
+                    f"chỉ số {args.metric} không có chiều thời gian để chia theo {args.grain}",
+                    failure="logic",
+                )
+            group_by.append(time_cut.code)
         bad = [g for g in [*group_by, *args.filters] if g not in allowed]
         if bad:
             cuts = ", ".join(sorted(allowed - {d.code for d in vocab.dimensions if d.is_time}))

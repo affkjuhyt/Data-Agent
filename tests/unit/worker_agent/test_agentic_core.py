@@ -416,12 +416,14 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
         raise c.CompileError("NO_JOIN_PATH", "stop here")
 
     monkeypatch.setattr(c, "compile_metric", refuse)
+    monkeypatch.setattr(c, "time_dimension_of", lambda *_a: day)
     by_month = QueryMetricArgs(
         metric="DOANH_THU_INTERNET", grain="month", group_by=["thang_tai_chinh", "vung"]
     )
     asyncio.run(QueryMetric().run(ctx, by_month))  # type: ignore[arg-type]
-    # The made-up month cut is the grain's job: it never reaches the compiler, the real cut does.
-    assert compiled and compiled[0].group_by == ["vung"]
+    # The made-up month cut never reaches the compiler; the month is cut along the metric's own
+    # time, which the catalogue the planner reads does not list.
+    assert compiled and compiled[0].group_by == ["vung", "ngay_dat"]
 
     refused = asyncio.run(
         QueryMetric().run(
