@@ -216,6 +216,27 @@ adventureworks-documents:  ## regenerate the DS-AW document seed from deploy/doc
 	  python tests/e2e/adventureworks/documents.py sql > $(AW_DOCUMENTS_SEED).tmp \
 	  && mv $(AW_DOCUMENTS_SEED).tmp $(AW_DOCUMENTS_SEED)
 
+# EV-01: NYC 311 (erm2-nwe9) pulled into a fixed snapshot the real-data evaluation's gold answers
+# are defined on (tests/e2e/nyc311/collect.py, docs/blueprint/DATASET_AND_EVALUATION.md §2). The rows
+# stay in NYC311_CACHE (outside the repo: the terms are to be confirmed, the data is not shared);
+# the manifest, row hashes and window, goes to model/eval/snapshots/. SOCRATA_APP_TOKEN from the
+# environment (the portal throttles the shared pool without one). A pull with the same snapshot id
+# that does not reproduce the manifest is refused: pull a new id.
+NYC311_CACHE ?= $(HOME)/.cache/dataagent/nyc311
+NYC311_SNAPSHOT ?= S3-2025Q1
+NYC311_START ?= 2025-01-01
+NYC311_END ?= 2025-04-01
+NYC311_RUN = docker run --rm --user "$$(id -u):$$(id -g)" -v "$(PWD):/src" -w /src \
+	-v "$(NYC311_CACHE):/cache" -e SOCRATA_APP_TOKEN $(DEV_TOOLS_IMAGE) python -I tests/e2e/nyc311/collect.py
+.PHONY: nyc311-snapshot nyc311-drift
+
+nyc311-snapshot: dev-tools  ## pull NYC 311 into a fixed snapshot (NYC311_SNAPSHOT, NYC311_START, NYC311_END)
+	@mkdir -p "$(NYC311_CACHE)" && $(NYC311_RUN) pull --cache /cache --snapshot "$(NYC311_SNAPSHOT)" \
+	  --start "$(NYC311_START)" --end "$(NYC311_END)"
+
+nyc311-drift: dev-tools  ## count the NYC 311 rows the portal changed since a snapshot (NYC311_SNAPSHOT)
+	@$(NYC311_RUN) drift --cache /cache --snapshot "$(NYC311_SNAPSHOT)"
+
 # R1-06: a Data Space's semantic model as YAML, read and written in the api pod with its
 # svc_context credentials. SEMANTIC_ORG is the organisation's id; an import is a dry run unless
 # SEMANTIC_APPLY=1, and approves nothing (relationships and metric versions wait for review).

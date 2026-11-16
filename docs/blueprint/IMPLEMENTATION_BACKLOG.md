@@ -190,7 +190,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 
 | ID | Ưu tiên | Tuần | Việc | Phụ thuộc | Vai | CS | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| EV-01 | P0 | 1 | CLI thu NYC 311 (S3) + manifest sha256 + Parquet/tháng + drift audit | — (snapshot format tạm JSON→Parquet; chuyển `libs/snapshot` ở tuần 4) | DE | M | manifest tái lập 2 lần giống nhau | todo |
+| EV-01 | P0 | 1 | CLI thu NYC 311 (S3) + manifest sha256 + Parquet/tháng + drift audit | — (snapshot format tạm JSON→Parquet; chuyển `libs/snapshot` ở tuần 4) | DE | M | manifest tái lập 2 lần giống nhau | doing: CLI + `make nyc311-snapshot/-drift` + test xong (JSONL nén theo tháng, Parquet dời sang EV-03); chưa kéo được: cổng trả 403 cho máy dev 16/11 — cần app token và một host cổng chấp nhận |
 | EV-08 | P0 | 1 | Cột mới `eval.eval_item` + loader YAML | — | DB | S | — | todo |
 | EV-10 | P0 | 1 | Sửa `halves` thật + `dense_ok_rate`/`rerank_ok_rate` (gộp DI-14) | — | AI | S | báo cáo keyword-only không ghi `dense: true` | done (phần halves; gate đọc truy hồi ở EV-12) |
 | EV-03 | P0 | 5 | Data Space DS-311 (nạp có version, `ds-311.yaml` 15–20 metric, value_index) | EV-01, DF-02, AE-14 (hoặc metric đơn giản trước) | DE/AI | M | 17 metric reconcile với SQL tay | todo |
