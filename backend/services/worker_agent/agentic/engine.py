@@ -1023,8 +1023,8 @@ def _append_caveats(s: State) -> None:
         if ds.id in used and ds.truncated:
             items.append(f"{ds.title}: kết quả bị cắt bớt, chỉ hiển thị một phần.")
     items += s.signals.caveats
-    if s.dropped_sentences:
-        items.append(f"Đã bỏ {s.dropped_sentences} câu có số không truy được nguồn.")
+    # Sentences the number check dropped are not said here: they were the draft's, the reader
+    # never saw them, and the count stays in number_check and on the write_answer step.
     # A failed step is said only when it was to fetch data and nothing fetched with that tool
     # afterwards: a computation that failed, or a query a later one replaced, is on the timeline
     # and casts no doubt on figures that were all traced.

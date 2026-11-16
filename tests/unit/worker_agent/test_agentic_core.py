@@ -93,6 +93,19 @@ def test_a_chart_and_a_kpi_take_their_figures_from_the_dataset() -> None:
         "b2",
     )
     assert kpi["items"][0]["value"] == 250000.0
+    # A row of a many-row result is named, never taken by index, and never called a total.
+    for draft in (
+        b.KpiDraft(label="Doanh thu", dataset="d1", column="Doanh thu", row=1),
+        b.KpiDraft(
+            label="Tổng doanh thu 2013",
+            dataset="d1",
+            column="Doanh thu",
+            match_column="Vùng",
+            match_value="Pacific",
+        ),
+    ):
+        with pytest.raises(b.BlockError):
+            b.materialize(b.BlockDraft(type="kpi", kpis=[draft]), ws, "b2")
     with pytest.raises(b.BlockError):
         b.materialize(b.BlockDraft(type="table", dataset="d9"), ws, "b3")
     with pytest.raises(b.BlockError):
@@ -577,6 +590,8 @@ def test_caveats_carry_the_sql_vote_and_leave_out_a_failed_computation() -> None
         ),
     )
     state.composition = [{"type": "kpi", "id": "b1", "items": [{"dataset": "d1"}]}]
+    # Draft sentences the number check dropped are the timeline's, not the reader's caveat.
+    state.dropped_sentences = 2
     engine._append_caveats(state)
     caveats = state.composition[-1]["items"]
     assert caveats == [
@@ -1264,3 +1279,15 @@ def test_a_series_longer_than_a_chart_holds_is_a_table_not_a_cut_chart() -> None
     # A line of the first 120 days would end in May with nothing saying the rest is missing.
     assert block["type"] == "table"
     assert block["row_count"] == 200
+
+
+def test_the_reporter_lays_out_by_question_and_names_no_internals() -> None:
+    from services.worker_agent.agentic import prompts
+
+    # The one recipe every baseline answer followed (conclusion, evidence, insights, caveat) is gone.
+    assert "mở bằng kết luận, rồi" not in prompts.REPORTER
+    for rule in ("- Một con số: kpi", "- Xu hướng", "- Vì sao", "mã dataset (d1, d2)"):
+        assert rule in prompts.REPORTER
+    assert "thuật ngữ nội bộ" in prompts.REVIEW_ANSWER
+    # "theo tháng" is a grain; a running total or a comparison is not added unasked.
+    assert "không tự thêm" in prompts.EXECUTOR
