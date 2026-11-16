@@ -1070,11 +1070,26 @@ def _label_only(text: str) -> bool:
 MAX_FOLLOW_UPS = 3
 
 
+_GRAIN_WORDS = ("ngay", "tuan", "thang", "quy", "nam")
+_BY = re.compile(r"\btheo (?:tung |cac )?(.+)")
+
+
+def _cut_exists(key: str, cuts: list[str]) -> bool:
+    """A next question cut "theo X" names a cut there is: a dimension's name or a grain. "Biến
+    động doanh thu theo từng dịch vụ Internet" named none (17/11)."""
+    m = _BY.search(key)
+    if m is None:
+        return True
+    after = m.group(1)
+    return after.split(" ", 1)[0] in _GRAIN_WORDS or any(after.startswith(c) for c in cuts if c)
+
+
 def runnable_follow_ups(items: list[str], question: str, vocab: Any) -> list[str]:
     """The next questions worth a chip (E5): each once, not the question just asked, and naming a
     metric of the catalogue, so a click asks something the data answers on its own. The model
     also offered "Liệu có cần thu thập dữ liệu bổ sung cho kỳ này không?" (17/11)."""
     names = [norm(m.name) for m in getattr(vocab, "metrics", [])] if vocab is not None else []
+    cuts = [norm(d.name) for d in getattr(vocab, "dimensions", [])] if vocab is not None else []
     seen = {norm(question)}
     kept: list[str] = []
     for item in items:
@@ -1083,6 +1098,8 @@ def runnable_follow_ups(items: list[str], question: str, vocab: Any) -> list[str
         if not text or key in seen:
             continue
         if names and not any(f" {n} " in f" {key} " for n in names):
+            continue
+        if cuts and not _cut_exists(key, cuts):
             continue
         seen.add(key)
         kept.append(text)

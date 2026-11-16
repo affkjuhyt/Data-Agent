@@ -315,19 +315,20 @@ def test_next_questions_are_kept_once_and_only_when_they_name_a_metric() -> None
     import uuid
 
     from services.worker_agent.agentic import engine
-    from services.worker_agent.understand.resolver import MetricEntry, Vocabulary
+    from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
 
     vocab = Vocabulary(
         metrics=[MetricEntry(uuid.uuid4(), "DOANH_THU_INTERNET", "Doanh thu Internet", True)],
-        dimensions=[],
+        dimensions=[DimensionEntry(uuid.uuid4(), "vung", "Vùng bán hàng")],
     )
     offered = [
+        "Biến động doanh thu Internet theo từng dịch vụ Internet",
         "Doanh thu Internet theo quý năm 2013",
         "Doanh thu Internet theo quý năm 2013?",
         "Liệu có cần thu thập dữ liệu bổ sung cho kỳ này không?",
         "Doanh thu Internet năm 2013 là bao nhiêu?",
         "So sánh doanh thu Internet 2013 với 2012",
-        "Doanh thu Internet theo vùng năm 2013",
+        "Doanh thu Internet theo vùng bán hàng năm 2013",
         "Doanh thu Internet theo nhóm sản phẩm năm 2013",
     ]
     assert engine.runnable_follow_ups(
@@ -335,7 +336,7 @@ def test_next_questions_are_kept_once_and_only_when_they_name_a_metric() -> None
     ) == [
         "Doanh thu Internet theo quý năm 2013",
         "So sánh doanh thu Internet 2013 với 2012",
-        "Doanh thu Internet theo vùng năm 2013",
+        "Doanh thu Internet theo vùng bán hàng năm 2013",
     ]
 
 
