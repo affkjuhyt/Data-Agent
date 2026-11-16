@@ -30,6 +30,7 @@ from services.worker_agent.sqlgen.run import explore
 from services.worker_agent.sqlgen.schema import link
 from services.worker_agent.sqlgen.space import load_space
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.grain import find_grain
 from services.worker_agent.understand.packs.base import iso_answer
 from services.worker_agent.understand.resolver import metric_words, quantity_words
 
@@ -166,10 +167,12 @@ class QueryMetric(Tool):
         ]
         group_by = [g for g in args.group_by if g not in calendar]
         times = {d.code for d in vocab.dimensions if d.is_time}
-        if args.grain and not times & set(group_by):
+        if args.grain and not times & set(group_by) and find_grain(ctx.question):
             # The catalogue the planner reads lists no time dimension, so "theo tháng" arrives as
             # a grain alone, which the compiler would ignore and answer with one total. The cut is
-            # along the metric's own time, as the governed path makes it (BR-80).
+            # along the metric's own time, as the governed path makes it (BR-80). Only when the
+            # question asks a cut along time: the model also sets a grain unasked ("cơ cấu theo
+            # nhóm" with grain=month), and cutting that by month split each group into months.
             try:
                 time_cut = c.time_dimension_of(version, ctx.layer.layer)
             except c.CompileError:

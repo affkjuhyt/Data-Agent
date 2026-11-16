@@ -437,6 +437,15 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
     # The made-up month cut never reaches the compiler; the month is cut along the metric's own
     # time, which the catalogue the planner reads does not list.
     assert compiled and compiled[0].group_by == ["vung", "ngay_dat"]
+    # A grain the model set unasked ("cơ cấu … theo vùng") adds no month cut to the groups.
+    ctx.question = "Cơ cấu doanh thu Internet theo vùng năm 2013"
+    asyncio.run(
+        QueryMetric().run(
+            ctx, QueryMetricArgs(metric="DOANH_THU_INTERNET", grain="month", group_by=["vung"])
+        )  # type: ignore[arg-type]
+    )
+    assert compiled[-1].group_by == ["vung"]
+    ctx.question = "Doanh thu Internet theo tháng"
 
     refused = asyncio.run(
         QueryMetric().run(
