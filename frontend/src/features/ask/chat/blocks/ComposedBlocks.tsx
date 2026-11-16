@@ -111,6 +111,8 @@ function exploreOf(block: Block, ctx: Ctx): (() => void) | undefined {
     group_by: arr<string>(e.group_by),
     filters: (e.filters && typeof e.filters === 'object' ? e.filters : {}) as Record<string, string[]>,
     time_cuts: arr<string>(e.time_cuts),
+    period: str(e.period) || null,
+    grain: (str(e.grain) || null) as ExploreHandoff['grain'],
   };
   return () => ctx.onOpenExplore!(handoff);
 }

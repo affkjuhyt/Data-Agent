@@ -110,6 +110,35 @@ async def test_uc_01_04_the_explorer_compiles_each_metric_into_one_long_result(
     assert seed.one("SELECT count(*) FROM query.query_result WHERE query_run_id = %s", run) == 1
 
 
+async def test_k1_the_explorer_reads_a_period_and_cuts_by_the_metrics_own_time_at_a_grain(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    debt = _metric(seed, bank, "DU_NO")
+    # A grain and no time cut: the metric's own time, one row per month.
+    by_month = _queue(
+        bank, "question", {"metric_ids": [debt], "dimensions": [], "filters": [], "grain": "month"}
+    )
+    await _drain()
+    assert _outcome(seed, by_month) == ("succeeded", None)
+    assert len(_rows(seed, by_month)) == 2  # August and September 2026
+    # A period: September alone.
+    september = _queue(
+        bank,
+        "question",
+        {
+            "metric_ids": [debt],
+            "dimensions": [],
+            "filters": [],
+            "grain": "month",
+            "period": "2026-09",
+        },
+    )
+    await _drain()
+    assert _outcome(seed, september) == ("succeeded", None)
+    assert len(_rows(seed, september)) == 1
+
+
 async def test_a_dataset_run_applies_its_filters_and_limit(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -196,6 +196,19 @@ describe('ExplorePage', () => {
     expect(await screen.findByText(/chưa chia theo tháng hay quý/)).toBeInTheDocument();
   });
 
+  it('K1: an answer read by month opens with its period and grain, and a grain alone runs', async () => {
+    handOffToExplore({
+      metric_id: 'exp-npl-ratio', group_by: ['vung', 'thang'], filters: {}, time_cuts: ['thang'], period: '2026', grain: 'month',
+    });
+    wrap(<ExplorePage />);
+    await waitFor(() => expect(within(shelf('Chỉ số')).getByText('Nợ xấu (%)')).toBeInTheDocument());
+    const time = shelf('Thời gian');
+    expect(within(time).getByRole('combobox', { name: 'Chia theo thời gian' })).toHaveValue('month');
+    expect(within(time).getByRole('combobox', { name: 'Kỳ' })).toHaveValue('2026');
+    // The month is read as the metric's own time, not left behind.
+    expect(screen.queryByText(/chưa chia theo tháng hay quý/)).not.toBeInTheDocument();
+  });
+
   it('opens the metric definition for "Vì sao số này?"', async () => {
     await nplByRegion();
     fireEvent.click(screen.getByRole('button', { name: 'Vì sao số này?' }));

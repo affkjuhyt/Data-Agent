@@ -114,7 +114,20 @@ function Explorer({ model: base }: { model: ExploreModel }) {
   const askRef = useRef<HTMLInputElement>(null);
   const seq = useRef(0);
 
-  const ready = shelves.metric_ids.length > 0 && shelves.dimension_ids.length > 0;
+  // A metric and a cut: a dimension, or a grain along the metric's own time (K1).
+  const ready = shelves.metric_ids.length > 0 && (shelves.dimension_ids.length > 0 || !!shelves.grain);
+  // The years the first metric has data in, for the period picker: one small reading by year.
+  const firstMetric = shelves.metric_ids[0];
+  const yearsRead = useV1(
+    ['exploreYears', firstMetric],
+    firstMetric
+      ? () =>
+          runExploreQuery({ metric_ids: [firstMetric], dimension_ids: [], filters: [], grain: 'year' }, base).then(
+            (r) => [...new Set(r.rows.map((row) => row.key.slice(0, 4)).filter((y) => /^\d{4}$/.test(y)))].sort(),
+          )
+      : null,
+  );
+  const years = Array.isArray(yearsRead.data) ? yearsRead.data : [];
   const queryKey = JSON.stringify(shelves);
 
   useEffect(() => {
@@ -230,11 +243,11 @@ function Explorer({ model: base }: { model: ExploreModel }) {
   const downloadCsv = () => {
     if (!result) return;
     const header = [result.category_label, ...result.series.map((s) => s.label)];
-    if (result.series.length > 1) header.push('Thay đổi');
+    if (result.has_delta) header.push('Thay đổi');
     const lines = [
       header.map(csvCell).join(','),
       ...result.rows.map((r) =>
-        [r.label, ...r.values, ...(result.series.length > 1 ? [r.delta] : [])]
+        [r.label, ...r.values, ...(result.has_delta ? [r.delta] : [])]
           .map(csvCell)
           .join(','),
       ),
@@ -393,7 +406,7 @@ function Explorer({ model: base }: { model: ExploreModel }) {
           </Button>
         </div>
 
-        <Shelves model={model} state={shelves} onChange={setShelves} />
+        <Shelves model={model} state={shelves} onChange={setShelves} years={years} />
 
         {!ready ? (
           <p className="rounded-lg border border-dashed border-border-strong px-da-xl py-da-2xl text-center text-muted-foreground da-body">

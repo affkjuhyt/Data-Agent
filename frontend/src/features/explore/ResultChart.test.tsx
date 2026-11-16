@@ -9,6 +9,7 @@ const result: ExploreResult = {
   subtitle_text: 'PROFIT v2 · 0,4 giây',
   category_label: 'Vùng',
   category_dimension_id: 'dim-region',
+  has_delta: true,
   series: [
     { key: 'q2', label: 'Quý 2' },
     { key: 'q3', label: 'Quý 3' },

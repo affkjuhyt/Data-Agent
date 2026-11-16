@@ -497,6 +497,7 @@ class QueryMetric(Tool):
                 if period is not None
                 else None,
                 "group_by": group_by,
+                "grain": args.grain,
                 "filters": {k: list(v) for k, v in args.filters.items()},
                 # Which column is which cut: a point picked on the chart names its column's label,
                 # Khám phá needs the dimension (ComposedBlocks' point menu, "Mở trong Khám phá").

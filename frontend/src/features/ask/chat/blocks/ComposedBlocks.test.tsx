@@ -59,7 +59,7 @@ describe('ComposedBlocks', () => {
       composed: true,
       trust: 'certified',
       insight: 'Từ 2013-01 đến 2013-03 tăng 200,0%; cao nhất 2013-03, thấp nhất 2013-01.',
-      explore: { metric_id: 'm-1', group_by: ['ngay_dat_hang'], filters: { nam: ['2013'] }, cuts: { Tháng: 'ngay_dat_hang' }, time_cuts: ['ngay_dat_hang'] },
+      explore: { metric_id: 'm-1', group_by: ['ngay_dat_hang'], filters: { nam: ['2013'] }, cuts: { Tháng: 'ngay_dat_hang' }, time_cuts: ['ngay_dat_hang'], period: '2013', grain: 'month' },
       spec: {
         chart_type: 'line',
         title: 'Doanh thu theo tháng',
@@ -181,6 +181,8 @@ describe('ComposedBlocks', () => {
       group_by: ['ngay_dat_hang'],
       filters: { nam: ['2013'] },
       time_cuts: ['ngay_dat_hang'],
+      period: '2013',
+      grain: 'month',
     });
   });
 });

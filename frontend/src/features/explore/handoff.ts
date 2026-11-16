@@ -1,4 +1,4 @@
-import type { ExploreModel } from '../../lib/v1/explore';
+import type { ExploreModel, Grain } from '../../lib/v1/explore';
 import type { ShelfState } from './Shelves';
 
 /*
@@ -12,8 +12,11 @@ export interface ExploreHandoff {
   metric_id: string;
   group_by: string[];
   filters: Record<string, string[]>;
-  /** The cuts read at a grain (month, quarter): Khám phá has no grain, so they stay behind. */
+  /** The cuts read along time: Khám phá reads them at the grain below (K1), its own time cut. */
   time_cuts: string[];
+  /** The period read ("2013", "2013-Q3", "2013-09"); a range Khám phá cannot pick is left out. */
+  period?: string | null;
+  grain?: Grain | null;
 }
 
 let pending: ExploreHandoff | null = null;
@@ -43,7 +46,10 @@ export function shelvesOf(handoff: ExploreHandoff, model: ExploreModel): Opened 
   const dimension_ids: string[] = [];
   for (const code of handoff.group_by) {
     const d = byCode.get(code);
-    if (d && !handoff.time_cuts.includes(code)) dimension_ids.push(d.id);
+    if (handoff.time_cuts.includes(code)) {
+      // Read at its grain as the metric's own time, not as a dimension cut by day.
+      if (!handoff.grain) left.push(code);
+    } else if (d) dimension_ids.push(d.id);
     else left.push(code);
   }
   const filters: ShelfState['filters'] = [];
@@ -52,5 +58,9 @@ export function shelvesOf(handoff: ExploreHandoff, model: ExploreModel): Opened 
     if (d && values.length) filters.push({ dimension_id: d.id, op: values.length === 1 ? 'eq' : 'in', values });
     else left.push(code);
   }
-  return { shelves: { metric_ids: [handoff.metric_id], dimension_ids, filters }, left };
+  const period = handoff.period && /^\d{4}(-Q[1-4]|-\d{2})?$/.test(handoff.period) ? handoff.period : null;
+  return {
+    shelves: { metric_ids: [handoff.metric_id], dimension_ids, filters, period, grain: handoff.grain ?? null },
+    left,
+  };
 }

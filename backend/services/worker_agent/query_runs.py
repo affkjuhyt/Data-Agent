@@ -13,8 +13,8 @@ The run is claimed `queued` → `running` in one statement, so a redelivered eve
 completed by the executor, which checks the tables again (Data Space, policies) and stores the
 rows the api's GET /v1/query-runs/{id}/rows reads. A run that cannot be built ends `failed` with
 the reason. Knowledge time (`as_of` before today) needs the history route, and `compare` a period
-to compare (semantic/compare.py, R1-06), which the explorer's request does not carry yet; such a
-run fails saying so, it never runs live instead.
+to compare (semantic/compare.py, R1-06); such a run fails saying so, it never runs live instead.
+The explorer's `period` and `grain` (K1) are read as the agent's readings read them.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ from services.worker_agent.query.scope import default_schema
 from services.worker_agent.questions import QUERYABLE, secrets
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import load
+from services.worker_agent.understand.packs.base import iso_answer
 
 logger = logging.getLogger(__name__)
 
@@ -119,13 +120,34 @@ async def _explore(
     except KeyError as exc:
         raise Unbuildable("Một chiều trong yêu cầu không còn trong lớp ngữ nghĩa.") from exc
 
+    # K1: the period read and the grain of a time cut. With a grain and no time cut, the cut is
+    # along each metric's own time, as the agent reads it (agentic/tools/query.py); a time cut
+    # with no grain is read by month: by day it was a row per day of every year.
+    period = None
+    if p.get("period"):
+        found = iso_answer(str(p["period"]))
+        if found is None:
+            raise Unbuildable(f"Kỳ {p['period']} không đúng dạng.")
+        period = c.Period(found.start, found.end)
+    times = {d.code for d in layer.layer.dimensions.values() if d.is_time}
+    grain = p.get("grain") or ("month" if times & set(group_by) else None)
+
     compiled: list[tuple[str, c.Compiled]] = []
     source: catalog.Source | None = None
     for metric_id in (uuid.UUID(str(m)) for m in p["metric_ids"]):
         version = layer.versions.get(metric_id)
         if version is None:
             raise Unbuildable("Chỉ số không còn phiên bản đang dùng.")
-        request = c.Request(version, group_by=group_by, filters=filters)
+        cuts = list(group_by)
+        if grain and not times & set(cuts):
+            try:
+                own = c.time_dimension_of(version, layer.layer)
+            except c.CompileError:
+                own = None
+            if own is None:
+                raise Unbuildable("Chỉ số này không có chiều thời gian để chia theo kỳ.")
+            cuts.append(own.code)
+        request = c.Request(version, group_by=cuts, filters=filters, period=period, grain=grain)
         first = c.compile_metric(request, layer.layer, dialect="postgres")
         dataset = layer.datasets[first.dataset_ids[0]]
         here = _queryable(await session.get(catalog.Source, dataset.source_id))

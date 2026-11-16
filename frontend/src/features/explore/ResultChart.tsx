@@ -217,7 +217,7 @@ export function ResultChart({
 
 /* "Bảng giá trị" (2143:15894): the category, one column per series, and the change. */
 export function ValueTable({ result, bare = false }: { result: ExploreResult; bare?: boolean }) {
-  const hasDelta = result.series.length > 1;
+  const hasDelta = result.has_delta;
   const view = useTableView(result.rows, {
     search: (row) =>
       `${row.label} ${row.values.map((value) => formatValue(value, result.unit)).join(' ')} ${hasDelta ? formatDelta(row.delta, result.unit) : ''}`,

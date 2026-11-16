@@ -325,6 +325,9 @@ def _explore(ds: Dataset) -> dict[str, Any] | None:
         "filters": dict(r.get("filters", {})),
         "cuts": dict(r.get("cuts", {})),
         "time_cuts": list(r.get("time_cuts", [])),
+        # K1: Khám phá reads a period and a grain too.
+        "period": r.get("period"),
+        "grain": r.get("grain"),
     }
 
 

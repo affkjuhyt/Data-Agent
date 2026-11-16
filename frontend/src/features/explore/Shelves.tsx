@@ -3,7 +3,7 @@ import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
 import { Icon } from '../../design-system/Icon';
 import { Menu } from '../../design-system/Menu';
-import type { ExploreDimension, ExploreFilter, ExploreModel } from '../../lib/v1/explore';
+import type { ExploreDimension, ExploreFilter, ExploreModel, Grain } from '../../lib/v1/explore';
 import { cn } from '../../lib/utils';
 import { Dialog } from '../../design-system/Dialog';
 import { FIELD_MIME, type FieldRef } from './FieldList';
@@ -19,7 +19,19 @@ export interface ShelfState {
   metric_ids: string[];
   dimension_ids: string[];
   filters: ExploreFilter[];
+  /** K1: the period read ("2013"); none reads every period. */
+  period?: string | null;
+  /** K1: cut along time at this grain; with no time dimension on the shelf, the metric's own. */
+  grain?: Grain | null;
 }
+
+const GRAINS: { value: Grain; label: string }[] = [
+  { value: 'day', label: 'Ngày' },
+  { value: 'week', label: 'Tuần' },
+  { value: 'month', label: 'Tháng' },
+  { value: 'quarter', label: 'Quý' },
+  { value: 'year', label: 'Năm' },
+];
 
 type Shelf = 'metric' | 'dimension' | 'filter';
 
@@ -27,10 +39,13 @@ export function Shelves({
   model,
   state,
   onChange,
+  years = [],
 }: {
   model: ExploreModel;
   state: ShelfState;
   onChange: (next: ShelfState) => void;
+  /** The years the chosen metric has data in, for the period picker. */
+  years?: string[];
 }) {
   const [editing, setEditing] = useState<ExploreDimension | null>(null);
   const metric = (id: string) => model.metrics.find((m) => m.id === id);
@@ -110,6 +125,43 @@ export function Shelves({
           );
         })}
       </ShelfRow>
+
+      {/* K1: the period and the grain of a cut along time; Khám phá read every period summed. */}
+      <div role="group" aria-label="Kệ Thời gian" className="flex flex-wrap items-center gap-da-md">
+        <span className="w-[56px] shrink-0 text-muted-foreground da-caption">Thời gian</span>
+        <label className="inline-flex items-center gap-da-xs text-muted-foreground da-caption">
+          Kỳ
+          <select
+            aria-label="Kỳ"
+            value={state.period ?? ''}
+            onChange={(e) => onChange({ ...state, period: e.target.value || null })}
+            className="rounded-sm border border-border bg-card px-da-sm py-[3px] text-foreground da-body-small"
+          >
+            <option value="">Mọi kỳ</option>
+            {[...new Set([...years, ...(state.period ? [state.period] : [])])].map((y) => (
+              <option key={y} value={y}>
+                {/^\d{4}$/.test(y) ? `Năm ${y}` : y}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="inline-flex items-center gap-da-xs text-muted-foreground da-caption">
+          Chia theo
+          <select
+            aria-label="Chia theo thời gian"
+            value={state.grain ?? ''}
+            onChange={(e) => onChange({ ...state, grain: (e.target.value || null) as Grain | null })}
+            className="rounded-sm border border-border bg-card px-da-sm py-[3px] text-foreground da-body-small"
+          >
+            <option value="">Không chia</option>
+            {GRAINS.map((g) => (
+              <option key={g.value} value={g.value}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       {editing && (
         <FilterDialog

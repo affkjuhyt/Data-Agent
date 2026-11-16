@@ -172,10 +172,16 @@ export type ExploreFilter = {
   values: string[];
 };
 
+export type Grain = 'day' | 'week' | 'month' | 'quarter' | 'year';
+
 interface ExploreQueryInput {
   metric_ids: string[];
   dimension_ids: string[];
   filters: ExploreFilter[];
+  /** K1: the period read ("2013", "2013-Q3", "2013-09"); none reads every period. */
+  period?: string | null;
+  /** K1: the grain of a time cut; with no time dimension on the shelf, the metric's own time. */
+  grain?: Grain | null;
 }
 
 const unitOf = (unit: string | null | undefined): Unit =>
@@ -286,6 +292,9 @@ export interface ExploreResult {
   /** The dimension of the categories (columns of the chart, rows of the table). */
   category_label: string;
   category_dimension_id: string | null;
+  /** Whether the series are periods, so a row's change from the first to the last means
+   *  something ("Thay đổi"). */
+  has_delta: boolean;
   series: { key: string; label: string }[];
   rows: ExploreRow[];
   unit: Unit;
@@ -332,9 +341,17 @@ export function readExploreResult(
     .map((id) => model.metrics.find((m) => m.id === id))
     .filter((m): m is ExploreMetric => m !== undefined);
   const metricByCode = new Map(chosen.map((m) => [m.code, m]));
-  const categoryAt = dimAt[0] ?? -1;
+  // A cut along time the worker added for a grain (none on the shelf) is the axis, the shelf's
+  // cut its series: "Doanh thu theo vùng, theo tháng" reads month by month.
+  const shelfTime = input.dimension_ids.some((id) => model.dimensions.find((d) => d.id === id)?.is_time);
+  const addedTime = input.grain && !shelfTime ? dimAt.find((i) => dimensionOf(names[i])?.is_time) : undefined;
+  const ordered = addedTime === undefined ? dimAt : [addedTime, ...dimAt.filter((i) => i !== addedTime)];
+  const categoryAt = ordered[0] ?? -1;
   const several = chosen.length > 1;
-  const memberAt = dimAt[1] ?? -1;
+  const memberAt = ordered[1] ?? -1;
+  // K3: "Thay đổi" (last series less first) says something only when the series are periods; for
+  // product groups it was a difference between Bikes and Accessories.
+  const periodSeries = !several && memberAt >= 0 && !!dimensionOf(names[memberAt])?.is_time;
   const seriesAt = several ? metricAt : memberAt;
   const SEP = ' · ';
 
@@ -376,7 +393,7 @@ export function readExploreResult(
       label: key,
       short_label: key,
       values: list,
-      delta: list.length > 1 && first !== null && last !== null ? last - first : null,
+      delta: periodSeries && list.length > 1 && first !== null && last !== null ? last - first : null,
     };
   });
 
@@ -397,6 +414,7 @@ export function readExploreResult(
     subtitle_text: `${chosen.map((m) => `${m.code}${m.version ? ` v${m.version}` : ''}`).join(', ')}${seconds}`,
     category_label: categoryLabel,
     category_dimension_id: category?.id ?? null,
+    has_delta: periodSeries && series.length > 1,
     series,
     rows,
     unit: chosen[0]?.unit ?? 'count',
@@ -434,7 +452,11 @@ export async function runExploreQuery(
         metric_ids: input.metric_ids,
         dimensions: input.dimension_ids,
         filters: input.filters,
-      } satisfies Schemas['ExploreQueryCreate'],
+        ...(input.period ? { period: input.period } : {}),
+        ...(input.grain ? { grain: input.grain } : {}),
+        // period and grain are in the api's ExploreQueryCreate (K1); schema.ts is regenerated
+        // (make api-types) once the drift-resolve schemas no longer collide (lib/v1/sources.ts).
+      } satisfies Schemas['ExploreQueryCreate'] & { period?: string; grain?: Grain },
     }),
   );
   const run = await awaitQueryRun(accepted);
