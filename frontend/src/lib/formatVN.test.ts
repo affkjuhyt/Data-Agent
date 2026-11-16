@@ -30,7 +30,9 @@ describe('setNumberLocale', () => {
       // The marks are CLDR's (Intl), as the server's are (Babel): Swiss German writes a point,
       // French groups with a narrow no-break space, Romanian a dot and a comma.
       setNumberLocale('de-CH');
-      expect(formatNumber(1284.5)).toBe('1’284.5');
+      // The CI runner's Node 20 groups with an ASCII apostrophe, Node 20.19.4 with U+2019: the
+      // ICU data differs between builds and either is Swiss German.
+      expect(formatNumber(1284.5)).toMatch(/^1['’]284\.5$/);
       setNumberLocale('fr-FR');
       expect(formatNumber(1284.5)).toBe('1\u202f284,5');
       setNumberLocale('ro-RO');
