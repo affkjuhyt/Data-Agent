@@ -929,12 +929,15 @@ class TestImageReferencesAreIntact:
         "qdrant/qdrant:v1.13.6",
         "apache/kafka:3.7.0",
         "bitnamilegacy/minio:2024.12.18-debian-12-r0",
-        "docker.io/clickhouse/clickhouse-server",
+        # PL-07: the moving tags are pinned to the build the cluster ran on 16/11/2026.
+        "docker.io/clickhouse/clickhouse-server:26.10.4.207"
+        "@sha256:4f491abc44d9f4a1747c033c35ddd5bc385521305d85ca8251ba0824ff597035",
         # Pinned: 2.7 dropped the file storage backend this deployment uses.
         "openbao/openbao:2.6.3",
-        "edoburu/pgbouncer:latest",
+        "edoburu/pgbouncer:latest@sha256:8638aa563607256d3c7440437534195f1066a92b68015d89ae9d6b935b444a6d",
         "quay.io/keycloak/keycloak:24.0",
-        "ghcr.io/berriai/litellm:main-stable",
+        "ghcr.io/berriai/litellm:main-stable"
+        "@sha256:b7b9e2c306343721802253d0dd9436b9634a2eb4e14da7c7cf06c5c7b7530802",
         "docker.io/langfuse/langfuse:3",
         "docker.io/langfuse/langfuse-worker:3",
         "prom/prometheus:v2.54.1",
@@ -971,6 +974,18 @@ class TestImageReferencesAreIntact:
             if not i.startswith("dataagent/") and i not in self.KNOWN
         ]
         assert not bad, f"unexpected image — add it to KNOWN if deliberate: {bad}"
+
+    def test_no_third_party_image_moves_under_us(self):
+        """PL-07: `latest`, `main-stable` or no tag at all is whatever the registry serves on the
+        day of the pull, so two deploys of one commit can run two builds. Ours are tagged by the
+        build; another's moving tag is pinned by digest."""
+        moving = re.compile(r"(^[^:@]+$)|:(latest|[\w.-]*stable)$")
+        bad = [
+            f"{w}: {i}"
+            for w, i in self._images()
+            if not i.startswith("dataagent/") and "@sha256:" not in i and moving.search(i)
+        ]
+        assert not bad, f"third-party image on a moving tag, pin it by digest: {bad}"
 
     def test_our_images_all_carry_the_dataagent_prefix(self):
         bad = [
