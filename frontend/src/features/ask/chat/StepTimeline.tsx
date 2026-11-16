@@ -1,14 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Icon, type IconName } from '../../../design-system/Icon';
 import { cn } from '../../../lib/utils';
 import type { StepStatus, TurnStep } from '../steps';
 import { StepDetail } from './StepDetail';
 
 /*
- * What the agent did on a turn, one line per step (docs/superpowers/specs/2026-11-02-ask-chat-
- * redesign-design.md): the header says how long it took and opens or closes the list; it stays
- * open while the turn runs. Each line is the step's verb in bold, its object, its chips, and a
- * chevron that opens what the step did (StepDetail).
+ * What the agent did on a turn (docs/superpowers/specs/2026-11-02-ask-chat-redesign-design.md),
+ * folded to one line (E1, as Holistics shows its agent's work): while the turn runs, the step it is
+ * on; once it ends, how many steps and how long, under the answer. The line opens the list: each
+ * step's verb in bold, its object, its chips, and a chevron that opens what it did (StepDetail).
  */
 
 const MARK: Record<StepStatus, { icon: IconName; className: string; label: string }> = {
@@ -35,9 +35,8 @@ export function StepTimeline({
   /** OP-8: one-line steward view (fail / replan / handover) from plan.steps.operator. */
   operatorWhy?: string;
 }) {
-  const [open, setOpen] = useState(running);
-  // Open while the turn runs; once it ends the answer is what matters, the steps fold away.
-  useEffect(() => setOpen(running), [running]);
+  // Closed until asked, running or not: one line says what the agent is doing or did.
+  const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   if (!recorded) {
@@ -45,11 +44,19 @@ export function StepTimeline({
   }
   if (!running && steps.length === 0 && !operatorWhy) return null;
 
+  const current = [...steps].reverse().find((s) => s.status === 'running') ?? steps[steps.length - 1];
+  const failed = steps.filter((s) => s.status === 'failed').length;
   const label = running
-    ? `Đang làm… ${steps.length} bước`
-    : durationMs !== undefined
-      ? `Đã làm trong ${seconds(durationMs)} giây`
-      : `Đã làm ${steps.length} bước`;
+    ? current
+      ? `${current.title}${current.target ? `: ${current.target}` : ''}…`
+      : 'Đang bắt đầu…'
+    : [
+        `Đã thực hiện ${steps.length} bước`,
+        durationMs !== undefined ? `${seconds(durationMs)} giây` : null,
+        failed ? `${failed} bước lỗi` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
 
   return (
     <div className="flex flex-col gap-da-sm">
@@ -57,11 +64,11 @@ export function StepTimeline({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex w-fit items-center gap-da-xs text-muted-foreground da-label hover:text-foreground"
+        className="inline-flex max-w-full items-center gap-da-xs text-muted-foreground da-label hover:text-foreground"
       >
-        <Icon name="sparkles" size={14} className={running ? 'text-primary' : undefined} />
-        {label}
-        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} />
+        <Icon name={running ? 'refresh' : 'sparkles'} size={14} className={running ? 'shrink-0 animate-spin text-primary' : 'shrink-0'} />
+        <span className="truncate">{label}</span>
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} className="shrink-0" />
       </button>
       {!running && operatorWhy && (
         <p className="m-0 text-muted-foreground da-caption" data-testid="operator-why">

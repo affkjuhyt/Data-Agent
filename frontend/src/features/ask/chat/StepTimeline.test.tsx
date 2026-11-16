@@ -38,9 +38,9 @@ const steps: TurnStep[] = [
 ];
 
 describe('StepTimeline', () => {
-  it('says how long the turn took and opens or closes on click', () => {
+  it('folds the finished turn to one line: its steps and how long, opened on click', () => {
     render(<StepTimeline steps={steps} running={false} durationMs={2400} recorded />);
-    const header = screen.getByRole('button', { name: /Đã làm trong 2,4 giây/ });
+    const header = screen.getByRole('button', { name: 'Đã thực hiện 3 bước · 2,4 giây' });
     expect(header).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(header);
     expect(header).toHaveAttribute('aria-expanded', 'true');
@@ -48,9 +48,18 @@ describe('StepTimeline', () => {
     expect(screen.getByText('AdventureWorksDW cho: Doanh thu Internet')).toBeInTheDocument();
   });
 
-  it('is open while the turn runs and counts its steps', () => {
-    render(<StepTimeline steps={[step({ status: 'running', durationMs: null })]} running recorded />);
-    expect(screen.getByRole('button', { name: /Đang làm… 1 bước/ })).toHaveAttribute('aria-expanded', 'true');
+  it('while the turn runs says the step it is on, the list closed until asked', () => {
+    const now = [steps[0], step({ stepId: 's2', seq: 2, title: 'Truy vấn chỉ số', target: 'Doanh thu Internet theo tháng', status: 'running', durationMs: null })];
+    render(<StepTimeline steps={now} running recorded />);
+    const line = screen.getByRole('button', { name: 'Truy vấn chỉ số: Doanh thu Internet theo tháng…' });
+    expect(line).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(line);
+    expect(screen.getByText('Hiểu câu hỏi')).toBeInTheDocument();
+  });
+
+  it('counts the failed steps on the folded line', () => {
+    render(<StepTimeline steps={[...steps, step({ stepId: 's5', seq: 5, status: 'failed' })]} running={false} durationMs={2400} recorded />);
+    expect(screen.getByRole('button', { name: 'Đã thực hiện 4 bước · 2,4 giây · 1 bước lỗi' })).toBeInTheDocument();
   });
 
   it('OP-8 shows operator.why when the turn has ended', () => {
@@ -68,7 +77,7 @@ describe('StepTimeline', () => {
 
   it('opens a query step to its SQL, read through the query run', async () => {
     render(<StepTimeline steps={steps} running={false} durationMs={2400} recorded />);
-    fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Đã thực hiện/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Xem chi tiết: Truy vấn' }));
     expect(await screen.findByText(/GROUP BY vung/)).toBeInTheDocument();
     expect(screen.getByText(/1 dòng/)).toBeInTheDocument();
@@ -78,14 +87,14 @@ describe('StepTimeline', () => {
   it('says when the SQL may not be read', async () => {
     const hidden = [step({ stepId: 's2', action: 'query', title: 'Truy vấn', detail: { row_count: 1, query_run_id: 'run-hidden' } })];
     render(<StepTimeline steps={hidden} running={false} durationMs={100} recorded />);
-    fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Đã thực hiện/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Xem chi tiết: Truy vấn' }));
     expect(await screen.findByText(/không có quyền xem SQL/)).toBeInTheDocument();
   });
 
   it('shows the reading of the question and nests the model call', () => {
     render(<StepTimeline steps={steps} running={false} durationMs={2400} recorded />);
-    fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Đã thực hiện/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Xem chi tiết: Hiểu câu hỏi' }));
     expect(screen.getByText('Doanh thu Internet')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Xem chi tiết: Viết câu trả lời' }));
@@ -95,7 +104,7 @@ describe('StepTimeline', () => {
   it('a failed step says why', () => {
     const failed = [step({ stepId: 's2', action: 'query', title: 'Truy vấn', status: 'failed', summary: 'Chưa truy vấn được nguồn Kho.' })];
     render(<StepTimeline steps={failed} running={false} durationMs={100} recorded />);
-    fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Đã thực hiện/ }));
     const row = screen.getByRole('listitem');
     expect(within(row).getByText('Chưa truy vấn được nguồn Kho.')).toBeInTheDocument();
     expect(within(row).getByLabelText('Lỗi')).toBeInTheDocument();
@@ -107,7 +116,7 @@ describe('StepTimeline', () => {
       detail: { asked: 'năm 2026', grain: 'year', available: ['năm 2013', 'năm 2014'], chosen: 'năm 2014', query_run_id: 'run-1' },
     })];
     render(<StepTimeline steps={explored} running={false} durationMs={100} recorded />);
-    fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Đã thực hiện/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Xem chi tiết: Tìm kỳ có dữ liệu' }));
     expect(screen.getByText('năm 2013 · năm 2014')).toBeInTheDocument();
     expect(screen.getByText('năm 2014', { selector: 'dd' })).toBeInTheDocument();
@@ -119,7 +128,7 @@ describe('StepTimeline', () => {
       detail: { dimension: 'vùng', asked: ['Miền Trung'], available: ['Miền Bắc', 'Miền Nam'], query_run_id: 'run-1', row_count: 2 },
     })];
     render(<StepTimeline steps={widened} running={false} durationMs={100} recorded />);
-    fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Đã thực hiện/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Xem chi tiết: Nới bộ lọc' }));
     expect(screen.getByText('Miền Bắc · Miền Nam')).toBeInTheDocument();
     expect(screen.getByText('Miền Trung', { selector: 'dd' })).toBeInTheDocument();
@@ -132,7 +141,7 @@ describe('StepTimeline', () => {
       detail: { phrase: 'mien nam', dimension: 'vùng', value: 'Miền Nam' },
     })];
     render(<StepTimeline steps={looked} running={false} durationMs={100} recorded />);
-    fireEvent.click(screen.getByRole('button', { name: /Đã làm trong/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Đã thực hiện/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Xem chi tiết: Tìm giá trị' }));
     expect(screen.getByText('Miền Nam', { selector: 'dd' })).toBeInTheDocument();
     expect(screen.getByText('vùng', { selector: 'dd' })).toBeInTheDocument();

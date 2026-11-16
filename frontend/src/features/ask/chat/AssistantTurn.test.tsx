@@ -22,8 +22,10 @@ describe('AssistantTurn', () => {
   it('shows the steps, the answer, the trust label and the next questions', () => {
     const h = handlers();
     render(<AssistantTurn message={base} busy={false} {...h} />);
-    expect(screen.getByRole('button', { name: /Đã làm trong 2,4 giây/ })).toBeInTheDocument();
-    expect(screen.getByText(/16.351.550,34 USD/)).toBeInTheDocument();
+    const line = screen.getByRole('button', { name: 'Đã thực hiện 1 bước · 2,4 giây' });
+    const answer = screen.getByText(/16.351.550,34 USD/);
+    // E1: the answer leads, what the agent did is one line under it.
+    expect(answer.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText('Theo chỉ số chuẩn')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Doanh thu Internet năm 2013 theo quý' }));
     expect(h.onAsk).toHaveBeenCalledWith('Doanh thu Internet năm 2013 theo quý');
@@ -77,7 +79,7 @@ describe('AssistantTurn', () => {
 
   it('while running shows the open timeline and no footer', () => {
     render(<AssistantTurn message={{ ...base, status: 'streaming', blocks: [], content: '' }} busy {...handlers()} />);
-    expect(screen.getByRole('button', { name: /Đang làm… 1 bước/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hiểu câu hỏi…' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Hỏi lại' })).not.toBeInTheDocument();
   });
 });
