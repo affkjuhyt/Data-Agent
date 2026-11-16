@@ -33,8 +33,11 @@ export function ResultCard({
   onSaveToSession,
   onPick,
   onOpenExplore,
+  selected,
   subtitle,
 }: {
+  /** The point picked on the chart, kept marked on it (E3). */
+  selected?: string | null;
   title: string;
   /** One line under the title: the reading the server computed from the drawn rows (E2). */
   subtitle?: string;
@@ -63,7 +66,7 @@ export function ResultCard({
   const body = (big: boolean) =>
     view === 'chart' && chart ? (
       <div className={big ? 'h-[480px]' : 'h-[280px]'}>
-        <ChartRenderer spec={chart} onPick={onPick} />
+        <ChartRenderer spec={chart} onPick={onPick} selected={selected} />
       </div>
     ) : (
       <DataGrid columns={columns} rows={rows} rowCount={rowCount} title={title} pageSize={big ? 20 : 8} />

@@ -4,6 +4,7 @@ runs, blocks take their data from datasets, every number in the text is traced, 
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -125,6 +126,30 @@ def test_a_chart_and_a_kpi_take_their_figures_from_the_dataset() -> None:
         b.materialize(b.BlockDraft(type="table", dataset="d9"), ws, "b3")
     with pytest.raises(b.BlockError):
         b.materialize(b.BlockDraft(type="chart", dataset="d1", x="Năm"), ws, "b4")
+
+
+def test_the_cut_a_question_names_is_found_by_its_full_name() -> None:
+    import uuid
+
+    from services.worker_agent.agentic.tools.query import named_cut
+    from services.worker_agent.understand.resolver import DimensionEntry, Vocabulary
+
+    ids = [uuid.uuid4() for _ in range(4)]
+    vocab = Vocabulary(
+        metrics=[],
+        dimensions=[
+            DimensionEntry(ids[0], "san_pham", "Sản phẩm"),
+            DimensionEntry(ids[1], "nhom_san_pham", "Nhóm sản phẩm"),
+            DimensionEntry(ids[2], "vung", "Vùng bán hàng"),
+            DimensionEntry(ids[3], "ngay", "Ngày đặt hàng", is_time=True),
+        ],
+    )
+    allowed = set(ids)
+    q = "Cơ cấu doanh thu theo nhóm sản phẩm năm 2013."
+    assert named_cut(q, vocab, allowed) == "nhom_san_pham"
+    # A cut the metric does not allow, or one named only in part ("theo vùng"), is left alone.
+    assert named_cut(q, vocab, {ids[0]}) is None
+    assert named_cut("Doanh thu theo vùng năm 2013", vocab, allowed) is None
 
 
 def test_a_charts_one_line_reading_is_computed_from_its_rows() -> None:
@@ -401,7 +426,7 @@ def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql()
         vocabulary=types.SimpleNamespace(
             metrics=[units], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
         ),
-        versions={units.metric_id: object()},
+        versions={units.metric_id: SimpleNamespace(allowed_dimension_ids=[])},
         blocked_metric_ids=set(),
     )
     ctx = types.SimpleNamespace(

@@ -6,7 +6,7 @@ import type React from 'react';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, LineChart,
   Pie, PieChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, RadialBar,
-  RadialBarChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis,
+  RadialBarChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import type { MouseHandlerDataParam } from 'recharts';
 import { formatCompact, formatNumber } from '../../../lib/formatVN';
@@ -19,8 +19,17 @@ const tickFormatter = (v: unknown) => (typeof v === 'number' ? (Math.abs(v) >= 1
 const valueFormatter = (v: unknown) => (typeof v === 'number' ? formatNumber(v) : String(v ?? ''));
 
 /** `onPick`: a point clicked — a bar, a point of a line or area, a slice — by its category on the
- *  x axis (the answer's "Đi sâu", UC-01-04, and the chat's point menu, E3). */
-export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (category: string) => void }) {
+ *  x axis (the answer's "Đi sâu", UC-01-04, and the chat's point menu, E3). `selected` stays
+ *  marked on the chart after the pointer leaves: a line, its dot, or the other bars dimmed. */
+export function ChartRenderer({
+  spec,
+  onPick,
+  selected,
+}: {
+  spec: ChartSpec;
+  onPick?: (category: string) => void;
+  selected?: string | null;
+}) {
   const colors = Array.from({ length: 6 }, (_, i) => chartColor(i));
   const grid = 'var(--border)';
   const axis = 'var(--muted-foreground)';
@@ -38,6 +47,30 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
     if (onPick && state.activeLabel !== undefined && state.activeLabel !== null) onPick(String(state.activeLabel));
   };
   const clickable = onPick ? { onClick: pickAt, style: { cursor: 'pointer' } } : {};
+
+  const picked = selected == null ? undefined : spec.data.find((row) => String(row[spec.x_key] ?? '') === selected);
+  const dimmed = (row: Record<string, unknown>) => (picked && row !== picked ? 0.35 : 1);
+  const marker = picked && (
+    <>
+      <ReferenceLine x={picked[spec.x_key] as string} stroke="var(--primary)" strokeDasharray="4 3" />
+      {spec.y_keys.map((k, i) =>
+        typeof picked[k] === 'number' ? (
+          <ReferenceDot
+            key={k}
+            x={picked[spec.x_key] as string}
+            y={picked[k] as number}
+            r={5}
+            fill={colors[i % colors.length]}
+            stroke="var(--card)"
+            strokeWidth={2}
+          />
+        ) : null,
+      )}
+    </>
+  );
+  // A bar chart's picked bar keeps its colour, the others fade.
+  const barCells = (i: number) =>
+    picked ? spec.data.map((row, j) => <Cell key={j} fill={colors[i % colors.length]} fillOpacity={dimmed(row)} />) : null;
 
   const axes = (numericX = false) => (
     <>
@@ -58,6 +91,7 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
           <LineChart data={spec.data} {...clickable}>
             {axes()}
             {spec.y_keys.map((k, i) => <Line key={k} type="monotone" dataKey={k} stroke={colors[i % colors.length]} strokeWidth={2} dot={false} />)}
+            {marker}
           </LineChart>
         );
       case 'area':
@@ -65,6 +99,7 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
           <AreaChart data={spec.data} {...clickable}>
             {axes()}
             {spec.y_keys.map((k, i) => <Area key={k} type="monotone" dataKey={k} stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.2} />)}
+            {marker}
           </AreaChart>
         );
       case 'pie':
@@ -79,7 +114,7 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
               cursor={onPick ? 'pointer' : undefined}
               onClick={onPick ? (entry: { payload?: Record<string, unknown> }) => onPick(String(entry.payload?.[spec.x_key] ?? '')) : undefined}
             >
-              {spec.data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
+              {spec.data.map((row, i) => <Cell key={i} fill={colors[i % colors.length]} fillOpacity={dimmed(row)} />)}
             </Pie>
           </PieChart>
         );
@@ -122,8 +157,13 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
                 const color = colors[i % colors.length];
                 if (s.type === 'line') return <Line key={s.key} type="monotone" dataKey={s.key} stroke={color} strokeWidth={2} dot={false} />;
                 if (s.type === 'area') return <Area key={s.key} type="monotone" dataKey={s.key} stroke={color} fill={color} fillOpacity={0.2} />;
-                return <Bar key={s.key} dataKey={s.key} fill={color} radius={[2, 2, 0, 0]} />;
+                return (
+                  <Bar key={s.key} dataKey={s.key} fill={color} radius={[2, 2, 0, 0]}>
+                    {barCells(i)}
+                  </Bar>
+                );
               })}
+              {marker}
             </ComposedChart>
           );
         }
@@ -139,7 +179,11 @@ export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (cat
         return (
           <BarChart data={spec.data} {...clickable}>
             {axes()}
-            {spec.y_keys.map((k, i) => <Bar key={k} dataKey={k} fill={colors[i % colors.length]} radius={[2, 2, 0, 0]} />)}
+            {spec.y_keys.map((k, i) => (
+              <Bar key={k} dataKey={k} fill={colors[i % colors.length]} radius={[2, 2, 0, 0]}>
+                {barCells(i)}
+              </Bar>
+            ))}
           </BarChart>
         );
     }

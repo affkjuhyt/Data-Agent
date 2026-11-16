@@ -80,13 +80,36 @@ describe('ComposedBlocks', () => {
     const onAsk = vi.fn();
     render(<ComposedBlocks blocks={monthly} onAsk={onAsk} />);
     pick('2013-02');
+    // A month is said as a question says a period, which the agent reads as one.
     fireEvent.click(screen.getByRole('button', { name: /Lọc theo giá trị này/ }));
-    expect(onAsk).toHaveBeenLastCalledWith('Doanh thu theo tháng, chỉ xét tháng 2013-02');
+    expect(onAsk).toHaveBeenLastCalledWith('Doanh thu Internet tháng 2/2013');
     fireEvent.click(screen.getByRole('button', { name: /Phân tích vì sao/ }));
-    expect(onAsk).toHaveBeenLastCalledWith('Vì sao Doanh thu Internet tháng 2013-02 tăng so với 2013-01?');
+    expect(onAsk).toHaveBeenLastCalledWith('Vì sao Doanh thu Internet tháng 2/2013 tăng so với tháng 1/2013?');
     pick('2013-03');
     fireEvent.click(screen.getByRole('button', { name: /Phân tích vì sao/ }));
-    expect(onAsk).toHaveBeenLastCalledWith('Vì sao Doanh thu Internet tháng 2013-03 cao nhất?');
+    expect(onAsk).toHaveBeenLastCalledWith('Vì sao Doanh thu Internet tháng 3/2013 cao nhất?');
+  });
+
+  it('narrows the question the chart answered to a member of a category axis', () => {
+    const onAsk = vi.fn();
+    const pie = [
+      {
+        type: 'chart',
+        id: 'c3',
+        composed: true,
+        spec: {
+          chart_type: 'pie',
+          title: 'Cơ cấu doanh thu',
+          x_key: 'Nhóm sản phẩm',
+          y_keys: ['Doanh thu'],
+          data: [{ 'Nhóm sản phẩm': 'Bikes', 'Doanh thu': 9 }, { 'Nhóm sản phẩm': 'Clothing', 'Doanh thu': 1 }],
+        },
+      },
+    ] as unknown as AnswerBlockView[];
+    render(<ComposedBlocks blocks={pie} onAsk={onAsk} question="Cơ cấu doanh thu theo nhóm sản phẩm năm 2013." />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Chọn điểm theo nhóm sản phẩm' }), { target: { value: 'Bikes' } });
+    fireEvent.click(screen.getByRole('button', { name: /Lọc theo giá trị này/ }));
+    expect(onAsk).toHaveBeenLastCalledWith('Cơ cấu doanh thu theo nhóm sản phẩm năm 2013, chỉ xét nhóm sản phẩm Bikes');
   });
 
   it('hides a left-out point and its reading until shown again; no follow-up while busy', () => {

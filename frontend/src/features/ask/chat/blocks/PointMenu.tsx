@@ -13,23 +13,47 @@ export interface Point {
   value: number | null;
 }
 
-/** "…, chỉ tháng 2013-05": the chart's own question narrowed to one member of its axis. */
-export const filterQuestion = (title: string, axis: string, category: string) =>
-  `${title}, chỉ xét ${axis.toLowerCase()} ${category}`;
+/** A member of a time axis said the way a question says a period ("2013-05" → "tháng 5/2013"),
+ *  so the agent reads it as the period: "tháng 2013-05" was not read as one, and its words were
+ *  refused as a quantity no metric measures. Null for a member that is not a period. */
+export function periodOf(category: string): string | null {
+  let m = /^(\d{4})$/.exec(category);
+  if (m) return `năm ${m[1]}`;
+  m = /^(\d{4})-(\d{1,2})$/.exec(category);
+  if (m) return `tháng ${Number(m[2])}/${m[1]}`;
+  m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(category);
+  if (m) return `ngày ${Number(m[3])}/${Number(m[2])}/${m[1]}`;
+  m = /^(\d{4})-?Q([1-4])$/i.exec(category);
+  if (m) return `quý ${m[2]}/${m[1]}`;
+  m = /^Q([1-4])[/ ](\d{4})$/i.exec(category);
+  if (m) return `quý ${m[1]}/${m[2]}`;
+  return null;
+}
 
-/** "Vì sao Doanh thu tháng 2013-12 cao nhất?": what stands out about the point, read from the
- *  drawn values, so the question names the thing to explain. */
+/** The point as a question names it: its period, or its member of the axis. */
+const pointName = (axis: string, category: string) => periodOf(category) ?? `${axis.toLowerCase()} ${category}`;
+
+/** "Doanh thu Internet tháng 5/2013": the measure at that period; a member of another axis
+ *  narrows the question the chart answered ("…, chỉ xét nhóm sản phẩm Bikes"). */
+export function filterQuestion(measure: string, asked: string, axis: string, category: string) {
+  const period = periodOf(category);
+  if (period) return `${measure} ${period}`;
+  return `${asked.trim().replace(/[.?!]+$/, '')}, chỉ xét ${axis.toLowerCase()} ${category}`;
+}
+
+/** "Vì sao Doanh thu Internet tháng 12/2013 cao nhất?": what stands out about the point, read
+ *  from the drawn values, so the question names the thing to explain. */
 export function whyQuestion(measure: string, axis: string, points: Point[], category: string, timeAxis: boolean) {
   const i = points.findIndex((p) => p.category === category);
   const value = points[i]?.value ?? null;
   const values = points.map((p) => p.value).filter((v): v is number => v !== null);
-  const at = `${measure} ${axis.toLowerCase()} ${category}`;
+  const at = `${measure} ${pointName(axis, category)}`;
   if (value === null || values.length < 2) return `Vì sao ${at} như vậy?`;
   if (value === Math.max(...values)) return `Vì sao ${at} cao nhất?`;
   if (value === Math.min(...values)) return `Vì sao ${at} thấp nhất?`;
   const before = timeAxis && i > 0 ? points[i - 1] : undefined;
   if (before?.value != null && before.value !== value)
-    return `Vì sao ${at} ${value > before.value ? 'tăng' : 'giảm'} so với ${before.category}?`;
+    return `Vì sao ${at} ${value > before.value ? 'tăng' : 'giảm'} so với ${pointName(axis, before.category)}?`;
   return `Vì sao ${at} đạt ${formatNumber(value)}?`;
 }
 

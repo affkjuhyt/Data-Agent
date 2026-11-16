@@ -64,6 +64,7 @@ export function AnswerBlocks({
         onSaveToSession={onSaveToSession}
         onAsk={onAsk}
         onOpenExplore={onOpenExplore}
+        question={message.questionText}
       />
     );
   }

@@ -12,6 +12,8 @@ from collections.abc import Iterable
 ANALYSIS_WORDS = frozenset(
     "co vi sao tai giam tang top cao thap nhat xu huong bien dong phan tich nguyen nhan ty trong "
     "luy ke so sanh chenh lech tong trung binh nhieu it hon bao tri dong gop anh huong cau chiem "
+    # Narrowing to a member ("…, chỉ xét nhóm Bikes", a chart point's "Lọc theo giá trị này").
+    "xet rieng loc "
     "why how trend compare increase decrease highest lowest total average share top rank change "
     "growth drop rise breakdown mix composition".split()
 )

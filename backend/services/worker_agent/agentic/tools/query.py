@@ -32,12 +32,29 @@ from services.worker_agent.sqlgen.space import load_space
 from services.worker_agent.understand import analyst
 from services.worker_agent.understand.grain import GRAIN_LABELS, find_grain
 from services.worker_agent.understand.packs.base import iso_answer
-from services.worker_agent.understand.resolver import metric_words, quantity_words
+from services.worker_agent.understand.resolver import Vocabulary, metric_words, quantity_words
+from services.worker_agent.understand.text import norm
 
 ROLE = "svc_qa"
 QUERYABLE = ("active", "testing")
 # Dimension codes that name a part of the calendar, as a model writes them when it makes one up.
 _CALENDAR_PART = re.compile(r"^(ngay|tuan|thang|quy|nam|day|week|month|quarter|year)(_|$)")
+
+
+def named_cut(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> str | None:
+    """The cut the question names after "theo"/"by" ("cơ cấu doanh thu theo nhóm sản phẩm"), by
+    its full name; the longest when several fit ("tiểu nhóm sản phẩm" over "sản phẩm")."""
+    text = f" {norm(question)} "
+    best = None
+    for d in vocab.dimensions:
+        if d.is_time or d.dimension_id not in allowed:
+            continue
+        name = norm(d.name)
+        named = bool(name) and re.search(rf" (theo|by) {re.escape(name)} ", text) is not None
+        if named and (best is None or len(name) > len(norm(best.name))):
+            best = d
+    return best.code if best else None
+
 
 _COLUMN_LABEL = {
     "base_value": "{metric} (kỳ so sánh)",
@@ -116,9 +133,19 @@ class QueryMetric(Tool):
                 f"không có chỉ số {args.metric} (hoặc bạn không được xem); dùng search_catalog",
                 failure="forbidden" if denied else "logic",
             )
+        vocab = ctx.layer.vocabulary
+        version = ctx.layer.versions[entry.metric_id]
+        times_all = {d.code for d in vocab.dimensions if d.is_time}
+        if not [g for g in args.group_by if g not in times_all]:
+            # "Cơ cấu doanh thu theo nhóm sản phẩm" read with no cut gave one total, then the
+            # grounding check refused "nhóm sản phẩm" as a quantity no metric measures (the 4B
+            # planner left group_by empty, 2 runs of 2 on 16/11). The question names the cut;
+            # the metric must allow it.
+            cut = named_cut(ctx.question, vocab, set(version.allowed_dimension_ids))
+            if cut is not None:
+                args = args.model_copy(update={"group_by": [*args.group_by, cut]})
         # A quantity the question asks that no certified metric of the catalogue names ("khách
         # hàng" where only units sold exist): no reading of this one will answer it.
-        vocab = ctx.layer.vocabulary
         catalogue: set[str] = set()
         for m in analyst._visible(ctx.layer).values():
             catalogue |= metric_words(m, vocab)
@@ -137,7 +164,6 @@ class QueryMetric(Tool):
                 "nói rõ không trả lời được",
                 detail={"unnamed": missing},
             )
-        version = ctx.layer.versions[entry.metric_id]
         period = None
         moved: tuple[c.Period, c.Period] | None = None
         if args.period:

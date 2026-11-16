@@ -884,7 +884,10 @@ async def compose(s: State) -> None:
             block = _checked(s, d, known, allowed)
             if block is None:
                 continue
-            made += 1
+            # The next questions say nothing about this one: an answer of them alone was drawn as
+            # an empty turn (every sentence dropped for an untraced number, no dataset).
+            if block["type"] != "follow_ups":
+                made += 1
             await publish(
                 str(s.question_id), "block", {"question_id": str(s.question_id), "block": block}
             )
@@ -911,6 +914,21 @@ async def compose(s: State) -> None:
                 )
             if not ws.datasets:
                 s.refused = "Chưa tìm được dữ liệu để trả lời câu hỏi này."
+                if s.composition:
+                    # Its next questions are kept, so the refusal is said in a block of its own.
+                    block = {
+                        "type": "callout",
+                        "id": f"b{len(s.composition) + 1}",
+                        "composed": True,
+                        "tone": "warning",
+                        "content": s.refused,
+                    }
+                    s.composition.insert(0, block)
+                    await publish(
+                        str(s.question_id),
+                        "block",
+                        {"question_id": str(s.question_id), "block": block},
+                    )
         handle.detail = {
             "blocks": [x["type"] for x in s.composition],
             "dropped_sentences": s.dropped_sentences,

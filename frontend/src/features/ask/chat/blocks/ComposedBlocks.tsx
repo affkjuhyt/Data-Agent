@@ -7,7 +7,7 @@ import type { ExploreHandoff } from '../../../explore/handoff';
 import { csvFileName, downloadCsv, toCsv } from '../../exportCsv';
 import type { AnswerBlockView, ChartSpec, Citation } from '../../types';
 import { CaveatsBlock } from './CaveatsBlock';
-import { filterQuestion, PointMenu, whyQuestion } from './PointMenu';
+import { filterQuestion, periodOf, PointMenu, whyQuestion } from './PointMenu';
 import { ResultCard } from './ResultCard';
 
 /*
@@ -39,6 +39,8 @@ type Ctx = {
   /** A follow-up question from a block (a chart's point menu); absent while the agent is busy. */
   onAsk?: (question: string) => void;
   onOpenExplore?: (handoff: ExploreHandoff) => void;
+  /** The question this answer answers: a chart point's filter narrows it. */
+  question?: string;
 };
 type Block = Record<string, unknown>;
 
@@ -102,9 +104,6 @@ function exploreOf(block: Block, ctx: Ctx): (() => void) | undefined {
   return () => ctx.onOpenExplore!(handoff);
 }
 
-// A member of a time axis: "2013", "2013-05", "2013-05-01", "Q2/2013".
-const TIME_MEMBER = /^(\d{4}([-/]\d{1,2}){0,2}|Q\d[/ ]\d{4})$/;
-
 const CHART_LABEL: Record<string, string> = {
   line: 'Đường',
   bar: 'Cột',
@@ -130,7 +129,7 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
   const categoryOf = (row: Record<string, unknown>) => String(row[spec.x_key] ?? '');
   const data = hidden.length ? spec.data.filter((row) => !hidden.includes(categoryOf(row))) : spec.data;
   const points = data.map((row) => ({ category: categoryOf(row), value: num(row[measure]) }));
-  const timeAxis = points.length > 0 && TIME_MEMBER.test(points[0].category);
+  const timeAxis = points.length > 0 && periodOf(points[0].category) !== null;
   const ask = ctx.onAsk;
   const shown: ChartSpec = {
     ...spec,
@@ -176,6 +175,7 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
         onSaveToSession={ctx.onSaveToSession}
         onOpenExplore={exploreOf(block, ctx)}
         onPick={setPicked}
+        selected={picked}
       />
       {hidden.length > 0 && (
         <p className="m-0 flex flex-wrap items-center gap-da-sm text-muted-foreground da-caption">
@@ -192,7 +192,7 @@ function ChartBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
         points={points}
         picked={picked}
         onPick={setPicked}
-        onFilter={ask && ((c) => ask(filterQuestion(title, spec.x_key, c)))}
+        onFilter={ask && ((c) => ask(filterQuestion(measure, ctx.question || title, spec.x_key, c)))}
         onExclude={
           points.length > 1
             ? (c) => {
