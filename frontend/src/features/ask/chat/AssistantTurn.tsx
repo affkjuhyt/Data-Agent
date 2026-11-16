@@ -110,7 +110,8 @@ export function AssistantTurn({
       running={running}
       durationMs={message.durationMs}
       recorded={message.stepsRecorded !== false}
-      operatorWhy={message.operatorWhy}
+      // "Đang chờ làm rõ từ người hỏi" is no longer so once the question back is answered.
+      operatorWhy={message.clarification && answeredWith !== undefined ? undefined : message.operatorWhy}
     />
   );
 
