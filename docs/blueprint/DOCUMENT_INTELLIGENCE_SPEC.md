@@ -559,7 +559,7 @@ vị/kỳ (FY vs CY từ `period` của metric và cột bảng), so với toler
 bản sửa đổi > bản gốc (`supersedes_id`), metric certified > tài liệu khi khác kỳ; không khớp và không thẩm quyền →
 `SOURCE_CONFLICT` + `ReconciliationNote` (STAGE, BASIS, GRAIN, RULES, RESIDUAL).
 **C.** Không OSS.
-**D.** Unit `test_reconcile.py` (scale, FY/CY, amendment); eval 25 case hybrid SEC/311 (DATASET_AND_EVALUATION).
+**D.** Unit `test_reconcile.py` (scale, FY/CY, amendment); eval 25 case hybrid SEC/TLC (DATASET_AND_EVALUATION).
 **E.** Hybrid ≥ 70 % đúng hoặc từ chối đúng; LLM không bao giờ chọn số (test: facts đã gắn nhãn `agree|authority|conflict`).
 
 ### F-10 (phần tài liệu) Eval tài liệu và sửa báo cáo halves

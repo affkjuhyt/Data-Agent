@@ -4,6 +4,8 @@ All facts below were fetched on 2026-11-12 unless stated; each carries its sourc
 
 Access note: `data.cityofnewyork.us` (Socrata) answered **403** to every non-browser request from this machine (metadata JSON, SODA queries, the discovery API), and the Wayback mirror rate-limited. Row counts and column facts for Dataset A therefore come from NYC's own update notice, the data.gov catalogue record and a secondary column listing, not from a live `count(*)`. Re-run the queries in §A.4 from a host with an app token before freezing a snapshot.
 
+**Update 2026-11-16: Dataset A is now the NYC TLC Trip Record Data.** The 311 portal still answered 403 to the dev machine on 16/11, through its API as well, so the 311 snapshot could not be pulled; §A below is kept as the research it was. The TLC files were fetched directly that day from `https://d37ci6vzurychx.cloudfront.net/trip-data/` (yellow 2024-01..03, green 2023-01..03 and 2024-01..03), with `misc/taxi_zone_lookup.csv` and the two data dictionaries from `https://www.nyc.gov/assets/tlc/downloads/pdf/` (dated 18 March 2025). Every file is pinned by sha256 and size in `tests/e2e/tlc/sources.json`. The terms are nyc.gov's, as for 311: internal evaluation only. The row counts and quality findings, measured with `count(*)` on the loaded snapshot, are in `DATASET_AND_EVALUATION.md` §2.
+
 ## A. NYC 311 Service Requests 2020–present (`erm2-nwe9`)
 
 **A.1 Identity, access, formats.**

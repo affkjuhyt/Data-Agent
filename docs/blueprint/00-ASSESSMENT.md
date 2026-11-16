@@ -37,7 +37,7 @@ phải thêm agent hay đổi model; là **dừng mở rộng, đóng các lỗ 
 3. **Năm lỗ hổng cấu trúc đóng trước mọi tính năng**: (a) bảng nạp có version, không `DROP`; (b) mã nhãn tin cậy
    lưu trên câu trả lời + receipt cho mọi đường; (c) bảng tài liệu là cấu trúc có ô và vị trí (Docling); (d) chỉ mục
    từ vựng bỏ dấu; (e) DQ `blocked` chặn đường governed và báo cáo, không chỉ ghi lưu ý.
-4. **Dữ liệu thật là cổng**: thêm hai Data Space từ NYC 311 và SEC EDGAR (có giấy phép rõ, có checksum), bộ vàng
+4. **Dữ liệu thật là cổng**: thêm hai Data Space từ NYC TLC trip records (thay NYC 311 ngày 16/11: cổng trả 403) và SEC EDGAR (có giấy phép rõ, có checksum), bộ vàng
    ≥ 150 case giải mù hai người; ngưỡng online chỉ được chốt từ lượt chạy thật (hiện tất cả là `provisional`).
 5. **Đo trước khi mua**: ba PoC bắt buộc trước khi tích hợp (Docling vs pipeline hiện tại trên 30 tài liệu; DuckDB
    trong sandbox vs JSON 10k dòng; rule-audit SQL khám phá trên bộ DS-AW) — [OPEN_SOURCE_RESEARCH.md](OPEN_SOURCE_RESEARCH.md) §4.
@@ -197,7 +197,7 @@ vận hành.
 
 | Giả định | Nếu sai thì | Cách phát hiện sớm |
 | --- | --- | --- |
-| Đường governed đủ phủ ≥ 60 % câu hỏi doanh nghiệp sau khi có 20–30 metric duyệt | Agent động thành đường chính → chi phí 40× và sai số khám phá quyết định sản phẩm | Đo tỷ lệ VERIFIED+GOVERNED trên bộ vàng 311/SEC ở tuần 6; dưới 50 % thì đầu tư schema-linking trước |
+| Đường governed đủ phủ ≥ 60 % câu hỏi doanh nghiệp sau khi có 20–30 metric duyệt | Agent động thành đường chính → chi phí 40× và sai số khám phá quyết định sản phẩm | Đo tỷ lệ VERIFIED+GOVERNED trên bộ vàng TLC/SEC ở tuần 6; dưới 50 % thì đầu tư schema-linking trước |
 | Docling bắt bảng tiếng Việt đủ tốt (cell F1 ≥ 0,85 PDF text) | Phải tự viết trích bảng theo đường kẻ hoặc giữ pipeline hiện tại + TableFormer riêng | PoC-1 tuần 2–3 (bake-off 30 tài liệu) |
 | Qwen3-14B đủ cho planner/SQL khi có ngữ cảnh tốt | Mọi cải tiến ngữ cảnh lợi ít; cần GPU thứ hai hoặc model API theo policy | Chạy lại bộ vàng với model đối chứng (bất kỳ OpenAI-compatible) ở tuần 8; chênh > 10 điểm thì mở D1 |
 | Khách mục tiêu cần on-prem thật và chấp nhận pilot trả phí | Elton/Wren self-host chiếm phân khúc; lợi thế còn là tài liệu tiếng Việt + governance | D3 chưa chốt; không có design partner ở tuần 10 thì dừng mở rộng connector |
@@ -225,8 +225,8 @@ deploy, 7 loại lịch Temporal cho 1 workflow, 11 bucket MinIO, 462 endpoint c
 ### 10.4 Cắt thêm 30 % mà vẫn giữ giá trị MVP
 
 Có. Thứ tự cắt (giữ từ trên xuống): (1) Data versioned + DQ gate; (2) AnswerEnvelope + receipt mọi đường; (3) bộ vàng
-311 + gate thật; (4) bảng tài liệu có cấu trúc + unaccent; (5) insights tool + chart validator + sandbox receipt;
-(6) outbox DLQ + backup đủ + metrics. **Cắt được**: SEC EDGAR (giữ 311 làm dữ liệu thật duy nhất ở MVP), monitor
+TLC + gate thật; (4) bảng tài liệu có cấu trúc + unaccent; (5) insights tool + chart validator + sandbox receipt;
+(6) outbox DLQ + backup đủ + metrics. **Cắt được**: SEC EDGAR (giữ TLC làm dữ liệu thật duy nhất ở MVP), monitor
 runtime, lineage sqlglot, connector REST, deep-analysis report mode, parent/child chunk. MVP sau khi cắt vẫn chứng
 minh được: hỏi đúng có nhãn và bằng chứng trên dữ liệu thật, tài liệu có bảng trích đúng ô, phân tích tái lập.
 
@@ -240,9 +240,9 @@ như `da_materialize_upsert`), Docling model weights (cache, phiên bản).
 
 | # | Thí nghiệm | Giả thuyết | Đạt khi | Thời điểm |
 | --- | --- | --- | --- | --- |
-| E1 | Bộ vàng NYC 311 (≥ 60 câu structured + 20 multi-turn) chạy trên governed-first với 15 metric duyệt | Governed-first đạt ≥ 85 % đúng giá trị, hỏi lại đúng lúc ≥ 80 % | Hai số trên, `unsupported_number_rate` = 0 | Tuần 6 |
+| E1 | Bộ vàng NYC TLC (≥ 60 câu structured + 20 multi-turn) chạy trên governed-first với 15 metric duyệt | Governed-first đạt ≥ 85 % đúng giá trị, hỏi lại đúng lúc ≥ 80 % | Hai số trên, `unsupported_number_rate` = 0 | Tuần 6 |
 | E2 | Bake-off Docling vs hiện tại vs Unstructured trên 30 tài liệu (10 pháp quy, 8 scan, 6 tài chính, 3 DOCX, 3 lệch) | Docling cell F1 ≥ 0,85 (PDF text), ≥ 0,70 (scan); CER tiếng Việt không tệ hơn Tesseract | Theo ngưỡng; ≤ 3 s/trang CPU | Tuần 3 |
-| E3 | Rule-audit SQL khám phá (cột đo ∈ measure của metric catalog; filter câu hỏi ∈ SQL) trên 61 câu DS-AW + 40 câu 311 | Giảm "sai bảng" từ 2/20 về 0 mà không tăng từ chối sai > 5 % | Hai số trên | Tuần 4 |
+| E3 | Rule-audit SQL khám phá (cột đo ∈ measure của metric catalog; filter câu hỏi ∈ SQL) trên 61 câu DS-AW + 40 câu TLC | Giảm "sai bảng" từ 2/20 về 0 mà không tăng từ chối sai > 5 % | Hai số trên | Tuần 4 |
 
 ### 10.7 Điều kiện phải đổi phương án
 
@@ -250,7 +250,7 @@ như `da_materialize_upsert`), Docling model weights (cache, phiên bản).
   chuyển trọng tâm sang Option C có giới hạn cho đường khám phá.
 - E2 thất bại cả Docling lẫn Unstructured trên scan tiếng Việt → chấp nhận "bảng chỉ từ PDF text/DOCX" ở MVP và đưa
   scan vào P2 với fine-tune Tesseract.
-- Không có design partner ở tuần 10 → giữ NYC 311 + AdventureWorks làm bằng chứng, không mở connector mới, chuyển
+- Không có design partner ở tuần 10 → giữ NYC TLC + AdventureWorks làm bằng chứng, không mở connector mới, chuyển
   nguồn lực sang Analyst Workspace tối thiểu để demo được.
 - Nếu chi phí agent động không giảm dưới 5× governed sau RES-05 + ngân sách → agent động chỉ bật cho vai analyst
   và deep analysis; Ask mặc định hoàn toàn governed.

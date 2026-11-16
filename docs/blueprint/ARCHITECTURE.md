@@ -396,8 +396,8 @@ table_ids[], chunk_ids[], extractor_version, embed_model}`; `answer.sealed{answe
 | `backend/services/worker_document/docling_adapter.py`, `tables.py`, `legal_headings.py` | F-07 |
 | `backend/libs/code_sandbox/duck.py` | mở DuckDB có khoá cấu hình |
 | `backend/libs/sql_guard/lineage.py` | sqlglot lineage |
-| `model/eval/cases/golden/{nyc311,edgar}/*.jsonl`, `model/eval/snapshots/*.manifest.json` | F-10 |
-| `tests/e2e/nyc311/`, `deploy/docker/semantic/ds-311.yaml` | F-10 |
+| `model/eval/cases/golden/{tlc,edgar}/*.jsonl`, `model/eval/snapshots/*.manifest.json` | F-10 |
+| `tests/e2e/tlc/` (dự phòng `tests/e2e/nyc311/`), `deploy/docker/semantic/ds-tlc.yaml` | F-10 |
 | `deploy/ansible/roles/k8s_gvisor/`, `deploy/k8s/*/runtimeclass-gvisor.yaml` | F-12 |
 | `deploy/k8s/dev/service/tei.yaml` (CPU, cờ) | eval full stack |
 

@@ -15,7 +15,7 @@
 | 4 | Product strategy & MVP (P0/P1/P2/Remove-Defer; mức tự chủ; cổng P0) | [STRATEGY.md](STRATEGY.md) |
 | 5 | Target technical architecture (3 phương án, chọn B+, diagrams, ADR-50…59, **sổ tên §9**) | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | 6 | Engineering specifications | [DATA_PIPELINE_SPEC.md](DATA_PIPELINE_SPEC.md), [ASK_ENGINE_SPEC.md](ASK_ENGINE_SPEC.md), [ANALYTICS_SPEC.md](ANALYTICS_SPEC.md), [DOCUMENT_INTELLIGENCE_SPEC.md](DOCUMENT_INTELLIGENCE_SPEC.md), [API_AND_SCHEMA_CONTRACTS.md](API_AND_SCHEMA_CONTRACTS.md) |
-| 7 | Real data & evaluation (NYC 311, SEC EDGAR, golden ≥ 150, scorecard, gates) | [DATASET_AND_EVALUATION.md](DATASET_AND_EVALUATION.md); chi tiết `evidence/datasets.md` |
+| 7 | Real data & evaluation (NYC TLC trip records, SEC EDGAR, golden ≥ 150, scorecard, gates) | [DATASET_AND_EVALUATION.md](DATASET_AND_EVALUATION.md); chi tiết `evidence/datasets.md` |
 | 8 | Implementation roadmap (WBS theo tuần, task theo vai, phụ thuộc) | [IMPLEMENTATION_BACKLOG.md](IMPLEMENTATION_BACKLOG.md) |
 | 9 | Coding agent handoff | [CODING_AGENT_INSTRUCTIONS.md](CODING_AGENT_INSTRUCTIONS.md) |
 | 10 | Architecture decision & critical review | [00-ASSESSMENT.md](00-ASSESSMENT.md) §Part 10 |
@@ -39,4 +39,4 @@ AdventureWorks chưa qua giải mù hai người.
 ## Trạng thái
 
 Chưa có dòng code ứng dụng nào được viết theo blueprint này (đúng yêu cầu của master prompt: dừng ở thiết kế). Việc
-đầu tiên của coding agent là Phase 0 của backlog: PoC-1/2/3/5 và dựng DS-311.
+đầu tiên của coding agent là Phase 0 của backlog: PoC-1/2/3/5 và dựng DS-TLC (thay DS-311 từ 16/11: cổng 311 trả 403).

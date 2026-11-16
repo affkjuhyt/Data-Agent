@@ -18,7 +18,7 @@
 | 7 | Đang over-engineering ở đâu? | §6 dưới: schema `exec`, knowledge page composer, entity-link/consolidation, forecast ledger/Monte Carlo, Kafka/ClickHouse/Langfuse, 4 connector enum, 7 loại lịch Temporal, hai đường trả lời có hai bộ cơ chế |
 | 8 | MVP nhắm L1, L2 hay L3? | **L2 vững, Proto-L3 có giám sát cho câu nhiều bước**, theo thang awesome-data-agents. Lý do đo được: governed (L2) 20/20 với 536 token; agentic 17/20 với 22,6k token và thua ở gate của chính nó; BIRD-Interact cho thấy tương tác là chỗ mọi hệ thống còn < 20 %. L3 đầy đủ (agent tự dàn pipeline) chỉ cho deep analysis của analyst, sau cổng P1 |
 | 9 | Triển khai nhiều khách mà không tùy chỉnh từng lần? | Data Space là đơn vị cấu hình (đã có); onboarding checklist 10–20 câu → nguồn → metric → eval (R1-15 đã có màn); bộ vàng theo Data Space là cổng. Việc còn thiếu: dataset contract tối thiểu, YAML semantic chuẩn (dbt-semantic-interfaces), gói ngôn ngữ vi/en, không còn tiếng Việt cứng trong harness |
-| 10 | Bằng chứng để quyết đầu tư tiếp? | Ba thí nghiệm E1–E3 ở [00-ASSESSMENT.md](00-ASSESSMENT.md) §10.6 và cổng P0 ở §5 dưới; tất cả đo trên NYC 311 (và SEC nếu không cắt), có checksum snapshot, giải mù hai người |
+| 10 | Bằng chứng để quyết đầu tư tiếp? | Ba thí nghiệm E1–E3 ở [00-ASSESSMENT.md](00-ASSESSMENT.md) §10.6 và cổng P0 ở §5 dưới; tất cả đo trên NYC TLC (và SEC nếu không cắt), có checksum snapshot, giải mù hai người |
 
 ## 2. Định vị chốt
 
@@ -44,7 +44,7 @@ Chấm: Impact (I), Dependency (D = cái gì phải có trước), Effort (E: S 
 | F-07 | **Bảng tài liệu có cấu trúc** (Docling wrap): `document.element`, `document.table_cell`, trích dẫn tới ô/bbox; số trong bảng đi đường SQL | cao | PoC-1 | L | cao (image, model) | Docling | cell F1 ≥ 0,85/0,70; RG-05 đóng |
 | F-08 | **Chỉ mục bỏ dấu** + synonym glossary trong truy hồi | cao | — | S | thấp | unaccent | khong-dau recall@1 ≥ 0,7 |
 | F-09 | **Analytics tất định tối thiểu**: tool `insights` (trend/streak/outlier/concentration) phơi cho agent; chart validator AN-03; receipt cho sandbox (code + input hashes + lib version); DuckDB trong sandbox | cao | F-03 | M | trung bình | DuckDB, pandera | `causal_claim_rate` đo trên văn bản thật = 0; chart lỗi bị chặn 100 % trên bộ AN-13 |
-| F-10 | **Dữ liệu thật + bộ vàng + gate thật**: DS-311 (S3 snapshot), ≥ 150 case giải mù, scorer theo hợp đồng, nightly real-model, ngưỡng online bỏ `provisional` | cao | F-01 | L | trung bình | — | report nightly; gate đọc retrieval + agent-eval |
+| F-10 | **Dữ liệu thật + bộ vàng + gate thật**: DS-TLC (snapshot TLC-2024Q1), ≥ 150 case giải mù, scorer theo hợp đồng, nightly real-model, ngưỡng online bỏ `provisional` | cao | F-01 | L | trung bình | — | report nightly; gate đọc retrieval + agent-eval |
 | F-11 | **Vận hành tối thiểu**: outbox attempts + dead-letter + 3 sự kiện mồ côi xử lý hoặc trả "không hỗ trợ"; backup đủ 6 kho + restore drill; `/metrics` Prometheus + OTel span tới collector có sẵn | cao | — | M | thấp | prometheus_client, OTel SDK | restore drill xanh; dashboard p50/p95 |
 | F-12 | **Sandbox hardening**: gVisor RuntimeClass; SQL không bao giờ vào container; kiểm nghĩa output (đơn vị, additivity) | cao | F-09 | S | thấp | gVisor | escape test 0/10; share trên non-additive bị chặn |
 
@@ -87,7 +87,7 @@ không dấu 0,10) và số công bố (Spider 2.0-Lite 76 %, DataSpace 66 %).
 
 | Nhóm | Metric | Ngưỡng P0 | Cơ sở |
 | --- | --- | --- | --- |
-| Ask structured | giá trị đúng (multiset, hợp đồng đóng băng) trên 40 case DS-311 | ≥ 85 % | AW governed 100 % trên câu đơn; 311 khó hơn (kiểu ngày, nhiều giá trị lọc) |
+| Ask structured | giá trị đúng (multiset, hợp đồng đóng băng) trên 40 case DS-TLC | ≥ 85 % | AW governed 100 % trên câu đơn; TLC khó hơn (dòng bẩn, tỷ lệ có điều kiện, nhiều giá trị lọc) |
 | Ask | `unsupported_number_rate` | 0 | tất định, đã = 0 trên AW |
 | Ask | hỏi lại đúng lúc (precision/recall trên 30 case multi-turn) | ≥ 0,80 / ≥ 0,80 | 01 §10 đặt 0,9; chưa đo nên hạ |
 | Ask | tỷ lệ câu đi VERIFIED + GOVERNED | ≥ 60 % | giả định §10.1 của 00-ASSESSMENT |

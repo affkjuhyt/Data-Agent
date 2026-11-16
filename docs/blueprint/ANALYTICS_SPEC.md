@@ -244,7 +244,7 @@ PoC-2 (OPEN_SOURCE_RESEARCH §4): 20 phân tích DS-AW; ≥ 2× nhanh, payload g
 
 - Trên bộ `charts.jsonl` cố định (≥ 40 bẫy: share trên COUNT DISTINCT, measure hằng, pie âm, grain lệch, cột trùng, nhãn
   ẩn), `chart_check` chặn **100 %** case `expect=block`, cho qua **100 %** case `expect=pass`.
-- `causal_claim_rate` đo trên văn bản `markdown` + `insights` của 61 câu DS-AW và 25 case analytical DS-311 = **0**;
+- `causal_claim_rate` đo trên văn bản `markdown` + `insights` của 61 câu DS-AW và 25 case analytical DS-TLC = **0**;
   mọi câu nguyên nhân chỉ trong `hypothesis`.
 - Mọi câu trả lời có figure `DERIVED` có `compute_run` và receipt; replay 20 câu DERIVED trên cùng snapshot → `match`
   **100 %**.

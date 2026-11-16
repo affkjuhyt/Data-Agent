@@ -35,16 +35,16 @@ gantt
   axisFormat  T%W
   section Phase 0 · PoC & nền đo
   PL-01 sqlglot 30 · PL-03 501 · PL-07 tắt stack thừa         :p0a, 2026-11-17, 7d
-  DI-01..03,05 bake-off Docling (PoC-1) · EV-01 thu 311 · EV-08/10 :p0b, 2026-11-17, 14d
+  DI-01..03,05 bake-off Docling (PoC-1) · EV-01 dữ liệu TLC · EV-08/10 :p0b, 2026-11-17, 14d
   PoC-2 DuckDB (DF-04 nhánh) · PoC-3 audit_rules (AE-07 nhánh) :p0c, 2026-11-24, 7d
   section Phase 1 · Data foundation
   DF-01,02,03,04,05,06 version+snapshot · PL-02 outbox DLQ     :p1a, 2026-12-01, 21d
   DF-07,08,09 DQ gate+contract · DF-17,18,19 · PL-04 backup · PL-05 metrics · PL-08 · PL-09 · PL-10 gVisor · PL-11 TEI :p1b, 2026-12-08, 21d
-  EV-03 DS-311                                                   :p1c, 2026-12-15, 7d
+  EV-03 DS-TLC                                                   :p1c, 2026-12-15, 7d
   section Phase 2 · Ask governed-first
   AE-01,02,03 router+budget · AE-04,05,06 envelope+receipt       :p2a, 2026-12-22, 21d
   AE-07,08,09,10 audit/qualify/zero/clarify · AL-01 compute_run  :p2b, 2027-01-05, 14d
-  EV-05 60 case 311 · EV-09 tier golden · EV-12 gate · EV-13 nightly :p2c, 2027-01-05, 21d
+  EV-05 60 case TLC · EV-09 tier golden · EV-12 gate · EV-13 nightly :p2c, 2027-01-05, 21d
   section Phase 3 · Document intelligence
   DI-04,06,07,08,09 docling→element/table · DI-10,11 intake+unaccent :p3a, 2027-01-19, 21d
   DI-12,13,15,16 table_query · quality · cases · API            :p3b, 2027-02-02, 14d
@@ -57,9 +57,9 @@ gantt
 
 | Phase | Tuần | Mục tiêu ra | Cổng ra (đo được) |
 | --- | --- | --- | --- |
-| 0 PoC & nền đo | 1–2 | Quyết Docling/DuckDB/audit_rules bằng số; snapshot 311 S3 có manifest; eval tier offline chạy với halves thật | PoC-1/2/3/5 có báo cáo trong `model/eval/`; `make eval-retrieval` ghi `dense_ok_rate` |
+| 0 PoC & nền đo | 1–2 | Quyết Docling/DuckDB/audit_rules bằng số; snapshot TLC-2024Q1 ghim sha256; eval tier offline chạy với halves thật | PoC-1/2/3/5 có báo cáo trong `model/eval/`; `make eval-retrieval` ghi `dense_ok_rate` |
 | 1 Data foundation | 3–5 | Không còn `DROP`; snapshot Parquet; DQ gate; backup đủ; outbox DLQ; gVisor; TEI eval | replay 100 % receipt DS-AW sau nạp lại; restore drill ≤ 60 phút; cross-org sweep 0 rò |
-| 2 Ask | 5–8 | Governed-first; AnswerEnvelope + receipt mọi đường; audit_rules; clarify policy; 60 case 311 chạy nightly | 20/20 DS-AW governed giữ; ≥ 85 % giá trị đúng trên 40 case 311 structured (đề xuất); `unsupported_number_rate` 0 |
+| 2 Ask | 5–8 | Governed-first; AnswerEnvelope + receipt mọi đường; audit_rules; clarify policy; 60 case TLC chạy nightly | 20/20 DS-AW governed giữ; ≥ 85 % giá trị đúng trên 40 case TLC structured (đề xuất); `unsupported_number_rate` 0 |
 | 3 Document | 8–11 | Bảng là cấu trúc; số từ bảng có trích dẫn ô; không dấu ≥ 0,7 | cell F1 ≥ 0,85/0,70; khong-dau recall@1 ≥ 0,7; recall@10 full-stack ≥ 0,85 |
 | 4 Analytics & hybrid | 10–13 | insights tool, chart_check, DuckDB sandbox, hypothesis block; reconcile nguồn chéo | `causal_claim_rate` thật = 0; 40 bẫy chart bị chặn; 25 case hybrid ≥ 70 % |
 | 5 Hardening & release | 13–16 | Tiêm lỗi, giải mù, rebase ngưỡng, HA tối thiểu, notices | thresholds.json không `provisional`; gate P0 (STRATEGY §5) xanh trên lượt chạy có SHA |
@@ -190,11 +190,11 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 
 | ID | Ưu tiên | Tuần | Việc | Phụ thuộc | Vai | CS | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| EV-01 | P0 | 1 | CLI thu NYC 311 (S3) + manifest sha256 + Parquet/tháng + drift audit | — (snapshot format tạm JSON→Parquet; chuyển `libs/snapshot` ở tuần 4) | DE | M | manifest tái lập 2 lần giống nhau | doing: CLI + `make nyc311-snapshot/-drift` + test xong (JSONL nén theo tháng, Parquet dời sang EV-03); chưa kéo được: cổng trả 403 cho máy dev 16/11 — cần app token và một host cổng chấp nhận |
+| EV-01 | P0 | 1 | Snapshot dữ liệu thật ghim sha256, nạp nguyên trạng (16/11: TLC Trip Records thay NYC 311, cổng 311 trả 403; bộ thu 311 `make nyc311-snapshot` giữ làm dự phòng) | — | DE | M | file sai hash bị từ chối; số dòng mỗi file tái lập | done fa9ccce9 (`make tlc`, `TLC-2024Q1` trong `tlc_trips` của cụm: 9 554 778 chuyến vàng, 372 649 xanh) |
 | EV-08 | P0 | 1 | Cột mới `eval.eval_item` + loader YAML | — | DB | S | — | todo |
 | EV-10 | P0 | 1 | Sửa `halves` thật + `dense_ok_rate`/`rerank_ok_rate` (gộp DI-14) | — | AI | S | báo cáo keyword-only không ghi `dense: true` | done (phần halves; gate đọc truy hồi ở EV-12) |
-| EV-03 | P0 | 5 | Data Space DS-311 (nạp có version, `ds-311.yaml` 15–20 metric, value_index) | EV-01, DF-02, AE-14 (hoặc metric đơn giản trước) | DE/AI | M | 17 metric reconcile với SQL tay | todo |
-| EV-05 | P0 | 6 | 60 case 311 (24/16/15/5) + SQL vàng | EV-03 | QA/AI | M | mỗi case fail đúng lý do trước | todo |
+| EV-03 | P0 | 5 | Data Space DS-TLC (truy vấn tại chỗ, `ds-tlc.yaml` 13 metric, value_index) | EV-01, AE-14 (hoặc metric đơn giản trước) | DE/AI | M | 13 metric reconcile với SQL tay | doing: seed + model + test xong, scan và import trên cụm 16/11; còn duyệt 9 quan hệ và 13 metric (admin) |
+| EV-05 | P0 | 6 | 60 case TLC (24/16/15/5) + SQL vàng | EV-03 | QA/AI | M | mỗi case fail đúng lý do trước | todo |
 | EV-09 | P0 | 7 | Tier `golden` qua `POST /v1/questions` thật; chấm theo rubric | AE-06, EV-05 | AI | M | report có `answer_id` mỗi case | todo |
 | EV-12 | P0 | 8 | `gate.py` đọc retrieval + agent-eval + golden + causal thật; metric vắng = fail | EV-09 | AI | S | — | todo |
 | EV-13 | P0 | 8 | Nightly: target Temporal `nightly-evals` chạy golden + retrieval + agent-eval; artifact | EV-09, PL-11 | BE | S | 7 đêm liên tiếp có report | todo |
@@ -234,7 +234,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | R0-13 | todo | cut (R0 đã nghiệm thu qua eval thật thay biên bản) | EV-13 |
 | R1-02 | khi khách cần | giữ todo; chỉ khi có design partner | DF-12/13 |
 | R1-12 | doing | tiếp | EV-08/09/12/13/14 |
-| R1-16 | doing | cut (DS-BH đã bỏ; AW + 311 thay) | EV-03 |
+| R1-16 | doing | cut (DS-BH đã bỏ; AW + TLC thay) | EV-03 |
 | KB-01, KB-03, KB-05, KB-07 | doing | KB-01 tiếp (FE nhỏ, gắn AE-06); KB-03/05/07 giữ, KB-07 → DI-17 | AE-06, DI-17 |
 | KB-04, KB-06 | todo | KB-06 defer (STRATEGY §6); KB-04 P2 | — |
 | AN-01, AN-02, AN-09, AN-10, AN-11, AN-12 | todo R2 | AN-10 → AE-12; AN-01/02/09/11/12 lùi sau P0 (Workspace) | AE-12 |
