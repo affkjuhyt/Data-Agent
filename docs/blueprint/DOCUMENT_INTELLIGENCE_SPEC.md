@@ -488,8 +488,8 @@ JSON Schema của export đặt ở `backend/libs/contracts/v1/document_export.j
 
 | Mục | Quy định |
 | --- | --- |
-| Kho | 30 tài liệu trong `tests/data/docs-bakeoff/` (không commit scan có PII): 10 PDF pháp quy VN text (≥ 1 bảng mỗi tài liệu, 3 tài liệu hai cột), 8 scan VN (300 dpi; 2 chụp điện thoại), 6 báo cáo tài chính (3 VN, 3 trang FinTabNet CDLA-Permissive), 3 DOCX, 3 trang xoay/lệch |
-| Ground truth | `tests/data/docs-bakeoff/gold/`: ô bảng theo schema FinTabNet (row, col, span, text), thứ tự đọc (danh sách element do người xếp), OCR 5 trang/scan (NFC), cây Chương/Điều/Khoản |
+| Kho | 30 tài liệu ngoài repo (`BAKEOFF_DOCS`, giấy phép khác nhau, scan có thể có PII); repo giữ `tests/data/docs-bakeoff/sources.json` (sha256, kích thước, trang, nguồn, giấy phép): 10 PDF pháp quy VN text (≥ 1 bảng mỗi tài liệu, 3 tài liệu hai cột), 8 scan VN (300 dpi; 2 chụp điện thoại), 6 báo cáo tài chính (3 VN, 3 trang FinTabNet CDLA-Permissive), 3 DOCX, 3 trang xoay/lệch |
+| Ground truth | `tests/data/docs-bakeoff/gold/<doc_id>/`: ô bảng theo schema FinTabNet (row, col, span, text) kèm HTML cho TEDS, thứ tự đọc (danh sách element do người xếp), OCR 5 trang/scan (NFC), cây Chương/Mục/Điều/Khoản. Hai người gán độc lập trong Label Studio (`make labelstudio`, cấu hình `model/eval/docs/labelstudio/page.xml`), bảng chép vào sheet CSV kiểu OTSL; `make bakeoff-gold` kiểm và ghi, `make bakeoff-agree` liệt kê chỗ hai người khác nhau (`model/eval/docs/labelstudio/README.md`) |
 | Hệ | A: pipeline hiện tại; B1: Docling + Tesseract vie+eng; B2: Docling + RapidOCR v6 vi; C: Unstructured hi_res (`languages=["vie","eng"]`, chỉ làm đối chứng, không vào image sản phẩm) |
 | Metric | TEDS, TEDS-S (evaluator OmniDocBench, Apache-2.0, vendored vào `model/eval/docs/teds.py`), cell F1 (exact text + vị trí), reading-order normalized edit distance, CER/WER có dấu và bỏ dấu, heading F1 theo level, giây/trang CPU 4 thread, RSS đỉnh |
 | Ngưỡng thay thế | cell F1 ≥ 0,85 PDF text, ≥ 0,70 scan; ED ≤ 0,10; CER không tệ hơn A; ≤ 3 s/trang CPU |

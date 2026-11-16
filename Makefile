@@ -235,6 +235,50 @@ adventureworks-documents:  ## regenerate the DS-AW document seed from deploy/doc
 	  python tests/e2e/adventureworks/documents.py sql > $(AW_DOCUMENTS_SEED).tmp \
 	  && mv $(AW_DOCUMENTS_SEED).tmp $(AW_DOCUMENTS_SEED)
 
+# PoC-1 / DI-01: the 30 bake-off documents labelled by two people in Label Studio
+# (model/eval/docs/labelstudio/README.md). The documents and Label Studio's data stay on this
+# machine, outside the repo (licences differ, scans may hold personal data); the repo keeps
+# tests/data/docs-bakeoff/sources.json and the reconciled gold/. Label Studio listens on
+# 127.0.0.1 only. The image is pinned by digest: 1.23.2, released 29/09/2026.
+BAKEOFF_DOCS ?= $(HOME)/.cache/dataagent/docs-bakeoff
+BAKEOFF_LABELS = $(PWD)/model/eval/docs/labelstudio
+LABELSTUDIO_IMAGE ?= heartexlabs/label-studio:1.23.2@sha256:afcc516a22775a39d0d66f4c2ddc95d01be3e3d3862b21fcf4f9de34b4ad4e12
+LABELSTUDIO_DATA ?= $(HOME)/.cache/dataagent/labelstudio
+LABELSTUDIO_PORT ?= 8080
+GOLD_OUT ?= $(BAKEOFF_DOCS)/gold-$(ANNOTATOR)
+BAKEOFF_CONVERT = python -I /labels/convert.py
+.PHONY: labelstudio labelstudio-stop bakeoff-render bakeoff-gold bakeoff-agree
+
+labelstudio:  ## run Label Studio on 127.0.0.1:LABELSTUDIO_PORT over BAKEOFF_DOCS (bake-off labelling)
+	@mkdir -p "$(LABELSTUDIO_DATA)" "$(BAKEOFF_DOCS)"
+	@docker start dataagent-labelstudio >/dev/null 2>&1 || docker run -d --name dataagent-labelstudio \
+	  -p 127.0.0.1:$(LABELSTUDIO_PORT):8080 \
+	  -v "$(LABELSTUDIO_DATA):/label-studio/data" -v "$(BAKEOFF_DOCS):/label-studio/files/bakeoff:ro" \
+	  -e LOCAL_FILES_SERVING_ENABLED=true -e LOCAL_FILES_DOCUMENT_ROOT=/label-studio/files \
+	  $(LABELSTUDIO_IMAGE) >/dev/null
+	@echo "Label Studio: http://127.0.0.1:$(LABELSTUDIO_PORT)"
+
+labelstudio-stop:  ## stop Label Studio (its data stays in LABELSTUDIO_DATA)
+	@docker stop dataagent-labelstudio >/dev/null && echo stopped
+
+bakeoff-render: dev-tools  ## page images and Label Studio tasks of BAKEOFF_DOCS; update tests/data/docs-bakeoff/sources.json
+	@docker run --rm -v "$(BAKEOFF_DOCS):/docs" -v "$(BAKEOFF_LABELS):/labels:ro" \
+	  $(IMAGE_REGISTRY)/dataagent/worker-document:latest $(BAKEOFF_CONVERT) render --docs /docs
+	@docker run --rm -v "$(BAKEOFF_DOCS):/docs:ro" -v "$(BAKEOFF_LABELS):/labels:ro" \
+	  -v "$(PWD)/tests/data/docs-bakeoff:/out" $(DEV_TOOLS_IMAGE) \
+	  $(BAKEOFF_CONVERT) manifest --docs /docs --out /out/sources.json
+
+bakeoff-gold: dev-tools  ## one annotator's gold: EXPORT (under BAKEOFF_DOCS) ANNOTATOR=<id|email> [GOLD_OUT]
+	@test -n "$(EXPORT)" -a -n "$(ANNOTATOR)" || { echo "EXPORT and ANNOTATOR are required"; exit 2; }
+	@mkdir -p "$(GOLD_OUT)" && docker run --rm -v "$(BAKEOFF_DOCS):/docs:ro" -v "$(BAKEOFF_LABELS):/labels:ro" \
+	  -v "$(GOLD_OUT):/out" $(DEV_TOOLS_IMAGE) \
+	  $(BAKEOFF_CONVERT) gold --docs /docs --export "/docs/$(EXPORT)" --annotator "$(ANNOTATOR)" --out /out
+
+bakeoff-agree: dev-tools  ## where annotators A and B differ (their gold-A, gold-B under BAKEOFF_DOCS)
+	@test -n "$(A)" -a -n "$(B)" || { echo "A and B are required"; exit 2; }
+	@docker run --rm -v "$(BAKEOFF_DOCS):/docs:ro" -v "$(BAKEOFF_LABELS):/labels:ro" $(DEV_TOOLS_IMAGE) \
+	  $(BAKEOFF_CONVERT) agree --a "/docs/gold-$(A)" --b "/docs/gold-$(B)"
+
 # EV-01: NYC 311 (erm2-nwe9) pulled into a fixed snapshot the real-data evaluation's gold answers
 # are defined on (tests/e2e/nyc311/collect.py, docs/blueprint/DATASET_AND_EVALUATION.md §2). The rows
 # stay in NYC311_CACHE (outside the repo: the terms are to be confirmed, the data is not shared);

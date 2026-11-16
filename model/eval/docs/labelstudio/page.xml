@@ -1,0 +1,33 @@
+<!--
+  Label Studio labeling config for one page image of the Docling bake-off corpus (PoC-1, EV-15 / DI-01).
+  Every region gets a label, its text as read on the page and its place in the reading order.
+  convert.py turns the export into tests/data/docs-bakeoff/gold/<doc_id>/; README.md is the guide.
+  The label values are what convert.py maps: change one here, change LABELS there.
+-->
+<View>
+  <Header value="$doc_id, trang $page"/>
+  <Image name="image" value="$image" zoom="true" zoomControl="true" rotateControl="true"/>
+  <RectangleLabels name="label" toName="image" strokeWidth="2" showInline="true">
+    <Label value="Tiêu đề" background="#d62728" hotkey="t"/>
+    <Label value="Chương" background="#9467bd"/>
+    <Label value="Mục" background="#8c564b"/>
+    <Label value="Điều" background="#e377c2"/>
+    <Label value="Khoản" background="#bcbd22"/>
+    <Label value="Heading 1" background="#1f77b4"/>
+    <Label value="Heading 2" background="#17becf"/>
+    <Label value="Heading 3" background="#aec7e8"/>
+    <Label value="Đoạn văn" background="#2ca02c" hotkey="p"/>
+    <Label value="Mục liệt kê" background="#98df8a" hotkey="l"/>
+    <Label value="Bảng" background="#ff7f0e" hotkey="b"/>
+    <Label value="Hình" background="#7f7f7f"/>
+    <Label value="Chú thích hình/bảng" background="#ffbb78"/>
+    <Label value="Chú thích cuối trang" background="#c5b0d5"/>
+    <Label value="Đầu trang" background="#c7c7c7"/>
+    <Label value="Chân trang" background="#c7c7c7"/>
+  </RectangleLabels>
+  <TextArea name="text" toName="image" perRegion="true" editable="true" rows="3"
+            displayMode="region-list"
+            placeholder="Chữ đúng như trên trang, có dấu. Bảng: tên sheet và số dòng tiêu đề, ví dụ t1; header=1"/>
+  <Number name="order" toName="image" perRegion="true" min="1" required="true"
+          placeholder="Thứ tự đọc trên trang (1, 2, 3…)"/>
+</View>
