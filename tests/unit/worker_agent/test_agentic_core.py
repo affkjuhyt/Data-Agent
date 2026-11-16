@@ -169,6 +169,15 @@ def test_two_periods_of_one_kind_are_read_side_by_side() -> None:
     # Adjacent years are one comparison (two_years); one period is no comparison.
     assert two_periods("So sánh doanh thu năm 2012 và 2013") is None
     assert two_periods("Doanh thu tháng 8/2013") is None
+    # The second period of a comparison is a date, never a quantity no metric measures.
+    from services.worker_agent.understand.resolver import Vocabulary, quantity_words
+
+    words = quantity_words(
+        "So sánh doanh thu tháng 8/2013 với tháng 3/2013",
+        Vocabulary(metrics=[], dimensions=[]),
+        today=datetime.date(2014, 1, 15),
+    )
+    assert "3/2013" not in words
     columns, rows = side_by_side(
         ["vung", "value"],
         ["Vùng", "Doanh thu"],
