@@ -91,8 +91,12 @@ async def test_created_job_materializes_rows_and_registers_a_local_dataset(
     )
 
     assert seed.one("SELECT status FROM ingest.job_run WHERE job_id = %s", job) == "succeeded"
+    # A loaded table is the source's (AUD-07: origin = 'source' exactly when source_id is set).
     dataset = seed.one(
-        "SELECT table_name FROM catalog.dataset WHERE org_id = %s AND origin = 'derived'", org
+        "SELECT table_name FROM catalog.dataset WHERE org_id = %s AND origin = 'source'"
+        " AND source_id = %s",
+        org,
+        source,
     )
     assert dataset is not None
     assert seed.one(f'SELECT count(*) FROM workspace."{dataset}"') == 2

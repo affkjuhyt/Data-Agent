@@ -104,8 +104,12 @@ async def test_a_mysql_table_is_loaded_and_catalogued(
 
     status = seed.one("SELECT status, error FROM ingest.job_run WHERE job_id = %s", job)
     assert status[0] == "succeeded", status
+    # A loaded table is the source's (AUD-07: origin = 'source' exactly when source_id is set).
     dataset = seed.one(
-        "SELECT table_name FROM catalog.dataset WHERE org_id = %s AND origin = 'derived'", org
+        "SELECT table_name FROM catalog.dataset WHERE org_id = %s AND origin = 'source'"
+        " AND source_id = %s",
+        org,
+        source,
     )
     assert seed.all(f'SELECT chi_nhanh, amount FROM workspace."{dataset}" ORDER BY 1') == [
         ("HN", 10.5),
