@@ -1089,6 +1089,72 @@ def test_a_member_the_question_names_but_no_dataset_used_hands_the_question_back
     )
 
 
+def test_an_answer_that_read_numbers_shows_them_and_says_them() -> None:
+    """F0 (17/11/2026): "Doanh thu năm 2013" kept only a callout, "3 đại lý cao nhất" a table and
+    no text, "Top 3 tiểu nhóm … là:" named none of the three, and a headline showed "{{F1}}"."""
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+
+    ws = Workspace()
+    total = ws.add(
+        title="t",
+        columns=["Doanh thu"],
+        rows=[[49926384.4972]],
+        trust="certified",
+        tool="query_metric",
+        unit="USD",
+    )
+    top = ws.add(
+        title="t",
+        columns=["Đại lý", "Doanh thu đại lý"],
+        rows=[["Roadway Bicycle Supply", "436921.6551"], ["Field Trip Store", "427305.5875"]],
+        trust="certified",
+        tool="query_metric",
+        unit="USD",
+    )
+    assert engine._rows_said(total, 5) == "Doanh thu: 49.926.384,50 USD."
+    assert engine._rows_said(top, 5) == (
+        "Doanh thu đại lý: Roadway Bicycle Supply (436.921,66 USD),"
+        " Field Trip Store (427.305,59 USD)."
+    )
+    assert engine._rows_said(top, 1) == ""
+
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(ws=ws),  # type: ignore[arg-type]
+        plan=_plan({"id": "s1", "tool": "query_metric", "instruction": "x", "status": "done"}),
+    )
+    # The last dataset read, as a table when it has rows to name; one number is a KPI.
+    shown = engine._data_block(state, "b2")
+    assert shown is not None and shown["type"] == "table" and shown["dataset"] == top.id
+    del ws.datasets[top.id]
+    kpi = engine._data_block(state, "b2")
+    assert kpi is not None and kpi["type"] == "kpi" and kpi["items"][0]["value"] == 49926384.4972
+    assert engine._shown_dataset(kpi) == total.id
+
+    ws.datasets[top.id] = top
+    state.composition = [
+        {"type": "markdown", "id": "b1", "content": "Top 2 đại lý năm 2013 là:"},
+        {"type": "table", "id": "b2", "dataset": top.id},
+    ]
+    engine._complete_lead_ins(state)
+    assert state.composition[0]["content"] == (
+        "Top 2 đại lý năm 2013 là: Roadway Bicycle Supply (436.921,66 USD),"
+        " Field Trip Store (427.305,59 USD)."
+    )
+
+    # The headline is filled and checked like any sentence.
+    known = {"F1": verify.Fact("F1", 768.0751, "768,08", "Giá trị đơn")}
+    assert verify.fill("Giá trị đơn bình quân là {{F1}} USD", known, set()).text == (
+        "Giá trị đơn bình quân là 768,08 USD"
+    )
+    assert verify.fill("Doanh thu đạt 49.926.384,50 USD", known, set()).text == ""
+
+
 def test_figures_that_are_all_zero_are_no_answer() -> None:
     from services.worker_agent.agentic import engine
 

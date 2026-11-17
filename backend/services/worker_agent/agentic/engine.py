@@ -56,7 +56,7 @@ from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
 from services.worker_agent.agentic.grounded import unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContext, ToolResult
 from services.worker_agent.agentic.tools.coverage import for_planning
-from services.worker_agent.agentic.workspace import TRUST_LABEL, Workspace, number
+from services.worker_agent.agentic.workspace import TRUST_LABEL, Dataset, Workspace, number
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
 from services.worker_agent.llm import Gateway, ModelUnavailable
@@ -954,6 +954,10 @@ async def compose(s: State) -> None:
                 break
         if drafts and not errors and not simple(s):
             drafts = await _reviewed(s, user, drafts)
+        # The headline is the answer's text when no markdown is left, and its line in lists: it
+        # was never filled nor checked (F0, 17/11), so a tag leaked ("{{F1}} USD") and a number the
+        # model typed was shown untraced.
+        s.headline = verify.fill(s.headline, known, allowed).text.strip() if s.headline else ""
         made = 0
         for d in drafts:
             block = _checked(s, d, known, allowed)
@@ -977,6 +981,15 @@ async def compose(s: State) -> None:
             }
             await _gate(s, contract_hit.target, contract_hit.detail, contract_hit.feedback)
             return
+        if made and not any(blk["type"] in _DATA_BLOCKS for blk in s.composition):
+            # Numbers were read and only words were kept (a callout, sentences dropped for a
+            # typed number): "Doanh thu năm 2013" was answered with a note and no figure (F0).
+            shown = _data_block(s, f"b{len(s.composition) + 1}")
+            if shown is not None:
+                s.composition.insert(0, shown)
+                await publish(
+                    str(s.question_id), "block", {"question_id": str(s.question_id), "block": shown}
+                )
         if made == 0:
             # No model, or nothing it wrote held: the datasets speak for themselves.
             for ds in list(ws.datasets.values())[-3:]:
@@ -1004,11 +1017,104 @@ async def compose(s: State) -> None:
                         "block",
                         {"question_id": str(s.question_id), "block": block},
                     )
+        _complete_lead_ins(s)
+        if not s.headline and not any(x["type"] == "markdown" for x in s.composition):
+            # No sentence at all ("3 đại lý có doanh thu cao nhất": a table and an empty text).
+            s.headline = next(
+                (
+                    said
+                    for x in s.composition
+                    if x["type"] in _DATA_BLOCKS
+                    and (said := _rows_said(ws.datasets.get(_shown_dataset(x)), 5))
+                ),
+                "",
+            )
         handle.detail = {
             "blocks": [x["type"] for x in s.composition],
             "dropped_sentences": s.dropped_sentences,
         }
     _append_caveats(s)
+
+
+_DATA_BLOCKS = frozenset({"kpi", "table", "chart"})
+
+
+def _shown_dataset(block: dict[str, Any]) -> str:
+    """The dataset a table or chart shows; a KPI names it on each of its items."""
+    return block.get("dataset") or next(
+        (it.get("dataset") or "" for it in block.get("items") or [] if isinstance(it, dict)), ""
+    )
+
+
+def _measure(ds: Dataset) -> tuple[int, list[int]] | None:
+    """The column a dataset measures (the aggregate is written last, as _figures reads it) and
+    the columns naming its rows."""
+    numeric = [
+        i
+        for i in range(len(ds.columns))
+        if ds.rows and all(number(r[i]) is not None for r in ds.rows if r[i] is not None)
+    ]
+    if not numeric:
+        return None
+    measure = numeric[-1]
+    return measure, [i for i in range(len(ds.columns)) if i not in numeric]
+
+
+def _rows_said(ds: Dataset | None, most: int) -> str:
+    """A dataset said in one line by the server, its numbers from its rows: "Doanh thu: 49.926.384,5
+    USD", "Doanh thu đại lý: Roadway Bicycle Supply (436.921,66), …". Empty past `most` rows."""
+    if ds is None or not ds.rows or len(ds.rows) > most or (found := _measure(ds)) is None:
+        return ""
+    measure, names = found
+    unit = f" {ds.unit}" if ds.unit else ""
+
+    def shown(row: list[Any]) -> str:
+        value = number(row[measure])
+        return verify.show(value) + unit if value is not None else "—"
+
+    if len(ds.rows) == 1 and not names:
+        return f"{ds.columns[measure]}: {shown(ds.rows[0])}."
+    listed = ", ".join(
+        f"{' '.join(str(row[i]) for i in names) or '—'} ({shown(row)})" for row in ds.rows
+    )
+    return f"{ds.columns[measure]}: {listed}."
+
+
+def _data_block(s: State, block_id: str) -> dict[str, Any] | None:
+    """The last dataset the turn read, shown: a KPI for one number, else its table."""
+    assert s.ctx is not None
+    ws = s.ctx.ws
+    ds = next(
+        (d for d in reversed(list(ws.datasets.values())) if d.tool in FETCHING and d.rows), None
+    )
+    if ds is None or (found := _measure(ds)) is None:
+        return None
+    measure, names = found
+    column = ds.columns[measure]
+    draft = (
+        b.BlockDraft(type="kpi", kpis=[b.KpiDraft(label=column, dataset=ds.id, column=column)])
+        if len(ds.rows) == 1 and not names
+        else b.BlockDraft(type="table", dataset=ds.id)
+    )
+    try:
+        return b.materialize(draft, ws, block_id)
+    except b.BlockError:
+        return None
+
+
+def _complete_lead_ins(s: State) -> None:
+    """A sentence leading into the rows below it ("Top 3 tiểu nhóm … là:") said them only by
+    pointing at the table, so the answer's text named none of the three (F0). The server says
+    the rows after it, their numbers from the dataset."""
+    assert s.ctx is not None
+    for i, blk in enumerate(s.composition):
+        content = (blk.get("content") or "").rstrip()
+        if blk["type"] != "markdown" or not content.endswith(":"):
+            continue
+        shown = next((x for x in s.composition[i + 1 :] if x["type"] in _DATA_BLOCKS), None)
+        said = _rows_said(s.ctx.ws.datasets.get(_shown_dataset(shown or {})), 10)
+        if said:
+            blk["content"] = f"{content} {said.split(': ', 1)[1]}"
 
 
 class AnswerReview(BaseModel):
