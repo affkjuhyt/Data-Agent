@@ -1,8 +1,9 @@
 """POST /v1/sources/{id}/jobs?dry_run=true (UC-04-06, added 12/10/2026) against PostgreSQL.
 
-A dry run checks the job exactly as a create does and records nothing: no job row, no outbox
-event. The 1,000-row trial on the source is worker-ingest's, so the answer says so instead of
-carrying a sample. Organisation, users and sources come from the ingest suite's fixture.
+A dry run checks the job exactly as a create does and creates no job. Since the CDC jobs
+(11/11/2026) it answers 202 with an ingest.job_sample to poll at GET /v1/job-samples/{id}:
+worker-ingest reads up to 1,000 source rows on `ingestion_job.sample_requested` and fills the
+sample and errors. Organisation, users and sources come from the ingest suite's fixture.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ def _events(ds: Space) -> int:
     return int(ds.one("SELECT count(*) FROM ingest.outbox WHERE org_id = %s", ds.org))
 
 
-async def test_dry_run_answers_the_would_be_job_and_records_nothing(ds: Space) -> None:
+async def test_dry_run_asks_worker_ingest_for_a_sample_and_creates_no_job(ds: Space) -> None:
     url = f"/v1/sources/{ds.source}/jobs"
     body = {
         **JOB,
@@ -39,19 +40,31 @@ async def test_dry_run_answers_the_would_be_job_and_records_nothing(ds: Space) -
         tried = await api.post(
             url, params={"dry_run": "true"}, json=body, headers=ds.headers("engineer")
         )
-        assert tried.status_code == 200, tried.text
-        job = tried.json()
-        assert job["dry_run"] is True
-        assert job["mode"] == "incremental" and job["cursor_column"] == "updated_since"
-        assert job["source_id"] == str(ds.source) and job["data_space_id"] == str(ds.space)
-        # The table's defaults apply as on a create, and BR-56 inherits the source's deadline.
-        assert job["status"] == "active" and job["dlq_retention_days"] == 30
-        assert job["freshness_sla"] == "PT1H"
-        # The sample is worker-ingest's; the api says so rather than inventing rows.
-        assert job["sample"] == [] and job["errors"] == []
-        assert "worker-ingest" in job["note"]
-        assert _jobs(ds) == 0 and _events(ds) == 0
-        assert ds.events(job["id"]) == []
+        assert tried.status_code == 202, tried.text
+        accepted = tried.json()
+        assert accepted["status"] == "running" and accepted["poll_after_ms"] > 0
+        sample_id = accepted["id"]
+        # No job: only the sample row and the request worker-ingest acts on.
+        assert _jobs(ds) == 0
+        assert (
+            ds.one("SELECT mode FROM ingest.job_sample WHERE id = %s", sample_id) == "incremental"
+        )
+        [(kind, payload)] = ds.events(sample_id)
+        assert kind == "ingestion_job.sample_requested"
+        assert payload["source_id"] == str(ds.source)
+        assert payload["cursor_column"] == "updated_since"
+
+        # Until worker-ingest fills it, the sample says it is still running and has no rows.
+        polled = await api.get(f"/v1/job-samples/{sample_id}", headers=ds.headers("engineer"))
+        assert polled.status_code == 200, polled.text
+        sample = polled.json()
+        assert sample["status"] == "running" and sample["poll_after_ms"] > 0
+        assert sample["sample"] == [] and sample["errors"] == []
+        # Another Data Space does not see it.
+        elsewhere = await api.get(
+            f"/v1/job-samples/{sample_id}", headers=ds.headers("engineer", uuid.uuid4())
+        )
+        assert elsewhere.status_code in (403, 404)
 
         # The same body without dry_run creates the job, as before.
         made = await api.post(url, json=body, headers=ds.headers("engineer"))

@@ -188,9 +188,10 @@ def ds(seed: Seed) -> Space:
         space=space,
         other=other,
         users=users,
-        source=source(space, "lai-suat-api", "ingest", "rest_api"),
+        # A table job reads a database (INGESTABLE_KINDS, since the CDC jobs of 11/11/2026).
+        source=source(space, "lai-suat-db", "ingest", "postgresql"),
         federated=source(space, "core-banking", "federated", "postgresql"),
-        other_source=source(other, "lai-suat-b", "ingest", "rest_api"),
+        other_source=source(other, "lai-suat-b", "ingest", "postgresql"),
         dataset=_dataset(seed, org, space, "lai_suat_huy_dong"),
         upload_dataset=_dataset(
             seed,
