@@ -997,6 +997,12 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
         )  # type: ignore[arg-type]
     )
     assert compiled[-1].group_by == ["vung"]
+    # F0: the grain the question names wins over the one the planner wrote.
+    ctx.question = "Doanh thu Internet theo quý năm 2013"
+    asyncio.run(
+        QueryMetric().run(ctx, QueryMetricArgs(metric="DOANH_THU_INTERNET", grain="year"))  # type: ignore[arg-type]
+    )
+    assert compiled[-1].grain == "quarter" and compiled[-1].group_by == ["ngay_dat"]
     ctx.question = "Doanh thu Internet theo tháng"
 
     refused = asyncio.run(

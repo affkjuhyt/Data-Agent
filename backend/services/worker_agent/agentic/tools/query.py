@@ -42,6 +42,8 @@ ROLE = "svc_qa"
 QUERYABLE = ("active", "testing")
 # Dimension codes that name a part of the calendar, as a model writes them when it makes one up.
 _CALENDAR_PART = re.compile(r"^(ngay|tuan|thang|quy|nam|day|week|month|quarter|year)(_|$)")
+# The grains query_metric takes (a fiscal one is read through the period, not the grain).
+_GRAINS = frozenset({"day", "week", "month", "quarter", "year"})
 
 
 def named_cut(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> str | None:
@@ -235,6 +237,16 @@ class QueryMetric(Tool):
             cut = named_cut(ctx.question, vocab, set(version.allowed_dimension_ids))
             if cut is not None:
                 args = args.model_copy(update={"group_by": [*args.group_by, cut]})
+        asked_grain = find_grain(ctx.question)
+        if (
+            asked_grain is not None
+            and asked_grain.grain in _GRAINS
+            and args.grain != asked_grain.grain
+            and not times_all & set(args.group_by)
+        ):
+            # "Doanh thu Internet theo quý năm 2013" was read with grain=year, one total, then
+            # rebuilt with Python and exploratory SQL (F0, 17/11). The question names the grain.
+            args = args.model_copy(update={"grain": asked_grain.grain})
         # Which year each side of a two-year comparison is, to name its columns.
         side_labels: dict[str, str] = {}
         years = two_years(ctx.question)
