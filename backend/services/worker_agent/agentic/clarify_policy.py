@@ -164,6 +164,46 @@ def unnamed_quantity(
     )
 
 
+def spoken_period(start: datetime.date, end: datetime.date) -> str:
+    """A period as a question says it: "năm 2013", "quý 4/2013", "tháng 12/2013"."""
+    months = (end.year - start.year) * 12 + end.month - start.month
+    if start.day == 1 and end.day == 1:
+        if months == 12 and start.month == 1:
+            return f"năm {start.year}"
+        if months == 3 and start.month % 3 == 1:
+            return f"quý {(start.month - 1) // 3 + 1}/{start.year}"
+        if months == 1:
+            return f"tháng {start.month}/{start.year}"
+    last = end - datetime.timedelta(days=1)
+    return f"từ {start:%d/%m/%Y} đến {last:%d/%m/%Y}"
+
+
+def missing_period(
+    question: str, span: str, asked: str, metric: str, nearest: tuple[datetime.date, datetime.date]
+) -> Clarify:
+    """The question back when the period it names holds no data of its metric at all (F1): the
+    nearest whole period of the same length offered as the question again, said with that period
+    in place of the asked one. It used to be read for the nearest period without asking, and the
+    answer gave 12/2013's figure to "tháng 3/2015" (F0, 17/11); a period beyond the data is the
+    person's to move, not the agent's."""
+    said = spoken_period(*nearest)
+    tokens = question.split()
+    words = span.split()
+    folded = [norm(_TRAILING.sub("", t)) for t in tokens]
+    option = f"{metric} {said}"
+    for i in range(len(tokens) - len(words) + 1):
+        if folded[i : i + len(words)] == words:
+            last = tokens[i + len(words) - 1]
+            end = m.group(0) if (m := _TRAILING.search(last)) else ""
+            option = " ".join([*tokens[:i], said + end, *tokens[i + len(words) :]])
+            break
+    return Clarify(
+        f"Chưa có dữ liệu {metric} cho {asked}. Kỳ đầy đủ gần nhất có dữ liệu là {said}."
+        " Bạn muốn xem kỳ đó?",
+        [option],
+    )
+
+
 def nothing_read(
     question: str, layer: SpaceLayer, period: str | None, *, max_options: int = UNNAMED_OPTIONS
 ) -> Clarify | None:

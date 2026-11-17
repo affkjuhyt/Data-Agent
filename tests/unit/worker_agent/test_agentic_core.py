@@ -317,6 +317,92 @@ def test_a_quantity_no_metric_measures_is_asked_back_with_the_closest_metrics() 
     )
 
 
+def test_a_period_with_no_data_of_the_metric_is_asked_back_before_any_plan() -> None:
+    """F1: "Doanh thu Internet tháng 3/2015" was answered with 12/2013's figure, q6 replanned
+    around 2026; both are asked back with the nearest whole period, before the planner runs."""
+    import datetime
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.semantic import compiler as c
+    from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
+    from services.worker_agent.understand.text import find_period
+
+    revenue, budget = uuid.uuid4(), uuid.uuid4()
+    layer = SimpleNamespace(
+        vocabulary=Vocabulary(
+            metrics=[
+                MetricEntry(revenue, "DOANH_THU_INTERNET", "Doanh thu Internet", True),
+                MetricEntry(budget, "TAI_CHINH_NGAN_SACH", "Số tài chính ngân sách", True),
+            ],
+            dimensions=[DimensionEntry(uuid.uuid4(), "phong_ban", "Phòng ban")],
+        ),
+        versions={revenue: object(), budget: object()},
+        blocked_metric_ids=frozenset(),
+    )
+    today = datetime.date(2026, 11, 17)
+
+    def state(question: str, code: str, nearest: c.Period | None) -> Any:
+        found = find_period(question, today)
+        assert found is not None
+        asked = c.Period(found.start, found.end)
+        return engine.State(
+            event=types.SimpleNamespace(),  # type: ignore[arg-type]
+            question_id=uuid.uuid4(),
+            model=types.SimpleNamespace(),  # type: ignore[arg-type]
+            ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+                question=question,
+                today=today,
+                period=found,
+                period_moves={code: (asked, nearest)} if nearest else {},
+                layer=layer,
+            ),
+            likely=[code],
+        )
+
+    month = state(
+        "Doanh thu Internet tháng 3/2015?",
+        "DOANH_THU_INTERNET",
+        c.Period(datetime.date(2013, 12, 1), datetime.date(2014, 1, 1)),
+    )
+    plan = engine._missing_period(month)
+    assert plan is not None and plan.mode == "ask" and not plan.steps
+    assert month.clarify is not None
+    assert month.clarify.question == (
+        "Chưa có dữ liệu Doanh thu Internet cho tháng 3/2015. Kỳ đầy đủ gần nhất có dữ liệu là"
+        " tháng 12/2013. Bạn muốn xem kỳ đó?"
+    )
+    # The option is the question again, at the nearest period.
+    assert month.clarify.options == ["Doanh thu Internet tháng 12/2013?"]
+
+    q6 = state(
+        "Tài chính ngân sách theo phòng ban năm 2026",
+        "TAI_CHINH_NGAN_SACH",
+        c.Period(datetime.date(2013, 1, 1), datetime.date(2014, 1, 1)),
+    )
+    assert engine._missing_period(q6) is not None
+    assert q6.clarify is not None
+    assert q6.clarify.options == ["Tài chính ngân sách theo phòng ban năm 2013"]
+
+    # A period with data (nothing moved), or a quantity beyond the metric, is the planner's.
+    covered = state("Doanh thu Internet năm 2013", "DOANH_THU_INTERNET", None)
+    assert engine._missing_period(covered) is None
+    beyond = state(
+        "Giá cổ phiếu Internet tháng 3/2015",
+        "DOANH_THU_INTERNET",
+        c.Period(datetime.date(2013, 12, 1), datetime.date(2014, 1, 1)),
+    )
+    assert engine._missing_period(beyond) is None
+    # Two periods compared: the planner reads them side by side.
+    both = state(
+        "So sánh doanh thu Internet năm 2009 và năm 2013",
+        "DOANH_THU_INTERNET",
+        c.Period(datetime.date(2013, 1, 1), datetime.date(2014, 1, 1)),
+    )
+    assert engine._missing_period(both) is None
+
+
 def test_a_turn_that_read_nothing_asks_back_before_writing() -> None:
     import datetime
     import types

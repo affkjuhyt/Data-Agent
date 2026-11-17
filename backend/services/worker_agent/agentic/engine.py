@@ -56,6 +56,7 @@ from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
 from services.worker_agent.agentic.grounded import unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContext, ToolResult
 from services.worker_agent.agentic.tools.coverage import for_planning
+from services.worker_agent.agentic.tools.query import two_periods
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Dataset, Workspace, number
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
@@ -127,6 +128,8 @@ class State:
     cancelled: bool = False
     # Where the metrics the question most likely reads have data (AGC-10), for the planner.
     coverage: str = ""
+    # Those metrics, best matched first (analyst.search_metrics).
+    likely: list[str] = field(default_factory=list)
     # Why compose would hand the question over (AGC-11): sent back to the replanner once first.
     feedback: str | None = None
     gate_retries: int = 0
@@ -276,8 +279,8 @@ async def prepare(s: State) -> None:
     try:
         # A question naming a period: where the metrics it most likely reads have data, so a
         # quarter the data never reaches is planned around, not queried and handed over (AGC-10).
-        likely = [m["metric"] for m in analyst.search_metrics(s.ctx.layer, question_text)]
-        s.coverage = await for_planning(s.ctx, likely[:COVERAGE_METRICS])
+        s.likely = [m["metric"] for m in analyst.search_metrics(s.ctx.layer, question_text)]
+        s.coverage = await for_planning(s.ctx, s.likely[:COVERAGE_METRICS])
     except Exception:
         logger.exception("question %s: data coverage not read", s.question_id)
 
@@ -397,11 +400,53 @@ async def _ask_plan(s: State, system: str, user: str) -> p.Plan:
     raise p.PlanInvalid(error)
 
 
+def _missing_period(s: State) -> p.Plan | None:
+    """F1: the question names one period, the metric it names has no data in it at all (the
+    coverage probe of prepare moved it, AGC-10): asked back before any plan, with the nearest whole
+    period as the option. The planner used to read the moved period and say so, or not (q6 replanned
+    around 2026; "Doanh thu Internet tháng 3/2015" was answered with 12/2013's figure). Not when the
+    question compares periods, or names a quantity beyond the metric: that is the planner's."""
+    ctx = s.ctx
+    if ctx is None or ctx.period is None or not ctx.period_moves or not s.likely:
+        return None
+    if two_periods(ctx.question) is not None:
+        return None
+    top = s.likely[0]
+    move = ctx.period_moves.get(top)
+    entry = analyst._visible(ctx.layer).get(top)
+    if move is None or entry is None:
+        return None
+    vocab = ctx.layer.vocabulary
+    cuts: set[str] = set()
+    for d in vocab.dimensions:
+        cuts |= set(norm(d.name).split())
+    if unnamed(
+        quantity_words(ctx.question, vocab, today=ctx.today), metric_words(entry, vocab) | cuts
+    ):
+        return None
+    ask = clarify_policy.missing_period(
+        ctx.question, ctx.period.span, ctx.period.label, entry.name, (move[1].start, move[1].end)
+    )
+    asked = _bind_clarify(
+        s,
+        p.Plan(
+            goal=f"Làm rõ kỳ của câu hỏi: {ctx.period.label} chưa có dữ liệu",
+            thought=f"{entry.name} không có dữ liệu ở {ctx.period.label}; hỏi lại trước khi truy vấn.",
+            mode="ask",
+            clarification=ask.question,
+            options=ask.options,
+        ),
+    )
+    # The clarify budget of the conversation is spent: plan as before.
+    return asked if asked.mode == "ask" else None
+
+
 async def plan(s: State) -> None:
     system = _planner_system(s)
     async with turn_trace.stepping("plan", title="Lập kế hoạch", target="") as step:
+        early = _missing_period(s)
         try:
-            s.plan = await _ask_plan(s, system, _situation(s))
+            s.plan = early or await _ask_plan(s, system, _situation(s))
         except (ModelUnavailable, p.PlanInvalid) as exc:
             step.status, step.summary = "failed", "Không lập được kế hoạch."
             logger.info(
@@ -411,7 +456,8 @@ async def plan(s: State) -> None:
             )
             s.handed_back = True
             return
-        s.plan = _bind_clarify(s, s.plan)
+        if early is None:
+            s.plan = _bind_clarify(s, s.plan)
         step.detail = {
             "goal": s.plan.goal,
             # Shown while the turn runs: the plan's reasoning, its codes said as names.
