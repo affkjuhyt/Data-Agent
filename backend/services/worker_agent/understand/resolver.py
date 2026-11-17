@@ -281,6 +281,12 @@ def metric_words(metric: MetricEntry, vocab: Vocabulary) -> set[str]:
 # out of the question; a second one ("tháng 8/2013 với tháng 3/2013") was left and refused as a
 # quantity no metric measures. A date names no quantity.
 _DATE_WORD = re.compile(r"^(?:q?\d{1,2}[/-])?\d{4}(?:[/-]\d{1,2})?$")
+# How a period is compared or accumulated, as whole phrases: "so với cùng kỳ năm trước", "luỹ kế
+# từ đầu năm đến hết tháng 6". Their words alone ("cùng", "đầu", "hết") were refused as a quantity
+# no metric measures (F0, 17/11); as single fillers they would also hide "đầu tư" or "từ khách hàng".
+_PERIOD_PHRASE = re.compile(
+    r"\b(?:cung ky(?: nam truoc| truoc)?|tu dau (?:nam|ky|quy|thang)|den het|nam truoc)\b"
+)
 
 
 def quantity_words(
@@ -297,6 +303,7 @@ def quantity_words(
     period = find_period(question, today, vocab.calendar)
     if period:
         text = text.replace(period.span, " ")
+    text = _PERIOD_PHRASE.sub(" ", text)
     chosen: set[str] = set()
     by_code = {d.code: d for d in vocab.dimensions}
     for code in group_by:
@@ -305,6 +312,12 @@ def quantity_words(
     for dim_code, members in (filters or {}).items():
         if dim_code in by_code:
             chosen |= set(norm(by_code[dim_code].name).split())
+            # The members the reading filters on are a cut's words, known to the value index or
+            # not: with no index or profile (DS-AW, 17/11) "nhóm hàng Bikes" left "bikes" as a
+            # quantity and a right reading was refused. A member that is not in the data reads
+            # nothing, which the turn then says.
+            for member in members:
+                chosen |= set(norm(str(member)).split())
         for v in vocab.values:
             if v.dimension_code == dim_code and v.value_code in members:
                 chosen |= set(norm(v.label).split()) | set(norm(v.value_code).split())
