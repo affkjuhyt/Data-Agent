@@ -1009,6 +1009,16 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
         QueryMetric().run(ctx, QueryMetricArgs(metric="DOANH_THU_INTERNET", group_by=["vung"]))  # type: ignore[arg-type]
     )
     assert (compiled[-1].top_n, compiled[-1].top_desc) == (2, False)
+    # F4: which member fell most over two years is read from all of them, not the top value.
+    ctx.question = (
+        "Doanh thu Internet theo vùng năm 2013 so với năm 2012: Vùng nào giảm nhiều nhất?"
+    )
+    asyncio.run(
+        QueryMetric().run(
+            ctx, QueryMetricArgs(metric="DOANH_THU_INTERNET", group_by=["vung"], top_n=1)
+        )  # type: ignore[arg-type]
+    )
+    assert compiled[-1].top_n is None
     ctx.question = "Doanh thu Internet theo tháng"
 
     refused = asyncio.run(

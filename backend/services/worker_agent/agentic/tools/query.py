@@ -46,6 +46,7 @@ _CALENDAR_PART = re.compile(r"^(ngay|tuan|thang|quy|nam|day|week|month|quarter|y
 _GRAINS = frozenset({"day", "week", "month", "quarter", "year"})
 # "Top 10 sản phẩm …", "3 đại lý có doanh thu cao nhất", "2 quốc gia … thấp nhất".
 _TOP_COUNT = re.compile(r"^(?:top\s*)?(\d{1,3})\s+[a-z]|\btop\s*(\d{1,3})\b")
+_CHANGE_ASKED = re.compile(r"\b(?:giam|tang|sut|tut|decrease|increase|drop|rise|grow)\w*\b")
 _LOWEST = re.compile(r"\b(?:thap nhat|it nhat|nho nhat|kem nhat|lowest|least|smallest|bottom)\b")
 
 
@@ -283,6 +284,11 @@ class QueryMetric(Tool):
                 "value": f"{entry.name} {later}",
                 "base_value": f"{entry.name} {earlier}",
             }
+        if args.compare_to is not None and args.top_n and _CHANGE_ASKED.search(norm(ctx.question)):
+            # "Vùng nào giảm nhiều nhất?" over two years was read top_n=1: the compiler ranks by
+            # the value, so it kept the largest region, which rose (F4, 17/11). Which member rose
+            # or fell most is read from all of them.
+            args = args.model_copy(update={"top_n": None})
         # Two periods of one kind compared, other than two adjacent years ("tháng 8/2013 với tháng
         # 3/2013", "năm 2011 và 2013"): read once per period and set side by side here. The planner
         # read them twice and merged them in Python, which the 4B model wrote broken (16/11).
