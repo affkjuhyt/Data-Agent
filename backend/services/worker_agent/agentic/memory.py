@@ -136,20 +136,80 @@ _LASTING = (
 )
 
 
+def _says(text: str, words: Sequence[str]) -> bool:
+    """Whether `text` (folded) holds one of `words` as whole words: as a substring, "luôn" (luon)
+    was found in "số lượng" (luong) and every question about a quantity was read for memories."""
+    folded = f" {norm(text)} "
+    return any(re.search(rf"(?<!\w){re.escape(w.strip())}(?!\w)", folded) for w in words)
+
+
 def worth_remembering(question: str) -> bool:
-    text = f" {norm(question)} "
-    return any(f" {w}" in text for w in _LASTING)
+    return _says(question, _LASTING)
 
 
 def content_hash(content: str) -> str:
     return hashlib.sha256(norm(content).encode()).hexdigest()
 
 
-def _kept(op: MemoryOp, fetched_numbers: set[str]) -> bool:
-    """The server's own rules over the model's proposal: a secret-looking text, or one quoting a
-    figure the turn fetched, is never stored."""
+# What the person must have said for each kind to be theirs: the model proposed "kết quả bằng
+# tiếng Trung, liệt kê theo tiểu nhóm" as a preference from "3 tiểu nhóm sản phẩm có số lượng bán
+# Internet nhiều nhất năm 2013", which says nothing lasting (17/11).
+_SAID: dict[str, tuple[str, ...]] = {
+    "preference": (
+        "luon",
+        "tu nay",
+        "tu gio",
+        "lan sau",
+        "mac dinh",
+        "toi muon",
+        "toi thich",
+        "always",
+        "from now",
+        "by default",
+        "i prefer",
+        "i want",
+    ),
+    "definition": (
+        "dinh nghia",
+        "nghia la",
+        "hieu la",
+        "duoc tinh",
+        "tinh bang",
+        "la khi",
+        "define",
+        "means",
+        "is counted",
+    ),
+    "feedback": ("khong phai", "y toi", "sai roi", "dung dung", "i mean", "instead", "not what"),
+    "fact": (
+        "toi phu trach",
+        "toi quan tam",
+        "toi lam",
+        "minh phu trach",
+        "chung toi",
+        "ben toi",
+        "i am",
+        "i'm",
+        "i work",
+        "my ",
+        "we ",
+    ),
+}
+# Han, kana, hangul: a memory in a script the person did not write in is the model's, not theirs.
+_FOREIGN_SCRIPT = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
+
+
+def _kept(op: MemoryOp, fetched_numbers: set[str], question: str = "") -> bool:
+    """The server's own rules over the model's proposal: a secret-looking text, one quoting a
+    figure the turn fetched, one in a script the question is not in, or a kind the person's words
+    do not say (a preference with no "luôn"/"từ nay", a definition with no "nghĩa là") is never
+    stored."""
     text = op.content.strip()
     if len(text) < 6 or _SECRET.search(text):
+        return False
+    if _FOREIGN_SCRIPT.search(text) and not _FOREIGN_SCRIPT.search(question):
+        return False
+    if question and not _says(question, _SAID.get(op.kind, ())):
         return False
     return not any(n in fetched_numbers for n in _NUMBER.findall(text) if len(n) >= 3)
 
@@ -174,7 +234,7 @@ async def extract(
         reply = await model.json_chat("planner", EXTRACT, user, Extraction, max_tokens=500)
     except ModelUnavailable:
         return []
-    return [op for op in reply.content.ops[:MAX_OPS] if _kept(op, fetched_numbers)]
+    return [op for op in reply.content.ops[:MAX_OPS] if _kept(op, fetched_numbers, question)]
 
 
 async def store(

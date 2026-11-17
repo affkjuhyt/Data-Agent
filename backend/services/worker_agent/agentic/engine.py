@@ -1911,7 +1911,13 @@ async def _remember(s: State) -> None:
     for their next ones (memory.py). Never in the way of the turn."""
     assert s.ctx is not None
     ctx = s.ctx
-    if not memory.worth_remembering(ctx.question):
+    payload = s.event.payload or {}
+    # An eval asks as the person but is not them: the DS-AW eval left "trình bày bằng tiếng Trung,
+    # liệt kê theo tiểu nhóm" in helios-admin's memory, and every later question was cut by
+    # sub-category, one answered in Chinese (17/11).
+    if payload.get("eval_run_id") or payload.get("remember") is False:
+        return
+    if not memory.worth_remembering(s.followed or ctx.question):
         return
     fetched = {
         n
@@ -1924,7 +1930,7 @@ async def _remember(s: State) -> None:
     try:
         ops = await memory.extract(
             s.model,
-            question=ctx.question,
+            question=s.followed or ctx.question,
             answer=_text(s),
             history=s.history,
             known=s.memories,
