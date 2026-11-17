@@ -1456,6 +1456,57 @@ def test_explain_change_tries_real_cuts_shows_two_and_checks_the_premise(
     assert engine._false_premise(state) == ""
 
 
+def test_a_follow_up_is_read_as_the_whole_question_it_continues() -> None:
+    """F4: "Doanh thu theo vùng năm 2013" → "Còn năm 2012?" → "Vùng nào giảm nhiều nhất?"."""
+    import datetime
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
+
+    buyers = uuid.uuid4()
+    vocab = Vocabulary(
+        metrics=[
+            MetricEntry(uuid.uuid4(), "DOANH_THU", "Doanh thu", True),
+            MetricEntry(buyers, "SO_KHACH_HANG", "Số khách hàng mua qua Internet", True),
+        ],
+        dimensions=[
+            DimensionEntry(uuid.uuid4(), "vung", "Vùng bán hàng"),
+            DimensionEntry(uuid.uuid4(), "nhom_hang", "Nhóm sản phẩm"),
+            DimensionEntry(uuid.uuid4(), "quoc_gia_khach", "Quốc gia khách hàng"),
+        ],
+        synonyms={"so khach hang": ("metric", str(buyers))},
+    )
+    today = datetime.date(2026, 11, 17)
+
+    def reading(period: str) -> dict[str, Any]:
+        return {
+            "metric": "DOANH_THU",
+            "metric_name": "Doanh thu",
+            "period": period,
+            "group_by": ["vung"],
+            "filters": {},
+        }
+
+    first = [reading("2013")]
+    assert (
+        engine._standalone("Còn năm 2012?", first, vocab, today)
+        == "Doanh thu theo Vùng bán hàng năm 2012"
+    )
+    both = [reading("2012"), reading("2013")]
+    assert engine._standalone("Vùng nào giảm nhiều nhất?", both, vocab, today) == (
+        "Doanh thu theo Vùng bán hàng năm 2013 so với năm 2012: Vùng nào giảm nhiều nhất?"
+    )
+    # A cut the follow-up names replaces the one before.
+    assert engine._standalone("Còn theo nhóm sản phẩm thì sao?", first, vocab, today).startswith(
+        "Doanh thu theo Nhóm sản phẩm năm 2013"
+    )
+    # A quantity of its own, or a metric named whole, is a new question; nothing to follow, too.
+    for new in ("Tồn kho năm 2013", "Số khách hàng năm 2013"):
+        assert engine._standalone(new, first, vocab, today) == "", new
+    assert engine._standalone("Còn năm 2012?", [], vocab, today) == ""
+
+
 def test_figures_that_are_all_zero_are_no_answer() -> None:
     from services.worker_agent.agentic import engine
 

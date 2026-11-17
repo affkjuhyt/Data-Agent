@@ -53,7 +53,7 @@ from services.worker_agent.agentic import (
 )
 from services.worker_agent.agentic import plan as p
 from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
-from services.worker_agent.agentic.grounded import unnamed
+from services.worker_agent.agentic.grounded import ANALYSIS_WORDS, unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContext, ToolResult
 from services.worker_agent.agentic.tools.coverage import for_planning
 from services.worker_agent.agentic.tools.query import two_periods
@@ -132,6 +132,8 @@ class State:
     coverage: str = ""
     # Those metrics, best matched first (analyst.search_metrics).
     likely: list[str] = field(default_factory=list)
+    # A follow-up as the person wrote it, when the turn reads it as a standalone question (F4).
+    followed: str = ""
     # Why compose would hand the question over (AGC-11): sent back to the replanner once first.
     feedback: str | None = None
     gate_retries: int = 0
@@ -188,6 +190,84 @@ async def _history(session: Any, question: qa.Question) -> str:
         if answer is not None and answer.text:
             lines.append(f"Trả lời: {answer.text[:400]}")
     return "\n".join(lines)
+
+
+async def _readings(session: Any, question: qa.Question) -> list[dict[str, Any]]:
+    """How the turns before this one read the data, latest turn first (persist's "reading")."""
+    rows = (
+        await session.execute(
+            select(qa.Plan.steps)
+            .join(qa.Question, qa.Question.id == qa.Plan.question_id)
+            .where(
+                qa.Question.conversation_id == question.conversation_id,
+                qa.Question.seq < question.seq,
+            )
+            .order_by(qa.Question.seq.desc(), qa.Plan.version.desc())
+            .limit(HISTORY_TURNS * 3)
+        )
+    ).all()
+    out = []
+    for (steps,) in rows:
+        datasets = steps.get("datasets") if isinstance(steps, dict) else None
+        for ds in (datasets or {}).values():
+            reading = ds.get("reading") if isinstance(ds, dict) else None
+            if isinstance(reading, dict) and reading.get("metric"):
+                out.append(reading)
+    return out
+
+
+def _standalone(text: str, readings: list[dict[str, Any]], vocab: Any, today: datetime.date) -> str:
+    """F4: a follow-up that names no quantity of its own ("Còn năm 2012?", "Vùng nào giảm nhiều
+    nhất?", "Còn theo nhóm sản phẩm thì sao?") as a whole question, from how the turn before read
+    the data: its metric and cuts, a period the follow-up names in place of its own, and, when the
+    follow-up asks what rose or fell over two periods the conversation read, both of them. The 4B
+    planner read the conversation's text and lost the comparison (79 s, two failed merges, no
+    answer to "which fell most", 17/11); every rule of the turn reads the question it is given.
+    Empty when there is nothing to follow or the question names a quantity: a new question."""
+    if not readings:
+        return ""
+    dims = {d.code: d for d in vocab.dimensions}
+    cut_words: set[str] = set()
+    for d in vocab.dimensions:
+        cut_words |= set(norm(d.name).split())
+    words = quantity_words(text, vocab, today=today)
+    if any(w not in cut_words and w not in ANALYSIS_WORDS for w in words):
+        return ""
+    folded = f" {norm(text)} "
+    # A metric named whole, by its name or a synonym ("Số khách hàng năm 2013"), is a new
+    # question even when its words are a cut's too ("Quốc gia khách hàng").
+    if any(f" {norm(m.name)} " in folded for m in vocab.metrics) or any(
+        f" {phrase} " in folded
+        for phrase, target in vocab.synonyms.items()
+        if target[0] == "metric"
+    ):
+        return ""
+    last = readings[0]
+    own_cuts = [d.code for d in vocab.dimensions if not d.is_time and f" {norm(d.name)} " in folded]
+    cuts = own_cuts or [g for g in last.get("group_by") or [] if g in dims and not dims[g].is_time]
+    parts = [str(last.get("metric_name") or last["metric"])]
+    if cuts:
+        parts.append("theo " + ", ".join(dims[c].name for c in cuts))
+    for dim, members in (last.get("filters") or {}).items():
+        if dim in dims and members:
+            parts.append(f"{dims[dim].name} {', '.join(str(m) for m in members)}")
+    own = find_period(text, today, vocab.calendar)
+    seen: list[Any] = []
+    for r in readings:
+        found = iso_answer(str(r.get("period") or "")) if r["metric"] == last["metric"] else None
+        if found is not None and all(f.start != found.start for f in seen):
+            seen.append(found)
+    asks_change = bool(_SAID_DOWN.search(folded) or _SAID_UP.search(folded))
+    if own is not None:
+        parts.append(own.label)
+    elif asks_change and len(seen) >= 2:
+        later, earlier = sorted(seen[:2], key=lambda f: f.start, reverse=True)
+        parts.append(f"{later.label} so với {earlier.label}")
+    elif seen:
+        parts.append(seen[0].label)
+    whole = " ".join(parts)
+    # Words beyond the period and fillers ("vùng nào giảm nhiều nhất") are the follow-up's ask.
+    return f"{whole}: {text}" if words else whole
 
 
 async def _prior_clarify_rounds(session: Any, question: qa.Question) -> int:
@@ -252,25 +332,30 @@ async def prepare(s: State) -> None:
         today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         layer = await load(session, space_id)
         s.history = await _history(session, question)
+        asked = _standalone(
+            question.text, await _readings(session, question), layer.vocabulary, today
+        )
+        if asked:
+            s.followed = question.text
         s.prior_clarify_rounds = await _prior_clarify_rounds(session, question)
         raw_audience = (event.payload or {}).get("audience")
         s.audience = "executive" if raw_audience == "executive" else clarify_policy.DEFAULT_AUDIENCE
         s.deep = deep_skill.requested(event.payload, question.purpose)
         s.conversation_id = conversation.id
-        question_text = question.text
+        question_text = asked or question.text
         s.ctx = ToolContext(
             org_id=event.org_id,
             space_id=space_id,
             user_id=user_id,
             question_id=s.question_id,
-            question=question.text,
+            question=question_text,
             today=today,
             as_of=question.as_of,
             purpose=question.purpose,
             layer=layer,
             model=s.model,
             ws=Workspace(),
-            period=find_period(question.text, today, layer.vocabulary.calendar),
+            period=find_period(question_text, today, layer.vocabulary.calendar),
         )
     try:
         known = await memory.load(event.org_id, space_id, user_id)
@@ -1569,6 +1654,13 @@ async def persist(s: State) -> None:
             "trust": ds.trust,
             "query_run_ids": ds.query_run_ids,
             "metric": (ds.reading or {}).get("metric"),
+            # How it was read, for the next question of the conversation (F4: "Còn năm 2012?").
+            "reading": {
+                k: (ds.reading or {}).get(k)
+                for k in ("metric", "metric_name", "period", "group_by", "filters")
+            }
+            if ds.reading
+            else None,
         }
         for ds in ctx.ws.datasets.values()
     }
