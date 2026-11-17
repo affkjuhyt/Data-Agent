@@ -1,8 +1,9 @@
 """POST /v1/sources/{id}/jobs?dry_run=true (UC-04-06, added 12/10/2026) against PostgreSQL.
 
-A dry run checks the job exactly as a create does and records nothing: no job row, no outbox
-event. The 1,000-row trial on the source is worker-ingest's, so the answer says so instead of
-carrying a sample. Organisation, users and sources come from the ingest suite's fixture.
+A dry run checks the job exactly as a create does and creates no job. Since the CDC jobs
+(11/11/2026) it answers 202 with an ingest.job_sample to poll at GET /v1/job-samples/{id}:
+worker-ingest reads up to 1,000 source rows on `ingestion_job.sample_requested` and fills the
+sample and errors. Organisation, users and sources come from the ingest suite's fixture.
 """
 
 from __future__ import annotations

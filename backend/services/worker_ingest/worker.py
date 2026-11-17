@@ -119,6 +119,29 @@ def _fits(kind: str, value: Any) -> bool:
     return isinstance(value, datetime.date) and not isinstance(value, datetime.datetime)
 
 
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _fits_plain(kind: str, value: Any) -> bool:
+    """_fits for a value already in the form the batch carries (_plain): a Decimal is its digits
+    and a date its ISO day there. Judged on the raw kinds, every numeric and date value of a
+    batch was quarantined as a type error."""
+    if isinstance(value, str) and kind == "numeric":
+        try:
+            return decimal.Decimal(value).is_finite()
+        except decimal.InvalidOperation:
+            return False
+    if isinstance(value, str) and kind == "date":
+        if not _ISO_DATE.match(value):
+            return False
+        try:
+            datetime.date.fromisoformat(value)
+        except ValueError:
+            return False
+        return True
+    return _fits(kind, value)
+
+
 @dataclass(frozen=True)
 class Window:
     """An incremental run's slice of the source (RES-17): the cursor column, above the value the
@@ -796,7 +819,8 @@ async def _filter_batch(
     for row in batch:
         bad = None
         for column, value in zip(columns, row, strict=True):
-            if not _fits(column["type"], value):
+            # The batch is already in its stored form (_plain): "10", "2026-09-30".
+            if not _fits_plain(column["type"], value):
                 bad = f"column {column['label']} value does not fit {column['type']}"
                 break
         if bad is None:

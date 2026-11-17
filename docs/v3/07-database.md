@@ -81,5 +81,11 @@ Mỗi routine ghi diễn giải của mình trong chú thích cạnh dấu `cove
   `context.data_product.pack_version_id`, `eval.error_book_entry.pack_contribution`, `pack_proposal_ref`), giá trị
   `pack` của các CHECK nguồn gốc, loại đề xuất `pack_activate`, `pack_upgrade`, `metric_override` và hai công cụ
   `pack.*` đã xoá khỏi nguồn tab 3/3b và khỏi cụm đã triển khai. Tab 3/3b của tài liệu thiết kế vẫn mô tả chúng.
+- Revision `v3_0033`, `v3_0035` (11/11/2026, job CDC): `svc_pipeline` đọc `context` (quan hệ đã duyệt để dựng data
+  mart); `ingest.ingestion_job` có `retry_policy`, `on_schema_change`, `on_invalid_record`, `skip_today`,
+  `merge_key_columns`; bảng mới `ingest.job_sample` giữ mẫu chạy thử của job chưa tạo; hàm
+  `public.da_materialize_upsert` (routines/workspace.sql) upsert theo khoá của job. Hai revision này ban đầu chỉ
+  sửa migration và ORM; nguồn tab 3/3b và `routines/` đã được bổ sung sau (17/11), để `dataagent.sql` dựng mới
+  giống cụm.
 - Chưa kiểm ở CSDL: chủ trang hypothesis khác người công bố (BR-194) — cần đọc `exec` dưới RLS chủ kho, để ở
   tầng ứng dụng.

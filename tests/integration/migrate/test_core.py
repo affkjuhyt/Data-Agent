@@ -1317,6 +1317,32 @@ def test_upload_materializer_accepts_a_column_named_value(db):
         assert cur.fetchall() == [("7", "retry"), ("12.5", "ok")]
 
 
+def test_upsert_materializer_merges_on_the_keys_and_checks_what_it_splices(db):
+    """da_materialize_upsert runs as da_owner: like the upload one, it refuses a column type,
+    a name or a merge key it would otherwise splice into DDL (v3_0036)."""
+    table_name = f"upsert_regression_{new_id().hex[:8]}"
+    columns = [{"name": "id", "type": "numeric"}, {"name": "value", "type": "text"}]
+    upsert = "SELECT public.da_materialize_upsert(%s, %s::jsonb, %s::jsonb, %s::text[])"
+    as_role(db, "svc_ingest", None)
+    run(db, upsert, (table_name, Json(columns), Json([["1", "a"], ["2", "b"]]), ["id"]))
+    run(db, upsert, (table_name, Json(columns), Json([["2", "c"]]), ["id"]))
+    as_admin(db)
+    with db.cursor() as cur:
+        cur.execute(f'SELECT id::text, value FROM workspace."{table_name}" ORDER BY id')
+        assert cur.fetchall() == [("1", "a"), ("2", "c")]
+
+    as_role(db, "svc_ingest", None)
+    rows = Json([["1", "a"]])
+    for bad_columns, keys, message in (
+        ([{"name": "id", "type": "text); DROP TABLE x; --"}], ["id"], "column type"),
+        ([{"name": "Id; --", "type": "text"}], ["Id; --"], "column name"),
+        ([], ["id"], "upload columns"),
+        (columns, ["missing"], "merge key missing"),
+    ):
+        refused = fails(db, upsert, (f"{table_name}_x", Json(bad_columns), rows, keys))
+        assert message in refused, refused
+
+
 def _calendar(db, org):
     return ins(
         db,

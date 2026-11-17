@@ -461,9 +461,7 @@ export async function runExploreQuery(
         filters: input.filters,
         ...(input.period ? { period: input.period } : {}),
         ...(input.grain ? { grain: input.grain } : {}),
-        // period and grain are in the api's ExploreQueryCreate (K1); schema.ts is regenerated
-        // (make api-types) once the drift-resolve schemas no longer collide (lib/v1/sources.ts).
-      } satisfies Schemas['ExploreQueryCreate'] & { period?: string; grain?: Grain },
+      } satisfies Schemas['ExploreQueryCreate'],
     }),
   );
   const run = await awaitQueryRun(accepted);

@@ -18252,6 +18252,24 @@
       "title": "Filters",
       "type": "array"
      },
+     "grain": {
+      "anyOf": [
+       {
+        "enum": [
+         "day",
+         "week",
+         "month",
+         "quarter",
+         "year"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Grain"
+     },
      "metric_ids": {
       "items": {
        "format": "uuid",
@@ -18261,6 +18279,19 @@
       "minItems": 1,
       "title": "Metric Ids",
       "type": "array"
+     },
+     "period": {
+      "anyOf": [
+       {
+        "maxLength": 32,
+        "pattern": "^\\d{4}(-Q[1-4]|-\\d{2})?$|^\\d{4}-\\d{2}-\\d{2}/\\d{4}-\\d{2}-\\d{2}$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Period"
      }
     },
     "required": [
@@ -22538,48 +22569,8 @@
     "type": "object"
    },
    "IngestionJobDryRun": {
-    "description": "POST /v1/sources/{id}/jobs?dry_run=true: the job as it would be created, not recorded.\n\nA3 also asks for a sample of 1,000 rows and its errors. Reading the source is worker-ingest's:\nthe api holds no connection to it, so sample and errors stay empty and `note` says so.",
+    "description": "GET /v1/job-samples/{id}: worker-filled sample after dry_run Accepted.",
     "properties": {
-     "consecutive_failures": {
-      "title": "Consecutive Failures",
-      "type": "integer"
-     },
-     "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-     },
-     "cursor_column": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Cursor Column"
-     },
-     "cursor_value": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Cursor Value"
-     },
-     "data_space_id": {
-      "format": "uuid",
-      "title": "Data Space Id",
-      "type": "string"
-     },
-     "dlq_retention_days": {
-      "title": "Dlq Retention Days",
-      "type": "integer"
-     },
      "dry_run": {
       "const": true,
       "default": true,
@@ -22594,48 +22585,12 @@
       "title": "Errors",
       "type": "array"
      },
-     "freshness_sla": {
-      "anyOf": [
-       {
-        "format": "duration",
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Freshness Sla"
-     },
      "id": {
       "format": "uuid",
       "title": "Id",
       "type": "string"
      },
-     "mode": {
-      "title": "Mode",
-      "type": "string"
-     },
-     "name": {
-      "title": "Name",
-      "type": "string"
-     },
      "note": {
-      "title": "Note",
-      "type": "string"
-     },
-     "paused_at": {
-      "anyOf": [
-       {
-        "format": "date-time",
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Paused At"
-     },
-     "paused_reason": {
       "anyOf": [
        {
         "type": "string"
@@ -22644,7 +22599,12 @@
         "type": "null"
        }
       ],
-      "title": "Paused Reason"
+      "title": "Note"
+     },
+     "poll_after_ms": {
+      "default": 1000,
+      "title": "Poll After Ms",
+      "type": "integer"
      },
      "sample": {
       "items": {
@@ -22654,68 +22614,14 @@
       "title": "Sample",
       "type": "array"
      },
-     "schedule_cron": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Schedule Cron"
-     },
-     "source_id": {
-      "format": "uuid",
-      "title": "Source Id",
-      "type": "string"
-     },
-     "source_object": {
-      "title": "Source Object",
-      "type": "string"
-     },
      "status": {
       "title": "Status",
-      "type": "string"
-     },
-     "target_dataset_id": {
-      "anyOf": [
-       {
-        "format": "uuid",
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Target Dataset Id"
-     },
-     "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
       "type": "string"
      }
     },
     "required": [
      "id",
-     "data_space_id",
-     "source_id",
-     "name",
-     "mode",
-     "source_object",
-     "target_dataset_id",
-     "cursor_column",
-     "cursor_value",
-     "schedule_cron",
-     "freshness_sla",
-     "dlq_retention_days",
-     "status",
-     "paused_reason",
-     "paused_at",
-     "consecutive_failures",
-     "created_at",
-     "updated_at",
-     "note"
+     "status"
     ],
     "title": "IngestionJobDryRun",
     "type": "object"
@@ -22806,12 +22712,36 @@
        }
       ]
      },
+     "merge_key_columns": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Merge Key Columns"
+     },
      "mode": {
       "title": "Mode",
       "type": "string"
      },
      "name": {
       "title": "Name",
+      "type": "string"
+     },
+     "on_invalid_record": {
+      "default": "quarantine_30d",
+      "title": "On Invalid Record",
+      "type": "string"
+     },
+     "on_schema_change": {
+      "default": "accept_new_columns",
+      "title": "On Schema Change",
       "type": "string"
      },
      "paused_at": {
@@ -22837,6 +22767,11 @@
       ],
       "title": "Paused Reason"
      },
+     "retry_policy": {
+      "default": "backoff_3",
+      "title": "Retry Policy",
+      "type": "string"
+     },
      "schedule_cron": {
       "anyOf": [
        {
@@ -22847,6 +22782,11 @@
        }
       ],
       "title": "Schedule Cron"
+     },
+     "skip_today": {
+      "default": false,
+      "title": "Skip Today",
+      "type": "boolean"
      },
      "source_id": {
       "format": "uuid",
@@ -22961,12 +22901,36 @@
       "title": "Id",
       "type": "string"
      },
+     "merge_key_columns": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Merge Key Columns"
+     },
      "mode": {
       "title": "Mode",
       "type": "string"
      },
      "name": {
       "title": "Name",
+      "type": "string"
+     },
+     "on_invalid_record": {
+      "default": "quarantine_30d",
+      "title": "On Invalid Record",
+      "type": "string"
+     },
+     "on_schema_change": {
+      "default": "accept_new_columns",
+      "title": "On Schema Change",
       "type": "string"
      },
      "paused_at": {
@@ -22992,6 +22956,11 @@
       ],
       "title": "Paused Reason"
      },
+     "retry_policy": {
+      "default": "backoff_3",
+      "title": "Retry Policy",
+      "type": "string"
+     },
      "schedule_cron": {
       "anyOf": [
        {
@@ -23002,6 +22971,11 @@
        }
       ],
       "title": "Schedule Cron"
+     },
+     "skip_today": {
+      "default": false,
+      "title": "Skip Today",
+      "type": "boolean"
      },
      "source_id": {
       "format": "uuid",
@@ -23195,6 +23169,20 @@
       ],
       "title": "Freshness Sla"
      },
+     "merge_key_columns": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Merge Key Columns"
+     },
      "mode": {
       "enum": [
        "full",
@@ -23210,6 +23198,54 @@
       "title": "Name",
       "type": "string"
      },
+     "on_invalid_record": {
+      "anyOf": [
+       {
+        "enum": [
+         "quarantine_30d",
+         "skip_and_log",
+         "stop"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "On Invalid Record"
+     },
+     "on_schema_change": {
+      "anyOf": [
+       {
+        "enum": [
+         "accept_new_columns",
+         "pause_and_ask",
+         "continue_and_notify"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "On Schema Change"
+     },
+     "retry_policy": {
+      "anyOf": [
+       {
+        "enum": [
+         "backoff_3",
+         "once",
+         "none"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Retry Policy"
+     },
      "schedule_cron": {
       "anyOf": [
        {
@@ -23221,6 +23257,17 @@
        }
       ],
       "title": "Schedule Cron"
+     },
+     "skip_today": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Skip Today"
      },
      "source_object": {
       "maxLength": 1000,
@@ -23247,6 +23294,24 @@
      "source_object"
     ],
     "title": "JobCreate",
+    "type": "object"
+   },
+   "JobDriftResolve": {
+    "properties": {
+     "action": {
+      "enum": [
+       "rebuild_full",
+       "accept_additive",
+       "pause"
+      ],
+      "title": "Action",
+      "type": "string"
+     }
+    },
+    "required": [
+     "action"
+    ],
+    "title": "JobDriftResolve",
     "type": "object"
    },
    "JobPatch": {
@@ -23276,6 +23341,20 @@
       ],
       "title": "Freshness Sla"
      },
+     "merge_key_columns": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Merge Key Columns"
+     },
      "name": {
       "anyOf": [
        {
@@ -23289,6 +23368,54 @@
       ],
       "title": "Name"
      },
+     "on_invalid_record": {
+      "anyOf": [
+       {
+        "enum": [
+         "quarantine_30d",
+         "skip_and_log",
+         "stop"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "On Invalid Record"
+     },
+     "on_schema_change": {
+      "anyOf": [
+       {
+        "enum": [
+         "accept_new_columns",
+         "pause_and_ask",
+         "continue_and_notify"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "On Schema Change"
+     },
+     "retry_policy": {
+      "anyOf": [
+       {
+        "enum": [
+         "backoff_3",
+         "once",
+         "none"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Retry Policy"
+     },
      "schedule_cron": {
       "anyOf": [
        {
@@ -23300,6 +23427,17 @@
        }
       ],
       "title": "Schedule Cron"
+     },
+     "skip_today": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Skip Today"
      }
     },
     "title": "JobPatch",
@@ -89988,6 +90126,149 @@
     ]
    }
   },
+  "/v1/job-samples/{id}": {
+   "get": {
+    "operationId": "getIngestionJobSample",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/IngestionJobDryRun"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Mẫu dữ liệu của lần chạy thử job nạp",
+    "tags": [
+     "Nạp dữ liệu"
+    ],
+    "x-capability": [
+     "admin_data"
+    ],
+    "x-use-cases": [
+     "UC-04-06"
+    ]
+   }
+  },
   "/v1/jobs": {
    "get": {
     "operationId": "listIngestionJobs",
@@ -90904,6 +91185,160 @@
      }
     ],
     "summary": "Tạm dừng, bắt buộc lý do",
+    "tags": [
+     "Nạp dữ liệu"
+    ],
+    "x-capability": [
+     "admin_data"
+    ],
+    "x-use-cases": [
+     "UC-04-09"
+    ]
+   }
+  },
+  "/v1/jobs/{id}:resolve-drift": {
+   "post": {
+    "description": "Clear schema_drift after the person accepts additive change, pauses, or asks a full rebuild.",
+    "operationId": "resolveIngestionJobDrift",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/JobDriftResolve"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/IngestionJobView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Xử lý thay đổi cấu trúc: nhận cột mới, tạm dừng hoặc nạp lại toàn bộ",
     "tags": [
      "Nạp dữ liệu"
     ],
@@ -117020,13 +117455,13 @@
       }
      },
      {
-      "description": "Check the job as create would, record nothing (200)",
+      "description": "Sample up to 1,000 source rows via worker-ingest; returns 202 Accepted",
       "in": "query",
       "name": "dry_run",
       "required": false,
       "schema": {
        "default": false,
-       "description": "Check the job as create would, record nothing (200)",
+       "description": "Sample up to 1,000 source rows via worker-ingest; returns 202 Accepted",
        "title": "Dry Run",
        "type": "boolean"
       }
@@ -117052,7 +117487,7 @@
            "$ref": "#/components/schemas/IngestionJobView"
           },
           {
-           "$ref": "#/components/schemas/IngestionJobDryRun"
+           "$ref": "#/components/schemas/services__api__modules__ingest__schemas__Accepted"
           }
          ],
          "title": "Response Createingestionjob"

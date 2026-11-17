@@ -148,7 +148,9 @@ class JobPatch(BaseModel):
     merge_key_columns: list[str] | None = None
 
 
-class DriftResolve(BaseModel):
+# Not "DriftResolve": acquire's body of /v1/schema-drifts/{id}:resolve has that name, and OpenAPI
+# keys schemas by class name, so the two overwrote each other in the frontend's generated types.
+class JobDriftResolve(BaseModel):
     action: Literal["rebuild_full", "accept_additive", "pause"]
 
 
