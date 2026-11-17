@@ -47,12 +47,12 @@ Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case
 | conflict | Conflict service | Khẳng định, xung đột, quy tắc giải quyết, thẩm quyền nguồn | P07 | 5 |
 | period | Period service | Lịch chốt, kỳ chốt, tệp kỳ, đối soát, số đã công bố, hồi tố | P10 | 6 |
 | pipeline | Pipeline service | Pipeline, lượt chạy, dòng dữ liệu, data mart, sản phẩm dữ liệu, ghi ngược | P06 | 6 |
-| ingest | Ingestion service | Job nạp, lượt chạy, bản ghi lỗi, tải tệp, quy tắc và kết quả chất lượng | P04, P06 | 6 |
+| ingest | Ingestion service | Job nạp, mẫu chạy thử, lượt chạy, bản ghi lỗi, tải tệp, quy tắc và kết quả chất lượng | P04, P06 | 7 |
 | audit | Audit service (CSDL riêng) | Nhật ký kiểm toán chuỗi băm, sự kiện bảo mật, bản xuất có chữ ký | P11 | 3 |
 | acquire | Acquisition service | Nguồn thu thập, phiên bản schema thu thập, lượt thu, trang gốc, bản ghi trích, quyết định duyệt, thay đổi cấu trúc, liên kết thực thể, danh mục thực thể chuẩn, đặc tả và lượt hợp nhất | P14 | 11 |
 | forecast | Forecast service | Việc dự báo, mô hình và phiên bản, backtest, kết quả dự báo, kịch bản, nhật ký độ chính xác, mô hình và tham số công thức, sổ dự báo | P15 | 10 |
 | exec | Exec vault service | Kho riêng lãnh đạo: kho và khoá bọc, luận điểm mã hoá, bằng chứng và điểm chấm niêm phong, bộ nhớ riêng, sổ truy cập khoá, bàn giao, bản công bố | P16 | 10 |
-| Tổng |  |  |  | 181 bảng, cộng một bảng outbox trong mỗi schema của dataagent (22 outbox) |
+| Tổng |  |  |  | 182 bảng, cộng một bảng outbox trong mỗi schema của dataagent (22 outbox) |
 
 ## D3. Danh mục thực thể
 
@@ -295,6 +295,7 @@ Mỗi bảng ghi mục đích, các use case đọc hoặc ghi nó (theo dòng �
 | Bảng | Mục đích | Use case dùng | So với v3.1 |
 | --- | --- | --- | --- |
 | ingestion\_job | Job nạp dữ liệu từ một nguồn | 04-06, 04-07, 04-09 | Giữ |
+| job\_sample | Mẫu chạy thử của job chưa tạo | 04-06 | Thêm 11/11/2026 (v3\_0035) |
 | job\_run | Một lần chạy job nạp | 04-06, 04-07, 04-09, 06-07 | Giữ |
 | dlq\_record | Bản ghi lỗi chờ xử lý | 04-07, 04-09 | Giữ |
 | file\_upload | Tệp CSV, Excel tải lên và ánh xạ cột | 04-08 | Giữ |
@@ -401,7 +402,7 @@ Ngoại lệ chỉ ghi thêm: svc\_period không có UPDATE, DELETE trên period
 | svc\_workspace | org, query, context |
 | svc\_skill | context, org, query |
 | svc\_document | org, catalog |
-| svc\_pipeline | catalog, org |
+| svc\_pipeline | catalog, context, org (context: quan hệ đã duyệt để dựng data mart, UC-06-06; v3\_0033) |
 | svc\_ingest | catalog, org |
 | svc\_acquire | catalog, context, governance, org |
 | svc\_forecast | acquire, catalog, context, org, query, skill |

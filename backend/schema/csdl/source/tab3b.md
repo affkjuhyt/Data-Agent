@@ -2955,13 +2955,40 @@ Job nạp dữ liệu từ một nguồn về vùng dữ liệu: toàn phần, g
 | schedule\_cron | text |  |
 | freshness\_sla | interval | Trễ quá hạn thì nguồn “Cần sửa” (BR-56) |
 | dlq\_retention\_days | integer, bắt buộc, mặc định 30 | BR-57 |
+| retry\_policy | text, bắt buộc, mặc định 'backoff\_3' | backoff\_3, once, none (RES-19) |
+| on\_schema\_change | text, bắt buộc, mặc định 'accept\_new\_columns' | accept\_new\_columns, pause\_and\_ask, continue\_and\_notify |
+| on\_invalid\_record | text, bắt buộc, mặc định 'quarantine\_30d' | quarantine\_30d, skip\_and\_log, stop |
+| skip\_today | boolean, bắt buộc, mặc định false | RES-17: bỏ ngày UTC hiện tại |
+| merge\_key\_columns | text\[\] | RES-17: khoá upsert khi incremental, CDC |
 | status | text, bắt buộc, mặc định 'active' | draft, active, paused, failing, schema\_drift |
 | paused\_reason | text | Bắt buộc khi tạm dừng (BR-106) |
 | paused\_at | timestamptz |  |
 | consecutive\_failures | smallint, bắt buộc, mặc định 0 |  |
 | deleted\_at | timestamptz | Xoá mềm |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (mode IN ('full','incremental','cdc')); CHECK (mode <> 'incremental' OR cursor\_column IS NOT NULL); CHECK (status IN ('draft','active','paused','failing','schema\_drift')); CHECK (status <> 'paused' OR paused\_reason IS NOT NULL).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (mode IN ('full','incremental','cdc')); CHECK (mode <> 'incremental' OR cursor\_column IS NOT NULL); CHECK (status IN ('draft','active','paused','failing','schema\_drift')); CHECK (status <> 'paused' OR paused\_reason IS NOT NULL); CHECK (retry\_policy IN ('backoff\_3','once','none')); CHECK (on\_schema\_change IN ('accept\_new\_columns','pause\_and\_ask','continue\_and\_notify')); CHECK (on\_invalid\_record IN ('quarantine\_30d','skip\_and\_log','stop')).
+
+#### ingest.job\_sample
+
+Mẫu chạy thử của một job chưa tạo: worker-ingest đọc thử nguồn, ghi mẫu và lỗi; không có dòng job. Use case: UC-04-06.
+
+| Cột | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| data\_space\_id | uuid, bắt buộc |  |
+| source\_id | uuid, bắt buộc | logic → catalog.source |
+| principal\_id | uuid, bắt buộc | Người chạy thử |
+| name | text, bắt buộc |  |
+| mode | text, bắt buộc | full, incremental, cdc |
+| source\_object | text, bắt buộc |  |
+| cursor\_column | text |  |
+| status | text, bắt buộc, mặc định 'running' | running, succeeded, failed |
+| sample | jsonb, bắt buộc, mặc định '\[\]' |  |
+| errors | jsonb, bắt buộc, mặc định '\[\]' |  |
+| note | text |  |
+| error | text |  |
+| finished\_at | timestamptz |  |
+
+Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (status IN ('running','succeeded','failed')); CHECK (mode IN ('full','incremental','cdc')).
 
 #### ingest.job\_run
 
