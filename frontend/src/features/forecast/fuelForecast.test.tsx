@@ -182,7 +182,9 @@ describe('ForecastLedgerPage', () => {
     expect(screen.getByText('134 đ/lít')).toBeInTheDocument();
     expect(screen.getByText('−38%')).toBeInTheDocument();
     expect(screen.getByText('N = 20 kỳ · cố định theo mô hình')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Kỳ' }).textContent).toContain(
+    // The period menu, not the table's sortable "Kỳ" header (a button too since 9957e802): only
+    // the menu's trigger carries aria-expanded.
+    expect(screen.getByRole('button', { name: 'Kỳ', expanded: false }).textContent).toContain(
       'Kỳ: 20 kỳ gần nhất · 19/02 – 02/07/2026',
     );
 
@@ -200,7 +202,7 @@ describe('ForecastLedgerPage', () => {
   it('shows a shorter window without changing the calibration', async () => {
     routeId = E5_LEDGER;
     show(<ForecastLedgerPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Kỳ' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Kỳ', expanded: false }));
     fireEvent.click(screen.getByRole('menuitem', { name: '10 kỳ gần nhất' }));
     await waitFor(() =>
       expect(

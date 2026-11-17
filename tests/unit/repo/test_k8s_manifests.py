@@ -370,6 +370,57 @@ class TestBackupsAreVerifiedNotAssumed:
         assert "gzip -t" in script
         assert "PostgreSQL database dump complete" in script
 
+    @pytest.mark.parametrize("env", ["dev", "production"])
+    def test_the_dump_waits_for_postgres(self, env):
+        """A run started while PostgreSQL restarted (03/11 and 16/11) failed at once and spent its
+        two retries within a minute, so no backup was taken that slot."""
+        script = self._script(K8S_DIR / env / "job" / "postgres-backup.yaml", "postgres-backup")
+        assert script.index("until pg_isready") < script.index("pg_dump --format")
+
+    @pytest.mark.parametrize("env", ["dev", "production"])
+    def test_every_database_the_stack_writes_is_dumped_and_a_failure_shows(self, env):
+        """PL-04: only `dataagent` was dumped, and `|| true` let a dump that died look fine."""
+        path = K8S_DIR / env / "job" / "postgres-backup.yaml"
+        script = self._script(path, "postgres-backup")
+        listed = next(
+            d["data"]["BACKUP_DATABASES"].split()
+            for d in _docs(path)
+            if d.get("kind") == "ConfigMap"
+        )
+        assert {"dataagent", "dataagent_audit", "temporal", "temporal_visibility"} <= set(listed)
+        code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+        assert "|| true" not in code and "set -o pipefail" in code
+        assert "for db in ${BACKUP_DATABASES}" in script and "exit 1" in script
+
+    @pytest.mark.parametrize("env", ["dev", "production"])
+    def test_the_object_and_vector_stores_are_backed_up(self, env):
+        """PL-04: MinIO and Qdrant had no backup at all."""
+        script = self._script(K8S_DIR / env / "job" / "store-backup.yaml", "store-backup")
+        code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+        assert "mc mirror" in code and "--remove" not in code
+        assert "/snapshots" in script and "tar -tf" in script
+        # Its own read-only MinIO user, never root (security review of 17/11).
+        assert "MINIO_ROOT" not in script and "STORE_BACKUP_MINIO_USER" in script
+
+    def test_store_backup_may_reach_the_stores_it_reads(self):
+        allowed = {
+            d["metadata"]["name"]: yaml.dump(d)
+            for d in _docs(MANIFEST_DIR / "networkpolicy-database.yaml")
+        }
+        for policy in ("allow-minio", "allow-qdrant"):
+            assert "app: store-backup" in allowed[policy], policy
+
+    @pytest.mark.parametrize("env", ["dev", "production"])
+    def test_squid_keeps_no_pid_file(self, env):
+        """/tmp outlives a container restart; the restarted Squid read its predecessor's PID file,
+        took itself for a second instance and exited, in a loop (16/11, 35 restarts)."""
+        conf = next(
+            d["data"]["squid.conf"]
+            for d in _docs(K8S_DIR / env / "service" / "egress-proxy.yaml")
+            if d.get("kind") == "ConfigMap"
+        )
+        assert re.search(r"^\s*pid_filename none\s*$", conf, re.M)
+
     def test_the_restore_verifies_before_it_drops(self):
         """Ordering is the whole point: verifying after the DROP means finding
         out the archive is truncated with the database already gone."""
@@ -910,12 +961,15 @@ class TestImageReferencesAreIntact:
         "qdrant/qdrant:v1.13.6",
         "apache/kafka:3.7.0",
         "bitnamilegacy/minio:2024.12.18-debian-12-r0",
-        "docker.io/clickhouse/clickhouse-server",
+        # PL-07: the moving tags are pinned to the build the cluster ran on 16/11/2026.
+        "docker.io/clickhouse/clickhouse-server:26.10.4.207"
+        "@sha256:4f491abc44d9f4a1747c033c35ddd5bc385521305d85ca8251ba0824ff597035",
         # Pinned: 2.7 dropped the file storage backend this deployment uses.
         "openbao/openbao:2.6.3",
-        "edoburu/pgbouncer:latest",
+        "edoburu/pgbouncer:latest@sha256:8638aa563607256d3c7440437534195f1066a92b68015d89ae9d6b935b444a6d",
         "quay.io/keycloak/keycloak:24.0",
-        "ghcr.io/berriai/litellm:main-stable",
+        "ghcr.io/berriai/litellm:main-stable"
+        "@sha256:b7b9e2c306343721802253d0dd9436b9634a2eb4e14da7c7cf06c5c7b7530802",
         "docker.io/langfuse/langfuse:3",
         "docker.io/langfuse/langfuse-worker:3",
         "prom/prometheus:v2.54.1",
@@ -952,6 +1006,18 @@ class TestImageReferencesAreIntact:
             if not i.startswith("dataagent/") and i not in self.KNOWN
         ]
         assert not bad, f"unexpected image — add it to KNOWN if deliberate: {bad}"
+
+    def test_no_third_party_image_moves_under_us(self):
+        """PL-07: `latest`, `main-stable` or no tag at all is whatever the registry serves on the
+        day of the pull, so two deploys of one commit can run two builds. Ours are tagged by the
+        build; another's moving tag is pinned by digest."""
+        moving = re.compile(r"(^[^:@]+$)|:(latest|[\w.-]*stable)$")
+        bad = [
+            f"{w}: {i}"
+            for w, i in self._images()
+            if not i.startswith("dataagent/") and "@sha256:" not in i and moving.search(i)
+        ]
+        assert not bad, f"third-party image on a moving tag, pin it by digest: {bad}"
 
     def test_our_images_all_carry_the_dataagent_prefix(self):
         bad = [

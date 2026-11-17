@@ -51,6 +51,10 @@ class RelationalProvider:
             or source.data_space_id != request.data_space_id
         ):
             raise PermissionError("source is outside the provider request scope")
+        if request.principal_id is None:
+            # The read is shaped by the person it is for (their policies, invariant 13): a request
+            # that names no one is refused, not run with nobody's rights.
+            raise PermissionError("a relational read needs the person it is read for")
 
         outcome = await run_query(
             org_id=request.org_id,

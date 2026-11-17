@@ -45,6 +45,7 @@ from services.api.modules.notify.schemas import (
     ChannelCallback,
     ChannelKind,
     ChannelPut,
+    ChannelRuleRow,
     ChannelRulesView,
     NotificationView,
     PrefsPut,
@@ -313,7 +314,9 @@ async def get_channel_rules(principal: CurrentPrincipal) -> ChannelRulesView:
         "mobile_push": {"text": "Cần liên kết", "tone": "warning"},
     }
     rows = [
-        {"kind": kind, "label": kind, "cells": cells, "note": "Phụ thuộc cài đặt cá nhân."}
+        ChannelRuleRow.model_validate(
+            {"kind": kind, "label": kind, "cells": cells, "note": "Phụ thuộc cài đặt cá nhân."}
+        )
         for kind in KINDS
     ]
     return ChannelRulesView(

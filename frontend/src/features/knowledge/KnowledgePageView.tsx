@@ -8,7 +8,6 @@ import { StatusDot } from '../../design-system/StatusDot';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Segmented } from '../../design-system/Segmented';
 import { Tabs } from '../../design-system/Tabs';
-import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { formatDate } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -16,14 +15,14 @@ import {
   getKnowledgePage,
   listKnowledgePages,
   listKnowledgePageVersions,
-  recompileKnowledgePage,
+  KNOWLEDGE_COMPOSER_PENDING,
   type KnowledgeClaim,
   type KnowledgeKind,
   type KnowledgePage,
   type KnowledgePageStatus,
   type KnowledgePageSummary,
 } from '../../lib/v1/knowledge';
-import { useV1, useV1Mutation } from '../../lib/v1/useV1';
+import { useV1 } from '../../lib/v1/useV1';
 
 /*
  * "P07 · Trang tri thức" (2405:14761, UC-07-10, UC-07-12): the compiled knowledge pages. The
@@ -144,16 +143,9 @@ function PageCard({
 }
 
 function Header({ page }: { page: KnowledgePage }) {
-  const toast = useToast();
   const status = STATUS[page.status];
   const valid = page.claims.filter((c) => c.status === 'valid').length;
   const expired = page.claims.length - valid;
-
-  const recompile = useV1Mutation(() => recompileKnowledgePage(page.id), {
-    onSuccess: () =>
-      toast({ tone: 'info', message: 'Đang biên soạn lại; bản mới chờ duyệt trước khi thay.' }),
-    onError: (e) => toast({ tone: 'error', message: `Không biên soạn lại được: ${e.message}` }),
-  });
 
   return (
     <PageHeader
@@ -181,10 +173,11 @@ function Header({ page }: { page: KnowledgePage }) {
         .join(' · ')}
       actions={
         <>
-          <Button loading={recompile.pending} onClick={() => recompile.run()}>
-            Biên soạn lại
-          </Button>
-          <Tooltip content="Trình sửa trang tri thức đang được làm; dùng “Biên soạn lại” để agent viết bản mới.">
+          {/* The api refuses a knowledge run with 501 until a composer exists (PL-03). */}
+          <Tooltip content={KNOWLEDGE_COMPOSER_PENDING}>
+            <Button disabled>Biên soạn lại</Button>
+          </Tooltip>
+          <Tooltip content="Trình sửa trang tri thức đang được làm.">
             <Button kind="primary" disabled>
               Đề xuất sửa
             </Button>

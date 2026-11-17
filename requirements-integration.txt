@@ -8,6 +8,9 @@ testcontainers[postgres,minio]>=4.7
 # service itself uses.
 psycopg2-binary>=2.9
 # Suites that migrate a fresh database run the alembic CLI the way the migrate
-# Job does (backend/alembic/env.py: SQLAlchemy async engine over asyncpg).
+# Job does. backend/alembic/env.py runs it over psycopg 3 (the migrate image's
+# driver: asyncpg cannot execute the multi-statement baseline), so CI's migrate
+# suite failed at its first revision without it.
 alembic>=1.13
 asyncpg>=0.29
+psycopg[binary]>=3.2

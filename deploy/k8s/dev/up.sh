@@ -44,7 +44,7 @@ done
 
 job setup
 job seed
-kubectl apply -f job/postgres-backup.yaml -f job/postgres-restore.yaml
+kubectl apply -f job/postgres-backup.yaml -f job/store-backup.yaml -f job/postgres-restore.yaml
 
 kubectl get pods -A -l app.kubernetes.io/part-of=dataagent
 kubectl get svc -A --field-selector spec.type=NodePort

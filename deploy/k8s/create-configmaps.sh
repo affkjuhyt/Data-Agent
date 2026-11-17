@@ -34,7 +34,7 @@ cm "$SVC" db-init-sql \
   --from-file=01-grants.sql=$K/sql/grant-roles.sql
 
 # GEN-04: demo data only where SEED_DEMO=1 (the deploy passes seed_demo): the demo
-# directory, DS-AW and its agents (applied by db-init from the optional
+# directory, DS-AW and its agents, DS-TLC (applied by db-init from the optional
 # db-init-demo-sql), DS-AW's documents (put in da-raw-docs by minio-init) and the
 # demo users of the realm. Without it they are removed, so an install that once
 # had them does not keep loading them; the Jobs mount these ConfigMaps optional.
@@ -46,6 +46,7 @@ if [ "${SEED_DEMO:-0}" = 1 ]; then
   cm "$SVC" db-init-demo-sql \
     --from-file=03-v3-demo-seed.sql=$K/sql/v3-demo-seed.sql \
     --from-file=04-v3-adventureworks-seed.sql=$K/sql/v3-adventureworks-seed.sql \
+    --from-file=05-v3-tlc-seed.sql=$K/sql/v3-tlc-seed.sql \
     --from-file=06-v3-adventureworks-context.sql=$K/sql/v3-adventureworks-context.sql \
     --from-file=06-v3-adventureworks-documents.sql=$K/sql/v3-adventureworks-documents.sql \
     --from-file=07-v3-agent-seed.sql=$K/sql/v3-agent-seed.sql \
@@ -64,5 +65,5 @@ cm "$SVC" keycloak-realm "${REALM[@]}"
 cm "$SVC" keycloak-scripts --from-file=$K/keycloak/setup-audience-mappers.sh
 cm "$SVC" kong-scripts     --from-file=$K/kong/kong-setup.sh
 cm "$SVC" litellm-config   --from-file=config.yaml=$K/litellm/config.yaml
-cm "$SVC" prometheus-config --from-file=$K/monitoring/prometheus.yml
+cm "$SVC" prometheus-config --from-file=$K/monitoring/prometheus.yml --from-file=$K/monitoring/rules.yml
 

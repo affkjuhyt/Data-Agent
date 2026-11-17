@@ -21,6 +21,19 @@ from libs import vectors
 log = logging.getLogger(__name__)
 
 
+@dataclass
+class Usage:
+    """How often one optional half was really called and answered. A configured endpoint that
+    never answers looks, from outside, exactly like a working one; this is what tells them apart."""
+
+    attempts: int = 0
+    ok: int = 0
+
+    @property
+    def ok_rate(self) -> float | None:
+        return round(self.ok / self.attempts, 4) if self.attempts else None
+
+
 @dataclass(frozen=True)
 class Target:
     qdrant_collection: str
@@ -46,6 +59,8 @@ class SearchServices:
         self._route = embed_route
         self._rerank = rerank_url.rstrip("/") if rerank_url else None
         self._timeout = timeout
+        self.dense_usage = Usage()
+        self.rerank_usage = Usage()
 
     @property
     def reranks(self) -> bool:
@@ -61,6 +76,7 @@ class SearchServices:
         """(chunk id, cosine) best first, over the collections' points of their current model."""
         if self._qdrant is None or not self._embed or not targets:
             return []
+        self.dense_usage.attempts += 1
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 r = await client.post(
@@ -71,12 +87,14 @@ class SearchServices:
                 r.raise_for_status()
                 vector = r.json()["data"][0]["embedding"]
             # BR-18: each collection is read for the points of its own current model only.
-            return await vectors.nearest(
+            found = await vectors.nearest(
                 self._qdrant,
                 [vectors.Target(t.qdrant_collection, t.embed_model) for t in targets],
                 vector,
                 limit,
             )
+            self.dense_usage.ok += 1
+            return found
         except (
             httpx.HTTPError,
             ResponseHandlingException,
@@ -92,6 +110,7 @@ class SearchServices:
         """One relevance score per text, in input order; None when the reranker is unavailable."""
         if not self._rerank or not texts:
             return None
+        self.rerank_usage.attempts += 1
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 r = await client.post(
@@ -102,7 +121,8 @@ class SearchServices:
                 scores = [0.0] * len(texts)
                 for item in r.json():
                     scores[int(item["index"])] = float(item["score"])
-                return scores
+            self.rerank_usage.ok += 1
+            return scores
         except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
             log.warning("document reranker unavailable", exc_info=True)
             return None

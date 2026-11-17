@@ -271,13 +271,15 @@ async def _released_model(
     )
     if frequency is not None:
         query = query.where(fc.ForecastModel.frequency == frequency)
-    return await session.scalar(query)
+    # Typed: the session is Any here, so what it returns is too.
+    model: fc.ForecastModel | None = await session.scalar(query)
+    return model
 
 
 async def _any_released_model(
     session: Any, ctx: ToolContext, metric: str, scope: dict[str, Any]
 ) -> fc.ForecastModel | None:
-    return await session.scalar(
+    model: fc.ForecastModel | None = await session.scalar(
         select(fc.ForecastModel)
         .where(
             fc.ForecastModel.org_id == ctx.org_id,
@@ -290,6 +292,7 @@ async def _any_released_model(
         .order_by(fc.ForecastModel.updated_at.desc())
         .limit(1)
     )
+    return model
 
 
 async def _current_job(
@@ -299,7 +302,7 @@ async def _current_job(
     horizon: int,
     scope: dict[str, Any],
 ) -> fc.ForecastJob | None:
-    candidate = await session.scalar(
+    candidate: fc.ForecastJob | None = await session.scalar(
         select(fc.ForecastJob)
         .where(
             fc.ForecastJob.org_id == ctx.org_id,

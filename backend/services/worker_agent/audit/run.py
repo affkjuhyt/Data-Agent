@@ -60,7 +60,7 @@ def _col(name: str, alias: str = "t") -> exp.Column:
     return exp.column(name, table=alias, quoted=True)
 
 
-def _count(arg: exp.Expression | None = None, *, distinct: bool = False) -> exp.Expression:
+def _count(arg: exp.Expr | None = None, *, distinct: bool = False) -> exp.Expr:
     if arg is None:
         return exp.Count(this=exp.Star())
     return exp.Count(this=exp.Distinct(expressions=[arg]) if distinct else arg)
@@ -74,13 +74,13 @@ class Builder:
             target.dataset.table_name, db=target.dataset.schema_name, quoted=True, alias="t"
         )
         self.dialect = dialect
-        self.where: exp.Expression | None = (
+        self.where: exp.Expr | None = (
             exp.EQ(this=_col(target.date_column), expression=exp.Literal.string(str(snapshot)))
             if snapshot is not None and target.date_column
             else None
         )
 
-    def _select(self, *cols: exp.Expression) -> exp.Select:
+    def _select(self, *cols: exp.Expr) -> exp.Select:
         q = exp.select(*cols).from_(self.table.copy())
         return q.where(self.where.copy()) if self.where is not None else q
 
@@ -92,7 +92,7 @@ class Builder:
         )
 
     def counts(self, columns: Sequence[Column]) -> str:
-        cols: list[exp.Expression] = [_count()]
+        cols: list[exp.Expr] = [_count()]
         for c in columns:
             cols += [_count(_col(c.name)), _count(_col(c.name), distinct=True)]
             if c.pii or c.kind == "boolean":

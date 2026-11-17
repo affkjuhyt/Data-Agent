@@ -112,6 +112,21 @@ frontend-lint:  ## tsc --noEmit
 frontend-test:  ## vitest
 	npm --workspace frontend run test
 
+# PL-15: every package the service images and the frontend ship, with its licence; fails on a
+# forbidden one (tools/licenses.json). Scans the images last built (make deploy-local builds
+# them), so rerun after a requirements change and commit THIRD-PARTY-NOTICES.md with it.
+LICENSE_IMAGES = api worker-agent worker-ingest worker-document crawler ml-forecast python-sandbox
+.PHONY: licenses
+
+licenses:  ## write THIRD-PARTY-NOTICES.md from the service images and the npm lock; fail on a forbidden licence
+	@out=$$(mktemp -d); trap 'rm -rf "$$out"' EXIT; \
+	for s in $(LICENSE_IMAGES); do \
+	  docker run --rm --entrypoint python -v "$(PWD)/tools:/tools:ro" "$(IMAGE_REGISTRY)/dataagent/$${s}:latest" \
+	    -I /tools/licenses.py scan --component "$$s" > "$$out/$$s.json" || exit 1; \
+	done; \
+	python3 tools/licenses.py npm --lock package-lock.json --component frontend > "$$out/frontend.json"; \
+	python3 tools/licenses.py report "$$out"/*.json --notices THIRD-PARTY-NOTICES.md
+
 ci: lint type test frontend-lint frontend-test design-audit  ## everything CI runs, locally
 
 # The serving benchmark talks to the GPU host over the LAN and, for
@@ -204,6 +219,25 @@ adventureworks: dev-tools  ## load AdventureWorksDW into the cluster's PostgreSQ
 	@$(AW_LOAD) sql --cache /cache --reader "$(AW_READER)" | $(AW_PSQL) -d "$(AW_DATABASE)"
 	@$(AW_PSQL) -d "$(AW_DATABASE)" -tAc "SELECT 'fact_internet_sales rows: ' || count(*) FROM fact_internet_sales"
 
+# NYC TLC Trip Record Data, the real dataset of DS-TLC (tests/e2e/tlc, EV-01): the Parquet months,
+# zone table and data dictionaries pinned by sha256 in sources.json, loaded as published (bad rows
+# included) into their own database, readable by TLC_READER. Rerunning reloads it in one
+# transaction; the cache keeps the ~170 MB download. nyc.gov terms: internal evaluation only.
+TLC_CACHE ?= $(HOME)/.cache/dataagent/tlc
+TLC_DATABASE ?= tlc_trips
+TLC_READER ?= app_user
+TLC_LOAD = docker run --rm -i -v "$(PWD)/tests/e2e/tlc:/tlc:ro" -v "$(TLC_CACHE):/cache" \
+	$(DEV_TOOLS_IMAGE) python -I /tlc/load.py
+.PHONY: tlc
+
+tlc: dev-tools  ## load the NYC TLC trip snapshot into the cluster's PostgreSQL (TLC_DATABASE, TLC_READER)
+	@mkdir -p "$(TLC_CACHE)" && $(TLC_LOAD) fetch --cache /cache
+	@$(AW_PSQL) -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$(TLC_DATABASE)'" | grep -q 1 || \
+	  $(AW_PSQL) -d postgres -c 'CREATE DATABASE "$(TLC_DATABASE)"'
+	@$(AW_PSQL) -d postgres -c 'GRANT CONNECT ON DATABASE "$(TLC_DATABASE)" TO "$(TLC_READER)"'
+	@$(TLC_LOAD) sql --cache /cache --reader "$(TLC_READER)" | $(AW_PSQL) -d "$(TLC_DATABASE)"
+	@$(AW_PSQL) -d "$(TLC_DATABASE)" -tAc "SELECT source_file || ': ' || count(*) FROM (SELECT source_file FROM yellow_trip UNION ALL SELECT source_file FROM green_trip) t GROUP BY source_file ORDER BY source_file"
+
 # The document corpus of DS-AW (tests/e2e/adventureworks/documents.py): the files of
 # deploy/docker/adventureworks-docs/ read by worker-document's own extractor and chunker, written as
 # the db-init seed. Rerun after editing a file or the pipeline; a stale seed fails the unit tests.
@@ -215,6 +249,79 @@ adventureworks-documents:  ## regenerate the DS-AW document seed from deploy/doc
 	  -e PYTHONDONTWRITEBYTECODE=1 $(IMAGE_REGISTRY)/dataagent/worker-document:latest \
 	  python tests/e2e/adventureworks/documents.py sql > $(AW_DOCUMENTS_SEED).tmp \
 	  && mv $(AW_DOCUMENTS_SEED).tmp $(AW_DOCUMENTS_SEED)
+
+# PoC-1 / DI-01: the 30 bake-off documents labelled by two people in Label Studio
+# (model/eval/docs/labelstudio/README.md). The documents and Label Studio's data stay on this
+# machine, outside the repo (licences differ, scans may hold personal data); the repo keeps
+# tests/data/docs-bakeoff/sources.json and the reconciled gold/. Label Studio listens on
+# 127.0.0.1 only. The image is pinned by digest: 1.23.2, released 29/09/2026.
+BAKEOFF_DOCS ?= $(HOME)/.cache/dataagent/docs-bakeoff
+BAKEOFF_LABELS = $(PWD)/model/eval/docs/labelstudio
+LABELSTUDIO_IMAGE ?= heartexlabs/label-studio:1.23.2@sha256:afcc516a22775a39d0d66f4c2ddc95d01be3e3d3862b21fcf4f9de34b4ad4e12
+LABELSTUDIO_DATA ?= $(HOME)/.cache/dataagent/labelstudio
+LABELSTUDIO_PORT ?= 8080
+GOLD_OUT ?= $(BAKEOFF_DOCS)/gold-$(ANNOTATOR)
+BAKEOFF_CONVERT = python -I /labels/convert.py
+.PHONY: labelstudio labelstudio-stop bakeoff-render bakeoff-gold bakeoff-agree
+
+labelstudio:  ## run Label Studio on 127.0.0.1:LABELSTUDIO_PORT over BAKEOFF_DOCS (bake-off labelling)
+	@mkdir -p "$(LABELSTUDIO_DATA)" "$(BAKEOFF_DOCS)"
+	@docker start dataagent-labelstudio >/dev/null 2>&1 || docker run -d --name dataagent-labelstudio \
+	  -p 127.0.0.1:$(LABELSTUDIO_PORT):8080 \
+	  -v "$(LABELSTUDIO_DATA):/label-studio/data" -v "$(BAKEOFF_DOCS):/label-studio/files/bakeoff:ro" \
+	  -e LOCAL_FILES_SERVING_ENABLED=true -e LOCAL_FILES_DOCUMENT_ROOT=/label-studio/files \
+	  $(LABELSTUDIO_IMAGE) >/dev/null
+	@echo "Label Studio: http://127.0.0.1:$(LABELSTUDIO_PORT)"
+
+labelstudio-stop:  ## stop Label Studio (its data stays in LABELSTUDIO_DATA)
+	@docker stop dataagent-labelstudio >/dev/null && echo stopped
+
+bakeoff-render: dev-tools  ## page images and Label Studio tasks of BAKEOFF_DOCS; update tests/data/docs-bakeoff/sources.json
+	@docker run --rm -v "$(BAKEOFF_DOCS):/docs" -v "$(BAKEOFF_LABELS):/labels:ro" \
+	  $(IMAGE_REGISTRY)/dataagent/worker-document:latest $(BAKEOFF_CONVERT) render --docs /docs
+	@docker run --rm -v "$(BAKEOFF_DOCS):/docs:ro" -v "$(BAKEOFF_LABELS):/labels:ro" \
+	  -v "$(PWD)/tests/data/docs-bakeoff:/out" $(DEV_TOOLS_IMAGE) \
+	  $(BAKEOFF_CONVERT) manifest --docs /docs --out /out/sources.json
+
+bakeoff-gold: dev-tools  ## one annotator's gold: EXPORT (under BAKEOFF_DOCS) ANNOTATOR=<id|email> [GOLD_OUT]
+	@test -n "$(EXPORT)" -a -n "$(ANNOTATOR)" || { echo "EXPORT and ANNOTATOR are required"; exit 2; }
+	@mkdir -p "$(GOLD_OUT)" && docker run --rm -v "$(BAKEOFF_DOCS):/docs:ro" -v "$(BAKEOFF_LABELS):/labels:ro" \
+	  -v "$(GOLD_OUT):/out" $(DEV_TOOLS_IMAGE) \
+	  $(BAKEOFF_CONVERT) gold --docs /docs --export "/docs/$(EXPORT)" --annotator "$(ANNOTATOR)" --out /out
+
+bakeoff-agree: dev-tools  ## where annotators A and B differ (their gold-A, gold-B under BAKEOFF_DOCS)
+	@test -n "$(A)" -a -n "$(B)" || { echo "A and B are required"; exit 2; }
+	@docker run --rm -v "$(BAKEOFF_DOCS):/docs:ro" -v "$(BAKEOFF_LABELS):/labels:ro" $(DEV_TOOLS_IMAGE) \
+	  $(BAKEOFF_CONVERT) agree --a "/docs/gold-$(A)" --b "/docs/gold-$(B)"
+
+# EV-01: NYC 311 (erm2-nwe9) pulled into a fixed snapshot the real-data evaluation's gold answers
+# are defined on (tests/e2e/nyc311/collect.py, docs/blueprint/DATASET_AND_EVALUATION.md §2). The rows
+# stay in NYC311_CACHE (outside the repo: the terms are to be confirmed, the data is not shared);
+# the manifest, row hashes and window, goes to model/eval/snapshots/. SOCRATA_APP_TOKEN from the
+# environment (the portal throttles the shared pool without one). A pull with the same snapshot id
+# that does not reproduce the manifest is refused: pull a new id.
+NYC311_CACHE ?= $(HOME)/.cache/dataagent/nyc311
+NYC311_SNAPSHOT ?= S3-2025Q1
+NYC311_START ?= 2025-01-01
+NYC311_END ?= 2025-04-01
+NYC311_RUN = docker run --rm --user "$$(id -u):$$(id -g)" -v "$(PWD):/src" -w /src \
+	-v "$(NYC311_CACHE):/cache" -e SOCRATA_APP_TOKEN $(DEV_TOOLS_IMAGE) python -I tests/e2e/nyc311/collect.py
+.PHONY: nyc311-snapshot nyc311-drift
+
+nyc311-snapshot: dev-tools  ## pull NYC 311 into a fixed snapshot (NYC311_SNAPSHOT, NYC311_START, NYC311_END)
+	@mkdir -p "$(NYC311_CACHE)" && $(NYC311_RUN) pull --cache /cache --snapshot "$(NYC311_SNAPSHOT)" \
+	  --start "$(NYC311_START)" --end "$(NYC311_END)"
+
+nyc311-drift: dev-tools  ## count the NYC 311 rows the portal changed since a snapshot (NYC311_SNAPSHOT)
+	@$(NYC311_RUN) drift --cache /cache --snapshot "$(NYC311_SNAPSHOT)"
+
+# PL-04: the latest backups (RUNBOOK §9a) restored into throwaway pods of the current kubectl
+# context and compared with the live stores; nothing live is written. Standard library + kubectl,
+# so it runs on the host. RESTORE_DRILL_ARGS: --keep leaves the pods.
+.PHONY: restore-drill
+
+restore-drill:  ## restore the latest backups into throwaway pods and compare them with the live stores
+	@python3 tests/ops/restore_drill.py $(RESTORE_DRILL_ARGS)
 
 # R1-06: a Data Space's semantic model as YAML, read and written in the api pod with its
 # svc_context credentials. SEMANTIC_ORG is the organisation's id; an import is a dry run unless

@@ -397,8 +397,9 @@ async def test_follow_a_calendar_with_in_app_always_on(cal: Org) -> None:
     assert events[0][1]["calendar_id"] == made["id"] and events[1][1]["status"] == "paused"
 
 
-# AC-08-08-04
 async def test_run_the_bulletin_now(cal: Org) -> None:
+    # No worker prepares a bulletin yet (event_bulletin.requested had no handler): a manual run
+    # is refused at once, after the role and state checks, and writes nothing.
     async with client(cal) as api:
         made = await _create(api, cal)
         event = seed_event(cal, made["id"], "2099-07-09T15:00:00+07:00")
@@ -408,40 +409,33 @@ async def test_run_the_bulletin_now(cal: Org) -> None:
         started = await api.post(
             url, json={"reason": "Giá dầu thế giới tăng mạnh"}, headers=cal.headers("steward")
         )
-        assert started.status_code == 202, started.text
-        bulletin = started.json()["id"]
-        assert started.headers["Location"] == f"/v1/event-bulletins/{bulletin}"
-        assert started.json()["status"] == "preparing"
+        assert started.status_code == 501, started.text
+        assert started.json()["code"] == "not_available"
+        assert (
+            cal.one("SELECT count(*) FROM monitor.event_bulletin WHERE event_id = %s", event) == 0
+        )
+        # A pre bulletin already being prepared is still a conflict, not a refusal.
+        pre = cal.seed.row("monitor.event_bulletin", org_id=cal.org, event_id=event, kind="pre")
         again = await api.post(url, json={}, headers=cal.headers("steward"))
         assert again.status_code == 409
-        # The forecast agent finished it; a second manual run re-issues the same pre bulletin.
+        # Reading a bulletin the forecast agent sent is unchanged.
         ledger = uuid.uuid4()
         cal.run(
             "UPDATE monitor.event_bulletin SET status = 'sent', sent_at = now(), ledger_entry_ids = %s::uuid[]"
             " WHERE id = %s",
             [str(ledger)],
-            bulletin,
+            pre,
         )
-        read = await api.get(f"/v1/event-bulletins/{bulletin}", headers=cal.headers("colleague"))
+        read = await api.get(f"/v1/event-bulletins/{pre}", headers=cal.headers("colleague"))
         assert read.status_code == 200, read.text
         assert read.json()["status"] == "sent" and read.json()["kind"] == "pre"
         assert read.json()["ledger_entry_links"] == [f"/v1/forecast-ledger/{ledger}"]
-        assert read.json()["content"]["manual_run"]["reason"] == "Giá dầu thế giới tăng mạnh"
-        reissued = await api.post(url, headers=cal.headers("steward"))
-        assert reissued.status_code == 202, reissued.text
-        assert reissued.json()["id"] == bulletin
         hidden = await api.get(
-            f"/v1/event-bulletins/{bulletin}", headers=cal.headers("owner", cal.other)
+            f"/v1/event-bulletins/{pre}", headers=cal.headers("owner", cal.other)
         )
         assert hidden.status_code == 404
-        no_cap = await api.get(f"/v1/event-bulletins/{bulletin}", headers=cal.headers("nocap"))
+        no_cap = await api.get(f"/v1/event-bulletins/{pre}", headers=cal.headers("nocap"))
         assert no_cap.status_code == 403
         missing = await api.get(f"/v1/event-bulletins/{uuid.uuid4()}", headers=cal.headers("owner"))
         assert missing.status_code == 404
-    assert (
-        cal.one("SELECT status FROM monitor.event_bulletin WHERE id = %s", bulletin) == "preparing"
-    )
-    requested = [p for e, p in cal.events("monitor", bulletin) if e == "event_bulletin.requested"]
-    assert len(requested) == 2
-    assert requested[0]["event_id"] == str(event) and requested[0]["trigger"] == "manual"
-    assert requested[0]["requested_by"] == str(cal.users["steward"])
+    assert [e for e, _ in cal.events("monitor", pre) if e == "event_bulletin.requested"] == []

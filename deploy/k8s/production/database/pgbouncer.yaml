@@ -78,7 +78,9 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: pgbouncer
-        image: edoburu/pgbouncer:latest
+        # Pinned (PL-07) to the build the cluster ran on 16/11/2026, PgBouncer 1.26.1: :latest moved under
+        # every pull. Multi-arch index digest.
+        image: edoburu/pgbouncer:latest@sha256:8638aa563607256d3c7440437534195f1066a92b68015d89ae9d6b935b444a6d
         ports:
         - containerPort: 8390
           name: http

@@ -21,7 +21,9 @@ replaced): retrieval's validity filter is scored with the rest.
         < model/eval/cases/retrieval.jsonl
 
 The report says which halves ran (dense needs QDRANT_URL and an embeddings endpoint, rerank
-DOCUMENT_RERANK_URL): a keyword-only number is not a baseline for the full stack.
+DOCUMENT_RERANK_URL): `halves` is what answered during the run, `usage` the calls behind it, so
+a configured but unreachable endpoint shows as not run. A keyword-only number is not a baseline
+for the full stack.
 """
 
 from __future__ import annotations
@@ -43,11 +45,14 @@ from sqlalchemy import select
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import org
 from services.worker_agent.documents.retrieve import Passage, retrieve
-from services.worker_agent.documents.search import SearchServices, services_from_env
+from services.worker_agent.documents.search import SearchServices, Usage, services_from_env
 
 ROLE = "svc_qa"
 LIMIT = 10
 CUTOFFS = (1, 3, 10)
+# A half counts as having run when this share of its calls answered; one dropped call in a
+# run of 156 still measures the full stack, a dead endpoint does not.
+RAN_AT = 0.95
 EXPECTS = ("found", "not_found")
 
 _SPACE = re.compile(r"\s+")
@@ -183,10 +188,38 @@ def _rates(results: list[Result]) -> dict[str, Any]:
     return out
 
 
+def _ran(usage: Usage) -> bool:
+    return usage.attempts > 0 and usage.ok / usage.attempts >= RAN_AT
+
+
+def halves(services: SearchServices) -> dict[str, bool]:
+    """Which halves actually ran, not which are configured: on 12/11/2026 a run with every
+    dense and rerank call failing (TEI unreachable) still reported dense and rerank, and its
+    keyword-only numbers were read as the full stack's baseline."""
+    return {
+        "keyword": True,
+        "dense": _ran(services.dense_usage),
+        "rerank": _ran(services.rerank_usage),
+    }
+
+
+def _usage(configured: bool, usage: Usage) -> dict[str, Any]:
+    return {
+        "configured": configured,
+        "attempts": usage.attempts,
+        "ok": usage.ok,
+        "ok_rate": usage.ok_rate,
+    }
+
+
 def summarize(results: list[Result], services: SearchServices) -> dict[str, Any]:
     tags = sorted({t for r in results for t in r.case.tags})
     return {
-        "halves": {"keyword": True, "dense": services.dense_configured, "rerank": services.reranks},
+        "halves": halves(services),
+        "usage": {
+            "dense": _usage(services.dense_configured, services.dense_usage),
+            "rerank": _usage(services.reranks, services.rerank_usage),
+        },
         "overall": _rates(results) if results else {"cases": 0},
         "by_tag": {t: _rates([r for r in results if t in r.case.tags]) for t in tags},
         "misses": [
@@ -249,6 +282,14 @@ def main(argv: list[str] | None = None, stdin: TextIO = sys.stdin) -> None:
         with open(args.cases, encoding="utf-8") as f:
             cases = parse_cases(f)
     report = asyncio.run(run(args.org, args.space, cases, services_from_env(), limit=args.limit))
+    for half, usage in report["usage"].items():
+        if usage["configured"] and not report["halves"][half]:
+            print(
+                f"warning: {half} is configured but did not run "
+                f"({usage['ok']}/{usage['attempts']} calls answered); "
+                "this report is not a full-stack baseline",
+                file=sys.stderr,
+            )
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 

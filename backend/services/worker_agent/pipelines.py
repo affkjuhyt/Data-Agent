@@ -84,7 +84,7 @@ _INNER = "da_inner_query"
 _CHAIN_TAIL = re.compile(r" SELECT \* FROM s\d+$")
 
 
-def over(inner: str, dialect: str, *columns: exp.Expression, limit: int | None = None) -> str:
+def over(inner: str, dialect: str, *columns: exp.Expr, limit: int | None = None) -> str:
     """A SELECT over `inner` (the steps' query, in the source's own dialect and kept verbatim),
     written in `dialect`: quoting, the cast of a total and LIMIT/TOP are the source's. Written as
     PostgreSQL, `sum("amount")` is the sum of a string literal on MySQL, 0 at every step, and the
@@ -104,7 +104,7 @@ def over(inner: str, dialect: str, *columns: exp.Expression, limit: int | None =
     return outer.replace(_INNER, f"({inner})", 1)
 
 
-def total(column: str, dialect: str) -> exp.Expression:
+def total(column: str, dialect: str) -> exp.Expr:
     """SUM(column) as an exact decimal: PostgreSQL's unbounded NUMERIC; elsewhere 38 digits with
     10 after the point (a bare DECIMAL is DECIMAL(10, 0) on MySQL and would round the total)."""
     kind = "NUMERIC" if dialect == "postgres" else "DECIMAL(38, 10)"

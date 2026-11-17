@@ -232,6 +232,24 @@ provider currently enabled for AdventureWorks and delegates to the existing scop
 added without changing question/SSE response shapes; the envelope keeps query-run provenance,
 trust, warnings, truncation, and JSON-safe values.
 
+### Metrics (PL-05)
+
+Prometheus (`prometheus` in `dataagent-service`, port 8400) scrapes the api's `/metrics` (port
+8290, outside /v1, so not through Kong) and each worker's (worker-agent 8291, worker-ingest 8292,
+worker-document 8293) every 5 s; `deploy/docker/monitoring/rules.yml` records the numbers below once
+a minute. `kubectl -n dataagent-service port-forward deploy/prometheus 8400` and open
+http://localhost:8400:
+
+| Query | What |
+| --- | --- |
+| `dataagent:question_seconds:p50_5m`, `…:p95_5m` | the time of a question: worker-agent's `question.received`, from claim to answer (the poll wait aside) |
+| `dataagent:http_request_seconds:p95_5m` | the api's p95 per route template |
+| `dataagent:http_5xx:ratio_5m` | the api's share of 5xx |
+| `dataagent:events_error:ratio_5m` | the share of outbox events a handler failed, per worker and type |
+| `time() - dataagent_worker_last_poll_timestamp_seconds` | seconds since a worker last finished a pass: a growing value is a stuck loop |
+
+Labels are route templates, event types and outcomes, never an id (`libs/metrics`).
+
 ## 5. Demo data
 
 With `seed_demo: true` (the dev inventory's setting) the `db-init` Job loads:
@@ -240,6 +258,7 @@ With `seed_demo: true` (the dev inventory's setting) the `db-init` Job loads:
 | --- | --- |
 | `deploy/docker/sql/v3-demo-seed.sql` | V3 demo organisation directory: `helios-engineer` (Data Engineer role) and `helios-viewer` (Viewer role: `ask` + `view_aggregate`, for the screen-audit harness). It opens no Data Space: the former `DS-DEMO` and the synthetic pilot `DS-BH` are archived on a cluster that still has them (their rows stay, hidden), DS-DEMO's membership is removed and the pilot's `workspace.pilot_*` tables are dropped. AdventureWorks is the only test data |
 | `deploy/docker/sql/v3-adventureworks-seed.sql` | `DS-AW` "AdventureWorks": the Data Space the product is tested on and its PostgreSQL source, the database `adventureworks_dw` read as `app_user` (OpenBao `demo-postgres`). Members: engineer, admin, and viewer (narrow capabilities). The data itself is loaded by `make adventureworks` (below); the schema scan, the semantic model (`deploy/docker/semantic/ds-aw.yaml` through `make semantic-import`) and the reviews are left to the product. It also registers two untrained forecast definitions (no version): company `DOANH_THU`, monthly, and the same metric scoped to product category Bikes (`nhom_hang` = `Bikes`) |
+| `deploy/docker/sql/v3-tlc-seed.sql` | `DS-TLC` "NYC Taxi": the real dataset of the evaluation (EV-01) and its PostgreSQL source, the database `tlc_trips` read as `app_user`. Same members as DS-AW. The data is loaded by `make tlc` (below); scan, semantic model (`deploy/docker/semantic/ds-tlc.yaml`) and reviews are left to the product |
 | `deploy/docker/sql/v3-adventureworks-context.sql` | `DS-AW`: 28 verified queries (R1-08) and the eval set "Câu hỏi AdventureWorks" (R1-12, the 61 cases of `deploy/docker/eval/ds-aw-cases.yaml`, blind sheet `docs/v3/eval/ds-aw-blind-sheet.md`). Seeded before the scan: a verified query's tables resolve to the scanned datasets when it runs |
 | `deploy/docker/sql/v3-adventureworks-documents.sql` | `DS-AW`'s documents, two collections: Vietnamese business documents of the fictional Adventure Works Cycles (metric definitions and the decision that replaces them, promotions with the dates of `dim_promotion`, budget policy, call-centre procedure, a final and a contradicting preliminary quarterly report, a letter carrying a prompt injection) and the eight genuine AdventureWorks product manuals with an English return policy. The files are `deploy/docker/adventureworks-docs/`, put in `da-raw-docs` by `minio-init`; pages and chunks are generated with worker-document's own extractor and chunker by `make adventureworks-documents` (a stale seed fails the worker-document unit suite). `model/eval/cases/retrieval.jsonl` is scored over them (`make eval-retrieval`) |
 | `deploy/docker/sql/v3-agent-seed.sql` | `DS-AW`: four agents (biên gộp Internet, doanh thu theo kênh, tồn kho, điều phối), their runs (running, waiting for a person, failed, succeeded, one lead run with two delegated ones), a rolling deployment, one skill waiting for review and one suggestion; the figures in their narratives are AdventureWorksDW's. Re-applied, the runs move back into the last day so the operations screen stays populated. Read by `tests/integration/test_agent_screens_e2e.py` |
@@ -252,6 +271,14 @@ With `seed_demo: true` (the dev inventory's setting) the `db-init` Job loads:
 make adventureworks
 make semantic-import SEMANTIC_ORG=a0000000-0000-0000-0000-000000000001 SEMANTIC_SPACE=DS-AW \
      SEMANTIC_AS=helios-engineer SEMANTIC_FILE=deploy/docker/semantic/ds-aw.yaml SEMANTIC_APPLY=1
+```
+
+**NYC TLC trip records** (City of New York, nyc.gov terms of use: internal evaluation only, not redistributed) are the real dataset. `make tlc` fetches snapshot `TLC-2024Q1` pinned in `tests/e2e/tlc/sources.json` (yellow trips January–March 2024, green January–March 2023 and 2024, the zone table and the data dictionaries; ~170 MB, cached in `~/.cache/dataagent/tlc`) and reloads the database `tlc_trips` in one transaction (~9.7 million trips, about a minute), as published: the bad rows stay, they are what the quality checks and the eval are about. Then scan the DS-TLC source and import its model:
+
+```bash
+make tlc
+make semantic-import SEMANTIC_ORG=a0000000-0000-0000-0000-000000000001 SEMANTIC_SPACE=DS-TLC \
+     SEMANTIC_AS=helios-engineer SEMANTIC_FILE=deploy/docker/semantic/ds-tlc.yaml SEMANTIC_APPLY=1
 ```
 
 Everything is idempotent. Beyond the DS-AW documents above, knowledge-base **documents** are not seeded; upload them through the UI (the files of `deploy/docker/adventureworks-docs/` are also the upload tests' inputs: html, docx, eml, pdf).
@@ -379,6 +406,45 @@ du -sh /data/registry-backups
 - Host cron scripts in `deploy/k8s/ops/`: `disk-alert.sh` (alerts above 80 %,
   `journalctl -t disk-alert`) and `backup-registry.sh` (daily registry backup).
   Install lines are in each script's header.
+
+## 9a. Backups (PL-04)
+
+Two CronJobs in `dataagent-service`, applied by the deploy (`k8s_setup`, `apply_maintenance_jobs`):
+
+| Job | When | What | Where |
+| --- | --- | --- | --- |
+| `postgres-backup` | every 6 h at :00 | `pg_dump` of each database in `BACKUP_DATABASES` (`dataagent` with the `keycloak` schema, `dataagent_audit`, `temporal`, `temporal_visibility`, `litellm`; production adds `langfuse`), each checked for the completion marker, plus the roles without their passwords (`pg_dumpall --globals-only`) | PVC `postgres-backups`: `dumps/dump_<db>_<ts>.sql.gz`, `dumps/roles_<ts>.sql.gz`, 7 days |
+| `store-backup` | every 6 h at :30 | MinIO: every bucket mirrored without `--remove`, so an object deleted in MinIO keeps its last copy; Qdrant: a snapshot of each collection, checked as a tar archive, then removed from Qdrant | PVC `store-backups`: `minio/<bucket>/…`, `qdrant/<ts>/<collection>.snapshot`, 7 days |
+
+Each waits up to 10 minutes for its stores, so a run that starts during a restart or a deploy
+takes its backup late instead of failing. A database or collection that fails fails the run
+(`kubectl -n dataagent-service get jobs`) and keeps the earlier files. The demo warehouses
+`adventureworks_dw` and `tlc_trips` are not backed up: `make adventureworks` and `make tlc` reload
+them from their pinned sources.
+
+Not covered yet: **OpenBao**. Its `file` storage has no snapshot API; the raft migration (also
+needed before OpenBao 2.7, which dropped `file`) comes first. Its unseal keys live outside the
+cluster (`.openbao-keys.json` beside the deploy's `secrets.env`): keep a copy of that file.
+**Alerting** on a failed run is not wired either (no kube-state-metrics); check the Jobs.
+
+Run one now: `kubectl -n dataagent-service create job --from=cronjob/<name> <name>-manual`.
+
+**Restore drill**: `make restore-drill` restores the latest backups into throwaway pods (label
+`app=restore-drill`, one at a time) and compares them with the live stores; nothing live is
+written. 17/11/2026 on the dev cluster: 68.8 s in all. Postgres 13.5 s, every live table present,
+`dataagent` (365 tables, 72 561 rows) and `dataagent_audit` equal row for row. Temporal's and
+LiteLLM's busy tables differed by a row or two, written after the dump. MinIO 44.8 s, every
+bucket's objects equal. Qdrant's three collections restored (all three are empty, live too). A
+drill that overwrites the live cluster is the next step, deliberately by hand.
+
+Restore:
+
+- **A database**: the suspended `postgres-restore` Job (`DUMP_FILE`, `TARGET_DB`) verifies the dump
+  before it drops anything; see `deploy/k8s/README.md`. On a new server load `roles_<ts>` first.
+  Then run the `migrate` Job before scaling the writers up.
+- **MinIO**: from a pod that mounts `store-backups`, `mc mirror /backups/minio/<bucket> store/<bucket>`.
+- **Qdrant**: upload a snapshot,
+  `curl -X POST "$QDRANT/collections/<name>/snapshots/upload?priority=snapshot" -F snapshot=@<file>`.
 
 ## 10. Database migrations (Alembic)
 

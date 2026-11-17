@@ -18,6 +18,7 @@ SCRIPT = REPO / "deploy" / "k8s" / "create-configmaps.sh"
 DEMO_SQL = (
     "v3-demo-seed.sql",
     "v3-adventureworks-seed.sql",
+    "v3-tlc-seed.sql",
     "v3-adventureworks-context.sql",
     "v3-adventureworks-documents.sql",
     "v3-agent-seed.sql",

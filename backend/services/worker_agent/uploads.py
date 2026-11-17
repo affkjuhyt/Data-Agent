@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import decimal
 import io
 import json
 import os
@@ -51,7 +52,9 @@ async def _read_object(key: str) -> bytes:
         aws_secret_access_key=secret_key,
     ) as client:
         response = await client.get_object(Bucket=BUCKET, Key=key)
-        return await response["Body"].read()
+        # Typed: aioboto3 is untyped, so the body read is Any to mypy.
+        data: bytes = await response["Body"].read()
+        return data
 
 
 def _rows(
@@ -287,7 +290,7 @@ async def _validate_upload(event: Event) -> None:
             await ingest_profile.load(session, row.data_space_id),
         )
         row.validation = validation
-        row.error_ratio = ratio
+        row.error_ratio = decimal.Decimal(str(ratio))
         if row.status != "committed":
             row.status = "mapped" if event.event_type == MAPPED else "analyzed"
 

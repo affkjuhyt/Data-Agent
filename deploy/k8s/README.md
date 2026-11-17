@@ -220,7 +220,7 @@ kubectl -n dataagent-service wait --for=condition=complete job/db-init --timeout
 
 kubectl apply -f deploy/k8s/production/service/
 kubectl apply -f deploy/k8s/production/job/setup.yaml          # Kong routes + Keycloak mappers
-kubectl apply -f deploy/k8s/production/job/postgres-backup.yaml
+kubectl apply -f deploy/k8s/production/job/postgres-backup.yaml -f deploy/k8s/production/job/store-backup.yaml
 ```
 
 `postgres-restore` drops a database, so it ships `suspend: true` with

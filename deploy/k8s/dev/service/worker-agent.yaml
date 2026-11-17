@@ -19,6 +19,8 @@ metadata:
     app: worker-agent
     app.kubernetes.io/part-of: dataagent
 data:
+  # PL-05: the port libs/metrics serves /metrics on (the Service below).
+  METRICS_PORT: '8291'
   OTEL_SERVICE_NAME: worker-agent
   # Every schedule's clock (ADR-33, schedules/clock.py): the worker keeps the Temporal Schedules in
   # step with the data and runs their firings, the nightly eval run among them.
@@ -124,6 +126,10 @@ spec:
         image: dataagent/worker-agent:latest
         imagePullPolicy: IfNotPresent
         command: ["python", "-m", "services.worker_agent.main"]
+        # PL-05: /metrics for Prometheus (libs/metrics); nothing else listens here.
+        ports:
+        - containerPort: 8291
+          name: metrics
         envFrom:
         - configMapRef:
             name: dataagent-config
@@ -153,3 +159,20 @@ spec:
         emptyDir: {}
       enableServiceLinks: false
       serviceAccountName: worker-agent
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-agent
+  namespace: dataagent-service
+  labels:
+    app: worker-agent
+    app.kubernetes.io/part-of: dataagent
+spec:
+  # PL-05: Prometheus' way in; the worker serves nothing but its metrics.
+  selector:
+    app: worker-agent
+  ports:
+  - name: metrics
+    port: 8291
+    targetPort: 8291

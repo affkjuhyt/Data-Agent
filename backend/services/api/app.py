@@ -25,6 +25,7 @@ from services.api.kernel.idempotency import (
     on_idempotent_answer,
     response_store_from_env,
 )
+from services.api.kernel.metrics import metrics_endpoint, metrics_middleware
 from services.api.kernel.problems import Problem, install_problem_handlers, problem_response
 from services.api.kernel.ratelimit import (
     CounterStore,
@@ -136,9 +137,14 @@ def create_app(
 
         return await trace_middleware(request, guarded)
 
+    # Outermost (PL-05): the time a caller waits, every inner layer and its 500 included.
+    app.middleware("http")(metrics_middleware)
+
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    app.add_api_route("/metrics", metrics_endpoint, include_in_schema=False)
 
     for router in ROUTERS:
         app.include_router(router)

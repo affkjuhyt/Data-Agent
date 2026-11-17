@@ -58,3 +58,66 @@ make agent-eval AGENT_EVAL_ORG=… AGENT_EVAL_AS=… AGENT_EVAL_ARGS="--engines 
 Watch for kind-1 misses from the baseline (quota as revenue, gross profit as margin, unfiltered
 channel). A refused SQL must not win again in the same turn; the timeline step detail shows
 `audit` and `refused`.
+
+## AE-07 catalogue rules for exploratory SQL (PoC-3, 16/11/2026)
+
+`sqlgen/audit_rules.py` holds a statement to the metric the deterministic reading of the question
+names (its tables, all of them when nothing is filtered, its measure columns, its division, its
+distinct counts) and to the question's own filter values and period, before the statement runs;
+on both paths (`answer_by_sql` and `explore_sql`). `SQL_AUDIT_RULES=off` turns it off.
+
+Measured offline, no model (`tests/integration/worker_agent/test_adventureworks_audit_rules.py`, the
+real AdventureWorksDW and `ds-aw.yaml`):
+
+| | result |
+| --- | --- |
+| reference SQL of the eval set refused (false refusals) | 0 / 48 |
+| questions the rules held to a metric | 42 / 48 |
+| recorded misses refused on the real model (quota for revenue, one channel for both, gross profit for margin, order lines for orders) | 4 / 4 |
+
+Two rules were narrowed on that run: a filtered slice is not held to every table of its metric
+(aw020: Components are sold to resellers only), and a reading that cuts a metric along a dimension
+it does not allow holds nothing (aw045: "doanh số" is a revenue synonym, Trade Sales a finance
+account). Not measured yet: the same 20 items through `make agent-eval` with the served model (the
+local cluster's workers wait on migration v3_0035, 16/11/2026).
+
+## The two stock misses of 12/11/2026 are not coverage's (16/11/2026)
+
+"Tồn kho cuối tháng 12/2013" and "Giá trị tồn kho cuối tháng 6/2014" failed on the agentic engine
+only. Compiling TON_KHO and GIA_TRI_TON_KHO by month on the real AdventureWorksDW and reading them
+with `semantic/coverage.py`: both cover 2013-12 and 2014-06 (43 months, the last one not cut off),
+so `query_metric` reads the asked month and moves nothing. The miss is in the agentic turn (plan,
+tool choice or reporter); `present_gate.no_figure` is not shown to be the cause. AE-09 waits for a
+turn trace of these two items from a live run before anything in the gate changes.
+
+## Live runs after the Phase 0 fixes (16/11/2026)
+
+`make agent-eval … --engines agentic,governed --limit 20` on the local cluster, the same 20 items as
+12/11. Three runs, each after a deploy: main at bc177e32 (sqlglot 30, AE-07 rules), 0ad096a8
+("cuối" read as part of a period), 33cb5869 (a "none" argument read as null).
+
+| run | agentic passed | governed passed | agentic tokens | agentic seconds |
+| --- | --- | --- | --- | --- |
+| 12/11 (9e503407, before) | 17 | 20 | 22 626 | 16.1 |
+| bc177e32 | 15 | 20 | 21 658 | 12.7 |
+| 0ad096a8 | 14 | 20 | 23 551 | 13.4 |
+| 33cb5869 | 14 | 20 | 23 243 | 12.8 |
+
+None of the agentic misses went through `explore_sql`, so the AE-07 rules did not touch them; the
+run-to-run spread on the same code is ±2 items (planner variance). What the turn traces showed and
+what was fixed:
+
+- Both stock items were refused by the RES-04 check: "cuối" in "cuối tháng 12/2013" was left over
+  after the period was read and taken for a quantity no metric names. Fixed in the vi pack
+  (0ad096a8); `query_metric` now reads TON_KHO for 2013-12.
+- "Giá trị tồn kho cuối tháng 6/2014" then failed on `analysis: "none"` written by the planner;
+  fixed (33cb5869). The agent now answers 23 603 975.57, the gold value.
+- Both stock items still fail the scorer: the planner adds what was not asked (a same-period
+  comparison, a Python trend, explain_change) and the answer carries extra figures, or only tables
+  with no sentence. "Số đơn Internet năm 2013" answers the gold 21 289 and fails the same way.
+  "Doanh thu tháng 6/2013" and "Giá trị đơn bình quân" fail on planner choices (a Python step that
+  errors; a fiscal-year cut with two date paths).
+
+Reading: on single-metric questions the agentic engine now gets the numbers right and loses on
+over-answering, at 43× the governed path's tokens. This is the case for AE-01 (governed-first
+router, ADR-50), not for more fixes in the agent's planning.

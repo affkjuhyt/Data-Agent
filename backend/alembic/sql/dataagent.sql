@@ -110,8 +110,8 @@ GRANT query_read TO svc_skill;
 GRANT org_read TO svc_document;
 GRANT catalog_read TO svc_document;
 GRANT catalog_read TO svc_pipeline;
-GRANT context_read TO svc_pipeline;
 GRANT org_read TO svc_pipeline;
+GRANT context_read TO svc_pipeline;
 GRANT catalog_read TO svc_ingest;
 GRANT org_read TO svc_ingest;
 GRANT catalog_read TO svc_acquire;
@@ -5286,15 +5286,15 @@ CREATE TABLE ingest.ingestion_job (
   schedule_cron text,
   freshness_sla interval,
   dlq_retention_days integer NOT NULL DEFAULT 30,
+  status text NOT NULL DEFAULT 'active',
+  paused_reason text,
+  paused_at timestamptz,
+  consecutive_failures smallint NOT NULL DEFAULT 0,
   retry_policy text NOT NULL DEFAULT 'backoff_3',
   on_schema_change text NOT NULL DEFAULT 'accept_new_columns',
   on_invalid_record text NOT NULL DEFAULT 'quarantine_30d',
   skip_today boolean NOT NULL DEFAULT false,
   merge_key_columns text[],
-  status text NOT NULL DEFAULT 'active',
-  paused_reason text,
-  paused_at timestamptz,
-  consecutive_failures smallint NOT NULL DEFAULT 0,
   deleted_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
@@ -5317,13 +5317,13 @@ COMMENT ON COLUMN ingest.ingestion_job.target_dataset_id IS 'logic → catalog.d
 COMMENT ON COLUMN ingest.ingestion_job.cursor_column IS 'Cột con trỏ khi incremental';
 COMMENT ON COLUMN ingest.ingestion_job.freshness_sla IS 'Trễ quá hạn thì nguồn “Cần sửa” (BR-56)';
 COMMENT ON COLUMN ingest.ingestion_job.dlq_retention_days IS 'BR-57';
+COMMENT ON COLUMN ingest.ingestion_job.status IS 'draft, active, paused, failing, schema_drift';
+COMMENT ON COLUMN ingest.ingestion_job.paused_reason IS 'Bắt buộc khi tạm dừng (BR-106)';
 COMMENT ON COLUMN ingest.ingestion_job.retry_policy IS 'backoff_3, once, none (RES-19)';
 COMMENT ON COLUMN ingest.ingestion_job.on_schema_change IS 'accept_new_columns, pause_and_ask, continue_and_notify';
 COMMENT ON COLUMN ingest.ingestion_job.on_invalid_record IS 'quarantine_30d, skip_and_log, stop';
 COMMENT ON COLUMN ingest.ingestion_job.skip_today IS 'RES-17: bỏ ngày UTC hiện tại';
-COMMENT ON COLUMN ingest.ingestion_job.merge_key_columns IS 'RES-17: khoá upsert khi incremental, CDC';
-COMMENT ON COLUMN ingest.ingestion_job.status IS 'draft, active, paused, failing, schema_drift';
-COMMENT ON COLUMN ingest.ingestion_job.paused_reason IS 'Bắt buộc khi tạm dừng (BR-106)';
+COMMENT ON COLUMN ingest.ingestion_job.merge_key_columns IS 'RES-17: khoá upsert khi incremental hoặc CDC';
 COMMENT ON COLUMN ingest.ingestion_job.deleted_at IS 'Xoá mềm';
 
 CREATE TABLE ingest.job_sample (
@@ -5347,11 +5347,13 @@ CREATE TABLE ingest.job_sample (
   CHECK (status IN ('running','succeeded','failed')),
   CHECK (mode IN ('full','incremental','cdc'))
 );
-COMMENT ON TABLE ingest.job_sample IS 'Mẫu chạy thử của một job chưa tạo: worker-ingest đọc thử nguồn, ghi mẫu và lỗi; không có dòng job. Use case: UC-04-06.';
+COMMENT ON TABLE ingest.job_sample IS 'Lần chạy thử một job sắp tạo: worker-ingest đọc mẫu dòng và lỗi từ nguồn, không tạo job (thêm 11/11/2026, revision v3_0035). Use case: UC-04-06.';
 COMMENT ON COLUMN ingest.job_sample.source_id IS 'logic → catalog.source';
-COMMENT ON COLUMN ingest.job_sample.principal_id IS 'Người chạy thử';
+COMMENT ON COLUMN ingest.job_sample.principal_id IS 'Người yêu cầu chạy thử';
 COMMENT ON COLUMN ingest.job_sample.mode IS 'full, incremental, cdc';
 COMMENT ON COLUMN ingest.job_sample.status IS 'running, succeeded, failed';
+COMMENT ON COLUMN ingest.job_sample.sample IS 'Mẫu dòng đọc được';
+COMMENT ON COLUMN ingest.job_sample.errors IS 'Lỗi theo dòng';
 
 CREATE TABLE ingest.job_run (
   id uuid NOT NULL,

@@ -13,6 +13,7 @@ from sqlglot.errors import OptimizeError, ParseError
 from sqlglot.optimizer.qualify import qualify
 
 from libs.sql_guard import SqlRejected, check_read_only
+from services.worker_agent.sqlgen import audit_rules
 from services.worker_agent.sqlgen.schema import Linked
 
 _TYPES = {
@@ -36,7 +37,9 @@ def fingerprint(sql: str, dialect: str = "postgres") -> str:
         return " ".join(text.lower().split())
 
 
-def problems(sql: str, linked: Linked, dialect: str) -> list[str]:
+def problems(
+    sql: str, linked: Linked, dialect: str, audit: audit_rules.AuditContext | None = None
+) -> list[str]:
     try:
         tree = sqlglot.parse_one(sql, read=dialect)
     except ParseError as exc:
@@ -74,8 +77,18 @@ def problems(sql: str, linked: Linked, dialect: str) -> list[str]:
         mapping.setdefault(t.schema, {})[t.name] = {
             c.name: _TYPES.get(c.kind, "TEXT") for c in t.columns
         }
+    schema: dict[str, object] = {**mapping}
     try:
-        qualify(tree.copy(), schema=mapping, dialect=dialect, validate_qualify_columns=True)
+        qualified = qualify(
+            tree.copy(), schema=schema, dialect=dialect, validate_qualify_columns=True
+        )
     except OptimizeError as exc:
         return [f"Cột không có trong bảng: {exc}. Chỉ dùng các cột đã liệt kê."]
-    return []
+    # A table or its alias used as a value is the whole row as a record in PostgreSQL
+    # (`SELECT l FROM t AS l`, `ROW_TO_JSON(l)`, `COUNT(L)`): every column again, shown or not.
+    # sqlglot 25 rejected it as an unknown column by accident; sqlglot 30 resolves it, per scope
+    # and with the dialect's case folding, to a TableColumn, which is what is refused here.
+    if qualified.find(exp.TableColumn):
+        return ["Không dùng SELECT * hay bảng.*; hãy nêu rõ các cột cần lấy."]
+    # Last, on the qualified tree: does it measure what the question names (AE-07)?
+    return audit_rules.check(qualified, audit) if audit is not None else []

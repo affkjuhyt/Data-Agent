@@ -47,7 +47,7 @@ class ChunkPoint:
 
 
 def _missing(exc: UnexpectedResponse) -> bool:
-    return exc.status_code == 404
+    return bool(exc.status_code == 404)
 
 
 async def nearest(

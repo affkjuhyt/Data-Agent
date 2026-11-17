@@ -69,7 +69,8 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: litellm
-        image: ghcr.io/berriai/litellm:main-stable
+        # Pinned (PL-07) to the build the cluster ran on 16/11/2026, LiteLLM 1.105.1: main-stable moves.
+        image: ghcr.io/berriai/litellm:main-stable@sha256:b7b9e2c306343721802253d0dd9436b9634a2eb4e14da7c7cf06c5c7b7530802
         args:
         - --config
         - /app/config.yaml

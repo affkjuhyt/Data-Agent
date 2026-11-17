@@ -241,7 +241,7 @@ async def active_row_scopes(
 _USER_SLOT = "__da_user_attr_"
 
 
-def _bind_user(condition: str, user: org_models.AppUser, dialect: str) -> exp.Expression:
+def _bind_user(condition: str, user: org_models.AppUser, dialect: str) -> exp.Expr:
     """The policy condition with each :user.attr as a string literal of the asker's value.
 
     The values go into the AST, not the SQL text: quoting them by hand (doubling ') let a
@@ -260,7 +260,7 @@ def _bind_user(condition: str, user: org_models.AppUser, dialect: str) -> exp.Ex
 
     tree = parse_one(_USER_ATTRIBUTE.sub(slot, condition), dialect=dialect)
 
-    def literal(node: exp.Expression) -> exp.Expression:
+    def literal(node: exp.Expr) -> exp.Expr:
         if isinstance(node, exp.Column) and not node.table and node.name.startswith(_USER_SLOT):
             return exp.Literal.string(values[int(node.name.removeprefix(_USER_SLOT))])
         return node
@@ -268,7 +268,7 @@ def _bind_user(condition: str, user: org_models.AppUser, dialect: str) -> exp.Ex
     return tree.transform(literal)
 
 
-def _selects(tree: exp.Expression) -> list[exp.Select]:
+def _selects(tree: exp.Expr) -> list[exp.Select]:
     """Every SELECT of the query once (find_all yields the root itself too)."""
     seen: dict[int, exp.Select] = {}
     for node in tree.find_all(exp.Select):
@@ -289,7 +289,7 @@ def _direct_tables(select_node: exp.Select) -> list[exp.Table]:
     return tables
 
 
-def _and_where(select_node: exp.Select, predicate: exp.Expression) -> None:
+def _and_where(select_node: exp.Select, predicate: exp.Expr) -> None:
     existing = select_node.args.get("where")
     select_node.set(
         "where",
@@ -297,7 +297,7 @@ def _and_where(select_node: exp.Select, predicate: exp.Expression) -> None:
     )
 
 
-def _resolved(ident: exp.Expression | None, source: catalog.Source) -> str | None:
+def _resolved(ident: exp.Expr | None, source: catalog.Source) -> str | None:
     """A name as the source resolves it (guard.tables_of): PostgreSQL folds an unquoted name to
     lower case and keeps a quoted one; the other engines compare without case."""
     if not isinstance(ident, exp.Identifier):
@@ -346,7 +346,7 @@ async def covered_columns(
     return out
 
 
-def _masked(column: str, method: str) -> exp.Expression:
+def _masked(column: str, method: str) -> exp.Expr:
     """A masked column in SQL, as the api's simulation shows it (governance/policies._MASKS)."""
     text = exp.cast(exp.column(column, quoted=True), "TEXT")
     if method == "hash":
@@ -434,7 +434,7 @@ def rewrite_column_policies(
             for name, method in masks.get(dataset.id, {}).items():
                 if method_of.setdefault(name, method) != method:
                     raise OutOfScope(f"conflicting masks for column {name}")
-        projection: list[exp.Expression] = []
+        projection: list[exp.Expr] = []
         for name in listed:
             key = name.lower()
             if key in drop:

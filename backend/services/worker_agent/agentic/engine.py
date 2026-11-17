@@ -1344,7 +1344,7 @@ async def persist(s: State) -> None:
             clarify=s.clarify is not None,
             handed_back=s.handed_back,
             cancelled=s.cancelled,
-            dataset_trusts={i: d["trust"] for i, d in datasets.items() if d.get("trust")},
+            dataset_trusts={ds.id: ds.trust for ds in ctx.ws.datasets.values() if ds.trust},
             audience=s.audience,
         ),
     }

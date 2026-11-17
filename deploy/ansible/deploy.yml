@@ -345,12 +345,14 @@
           set -a; . "{{ secrets_env_file }}"; set +a
           bash "{{ k8s_dir }}/create-secrets.sh" >/dev/null
 
+          {% if enable_kafka | bool %}
           jaas=$(mktemp); trap 'rm -f "$jaas"' EXIT
           sed -e "s|REPLACE_WITH_KAFKA_ADMIN_PASSWORD|${KAFKA_ADMIN_PASSWORD}|g" \
               "{{ docker_dir }}/kafka/kafka-broker-jaas.config.example" > "$jaas"
           kubectl -n {{ ns_database }} create secret generic kafka-jaas \
             --from-file=kafka-broker-jaas.config="$jaas" \
             --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+          {% endif %}
         executable: /bin/bash
       when: secrets_changed | bool
       changed_when: true
@@ -377,12 +379,14 @@
           set -euo pipefail
           stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
           {% if database_manifests | length > 0 %}
-          for name in {% for name in database_manifests %}{{ name | quote }} {% endfor %}; do
+          for name in {% for name in database_manifests | difference(disabled_manifests) %}{{ name | quote }} {% endfor %}; do
             f="{{ k8s_manifests }}/database/$name.yaml"
             {{ manifest_sed }} "$f" > "$stage/$name.yaml"
           done
           {% else %}
           for f in "{{ k8s_manifests }}/database"/*.yaml; do
+            # A store this install turns off (enable_kafka, enable_langfuse) is not applied.
+            case " {{ disabled_manifests | join(' ') }} " in *" $(basename "$f" .yaml) "*) continue ;; esac
             {{ manifest_sed }} "$f" > "$stage/$(basename "$f")"
           done
           {% endif %}
@@ -397,7 +401,7 @@
         cmd: >-
           {{ kubectl }} -n {{ ns_database }} rollout status statefulset/{{ item }}
           --timeout={{ wait_statefulset }}s
-      loop: "{{ ['postgres'] + database_workloads }}"
+      loop: "{{ ['postgres'] + (database_workloads | difference(disabled_manifests)) }}"
       changed_when: false
       when: (apply_databases | bool) and (databases_changed | bool)
 
@@ -453,12 +457,14 @@
           set -euo pipefail
           stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
           {% if service_manifests | length > 0 %}
-          for name in {% for name in service_manifests %}{{ name | quote }} {% endfor %}; do
+          for name in {% for name in service_manifests | difference(disabled_manifests) %}{{ name | quote }} {% endfor %}; do
             f="{{ k8s_manifests }}/service/$name.yaml"
             {{ manifest_sed }} "$f" > "$stage/$name.yaml"
           done
           {% else %}
           for f in "{{ k8s_manifests }}/service"/*.yaml; do
+            # A store this install turns off (enable_kafka, enable_langfuse) is not applied.
+            case " {{ disabled_manifests | join(' ') }} " in *" $(basename "$f" .yaml) "*) continue ;; esac
             {{ manifest_sed }} "$f" > "$stage/$(basename "$f")"
           done
           {% endif %}
@@ -467,6 +473,23 @@
       register: svc_apply
       changed_when: "'created' in svc_apply.stdout or 'configured' in svc_apply.stdout"
       when: (apply_services | bool) and (services_changed | bool)
+
+    # PL-07: the workloads of a store this install turns off. Volumes and Secrets stay, so turning
+    # it back on finds its data; a StatefulSet's claims are not deleted with it.
+    - name: Remove the workloads of the stores turned off
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          for app in {{ disabled_manifests | map('quote') | join(' ') }}; do
+            for ns in {{ ns_database }} {{ ns_service }}; do
+              {{ kubectl }} -n "$ns" delete statefulset,deployment,service -l "app=$app" \
+                --ignore-not-found
+            done
+          done
+        executable: /bin/bash
+      register: disabled_removed
+      changed_when: "'deleted' in disabled_removed.stdout"
+      when: disabled_manifests | length > 0
 
     # After the service tier, whose manifests carry per-workload env ConfigMaps
     # of their own, so a change there is seen too.
@@ -729,7 +752,7 @@
         executable: /bin/bash
       vars:
         wait_list: >-
-          {{ (((service_workloads | map('regex_replace', '^', 'Deployment/')
+          {{ (((service_workloads | difference(disabled_manifests) | map('regex_replace', '^', 'Deployment/')
                  | map('regex_replace', '$', ' ' ~ ns_service) | list)
                 if ((apply_services | bool) and (service_manifests_changed | bool)) else [])
               + (restart_for_images | default([])) + (restart_for_config | default([]))) | unique }}

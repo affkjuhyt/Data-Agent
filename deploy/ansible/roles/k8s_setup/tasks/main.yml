@@ -29,8 +29,11 @@
       changed_when: false
       failed_when: "'Complete' not in setup_state.stdout"
 
+    # PL-04: the databases (postgres-backup) and the object and vector stores (store-backup).
     - name: Create backup cronjob
-      ansible.builtin.command: "{{ kubectl }} apply -f {{ (k8s_manifests ~ '/job/postgres-backup.yaml') | quote }}"
+      ansible.builtin.command: >-
+        {{ kubectl }} apply -f {{ (k8s_manifests ~ '/job/postgres-backup.yaml') | quote }}
+        -f {{ (k8s_manifests ~ '/job/store-backup.yaml') | quote }}
       register: backup_apply
       changed_when: "'created' in backup_apply.stdout or 'configured' in backup_apply.stdout"
       when: apply_maintenance_jobs | bool

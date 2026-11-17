@@ -129,7 +129,7 @@ function SessionList() {
 
 function SessionState({ ws }: { ws: Workspace }) {
   if (ws.agent_state === 'waiting_you') return <Badge tone="warning">Chờ bạn</Badge>;
-  if (ws.agent_state === 'running') return <StatusDot tone="info" label="Agent đang chạy" />;
+  if (ws.agent_state === 'running') return <StatusDot tone="info">Agent đang chạy</StatusDot>;
   return (
     <span className="shrink-0 text-muted-foreground da-caption">
       {formatElapsed(ws.updated_at)}

@@ -166,7 +166,7 @@
   {
    "name": "ingest",
    "owner_service": "Ingestion service",
-   "content": "Job nạp, mẫu chạy thử, lượt chạy, bản ghi lỗi, tải tệp, quy tắc và kết quả chất lượng",
+   "content": "Job nạp, lượt chạy, lần chạy thử, bản ghi lỗi, tải tệp, quy tắc và kết quả chất lượng",
    "modules": "P04, P06",
    "table_count": 7,
    "database": "dataagent",
@@ -295,8 +295,8 @@
   ],
   "svc_pipeline": [
    "catalog",
-   "context",
-   "org"
+   "org",
+   "context"
   ],
   "svc_ingest": [
    "catalog",
@@ -25022,6 +25022,50 @@
      "pii": false
     },
     {
+     "name": "status",
+     "type": "text",
+     "not_null": true,
+     "default": "'active'",
+     "unique": false,
+     "comment": "draft, active, paused, failing, schema_drift",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "paused_reason",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Bắt buộc khi tạm dừng (BR-106)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "paused_at",
+     "type": "timestamptz",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "consecutive_failures",
+     "type": "smallint",
+     "not_null": true,
+     "default": "0",
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "retry_policy",
      "type": "text",
      "not_null": true,
@@ -25071,51 +25115,7 @@
      "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "RES-17: khoá upsert khi incremental, CDC",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "status",
-     "type": "text",
-     "not_null": true,
-     "default": "'active'",
-     "unique": false,
-     "comment": "draft, active, paused, failing, schema_drift",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "paused_reason",
-     "type": "text",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "Bắt buộc khi tạm dừng (BR-106)",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "paused_at",
-     "type": "timestamptz",
-     "not_null": false,
-     "default": null,
-     "unique": false,
-     "comment": "",
-     "fk": null,
-     "logic_ref": null,
-     "pii": false
-    },
-    {
-     "name": "consecutive_failures",
-     "type": "smallint",
-     "not_null": true,
-     "default": "0",
-     "unique": false,
-     "comment": "",
+     "comment": "RES-17: khoá upsert khi incremental hoặc CDC",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -25179,7 +25179,7 @@
    "schema": "ingest",
    "name": "job_sample",
    "qualified": "ingest.job_sample",
-   "description": "Mẫu chạy thử của một job chưa tạo: worker-ingest đọc thử nguồn, ghi mẫu và lỗi; không có dòng job. Use case: UC-04-06.",
+   "description": "Lần chạy thử một job sắp tạo: worker-ingest đọc mẫu dòng và lỗi từ nguồn, không tạo job (thêm 11/11/2026, revision v3_0035). Use case: UC-04-06.",
    "use_cases": [
     "UC-04-06"
    ],
@@ -25212,7 +25212,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "Người chạy thử",
+     "comment": "Người yêu cầu chạy thử",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -25278,7 +25278,7 @@
      "not_null": true,
      "default": "'[]'",
      "unique": false,
-     "comment": "",
+     "comment": "Mẫu dòng đọc được",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -25289,7 +25289,7 @@
      "not_null": true,
      "default": "'[]'",
      "unique": false,
-     "comment": "",
+     "comment": "Lỗi theo dòng",
      "fk": null,
      "logic_ref": null,
      "pii": false

@@ -54,7 +54,8 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
       - name: clickhouse
-        image: docker.io/clickhouse/clickhouse-server
+        # Pinned (PL-07) to the build the cluster ran on 16/11/2026, ClickHouse 26.10.4.207 (index digest).
+        image: docker.io/clickhouse/clickhouse-server:26.10.4.207@sha256:4f491abc44d9f4a1747c033c35ddd5bc385521305d85ca8251ba0824ff597035
         ports:
         - containerPort: 8370
           name: http

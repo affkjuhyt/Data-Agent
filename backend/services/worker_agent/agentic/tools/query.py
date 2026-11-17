@@ -11,7 +11,7 @@ import re
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session
@@ -25,6 +25,7 @@ from services.worker_agent.llm import ModelUnavailable
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.semantic import analysis, compare, coverage
 from services.worker_agent.semantic import compiler as c
+from services.worker_agent.sqlgen import audit_rules
 from services.worker_agent.sqlgen.answer import _keep_one_source
 from services.worker_agent.sqlgen.check import fingerprint
 from services.worker_agent.sqlgen.generate import schema_text
@@ -160,6 +161,23 @@ class QueryMetricArgs(BaseModel):
         default=None, description="tỷ trọng trên tổng / luỹ kế, hoặc null"
     )
     title: str | None = Field(default=None, description="tên ngắn của bảng kết quả")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _null_words(cls, data: Any) -> Any:
+        """The planner writes "none" or "null" as text for an optional argument it means to leave
+        out; on 16/11/2026 `analysis: "none"` failed the schema, the step failed, and a stock
+        question the catalogue answers was never read."""
+        if not isinstance(data, dict):
+            return data
+        return {
+            k: None if k in _OPTIONAL and isinstance(v, str) and v.strip().lower() in _NULLS else v
+            for k, v in data.items()
+        }
+
+
+_NULLS = frozenset({"", "none", "null", "nil"})
+_OPTIONAL = frozenset({"period", "grain", "top_n", "compare_to", "analysis", "title"})
 
 
 async def _source_for(ctx: ToolContext, dataset_id: uuid.UUID) -> catalog.Source | None:
@@ -639,6 +657,12 @@ class ExploreSql(Tool):
             )
 
         dialect = dialect_of(source.kind)
+        # The catalogue's hold on the statement (AE-07): checked before it runs, unlike _audit.
+        rules = (
+            audit_rules.context_for(args.question or ctx.question, ctx.layer, today=ctx.today)
+            if audit_rules.enabled()
+            else None
+        )
         # One semantic-audit miss → ban that SQL and try explore once more this step (RES-02);
         # a second miss goes back to the planner with the ban kept on the turn.
         last_reason = ""
@@ -651,6 +675,7 @@ class ExploreSql(Tool):
                 space.schema.examples,
                 run_sql,
                 refuse=tuple(ctx.refused_sql),
+                audit=rules,
             )
             for name in e.models:
                 ctx.models.append({"task": "text_to_sql", "model_name": name, "tokens": e.tokens})
@@ -661,6 +686,9 @@ class ExploreSql(Tool):
                 "query_run_id": str(e.query_run_id) if e.query_run_id else None,
                 "refused": len(ctx.refused_sql),
             }
+            rejected = [p for t in e.tried if t.get("status") == "rejected" for p in t["problems"]]
+            if rejected:
+                detail["audit_rules"] = sorted(set(rejected))[:5]
             if e.decision == "failed" or e.query_run_id is None:
                 if last_reason:
                     return ToolResult(

@@ -2,6 +2,11 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vitest/config";
 
+// The screens show times in the viewer's zone, and the tests are written in Việt Nam's: on a CI
+// runner in UTC "16:05" read "09:05" and the suite failed only there. Set here, before the
+// workers start, so every worker inherits it whatever the machine's zone.
+process.env.TZ = "Asia/Ho_Chi_Minh";
+
 export default defineConfig({
   // Cast: @vitejs/plugin-react is typed against the project's `vite`, while
   // vitest/config expects a plugin from its own nested `vite` copy. The two

@@ -24,7 +24,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Body, Path, Query, Response
+from fastapi import APIRouter, Body, Path, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,22 +35,18 @@ from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import Page
-from services.api.kernel.problems import Problem
+from services.api.kernel.problems import Problem, not_available
 from services.api.modules.audit import record_self_approval
 from services.api.modules.context.common import (
     ROLE,
     ContextPage,
-    accepted,
     audit,
     emit,
     field_error,
     keyset_page,
     now,
-    page_readable,
-    readable_data_spaces,
     reader_settings,
     require_active_users,
-    slugify,
 )
 from services.api.modules.context.schemas import (
     Accepted,
@@ -75,10 +71,12 @@ from services.api.modules.context.schemas import (
     SourceView,
 )
 
+# The refusal of every action that waits on the knowledge page composer (KB-06), not built yet.
+NO_COMPOSER = "Chưa có bộ biên soạn trang tri thức, nên chưa tạo hay cập nhật trang từ nguồn được."
+
 router = APIRouter()
 
 INDEX_LIMIT = 20
-DEFAULT_PAGE_LIMIT = 20
 # BR-166: a dismissed finding stays hidden for 90 days.
 DISMISS_DAYS = 90
 Render = Literal["template", "filled"]
@@ -814,15 +812,6 @@ def _number_check_failures(check: Any) -> list[str]:
     return reasons
 
 
-async def _reader_can_see(
-    session: AsyncSession, principal: Principal, page: context.KnowledgePage
-) -> bool:
-    """The BR-163 test of one page for the caller, done in Python because this transaction
-    writes (it is not a reader transaction)."""
-    spaces = await readable_data_spaces(session, principal)
-    return page_readable(page.required_data_space_ids, page.classification, spaces)
-
-
 @router.post(
     "/v1/knowledge-pages:from-answer",
     status_code=202,
@@ -833,11 +822,10 @@ async def save_answer_as_knowledge(
     body: FromAnswer,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
-    response: Response,
 ) -> dict[str, Any]:
-    """BR-167 checks, the target page, then a saveback run Agent Tri thức executes: it turns the
-    numbers into placeholders and the citations into claims, cites the answer as a source and
-    submits the version for review (UC-07-12 steps 2-4). Answered 202 with the run."""
+    """BR-167 checks; the saveback run Agent Tri thức would execute (UC-07-12 steps 2-4: numbers to
+    placeholders, citations to claims, a version for review) waits on the page composer, so an
+    answer that passes them is refused with 501 not_available, nothing written."""
     async with _session(principal, reader=False) as session:
         found = (
             await session.execute(
@@ -871,89 +859,9 @@ async def save_answer_as_knowledge(
                 "business_rule_violated",
                 "The answer cannot be saved (BR-167): " + "; ".join(reasons) + ".",
             )
-        target: context.KnowledgePage | None = None
-        if body.target_page_id is not None:
-            target = await session.scalar(
-                select(context.KnowledgePage).where(
-                    context.KnowledgePage.id == body.target_page_id,
-                    context.KnowledgePage.data_space_id == data_space,
-                    context.KnowledgePage.status != "retired",
-                )
-            )
-            if target is not None and not await _reader_can_see(session, principal, target):
-                target = None
-        mode = body.mode or ("append" if target is not None else "new_page")
-        if target is None:
-            # AC-07-12-05: no right on the target page, or none named: a new page in the
-            # caller's Data Space.
-            mode = "new_page"
-            title = body.title or question_text[:300]
-            target = context.KnowledgePage(
-                id=uuid7(),
-                org_id=principal.org_id,
-                data_space_id=data_space,
-                kind="topic",
-                subject_kind="topic",
-                slug=f"{slugify(title)}-{uuid7().hex[-6:]}",
-                title=title,
-                owner_id=principal.user_id,
-                status="draft",
-                created_by=principal.user_id,
-                updated_by=principal.user_id,
-            )
-            session.add(target)
-            emit(
-                session,
-                principal,
-                "knowledge_page",
-                target.id,
-                "knowledge_page.created",
-                page_id=target.id,
-                data_space_id=data_space,
-                kind=target.kind,
-                status=target.status,
-            )
-        run = context.KnowledgeRun(
-            id=uuid7(),
-            org_id=principal.org_id,
-            data_space_id=data_space,
-            kind="ingest",
-            trigger="saveback",
-            source_kind="answer",
-            source_ref=answer.id,
-            status="queued",
-            page_limit=1,
-            created_by=principal.user_id,
-        )
-        session.add(run)
-        emit(
-            session,
-            principal,
-            "knowledge_run",
-            run.id,
-            "knowledge_run.requested",
-            run_id=run.id,
-            data_space_id=data_space,
-            kind=run.kind,
-            trigger=run.trigger,
-            answer_id=answer.id,
-            page_id=target.id,
-            mode=mode,
-            requested_by=principal.user_id,
-            status=run.status,
-        )
-        if body.note:
-            audit(
-                session,
-                principal,
-                action="knowledge_page.save_answer",
-                object_kind="knowledge_run",
-                object_id=run.id,
-                after={"answer_id": answer.id, "page_id": target.id, "note": body.note},
-            )
-        # One run per Data Space and kind at a time: a second one answers 409 here.
-        await session.flush()
-    return accepted(response, f"/v1/knowledge-runs/{run.id}", run.id, "queued")
+        # No worker takes knowledge_run.requested (the knowledge page composer is deferred,
+        # docs/blueprint/STRATEGY.md §6): refused after BR-167, before a page or run is written.
+        raise not_available(NO_COMPOSER)
 
 
 # ---------------------------------------------------------------- runs (UC-07-10, UC-07-11)
@@ -969,42 +877,10 @@ async def create_knowledge_run(
     body: KnowledgeRunCreate,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
-    response: Response,
 ) -> dict[str, Any]:
     if body.data_space_id != data_space:
         raise field_error("data_space_id", "data_space_id must be the Data Space of the request.")
-    async with _session(principal, reader=False) as session:
-        run = context.KnowledgeRun(
-            id=uuid7(),
-            org_id=principal.org_id,
-            data_space_id=data_space,
-            kind=body.kind,
-            trigger="manual",
-            source_kind=body.source_kind,
-            source_ref=body.source_ref,
-            status="queued",
-            page_limit=body.page_limit or DEFAULT_PAGE_LIMIT,
-            created_by=principal.user_id,
-        )
-        session.add(run)
-        emit(
-            session,
-            principal,
-            "knowledge_run",
-            run.id,
-            "knowledge_run.requested",
-            run_id=run.id,
-            data_space_id=data_space,
-            kind=run.kind,
-            trigger=run.trigger,
-            source_kind=run.source_kind,
-            source_ref=run.source_ref,
-            page_limit=run.page_limit,
-            status=run.status,
-        )
-        # BR-166: one run of a kind per Data Space; a second answers 409 conflict.
-        await session.flush()
-    return accepted(response, f"/v1/knowledge-runs/{run.id}", run.id, "queued")
+    raise not_available(NO_COMPOSER)
 
 
 @router.get(

@@ -20,6 +20,8 @@ data:
   PGHOST: postgres.dataagent-database.svc.cluster.local
   PGUSER: admin
   PGDATABASE: dataagent
+  # PL-04: the databases each run dumps (see the script).
+  BACKUP_DATABASES: dataagent dataagent_audit temporal temporal_visibility litellm
   BACKUP_RETENTION_DAYS: '7'
   PGPORT: '8300'
 ---
@@ -69,16 +71,44 @@ spec:
             - -c
             - |
               set -eu
+              # pipefail: `pg_dump | gzip` otherwise reports gzip's status, and a dump that died mid-stream
+              # looked like a success (the old `|| true` hid it the same way). The checks below still verify
+              # the file itself, since that is what a restore will read.
+              set -o pipefail
+              # A run that starts while PostgreSQL restarts (a cluster restart, a deploy: the failed runs of
+              # 03/11 and 16/11) failed at once and spent its two retries within a minute. Wait for it.
+              waited=0
+              until pg_isready -q -t 5; do
+                waited=$((waited + 10))
+                if [ "$waited" -gt 600 ]; then echo "[backup] postgres not ready after 10 min"; exit 1; fi
+                sleep 5
+              done
               mkdir -p /backups/dumps
               ts=$(date +%Y%m%d_%H%M%S)
-              dump=/backups/dumps/dump_${ts}.sql.gz
-              pg_dump --format=plain --no-owner --no-privileges | gzip > "${dump}.tmp" || true
-              if gzip -t "${dump}.tmp" 2>/dev/null && gunzip -c "${dump}.tmp" | tail -5 | grep -q "PostgreSQL database dump complete"; then
-                mv "${dump}.tmp" "${dump}"; echo "[backup] ok ${dump}"
+              failed=""
+              # PL-04: every database the stack writes, each its own file, so one that fails does not cost
+              # the others. The demo warehouses (adventureworks_dw, tlc_trips) reload from their pinned
+              # sources and are not listed.
+              for db in ${BACKUP_DATABASES}; do
+                dump=/backups/dumps/dump_${db}_${ts}.sql.gz
+                if pg_dump --format=plain --no-owner --no-privileges -d "${db}" | gzip > "${dump}.tmp" \
+                   && gzip -t "${dump}.tmp" \
+                   && gunzip -c "${dump}.tmp" | tail -5 | grep -q "PostgreSQL database dump complete"; then
+                  mv "${dump}.tmp" "${dump}"; echo "[backup] ok ${dump}"
+                else
+                  echo "[backup] ${db} failed, its previous dumps kept"; rm -f "${dump}.tmp"; failed="${failed} ${db}"
+                fi
+              done
+              # The roles a restore onto a new server needs before the dumps, without their passwords
+              # (db-init sets those from the vault).
+              roles=/backups/dumps/roles_${ts}.sql.gz
+              if pg_dumpall --globals-only --no-role-passwords | gzip > "${roles}.tmp" && gzip -t "${roles}.tmp"; then
+                mv "${roles}.tmp" "${roles}"; echo "[backup] ok ${roles}"
               else
-                echo "[backup] failed, previous dumps kept"; rm -f "${dump}.tmp"; exit 1
+                echo "[backup] roles failed"; rm -f "${roles}.tmp"; failed="${failed} roles"
               fi
-              find /backups/dumps -name 'dump_*.sql.gz' -mtime +${BACKUP_RETENTION_DAYS} -delete
+              find /backups/dumps \( -name 'dump_*.sql.gz' -o -name 'roles_*.sql.gz' \) -mtime +${BACKUP_RETENTION_DAYS} -delete
+              if [ -n "${failed}" ]; then echo "[backup] FAILED:${failed}"; exit 1; fi
             resources:
               requests:
                 cpu: 100m

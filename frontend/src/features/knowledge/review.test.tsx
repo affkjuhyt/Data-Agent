@@ -34,6 +34,11 @@ describe('KnowledgeReviewPage', () => {
     const card = screen.getByRole('region', { name: 'Phát hiện đang xem' });
     expect(within(card).getByText('5,10%/năm · website · 08:04 10/10')).toBeInTheDocument();
     expect(within(card).getByText('4,90%/năm · API · 08:31 10/10')).toBeInTheDocument();
+    // A lint run now would answer 501 until a page composer exists (PL-03): not offered.
+    expect(screen.getByRole('button', { name: 'Chạy rà soát ngay' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   it('marks a page stale, which closes the finding', async () => {

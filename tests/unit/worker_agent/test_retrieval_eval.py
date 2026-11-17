@@ -110,3 +110,44 @@ def test_rates_over_found_absent_and_forbidden_cases() -> None:
     assert overall["forbidden_rate"] == 0.2 and overall["passed"] == 3
     assert report["by_tag"]["khong-dau"]["recall@10"] == 0.5
     assert [m["id"] for m in report["misses"]] == ["miss", "old"]
+
+
+class _Dead(SearchServices):
+    """Configured halves whose every call fails, like TEI unreachable on 12/11/2026."""
+
+    def __init__(self) -> None:
+        super().__init__(qdrant_url=None, embed_url="http://embed.invalid", rerank_url="http://rr")
+        self._qdrant = object()  # type: ignore[assignment]
+
+
+def test_a_configured_half_that_never_answers_is_not_reported_as_run() -> None:
+    services = _Dead()
+    services.dense_usage.attempts = 156
+    services.rerank_usage.attempts = 152
+    report = summarize([], services)
+    assert services.dense_configured and services.reranks
+    assert report["halves"] == {"keyword": True, "dense": False, "rerank": False}
+    assert report["usage"]["dense"] == {
+        "configured": True,
+        "attempts": 156,
+        "ok": 0,
+        "ok_rate": 0.0,
+    }
+
+
+def test_a_half_that_answered_almost_every_call_ran() -> None:
+    services = _Dead()
+    services.dense_usage.attempts, services.dense_usage.ok = 156, 155
+    services.rerank_usage.attempts, services.rerank_usage.ok = 156, 140
+    report = summarize([], services)
+    assert report["halves"] == {"keyword": True, "dense": True, "rerank": False}
+    assert report["usage"]["rerank"]["ok_rate"] == round(140 / 156, 4)
+
+
+async def test_a_failing_call_is_counted_as_an_attempt_without_an_answer() -> None:
+    services = SearchServices(qdrant_url=None, embed_url=None, rerank_url="http://127.0.0.1:9")
+    assert await services.rerank("q", ["a", "b"]) is None
+    assert (services.rerank_usage.attempts, services.rerank_usage.ok) == (1, 0)
+    # Nothing to rerank is not a call.
+    assert await services.rerank("q", []) is None
+    assert services.rerank_usage.attempts == 1

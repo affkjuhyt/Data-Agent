@@ -3,7 +3,7 @@
  * job's event stream. An empty space offers to define a model.
  */
 import type { ReactElement } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -165,8 +165,10 @@ const server = setupServer(
   http.get('*/v1/forecasts/:id', () => HttpResponse.json(jobDetail('training'))),
   http.get('*/v1/forecasts/:id/events', async () => {
     await eventsGate;
+    // A blank line ends an SSE event, as kernel/sse.py writes it; an event the stream ends inside
+    // of is dropped by the reader (lib/v1/client.ts, since ec70322f).
     return new HttpResponse(
-      ['id: 1', 'event: done', 'data: {"status":"ready"}', ''].join('\n'),
+      ['id: 1', 'event: done', 'data: {"status":"ready"}', '', ''].join('\n'),
       { headers: { 'Content-Type': 'text/event-stream' } },
     );
   }),
@@ -190,6 +192,9 @@ const show = (page: ReactElement) => render(<ToastProvider>{page}</ToastProvider
 describe('forecast screens on the api', () => {
   it('reads a model forecast from its predictions when the space has a model', async () => {
     show(<ForecastPage />);
+    // From the rail the page lists the models first (the hub, 25b5482e); a model's forecast
+    // opens from its row.
+    fireEvent.click(await screen.findByRole('button', { name: 'Xem dự báo' }));
     expect(
       await screen.findByRole('heading', { level: 1, name: /DOANH_THU · T11\/2026/ }),
     ).toBeInTheDocument();

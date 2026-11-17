@@ -52,6 +52,8 @@ class Space:
     source: uuid.UUID
     federated: uuid.UUID
     other_source: uuid.UUID
+    # An ingest-mode source of a kind worker-ingest does not read as tables (a REST API).
+    rest_source: uuid.UUID
     dataset: uuid.UUID
     upload_dataset: uuid.UUID
     other_dataset: uuid.UUID
@@ -79,7 +81,7 @@ class Space:
     def job(self, space: uuid.UUID | None = None, **values: Any) -> uuid.UUID:
         values.setdefault("name", "Lãi suất huy động")
         values.setdefault("mode", "full")
-        values.setdefault("source_object", "/api/lai-suat")
+        values.setdefault("source_object", "public.lai_suat")
         return self.seed.row(
             "ingest.ingestion_job",
             org_id=self.org,
@@ -188,10 +190,11 @@ def ds(seed: Seed) -> Space:
         space=space,
         other=other,
         users=users,
-        # A table job reads a database (INGESTABLE_KINDS, since the CDC jobs of 11/11/2026).
+        # Worker-ingest loads tables over SQL (25b5482e): the loaded source is a database.
         source=source(space, "lai-suat-db", "ingest", "postgresql"),
         federated=source(space, "core-banking", "federated", "postgresql"),
         other_source=source(other, "lai-suat-b", "ingest", "postgresql"),
+        rest_source=source(space, "lai-suat-api", "ingest", "rest_api"),
         dataset=_dataset(seed, org, space, "lai_suat_huy_dong"),
         upload_dataset=_dataset(
             seed,
@@ -221,7 +224,7 @@ def client(ds: Space) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://api")
 
 
-JOB = {"name": "Lãi suất huy động", "mode": "full", "source_object": "/api/lai-suat"}
+JOB = {"name": "Lãi suất huy động", "mode": "full", "source_object": "public.lai_suat"}
 
 
 # --- jobs ---------------------------------------------------------------------------------------
@@ -303,6 +306,12 @@ async def test_job_creation_refusals(ds: Space) -> None:
         )
         assert federated.status_code == 422
         assert federated.json()["code"] == "business_rule_violated"
+        # Worker-ingest reads tables over SQL: an ingest-mode REST source is not a table job.
+        rest = await api.post(
+            f"/v1/sources/{ds.rest_source}/jobs", json=JOB, headers=ds.headers("engineer")
+        )
+        assert rest.status_code == 422
+        assert rest.json()["code"] == "business_rule_violated"
         foreign_target = await api.post(
             url,
             json={**JOB, "target_dataset_id": str(ds.other_dataset)},

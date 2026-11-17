@@ -12,6 +12,7 @@ from typing import Any
 
 from services.worker_agent.llm import Gateway
 from services.worker_agent.query.executor import QueryOutcome
+from services.worker_agent.sqlgen.audit_rules import AuditContext
 from services.worker_agent.sqlgen.check import fingerprint, problems
 from services.worker_agent.sqlgen.generate import (
     METHODS,
@@ -49,6 +50,7 @@ async def explore(
     run_sql: Callable[[str], Awaitable[QueryOutcome]],
     methods: Sequence[str] = METHODS,
     refuse: Sequence[str] = (),
+    audit: AuditContext | None = None,
 ) -> Exploration:
     banned = {fingerprint(s, dialect) for s in refuse if s}
     written = await candidates(
@@ -58,11 +60,11 @@ async def explore(
     async def checked(c: Candidate) -> tuple[Candidate, list[str]]:
         if c.sql is None:
             return c, [c.error or "no SQL"]
-        found = problems(c.sql, linked, dialect)
+        found = problems(c.sql, linked, dialect, audit)
         if not found:
             return c, []
         fixed = await repair(gateway, question, linked, dialect, c, found)
-        return fixed, problems(fixed.sql, linked, dialect) if fixed.sql else [
+        return fixed, problems(fixed.sql, linked, dialect, audit) if fixed.sql else [
             fixed.error or "no SQL"
         ]
 
@@ -97,7 +99,7 @@ async def explore(
             fixed = await diagnose_and_repair(gateway, question, linked, dialect, c, out.error)
             if (
                 fixed.sql
-                and not problems(fixed.sql, linked, dialect)
+                and not problems(fixed.sql, linked, dialect, audit)
                 and fingerprint(fixed.sql, dialect) not in banned
             ):
                 retried = await run_sql(fixed.sql)

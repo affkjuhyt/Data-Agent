@@ -96,7 +96,8 @@ def _freshness_sql(rule: ingest.QualityRule, table: str) -> exp.Select:
     stale = exp.or_(
         exp.Is(this=newest, expression=exp.Null()), exp.LT(this=newest.copy(), expression=cutoff)
     )
-    source = sqlglot.parse_one(f"SELECT 1 FROM {table}", read="postgres").args["from"]
+    source = sqlglot.parse_one(f"SELECT 1 FROM {table}", read="postgres").find(exp.From)
+    assert source is not None
     return exp.select(
         exp.alias_(exp.Case().when(stale, exp.Literal.number(1)).else_(exp.Literal.number(0)), "n")
     ).from_(source.this)

@@ -22,10 +22,11 @@ import signal
 import time
 import uuid
 from collections.abc import Mapping
+from functools import partial
 
 from sqlalchemy import select, text
 
-from libs import language
+from libs import language, metrics
 from libs.dataagent_db import scoped_session, unscoped_session
 from libs.dataagent_db.models import org
 from services.worker_agent import (
@@ -103,6 +104,9 @@ async def org_locale(org_id: uuid.UUID | None) -> str | None:
     return locale
 
 
+SERVICE = "worker-agent"
+
+
 async def run_once(source: EventSource, handlers: Mapping[str, Handler], batch: int = BATCH) -> int:
     """Claim one batch and handle it; returns how many events were handled."""
     async with source.claim(batch) as events:
@@ -112,7 +116,9 @@ async def run_once(source: EventSource, handlers: Mapping[str, Handler], batch: 
             with language.use_locale(await org_locale(event.org_id)):
                 # Within one claim a failure aborts the batch: nothing is acknowledged and the
                 # events come back on the next claim, already-handled ones as no-ops.
-                await handlers[event.event_type](event)
+                await metrics.timed_event(
+                    SERVICE, event.event_type, partial(handlers[event.event_type], event)
+                )
         return len(events)
 
 
@@ -275,6 +281,7 @@ async def run(stop: asyncio.Event) -> None:
                 handled += await run_once(source, HANDLERS)
             except Exception:
                 logger.exception("worker-agent | batch failed; retrying after a pause")
+        metrics.polled(SERVICE)
         if not handled:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=POLL_SECONDS)
@@ -287,6 +294,8 @@ async def run(stop: asyncio.Event) -> None:
 
 def main() -> None:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+    # PL-05: /metrics on its own port for Prometheus (deploy/docker/monitoring/prometheus.yml).
+    metrics.serve(int(os.environ.get("METRICS_PORT", "0")))
     questions.set_provider_registry(
         ProviderRegistry.build_default(
             secrets=questions.secrets(), source_loader=questions.source_for_provider

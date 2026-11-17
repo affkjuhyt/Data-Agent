@@ -43,6 +43,8 @@ metadata:
     app: kong
     app.kubernetes.io/part-of: dataagent
 spec:
+  # No HorizontalPodAutoscaler here, unlike production: the local cluster has no metrics API, so
+  # it never scaled and only logged "unable to get metrics" every 15 s. One replica (the default).
   selector:
     matchLabels:
       app: kong
@@ -139,26 +141,3 @@ spec:
     nodePort: 30101
     name: admin
   type: NodePort
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: kong
-  namespace: dataagent-service
-  labels:
-    app: kong
-    app.kubernetes.io/part-of: dataagent
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: kong
-  minReplicas: 1
-  maxReplicas: 6
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70

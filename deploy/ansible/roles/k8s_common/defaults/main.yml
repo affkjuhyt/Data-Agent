@@ -163,6 +163,17 @@ service_workloads:
 # is ready to run, without deleting the legacy files from the repository.
 service_manifests: []
 
+# PL-07: the stores no code uses yet. Kafka is the ADR-06 target (outbox → Debezium), but every
+# relay reads its outbox table itself; Langfuse, with the ClickHouse that serves only it, is the
+# trace store until PL-06, and nothing sends it a trace. An install that turns one off neither
+# applies nor waits for its manifests, and the deploy removes its running workloads (their
+# volumes and Secrets stay, so turning it back on finds the data).
+enable_kafka: true
+enable_langfuse: true
+disabled_manifests: >-
+  {{ ([] if (enable_kafka | bool) else ['kafka'])
+     + ([] if (enable_langfuse | bool) else ['clickhouse', 'langfuse', 'langfuse-worker']) }}
+
 migration_jobs: [kong-migration, migrate]
 job_workloads: [db-init, minio-init, temporal-schema]
 # With apply_jobs, a Job reruns only when its own manifest

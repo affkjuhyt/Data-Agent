@@ -33,6 +33,11 @@ wait_rollout: 180
 # Keep build logs outside the checkout, but on a writable local filesystem.
 build_log_dir: "{{ lookup('env', 'TMPDIR') | default('/tmp', true) }}/dataagent-deploy/k8s-local"
 
+# PL-07: no Kafka, ClickHouse or Langfuse on the laptop: nothing uses them yet (k8s_common
+# defaults), and Kafka and ClickHouse alone held ~1 GB on the one node (575 + 404 MiB, 17/11/2026).
+enable_kafka: false
+enable_langfuse: false
+
 seed_demo: true
 # The demo organisation, its admin the realm's helios-admin (already in Keycloak).
 org_id: "{{ seed_demo_tenant }}"

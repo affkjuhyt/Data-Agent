@@ -89,7 +89,9 @@ class MinioObjectStore:
             ) as client:
                 response = await client.get_object(Bucket=bucket, Key=key)
                 async with response["Body"] as body:
-                    return await body.read()
+                    # Typed: aioboto3 is untyped, so the body read is Any to mypy.
+                    data: bytes = await body.read()
+                    return data
         except (BotoCoreError, ClientError) as exc:
             raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
 

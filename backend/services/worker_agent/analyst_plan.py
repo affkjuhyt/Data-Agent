@@ -14,7 +14,8 @@ def build_analysis_plan(
     metric_version_id: str,
     metric_name: str,
     group_by: list[str],
-    filters: list[dict[str, Any]],
+    # The reading's filters as it holds them: dimension code → member codes.
+    filters: dict[str, list[str]],
     period: tuple[date, date] | None,
     top_n: int | None,
     top_desc: bool | None,
@@ -40,8 +41,7 @@ def build_analysis_plan(
         query_args["analysis"] = analysis
 
     shape = "scalar" if not group_by else "breakdown"
-    visual = "metric" if shape == "scalar" else ("line" if grain else "bar"
-    )
+    visual = "metric" if shape == "scalar" else ("line" if grain else "bar")
     steps: list[dict[str, Any]] = [
         {
             "id": "understand",

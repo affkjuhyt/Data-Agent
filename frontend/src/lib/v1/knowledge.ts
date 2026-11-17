@@ -170,6 +170,15 @@ export const listKnowledgePageVersions = async (id: string) => {
   };
 };
 
+/**
+ * Why the screens offer no knowledge run (compile, lint) nor "save an answer as knowledge": no
+ * worker composes pages yet, so the api answers those with 501 not_available (NO_COMPOSER of
+ * context/routes_knowledge.py; the composer is deferred, docs/blueprint/STRATEGY.md §6). The calls
+ * below stay for when it exists.
+ */
+export const KNOWLEDGE_COMPOSER_PENDING =
+  'Chưa có bộ biên soạn trang tri thức, nên chưa tạo hay cập nhật trang từ nguồn được.';
+
 /** KnowledgeRunCreate needs the Data Space; the one chosen in the top bar is sent. */
 const spaceForRun = () => {
   const space = currentDataSpace();

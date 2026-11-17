@@ -7,8 +7,10 @@ import { SideRail } from './SideRail';
 import type { AreaId, RailGroup } from './areas';
 import { useRailCounts } from './useRailCounts';
 import { useShellCounts } from './useShellCounts';
+import { useInitialSpace } from './useInitialSpace';
 import { listDataSpaces } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
+import { setOpenLastUsed } from '../../lib/v1/explore';
 import { MobileTabBar, mobileTabOf } from './MobileTabBar';
 import { NotificationDrawer } from '../../features/notifications/NotificationDrawer';
 import { useAuth } from '../../lib/AuthProvider';
@@ -68,18 +70,16 @@ export function AppShell({
     || spaces.data?.items[0]?.id
     || '';
 
-  useEffect(() => {
-    const id = candidateId;
-    if (!id) return;
-    const ds = spaces.data?.items.find((s) => s.id === id);
-    if (ds) {
-      pickedBeforeShell.current = '';
-      setDataSpace({ id: ds.id, name: ds.name });
-    }
-  }, [candidateId, spaces.data, setDataSpace]);
+  const { markChosen } = useInitialSpace(candidateId, spaces.data?.items, setDataSpace);
   const chooseSpace = (id: string) => {
+    markChosen();
     const ds = spaces.data?.items.find((s) => s.id === id);
     setDataSpace(ds ? { id: ds.id, name: ds.name } : null);
+    // "Mở Data Space dùng gần nhất" keeps the last one in the account, and it is read before the
+    // browser's own memory on the next load: without this a reload reopened the old default.
+    if (ds && me?.default_data_space_id && me.default_data_space_id !== ds.id) {
+      void setOpenLastUsed(true, ds.id).catch(() => undefined);
+    }
   };
   const spaceOptions = [
     { id: '', name: 'Toàn tổ chức' },

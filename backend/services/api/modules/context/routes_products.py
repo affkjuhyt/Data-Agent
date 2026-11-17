@@ -379,7 +379,7 @@ async def list_published_product_catalog(
     """
     products = await published_products(principal, data_space)
     async with transaction(ROLE, principal) as session:
-        spaces = dict(
+        spaces: dict[uuid.UUID, str] = dict(
             (
                 await session.execute(
                     select(org.DataSpace.id, org.DataSpace.name).where(
@@ -387,7 +387,9 @@ async def list_published_product_catalog(
                         org.DataSpace.deleted_at.is_(None),
                     )
                 )
-            ).all()
+            )
+            .tuples()
+            .all()
         )
     items = products[: page.page_size]
     return Page(

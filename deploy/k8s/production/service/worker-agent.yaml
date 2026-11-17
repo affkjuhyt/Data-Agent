@@ -19,6 +19,8 @@ metadata:
     app: worker-agent
     app.kubernetes.io/part-of: dataagent
 data:
+  # PL-05: the port libs/metrics serves /metrics on (the Service below).
+  METRICS_PORT: '8291'
   # Document answers (UC-05-04): the question is embedded by the TEI the chunks were embedded
   # with and the pool is ordered by the TEI reranker; without them retrieval is keyword-only.
   DOCUMENT_EMBED_URL: __DOCUMENT_EMBED_URL__
@@ -109,6 +111,10 @@ spec:
       - name: worker-agent
         image: dataagent/worker-agent:latest
         command: ["python", "-m", "services.worker_agent.main"]
+        # PL-05: /metrics for Prometheus (libs/metrics); nothing else listens here.
+        ports:
+        - containerPort: 8291
+          name: metrics
         envFrom:
         - configMapRef:
             name: dataagent-config
@@ -138,3 +144,20 @@ spec:
         emptyDir: {}
       enableServiceLinks: false
       serviceAccountName: worker-agent
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-agent
+  namespace: dataagent-service
+  labels:
+    app: worker-agent
+    app.kubernetes.io/part-of: dataagent
+spec:
+  # PL-05: Prometheus' way in; the worker serves nothing but its metrics.
+  selector:
+    app: worker-agent
+  ports:
+  - name: metrics
+    port: 8291
+    targetPort: 8291

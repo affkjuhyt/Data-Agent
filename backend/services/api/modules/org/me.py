@@ -54,7 +54,8 @@ _TEMPLATES = (
 
 def _onboarding(user: org.AppUser) -> OnboardingView:
     attrs = user.attributes if isinstance(user.attributes, dict) else {}
-    saved = attrs.get("onboarding") if isinstance(attrs.get("onboarding"), dict) else {}
+    raw = attrs.get("onboarding")
+    saved = raw if isinstance(raw, dict) else {}
     state = str(saved.get("state", "pending"))
     return OnboardingView(
         state=state,

@@ -8,8 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs.dataagent_db.models import catalog
-from libs.dataagent_db.models import context
+from libs.dataagent_db.models import catalog, context
 from libs.mart_model import propose_from_relationships, relations_match_active
 
 
@@ -60,7 +59,7 @@ async def active_fact_relationships(
         }
         for r in rows
     ]
-    targets = {r["to_dataset_id"] for r in payload} | {fact_dataset_id}
+    targets = {r.to_dataset_id for r in rows} | {fact_dataset_id}
     return payload, await _datasets(session, data_space, targets)
 
 

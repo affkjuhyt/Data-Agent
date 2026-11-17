@@ -38,8 +38,8 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
       items: [
         { id: 'ASK', label: 'Hỏi đáp' },
         { id: 'EXPLORE', label: 'Khám phá' },
-        // P16: only leaders with the exec_vault role have a vault.
-        { id: 'VAULT', label: 'Kho riêng', requires: 'exec_vault' },
+        // P16 Kho riêng is out of navigation: publishing a thesis answers 501 until its page
+        // drafter exists (deferred, docs/blueprint/STRATEGY.md §6, PL-03); features/vault stays.
         // Hub of models + latest forecasts; create lives on the hub empty state, not the rail.
         { id: 'FORECAST', label: 'Dự báo' },
         { id: 'SESSIONS', label: 'Phiên làm việc' },
@@ -188,7 +188,6 @@ const RAIL_PARENT: Partial<Record<AreaId, Record<string, string>>> = {
     FORECAST_STUDIO: 'FORECAST',
     FORECAST_MODEL: 'FORECAST',
     FORECAST_MODEL_NEW: 'FORECAST',
-    FUEL_FORECAST: 'FORECAST',
     FORECAST_LEDGER: 'FORECAST',
     RECEIPT: 'ASK',
     DOC_ASK: 'ASK',

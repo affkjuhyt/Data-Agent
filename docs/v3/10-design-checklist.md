@@ -9,8 +9,8 @@
 
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
-| Use case (tab 8) | 115 | 13 UC đủ tiêu chí bắt buộc | todo 13, partial 89, done 8, na 5 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 339 có test nhắc mã AC | todo 739, na 39 |
+| Use case (tab 8) | 115 | 13 UC đủ tiêu chí bắt buộc | todo 13, partial 88, done 8, blocked 1, na 5 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 337 có test nhắc mã AC | todo 739, na 39 |
 | Endpoint A2 (tab 4) | 462 (A2 ghi 463 dòng; POST /v1/data-products ở hai nhóm) | 462 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 208 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 157 có mã nhắc tới | todo 188, na 7 |
@@ -227,7 +227,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC-16-02 | Bộ nhớ riêng và hỏi riêng | partial | 5/5 | 3/3 | 4/8 | claude · 4/8 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
 | UC-16-03 | Xem bằng chứng hai phía | partial | 3/3 | 4/4 | 2/7 | claude · 2/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
 | UC-16-04 | Tự chấm và xem độ hiệu chỉnh | partial | 3/3 | 4/4 | 1/5 | claude · 1/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
-| UC-16-05 | Công bố luận điểm thành giả thuyết | partial | 4/4 | 5/5 | 4/6 | claude · 4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
+| UC-16-05 | Công bố luận điểm thành giả thuyết | blocked | 4/4 | 5/5 | 3/6 | claude · Tạo publication trả 501 not_available từ 16/11/2026 (PL-03): không worker nào nhận exec.publication.requested; hoãn theo docs/blueprint/STRATEGY.md §6. Rút lại publication (AC-16-05-05) vẫn có test |
 | UC-16-06 | Niêm phong, bàn giao hoặc huỷ khoá khi rời vị trí | partial | 6/6 | 6/6 | 3/5 | claude · 3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md |
 
 ## Endpoint A2 theo nhóm
@@ -315,7 +315,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-53 | UC-02-04, UC-02-07 | todo | `backend/services/api/modules/workspace/routes.py` |
 | BR-54 | UC-02-07 | todo |  |
 | BR-55 | UC-04-06 | todo |  |
-| BR-56 | UC-04-06, UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +5 |
+| BR-56 | UC-04-06, UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +4 |
 | BR-57 | UC-04-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/ingest.py` +3 |
 | BR-58 | UC-04-08 | todo | `backend/services/api/modules/ingest/routes.py` |
 | BR-59 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/libs/dataagent_db/models/qa.py` +8 |
@@ -1444,14 +1444,14 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-08-08 Nhận bản tin theo lịch sự kiện ngoài · 2/7</summary>
+<details><summary>UC-08-08 Nhận bản tin theo lịch sự kiện ngoài · 1/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-08-08-01 | Chính | Cho lịch “Kỳ điều hành giá xăng dầu” active và AC02 đã theo dõi / Khi đến 20:00 thứ Tư 08/07/2026 cho kỳ 09/07 / Thì AC02 nhận bản tin trước kỳ gồm giá kỳ trước (E5RON92 19.730 đ/lít), trung vị, khoảng 80%, P(tăng) từ… | API, CSDL | todo |  |
 | AC-08-08-02 | Chính | Cho Bộ Công Thương công bố giá lúc 15:30 thứ Năm / Khi external_event chuyển occurred / Thì AC02 nhận bản tin kết quả có giá công bố, sai số, trong khoảng hay không, phần lệch chính, liên kết SCR-71; có event_bulletin… | API, CSDL | todo |  |
 | AC-08-08-03 | Thay thế | Cho bản tin trước kỳ 09/07 đã gửi / Khi Bộ thông báo dời kỳ sang 10/07 / Thì event chuyển shifted, người theo dõi nhận “kỳ dời sang 10/07/2026”, giờ bản tin tính lại và dự báo trước kỳ mới chạy lại | API, CSDL | todo | `tests/integration/api/test_monitor_calendars.py` |
-| AC-08-08-04 | Thay thế | Cho người phụ trách lịch / Khi gọi :run-bulletin ngoài giờ / Thì có event_bulletin mới gửi tới người theo dõi | API | todo | `tests/integration/api/test_monitor_calendars.py` |
+| AC-08-08-04 | Thay thế | Cho người phụ trách lịch / Khi gọi :run-bulletin ngoài giờ / Thì có event_bulletin mới gửi tới người theo dõi | API | todo |  |
 | AC-08-08-05 | Ngoại lệ | Cho cổng dự báo kỳ 09/07 không đạt / Khi đến 20:00 / Thì vẫn gửi đúng giờ bản tin “CHƯA CÓ dự báo kỳ 09/07/2026” kèm lý do, không có số dự báo cũ | API, Đánh giá agent | todo |  |
 | AC-08-08-06 | Ngoại lệ | Cho quá post_wait_max chưa có thông báo của Bộ / Khi hết thời gian chờ / Thì Cần bạn có yêu cầu cho người phụ trách và không có event_bulletin post | CSDL | todo |  |
 | AC-08-08-07 | Quy tắc | Cho bản tin trước kỳ của kỳ chưa xác nhận / Khi lưu event_bulletin / Thì mọi số trỏ ledger_entry hoặc dataset đã chứng nhận, có khoảng 80%, xác suất Quỹ, chỉ số hiệu chỉnh và nhãn “kỳ dự kiến”; thiếu một trong các phầ… | CSDL | todo |  |
@@ -2170,11 +2170,11 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-16-05 Công bố luận điểm thành giả thuyết · 5/8</summary>
+<details><summary>UC-16-05 Công bố luận điểm thành giả thuyết · 4/8</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-16-05-01 | Chính | Cho luận điểm giá xăng open của AC02 / Khi bấm “Công bố cho tổ chức”, chỉ ghi “Thành viên Ban điều hành”, không hiện mức tự tin và lý do, chọn Data Space Khối Tài chính / Thì bản nháp có câu “Giá trần E5RON92 kỳ điều … | period=2026-10-22}}; người phụ trách Data Space đích có proposal kind knowledge_page | todo | `tests/integration/api/test_exec.py` |
+| AC-16-05-01 | Chính | Cho luận điểm giá xăng open của AC02 / Khi bấm “Công bố cho tổ chức”, chỉ ghi “Thành viên Ban điều hành”, không hiện mức tự tin và lý do, chọn Data Space Khối Tài chính / Thì bản nháp có câu “Giá trần E5RON92 kỳ điều … | period=2026-10-22}}; người phụ trách Data Space đích có proposal kind knowledge_page | todo |  |
 | AC-16-05-02 | Chính | Cho bản công bố ở AC-16-05-01 / Khi AC03 khác AC02 duyệt và khi qua 22/10/2026 18:00 với giá 19.950 đ/lít (minh hoạ) / Thì trang active mang nhãn “Giả thuyết, chưa kiểm chứng” kèm ngày chấm, sau đó đổi thành “Đã kiểm … | API, E2E | todo |  |
 | AC-16-05-03 | Chính | Cho trang giả thuyết active / Khi AC01 hỏi “giá trần E5RON92 kỳ gần nhất” và hỏi một câu về lãi suất / Thì câu đầu không lấy số từ trang, chỉ nhắc trang trong phần “Giả thuyết đang mở của ban điều hành”; câu sau không… | Đánh giá agent | todo |  |
 | AC-16-05-04 | Thay thế | Cho người duyệt yêu cầu sửa câu chữ / Khi AC02 sửa bản công bố trên SCR-75 và gửi lại / Thì có phiên bản trang mới chờ duyệt và content_ct, cond_ct của luận điểm gốc không đổi | API, CSDL | todo |  |

@@ -28,7 +28,7 @@ def _events(ds: Space) -> int:
     return int(ds.one("SELECT count(*) FROM ingest.outbox WHERE org_id = %s", ds.org))
 
 
-async def test_dry_run_asks_worker_ingest_for_a_sample_and_creates_no_job(ds: Space) -> None:
+async def test_dry_run_answers_the_would_be_job_and_records_nothing(ds: Space) -> None:
     url = f"/v1/sources/{ds.source}/jobs"
     body = {
         **JOB,
@@ -37,34 +37,41 @@ async def test_dry_run_asks_worker_ingest_for_a_sample_and_creates_no_job(ds: Sp
         "target_dataset_id": str(ds.dataset),
     }
     async with client(ds) as api:
+        # Since 11/11/2026 (25b5482e) worker-ingest samples the source for real: the dry run is
+        # accepted, recorded as a sample request (ingest.job_sample + outbox), and polled.
         tried = await api.post(
             url, params={"dry_run": "true"}, json=body, headers=ds.headers("engineer")
         )
         assert tried.status_code == 202, tried.text
         accepted = tried.json()
         assert accepted["status"] == "running" and accepted["poll_after_ms"] > 0
-        sample_id = accepted["id"]
-        # No job: only the sample row and the request worker-ingest acts on.
-        assert _jobs(ds) == 0
-        assert (
-            ds.one("SELECT mode FROM ingest.job_sample WHERE id = %s", sample_id) == "incremental"
-        )
-        [(kind, payload)] = ds.events(sample_id)
+        sample = accepted["id"]
+        # No job: only the request for a sample, which is what worker-ingest consumes.
+        assert _jobs(ds) == 0 and _events(ds) == 1
+        [(kind, payload)] = ds.events(sample)
         assert kind == "ingestion_job.sample_requested"
+        assert payload["mode"] == "incremental" and payload["cursor_column"] == "updated_since"
         assert payload["source_id"] == str(ds.source)
-        assert payload["cursor_column"] == "updated_since"
 
-        # Until worker-ingest fills it, the sample says it is still running and has no rows.
-        polled = await api.get(f"/v1/job-samples/{sample_id}", headers=ds.headers("engineer"))
-        assert polled.status_code == 200, polled.text
-        sample = polled.json()
-        assert sample["status"] == "running" and sample["poll_after_ms"] > 0
-        assert sample["sample"] == [] and sample["errors"] == []
-        # Another Data Space does not see it.
+        # Until the worker has read the source the api has no rows to show, and invents none.
+        waiting = await api.get(f"/v1/job-samples/{sample}", headers=ds.headers("engineer"))
+        assert waiting.status_code == 200, waiting.text
+        assert waiting.json()["status"] == "running" and waiting.json()["sample"] == []
+        assert waiting.json()["poll_after_ms"] > 0
+        with ds.seed.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE ingest.job_sample SET status = 'succeeded', finished_at = now(),"
+                ' sample = \'[{"ky_han": "12T", "lai_suat": 4.7}]\' WHERE id = %s',
+                (sample,),
+            )
+        ready = await api.get(f"/v1/job-samples/{sample}", headers=ds.headers("engineer"))
+        assert ready.json()["status"] == "succeeded" and ready.json()["poll_after_ms"] == 0
+        assert ready.json()["sample"] == [{"ky_han": "12T", "lai_suat": 4.7}]
+        # Another Data Space does not see the sample.
         elsewhere = await api.get(
-            f"/v1/job-samples/{sample_id}", headers=ds.headers("engineer", uuid.uuid4())
+            f"/v1/job-samples/{sample}", headers=ds.headers("engineer", ds.other)
         )
-        assert elsewhere.status_code in (403, 404)
+        assert elsewhere.status_code == 404
 
         # The same body without dry_run creates the job, as before.
         made = await api.post(url, json=body, headers=ds.headers("engineer"))

@@ -151,5 +151,5 @@ UC-16-01	partial	claude	5/7 tiêu chí bắt buộc có test (đếm 23/10/2026)
 UC-16-02	partial	claude	4/8 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
 UC-16-03	partial	claude	2/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
 UC-16-04	partial	claude	1/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
-UC-16-05	partial	claude	4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-16-05	blocked	claude	Tạo publication trả 501 not_available từ 16/11/2026 (PL-03): không worker nào nhận exec.publication.requested; hoãn theo docs/blueprint/STRATEGY.md §6. Rút lại publication (AC-16-05-05) vẫn có test
 UC-16-06	partial	claude	3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import functools
 import hashlib
 import json
 import logging
@@ -463,6 +464,11 @@ def _cut_clarification(
         f"Người phụ trách có thể thêm “{asked}” làm từ đồng nghĩa để lần sau hệ thống hiểu ngay.",
         choices,
     )
+
+
+def _probe_compile(request: c.Request, *, layer: SpaceLayer, dialect: str) -> c.Compiled:
+    """The request compiled as it stands: no comparison, no analysis beside it."""
+    return c.compile_metric(request, layer.layer, dialect=dialect)
 
 
 def _compiled(
@@ -1592,7 +1598,9 @@ async def _understand_and_plan(
         period_result_ids: list[uuid.UUID] | None = None
         filed_period_label: str | None = None
         filed_rows: list[dict[str, Any]] | None = None
-        if problem is None and question.knowledge_mode == "period_close":
+        # Filed numbers are read for a compiled metric only: a reading that asks back compiles
+        # nothing, and reading its filed result dereferenced None.
+        if problem is None and compiled is not None and question.knowledge_mode == "period_close":
             if u.period is None:
                 problem = Refusal.of(
                     ErrorCode.NO_DATA_FOR_PERIOD,
@@ -1659,7 +1667,12 @@ async def _understand_and_plan(
                             for row in published
                         ]
                         period_result_ids = [row.id for row in published]
-        elif problem is None and question.knowledge_mode == "latest" and u.period is not None:
+        elif (
+            problem is None
+            and compiled is not None
+            and question.knowledge_mode == "latest"
+            and u.period is not None
+        ):
             # BR-39 / AC-10-01-02: a dated question without an explicit mode compares the
             # live result with the filed result when the period has one. Missing filed history
             # is not an error: the answer remains explicitly current-data only.
@@ -1846,15 +1859,16 @@ async def _understand_and_plan(
                 ),
                 best_effort_note=best_effort_note,
                 request=compile_request,
-                recompile=lambda request,
-                _layer=layer,
-                _to=compare_to,
-                _shown=shown,
-                _d=dialect_for_source(source.kind): _compiled(request, _layer, _to, _d, _shown),
-                probe_compile=lambda request,
-                _layer=layer,
-                _d=dialect_for_source(source.kind): c.compile_metric(
-                    request, _layer.layer, dialect=_d
+                # Bound now (partial, not a closure over names this loop may rebind).
+                recompile=functools.partial(
+                    _compiled,
+                    layer=layer,
+                    compare_to=compare_to,
+                    dialect=dialect_for_source(source.kind),
+                    shown=shown,
+                ),
+                probe_compile=functools.partial(
+                    _probe_compile, layer=layer, dialect=dialect_for_source(source.kind)
                 ),
                 time_code=_probe_time_code(layer, layer.versions[u.metric.metric_id]),
             )
@@ -2327,7 +2341,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             insights=written(ins.sentences, every) or None,
         )
         shown = [f for f in every if f.display_state == "shown"]
-        check = {
+        check: dict[str, Any] = {
             "numbers_total": len(shown),
             "traced": len(shown),
             "untraceable_draft": 0,
