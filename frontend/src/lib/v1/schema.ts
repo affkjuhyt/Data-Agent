@@ -3765,6 +3765,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/job-samples/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mẫu dữ liệu của lần chạy thử job nạp */
+        get: operations["getIngestionJobSample"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/jobs": {
         parameters: {
             query?: never;
@@ -3844,6 +3861,26 @@ export interface paths {
         put?: never;
         /** Tạm dừng, bắt buộc lý do */
         post: operations["pauseIngestionJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{id}:resolve-drift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Xử lý thay đổi cấu trúc: nhận cột mới, tạm dừng hoặc nạp lại toàn bộ
+         * @description Clear schema_drift after the person accepts additive change, pauses, or asks a full rebuild.
+         */
+        post: operations["resolveIngestionJobDrift"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13080,8 +13117,12 @@ export interface components {
             dimensions?: string[];
             /** Filters */
             filters?: components["schemas"]["ExploreFilter"][];
+            /** Grain */
+            grain?: ("day" | "week" | "month" | "quarter" | "year") | null;
             /** Metric Ids */
             metric_ids: string[];
+            /** Period */
+            period?: string | null;
         };
         /**
          * ExportAccepted
@@ -14713,30 +14754,9 @@ export interface components {
         };
         /**
          * IngestionJobDryRun
-         * @description POST /v1/sources/{id}/jobs?dry_run=true: the job as it would be created, not recorded.
-         *
-         *     A3 also asks for a sample of 1,000 rows and its errors. Reading the source is worker-ingest's:
-         *     the api holds no connection to it, so sample and errors stay empty and `note` says so.
+         * @description GET /v1/job-samples/{id}: worker-filled sample after dry_run Accepted.
          */
         IngestionJobDryRun: {
-            /** Consecutive Failures */
-            consecutive_failures: number;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Cursor Column */
-            cursor_column: string | null;
-            /** Cursor Value */
-            cursor_value: string | null;
-            /**
-             * Data Space Id
-             * Format: uuid
-             */
-            data_space_id: string;
-            /** Dlq Retention Days */
-            dlq_retention_days: number;
             /**
              * Dry Run
              * @default true
@@ -14747,45 +14767,24 @@ export interface components {
             errors?: {
                 [key: string]: unknown;
             }[];
-            /** Freshness Sla */
-            freshness_sla: string | null;
             /**
              * Id
              * Format: uuid
              */
             id: string;
-            /** Mode */
-            mode: string;
-            /** Name */
-            name: string;
             /** Note */
-            note: string;
-            /** Paused At */
-            paused_at: string | null;
-            /** Paused Reason */
-            paused_reason: string | null;
+            note?: string | null;
+            /**
+             * Poll After Ms
+             * @default 1000
+             */
+            poll_after_ms: number;
             /** Sample */
             sample?: {
                 [key: string]: unknown;
             }[];
-            /** Schedule Cron */
-            schedule_cron: string | null;
-            /**
-             * Source Id
-             * Format: uuid
-             */
-            source_id: string;
-            /** Source Object */
-            source_object: string;
             /** Status */
             status: string;
-            /** Target Dataset Id */
-            target_dataset_id: string | null;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
         };
         /**
          * IngestionJobSummary
@@ -14825,16 +14824,38 @@ export interface components {
             /** Lag Seconds */
             lag_seconds?: number | null;
             last_run?: components["schemas"]["JobRunView"] | null;
+            /** Merge Key Columns */
+            merge_key_columns?: string[] | null;
             /** Mode */
             mode: string;
             /** Name */
             name: string;
+            /**
+             * On Invalid Record
+             * @default quarantine_30d
+             */
+            on_invalid_record: string;
+            /**
+             * On Schema Change
+             * @default accept_new_columns
+             */
+            on_schema_change: string;
             /** Paused At */
             paused_at: string | null;
             /** Paused Reason */
             paused_reason: string | null;
+            /**
+             * Retry Policy
+             * @default backoff_3
+             */
+            retry_policy: string;
             /** Schedule Cron */
             schedule_cron: string | null;
+            /**
+             * Skip Today
+             * @default false
+             */
+            skip_today: boolean;
             /**
              * Source Id
              * Format: uuid
@@ -14879,16 +14900,38 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Merge Key Columns */
+            merge_key_columns?: string[] | null;
             /** Mode */
             mode: string;
             /** Name */
             name: string;
+            /**
+             * On Invalid Record
+             * @default quarantine_30d
+             */
+            on_invalid_record: string;
+            /**
+             * On Schema Change
+             * @default accept_new_columns
+             */
+            on_schema_change: string;
             /** Paused At */
             paused_at: string | null;
             /** Paused Reason */
             paused_reason: string | null;
+            /**
+             * Retry Policy
+             * @default backoff_3
+             */
+            retry_policy: string;
             /** Schedule Cron */
             schedule_cron: string | null;
+            /**
+             * Skip Today
+             * @default false
+             */
+            skip_today: boolean;
             /**
              * Source Id
              * Format: uuid
@@ -14965,6 +15008,8 @@ export interface components {
             dlq_retention_days?: number | null;
             /** Freshness Sla */
             freshness_sla?: string | null;
+            /** Merge Key Columns */
+            merge_key_columns?: string[] | null;
             /**
              * Mode
              * @enum {string}
@@ -14972,12 +15017,28 @@ export interface components {
             mode: "full" | "incremental" | "cdc";
             /** Name */
             name: string;
+            /** On Invalid Record */
+            on_invalid_record?: ("quarantine_30d" | "skip_and_log" | "stop") | null;
+            /** On Schema Change */
+            on_schema_change?: ("accept_new_columns" | "pause_and_ask" | "continue_and_notify") | null;
+            /** Retry Policy */
+            retry_policy?: ("backoff_3" | "once" | "none") | null;
             /** Schedule Cron */
             schedule_cron?: string | null;
+            /** Skip Today */
+            skip_today?: boolean | null;
             /** Source Object */
             source_object: string;
             /** Target Dataset Id */
             target_dataset_id?: string | null;
+        };
+        /** JobDriftResolve */
+        JobDriftResolve: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "rebuild_full" | "accept_additive" | "pause";
         };
         /** JobPatch */
         JobPatch: {
@@ -14985,10 +15046,20 @@ export interface components {
             dlq_retention_days?: number | null;
             /** Freshness Sla */
             freshness_sla?: string | null;
+            /** Merge Key Columns */
+            merge_key_columns?: string[] | null;
             /** Name */
             name?: string | null;
+            /** On Invalid Record */
+            on_invalid_record?: ("quarantine_30d" | "skip_and_log" | "stop") | null;
+            /** On Schema Change */
+            on_schema_change?: ("accept_new_columns" | "pause_and_ask" | "continue_and_notify") | null;
+            /** Retry Policy */
+            retry_policy?: ("backoff_3" | "once" | "none") | null;
             /** Schedule Cron */
             schedule_cron?: string | null;
+            /** Skip Today */
+            skip_today?: boolean | null;
         };
         /** JobRunView */
         JobRunView: {
@@ -53035,6 +53106,118 @@ export interface operations {
             };
         };
     };
+    getIngestionJobSample: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionJobDryRun"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
     listIngestionJobs: {
         parameters: {
             query?: {
@@ -53517,6 +53700,122 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Reason"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionJobView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    resolveIngestionJobDrift: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobDriftResolve"];
             };
         };
         responses: {
@@ -72007,7 +72306,7 @@ export interface operations {
     createIngestionJob: {
         parameters: {
             query?: {
-                /** @description Check the job as create would, record nothing (200) */
+                /** @description Sample up to 1,000 source rows via worker-ingest; returns 202 Accepted */
                 dry_run?: boolean;
             };
             header?: never;
@@ -72028,7 +72327,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IngestionJobView"] | components["schemas"]["IngestionJobDryRun"];
+                    "application/json": components["schemas"]["IngestionJobView"] | components["schemas"]["services__api__modules__ingest__schemas__Accepted"];
                 };
             };
             /** @description Invalid request */

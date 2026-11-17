@@ -49,12 +49,12 @@ from services.api.modules.ingest.schemas import (
     Backfill,
     DatasetView,
     DlqRecordView,
-    DriftResolve,
     FileUploadView,
     IngestionJobDryRun,
     IngestionJobSummary,
     IngestionJobView,
     JobCreate,
+    JobDriftResolve,
     JobPatch,
     JobRunView,
     JobStatus,
@@ -573,7 +573,7 @@ async def resume_job(
     **endpoint("POST", "/v1/jobs/{id}:resolve-drift", operation_id="resolveIngestionJobDrift"),
 )
 async def resolve_job_drift(
-    body: DriftResolve,
+    body: JobDriftResolve,
     job_id: IdPath,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
