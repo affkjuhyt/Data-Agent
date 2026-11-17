@@ -390,6 +390,23 @@ class QueryMetric(Tool):
                     failure="logic",
                 )
             group_by.append(time_cut.code)
+        by_code = {d.code: d for d in vocab.dimensions}
+        asked_text = f" {norm(ctx.question)} "
+        stray = [
+            f
+            for f in args.filters
+            if period is not None
+            and _CALENDAR_PART.match(f)
+            and f" {norm(by_code[f].name if f in by_code else f)} " not in asked_text
+        ]
+        if stray:
+            # "Top 10 sản phẩm theo doanh thu năm 2013" was read for the calendar year AND
+            # filtered nam_tai_chinh=2013: the two overlap on January to June, and half the
+            # revenue was gone without a word (17/11). A period is read as the period; a calendar
+            # part is a filter only when the question names it ("năm tài chính 2013").
+            args = args.model_copy(
+                update={"filters": {k: v for k, v in args.filters.items() if k not in stray}}
+            )
         bad = [g for g in [*group_by, *args.filters] if g not in allowed]
         if bad:
             cuts = ", ".join(sorted(allowed - {d.code for d in vocab.dimensions if d.is_time}))

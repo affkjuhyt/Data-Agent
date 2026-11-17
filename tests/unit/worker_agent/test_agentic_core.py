@@ -1019,6 +1019,20 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
         )  # type: ignore[arg-type]
     )
     assert compiled[-1].top_n is None
+    # A calendar part the question does not name is no filter beside the period it reads.
+    ctx.question = "Top 10 vùng theo doanh thu Internet năm 2013"
+    asyncio.run(
+        QueryMetric().run(
+            ctx,
+            QueryMetricArgs(
+                metric="DOANH_THU_INTERNET",
+                group_by=["vung"],
+                period="2013",
+                filters={"nam_tai_chinh": ["2013"]},
+            ),
+        )  # type: ignore[arg-type]
+    )
+    assert compiled[-1].filters == {}
     ctx.question = "Doanh thu Internet theo tháng"
 
     refused = asyncio.run(
