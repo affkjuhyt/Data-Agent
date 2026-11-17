@@ -44,6 +44,21 @@ QUERYABLE = ("active", "testing")
 _CALENDAR_PART = re.compile(r"^(ngay|tuan|thang|quy|nam|day|week|month|quarter|year)(_|$)")
 # The grains query_metric takes (a fiscal one is read through the period, not the grain).
 _GRAINS = frozenset({"day", "week", "month", "quarter", "year"})
+# "Top 10 sản phẩm …", "3 đại lý có doanh thu cao nhất", "2 quốc gia … thấp nhất".
+_TOP_COUNT = re.compile(r"^(?:top\s*)?(\d{1,3})\s+[a-z]|\btop\s*(\d{1,3})\b")
+_LOWEST = re.compile(r"\b(?:thap nhat|it nhat|nho nhat|kem nhat|lowest|least|smallest|bottom)\b")
+
+
+def asked_top(question: str) -> tuple[int, bool] | None:
+    """How many members a ranking question asks for, and whether the highest first."""
+    text = norm(question)
+    m = _TOP_COUNT.search(text)
+    if m is None:
+        return None
+    count = int(m.group(1) or m.group(2))
+    if not 0 < count <= 100:
+        return None
+    return count, _LOWEST.search(text) is None
 
 
 def named_cut(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> str | None:
@@ -247,6 +262,12 @@ class QueryMetric(Tool):
             # "Doanh thu Internet theo quý năm 2013" was read with grain=year, one total, then
             # rebuilt with Python and exploratory SQL (F0, 17/11). The question names the grain.
             args = args.model_copy(update={"grain": asked_grain.grain})
+        top = asked_top(ctx.question)
+        if top is not None and [g for g in args.group_by if g not in times_all]:
+            # "3 đại lý có doanh thu cao nhất" read again without top_n gave 488 dealers in name
+            # order, and the answer called the first three alphabetically the highest (F0, 17/11).
+            # The question says how many, and which end.
+            args = args.model_copy(update={"top_n": top[0], "top_desc": top[1]})
         # Which year each side of a two-year comparison is, to name its columns.
         side_labels: dict[str, str] = {}
         years = two_years(ctx.question)

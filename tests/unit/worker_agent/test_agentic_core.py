@@ -1003,6 +1003,12 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
         QueryMetric().run(ctx, QueryMetricArgs(metric="DOANH_THU_INTERNET", grain="year"))  # type: ignore[arg-type]
     )
     assert compiled[-1].grain == "quarter" and compiled[-1].group_by == ["ngay_dat"]
+    # F0: the count and the end a ranking question names win too ("3 … thấp nhất").
+    ctx.question = "2 vùng có doanh thu Internet thấp nhất năm 2013"
+    asyncio.run(
+        QueryMetric().run(ctx, QueryMetricArgs(metric="DOANH_THU_INTERNET", group_by=["vung"]))  # type: ignore[arg-type]
+    )
+    assert (compiled[-1].top_n, compiled[-1].top_desc) == (2, False)
     ctx.question = "Doanh thu Internet theo tháng"
 
     refused = asyncio.run(
