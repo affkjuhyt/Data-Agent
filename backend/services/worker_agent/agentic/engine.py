@@ -33,7 +33,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 
-from libs import clock
+from libs import clock, language
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
 from services.worker_agent import turn_trace
@@ -65,6 +65,8 @@ from services.worker_agent.progress import is_cancel_requested, publish
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.packs import PACKS
+from services.worker_agent.understand.packs.base import iso_answer
 from services.worker_agent.understand.resolver import metric_words, quantity_words
 from services.worker_agent.understand.text import find_period, norm
 from services.worker_agent.understand.value_retrieval import sem_value_retrieval
@@ -973,9 +975,17 @@ async def compose(s: State) -> None:
     citations = "\n".join(
         f"[{c['index']}] {c['source']}: {c['snippet'][:300]}" for c in ws.citations
     )
+    premise = _false_premise(s)
     user = (
         f"{_situation(s)}\n\n{_progress(s)}\n\n<facts>\n{_facts_text(known) or '(không có)'}\n</facts>"
         + (f"\n\n<citations>\n{citations}\n</citations>" if citations else "")
+        + (
+            f"\n\n<premise>Tiền đề của câu hỏi sai: {premise} Câu trả lời mở đầu bằng điều này"
+            " (server đã đặt nó ở đầu), rồi phân tích biến động thật; không giải thích theo chiều"
+            " câu hỏi nói.</premise>"
+            if premise
+            else ""
+        )
     )
     # The period labels where the data is (data_coverage, the planning probe) may be named
     # untagged as a dataset's period cells may ("dữ liệu có từ 2010-12 đến 2013-12"); its figures
@@ -1085,6 +1095,20 @@ async def compose(s: State) -> None:
                         "block",
                         {"question_id": str(s.question_id), "block": block},
                     )
+        if premise:
+            # Said by the server, its numbers from the compared totals: the reporter of q7 wrote
+            # "doanh thu tháng 8/2013 giảm vì…" over a month that rose 13,1% (F0, 17/11).
+            block = {
+                "type": "callout",
+                "id": f"b{len(s.composition) + 1}",
+                "composed": True,
+                "tone": "warning",
+                "content": premise,
+            }
+            s.composition.insert(0, block)
+            await publish(
+                str(s.question_id), "block", {"question_id": str(s.question_id), "block": block}
+            )
         _complete_lead_ins(s)
         if not s.headline and not any(x["type"] == "markdown" for x in s.composition):
             # No sentence at all ("3 đại lý có doanh thu cao nhất": a table and an empty text).
@@ -1105,6 +1129,51 @@ async def compose(s: State) -> None:
 
 
 _DATA_BLOCKS = frozenset({"kpi", "table", "chart"})
+# The direction a "vì sao" question takes for granted ("Vì sao doanh thu tháng 8/2013 giảm?").
+_SAID_DOWN = re.compile(r"\b(?:giam|sut|tut|di xuong|decrease|decline|drop|fall|fell)\b")
+_SAID_UP = re.compile(r"\b(?:tang|di len|increase|rise|rose|grow|grew)\b")
+
+
+def _false_premise(s: State) -> str:
+    """F3: a "why did it fall" question over a period that rose (or the reverse), said with the
+    two totals explain_change compared; empty when the question's direction holds, names none,
+    or nothing was compared."""
+    assert s.ctx is not None
+    changes = getattr(s.ctx, "changes", None)
+    text = norm(s.ctx.question)
+    if not changes or not any(pack.why.search(text) for pack in PACKS):
+        return ""
+    said = "giảm" if _SAID_DOWN.search(text) else "tăng" if _SAID_UP.search(text) else ""
+    if not said:
+        return ""
+    change = changes[0]
+    now, then = float(change["now"]), float(change["then"])
+    went = "tăng" if now > then else "giảm" if now < then else "không đổi"
+    if went == said:
+        return ""
+    found = iso_answer(str(change["period"]))
+    span = clarify_policy.spoken_period(found.start, found.end) if found else change["period"]
+    base = "cùng kỳ năm trước" if change["compare_to"] == "same_period_last_year" else "kỳ trước"
+    if found is not None:
+        months = (found.end.year - found.start.year) * 12 + found.end.month - found.start.month
+        back = 12 if change["compare_to"] == "same_period_last_year" else months
+        if months > 0:
+            start = _shift_months(found.start, -back)
+            base = clarify_policy.spoken_period(start, _shift_months(start, months))
+    unit = f" {change['unit']}" if change.get("unit") else ""
+    if went == "không đổi":
+        return f"{change['name']} {span} không {said}: bằng {base} ({verify.show(now)}{unit})."
+    share = f" {language.number(abs(now - then) / abs(then) * 100, 1)}%" if then else ""
+    return (
+        f"{change['name']} {span} không {said} mà {went}{share} so với {base}"
+        f" (từ {verify.show(then)} {'lên' if went == 'tăng' else 'xuống'}"
+        f" {verify.show(now)}{unit})."
+    )
+
+
+def _shift_months(day: datetime.date, months: int) -> datetime.date:
+    total = day.year * 12 + day.month - 1 + months
+    return datetime.date(total // 12, total % 12 + 1, day.day)
 
 
 def _shown_dataset(block: dict[str, Any]) -> str:

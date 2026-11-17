@@ -55,6 +55,9 @@ class ToolContext:
     # Fingerprints of explore_sql statements the semantic audit already refused this turn (RES-02).
     # Shared across dataclasses.replace copies so a replan cannot rewrite the same SQL.
     refused_sql: list[str] = field(default_factory=list)
+    # The totals explain_change compared (metric, period, compare_to, now, then), shared the same
+    # way: the answer checks the question's premise against them (F3).
+    changes: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass

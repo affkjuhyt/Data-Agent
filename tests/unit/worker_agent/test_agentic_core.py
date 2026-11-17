@@ -1356,6 +1356,106 @@ def test_an_answer_that_read_numbers_shows_them_and_says_them() -> None:
     assert verify.fill("Doanh thu đạt 49.926.384,50 USD", known, set()).text == ""
 
 
+def test_explain_change_tries_real_cuts_shows_two_and_checks_the_premise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F3 (q7, "Vì sao doanh thu tháng 8/2013 giảm?"): the month rose, the answer explained a fall
+    by "Năm tài chính", a calendar cut two compared periods always differ by."""
+    import datetime
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.agentic.tools import explain
+    from services.worker_agent.agentic.tools.base import ToolResult
+    from services.worker_agent.understand.resolver import DimensionEntry
+
+    dims = {
+        "nam_tai_chinh": ("Năm tài chính", [["FY2014", 110, 100]]),
+        "vung": ("Vùng", [["Europe", 60, 40], ["Pacific", 50, 60]]),
+        "nhom_hang": ("Nhóm hàng", [["Bikes", 100, 90], ["Clothing", 10, 10]]),
+        "kenh": ("Kênh", [["Online", 110, 100]]),
+    }
+    monkeypatch.setattr(
+        explain.analyst,
+        "describe_metric",
+        lambda _layer, _code: {
+            "name": "Doanh thu",
+            "dimensions": [{"dimension": c, "name": n} for c, (n, _) in dims.items()],
+        },
+    )
+    ws = Workspace()
+    asked: list[list[str]] = []
+
+    async def run(_self: Any, _ctx: Any, args: Any) -> ToolResult:
+        asked.append(list(args.group_by))
+        if not args.group_by:
+            ds = ws.add(
+                title="t", columns=["value", "base_value"], rows=[[110, 100]], trust="certified"
+            )
+        else:
+            cut = args.group_by[0]
+            ds = ws.add(
+                title="t",
+                columns=[cut, "value", "base_value"],
+                rows=dims[cut][1],
+                trust="certified",
+            )
+        return ToolResult(True, "ok", [ds.id])
+
+    monkeypatch.setattr(explain.QueryMetric, "run", run)
+    ctx = types.SimpleNamespace(
+        ws=ws,
+        layer=types.SimpleNamespace(
+            vocabulary=types.SimpleNamespace(
+                dimensions=[DimensionEntry(uuid.uuid4(), c, n) for c, (n, _) in dims.items()]
+            )
+        ),
+        changes=[],
+        step_id="s1",
+    )
+    done = asyncio.run(
+        explain.ExplainChange().run(
+            ctx,  # type: ignore[arg-type]
+            explain.ExplainChangeArgs(metric="DOANH_THU", period="2013-08"),
+        )
+    )
+    assert done.ok
+    # The calendar cut is never tried; the total is read first.
+    assert asked == [[], ["vung"], ["nhom_hang"], ["kenh"]]
+    # One member holds all of a change: it explains nothing. The two real cuts are shown.
+    shown = [ws.datasets[d].title for d in done.datasets]
+    # Ranked by concentration: all of Nhóm hàng's change is Bikes', Vùng's is split.
+    assert shown == ["Đóng góp vào thay đổi theo Nhóm hàng", "Đóng góp vào thay đổi theo Vùng"]
+    assert ctx.changes == [
+        {
+            "metric": "DOANH_THU",
+            "name": "Doanh thu",
+            "period": "2013-08",
+            "compare_to": "previous_period",
+            "now": 110,
+            "then": 100,
+            "unit": None,
+        }
+    ]
+
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+            question="Vì sao doanh thu tháng 8/2013 giảm?",
+            changes=ctx.changes,
+            today=datetime.date(2026, 11, 17),
+        ),
+    )
+    assert engine._false_premise(state) == (
+        "Doanh thu tháng 8/2013 không giảm mà tăng 10,0% so với tháng 7/2013 (từ 100 lên 110)."
+    )
+    state.ctx.question = "Vì sao doanh thu tháng 8/2013 tăng?"  # type: ignore[union-attr]
+    assert engine._false_premise(state) == ""
+
+
 def test_figures_that_are_all_zero_are_no_answer() -> None:
     from services.worker_agent.agentic import engine
 

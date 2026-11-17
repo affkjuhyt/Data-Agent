@@ -11,6 +11,7 @@ not a cause, and the observation says so.
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -22,6 +23,11 @@ from services.worker_agent.understand import analyst
 
 MAX_HYPOTHESES = 5
 MAX_MEMBERS = 8
+# The explanations shown: the best cut and the next (F3: "vì sao" answered from at least two).
+SHOWN_CUTS = 2
+# A part of the calendar ("Năm tài chính", "Quý tài chính", "Ngày"): two periods compared differ by
+# it by construction, so all of the change sat in one member and it ranked first (q7, F0 17/11).
+_CALENDAR_CUT = re.compile(r"^(ngay|tuan|thang|quy|nam|day|week|month|quarter|year)(_|$)")
 
 
 class ExplainChangeArgs(BaseModel):
@@ -47,12 +53,43 @@ class ExplainChange(Tool):
         described = analyst.describe_metric(ctx.layer, args.metric)
         if isinstance(described, str):
             return ToolResult(False, described)
-        allowed = [d["dimension"] for d in described["dimensions"]]
+        times = {d.code for d in ctx.layer.vocabulary.dimensions if d.is_time}
+        allowed = [
+            d["dimension"]
+            for d in described["dimensions"]
+            if d["dimension"] not in times and not _CALENDAR_CUT.match(d["dimension"])
+        ]
         hypotheses = [d for d in args.dimensions if d in allowed] or allowed
         hypotheses = hypotheses[:MAX_HYPOTHESES]
         if not hypotheses:
             return ToolResult(False, f"chỉ số {args.metric} không cho chia theo chiều nào")
         names = {d["dimension"]: d["name"] for d in described["dimensions"]}
+        # The two periods' totals, read as such (a ratio does not add up over members): what the
+        # question's "giảm"/"tăng" is checked against.
+        total = await QueryMetric().run(
+            ctx,
+            QueryMetricArgs(
+                metric=args.metric,
+                period=args.period,
+                compare_to=args.compare_to,
+                title=f"{described['name']}: so kỳ",
+            ),
+        )
+        if total.ok and total.datasets:
+            row = (ctx.ws.datasets[total.datasets[0]].rows or [[None, None]])[0]
+            now, then = number(row[-2]), number(row[-1])
+            if now is not None and then is not None:
+                ctx.changes.append(
+                    {
+                        "metric": args.metric,
+                        "name": described["name"],
+                        "period": args.period,
+                        "compare_to": args.compare_to,
+                        "now": now,
+                        "then": then,
+                        "unit": ctx.ws.datasets[total.datasets[0]].unit,
+                    }
+                )
         trials = []
         for dim in hypotheses:
             done = await QueryMetric().run(
@@ -83,7 +120,8 @@ class ExplainChange(Tool):
                     continue
                 members.append((str(row[0]), now or 0.0, then or 0.0))
             moved = sum(abs(n - t) for _, n, t in members)
-            if not members or moved == 0:
+            if len(members) < 2 or moved == 0:
+                # One member holds all of any change: it explains nothing.
                 trials.append({"dimension": names[dim], "result": "không đổi"})
                 continue
             top = max(members, key=lambda m: abs(m[1] - m[2]))
@@ -104,33 +142,44 @@ class ExplainChange(Tool):
             return ToolResult(
                 False, "không chiều nào cho được so sánh hai kỳ", detail={"trials": trials}
             )
+        made = []
+        for trial in ranked[:SHOWN_CUTS]:
+            rows = sorted(trial["members"], key=lambda m: -abs(m[1] - m[2]))
+            moved = sum(abs(n - t) for _, n, t in rows)
+            source = ctx.ws.datasets[str(trial["dataset"])]
+            made.append(
+                ctx.ws.add(
+                    title=f"Đóng góp vào thay đổi theo {trial['dimension']}",
+                    columns=[
+                        str(trial["dimension"]),
+                        "Kỳ này",
+                        "Kỳ so sánh",
+                        "Thay đổi",
+                        "Tỷ trọng thay đổi (%)",
+                    ],
+                    rows=[
+                        [
+                            name,
+                            now,
+                            then,
+                            round(now - then, 4),
+                            round((now - then) / moved * 100, 2),
+                        ]
+                        for name, now, then in rows[:MAX_MEMBERS]
+                    ],
+                    trust=source.trust,
+                    query_run_ids=source.query_run_ids,
+                    metric_version_ids=source.metric_version_ids,
+                    step_id=ctx.step_id,
+                    tool=self.name,
+                    unit=source.unit,
+                    reading=source.reading,
+                )
+            )
         best = ranked[0]
-        rows = sorted(best["members"], key=lambda m: -abs(m[1] - m[2]))
-        moved = sum(abs(n - t) for _, n, t in rows)
-        total_change = sum(n - t for _, n, t in rows)
-        shown = rows[:MAX_MEMBERS]
-        result = ctx.ws.add(
-            title=f"Đóng góp vào thay đổi theo {best['dimension']}",
-            columns=[
-                str(best["dimension"]),
-                "Kỳ này",
-                "Kỳ so sánh",
-                "Thay đổi",
-                "Tỷ trọng thay đổi (%)",
-            ],
-            rows=[
-                [name, now, then, round(now - then, 4), round((now - then) / moved * 100, 2)]
-                for name, now, then in shown
-            ],
-            trust=ctx.ws.datasets[str(best["dataset"])].trust,
-            query_run_ids=[
-                r for t in ranked for r in ctx.ws.datasets[str(t["dataset"])].query_run_ids
-            ],
-            metric_version_ids=ctx.ws.datasets[str(best["dataset"])].metric_version_ids,
-            step_id=ctx.step_id,
-            tool=self.name,
-            unit=ctx.ws.datasets[str(best["dataset"])].unit,
-            reading=ctx.ws.datasets[str(best["dataset"])].reading,
+        change = next((x for x in reversed(ctx.changes) if x["metric"] == args.metric), None)
+        total_change = (
+            change["now"] - change["then"] if change else sum(n - t for _, n, t in best["members"])
         )
         feedback = [
             {
@@ -142,12 +191,16 @@ class ExplainChange(Tool):
         ] + [{"dimension": t["dimension"], "result": t["result"]} for t in trials if "result" in t]
         observation = (
             f"Giả thuyết đã thử (xếp theo mức tập trung của thay đổi): {cut(feedback, 1200)}\n"
-            f"Tổng thay đổi {round(total_change, 4)}; chiều giải thích tốt nhất: {best['dimension']}.\n"
-            f"{result.preview()}\nĐây là đóng góp theo thành viên, không phải nguyên nhân."
+            + (f"Tổng kỳ này {change['now']}, kỳ so sánh {change['then']}; " if change else "")
+            + f"tổng thay đổi {round(total_change, 4)}"
+            f" ({'tăng' if total_change > 0 else 'giảm' if total_change < 0 else 'không đổi'});"
+            f" chiều giải thích tốt nhất: {best['dimension']}.\n"
+            + "\n".join(d.preview() for d in made)
+            + "\nĐây là đóng góp theo thành viên, không phải nguyên nhân."
         )
         return ToolResult(
             True,
             observation,
-            [result.id],
-            detail={"hypotheses": feedback, "dataset": result.id},
+            [d.id for d in made],
+            detail={"hypotheses": feedback, "dataset": made[0].id},
         )
