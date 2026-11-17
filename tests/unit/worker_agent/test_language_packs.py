@@ -224,3 +224,17 @@ def test_a_member_filtered_on_and_a_compared_period_name_no_quantity() -> None:
     ]
     # "đầu" folds to "dầu" (oil): only the whole phrase goes.
     assert quantity_words("Giá dầu năm trước", vocab, today=TODAY) == ["gia", "dau"]
+
+
+def test_a_model_written_range_ending_on_a_month_end_includes_that_day() -> None:
+    # 17/11/2026: "2013-01-01/2013-12-31" read end-exclusive lost 31 December's sales.
+    from services.worker_agent.understand.packs.base import iso_answer
+
+    for written, end in (
+        ("2013-01-01/2013-12-31", datetime.date(2014, 1, 1)),
+        ("2013-02-01/2013-02-28", datetime.date(2013, 3, 1)),
+        ("2013-01-01/2014-01-01", datetime.date(2014, 1, 1)),
+        ("2013-08-05/2013-08-20", datetime.date(2013, 8, 20)),
+    ):
+        found = iso_answer(written)
+        assert found is not None and found.end == end, written

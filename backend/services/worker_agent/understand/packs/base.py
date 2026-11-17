@@ -218,6 +218,11 @@ def iso_answer(text: str) -> FoundPeriod | None:
             return None
         if start >= end:
             return None
+        if start.day == 1 and (end + datetime.timedelta(days=1)).day == 1:
+            # From a month's first day to a month's last ("2013-01-01/2013-12-31"): the model wrote
+            # the end inclusive. Read exclusive, the last day was lost without a word (Southwest
+            # 2013: 9.734.230 against 9.734.390, 17/11).
+            end += datetime.timedelta(days=1)
         if end - start == datetime.timedelta(days=1):
             return day(start, written)
         to = " to " if _english() else " đến "
