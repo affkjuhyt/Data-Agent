@@ -893,6 +893,47 @@ def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql()
     assert done.detail["unnamed"] == ["khach", "hang", "mua"]
 
 
+def test_query_metric_sends_a_missed_cut_back_as_an_argument_error() -> None:
+    """F0: "Doanh thu Internet khu vực Europe" filtered on the wrong cut left "khu vực", refused as
+    a quantity no metric measures; the step is now read again with the cut."""
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic.tools.query import QueryMetric, QueryMetricArgs
+    from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry
+
+    revenue = MetricEntry(uuid.uuid4(), "DOANH_THU_INTERNET", "Doanh thu Internet", True)
+    layer = types.SimpleNamespace(
+        vocabulary=types.SimpleNamespace(
+            metrics=[revenue],
+            synonyms={},
+            dimensions=[
+                DimensionEntry(uuid.uuid4(), "khu_vuc", "Khu vực"),
+                DimensionEntry(uuid.uuid4(), "vung", "Vùng bán hàng"),
+            ],
+            values=[],
+            calendar=clock.DEFAULT,
+        ),
+        versions={revenue.metric_id: SimpleNamespace(allowed_dimension_ids=[])},
+        blocked_metric_ids=set(),
+    )
+    ctx = types.SimpleNamespace(
+        layer=layer,
+        question="Doanh thu Internet khu vực Europe năm 2013",
+        today=datetime.date(2026, 11, 17),
+    )
+    done = asyncio.run(
+        QueryMetric().run(
+            ctx,  # type: ignore[arg-type]
+            QueryMetricArgs(metric="DOANH_THU_INTERNET", filters={"vung": ["Europe"]}),
+        )
+    )
+    assert not done.ok and done.failure == "arguments"
+    assert "Khu vực" in done.observation and "unnamed" not in done.detail
+
+
 def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypatch) -> None:
     import datetime
     import types

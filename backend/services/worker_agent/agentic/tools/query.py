@@ -274,6 +274,26 @@ class QueryMetric(Tool):
             ),
             catalogue,
         )
+        cut_named = [
+            d.name
+            for d in vocab.dimensions
+            if not d.is_time and set(norm(d.name).split()) & set(missing)
+        ]
+        if (
+            missing
+            and cut_named
+            and all(any(w in norm(name).split() for name in cut_named) for w in missing)
+        ):
+            # Only a cut's words left ("khu vực", "quốc gia", "sản phẩm"): the reading missed
+            # the cut, it is no quantity the catalogue lacks. Refused as a missing metric, the
+            # turn said "no data" for "Doanh thu Internet khu vực Europe" (F0, 17/11); as an
+            # argument error the step is read again with the cut.
+            return ToolResult(
+                False,
+                f"câu hỏi nêu {', '.join(cut_named[:3])} nhưng cách đọc chưa chia (group_by) hay"
+                " lọc (filters) theo chiều đó: đọc lại, chia hoặc lọc theo đúng chiều câu hỏi nêu",
+                failure="arguments",
+            )
         if missing:
             # RES-04: do not send the planner to invent the quantity with explore_sql.
             return ToolResult(
