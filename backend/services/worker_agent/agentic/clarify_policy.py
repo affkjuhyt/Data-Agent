@@ -15,11 +15,13 @@ from dataclasses import dataclass
 from typing import Literal
 
 from services.worker_agent.agentic import plan as p
+from services.worker_agent.agentic.grounded import ANALYSIS_WORDS
 from services.worker_agent.agentic.tools.base import Clarify
 from services.worker_agent.semantic.loader import SpaceLayer
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.packs import PACKS
 from services.worker_agent.understand.resolver import metric_words, quantity_words
-from services.worker_agent.understand.text import norm
+from services.worker_agent.understand.text import find_period, norm
 
 Audience = Literal["executive", "analyst"]
 
@@ -97,6 +99,11 @@ def apply(
 # A quantity no certified metric measures is asked back with this many metrics to choose from.
 UNNAMED_OPTIONS = 4
 _TRAILING = re.compile(r"[?.!,;:]+$")
+_FILLER = frozenset[str]().union(*(pack.filler for pack in PACKS))
+_ANALYSIS_PHRASE = re.compile(
+    r"\b(?:so sanh|vi sao|tai sao|dong gop|bien dong|co cau|ty trong|xu huong|chenh lech"
+    r"|nguyen nhan|phan tich|cao nhat|thap nhat|luy ke)\b"
+)
 
 
 def _closest(question: str, layer: SpaceLayer) -> list[str]:
@@ -161,6 +168,67 @@ def unnamed_quantity(
     return Clarify(
         f"Chưa có chỉ số chuẩn nào đo “{phrase}”. Bạn muốn xem chỉ số nào dưới đây?",
         [asked_with(name) for name in found[:max_options]],
+    )
+
+
+def same_named(question: str, layer: SpaceLayer, today: datetime.date) -> Clarify | None:
+    """F2: the question names a quantity that two or more certified metrics are named after and
+    none is exactly ("Lãi gộp năm 2013": Internet or đại lý; "Số tài chính": ngân sách or thực tế):
+    asked back with those metrics, each the question again with its name in place. The planner
+    picked one alone and answered it (F0, 17/11).
+
+    Matched on whole phrases (a metric's name or one of its synonyms), not on the union of their
+    words: "số lượng khách hàng", a synonym of the customers, holds "lượng" too. None when a word
+    of the quantity is in no metric's phrase ("Giá cổ phiếu": not this check's to answer), when a
+    metric is named exactly, or when fewer than two are named."""
+    vocab = layer.vocabulary
+    visible = analyst._visible(layer)
+    phrases: dict[str, list[set[str]]] = {
+        code: [set(norm(m.name).split())] for code, m in visible.items() if m.certified
+    }
+    for phrase, target in vocab.synonyms.items():
+        for code, m in visible.items():
+            if code in phrases and target[:2] == ("metric", str(m.metric_id)):
+                phrases[code].append(set(phrase.split()))
+    known = set().union(*(w for ps in phrases.values() for w in ps)) if phrases else set()
+    # A cut's words ("theo khu vực") are no unknown quantity; they are not set aside either, as the
+    # space's cuts are named with its metrics' words ("Năm tài chính", "Ngày đặt hàng (đại lý)").
+    cuts: set[str] = set()
+    for d in vocab.dimensions:
+        cuts |= set(norm(d.name).split())
+    content = [w for w in quantity_words(question, vocab, today=today) if w not in ANALYSIS_WORDS]
+    if not any(w in known for w in content) or any(w not in known | cuts for w in content):
+        return None
+    # The question's words any metric is named with, fillers kept: "bán" folds to "bạn", a filler,
+    # and "Số lượng bán" read as "lượng" alone also matched "số lượng khách hàng".
+    # Analysis is set aside by its phrases: its single words are metric words too ("gộp" of
+    # "đóng góp", "tài" of "tại sao", "số" of "so sánh", "biên" of "biến động").
+    found = find_period(question, today, vocab.calendar)
+    text = norm(question).replace(found.span, " ") if found else norm(question)
+    asked = {w for w in _ANALYSIS_PHRASE.sub(" ", text).split() if w in known}
+    named = {
+        code: min(len(p - asked - _FILLER) for p in ps if asked <= p)
+        for code, ps in phrases.items()
+        if any(asked <= p for p in ps)
+    }
+    if len(named) < 2 or 0 in named.values():
+        return None
+    tokens = question.split()
+    at = [i for i, t in enumerate(tokens) if norm(_TRAILING.sub("", t)) in asked]
+    if not at:
+        return None
+    first, last = at[0], at[-1]
+    end = m.group(0) if (m := _TRAILING.search(tokens[last])) else ""
+    phrase = _TRAILING.sub("", " ".join(tokens[first : last + 1]))
+
+    def asked_with(name: str) -> str:
+        said = name if first == 0 else name[:1].lower() + name[1:]
+        return " ".join([*tokens[:first], said + end, *tokens[last + 1 :]])
+
+    names = sorted(visible[code].name for code in named)[:UNNAMED_OPTIONS]
+    return Clarify(
+        f"“{phrase}” có ở nhiều chỉ số chuẩn. Bạn muốn xem chỉ số nào?",
+        [asked_with(name) for name in names],
     )
 
 

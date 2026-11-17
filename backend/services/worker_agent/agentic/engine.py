@@ -427,24 +427,46 @@ def _missing_period(s: State) -> p.Plan | None:
     ask = clarify_policy.missing_period(
         ctx.question, ctx.period.span, ctx.period.label, entry.name, (move[1].start, move[1].end)
     )
+    return _asking(
+        s,
+        ask,
+        f"Làm rõ kỳ của câu hỏi: {ctx.period.label} chưa có dữ liệu",
+        f"{entry.name} không có dữ liệu ở {ctx.period.label}; hỏi lại trước khi truy vấn.",
+    )
+
+
+def _same_named(s: State) -> p.Plan | None:
+    """F2: a quantity two or more certified metrics are named after, none exactly ("Lãi gộp năm
+    2013"), is asked back before any plan (clarify_policy.same_named)."""
+    if s.ctx is None:
+        return None
+    ask = clarify_policy.same_named(s.ctx.question, s.ctx.layer, s.ctx.today)
+    if ask is None:
+        return None
+    return _asking(
+        s,
+        ask,
+        "Làm rõ chỉ số được hỏi",
+        "Câu hỏi khớp nhiều chỉ số chuẩn; hỏi lại trước khi truy vấn.",
+    )
+
+
+def _asking(s: State, ask: Clarify, goal: str, thought: str) -> p.Plan | None:
+    """A plan that asks `ask` back, or None when the conversation's clarify budget is spent and
+    the planner plans as before."""
     asked = _bind_clarify(
         s,
         p.Plan(
-            goal=f"Làm rõ kỳ của câu hỏi: {ctx.period.label} chưa có dữ liệu",
-            thought=f"{entry.name} không có dữ liệu ở {ctx.period.label}; hỏi lại trước khi truy vấn.",
-            mode="ask",
-            clarification=ask.question,
-            options=ask.options,
+            goal=goal, thought=thought, mode="ask", clarification=ask.question, options=ask.options
         ),
     )
-    # The clarify budget of the conversation is spent: plan as before.
     return asked if asked.mode == "ask" else None
 
 
 async def plan(s: State) -> None:
     system = _planner_system(s)
     async with turn_trace.stepping("plan", title="Lập kế hoạch", target="") as step:
-        early = _missing_period(s)
+        early = _missing_period(s) or _same_named(s)
         try:
             s.plan = early or await _ask_plan(s, system, _situation(s))
         except (ModelUnavailable, p.PlanInvalid) as exc:

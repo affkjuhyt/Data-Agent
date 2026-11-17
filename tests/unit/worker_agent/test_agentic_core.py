@@ -317,6 +317,74 @@ def test_a_quantity_no_metric_measures_is_asked_back_with_the_closest_metrics() 
     )
 
 
+def test_a_quantity_several_metrics_are_named_after_is_asked_back() -> None:
+    """F2: "Lãi gộp năm 2013" was answered with Internet's alone; DS-AW's names and synonyms."""
+    import datetime
+    import uuid
+
+    from services.worker_agent.agentic import clarify_policy
+    from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
+
+    named = {
+        "DOANH_THU": "Doanh thu",
+        "DOANH_THU_INTERNET": "Doanh thu Internet",
+        "LAI_GOP_INTERNET": "Lãi gộp Internet",
+        "LAI_GOP_DAI_LY": "Lãi gộp đại lý",
+        "BIEN_GOP_INTERNET": "Biên lợi nhuận gộp Internet",
+        "SO_LUONG_BAN_INTERNET": "Số lượng bán Internet",
+        "SO_LUONG_BAN_DAI_LY": "Số lượng bán đại lý",
+        "SO_KHACH_HANG_INTERNET": "Số khách hàng mua qua Internet",
+        "GIA_TRI_TON_KHO": "Giá trị tồn kho",
+    }
+    ids = {code: uuid.uuid4() for code in named}
+    synonyms = {
+        "doanh so": "DOANH_THU",
+        "loi nhuan gop internet": "LAI_GOP_INTERNET",
+        "so luong khach hang": "SO_KHACH_HANG_INTERNET",
+    }
+    layer = SimpleNamespace(
+        vocabulary=Vocabulary(
+            metrics=[MetricEntry(ids[c], c, n, True) for c, n in named.items()],
+            # Cuts are named with metric words: they must not hide "đại lý" from the check.
+            dimensions=[
+                DimensionEntry(uuid.uuid4(), "khu_vuc", "Khu vực"),
+                DimensionEntry(uuid.uuid4(), "ngay_dat_dai_ly", "Ngày đặt hàng (đại lý)"),
+            ],
+            synonyms={p: ("metric", str(ids[c])) for p, c in synonyms.items()},
+        ),
+        versions={i: object() for i in ids.values()},
+        blocked_metric_ids=frozenset(),
+    )
+    today = datetime.date(2026, 11, 17)
+
+    def ask(question: str) -> Any:
+        return clarify_policy.same_named(question, layer, today)
+
+    gross = ask("Lãi gộp năm 2013?")
+    assert gross is not None
+    assert gross.question == "“Lãi gộp” có ở nhiều chỉ số chuẩn. Bạn muốn xem chỉ số nào?"
+    assert gross.options == ["Lãi gộp Internet năm 2013?", "Lãi gộp đại lý năm 2013?"]
+    # "bán" folds to "bạn", a filler; the customers' synonym holds "lượng" but not "bán".
+    units = ask("Số lượng bán theo khu vực năm 2013")
+    assert units is not None
+    assert units.options == [
+        "Số lượng bán Internet theo khu vực năm 2013",
+        "Số lượng bán đại lý theo khu vực năm 2013",
+    ]
+    # Named exactly, by a name or a synonym; "biên"/"gộp" are metric words, not analysis.
+    for question in (
+        "Doanh thu năm 2013",
+        "Doanh số năm 2013",
+        "Lãi gộp đại lý năm 2013",
+        "Biên lợi nhuận gộp Internet năm 2013",
+        "So sánh doanh thu theo khu vực năm 2012 và 2013",
+        # A word no metric holds: not this check's question.
+        "Giá cổ phiếu hôm nay",
+        "Khách hàng rời bỏ là bao nhiêu?",
+    ):
+        assert ask(question) is None, question
+
+
 def test_a_period_with_no_data_of_the_metric_is_asked_back_before_any_plan() -> None:
     """F1: "Doanh thu Internet tháng 3/2015" was answered with 12/2013's figure, q6 replanned
     around 2026; both are asked back with the nearest whole period, before the planner runs."""
