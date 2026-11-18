@@ -373,6 +373,28 @@ agent-eval:  ## the dynamic agent on a Data Space's eval set (AGENT_EVAL_ORG, AG
 		python -m services.worker_agent.agentic.evaluate --org "$(AGENT_EVAL_ORG)" \
 		--space "$(AGENT_EVAL_SPACE)" --as "$(AGENT_EVAL_AS)" $(AGENT_EVAL_ARGS)
 
+# Every eval set of the space in one run, AGENT_EVAL_CONCURRENCY items at a time, saved as
+# $(AGENT_EVAL_OUT)/$(LABEL).json and compared with the run saved as COMPARE when one is named.
+AGENT_EVAL_OUT ?= $(HOME)/.dataagent/agent-eval
+AGENT_EVAL_CONCURRENCY ?= 4
+.PHONY: agent-eval-suite agent-eval-compare
+
+agent-eval-suite:  ## every eval set of the space, saved as LABEL, compared with COMPARE (AGENT_EVAL_ORG, AGENT_EVAL_AS)
+	@test -n "$(LABEL)" || { echo "LABEL=<name> names this run, e.g. LABEL=14b"; exit 2; }
+	@mkdir -p "$(AGENT_EVAL_OUT)"
+	@kubectl -n dataagent-service exec -i deploy/worker-agent -c worker-agent -- \
+		python -m services.worker_agent.agentic.evaluate --org "$(AGENT_EVAL_ORG)" \
+		--space "$(AGENT_EVAL_SPACE)" --as "$(AGENT_EVAL_AS)" --all-sets \
+		--concurrency $(AGENT_EVAL_CONCURRENCY) --json $(AGENT_EVAL_ARGS) \
+		> "$(AGENT_EVAL_OUT)/$(LABEL).json.part" \
+		&& mv "$(AGENT_EVAL_OUT)/$(LABEL).json.part" "$(AGENT_EVAL_OUT)/$(LABEL).json"
+	@if [ -n "$(COMPARE)" ]; then $(MAKE) --no-print-directory agent-eval-compare BEFORE=$(COMPARE) AFTER=$(LABEL); fi
+
+agent-eval-compare: dev-tools  ## two saved agent-eval-suite runs side by side (BEFORE, AFTER: their labels)
+	@docker run --rm -v "$(AGENT_EVAL_OUT):/runs:ro" \
+		-v "$(PWD)/backend/services/worker_agent/agentic/eval_compare.py:/eval_compare.py:ro" \
+		$(DEV_TOOLS_IMAGE) python /eval_compare.py "/runs/$(BEFORE).json" "/runs/$(AFTER).json"
+
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
 

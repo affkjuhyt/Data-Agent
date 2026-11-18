@@ -12,6 +12,9 @@ It writes what asking writes: a conversation, a question, its answer and its run
 engine, as the person named. In the worker pod:
     make agent-eval AGENT_EVAL_ORG=<org id> AGENT_EVAL_AS=<username> \\
          AGENT_EVAL_ARGS="--limit 10 --engines agentic,governed"
+Every set of the space at once, items asked a few at a time, saved under a label and compared
+with an earlier run (eval_compare.py):
+    make agent-eval-suite AGENT_EVAL_ORG=<org id> AGENT_EVAL_AS=<username> LABEL=14b COMPARE=4b
 """
 
 from __future__ import annotations
@@ -67,6 +70,7 @@ class Summary:
     mean_tokens: float
     mean_seconds: float
     outcomes: list[Outcome] = field(default_factory=list)
+    eval_set: str = ""
 
 
 def _any_order(item: ev.EvalItem, answer: qa.Answer | None) -> bool | None:
@@ -197,7 +201,7 @@ async def _ask(
     )
 
 
-def summarize(engine: str, outcomes: Sequence[Outcome]) -> Summary:
+def summarize(engine: str, outcomes: Sequence[Outcome], eval_set: str = "") -> Summary:
     n = len(outcomes) or 1
     paths: dict[str, int] = {}
     for o in outcomes:
@@ -212,48 +216,86 @@ def summarize(engine: str, outcomes: Sequence[Outcome]) -> Summary:
         mean_tokens=round(sum(o.tokens for o in outcomes) / n),
         mean_seconds=round(sum(o.seconds for o in outcomes) / n, 1),
         outcomes=list(outcomes),
+        eval_set=eval_set,
     )
+
+
+async def _set_names(org_id: uuid.UUID, user: uuid.UUID, space: uuid.UUID) -> list[str]:
+    """Every eval set of the Data Space that holds an active item, by name."""
+    async with scoped_session(eval_runs.ROLE, org_id, user) as session:
+        return list(
+            (
+                await session.scalars(
+                    select(ev.EvalSet.name)
+                    .where(
+                        ev.EvalSet.data_space_id == space,
+                        ev.EvalSet.id.in_(
+                            select(ev.EvalItem.eval_set_id).where(ev.EvalItem.status == "active")
+                        ),
+                    )
+                    .order_by(ev.EvalSet.name)
+                )
+            ).all()
+        )
 
 
 async def run(
     org_id: uuid.UUID,
     space_code: str,
     username: str,
-    set_name: str,
+    set_names: Sequence[str] | None,
     engines: Sequence[str],
     limit: int | None,
     offset: int,
+    concurrency: int = 1,
 ) -> list[Summary]:
+    """One summary per set and engine. Items are asked `concurrency` at a time; the engines
+    one after the other, since the engine is read from the environment (ASK_ENGINE)."""
     space, user = await _who(org_id, space_code, username)
-    items = (await _items(org_id, user, space, set_name))[offset:][:limit]
-    found: dict[str, list[Outcome]] = {e: [] for e in engines}
-    for item in items:
-        for engine in engines:
+    names = list(set_names) if set_names else await _set_names(org_id, user, space)
+    items = [
+        (name, item)
+        for name in names
+        for item in (await _items(org_id, user, space, name))[offset:][:limit]
+    ]
+    gate = asyncio.Semaphore(max(1, concurrency))
+
+    async def ask(name: str, item: ev.EvalItem, engine: str) -> Outcome:
+        async with gate:
             outcome = await _ask(org_id, space, user, item, engine)
-            found[engine].append(outcome)
-            # One line per answer as it comes, so a long run shows its progress.
-            print(
-                f"[{engine}] {'PASS' if outcome.passed else 'fail'} {outcome.path:<8} "
-                f"{outcome.steps:>2} steps {outcome.seconds:>5}s  {outcome.question[:70]}",
-                file=sys.stderr,
-                flush=True,
-            )
-    return [summarize(e, found[e]) for e in engines]
+        # One line per answer as it comes, so a long run shows its progress.
+        print(
+            f"[{engine}] {'PASS' if outcome.passed else 'fail'} {outcome.path:<8} "
+            f"{outcome.steps:>2} steps {outcome.seconds:>5}s  {name[:24]:<24}  "
+            f"{outcome.question[:70]}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return outcome
+
+    summaries: list[Summary] = []
+    for engine in engines:
+        outcomes = await asyncio.gather(*(ask(name, item, engine) for name, item in items))
+        for name in names:
+            mine = [o for (n, _), o in zip(items, outcomes, strict=True) if n == name]
+            summaries.append(summarize(engine, mine, name))
+    return summaries
 
 
 def _table(summaries: Sequence[Summary]) -> str:
     lines = [
         "engine     items  passed  any-order  agentic  handover  governed  steps  tokens  seconds"
+        "  set"
     ]
     for s in summaries:
         lines.append(
             f"{s.engine:<10} {s.items:>5}  {s.passed:>6}  {s.values_any_order:>9}"
             f"  {s.by_path.get('agentic', 0):>7}  {s.by_path.get('handover', 0):>8}"
             f"  {s.by_path.get('governed', 0):>8}  {s.mean_steps:>5}  {s.mean_tokens:>6}"
-            f"  {s.mean_seconds:>7}"
+            f"  {s.mean_seconds:>7}  {s.eval_set}"
         )
     for s in summaries:
-        lines.append(f"\n{s.engine}: what did not pass")
+        lines.append(f"\n{s.engine} · {s.eval_set}: what did not pass")
         lines += [
             f"  {o.path:<8} {o.kind or '-':<13} {o.question[:60]} → {o.answer[:90]}"
             for o in s.outcomes
@@ -267,17 +309,30 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--org", required=True, type=uuid.UUID)
     parser.add_argument("--space", default="DS-AW")
     parser.add_argument("--as", dest="username", required=True)
-    parser.add_argument("--set", dest="set_name", default="Câu hỏi AdventureWorks")
+    # A set's name may hold a comma ("… (mới, 18/11)"): one --set per set.
+    parser.add_argument("--set", dest="set_names", action="append", default=None)
+    parser.add_argument("--all-sets", action="store_true", help="every eval set of the space")
     parser.add_argument("--engines", default="agentic")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--concurrency", type=int, default=1, help="items asked at a time")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     engines = [e for e in args.engines.split(",") if e in ENGINES]
     if not engines:
         raise SystemExit(f"--engines takes {', '.join(ENGINES)}")
+    set_names = None if args.all_sets else (args.set_names or ["Câu hỏi AdventureWorks"])
     summaries = asyncio.run(
-        run(args.org, args.space, args.username, args.set_name, engines, args.limit, args.offset)
+        run(
+            args.org,
+            args.space,
+            args.username,
+            set_names,
+            engines,
+            args.limit,
+            args.offset,
+            args.concurrency,
+        )
     )
     if args.json:
         print(json.dumps([asdict(s) for s in summaries], ensure_ascii=False, indent=2))
