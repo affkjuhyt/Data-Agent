@@ -33,6 +33,7 @@ from services.worker_agent.sqlgen.run import explore
 from services.worker_agent.sqlgen.schema import link
 from services.worker_agent.sqlgen.space import load_space
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.comparison import find_comparison
 from services.worker_agent.understand.grain import GRAIN_LABELS, find_grain
 from services.worker_agent.understand.packs.base import iso_answer
 from services.worker_agent.understand.resolver import Vocabulary, metric_words, quantity_words
@@ -48,6 +49,52 @@ _GRAINS = frozenset({"day", "week", "month", "quarter", "year"})
 _TOP_COUNT = re.compile(r"^(?:top\s*)?(\d{1,3})\s+[a-z]|\btop\s*(\d{1,3})\b")
 _CHANGE_ASKED = re.compile(r"\b(?:giam|tang|sut|tut|decrease|increase|drop|rise|grow)\w*\b")
 _LOWEST = re.compile(r"\b(?:thap nhat|it nhat|nho nhat|kem nhat|lowest|least|smallest|bottom)\b")
+
+
+def _calendar_cut(
+    question: str, vocab: Vocabulary, allowed: set[uuid.UUID]
+) -> dict[str, list[str]]:
+    """A part of the calendar the space models as a cut of its own, named with its number in the
+    question ("năm tài chính 2013", "quý tài chính 3"): that cut, filtered on that number."""
+    text = norm(question)
+    out: dict[str, list[str]] = {}
+    for d in vocab.dimensions:
+        if d.is_time or d.dimension_id not in allowed or not _CALENDAR_PART.match(d.code):
+            continue
+        if m := re.search(rf"\b{re.escape(norm(d.name))} (\d{{1,4}})\b", text):
+            out[d.code] = [m.group(1)]
+    return out
+
+
+# "luỹ kế từ đầu năm đến hết tháng 6/2013", "từ đầu năm tới nay": the year up to the period named.
+_FROM_YEAR_START = re.compile(r"\btu dau nam\b")
+
+
+def _relative_reading(ctx: ToolContext, args: QueryMetricArgs, times: set[str]) -> QueryMetricArgs:
+    """The comparison and the span a question names in words, which the 4B planner left out:
+    "so với cùng kỳ năm trước" / "so với quý trước" read one period alone (F0, 17/11), "luỹ kế từ
+    đầu năm đến hết tháng 6/2013" read June alone. The question names them; the reading follows."""
+    found = getattr(ctx, "period", None)
+    if found is not None and _FROM_YEAR_START.search(norm(ctx.question)):
+        start = datetime.date(found.end.year if found.end.month > 1 else found.end.year - 1, 1, 1)
+        if start < found.start:
+            asked_cut_along_time = find_grain(ctx.question) is not None or times & set(
+                args.group_by
+            )
+            args = args.model_copy(
+                update={
+                    "period": f"{start.isoformat()}/{found.end.isoformat()}",
+                    # One figure for the span unless the question cuts it along time.
+                    **({} if asked_cut_along_time else {"analysis": None, "grain": None}),
+                }
+            )
+    compared = find_comparison(ctx.question)
+    if compared is not None and args.compare_to is None and args.analysis is None:
+        update: dict[str, Any] = {"compare_to": compared.compare_to}
+        if not args.period and found is not None:
+            update["period"] = f"{found.start.isoformat()}/{found.end.isoformat()}"
+        args = args.model_copy(update=update)
+    return args
 
 
 def asked_top(question: str) -> tuple[int, bool] | None:
@@ -302,6 +349,16 @@ class QueryMetric(Tool):
             pair = two_periods(ctx.question)
             if pair is not None:
                 args = args.model_copy(update={"period": None, "grain": None})
+        calendar_cut = _calendar_cut(ctx.question, vocab, set(version.allowed_dimension_ids))
+        if calendar_cut and pair is None and not side_labels:
+            # "Doanh thu Internet năm tài chính 2013": the space models its fiscal year as a cut
+            # (AdventureWorks names it by the year it starts in), so it is read as that cut, not as
+            # calendar 2013 or a period the default calendar guesses (F0, 17/11: three items).
+            args = args.model_copy(
+                update={"filters": {**args.filters, **calendar_cut}, "period": None}
+            )
+        elif pair is None and not side_labels:
+            args = _relative_reading(ctx, args, times_all)
         # A quantity the question asks that no certified metric of the catalogue names ("khách
         # hàng" where only units sold exist): no reading of this one will answer it.
         catalogue: set[str] = set()

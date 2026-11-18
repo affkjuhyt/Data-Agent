@@ -2203,3 +2203,48 @@ def test_a_null_written_as_text_leaves_an_optional_query_argument_out() -> None:
         QueryMetricArgs.model_validate({"metric": "X", "analysis": "average"})
     # The metric is not optional: "none" stays a (wrong) code, not a missing one.
     assert QueryMetricArgs.model_validate({"metric": "none"}).metric == "none"
+
+
+def test_a_fiscal_cut_a_span_from_the_year_start_and_a_relative_comparison_are_read() -> None:
+    """Holdout of 18/11: the question names them, the 4B planner left them out."""
+    import datetime
+    import types
+    import uuid
+
+    from services.worker_agent.agentic.tools.query import (
+        QueryMetricArgs,
+        _calendar_cut,
+        _relative_reading,
+    )
+    from services.worker_agent.understand.resolver import DimensionEntry
+    from services.worker_agent.understand.text import find_period
+
+    fiscal = DimensionEntry(uuid.uuid4(), "nam_tai_chinh", "Năm tài chính")
+    region = DimensionEntry(uuid.uuid4(), "khu_vuc", "Khu vực")
+    vocab = types.SimpleNamespace(dimensions=[fiscal, region])
+    allowed = {fiscal.dimension_id, region.dimension_id}
+    assert _calendar_cut("Doanh thu Internet năm tài chính 2013", vocab, allowed) == {  # type: ignore[arg-type]
+        "nam_tai_chinh": ["2013"]
+    }
+    # Not a calendar part, or not allowed for the metric: no cut.
+    assert _calendar_cut("Doanh thu khu vực 2013", vocab, allowed) == {}  # type: ignore[arg-type]
+    assert _calendar_cut("Doanh thu năm tài chính 2013", vocab, {region.dimension_id}) == {}  # type: ignore[arg-type]
+
+    today = datetime.date(2026, 11, 18)
+
+    def read(question: str, **args: Any) -> QueryMetricArgs:
+        ctx = types.SimpleNamespace(question=question, period=find_period(question, today))
+        return _relative_reading(ctx, QueryMetricArgs(metric="M", **args), set())  # type: ignore[arg-type]
+
+    ytd = read(
+        "Doanh thu Internet luỹ kế từ đầu năm đến hết tháng 9/2012",
+        period="2012-09-01/2012-10-01",
+        analysis="running_total",
+    )
+    assert (ytd.period, ytd.analysis) == ("2012-01-01/2012-10-01", None)
+    yoy = read("Doanh thu đại lý năm 2012 so với cùng kỳ năm trước", period="2012")
+    assert yoy.compare_to == "same_period_last_year" and yoy.period == "2012"
+    qoq = read("Doanh thu Internet quý 2/2013 so với quý trước")
+    assert qoq.compare_to == "previous_period" and qoq.period == "2013-04-01/2013-07-01"
+    plain = read("Doanh thu Internet năm 2013", period="2013")
+    assert plain.compare_to is None and plain.period == "2013"
