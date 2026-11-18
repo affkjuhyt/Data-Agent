@@ -52,11 +52,13 @@ from services.worker_agent.agentic import (
     verify,
 )
 from services.worker_agent.agentic import plan as p
+from services.worker_agent.agentic.contract import Contract
+from services.worker_agent.agentic.contract import read as read_contract
 from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
 from services.worker_agent.agentic.grounded import ANALYSIS_WORDS, unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContext, ToolResult
 from services.worker_agent.agentic.tools.coverage import for_planning
-from services.worker_agent.agentic.tools.query import asked_top, asks_change, two_periods, two_years
+from services.worker_agent.agentic.tools.query import asked_top, asks_change, two_periods
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Dataset, Workspace, number
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
@@ -65,7 +67,6 @@ from services.worker_agent.progress import is_cancel_requested, publish
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import analyst
-from services.worker_agent.understand.comparison import find_comparison
 from services.worker_agent.understand.packs import PACKS, search
 from services.worker_agent.understand.packs.base import iso_answer
 from services.worker_agent.understand.resolver import metric_words, names_metric, quantity_words
@@ -144,6 +145,11 @@ class State:
     prior_clarify_rounds: int = 0
     # OP-6: deep analysis skill loaded into the planner when the turn asks for it.
     deep: bool = False
+    # What the question asks, read by rule before any plan (contract.py).
+    contract: Contract | None = None
+    # The datasets the answer is written from, when the contract picks them (_answering): the
+    # reporter is shown only them and the steps that made them.
+    answering: set[str] | None = None
 
 
 # ---------------------------------------------------------------- prepare
@@ -358,6 +364,7 @@ async def prepare(s: State) -> None:
             ws=Workspace(),
             period=find_period(question_text, today, layer.vocabulary.calendar),
         )
+        s.contract = read_contract(question_text, layer, s.ctx.period)
     try:
         known = await memory.load(event.org_id, space_id, user_id)
         s.memories = memory.rank(question_text, known, datetime.datetime.now(datetime.UTC))
@@ -430,7 +437,7 @@ def _planner_system(s: State) -> str:
     return deep_skill.inject(base, active=s.deep)
 
 
-def _situation(s: State) -> str:
+def _situation(s: State, *, coverage: bool = True) -> str:
     assert s.ctx is not None
     parts = [f"Hôm nay: {s.ctx.today.isoformat()}"]
     if s.history:
@@ -438,9 +445,12 @@ def _situation(s: State) -> str:
     if s.memories:
         parts.append(memory.render(s.memories))
     parts.append(f"<question>\n{s.ctx.question}\n</question>")
-    if s.coverage:
+    if s.coverage and coverage:
         parts.append(f"<coverage>\n{s.coverage}\n</coverage>")
-    if s.ctx.period is not None:
+    if s.contract is not None:
+        names = {m.code: m.name for m in s.ctx.layer.vocabulary.metrics}
+        parts.append(f"<contract>\n{s.contract.render(names)}\n</contract>")
+    elif s.ctx.period is not None:
         p_ = s.ctx.period
         parts.append(
             f"Kỳ câu hỏi nêu (đọc theo quy tắc, đúng): {p_.label} = period "
@@ -450,8 +460,9 @@ def _situation(s: State) -> str:
     return "\n\n".join(parts)
 
 
-def _progress(s: State) -> str:
-    """The plan as walked so far and every dataset, for the replanner, reviewer and executor."""
+def _progress(s: State, *, only: set[str] | None = None) -> str:
+    """The plan as walked so far and every dataset, for the replanner, reviewer and executor;
+    for the reporter, with `only`, the steps that made those datasets."""
     assert s.ctx is not None and s.plan is not None
     steps = [
         {
@@ -463,6 +474,7 @@ def _progress(s: State) -> str:
             "observation": st.observation[:1200],
         }
         for st in s.plan.steps
+        if only is None or only & set(st.datasets)
     ]
     return (
         f"<plan goal={json.dumps(s.plan.goal, ensure_ascii=False)}>\n"
@@ -581,6 +593,38 @@ def _same_named(s: State) -> p.Plan | None:
     )
 
 
+def _read_as_asked(s: State, plan: p.Plan) -> p.Plan:
+    """A planner's ask, where the question names its metric and its period, is read instead.
+    What is asked back is the rules' to find before any plan (_missing_period, _same_named,
+    _unknown_cut, _out_of_scope) or a tool's (E4); a planner asks back as its own caution goes:
+    the 14B planner asked "Phúc lợi nhân viên Employee Benefits thực tế năm 2012" back ("no metric
+    is about employee benefits"), an account of Số tài chính thực tế that the 4B planner read
+    (19/11). Its steps run when it wrote some; else one reading of the metric, whose arguments
+    query_metric reads from the question."""
+    c = s.contract
+    if plan.mode != "ask" or c is None or c.metric is None or not c.answerable():
+        return plan
+    steps = plan.steps or [
+        p.PlanStep(
+            id="s1",
+            tool="query_metric",
+            instruction="Đọc chỉ số theo câu hỏi",
+            args={"metric": c.metric},
+        )
+    ]
+    return plan.model_copy(
+        update={
+            "mode": "analyze",
+            "clarification": None,
+            "options": [],
+            "steps": steps,
+            "thought": clarify_policy.join_thought(
+                plan.thought, "Câu hỏi đã nêu chỉ số và kỳ: đọc theo câu hỏi, không hỏi lại."
+            ),
+        }
+    )
+
+
 def _asking(s: State, ask: Clarify, goal: str, thought: str) -> p.Plan | None:
     """A plan that asks `ask` back, or None when the conversation's clarify budget is spent and
     the planner plans as before."""
@@ -609,7 +653,7 @@ async def plan(s: State) -> None:
             s.handed_back = True
             return
         if early is None:
-            s.plan = _bind_clarify(s, s.plan)
+            s.plan = _bind_clarify(s, _read_as_asked(s, s.plan))
         step.detail = {
             "goal": s.plan.goal,
             # Shown while the turn runs: the plan's reasoning, its codes said as names.
@@ -697,6 +741,9 @@ async def act(s: State) -> None:
     for step in [st for st in steps if not TOOLS[st.tool].asked(s.ctx.question)]:
         step.status, step.observation = "skipped", "câu hỏi không hỏi điều bước này trả lời"
         steps.remove(step)
+    for step in [st for st in steps if _beside_contract(s, st)]:
+        step.status, step.observation = "skipped", "câu hỏi không hỏi chỉ số này"
+        steps.remove(step)
     if not steps:
         return
     s.step_runs += len(steps)
@@ -714,6 +761,27 @@ async def act(s: State) -> None:
         if not result.ok and s.failed is None and result.failure != "forbidden":
             s.failed = step
     _ask_for_unnamed(s, results)
+
+
+def _beside_contract(s: State, step: p.PlanStep) -> bool:
+    """A reading of another metric beside the one the question asks, which the plan also reads
+    and no step computes from: the 14B planner read Giá trị tồn kho beside "Tồn kho cuối tháng
+    12/2013" and the answer named both and neither figure (19/11). A reading another step uses
+    ("phần trăm của tổng") is part of the answer and runs; so does any when the question asks why,
+    whose causes may lie in another metric."""
+    c = s.contract
+    if c is None or c.metric is None or c.why or step.tool != "query_metric" or s.plan is None:
+        return False
+    if step.args.get("metric") in (None, c.metric):
+        return False
+    used = any(step.id in other.depends_on for other in s.plan.steps)
+    asked = any(
+        other.tool == "query_metric"
+        and other.args.get("metric") == c.metric
+        and other.status != "skipped"
+        for other in s.plan.steps
+    )
+    return asked and not used
 
 
 def _ask_for_unnamed(s: State, results: list[ToolResult]) -> None:
@@ -867,7 +935,7 @@ async def replan(s: State) -> None:
         if failed is not None:
             # The failed step stays on the record, after the ones that are done.
             rebuilt.steps.insert(len(done), failed.model_copy())
-        s.plan = _bind_clarify(s, rebuilt)
+        s.plan = _bind_clarify(s, _read_as_asked(s, rebuilt))
         handle.detail = {
             "steps": p.view(s.plan),
             "thought": narrate.reader(new.thought, _vocab(s)),
@@ -1086,10 +1154,9 @@ async def _gate(s: State, target: str, detail: dict[str, Any], feedback: str) ->
 
 def _answering(s: State) -> dict[str, Dataset] | None:
     """The readings that answer the question by themselves, whatever the plan did beside them:
-    the certified readings, holding figures, of the one metric the question calls by its name,
-    and when it asks for a comparison, those that hold both periods. None when the question
-    names no metric or several, asks why, or no such reading was made; then everything read
-    stands.
+    the certified readings, holding figures, of the one metric the contract names, and when it
+    asks for a comparison, those that hold both periods. None when the contract names no metric
+    or several, asks why, or no such reading was made; then everything read stands.
 
     The rules read each step's arguments from the question, so the first reading of a plan is
     right whatever model wrote it; the 14B planner then read the base period again and computed
@@ -1097,24 +1164,16 @@ def _answering(s: State) -> dict[str, Dataset] | None:
     against 2011 the wrong way round, "Tồn kho" beside the value of stock it was not asked
     (19/11). Which numbers answer is the server's to say, not the plan's shape."""
     assert s.ctx is not None
+    c = s.contract
+    if c is None or c.metric is None or c.why:
+        return None
     certified = [
         d
         for d in s.ctx.ws.datasets.values()
         if d.tool == "query_metric" and d.trust == "certified" and d.reading and _holds_figures(d)
     ]
-    if not certified:
-        return None
-    question = s.ctx.question
-    if search(norm(question), lambda pack: pack.why) is not None:
-        return None
-    vocab = s.ctx.layer.vocabulary
-    # Every metric of the vocabulary: one the asker may not see is never read, so it names no
-    # reading here either.
-    named = [m.code for m in vocab.metrics if names_metric(question, m, vocab)]
-    if len(named) != 1:
-        return None
-    readings = [d for d in certified if (d.reading or {}).get("metric") == named[0]]
-    if find_comparison(question) or two_years(question) or two_periods(question):
+    readings = [d for d in certified if (d.reading or {}).get("metric") == c.metric]
+    if c.compare_to or c.sides:
         readings = [d for d in readings if (d.reading or {}).get("compared")]
     return {d.id: d for d in readings} or None
 
@@ -1125,12 +1184,17 @@ async def compose(s: State) -> None:
     assert s.ctx is not None
     kept = _answering(s)
     full = s.ctx.ws
-    if kept is not None and len(kept) < len(full.datasets):
-        s.ctx.ws = Workspace(datasets=kept, citations=full.citations, _seq=full._seq)
+    if kept is not None:
+        # Only they and the steps that made them: the reporter shown every step named the
+        # reading the plan made beside them, and where the data starts (19/11).
+        s.answering = set(kept)
+        if len(kept) < len(full.datasets):
+            s.ctx.ws = Workspace(datasets=kept, citations=full.citations, _seq=full._seq)
     try:
         await _compose(s)
     finally:
         s.ctx.ws = full
+        s.answering = None
 
 
 async def _compose(s: State) -> None:
@@ -1170,7 +1234,8 @@ async def _compose(s: State) -> None:
     )
     premise = _false_premise(s)
     user = (
-        f"{_situation(s)}\n\n{_progress(s)}\n\n<facts>\n{_facts_text(known) or '(không có)'}\n</facts>"
+        f"{_situation(s, coverage=s.answering is None)}\n\n{_progress(s, only=s.answering)}"
+        f"\n\n<facts>\n{_facts_text(known) or '(không có)'}\n</facts>"
         + (f"\n\n<citations>\n{citations}\n</citations>" if citations else "")
         + (
             f"\n\n<premise>Tiền đề của câu hỏi sai: {premise} Câu trả lời mở đầu bằng điều này"

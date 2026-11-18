@@ -54,9 +54,7 @@ _GRAINS = frozenset({"day", "week", "month", "quarter", "year"})
 # "Top 10 sản phẩm …", "3 đại lý có doanh thu cao nhất", "2 quốc gia … thấp nhất".
 
 
-def _calendar_cut(
-    question: str, vocab: Vocabulary, allowed: set[uuid.UUID]
-) -> dict[str, list[str]]:
+def calendar_cut(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> dict[str, list[str]]:
     """A part of the calendar the space models as a cut of its own, named with its number in the
     question ("năm tài chính 2013", "quý tài chính 3"): that cut, filtered on that number."""
     text = norm(question)
@@ -149,7 +147,7 @@ def named_members(
     }
 
 
-def _asks_breakdown(question: str, vocab: Vocabulary, top: tuple[int, bool] | None) -> bool:
+def asks_breakdown(question: str, vocab: Vocabulary, top: tuple[int, bool] | None) -> bool:
     """Whether the question asks figures by a cut at all: "theo …", "từng/mỗi/các …", a count
     ("5 sản phẩm …"), or a cut named whole ("Cơ cấu doanh thu nhóm sản phẩm")."""
     text = f" {norm(question)} "
@@ -216,12 +214,29 @@ def cut_after_count(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -
     return max(hits, key=lambda h: len(h[0]))[1] if hits else None
 
 
+def metric_of_member(question: str, layer: Any, dimension_id: uuid.UUID) -> str | None:
+    """The metric a question naming a member of `dimension_id` reads it on: of the metrics the
+    asker may see that cut by it, the one the question names more words of than any other ("Phúc
+    lợi nhân viên Employee Benefits thực tế": "thực tế" → Số tài chính thực tế)."""
+    vocab = layer.vocabulary
+    able = [
+        m
+        for m in analyst._visible(layer).values()
+        if dimension_id in layer.versions[m.metric_id].allowed_dimension_ids
+    ]
+    asked = set(norm(question).split())
+    scored = sorted(((len(metric_words(m, vocab) & asked), m.code) for m in able), reverse=True)
+    if scored and scored[0][0] > 0 and (len(scored) == 1 or scored[1][0] < scored[0][0]):
+        return scored[0][1]
+    return None
+
+
 def asks_change(text: str) -> bool:
     """Whether normalised text names a rise or a fall ("giảm", "tăng", "fell")."""
     return any(pack.rises.search(text) or pack.falls.search(text) for pack in PACKS)
 
 
-def _asks_ranking(text: str) -> bool:
+def asks_ranking(text: str) -> bool:
     """Whether normalised text ranks members, by a count or a superlative ("cao nhất", "top")."""
     return any(
         pack.counted.search(text) or pack.rank.search(text) or pack.superlative.search(text)
@@ -238,7 +253,7 @@ def unasked_dropped(question: str, args: QueryMetricArgs) -> QueryMetricArgs:
       2012 and answered with both figures (18/11): a comparison is asked by a base the question
       names, two years, or a rise or fall."""
     text = norm(question)
-    if args.top_n and not _asks_ranking(text):
+    if args.top_n and not asks_ranking(text):
         args = args.model_copy(update={"top_n": None})
     if (
         args.compare_to is not None
@@ -509,7 +524,7 @@ class QueryMetric(Tool):
                     "group_by": [g for g in args.group_by if g not in misplaced],
                 }
             )
-        if args.compare_to is None and not _asks_breakdown(ctx.question, vocab, top):
+        if args.compare_to is None and not asks_breakdown(ctx.question, vocab, top):
             # A breakdown the question does not ask ("Tồn kho cuối tháng 12/2013" read by
             # sub-category, "… loại Specialty Bike Shop" by product): one figure, as asked.
             args = args.model_copy(
@@ -553,14 +568,12 @@ class QueryMetric(Tool):
             pair = two_periods(ctx.question)
             if pair is not None:
                 args = args.model_copy(update={"period": None, "grain": None})
-        calendar_cut = _calendar_cut(ctx.question, vocab, set(version.allowed_dimension_ids))
-        if calendar_cut and pair is None and not side_labels:
+        fiscal = calendar_cut(ctx.question, vocab, set(version.allowed_dimension_ids))
+        if fiscal and pair is None and not side_labels:
             # "Doanh thu Internet năm tài chính 2013": the space models its fiscal year as a cut
             # (AdventureWorks names it by the year it starts in), so it is read as that cut, not as
             # calendar 2013 or a period the default calendar guesses (F0, 17/11: three items).
-            args = args.model_copy(
-                update={"filters": {**args.filters, **calendar_cut}, "period": None}
-            )
+            args = args.model_copy(update={"filters": {**args.filters, **fiscal}, "period": None})
         elif pair is None and not side_labels:
             args = _relative_reading(ctx, args, times_all)
         # A quantity the question asks that no certified metric of the catalogue names ("khách
@@ -592,15 +605,11 @@ class QueryMetric(Tool):
                 if by_id[dim].dimension_id in ctx.layer.versions[m.metric_id].allowed_dimension_ids
             ]
             able = [m.name for m in able_entries]
-            # The 4B executor read the error and kept the metric (18/11): when one metric that
-            # cuts by the member's dimension is named by the question more than any other ("thực
-            # tế" → Số tài chính thực tế), the step is read on it.
-            asked = set(norm(ctx.question).split())
-            scored = sorted(
-                ((len(metric_words(m, vocab) & asked), m.code) for m in able_entries), reverse=True
-            )
-            if scored and scored[0][0] > 0 and (len(scored) == 1 or scored[1][0] < scored[0][0]):
-                return await self.run(ctx, args.model_copy(update={"metric": scored[0][1]}))
+            # The 4B executor read the error and kept the metric (18/11).
+            if (
+                better := metric_of_member(ctx.question, ctx.layer, by_id[dim].dimension_id)
+            ) is not None:
+                return await self.run(ctx, args.model_copy(update={"metric": better}))
             return ToolResult(
                 False,
                 f"“{', '.join(foreign[dim])}” thuộc chiều {by_id[dim].name}, chỉ số {entry.name}"

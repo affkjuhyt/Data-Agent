@@ -886,12 +886,22 @@ def test_the_answer_reads_what_answers_the_question_whatever_else_the_plan_read(
 
     from libs import clock
     from services.worker_agent.agentic import engine
+    from services.worker_agent.agentic import plan as p
+    from services.worker_agent.agentic.contract import read as read_contract
     from services.worker_agent.understand.resolver import MetricEntry
+    from services.worker_agent.understand.text import find_period
 
     revenue = MetricEntry(uuid.uuid4(), "DOANH_THU_DAI_LY", "Doanh thu đại lý", True)
     units = MetricEntry(uuid.uuid4(), "SO_LUONG_BAN_DAI_LY", "Số lượng bán đại lý", True)
     vocab = types.SimpleNamespace(
         metrics=[revenue, units], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
+    )
+    layer = types.SimpleNamespace(
+        vocabulary=vocab,
+        versions={
+            m.metric_id: types.SimpleNamespace(allowed_dimension_ids=[]) for m in (revenue, units)
+        },
+        blocked_metric_ids=set(),
     )
     ws = Workspace()
 
@@ -924,19 +934,21 @@ def test_the_answer_reads_what_answers_the_question_whatever_else_the_plan_read(
         reading=reading("SO_LUONG_BAN_DAI_LY", compared=False),
     )
 
-    def answering(question: str) -> list[str] | None:
-        s = engine.State(
+    def state(question: str) -> Any:
+        today = datetime.date(2026, 11, 19)
+        period = find_period(question, today, clock.DEFAULT)
+        return engine.State(
             event=types.SimpleNamespace(),  # type: ignore[arg-type]
             question_id=uuid.uuid4(),
             model=types.SimpleNamespace(),  # type: ignore[arg-type]
             ctx=types.SimpleNamespace(  # type: ignore[arg-type]
-                ws=ws,
-                question=question,
-                today=datetime.date(2026, 11, 19),
-                layer=types.SimpleNamespace(vocabulary=vocab),
+                ws=ws, question=question, today=today, layer=layer, period=period
             ),
+            contract=read_contract(question, layer, period),
         )
-        found = engine._answering(s)
+
+    def answering(question: str) -> list[str] | None:
+        found = engine._answering(state(question))
         return None if found is None else sorted(found)
 
     # A comparison asked: the reading that holds both periods, nothing else the plan read.
@@ -947,6 +959,77 @@ def test_the_answer_reads_what_answers_the_question_whatever_else_the_plan_read(
     assert answering("Vì sao doanh thu đại lý quý 3/2013 giảm") is None
     assert answering("Doanh thu đại lý và số lượng bán đại lý quý 3/2013") is None
     assert answering("Tình hình kinh doanh quý 3/2013") is None
+
+    # The planner, executor, reviewer and reporter read the same contract.
+    shown = read_contract(
+        "Doanh thu đại lý quý 3/2013 so với quý trước",
+        layer,
+        find_period("Doanh thu đại lý quý 3/2013", datetime.date(2026, 11, 19), clock.DEFAULT),
+    ).render({revenue.code: revenue.name})
+    assert "- chỉ số: DOANH_THU_DAI_LY (Doanh thu đại lý)" in shown
+    assert '"2013-07-01/2013-10-01"' in shown
+    assert "- so sánh: với kỳ liền trước" in shown
+    assert "- xếp hạng: không" in shown
+
+    # A reading of another metric beside the one asked does not run, unless a step uses it.
+    def step(sid: str, metric: str, after: list[str] | None = None) -> p.PlanStep:
+        tool = "query_metric" if metric else "analyze"
+        args = {"metric": metric} if metric else {}
+        return p.PlanStep(id=sid, tool=tool, instruction=sid, args=args, depends_on=after or [])
+
+    s = state("Doanh thu đại lý quý 3/2013")
+    s.plan = p.Plan(
+        goal="g", steps=[step("s1", "DOANH_THU_DAI_LY"), step("s2", "SO_LUONG_BAN_DAI_LY")]
+    )
+    assert [engine._beside_contract(s, st) for st in s.plan.steps] == [False, True]
+    s.plan.steps.append(step("s3", "", ["s1", "s2"]))
+    assert not engine._beside_contract(s, s.plan.steps[1])
+    # Asked why: its causes may lie in another metric.
+    s = state("Vì sao doanh thu đại lý quý 3/2013 giảm")
+    s.plan = p.Plan(
+        goal="g", steps=[step("s1", "DOANH_THU_DAI_LY"), step("s2", "SO_LUONG_BAN_DAI_LY")]
+    )
+    assert not engine._beside_contract(s, s.plan.steps[1])
+
+    # A planner's ask over a question that names its metric and period is read instead.
+    ask = p.Plan(goal="g", mode="ask", clarification="Bạn muốn chỉ số nào?", options=["a"])
+    read = engine._read_as_asked(state("Doanh thu đại lý quý 3/2013"), ask)
+    assert read.mode == "analyze" and read.clarification is None
+    assert [(st.tool, st.args) for st in read.steps] == [
+        ("query_metric", {"metric": "DOANH_THU_DAI_LY"})
+    ]
+    # No period named, or no metric: the ask stands.
+    assert engine._read_as_asked(state("Doanh thu đại lý"), ask).mode == "ask"
+    assert engine._read_as_asked(state("Tình hình kinh doanh quý 3/2013"), ask).mode == "ask"
+
+    # The reporter is shown the steps that made the readings it writes from.
+    s = state("Doanh thu đại lý quý 3/2013")
+    s.plan = p.Plan(
+        goal="g", steps=[step("s1", "DOANH_THU_DAI_LY"), step("s2", "SO_LUONG_BAN_DAI_LY")]
+    )
+    s.plan.steps[0].datasets, s.plan.steps[1].datasets = ["d2"], ["d4"]
+    assert '"s2"' in engine._progress(s)
+    assert '"s2"' not in engine._progress(s, only={"d2"})
+
+
+def test_the_contract_names_a_cut_only_as_the_question_writes_it() -> None:
+    """19/11: "tính theo số lượng" folds to the "tỉnh" of "Bang / tỉnh"; the planner was to be
+    shown a cut by province the question never asked."""
+    import types
+    import uuid
+
+    from services.worker_agent.agentic.contract import _written
+
+    province = types.SimpleNamespace(code="BANG", name="Bang / tỉnh", dimension_id=uuid.uuid4())
+    group = types.SimpleNamespace(code="NHOM", name="Nhóm sản phẩm", dimension_id=uuid.uuid4())
+    vocab = types.SimpleNamespace(
+        dimensions=[province, group],
+        synonyms={"nhom hang": ("dimension", str(group.dimension_id))},
+    )
+    assert not _written("Sản phẩm nào bán nhiều nhất, tính theo số lượng", "BANG", vocab)
+    assert _written("Doanh thu theo tỉnh năm 2013", "BANG", vocab)
+    assert _written("Doanh thu theo Nhóm sản phẩm, năm 2013", "NHOM", vocab)
+    assert _written("Doanh thu theo từng nhóm hàng", "NHOM", vocab)
 
 
 def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql() -> None:
@@ -2340,8 +2423,8 @@ def test_a_fiscal_cut_a_span_from_the_year_start_and_a_relative_comparison_are_r
 
     from services.worker_agent.agentic.tools.query import (
         QueryMetricArgs,
-        _calendar_cut,
         _relative_reading,
+        calendar_cut,
     )
     from services.worker_agent.understand.resolver import DimensionEntry
     from services.worker_agent.understand.text import find_period
@@ -2350,12 +2433,12 @@ def test_a_fiscal_cut_a_span_from_the_year_start_and_a_relative_comparison_are_r
     region = DimensionEntry(uuid.uuid4(), "khu_vuc", "Khu vực")
     vocab = types.SimpleNamespace(dimensions=[fiscal, region])
     allowed = {fiscal.dimension_id, region.dimension_id}
-    assert _calendar_cut("Doanh thu Internet năm tài chính 2013", vocab, allowed) == {  # type: ignore[arg-type]
+    assert calendar_cut("Doanh thu Internet năm tài chính 2013", vocab, allowed) == {  # type: ignore[arg-type]
         "nam_tai_chinh": ["2013"]
     }
     # Not a calendar part, or not allowed for the metric: no cut.
-    assert _calendar_cut("Doanh thu khu vực 2013", vocab, allowed) == {}  # type: ignore[arg-type]
-    assert _calendar_cut("Doanh thu năm tài chính 2013", vocab, {region.dimension_id}) == {}  # type: ignore[arg-type]
+    assert calendar_cut("Doanh thu khu vực 2013", vocab, allowed) == {}  # type: ignore[arg-type]
+    assert calendar_cut("Doanh thu năm tài chính 2013", vocab, {region.dimension_id}) == {}  # type: ignore[arg-type]
 
     today = datetime.date(2026, 11, 18)
 
@@ -2464,7 +2547,7 @@ def test_named_members_the_counted_cut_and_an_unasked_breakdown_are_read_from_th
     import uuid
 
     from services.worker_agent.agentic.tools.query import (
-        _asks_breakdown,
+        asks_breakdown,
         cut_after_count,
         named_cut,
         named_cuts,
@@ -2533,9 +2616,9 @@ def test_named_members_the_counted_cut_and_an_unasked_breakdown_are_read_from_th
         "loai_dai_ly",
         "khu_vuc",
     }
-    assert not _asks_breakdown("Doanh thu đại lý loại Specialty Bike Shop năm 2013", vocab, None)
-    assert _asks_breakdown("Doanh thu đại lý theo khu vực năm 2013", vocab, None)
-    assert _asks_breakdown("Cơ cấu doanh thu đại lý khu vực năm 2013", vocab, None)
+    assert not asks_breakdown("Doanh thu đại lý loại Specialty Bike Shop năm 2013", vocab, None)
+    assert asks_breakdown("Doanh thu đại lý theo khu vực năm 2013", vocab, None)
+    assert asks_breakdown("Cơ cấu doanh thu đại lý khu vực năm 2013", vocab, None)
 
 
 def test_an_account_named_with_its_gloss_is_read_on_a_metric_that_cuts_by_accounts(
