@@ -2497,3 +2497,46 @@ def test_an_answer_over_readings_that_all_came_back_empty_is_a_refusal() -> None
     assert engine._read_nothing(state)
     ws.add(title="t", columns=["value"], rows=[[5]], trust="certified", tool="query_metric")
     assert not engine._read_nothing(state)
+
+
+def test_a_reading_that_holds_no_figure_is_not_shown_beside_one_that_does() -> None:
+    """ "Số cuộc gọi tổng đài tháng 5/2014": 12/2013 read first (one NULL row), May 2014 next."""
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+
+    ws = Workspace()
+    empty = ws.add(
+        title="t", columns=["Số cuộc gọi"], rows=[[None]], trust="certified", tool="query_metric"
+    )
+    held = ws.add(
+        title="t", columns=["Số cuộc gọi"], rows=[[43349]], trust="certified", tool="query_metric"
+    )
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(ws=ws),  # type: ignore[arg-type]
+        composition=[
+            {
+                "type": "kpi",
+                "id": "b1",
+                "items": [{"dataset": empty.id, "value": None, "label": "Số cuộc gọi"}],
+            },
+            {"type": "markdown", "id": "b2", "content": "x"},
+        ],
+    )
+    assert not engine._holds_figures(empty) and engine._holds_figures(held)
+    engine._drop_empty_shown(state)
+    assert [b["id"] for b in state.composition] == ["b2"]
+    assert not engine._read_nothing(state)
+    del ws.datasets[held.id]
+    state.composition = [
+        {
+            "type": "kpi",
+            "id": "b1",
+            "items": [{"dataset": empty.id, "value": None, "label": "Số cuộc gọi"}],
+        }
+    ]
+    assert engine._read_nothing(state)

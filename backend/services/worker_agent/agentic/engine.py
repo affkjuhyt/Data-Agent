@@ -1198,6 +1198,7 @@ async def compose(s: State) -> None:
             }
             await _gate(s, contract_hit.target, contract_hit.detail, contract_hit.feedback)
             return
+        _drop_empty_shown(s)
         if made and not any(blk["type"] in _DATA_BLOCKS for blk in s.composition):
             # Numbers were read and only words were kept (a callout, sentences dropped for a
             # typed number): "Doanh thu năm 2013" was answered with a note and no figure (F0).
@@ -1354,11 +1355,39 @@ def _compared(ds: Dataset) -> tuple[int, int, list[int]] | None:
     return None
 
 
+def _holds_figures(ds: Dataset) -> bool:
+    """Whether a dataset holds a figure at all: a sum over no rows is one row of NULL ("Số cuộc
+    gọi tổng đài" read for 12/2013, where the call centre has May 2014 only)."""
+    found = _measure(ds) if ds.rows else None
+    return found is not None and any(number(r[found[0]]) is not None for r in ds.rows)
+
+
 def _read_nothing(s: State) -> bool:
-    """The turn read the data and every reading came back empty, and the answer shows no figure."""
+    """The turn read the data, no reading holds a figure, and the answer shows none."""
     assert s.ctx is not None
     fetched = [d for d in s.ctx.ws.datasets.values() if d.tool in FETCHING]
-    return bool(fetched) and all(not d.rows for d in fetched) and not _figures(s)
+    return (
+        bool(fetched)
+        and not any(_holds_figures(d) for d in fetched)
+        and all(f.get("value") is None for f in _figures(s))
+    )
+
+
+def _drop_empty_shown(s: State) -> None:
+    """A table, chart or KPI of a reading that holds no figure, beside readings that do, is not
+    the answer: "Số cuộc gọi tổng đài tháng 5/2014" read 12/2013 first (NULL) then May 2014
+    (43.349), and the answer showed the first, "—" (18/11)."""
+    assert s.ctx is not None
+    datasets = s.ctx.ws.datasets
+    if not any(_holds_figures(d) for d in datasets.values() if d.tool in FETCHING):
+        return
+    s.composition = [
+        blk
+        for blk in s.composition
+        if blk["type"] not in _DATA_BLOCKS
+        or (ds := datasets.get(_shown_dataset(blk))) is None
+        or _holds_figures(ds)
+    ]
 
 
 def _top_unsaid(s: State) -> str:
@@ -1471,7 +1500,12 @@ def _data_block(s: State, block_id: str) -> dict[str, Any] | None:
     assert s.ctx is not None
     ws = s.ctx.ws
     ds = next(
-        (d for d in reversed(list(ws.datasets.values())) if d.tool in FETCHING and d.rows), None
+        (
+            d
+            for d in reversed(list(ws.datasets.values()))
+            if d.tool in FETCHING and _holds_figures(d)
+        ),
+        None,
     )
     if ds is None or (found := _measure(ds)) is None:
         return None
