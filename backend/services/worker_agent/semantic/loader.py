@@ -48,6 +48,10 @@ class SpaceLayer:
     version_rows: dict[uuid.UUID, context.MetricVersion]  # metric id → its row (receipt fields)
     datasets: dict[uuid.UUID, catalog.Dataset]
     blocked_metric_ids: frozenset[uuid.UUID]
+    # What the space's tables and their columns are called (entities' names, display names): a
+    # question naming one is the tables' to try, not out of the space (clarify_policy).
+    table_names: tuple[str, ...] = ()
+    column_names: tuple[str, ...] = ()
 
 
 async def load(
@@ -375,6 +379,32 @@ async def load(
         ),
         calendar=calendar,
     )
+    table_names = tuple(
+        dict.fromkeys(
+            [e.name for e in entities]
+            + [d.display_name for d in datasets.values() if d.display_name]
+        )
+    )
+    column_names = tuple(
+        dict.fromkeys(
+            (
+                await session.scalars(
+                    select(catalog.ColumnMeta.display_name).where(
+                        catalog.ColumnMeta.dataset_id.in_(list(datasets)),
+                        catalog.ColumnMeta.removed_in_version.is_(None),
+                        catalog.ColumnMeta.display_name.is_not(None),
+                    )
+                )
+            ).all()
+        )
+    )
     return SpaceLayer(
-        vocabulary, layer, versions, version_rows, datasets, frozenset(blocked_metric_ids)
+        vocabulary,
+        layer,
+        versions,
+        version_rows,
+        datasets,
+        frozenset(blocked_metric_ids),
+        table_names,
+        tuple(n for n in column_names if n),
     )

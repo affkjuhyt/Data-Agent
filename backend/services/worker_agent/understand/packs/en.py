@@ -45,6 +45,11 @@ _ORDINAL = {
 }
 _ORDINALS = "|".join(_ORDINAL)
 _FISCAL = r"(?:fiscal year|fiscal|fy)\s?(\d{4})"
+_RISES = r"ris(?:e|es|en|ing)|rose|gr(?:ow|ows|ew|own|owing)|increas(?:e|es|ed|ing)|went up"
+_FALLS = (
+    r"f(?:all|alls|ell|allen|alling)|drop(?:s|ped|ping)?|declin(?:e|es|ed|ing)"
+    r"|decreas(?:e|es|ed|ing)|went down"
+)
 _UNITS = {"day": "day", "week": "week", "month": "month", "quarter": "quarter", "year": "year"}
 
 
@@ -211,6 +216,55 @@ PACK = Pack(
         ("with current data", "latest"),
         ("using current data", "latest"),
     ),
+    rises=re.compile(rf"\b(?:{_RISES})\b"),
+    falls=re.compile(rf"\b(?:{_FALLS})\b"),
+    most_changed=re.compile(
+        rf"\b(?:{_RISES}|{_FALLS})\b.*\bmost\b"
+        r"|\b(?:biggest|largest|steepest|sharpest) (?:drop|fall|decline|decrease|rise|increase"
+        r"|growth|gain)\b"
+    ),
+    counted=re.compile(r"^(?:top\s*)?(\d{1,3})\s+[a-z]|\b(?:top|bottom)\s*(\d{1,3})\b"),
+    several=re.compile(r"\b(?:every|various)\b"),
+    # English names its months ("August 2013"), read by `periods`; two of them side by side are
+    # not read yet, and a bare "8/2013" is no English month: in "tháng 8/2013 và quý 3/2013" it
+    # took "3/2013" for March.
+    month_named=re.compile(r"(?!)"),
+    quarter_named=re.compile(r"\bq([1-4])[ /-]?((?:19|20)\d{2})\b"),
+    two_years=re.compile(
+        r"\b((?:19|20)\d{2}) (?:and|vs|versus|against|compared (?:to|with)) ((?:19|20)\d{2})\b"
+    ),
+    analysis_phrase=re.compile(
+        r"\b(?:compared? (?:to|with)|why|contribution|trend|breakdown|difference|cause|analy[sz]e"
+        r"|highest|lowest|cumulative|running total|share of)\b"
+    ),
+    analysis_words=frozenset(
+        "why how trend compare increase decrease highest lowest total average share top rank "
+        "change growth drop rise breakdown mix composition".split()
+    ),
+    cut_ends=frozenset(
+        "in for during from to since vs versus compared than day week month quarter year".split()
+    ),
+    lasting=(
+        "always",
+        "from now",
+        "by default",
+        "define",
+        "means",
+        "i mean",
+        "i am",
+        "i'm",
+        "my ",
+        "we ",
+        "don't",
+        "do not",
+        "instead",
+    ),
+    said={
+        "preference": ("always", "from now", "by default", "i prefer", "i want"),
+        "definition": ("define", "means", "is counted"),
+        "feedback": ("i mean", "instead", "not what"),
+        "fact": ("i am", "i'm", "i work", "my ", "we "),
+    },
     comparators=(
         (r">=|at least|no less than", ">="),
         (r"<=|at most|up to|no more than", "<="),

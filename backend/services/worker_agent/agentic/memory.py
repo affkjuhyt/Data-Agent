@@ -37,6 +37,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
 from services.worker_agent.agentic.prompts import BOUNDARY
 from services.worker_agent.llm import Gateway, ModelUnavailable
+from services.worker_agent.understand.packs import PACKS
 from services.worker_agent.understand.text import norm
 
 logger = logging.getLogger(__name__)
@@ -100,56 +101,46 @@ _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
 # Words that say something meant to last (a preference, a definition, a correction): a turn without
 # any is not read for memories, which saves a model call on most questions (RES-05).
-_LASTING = (
-    "toi ",
-    "minh ",
-    "chung toi",
-    "luon",
-    "tu nay",
-    "tu gio",
-    "lan sau",
-    "mac dinh",
-    "dinh nghia",
-    "nghia la",
-    "hieu la",
-    "duoc tinh",
-    "tinh bang",
-    "dung ",
-    "khong phai",
-    "y toi",
-    "toi muon",
-    "toi phu trach",
-    "toi quan tam",
-    "always",
-    "from now",
-    "by default",
-    "define",
-    "means",
-    "i mean",
-    "i am",
-    "i'm",
-    "my ",
-    "we ",
-    "don't",
-    "do not",
-    "instead",
-)
+_LASTING = tuple(w for pack in PACKS for w in pack.lasting)
+
+
+def _says(text: str, words: Sequence[str]) -> bool:
+    """Whether `text` (folded) holds one of `words` as whole words: as a substring, "luôn" (luon)
+    was found in "số lượng" (luong) and every question about a quantity was read for memories."""
+    folded = f" {norm(text)} "
+    return any(re.search(rf"(?<!\w){re.escape(w.strip())}(?!\w)", folded) for w in words)
 
 
 def worth_remembering(question: str) -> bool:
-    text = f" {norm(question)} "
-    return any(f" {w}" in text for w in _LASTING)
+    return _says(question, _LASTING)
 
 
 def content_hash(content: str) -> str:
     return hashlib.sha256(norm(content).encode()).hexdigest()
 
 
-def _kept(op: MemoryOp, fetched_numbers: set[str]) -> bool:
-    """The server's own rules over the model's proposal: a secret-looking text, or one quoting a
-    figure the turn fetched, is never stored."""
+# What the person must have said for each kind to be theirs: the model proposed "kết quả bằng
+# tiếng Trung, liệt kê theo tiểu nhóm" as a preference from "3 tiểu nhóm sản phẩm có số lượng bán
+# Internet nhiều nhất năm 2013", which says nothing lasting (17/11).
+_SAID: dict[str, tuple[str, ...]] = {
+    kind: tuple(w for pack in PACKS for w in pack.said.get(kind, ()))
+    for kind in ("preference", "definition", "feedback", "fact")
+}
+# Han, kana, hangul: a memory in a script the person did not write in is the model's, not theirs.
+_FOREIGN_SCRIPT = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
+
+
+def _kept(op: MemoryOp, fetched_numbers: set[str], question: str = "") -> bool:
+    """The server's own rules over the model's proposal: a secret-looking text, one quoting a
+    figure the turn fetched, one in a script the question is not in, or a kind the person's words
+    do not say (a preference with no "luôn"/"từ nay", a definition with no "nghĩa là") is never
+    stored."""
     text = op.content.strip()
     if len(text) < 6 or _SECRET.search(text):
+        return False
+    if _FOREIGN_SCRIPT.search(text) and not _FOREIGN_SCRIPT.search(question):
+        return False
+    if question and not _says(question, _SAID.get(op.kind, ())):
         return False
     return not any(n in fetched_numbers for n in _NUMBER.findall(text) if len(n) >= 3)
 
@@ -174,7 +165,7 @@ async def extract(
         reply = await model.json_chat("planner", EXTRACT, user, Extraction, max_tokens=500)
     except ModelUnavailable:
         return []
-    return [op for op in reply.content.ops[:MAX_OPS] if _kept(op, fetched_numbers)]
+    return [op for op in reply.content.ops[:MAX_OPS] if _kept(op, fetched_numbers, question)]
 
 
 async def store(

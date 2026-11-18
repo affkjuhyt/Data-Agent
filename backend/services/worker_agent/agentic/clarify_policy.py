@@ -10,16 +10,19 @@ interpretations would change metric, period, or scope.
 from __future__ import annotations
 
 import datetime
+import itertools
 import re
 from dataclasses import dataclass
 from typing import Literal
 
 from services.worker_agent.agentic import plan as p
+from services.worker_agent.agentic.grounded import ANALYSIS_WORDS
 from services.worker_agent.agentic.tools.base import Clarify
 from services.worker_agent.semantic.loader import SpaceLayer
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.packs import PACKS, search, words
 from services.worker_agent.understand.resolver import metric_words, quantity_words
-from services.worker_agent.understand.text import norm
+from services.worker_agent.understand.text import find_period, norm
 
 Audience = Literal["executive", "analyst"]
 
@@ -97,6 +100,7 @@ def apply(
 # A quantity no certified metric measures is asked back with this many metrics to choose from.
 UNNAMED_OPTIONS = 4
 _TRAILING = re.compile(r"[?.!,;:]+$")
+_FILLER = words(lambda pack: pack.filler)
 
 
 def _closest(question: str, layer: SpaceLayer) -> list[str]:
@@ -161,6 +165,214 @@ def unnamed_quantity(
     return Clarify(
         f"Chưa có chỉ số chuẩn nào đo “{phrase}”. Bạn muốn xem chỉ số nào dưới đây?",
         [asked_with(name) for name in found[:max_options]],
+    )
+
+
+def same_named(question: str, layer: SpaceLayer, today: datetime.date) -> Clarify | None:
+    """F2: the question names a quantity that two or more certified metrics are named after and
+    none is exactly ("Lãi gộp năm 2013": Internet or đại lý; "Số tài chính": ngân sách or thực tế):
+    asked back with those metrics, each the question again with its name in place. The planner
+    picked one alone and answered it (F0, 17/11).
+
+    Matched on whole phrases (a metric's name or one of its synonyms), not on the union of their
+    words: "số lượng khách hàng", a synonym of the customers, holds "lượng" too. None when a word
+    of the quantity is in no metric's phrase ("Giá cổ phiếu": not this check's to answer), when a
+    metric is named exactly, or when fewer than two are named."""
+    vocab = layer.vocabulary
+    visible = analyst._visible(layer)
+    phrases: dict[str, list[set[str]]] = {
+        code: [set(norm(m.name).split())] for code, m in visible.items() if m.certified
+    }
+    for phrase, target in vocab.synonyms.items():
+        for code, m in visible.items():
+            if code in phrases and target[:2] == ("metric", str(m.metric_id)):
+                phrases[code].append(set(phrase.split()))
+    known = set().union(*(w for ps in phrases.values() for w in ps)) if phrases else set()
+    # A cut's words ("theo khu vực") are no unknown quantity; they are not set aside either, as the
+    # space's cuts are named with its metrics' words ("Năm tài chính", "Ngày đặt hàng (đại lý)").
+    cuts: set[str] = set()
+    for d in vocab.dimensions:
+        cuts |= set(norm(d.name).split())
+    content = [w for w in quantity_words(question, vocab, today=today) if w not in ANALYSIS_WORDS]
+    if not any(w in known for w in content) or any(w not in known | cuts for w in content):
+        return None
+    # The question's words any metric is named with, fillers kept: "bán" folds to "bạn", a filler,
+    # and "Số lượng bán" read as "lượng" alone also matched "số lượng khách hàng".
+    # Analysis is set aside by its phrases: its single words are metric words too ("gộp" of
+    # "đóng góp", "tài" of "tại sao", "số" of "so sánh", "biên" of "biến động").
+    found = find_period(question, today, vocab.calendar)
+    text = norm(question).replace(found.span, " ") if found else norm(question)
+    for pack in PACKS:
+        text = pack.analysis_phrase.sub(" ", text)
+    asked = {w for w in text.split() if w in known}
+    named = {
+        code: min(len(p - asked - _FILLER) for p in ps if asked <= p)
+        for code, ps in phrases.items()
+        if any(asked <= p for p in ps)
+    }
+    if len(named) < 2 or 0 in named.values():
+        return None
+    tokens = question.split()
+    at = [i for i, t in enumerate(tokens) if norm(_TRAILING.sub("", t)) in asked]
+    if not at:
+        return None
+    first, last = at[0], at[-1]
+    end = trail.group(0) if (trail := _TRAILING.search(tokens[last])) else ""
+    phrase = _TRAILING.sub("", " ".join(tokens[first : last + 1]))
+
+    def asked_with(name: str) -> str:
+        said = name if first == 0 else name[:1].lower() + name[1:]
+        return " ".join([*tokens[:first], said + end, *tokens[last + 1 :]])
+
+    names = sorted(visible[code].name for code in named)[:UNNAMED_OPTIONS]
+    return Clarify(
+        f"“{phrase}” có ở nhiều chỉ số chuẩn. Bạn muốn xem chỉ số nào?",
+        [asked_with(name) for name in names],
+    )
+
+
+def _phrases(layer: SpaceLayer) -> tuple[list[set[str]], list[set[str]]]:
+    """The space's names as word sets: its metrics' (names, synonyms), and the rest a cut can be
+    named with (cuts' names and synonyms, the members its value index holds). Matched as whole
+    phrases: single words collide once folded ("lý" of "lý do" is the "lý" of "đại lý")."""
+    vocab = layer.vocabulary
+    metrics = [set(norm(m.name).split()) for m in vocab.metrics]
+    cuts = [set(norm(d.name).split()) for d in vocab.dimensions]
+    for phrase, target in vocab.synonyms.items():
+        (metrics if target[0] == "metric" else cuts).append(set(phrase.split()))
+    cuts += [set(norm(v.label).split()) for v in vocab.values]
+    return [m for m in metrics if m], [c for c in cuts if c]
+
+
+def out_of_scope(question: str, layer: SpaceLayer, today: datetime.date) -> str | None:
+    """A data question naming none of the space's metrics or tables, refused before any plan: no
+    metric's name or synonym is half in it, no table's name whole ("Giá cổ phiếu của công ty hôm
+    nay", "Tỷ giá USD hôm nay"). The planner read such questions as the nearest metric, or wrote
+    "no data" as an answer (F0, 17/11).
+    Half named ("Khách hàng rời bỏ": "số khách hàng") is asked back with the closest metrics
+    instead (unnamed_quantity); a question asking no quantity and naming no period (a greeting)
+    is not this check's."""
+    vocab = layer.vocabulary
+    text = norm(question)
+    found = find_period(question, today, vocab.calendar)
+    if found is None and not any(pack.quantity.search(text) for pack in PACKS):
+        return None
+    asked = set(text.split())
+    metrics, _ = _phrases(layer)
+    if any(len(m & asked) * 2 >= len(m) for m in metrics):
+        return None
+    # A table the question names ("Số khoản vay theo mã chi nhánh": the entity "Khoản vay") is the
+    # tables' to try (01 §3.4): refused here, the governed path never wrote the SQL that answers
+    # it when the planner was away (integration suite, 18/11).
+    for name in getattr(layer, "table_names", ()):
+        words = set(norm(name).split()) - _FILLER
+        if words and words <= asked:
+            return None
+    tokens = question.split()
+    content = set(quantity_words(question, vocab, today=today))
+    at = [i for i, t in enumerate(tokens) if norm(_TRAILING.sub("", t)) in content]
+    shown = _TRAILING.sub("", " ".join(tokens[at[0] : at[-1] + 1])) if at else ""
+    return (
+        f"Dữ liệu của Data Space này không có số đo cho “{shown or question.strip()}”, nên không"
+        " trả lời được câu hỏi này. Bạn có thể hỏi về các chỉ số trong danh mục."
+    )
+
+
+_CUT_ENDS = words(lambda pack: pack.cut_ends)
+
+
+def unknown_cut(question: str, layer: SpaceLayer, today: datetime.date) -> Clarify | None:
+    """A cut the space does not model, asked back before any plan ("Doanh thu theo nhân viên bán
+    hàng", "… theo lý do mua hàng", "… theo ngày giao hàng"): the planner cut by the nearest
+    dimension or joined the table itself, and summed the revenue several times over (F0, 17/11).
+    Known when its words sit in one cut's name or synonym, one member, or one metric ("theo doanh
+    thu"); "theo tháng", "theo ngày" alone are a grain."""
+    tokens = question.split()
+    folded = [norm(_TRAILING.sub("", t)) for t in tokens]
+    starts = list(itertools.accumulate((len(w) + 1 for w in folded), initial=0))
+    m = search(" ".join(folded), lambda pack: pack.unplaced_cut)
+    if m is None:
+        return None
+    # The token the cut's words start at ("theo", "by" and "từng" before it are not the cut).
+    at = next((i for i, start in enumerate(starts) if start >= m.start(1)), len(folded))
+    cut: list[int] = []
+    for i in range(at, len(folded)):
+        word = folded[i]
+        after = folded[i + 1] if i + 1 < len(folded) else ""
+        period_next = not after or any(ch.isdigit() for ch in after) or after in _CUT_ENDS
+        if any(ch.isdigit() for ch in word) or (word in _CUT_ENDS and (i > at or period_next)):
+            break
+        cut.append(i)
+        if _TRAILING.search(tokens[i]):
+            break
+    cut_words = {folded[i] for i in cut} - _FILLER - ANALYSIS_WORDS
+    if not cut_words:
+        return None
+    metrics, cuts = _phrases(layer)
+    if any(cut_words <= phrase for phrase in [*metrics, *cuts]):
+        return None
+    # A column of the space's tables ("theo mã chi nhánh") is the tables' to cut by (01 §3.4).
+    if any(cut_words <= set(norm(name).split()) for name in getattr(layer, "column_names", ())):
+        return None
+    asked = _TRAILING.sub("", " ".join(tokens[cut[0] : cut[-1] + 1]))
+    return Clarify(
+        f"Dữ liệu chưa có chiều “{asked}” để chia. Bạn muốn chia theo chiều nào khác, hoặc xem"
+        " tổng?",
+        [],
+    )
+
+
+def spoken_period(start: datetime.date, end: datetime.date) -> str:
+    """A period as a question says it: "năm 2013", "quý 4/2013", "tháng 12/2013"."""
+    months = (end.year - start.year) * 12 + end.month - start.month
+    if start.day == 1 and end.day == 1:
+        if months == 12 and start.month == 1:
+            return f"năm {start.year}"
+        if months == 3 and start.month % 3 == 1:
+            return f"quý {(start.month - 1) // 3 + 1}/{start.year}"
+        if months == 1:
+            return f"tháng {start.month}/{start.year}"
+    last = end - datetime.timedelta(days=1)
+    return f"từ {start:%d/%m/%Y} đến {last:%d/%m/%Y}"
+
+
+def missing_period(
+    question: str,
+    span: str,
+    asked: str,
+    metric: str,
+    nearest: tuple[datetime.date, datetime.date],
+    held: tuple[datetime.date, datetime.date] | None = None,
+) -> Clarify:
+    """The question back when the period it names holds no data of its metric at all (F1): the
+    nearest whole period of the same length offered as the question again, said with that period
+    in place of the asked one. It used to be read for the nearest period without asking, and the
+    answer gave 12/2013's figure to "tháng 3/2015" (F0, 17/11); a period beyond the data is the
+    person's to move, not the agent's."""
+    said = spoken_period(*nearest)
+    tokens = question.split()
+    words = span.split()
+    folded = [norm(_TRAILING.sub("", t)) for t in tokens]
+    option = f"{metric} {said}"
+    for i in range(len(tokens) - len(words) + 1):
+        if folded[i : i + len(words)] == words:
+            trail = _TRAILING.search(tokens[i + len(words) - 1])
+            end = trail.group(0) if trail else ""
+            option = " ".join([*tokens[:i], said + end, *tokens[i + len(words) :]])
+            break
+    if held is not None:
+        # No whole period of that length to offer: say where the data is, offer the nearest one.
+        last_day = held[1] - datetime.timedelta(days=1)
+        return Clarify(
+            f"Chưa có dữ liệu {metric} cho {asked}; dữ liệu chỉ có từ tháng"
+            f" {held[0].month}/{held[0].year} đến tháng {last_day.month}/{last_day.year}."
+            f" Bạn muốn xem {said}?",
+            [option],
+        )
+    return Clarify(
+        f"Chưa có dữ liệu {metric} cho {asked}. Kỳ đầy đủ gần nhất có dữ liệu là {said}."
+        " Bạn muốn xem kỳ đó?",
+        [option],
     )
 
 

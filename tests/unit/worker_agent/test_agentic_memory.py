@@ -60,3 +60,19 @@ def test_only_a_turn_that_says_something_lasting_is_read_for_memories() -> None:
     assert memory.worth_remembering("Khách hàng mới nghĩa là mua lần đầu")
     assert memory.worth_remembering("Không phải, ý tôi là doanh thu thuần")
     assert memory.worth_remembering("From now on answer in English")
+
+
+def test_a_kind_is_kept_only_when_the_persons_words_say_it_in_their_script() -> None:
+    # 17/11/2026: from an eval question the model kept "kết quả bằng tiếng Trung, liệt kê theo
+    # tiểu nhóm" as helios-admin's preference; every later answer was cut by sub-category.
+    asked = "3 tiểu nhóm sản phẩm có số lượng bán Internet nhiều nhất năm 2013"
+    made_up = memory.MemoryOp(kind="preference", content="Liệt kê theo tiểu nhóm sản phẩm")
+    chinese = memory.MemoryOp(kind="preference", content="结果以中文呈现")
+    assert not memory._kept(made_up, set(), asked)
+    assert not memory._kept(chinese, set(), "Từ nay luôn liệt kê theo tiểu nhóm")
+    # Said by the person, in their words and script: kept.
+    said = memory.MemoryOp(kind="preference", content="Luôn liệt kê theo tiểu nhóm sản phẩm")
+    assert memory._kept(said, set(), "Từ nay luôn liệt kê theo tiểu nhóm sản phẩm")
+    defined = memory.MemoryOp(kind="definition", content="Khách hàng mới là khách mua lần đầu")
+    assert memory._kept(defined, set(), "Khách hàng mới nghĩa là mua lần đầu trong năm")
+    assert not memory._kept(defined, set(), "Có bao nhiêu khách hàng mới năm 2013")

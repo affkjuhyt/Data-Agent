@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResult
 from services.worker_agent.agentic.tools.query import QUERYABLE, _secrets, _source_for
+from services.worker_agent.explore import bucket
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic import coverage
 from services.worker_agent.understand import analyst
@@ -121,4 +122,7 @@ async def for_planning(ctx: ToolContext, codes: list[str]) -> str:
             suggested = coverage.suggest(found, asked)
             if suggested is not None:
                 ctx.period_moves[code] = (asked, suggested[0])
+            elif found.first is not None and found.last is not None:
+                held = c.Period(found.first, bucket(found.last, found.grain).end)
+                ctx.period_gaps[code] = (asked, held)
     return "\n".join(lines)

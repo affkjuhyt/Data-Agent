@@ -145,7 +145,8 @@ async def _ask(
             "question.received",
             "question",
             question_id,
-            {"question_id": str(question_id), "user_id": str(user)},
+            # Asked as the person, not by them: nothing is kept in their memory.
+            {"question_id": str(question_id), "user_id": str(user), "remember": False},
         )
     )
     seconds = time.monotonic() - started

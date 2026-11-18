@@ -49,12 +49,18 @@ class ToolContext:
     # AGC-10: a metric whose data never reaches the asked period, mapped to the latest whole period
     # of the same length (semantic/coverage.py); query_metric reads that one instead and says so.
     period_moves: dict[str, tuple[Any, Any]] = field(default_factory=dict)
+    # A metric with no data in the asked period at all and no whole period to move to (budget data
+    # from 12/2010 to 11/2011 asked for 2026): the asked period and the span the data holds (F1).
+    period_gaps: dict[str, tuple[Any, Any]] = field(default_factory=dict)
     # Model calls made inside tools (sqlgen), for the receipt.
     models: list[dict[str, Any]] = field(default_factory=list)
     step_id: str = ""
     # Fingerprints of explore_sql statements the semantic audit already refused this turn (RES-02).
     # Shared across dataclasses.replace copies so a replan cannot rewrite the same SQL.
     refused_sql: list[str] = field(default_factory=list)
+    # The totals explain_change compared (metric, period, compare_to, now, then), shared the same
+    # way: the answer checks the question's premise against them (F3).
+    changes: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -99,6 +105,12 @@ class Tool:
 
     async def run(self, ctx: ToolContext, args: BaseModel) -> ToolResult:
         raise NotImplementedError
+
+    @classmethod
+    def asked(cls, question: str) -> bool:
+        """Whether the question asks what this tool answers: a tool that answers one kind of
+        question (why a figure moved) runs only when that kind is asked, whoever planned it."""
+        return True
 
     @classmethod
     def schema(cls) -> dict[str, Any]:

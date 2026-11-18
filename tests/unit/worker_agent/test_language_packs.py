@@ -198,3 +198,60 @@ def test_the_start_of_a_period_does_not_swallow_oil() -> None:
     found = find_period("Giá dầu tháng 12/2013", TODAY)
     assert found is not None and found.span == "thang 12/2013"
     assert quantity_words("Giá dầu tháng 12/2013", STOCK_VOCAB, today=TODAY) == ["gia", "dau"]
+
+
+def test_a_member_filtered_on_and_a_compared_period_name_no_quantity() -> None:
+    # F0 (17/11/2026): DS-AW has no value index, so "Bikes" was left as a quantity and twelve
+    # right readings were refused, with "cùng kỳ" and "từ đầu năm đến hết" alike.
+    group = DimensionEntry(uuid.uuid4(), "nhom_hang", "Nhóm hàng")
+    vocab = Vocabulary(metrics=[STOCK, OIL], dimensions=[group])
+    asked = "Tồn kho nhóm hàng Bikes cuối tháng 12/2013"
+    assert quantity_words(asked, vocab, today=TODAY) == ["ton", "kho", "nhom", "hang", "bikes"]
+    filtered = quantity_words(asked, vocab, today=TODAY, filters={"nhom_hang": ["Bikes"]})
+    assert filtered == ["ton", "kho"]
+    # A made-up cut is no cut: its member stays a word to be named.
+    made_up = quantity_words(asked, vocab, today=TODAY, filters={"loai_xe": ["Bikes"]})
+    assert "bikes" in made_up
+    assert quantity_words("Tồn kho tháng 6/2013 so với cùng kỳ năm trước", vocab, today=TODAY) == [
+        "ton",
+        "kho",
+    ]
+    assert quantity_words("Tồn kho luỹ kế từ đầu năm đến hết tháng 6/2013", vocab, today=TODAY) == [
+        "ton",
+        "kho",
+    ]
+    # "đầu" folds to "dầu" (oil): only the whole phrase goes.
+    assert quantity_words("Giá dầu năm trước", vocab, today=TODAY) == ["gia", "dau"]
+
+
+def test_a_model_written_range_ending_on_a_month_end_includes_that_day() -> None:
+    # 17/11/2026: "2013-01-01/2013-12-31" read end-exclusive lost 31 December's sales.
+    from services.worker_agent.understand.packs.base import iso_answer
+
+    for written, end in (
+        ("2013-01-01/2013-12-31", datetime.date(2014, 1, 1)),
+        ("2013-02-01/2013-02-28", datetime.date(2013, 3, 1)),
+        ("2013-01-01/2014-01-01", datetime.date(2014, 1, 1)),
+        ("2013-08-05/2013-08-20", datetime.date(2013, 8, 20)),
+    ):
+        found = iso_answer(written)
+        assert found is not None and found.end == end, written
+
+
+@pytest.mark.parametrize(
+    ("question", "start", "end"),
+    [
+        ("Doanh thu luỹ kế từ đầu năm đến hết tháng 6/2013", (2013, 1, 1), (2013, 7, 1)),
+        ("Doanh thu luỹ kế đến hết quý 3/2013", (2013, 1, 1), (2013, 10, 1)),
+        ("Doanh thu từ đầu quý đến hết tháng 8/2013", (2013, 7, 1), (2013, 9, 1)),
+        ("Doanh thu đại lý 6 tháng đầu năm 2013", (2013, 1, 1), (2013, 7, 1)),
+        ("Doanh thu 3 tháng cuối năm 2012", (2012, 10, 1), (2013, 1, 1)),
+        ("Doanh thu nửa cuối năm 2012", (2012, 7, 1), (2013, 1, 1)),
+    ],
+)
+def test_a_span_to_a_period_is_read_as_one_period(
+    question: str, start: tuple[int, int, int], end: tuple[int, int, int]
+) -> None:
+    found = find_period(question, TODAY)
+    assert found is not None
+    assert (found.start, found.end) == (datetime.date(*start), datetime.date(*end))

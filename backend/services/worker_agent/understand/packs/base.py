@@ -65,6 +65,30 @@ class Pack:
     why: re.Pattern[str]
     # (phrase, knowledge mode)
     knowledge: tuple[tuple[str, str], ...]
+    # A movement the question names ("giảm", "fell"), and one it asks the largest of ("giảm nhiều
+    # nhất", "fell the most").
+    rises: re.Pattern[str]
+    falls: re.Pattern[str]
+    most_changed: re.Pattern[str]
+    # A count of members asked for ("5 sản phẩm …", "top 5"): group 1 or 2 the count.
+    counted: re.Pattern[str]
+    # Words that speak of several members without naming the cut ("các", "những").
+    several: re.Pattern[str]
+    # Two periods of one kind named side by side: a month or a quarter (groups: number, year),
+    # found as often as it is written, and two years joined (groups: year, year).
+    month_named: re.Pattern[str]
+    quarter_named: re.Pattern[str]
+    two_years: re.Pattern[str]
+    # What to do with a quantity, not which one: phrases whose words are a metric's too ("so" of
+    # "so sánh", "gộp" of "đóng góp"), set aside whole, and single words (normalised).
+    analysis_phrase: re.Pattern[str]
+    analysis_words: frozenset[str]
+    # Where a cut named after `unplaced_cut` ends: a period, a comparison, a scope.
+    cut_ends: frozenset[str]
+    # Memory (RES-05): words that say something meant to last, and what a kind of memory needs
+    # the person to have said (a preference "luôn", a definition "nghĩa là").
+    lasting: tuple[str, ...]
+    said: dict[str, tuple[str, ...]]
     # A condition on a number ("trên 1 tỷ", "over 1 billion"): (words, op) before the number,
     # the words around a range's two numbers ({low}, {high}), and number words by multiplier.
     comparators: tuple[tuple[str, str], ...] = ()
@@ -218,6 +242,11 @@ def iso_answer(text: str) -> FoundPeriod | None:
             return None
         if start >= end:
             return None
+        if start.day == 1 and (end + datetime.timedelta(days=1)).day == 1:
+            # From a month's first day to a month's last ("2013-01-01/2013-12-31"): the model wrote
+            # the end inclusive. Read exclusive, the last day was lost without a word (Southwest
+            # 2013: 9.734.230 against 9.734.390, 17/11).
+            end += datetime.timedelta(days=1)
         if end - start == datetime.timedelta(days=1):
             return day(start, written)
         to = " to " if _english() else " đến "
