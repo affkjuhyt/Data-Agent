@@ -1210,7 +1210,10 @@ async def compose(s: State) -> None:
                 )
         if made == 0:
             # No model, or nothing it wrote held: the datasets speak for themselves.
-            for ds in list(ws.datasets.values())[-3:]:
+            # Only readings that hold a figure, when one does: the fallback showed the NULL row of
+            # a period with no data beside the one asked (18/11).
+            held = [d for d in ws.datasets.values() if _holds_figures(d)]
+            for ds in (held or list(ws.datasets.values()))[-3:]:
                 block = b.materialize(
                     b.BlockDraft(type="table", dataset=ds.id), ws, f"b{len(s.composition) + 1}"
                 )
@@ -1249,6 +1252,7 @@ async def compose(s: State) -> None:
             await publish(
                 str(s.question_id), "block", {"question_id": str(s.question_id), "block": block}
             )
+        _drop_empty_shown(s)
         _complete_lead_ins(s)
         if said := _top_unsaid(s):
             # "Top 5 tiểu nhóm …" answered with its title and the table: the text named none of
