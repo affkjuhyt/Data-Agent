@@ -176,6 +176,24 @@ def _cut_names(vocab: Vocabulary, allowed: set[uuid.UUID]) -> list[tuple[str, st
     return names
 
 
+def named_cuts(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> set[str]:
+    """Every cut the question names anywhere, by one of its names (_cut_names); a longer name
+    holds its words, so "nhóm sản phẩm" names Nhóm sản phẩm and not also Sản phẩm, and a metric's
+    name holds its own ("đại lý" of "doanh thu đại lý" names no cut Đại lý)."""
+    text = f" {norm(question)} "
+    metrics: list[tuple[str, str | None]] = [(norm(m.name), None) for m in vocab.metrics]
+    metrics += [(p, None) for p, target in vocab.synonyms.items() if target[0] == "metric"]
+    taken: list[tuple[int, int]] = []
+    found: set[str] = set()
+    for name, code in sorted([*_cut_names(vocab, allowed), *metrics], key=lambda n: -len(n[0])):
+        for m in re.finditer(rf"(?<= ){re.escape(name)}(?= )", text) if name else ():
+            if not any(m.start() < end and start < m.end() for start, end in taken):
+                taken.append(m.span())
+                if code is not None:
+                    found.add(code)
+    return found
+
+
 def cut_after_count(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> str | None:
     """The cut a ranking question counts ("3 nhóm sản phẩm có …", "Top 5 tiểu nhóm sản phẩm …"):
     the cut whose whole name or synonym follows the count, the longest that does."""
@@ -192,6 +210,35 @@ def cut_after_count(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -
 def asks_change(text: str) -> bool:
     """Whether normalised text names a rise or a fall ("giảm", "tăng", "fell")."""
     return any(pack.rises.search(text) or pack.falls.search(text) for pack in PACKS)
+
+
+def _asks_ranking(text: str) -> bool:
+    """Whether normalised text ranks members, by a count or a superlative ("cao nhất", "top")."""
+    return any(
+        pack.counted.search(text) or pack.rank.search(text) or pack.superlative.search(text)
+        for pack in PACKS
+    )
+
+
+def unasked_dropped(question: str, args: QueryMetricArgs) -> QueryMetricArgs:
+    """The planner's ranking and comparison, kept only when the question asks for them.
+    - "Doanh thu đại lý năm 2013 theo từng nhóm hàng" was read top_n=10, its four groups ordered
+      by value where every member in name order was asked (18/11): a ranking is asked by a count
+      or a superlative;
+    - "Doanh thu Internet từ khách hàng nữ năm 2013" was read again beside the same period of
+      2012 and answered with both figures (18/11): a comparison is asked by a base the question
+      names, two years, or a rise or fall."""
+    text = norm(question)
+    if args.top_n and not _asks_ranking(text):
+        args = args.model_copy(update={"top_n": None})
+    if (
+        args.compare_to is not None
+        and find_comparison(question) is None
+        and two_years(question) is None
+        and not asks_change(text)
+    ):
+        args = args.model_copy(update={"compare_to": None})
+    return args
 
 
 def asked_top(question: str) -> tuple[int, bool] | None:
@@ -396,6 +443,14 @@ class QueryMetric(Tool):
             cut = named_cut(ctx.question, vocab, set(version.allowed_dimension_ids))
             if cut is not None:
                 args = args.model_copy(update={"group_by": [*args.group_by, cut]})
+        named = named_cuts(ctx.question, vocab, set(version.allowed_dimension_ids))
+        if named & set(args.group_by):
+            # "Doanh thu đại lý theo các nhóm sản phẩm năm 2011" was cut by Tiểu nhóm, Nhóm and
+            # Sản phẩm, 132 rows for four groups asked (18/11): the cuts the question names are
+            # the ones it is cut by, beside time.
+            args = args.model_copy(
+                update={"group_by": [g for g in args.group_by if g in times_all or g in named]}
+            )
         asked_grain = find_grain(ctx.question)
         if (
             asked_grain is not None
@@ -408,6 +463,7 @@ class QueryMetric(Tool):
             args = args.model_copy(update={"grain": asked_grain.grain})
         allowed_ids = set(version.allowed_dimension_ids)
         top = asked_top(ctx.question)
+        args = unasked_dropped(ctx.question, args)
         counted = cut_after_count(ctx.question, vocab, allowed_ids) if top else None
         if counted is not None:
             # "3 nhóm sản phẩm có doanh thu đại lý cao nhất" was cut by Tiểu nhóm sản phẩm, and

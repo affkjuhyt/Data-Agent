@@ -1047,6 +1047,28 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
         )  # type: ignore[arg-type]
     )
     assert compiled[-1].top_n is None
+    # A ranking and a comparison are the question's to ask: a count the planner set on a plain
+    # breakdown, and a base period beside a question that names none, are not read.
+    ctx.question = "Doanh thu Internet năm 2013 theo từng vùng"
+    asyncio.run(
+        QueryMetric().run(
+            ctx, QueryMetricArgs(metric="DOANH_THU_INTERNET", group_by=["vung"], top_n=10)
+        )  # type: ignore[arg-type]
+    )
+    assert compiled[-1].top_n is None
+    from services.worker_agent.agentic.tools.query import unasked_dropped
+
+    compared = QueryMetricArgs(metric="DOANH_THU_INTERNET", compare_to="same_period_last_year")
+    assert unasked_dropped("Doanh thu Internet năm 2013", compared).compare_to is None
+    for asks in (
+        "Doanh thu Internet năm 2013 so với cùng kỳ năm trước",
+        "Doanh thu Internet năm 2013 giảm bao nhiêu",
+        "Doanh thu Internet năm 2012 và 2013",
+    ):
+        assert unasked_dropped(asks, compared).compare_to == "same_period_last_year"
+    ranked = QueryMetricArgs(metric="DOANH_THU_INTERNET", group_by=["vung"], top_n=1)
+    assert unasked_dropped("Vùng nào có doanh thu Internet cao nhất", ranked).top_n == 1
+    assert unasked_dropped("Top 5 vùng theo doanh thu Internet", ranked).top_n == 1
     # A calendar part the question does not name is no filter beside the period it reads.
     ctx.question = "Top 10 vùng theo doanh thu Internet năm 2013"
     asyncio.run(
@@ -2363,6 +2385,7 @@ def test_named_members_the_counted_cut_and_an_unasked_breakdown_are_read_from_th
         _asks_breakdown,
         cut_after_count,
         named_cut,
+        named_cuts,
         named_members,
     )
     from services.worker_agent.understand.resolver import (
@@ -2419,6 +2442,15 @@ def test_named_members_the_counted_cut_and_an_unasked_breakdown_are_read_from_th
     assert named_cut("Doanh thu đại lý năm 2013 theo từng nhóm hàng", vocab, allowed) == "nhom_hang"
     assert named_cut("Doanh thu theo tỉnh năm 2013", vocab, allowed) == "tinh_bang"
     assert named_cut("Doanh thu theo tiểu nhóm sản phẩm", vocab, allowed) == "tieu_nhom"
+    # Every cut named anywhere, a longer name holding the words of a shorter one and a metric's
+    # name holding its own.
+    assert named_cuts("Doanh thu đại lý theo các nhóm sản phẩm năm 2011", vocab, allowed) == {
+        "nhom_hang"
+    }
+    assert named_cuts("Doanh thu đại lý theo loại đại lý và khu vực", vocab, allowed) == {
+        "loai_dai_ly",
+        "khu_vuc",
+    }
     assert not _asks_breakdown("Doanh thu đại lý loại Specialty Bike Shop năm 2013", vocab, None)
     assert _asks_breakdown("Doanh thu đại lý theo khu vực năm 2013", vocab, None)
     assert _asks_breakdown("Cơ cấu doanh thu đại lý khu vực năm 2013", vocab, None)
