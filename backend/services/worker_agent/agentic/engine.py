@@ -1218,6 +1218,18 @@ async def compose(s: State) -> None:
                 str(s.question_id), "block", {"question_id": str(s.question_id), "block": block}
             )
         _complete_lead_ins(s)
+        if not any(x["type"] == "markdown" for x in s.composition) and (said := _most_changed(s)):
+            block = {
+                "type": "markdown",
+                "id": f"b{len(s.composition) + 1}",
+                "composed": True,
+                "content": said,
+            }
+            s.composition.insert(0, block)
+            s.headline = s.headline or said
+            await publish(
+                str(s.question_id), "block", {"question_id": str(s.question_id), "block": block}
+            )
         if not s.headline and not any(x["type"] == "markdown" for x in s.composition):
             # No sentence at all ("3 đại lý có doanh thu cao nhất": a table and an empty text).
             s.headline = next(
@@ -1277,6 +1289,64 @@ def _false_premise(s: State) -> str:
         f" (từ {verify.show(then)} {'lên' if went == 'tăng' else 'xuống'}"
         f" {verify.show(now)}{unit})."
     )
+
+
+_MOST = re.compile(r"\b(?:giam|tang|sut|tut)\b.*\b(?:nhieu|manh|nhanh) nhat\b")
+_YEAR_END = re.compile(r"^(.*) ((?:19|20)\d{2})$")
+
+
+def _compared(ds: Dataset) -> tuple[int, int, list[int]] | None:
+    """The column of this period, of the period compared, and the naming columns of a comparison
+    query_metric read: "Doanh thu" / "Doanh thu (kỳ so sánh)", or "Doanh thu 2013" / "Doanh thu
+    2012" for two years side by side."""
+    cols = ds.columns
+    for i, name in enumerate(cols):
+        if name.endswith(" (kỳ so sánh)") and name[: -len(" (kỳ so sánh)")] in cols:
+            now = cols.index(name[: -len(" (kỳ so sánh)")])
+            return now, i, [j for j in range(len(cols)) if j not in (now, i)]
+    years = [
+        (m.group(1), int(m.group(2)), j) for j, c in enumerate(cols) if (m := _YEAR_END.match(c))
+    ]
+    if len(years) == 2 and years[0][0] == years[1][0]:
+        (_, _, a), (_, _, b) = sorted(years, key=lambda y: -y[1])
+        return a, b, [j for j in range(len(cols)) if j not in (a, b)]
+    return None
+
+
+def _most_changed(s: State) -> str:
+    """F4: "Vùng nào giảm nhiều nhất?" answered with tables and no sentence (the reporter's prompt
+    overflowed, 18/11): the member that fell (or rose) most, said by the server from the comparison
+    read. Empty when the question asks no such thing or nothing compared two periods by a cut."""
+    assert s.ctx is not None
+    text = norm(s.ctx.question)
+    if not _MOST.search(text):
+        return ""
+    down = bool(_SAID_DOWN.search(text))
+    for ds in s.ctx.ws.datasets.values():
+        found = _compared(ds) if ds.tool == "query_metric" else None
+        if found is None or not found[2]:
+            continue
+        now_i, then_i, names = found
+        rows = [
+            (" ".join(str(r[j]) for j in names), number(r[now_i]), number(r[then_i]))
+            for r in ds.rows
+        ]
+        moved = [
+            (name, now, then) for name, now, then in rows if now is not None and then is not None
+        ]
+        if not moved:
+            continue
+        name, now, then = (min if down else max)(moved, key=lambda m: m[1] - m[2])
+        label = ds.columns[names[0]]
+        unit = f" {ds.unit}" if ds.unit else ""
+        if (now < then) != down or now == then:
+            return f"Không {label.lower()} nào {'giảm' if down else 'tăng'} giữa hai kỳ đã so."
+        share = f", {language.number(abs(now - then) / abs(then) * 100, 1)}%" if then else ""
+        return (
+            f"{label} {'giảm' if down else 'tăng'} nhiều nhất: {name}"
+            f" (từ {verify.show(then)} {'xuống' if down else 'lên'} {verify.show(now)}{unit}{share})."
+        )
+    return ""
 
 
 def _shift_months(day: datetime.date, months: int) -> datetime.date:

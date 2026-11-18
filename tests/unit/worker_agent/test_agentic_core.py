@@ -1552,6 +1552,39 @@ def test_a_follow_up_is_read_as_the_whole_question_it_continues() -> None:
     assert engine._standalone("Còn năm 2012?", [], vocab, today) == ""
 
 
+def test_which_member_fell_most_is_said_from_the_comparison() -> None:
+    """F4: "Vùng nào giảm nhiều nhất?" came back as three tables and no sentence (18/11)."""
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+
+    ws = Workspace()
+    ws.add(
+        title="t",
+        columns=["Vùng bán hàng", "Doanh thu", "Doanh thu (kỳ so sánh)"],
+        rows=[["Southwest", 9734390.81, 8513723.41], ["Northeast", 2400000.0, 3000000.0]],
+        trust="certified",
+        tool="query_metric",
+        unit="USD",
+    )
+
+    def said(question: str) -> str:
+        state = engine.State(
+            event=types.SimpleNamespace(),  # type: ignore[arg-type]
+            question_id=uuid.uuid4(),
+            model=types.SimpleNamespace(),  # type: ignore[arg-type]
+            ctx=types.SimpleNamespace(ws=ws, question=question),  # type: ignore[arg-type]
+        )
+        return engine._most_changed(state)
+
+    assert said("Doanh thu theo vùng năm 2013 so với năm 2012: Vùng nào giảm nhiều nhất?") == (
+        "Vùng bán hàng giảm nhiều nhất: Northeast (từ 3.000.000 xuống 2.400.000 USD, 20,0%)."
+    )
+    assert said("Vùng nào tăng mạnh nhất?").startswith("Vùng bán hàng tăng nhiều nhất: Southwest")
+    assert said("Doanh thu theo vùng năm 2013") == ""
+
+
 def test_figures_that_are_all_zero_are_no_answer() -> None:
     from services.worker_agent.agentic import engine
 
