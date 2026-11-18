@@ -56,7 +56,7 @@ from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
 from services.worker_agent.agentic.grounded import ANALYSIS_WORDS, unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContext, ToolResult
 from services.worker_agent.agentic.tools.coverage import for_planning
-from services.worker_agent.agentic.tools.query import two_periods
+from services.worker_agent.agentic.tools.query import asked_top, two_periods
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Dataset, Workspace, number
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
@@ -1242,6 +1242,16 @@ async def compose(s: State) -> None:
                 str(s.question_id), "block", {"question_id": str(s.question_id), "block": block}
             )
         _complete_lead_ins(s)
+        if said := _top_unsaid(s):
+            # "Top 5 tiểu nhóm …" answered with its title and the table: the text named none of
+            # the five (holdout, 18/11). The ranking is said from the rows shown.
+            ranked = {"type": "markdown", "id": f"b{len(s.composition) + 1}", "composed": True}
+            s.composition.insert(0, {**ranked, "content": said})
+            await publish(
+                str(s.question_id),
+                "block",
+                {"question_id": str(s.question_id), "block": s.composition[0]},
+            )
         if not any(x["type"] == "markdown" for x in s.composition) and (said := _most_changed(s)):
             block = {
                 "type": "markdown",
@@ -1335,6 +1345,26 @@ def _compared(ds: Dataset) -> tuple[int, int, list[int]] | None:
         (_, _, a), (_, _, b) = sorted(years, key=lambda y: -y[1])
         return a, b, [j for j in range(len(cols)) if j not in (a, b)]
     return None
+
+
+def _top_unsaid(s: State) -> str:
+    """A ranking question ("3 đại lý …", "Top 5 …") whose text names not even its first member:
+    the rows of the first table or chart, said by the server; empty otherwise."""
+    assert s.ctx is not None
+    if asked_top(s.ctx.question) is None:
+        return ""
+    shown = next((x for x in s.composition if x["type"] in _DATA_BLOCKS), None)
+    ds = s.ctx.ws.datasets.get(_shown_dataset(shown)) if shown else None
+    found = _measure(ds) if ds is not None and ds.rows else None
+    if ds is None or found is None or not found[1]:
+        return ""
+    first = " ".join(str(ds.rows[0][i]) for i in found[1])
+    written = " ".join(
+        str(x.get("content") or "") for x in s.composition if x["type"] == "markdown"
+    )
+    if first in written or first in s.headline:
+        return ""
+    return _rows_said(ds, 10)
 
 
 def _most_changed(s: State) -> str:

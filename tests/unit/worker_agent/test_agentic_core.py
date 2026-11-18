@@ -2303,3 +2303,62 @@ def test_what_the_space_does_not_measure_or_cut_by_is_said_before_any_plan() -> 
         "Doanh thu theo ngày",
     ):
         assert clarify_policy.unknown_cut(question, layer, today) is None, question
+
+
+def test_named_members_the_counted_cut_and_an_unasked_breakdown_are_read_from_the_question() -> (
+    None
+):
+    """Holdout of 18/11: "loại Specialty Bike Shop" unfiltered, "khu vực Pacific" filtered on the
+    wrong cut, "3 nhóm sản phẩm" cut by sub-category, a total cut by product."""
+    import uuid
+
+    from services.worker_agent.agentic.tools.query import (
+        _asks_breakdown,
+        cut_after_count,
+        named_members,
+    )
+    from services.worker_agent.understand.resolver import (
+        DimensionEntry,
+        MetricEntry,
+        ValueEntry,
+        Vocabulary,
+    )
+
+    dims = [
+        DimensionEntry(uuid.uuid4(), "loai_dai_ly", "Loại đại lý"),
+        DimensionEntry(uuid.uuid4(), "ten_dai_ly", "Đại lý"),
+        DimensionEntry(uuid.uuid4(), "khu_vuc", "Khu vực"),
+        DimensionEntry(uuid.uuid4(), "vung", "Vùng bán hàng"),
+        DimensionEntry(uuid.uuid4(), "quoc_gia", "Quốc gia bán"),
+        DimensionEntry(uuid.uuid4(), "nhom_hang", "Nhóm sản phẩm"),
+        DimensionEntry(uuid.uuid4(), "tieu_nhom", "Tiểu nhóm sản phẩm"),
+    ]
+    vocab = Vocabulary(
+        metrics=[MetricEntry(uuid.uuid4(), "DOANH_THU_DAI_LY", "Doanh thu đại lý", True)],
+        dimensions=dims,
+        values=[
+            ValueEntry("loai_dai_ly", "Specialty Bike Shop", "Specialty Bike Shop"),
+            ValueEntry("khu_vuc", "Pacific", "Pacific"),
+            ValueEntry("vung", "France", "France"),
+            ValueEntry("quoc_gia", "France", "France"),
+            ValueEntry("nhom_hang", "Bikes", "Bikes"),
+            ValueEntry("tieu_nhom", "Road Bikes", "Road Bikes"),
+        ],
+    )
+    allowed = {d.dimension_id for d in dims}
+    assert named_members("Doanh thu đại lý loại Specialty Bike Shop năm 2013", vocab, allowed) == {
+        "loai_dai_ly": ["Specialty Bike Shop"]
+    }
+    assert named_members("Doanh thu khu vực Pacific năm 2012", vocab, allowed) == {
+        "khu_vuc": ["Pacific"]
+    }
+    # A name two cuts hold says no cut; the longer name wins over the one inside it.
+    assert named_members("Doanh thu bán ở France năm 2013", vocab, allowed) == {}
+    assert named_members("Doanh thu Road Bikes năm 2013", vocab, allowed) == {
+        "tieu_nhom": ["Road Bikes"]
+    }
+    assert cut_after_count("3 nhóm sản phẩm có doanh thu cao nhất", vocab, allowed) == "nhom_hang"
+    assert cut_after_count("Top 5 tiểu nhóm sản phẩm theo doanh thu", vocab, allowed) == "tieu_nhom"
+    assert not _asks_breakdown("Doanh thu đại lý loại Specialty Bike Shop năm 2013", vocab, None)
+    assert _asks_breakdown("Doanh thu đại lý theo khu vực năm 2013", vocab, None)
+    assert _asks_breakdown("Cơ cấu doanh thu đại lý khu vực năm 2013", vocab, None)

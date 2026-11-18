@@ -97,6 +97,81 @@ def _relative_reading(ctx: ToolContext, args: QueryMetricArgs, times: set[str]) 
     return args
 
 
+def named_members(
+    question: str, vocab: Vocabulary, allowed: set[uuid.UUID]
+) -> dict[str, list[str]]:
+    """The members the question names whole, by the value index, on cuts the metric allows:
+    "loại Specialty Bike Shop", "khu vực Pacific", "Rent". The longest name wins where two
+    overlap ("Trade Sales" over "Sales"); one-letter or numeric codes are never read as names."""
+    text = f" {norm(question)} "
+    dims = {d.code: d for d in vocab.dimensions if d.dimension_id in allowed and not d.is_time}
+    found: list[tuple[str, str, str]] = []
+    for v in vocab.values:
+        label = norm(v.label)
+        if v.dimension_code not in dims or len(label) < 3 or label.replace(" ", "").isdigit():
+            continue
+        if f" {label} " in text:
+            found.append((label, v.dimension_code, v.value_code))
+    found.sort(key=lambda f: -len(f[0]))
+    out: dict[str, list[str]] = {}
+    taken: list[str] = []
+    for label, dim, code in found:
+        if any(len(longer) > len(label) and f" {label} " in f" {longer} " for longer in taken):
+            continue
+        taken.append(label)
+        out.setdefault(dim, []).append(code)
+    # A name held by several cuts ("Pacific" as a region and a territory group) says no cut.
+    by_name: dict[str, list[str]] = {}
+    for dim, codes in out.items():
+        for code in codes:
+            by_name.setdefault(norm(code), []).append(dim)
+    return {
+        dim: [c for c in codes if len(by_name[norm(c)]) == 1]
+        for dim, codes in out.items()
+        if any(len(by_name[norm(c)]) == 1 for c in codes)
+    }
+
+
+_BREAKDOWN = re.compile(r"\b(?:theo|tung|moi|cac|nhung|by|per|each)\b")
+
+
+def _asks_breakdown(question: str, vocab: Vocabulary, top: tuple[int, bool] | None) -> bool:
+    """Whether the question asks figures by a cut at all: "theo …", "từng/mỗi/các …", a count
+    ("5 sản phẩm …"), or a cut named whole ("Cơ cấu doanh thu nhóm sản phẩm")."""
+    text = f" {norm(question)} "
+    if top is not None or _BREAKDOWN.search(text):
+        return True
+    # A metric's name is no cut's: "Doanh thu đại lý" holds the cut name "Đại lý".
+    for m in vocab.metrics:
+        text = text.replace(f" {norm(m.name)} ", " ")
+    names = [norm(d.name) for d in vocab.dimensions if not d.is_time]
+    names += [p for p, t in vocab.synonyms.items() if t[0] == "dimension"]
+    return any(f" {name} " in text for name in names if name)
+
+
+def cut_after_count(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> str | None:
+    """The cut a ranking question counts ("3 nhóm sản phẩm có …", "Top 5 tiểu nhóm sản phẩm …"):
+    the cut whose whole name or synonym follows the count, the longest that does."""
+    text = norm(question)
+    m = _TOP_COUNT.search(text)
+    if m is None:
+        return None
+    after = text[m.end(1) if m.group(1) else m.end(2) :].strip()
+    names: list[tuple[str, str]] = [
+        (norm(d.name), d.code)
+        for d in vocab.dimensions
+        if d.dimension_id in allowed and not d.is_time
+    ]
+    by_id = {str(d.dimension_id): d.code for d in vocab.dimensions if d.dimension_id in allowed}
+    names += [
+        (phrase, by_id[target[1]])
+        for phrase, target in vocab.synonyms.items()
+        if target[0] == "dimension" and target[1] in by_id
+    ]
+    hits = [(name, code) for name, code in names if f"{after} ".startswith(f"{name} ")]
+    return max(hits, key=lambda h: len(h[0]))[1] if hits else None
+
+
 def asked_top(question: str) -> tuple[int, bool] | None:
     """How many members a ranking question asks for, and whether the highest first."""
     text = norm(question)
@@ -310,7 +385,43 @@ class QueryMetric(Tool):
             # "Doanh thu Internet theo quý năm 2013" was read with grain=year, one total, then
             # rebuilt with Python and exploratory SQL (F0, 17/11). The question names the grain.
             args = args.model_copy(update={"grain": asked_grain.grain})
+        allowed_ids = set(version.allowed_dimension_ids)
         top = asked_top(ctx.question)
+        counted = cut_after_count(ctx.question, vocab, allowed_ids) if top else None
+        if counted is not None and counted not in args.group_by:
+            # "3 nhóm sản phẩm có doanh thu đại lý cao nhất" was cut by Tiểu nhóm sản phẩm
+            # (holdout, 18/11): the cut the question counts is the one named after the count.
+            args = args.model_copy(
+                update={"group_by": [g for g in args.group_by if g in times_all] + [counted]}
+            )
+        members = named_members(ctx.question, vocab, allowed_ids)
+        if members:
+            # "Doanh thu đại lý loại Specialty Bike Shop" was cut by product with no filter,
+            # "khu vực Pacific" filtered on the territory where Pacific is no member (holdout,
+            # 18/11): a member the question names whole is filtered on the cut that holds it.
+            named = {norm(c) for codes in members.values() for c in codes}
+            filters: dict[str, list[str]] = {}
+            misplaced: set[str] = set()
+            for dim, values in args.filters.items():
+                kept = [v for v in values if dim in members or norm(str(v)) not in named]
+                if len(kept) < len(values):
+                    misplaced.add(dim)
+                if kept:
+                    filters[dim] = kept
+            for dim, codes in members.items():
+                filters[dim] = list(dict.fromkeys([*filters.get(dim, []), *codes]))
+            args = args.model_copy(
+                update={
+                    "filters": filters,
+                    "group_by": [g for g in args.group_by if g not in misplaced],
+                }
+            )
+        if args.compare_to is None and not _asks_breakdown(ctx.question, vocab, top):
+            # A breakdown the question does not ask ("Tồn kho cuối tháng 12/2013" read by
+            # sub-category, "… loại Specialty Bike Shop" by product): one figure, as asked.
+            args = args.model_copy(
+                update={"group_by": [g for g in args.group_by if g in times_all]}
+            )
         if top is not None and [g for g in args.group_by if g not in times_all]:
             # "3 đại lý có doanh thu cao nhất" read again without top_n gave 488 dealers in name
             # order, and the answer called the first three alphabetically the highest (F0, 17/11).
