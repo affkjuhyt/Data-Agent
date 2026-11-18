@@ -75,19 +75,28 @@ def _relative_reading(ctx: ToolContext, args: QueryMetricArgs, times: set[str]) 
     - the question's own period (read by rule, find_period) wins over the one the planner wrote:
       "luỹ kế từ đầu năm đến hết tháng 6/2013" was read as June, "… năm 2013" as 2013-01-01 to
       2013-12-31 in other turns;
-    - a comparison the question names ("so với cùng kỳ năm trước", "so với quý trước") is read;
+    - a comparison the question names ("so với cùng kỳ năm trước", "so với quý trước") is read,
+      and a step that reads its base period alone keeps that period;
     - a running total over the period, the question cutting nothing along time, is the period's
       one figure."""
     found = getattr(ctx, "period", None)
     cut_along_time = find_grain(ctx.question) is not None or bool(times & set(args.group_by))
+    compared = find_comparison(ctx.question)
+    written = iso_answer(args.period) if args.period else None
+    if found is not None and compared is not None and written is not None:
+        base = compare.base_period(c.Period(found.start, found.end), compared.compare_to)
+        if (written.start, written.end) == (base.start, base.end):
+            # "Doanh thu đại lý quý 3/2013 so với quý trước" planned as two readings, Q3 then
+            # Q2 (the 14B planner, 19/11): the second was moved to Q3 too and both read the same
+            # figure. A step that reads the base period the question compares with is that side,
+            # read alone.
+            return args.model_copy(update={"compare_to": None})
     if found is not None:
         asked = f"{found.start.isoformat()}/{found.end.isoformat()}"
-        written = iso_answer(args.period) if args.period else None
         if written is None or (written.start, written.end) != (found.start, found.end):
             args = args.model_copy(update={"period": asked})
     if args.analysis == "running_total" and not cut_along_time:
         args = args.model_copy(update={"analysis": None, "grain": None})
-    compared = find_comparison(ctx.question)
     if compared is not None and args.compare_to is None and args.analysis is None:
         args = args.model_copy(update={"compare_to": compared.compare_to})
     return args

@@ -2301,6 +2301,16 @@ def test_a_fiscal_cut_a_span_from_the_year_start_and_a_relative_comparison_are_r
     assert yoy.compare_to == "same_period_last_year" and yoy.period == "2012"
     qoq = read("Doanh thu Internet quý 2/2013 so với quý trước")
     assert qoq.compare_to == "previous_period" and qoq.period == "2013-04-01/2013-07-01"
+    # A step that reads the base period alone is that side of the comparison (the 14B planner,
+    # 19/11): its period is kept and nothing is compared on it.
+    base = read(
+        "Doanh thu đại lý quý 3/2013 so với quý trước",
+        period="2013-04-01/2013-07-01",
+        compare_to="previous_period",
+    )
+    assert (base.period, base.compare_to) == ("2013-04-01/2013-07-01", None)
+    last_year = read("Doanh thu đại lý năm 2012 so với cùng kỳ năm trước", period="2011")
+    assert (last_year.period, last_year.compare_to) == ("2011", None)
     plain = read("Doanh thu Internet năm 2013", period="2013")
     assert plain.compare_to is None and plain.period == "2013"
 
