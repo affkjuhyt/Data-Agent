@@ -36,6 +36,19 @@ model_list:
 
   # ── accuracy tier → agent-main (Qwen3-14B-AWQ) ─────────────────────────────
 
+  # The dynamic agent's own planning (plan, executor, review): on 4B it read the question right
+  # once the rules did (DS-AW 58/61) but planned poorly over several steps, so it moved to 14B on
+  # 19/11 (lead's call). Thinking stays off as on `planner`, so the model is the one change
+  # measured (`make agent-eval-suite`); back to agent-fast is this entry alone.
+  - model_name: agent-planner
+    litellm_params:
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
   - model_name: responder
     litellm_params:
       model: openai/agent-main

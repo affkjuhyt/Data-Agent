@@ -60,7 +60,7 @@ from services.worker_agent.agentic.tools.query import asked_top, asks_change, tw
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Dataset, Workspace, number
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
-from services.worker_agent.llm import Gateway, ModelUnavailable
+from services.worker_agent.llm import AGENT_PLANNER, Gateway, ModelUnavailable
 from services.worker_agent.progress import is_cancel_requested, publish
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic.loader import load
@@ -474,7 +474,7 @@ async def _ask_plan(s: State, system: str, user: str) -> p.Plan:
     error = ""
     for _ in range(2):
         reply = await s.model.json_chat(
-            "planner",
+            AGENT_PLANNER,
             system,
             user + (f"\n\nKế hoạch trước bị từ chối: {error}" if error else ""),
             p.Plan,
@@ -670,7 +670,7 @@ async def _arguments(s: State, step: p.PlanStep, error: str) -> Any:
         + (f"\n\nLần trước lỗi: {error}" if error else "")
     )
     reply = await s.model.json_chat(
-        "planner", prompts.EXECUTOR, user, ExecutorReply, max_tokens=1500
+        AGENT_PLANNER, prompts.EXECUTOR, user, ExecutorReply, max_tokens=1500
     )
     try:
         return tool.Args.model_validate(reply.content.args)
@@ -899,7 +899,11 @@ async def review(s: State) -> None:
     system = prompts.REVIEW.replace("{tools}", _tool_cards())
     try:
         reply = await s.model.json_chat(
-            "planner", system, f"{_situation(s)}\n\n{_progress(s)}", ReviewReply, max_tokens=1200
+            AGENT_PLANNER,
+            system,
+            f"{_situation(s)}\n\n{_progress(s)}",
+            ReviewReply,
+            max_tokens=1200,
         )
     except ModelUnavailable:
         return
@@ -1558,7 +1562,7 @@ async def _reviewed(s: State, user: str, drafts: list[b.BlockDraft]) -> list[b.B
     draft = json.dumps([d.model_dump(exclude_defaults=True) for d in drafts], ensure_ascii=False)
     try:
         review = await s.model.json_chat(
-            "planner",
+            AGENT_PLANNER,
             prompts.REVIEW_ANSWER,
             f"{user}\n\n<draft>\n{draft[:6000]}\n</draft>",
             AnswerReview,

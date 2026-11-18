@@ -43,6 +43,10 @@ HTTP_RETRIES = 2
 # would force JSON tokens immediately and erase the reasoning the alias is for. Thinking eats
 # latency and tokens; that trade is intentional (correctness over speed) and only these roles pay it.
 THINKING_ROLES = frozenset({"responder", "orchestrator-planner"})
+# The dynamic agent's own planning calls (plan, executor, review, specialists): an alias apart from
+# the governed path's `planner`, so the agent's model is set in the LiteLLM config alone (the 4B
+# model planned poorly over several steps, lead's call 19/11: Qwen3-14B).
+AGENT_PLANNER = "agent-planner"
 # Thinking + a long JSON answer needs headroom beyond the old 20s JSON-only timeout.
 THINKING_TIMEOUT_S = 120.0
 _THINK_BLOCK = re.compile(r"<think>\s*.*?\s*</think>\s*", re.DOTALL | re.IGNORECASE)

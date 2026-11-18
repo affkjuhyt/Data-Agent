@@ -14,7 +14,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResult, cut
-from services.worker_agent.llm import ModelUnavailable
+from services.worker_agent.llm import AGENT_PLANNER, ModelUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,9 @@ async def run(
             "</transcript>"
         )
         try:
-            reply = await ctx.model.json_chat("planner", system, user, StepChoice, max_tokens=900)
+            reply = await ctx.model.json_chat(
+                AGENT_PLANNER, system, user, StepChoice, max_tokens=900
+            )
         except ModelUnavailable as exc:
             return ToolResult(
                 False,
