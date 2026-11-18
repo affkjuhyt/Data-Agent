@@ -494,14 +494,16 @@ def _missing_period(s: State) -> p.Plan | None:
     around 2026; "Doanh thu Internet tháng 3/2015" was answered with 12/2013's figure). Not when the
     question compares periods, or names a quantity beyond the metric: that is the planner's."""
     ctx = s.ctx
-    if ctx is None or ctx.period is None or not ctx.period_moves or not s.likely:
+    gaps = getattr(ctx, "period_gaps", None) or {} if ctx is not None else {}
+    if ctx is None or ctx.period is None or not (ctx.period_moves or gaps) or not s.likely:
         return None
     if two_periods(ctx.question) is not None:
         return None
     top = s.likely[0]
     move = ctx.period_moves.get(top)
+    gap = gaps.get(top) if move is None else None
     entry = analyst._visible(ctx.layer).get(top)
-    if move is None or entry is None:
+    if (move is None and gap is None) or entry is None:
         return None
     vocab = ctx.layer.vocabulary
     cuts: set[str] = set()
@@ -511,8 +513,15 @@ def _missing_period(s: State) -> p.Plan | None:
         quantity_words(ctx.question, vocab, today=ctx.today), metric_words(entry, vocab) | cuts
     ):
         return None
+    held = None
+    if move is not None:
+        nearest = (move[1].start, move[1].end)
+    else:
+        assert gap is not None
+        held = (gap[1].start, gap[1].end)
+        nearest = _last_like(ctx.period.start, ctx.period.end, gap[1].end) or held
     ask = clarify_policy.missing_period(
-        ctx.question, ctx.period.span, ctx.period.label, entry.name, (move[1].start, move[1].end)
+        ctx.question, ctx.period.span, ctx.period.label, entry.name, nearest, held
     )
     return _asking(
         s,
@@ -520,6 +529,20 @@ def _missing_period(s: State) -> p.Plan | None:
         f"Làm rõ kỳ của câu hỏi: {ctx.period.label} chưa có dữ liệu",
         f"{entry.name} không có dữ liệu ở {ctx.period.label}; hỏi lại trước khi truy vấn.",
     )
+
+
+def _last_like(
+    start: datetime.date, end: datetime.date, data_end: datetime.date
+) -> tuple[datetime.date, datetime.date] | None:
+    """The latest period as long as [start, end) and aligned like it (a calendar year, quarter or
+    month) that holds the last day with data before `data_end`; None for any other length."""
+    months = (end.year - start.year) * 12 + end.month - start.month
+    if start.day != 1 or end.day != 1 or months not in (1, 3, 12):
+        return None
+    last = data_end - datetime.timedelta(days=1)
+    first_month = last.month - (last.month - start.month) % months
+    at = _shift_months(datetime.date(last.year, 1, 1), first_month - 1)
+    return at, _shift_months(at, months)
 
 
 def _same_named(s: State) -> p.Plan | None:

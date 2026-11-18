@@ -247,7 +247,12 @@ def spoken_period(start: datetime.date, end: datetime.date) -> str:
 
 
 def missing_period(
-    question: str, span: str, asked: str, metric: str, nearest: tuple[datetime.date, datetime.date]
+    question: str,
+    span: str,
+    asked: str,
+    metric: str,
+    nearest: tuple[datetime.date, datetime.date],
+    held: tuple[datetime.date, datetime.date] | None = None,
 ) -> Clarify:
     """The question back when the period it names holds no data of its metric at all (F1): the
     nearest whole period of the same length offered as the question again, said with that period
@@ -265,6 +270,15 @@ def missing_period(
             end = m.group(0) if (m := _TRAILING.search(last)) else ""
             option = " ".join([*tokens[:i], said + end, *tokens[i + len(words) :]])
             break
+    if held is not None:
+        # No whole period of that length to offer: say where the data is, offer the nearest one.
+        last = held[1] - datetime.timedelta(days=1)
+        return Clarify(
+            f"Chưa có dữ liệu {metric} cho {asked}; dữ liệu chỉ có từ tháng"
+            f" {held[0].month}/{held[0].year} đến tháng {last.month}/{last.year}."
+            f" Bạn muốn xem {said}?",
+            [option],
+        )
     return Clarify(
         f"Chưa có dữ liệu {metric} cho {asked}. Kỳ đầy đủ gần nhất có dữ liệu là {said}."
         " Bạn muốn xem kỳ đó?",

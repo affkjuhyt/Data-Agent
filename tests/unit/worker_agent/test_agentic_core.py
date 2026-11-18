@@ -411,7 +411,7 @@ def test_a_period_with_no_data_of_the_metric_is_asked_back_before_any_plan() -> 
     )
     today = datetime.date(2026, 11, 17)
 
-    def state(question: str, code: str, nearest: c.Period | None) -> Any:
+    def state(question: str, code: str, nearest: c.Period | None, held: Any = None) -> Any:
         found = find_period(question, today)
         assert found is not None
         asked = c.Period(found.start, found.end)
@@ -424,6 +424,7 @@ def test_a_period_with_no_data_of_the_metric_is_asked_back_before_any_plan() -> 
                 today=today,
                 period=found,
                 period_moves={code: (asked, nearest)} if nearest else {},
+                period_gaps={code: (asked, held)} if held else {},
                 layer=layer,
             ),
             likely=[code],
@@ -452,6 +453,20 @@ def test_a_period_with_no_data_of_the_metric_is_asked_back_before_any_plan() -> 
     assert engine._missing_period(q6) is not None
     assert q6.clarify is not None
     assert q6.clarify.options == ["Tài chính ngân sách theo phòng ban năm 2013"]
+    # DS-AW's budget runs 12/2010 to 11/2011: no whole year to move to, the span is said and the
+    # latest year holding data offered (q6, 17/11).
+    gap = state(
+        "Tài chính ngân sách theo phòng ban năm 2026",
+        "TAI_CHINH_NGAN_SACH",
+        None,
+        c.Period(datetime.date(2010, 12, 1), datetime.date(2011, 12, 1)),
+    )
+    assert engine._missing_period(gap) is not None and gap.clarify is not None
+    assert gap.clarify.question == (
+        "Chưa có dữ liệu Số tài chính ngân sách cho năm 2026; dữ liệu chỉ có từ tháng 12/2010"
+        " đến tháng 11/2011. Bạn muốn xem năm 2011?"
+    )
+    assert gap.clarify.options == ["Tài chính ngân sách theo phòng ban năm 2011"]
 
     # A period with data (nothing moved), or a quantity beyond the metric, is the planner's.
     covered = state("Doanh thu Internet năm 2013", "DOANH_THU_INTERNET", None)
