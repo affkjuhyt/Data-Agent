@@ -877,6 +877,78 @@ def test_a_metric_that_does_not_measure_what_was_asked_hands_the_question_back()
     assert engine._unnamed_quantity(state("Cơ cấu số lượng bán Internet năm 2013")) == []
 
 
+def test_the_answer_reads_what_answers_the_question_whatever_else_the_plan_read() -> None:
+    """19/11, the 14B planner: the first reading held the comparison asked; a second reading of
+    the base period, a Python step over both and a metric not asked were what the answer showed."""
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    revenue = MetricEntry(uuid.uuid4(), "DOANH_THU_DAI_LY", "Doanh thu đại lý", True)
+    units = MetricEntry(uuid.uuid4(), "SO_LUONG_BAN_DAI_LY", "Số lượng bán đại lý", True)
+    vocab = types.SimpleNamespace(
+        metrics=[revenue, units], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
+    )
+    ws = Workspace()
+
+    def reading(metric: str, *, compared: bool) -> dict[str, Any]:
+        return {"metric": metric, "group_by": [], "filters": {}, "compared": compared}
+
+    both = ws.add(
+        title="Doanh thu đại lý",
+        columns=["Doanh thu đại lý", "Doanh thu đại lý (kỳ so sánh)"],
+        rows=[[7644679.64, 8656657.46]],
+        trust="certified",
+        tool="query_metric",
+        reading=reading("DOANH_THU_DAI_LY", compared=True),
+    )
+    ws.add(
+        title="Doanh thu đại lý",
+        columns=["Doanh thu đại lý"],
+        rows=[[8656657.46]],
+        trust="certified",
+        tool="query_metric",
+        reading=reading("DOANH_THU_DAI_LY", compared=False),
+    )
+    ws.add(title="Tăng trưởng", columns=["%"], rows=[[-11.69]], trust="derived", tool="run_python")
+    ws.add(
+        title="Số lượng bán đại lý",
+        columns=["Số lượng bán đại lý"],
+        rows=[[52801]],
+        trust="certified",
+        tool="query_metric",
+        reading=reading("SO_LUONG_BAN_DAI_LY", compared=False),
+    )
+
+    def answering(question: str) -> list[str] | None:
+        s = engine.State(
+            event=types.SimpleNamespace(),  # type: ignore[arg-type]
+            question_id=uuid.uuid4(),
+            model=types.SimpleNamespace(),  # type: ignore[arg-type]
+            ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+                ws=ws,
+                question=question,
+                today=datetime.date(2026, 11, 19),
+                layer=types.SimpleNamespace(vocabulary=vocab),
+            ),
+        )
+        found = engine._answering(s)
+        return None if found is None else sorted(found)
+
+    # A comparison asked: the reading that holds both periods, nothing else the plan read.
+    assert answering("Doanh thu đại lý quý 3/2013 so với quý trước") == [both.id]
+    # One period asked: every reading of the metric named, not the other metric nor the Python.
+    assert answering("Doanh thu đại lý quý 3/2013") == ["d1", "d2"]
+    # A "why", two metrics named, or none: the plan's own readings stand.
+    assert answering("Vì sao doanh thu đại lý quý 3/2013 giảm") is None
+    assert answering("Doanh thu đại lý và số lượng bán đại lý quý 3/2013") is None
+    assert answering("Tình hình kinh doanh quý 3/2013") is None
+
+
 def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql() -> None:
     import datetime
     import types

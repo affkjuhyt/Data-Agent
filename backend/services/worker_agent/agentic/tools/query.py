@@ -914,6 +914,9 @@ class QueryMetric(Tool):
                     if code in group_by
                 },
                 "time_cuts": sorted(times & set(group_by)),
+                # Whether the rows hold two periods side by side (a comparison, two years, two
+                # periods of one kind): the reading that answers a comparison by itself.
+                "compared": args.compare_to is not None or pair is not None or bool(side_labels),
             },
         )
         detail["dataset"] = ds.id

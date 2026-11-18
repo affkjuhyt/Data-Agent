@@ -56,7 +56,7 @@ from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
 from services.worker_agent.agentic.grounded import ANALYSIS_WORDS, unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContext, ToolResult
 from services.worker_agent.agentic.tools.coverage import for_planning
-from services.worker_agent.agentic.tools.query import asked_top, asks_change, two_periods
+from services.worker_agent.agentic.tools.query import asked_top, asks_change, two_periods, two_years
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Dataset, Workspace, number
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
@@ -65,6 +65,7 @@ from services.worker_agent.progress import is_cancel_requested, publish
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.comparison import find_comparison
 from services.worker_agent.understand.packs import PACKS, search
 from services.worker_agent.understand.packs.base import iso_answer
 from services.worker_agent.understand.resolver import metric_words, names_metric, quantity_words
@@ -1083,7 +1084,56 @@ async def _gate(s: State, target: str, detail: dict[str, Any], feedback: str) ->
     s.handed_back = True
 
 
+def _answering(s: State) -> dict[str, Dataset] | None:
+    """The readings that answer the question by themselves, whatever the plan did beside them:
+    the certified readings, holding figures, of the one metric the question calls by its name,
+    and when it asks for a comparison, those that hold both periods. None when the question
+    names no metric or several, asks why, or no such reading was made; then everything read
+    stands.
+
+    The rules read each step's arguments from the question, so the first reading of a plan is
+    right whatever model wrote it; the 14B planner then read the base period again and computed
+    the change in Python, and the answer showed its numbers: Q3 against Q2 as "-11,69 USD", 2012
+    against 2011 the wrong way round, "Tồn kho" beside the value of stock it was not asked
+    (19/11). Which numbers answer is the server's to say, not the plan's shape."""
+    assert s.ctx is not None
+    certified = [
+        d
+        for d in s.ctx.ws.datasets.values()
+        if d.tool == "query_metric" and d.trust == "certified" and d.reading and _holds_figures(d)
+    ]
+    if not certified:
+        return None
+    question = s.ctx.question
+    if search(norm(question), lambda pack: pack.why) is not None:
+        return None
+    vocab = s.ctx.layer.vocabulary
+    # Every metric of the vocabulary: one the asker may not see is never read, so it names no
+    # reading here either.
+    named = [m.code for m in vocab.metrics if names_metric(question, m, vocab)]
+    if len(named) != 1:
+        return None
+    readings = [d for d in certified if (d.reading or {}).get("metric") == named[0]]
+    if find_comparison(question) or two_years(question) or two_periods(question):
+        readings = [d for d in readings if (d.reading or {}).get("compared")]
+    return {d.id: d for d in readings} or None
+
+
 async def compose(s: State) -> None:
+    """The reporter writes from the readings that answer the question (_answering) when there
+    are such; every dataset the turn made stays on the turn for its trace."""
+    assert s.ctx is not None
+    kept = _answering(s)
+    full = s.ctx.ws
+    if kept is not None and len(kept) < len(full.datasets):
+        s.ctx.ws = Workspace(datasets=kept, citations=full.citations, _seq=full._seq)
+    try:
+        await _compose(s)
+    finally:
+        s.ctx.ws = full
+
+
+async def _compose(s: State) -> None:
     assert s.ctx is not None and s.plan is not None
     ws = s.ctx.ws
     if _ask_for_unnamed_question(s):
