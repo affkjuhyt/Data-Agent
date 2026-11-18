@@ -281,12 +281,96 @@ def metric_words(metric: MetricEntry, vocab: Vocabulary) -> set[str]:
 # out of the question; a second one ("tháng 8/2013 với tháng 3/2013") was left and refused as a
 # quantity no metric measures. A date names no quantity.
 _DATE_WORD = re.compile(r"^(?:q?\d{1,2}[/-])?\d{4}(?:[/-]\d{1,2})?$")
-# How a period is compared or accumulated, as whole phrases: "so với cùng kỳ năm trước", "luỹ kế
-# từ đầu năm đến hết tháng 6". Their words alone ("cùng", "đầu", "hết") were refused as a quantity
-# no metric measures (F0, 17/11); as single fillers they would also hide "đầu tư" or "từ khách hàng".
-_PERIOD_PHRASE = re.compile(
-    r"\b(?:cung ky(?: nam truoc| truoc)?|tu dau (?:nam|ky|quy|thang)|den het|nam truoc)\b"
-)
+
+
+def _without_readings(question: str) -> str:
+    """The question without the words a comparison, an analysis or a grain reader took (each
+    returns the rest as the person wrote it)."""
+    from services.worker_agent.understand.analysis import find_analysis
+    from services.worker_agent.understand.comparison import find_comparison
+    from services.worker_agent.understand.grain import find_grain
+
+    rest = question
+    if found := find_comparison(rest):
+        rest = found.rest
+    if (analysis := find_analysis(rest)) is not None and not analysis.weak:
+        rest = analysis.rest
+    if grain := find_grain(rest):
+        rest = grain.rest
+    return rest
+
+
+def _metric_phrases(metric: MetricEntry, vocab: Vocabulary) -> list[set[str]]:
+    """The word sets a metric is called by: its name and each synonym, numbers aside."""
+    phrases = [norm(metric.name)] + [
+        phrase
+        for phrase, target in vocab.synonyms.items()
+        if target[:2] == ("metric", str(metric.metric_id))
+    ]
+    return [{w for w in phrase.split() if not w.isdigit()} for phrase in phrases]
+
+
+def names_metric(
+    question: str, metric: MetricEntry, vocab: Vocabulary, *, member_named: bool = False
+) -> bool:
+    """Whether the question calls the metric by its name: every word of its name or of one of its
+    synonyms is in the question (in any order), or more than half of the words that are no filler
+    are and the question names a member of a cut the metric is read by ("Chi phí lương Salaries
+    thực tế": "số thực tế" and the account Salaries). A question that names the metric it is read
+    on asks no other quantity; the words left are how it is said ("Cho mình xin số đơn hàng
+    internet", "Lãi gộp của kênh đại lý"), not a quantity no metric measures (RES-04).
+
+    A filler may be left out of a name only when the words left call nothing else: "Tài chính
+    ngân sách" is "Số tài chính ngân sách", but "khách hàng" is also in a cut ("Quốc gia khách
+    hàng") and a member ("khách hàng nữ"), so "Tỷ lệ khách hàng rời bỏ" does not name "Số khách
+    hàng" and was answered as if it did (18/11). And the longest name the question holds wins:
+    "Doanh thu" in "Tổng doanh thu bán sỉ" is the reseller's revenue's ("doanh thu bán sỉ")."""
+    words = set(norm(question).split())
+    others = _other_names(metric, vocab)
+    held = [
+        phrase
+        for phrase in _metric_phrases(metric, vocab)
+        if phrase
+        and (
+            phrase <= words
+            or ((bare := phrase - _FILLER) and bare <= words and not any(bare <= o for o in others))
+        )
+    ]
+    if held:
+        longer = (
+            p
+            for other in vocab.metrics
+            if other.metric_id != metric.metric_id
+            for p in _metric_phrases(other, vocab)
+            if p <= words
+        )
+        return not any(any(mine < p for mine in held) for p in longer)
+    if not member_named:
+        return False
+    for phrase in _metric_phrases(metric, vocab):
+        named = phrase - _FILLER
+        if named and len(named & words) * 2 > len(named):
+            return True
+    return False
+
+
+def _other_names(metric: MetricEntry, vocab: Vocabulary) -> list[set[str]]:
+    """The word sets of every other name the space gives: other metrics, cuts, members and the
+    synonyms of each."""
+    names = [
+        p
+        for m in vocab.metrics
+        if m.metric_id != metric.metric_id
+        for p in _metric_phrases(m, vocab)
+    ]
+    names += [set(norm(d.name).split()) for d in vocab.dimensions]
+    names += [set(norm(v.label).split()) for v in vocab.values]
+    names += [
+        set(phrase.split())
+        for phrase, target in vocab.synonyms.items()
+        if target[0] != "metric" or target[1] != str(metric.metric_id)
+    ]
+    return names
 
 
 def quantity_words(
@@ -299,11 +383,14 @@ def quantity_words(
 ) -> list[str]:
     """The question's words that can only name a quantity: those of its period, of the cuts and
     filters a reading chose, fillers and numbers set aside."""
+    # What the language's readers recognise is no quantity: the period first, read on the whole
+    # question ("luỹ kế từ đầu năm đến hết tháng 6/2013" is one span), then a comparison ("so với
+    # cùng kỳ năm trước"), an analysis ("chiếm bao nhiêu phần trăm"), a grain ("theo quý").
     text = norm(question)
     period = find_period(question, today, vocab.calendar)
     if period:
         text = text.replace(period.span, " ")
-    text = _PERIOD_PHRASE.sub(" ", text)
+    text = norm(_without_readings(text))
     chosen: set[str] = set()
     by_code = {d.code: d for d in vocab.dimensions}
     for code in group_by:

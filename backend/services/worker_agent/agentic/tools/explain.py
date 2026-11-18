@@ -20,6 +20,8 @@ from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResu
 from services.worker_agent.agentic.tools.query import QueryMetric, QueryMetricArgs
 from services.worker_agent.agentic.workspace import number
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.packs import search
+from services.worker_agent.understand.text import norm
 
 MAX_HYPOTHESES = 5
 MAX_MEMBERS = 8
@@ -48,6 +50,13 @@ class ExplainChange(Tool):
         "giải thích tốt nhất"
     )
     Args = ExplainChangeArgs
+
+    @classmethod
+    def asked(cls, question: str) -> bool:
+        # "Doanh thu năm 2012 so với năm 2011" and "Doanh thu và lãi gộp Internet năm 2013" were
+        # answered with the drivers of a change no one asked about, added by the review (new set,
+        # 18/11): two figures compared are the answer; what moved them is asked with a "why".
+        return search(norm(question), lambda pack: pack.why) is not None
 
     async def run(self, ctx: ToolContext, args: ExplainChangeArgs) -> ToolResult:  # type: ignore[override]
         described = analyst.describe_metric(ctx.layer, args.metric)

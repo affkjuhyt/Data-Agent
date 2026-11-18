@@ -7,16 +7,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-# Words that say what to do with a quantity, not which one (normalised, both languages): a "why",
-# a ranking, a trend or a comparison is the agent's to plan, not a metric to be named.
-ANALYSIS_WORDS = frozenset(
-    "co vi sao tai giam tang top cao thap nhat xu huong bien dong phan tich nguyen nhan ty trong "
-    "luy ke so sanh chenh lech tong trung binh nhieu it hon bao tri dong gop anh huong cau chiem "
-    # Narrowing to a member ("…, chỉ xét nhóm Bikes", a chart point's "Lọc theo giá trị này").
-    "xet rieng loc "
-    "why how trend compare increase decrease highest lowest total average share top rank change "
-    "growth drop rise breakdown mix composition".split()
-)
+from services.worker_agent.understand.packs import words
+
+# Words that say what to do with a quantity, not which one (every language pack's): a "why", a
+# ranking, a trend or a comparison is the agent's to plan, not a metric to be named.
+ANALYSIS_WORDS = words(lambda pack: pack.analysis_words)
 
 
 def unnamed(words: Iterable[str], named: set[str]) -> list[str]:

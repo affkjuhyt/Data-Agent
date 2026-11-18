@@ -35,8 +35,14 @@ from services.worker_agent.sqlgen.space import load_space
 from services.worker_agent.understand import analyst
 from services.worker_agent.understand.comparison import find_comparison
 from services.worker_agent.understand.grain import GRAIN_LABELS, find_grain
-from services.worker_agent.understand.packs.base import iso_answer
-from services.worker_agent.understand.resolver import Vocabulary, metric_words, quantity_words
+from services.worker_agent.understand.packs import PACKS, search
+from services.worker_agent.understand.packs.base import Pack, iso_answer
+from services.worker_agent.understand.resolver import (
+    Vocabulary,
+    metric_words,
+    names_metric,
+    quantity_words,
+)
 from services.worker_agent.understand.text import norm
 
 ROLE = "svc_qa"
@@ -46,9 +52,6 @@ _CALENDAR_PART = re.compile(r"^(ngay|tuan|thang|quy|nam|day|week|month|quarter|y
 # The grains query_metric takes (a fiscal one is read through the period, not the grain).
 _GRAINS = frozenset({"day", "week", "month", "quarter", "year"})
 # "Top 10 sản phẩm …", "3 đại lý có doanh thu cao nhất", "2 quốc gia … thấp nhất".
-_TOP_COUNT = re.compile(r"^(?:top\s*)?(\d{1,3})\s+[a-z]|\btop\s*(\d{1,3})\b")
-_CHANGE_ASKED = re.compile(r"\b(?:giam|tang|sut|tut|decrease|increase|drop|rise|grow)\w*\b")
-_LOWEST = re.compile(r"\b(?:thap nhat|it nhat|nho nhat|kem nhat|lowest|least|smallest|bottom)\b")
 
 
 def _calendar_cut(
@@ -66,34 +69,27 @@ def _calendar_cut(
     return out
 
 
-# "luỹ kế từ đầu năm đến hết tháng 6/2013", "từ đầu năm tới nay": the year up to the period named.
-_FROM_YEAR_START = re.compile(r"\btu dau nam\b")
-
-
 def _relative_reading(ctx: ToolContext, args: QueryMetricArgs, times: set[str]) -> QueryMetricArgs:
-    """The comparison and the span a question names in words, which the 4B planner left out:
-    "so với cùng kỳ năm trước" / "so với quý trước" read one period alone (F0, 17/11), "luỹ kế từ
-    đầu năm đến hết tháng 6/2013" read June alone. The question names them; the reading follows."""
+    """The period, the comparison and the accumulation as the question names them, which the 4B
+    planner rewrote or left out (F0, 17/11, and the holdout of 18/11):
+    - the question's own period (read by rule, find_period) wins over the one the planner wrote:
+      "luỹ kế từ đầu năm đến hết tháng 6/2013" was read as June, "… năm 2013" as 2013-01-01 to
+      2013-12-31 in other turns;
+    - a comparison the question names ("so với cùng kỳ năm trước", "so với quý trước") is read;
+    - a running total over the period, the question cutting nothing along time, is the period's
+      one figure."""
     found = getattr(ctx, "period", None)
-    if found is not None and _FROM_YEAR_START.search(norm(ctx.question)):
-        start = datetime.date(found.end.year if found.end.month > 1 else found.end.year - 1, 1, 1)
-        if start < found.start:
-            asked_cut_along_time = find_grain(ctx.question) is not None or times & set(
-                args.group_by
-            )
-            args = args.model_copy(
-                update={
-                    "period": f"{start.isoformat()}/{found.end.isoformat()}",
-                    # One figure for the span unless the question cuts it along time.
-                    **({} if asked_cut_along_time else {"analysis": None, "grain": None}),
-                }
-            )
+    cut_along_time = find_grain(ctx.question) is not None or bool(times & set(args.group_by))
+    if found is not None:
+        asked = f"{found.start.isoformat()}/{found.end.isoformat()}"
+        written = iso_answer(args.period) if args.period else None
+        if written is None or (written.start, written.end) != (found.start, found.end):
+            args = args.model_copy(update={"period": asked})
+    if args.analysis == "running_total" and not cut_along_time:
+        args = args.model_copy(update={"analysis": None, "grain": None})
     compared = find_comparison(ctx.question)
     if compared is not None and args.compare_to is None and args.analysis is None:
-        update: dict[str, Any] = {"compare_to": compared.compare_to}
-        if not args.period and found is not None:
-            update["period"] = f"{found.start.isoformat()}/{found.end.isoformat()}"
-        args = args.model_copy(update=update)
+        args = args.model_copy(update={"compare_to": compared.compare_to})
     return args
 
 
@@ -144,14 +140,11 @@ def named_members(
     }
 
 
-_BREAKDOWN = re.compile(r"\b(?:theo|tung|moi|cac|nhung|by|per|each)\b")
-
-
 def _asks_breakdown(question: str, vocab: Vocabulary, top: tuple[int, bool] | None) -> bool:
     """Whether the question asks figures by a cut at all: "theo …", "từng/mỗi/các …", a count
     ("5 sản phẩm …"), or a cut named whole ("Cơ cấu doanh thu nhóm sản phẩm")."""
     text = f" {norm(question)} "
-    if top is not None or _BREAKDOWN.search(text):
+    if top is not None or any(p.by.search(text) or p.several.search(text) for p in PACKS):
         return True
     # A metric's name is no cut's: "Doanh thu đại lý" holds the cut name "Đại lý".
     # Longest first: "Doanh thu" taken out of "Doanh thu đại lý" left "đại lý", a cut's name.
@@ -162,88 +155,78 @@ def _asks_breakdown(question: str, vocab: Vocabulary, top: tuple[int, bool] | No
     return any(f" {name} " in text for name in names if name)
 
 
-def without_glosses(question: str, missing: list[str], members: dict[str, list[str]]) -> list[str]:
-    """The unnamed words left once a member's gloss is set aside: "Chi phí lương Salaries",
-    "Chi phí thuê Rent", "Phúc lợi nhân viên Employee Benefits" name an account in English after
-    saying it in Vietnamese, and "phí", "thuê" were refused as quantities no metric measures
-    (18/11). Up to four words right before a member the reading filters on are its gloss."""
-    if not missing or not members:
-        return missing
-    words = norm(question).split()
-    glossed: set[str] = set()
-    for code in (member for codes in members.values() for member in codes):
-        name = norm(str(code)).split()
-        for i in range(len(words) - len(name) + 1):
-            if words[i : i + len(name)] == name:
-                glossed |= set(words[max(0, i - 4) : i])
-    return [w for w in missing if w not in glossed]
+def _cut_names(vocab: Vocabulary, allowed: set[uuid.UUID]) -> list[tuple[str, str]]:
+    """(phrase, code) for every name a cut the metric allows is called by: its name, each side of
+    a name written "A / B" ("Bang / tỉnh" is "bang" or "tỉnh"), and its approved synonyms
+    ("nhóm hàng" of Nhóm sản phẩm). "Top 3 bang …" and "… theo từng nhóm hàng" named their cut
+    by one of these, and a planner that left the cut out read one total (18/11)."""
+    cuts = [d for d in vocab.dimensions if d.dimension_id in allowed and not d.is_time]
+    names = [
+        (phrase, d.code)
+        for d in cuts
+        for phrase in dict.fromkeys([norm(d.name), *(norm(part) for part in d.name.split("/"))])
+        if phrase
+    ]
+    by_id = {str(d.dimension_id): d.code for d in cuts}
+    names += [
+        (phrase, by_id[target[1]])
+        for phrase, target in vocab.synonyms.items()
+        if target[0] == "dimension" and target[1] in by_id
+    ]
+    return names
 
 
 def cut_after_count(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> str | None:
     """The cut a ranking question counts ("3 nhóm sản phẩm có …", "Top 5 tiểu nhóm sản phẩm …"):
     the cut whose whole name or synonym follows the count, the longest that does."""
     text = norm(question)
-    m = _TOP_COUNT.search(text)
+    m = search(text, lambda pack: pack.counted)
     if m is None:
         return None
     after = text[m.end(1) if m.group(1) else m.end(2) :].strip()
-    names: list[tuple[str, str]] = [
-        (norm(d.name), d.code)
-        for d in vocab.dimensions
-        if d.dimension_id in allowed and not d.is_time
-    ]
-    by_id = {str(d.dimension_id): d.code for d in vocab.dimensions if d.dimension_id in allowed}
-    names += [
-        (phrase, by_id[target[1]])
-        for phrase, target in vocab.synonyms.items()
-        if target[0] == "dimension" and target[1] in by_id
-    ]
+    names = _cut_names(vocab, allowed)
     hits = [(name, code) for name, code in names if f"{after} ".startswith(f"{name} ")]
     return max(hits, key=lambda h: len(h[0]))[1] if hits else None
+
+
+def asks_change(text: str) -> bool:
+    """Whether normalised text names a rise or a fall ("giảm", "tăng", "fell")."""
+    return any(pack.rises.search(text) or pack.falls.search(text) for pack in PACKS)
 
 
 def asked_top(question: str) -> tuple[int, bool] | None:
     """How many members a ranking question asks for, and whether the highest first."""
     text = norm(question)
-    m = _TOP_COUNT.search(text)
+    m = search(text, lambda pack: pack.counted)
     if m is None:
         return None
     count = int(m.group(1) or m.group(2))
     if not 0 < count <= 100:
         return None
-    return count, _LOWEST.search(text) is None
+    return count, search(text, lambda pack: pack.ascending) is None
 
 
 def named_cut(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> str | None:
-    """The cut the question names after "theo"/"by" ("cơ cấu doanh thu theo nhóm sản phẩm"), by
-    its full name; the longest when several fit ("tiểu nhóm sản phẩm" over "sản phẩm")."""
+    """The cut the question names after "theo"/"by" ("cơ cấu doanh thu theo nhóm sản phẩm", "…
+    theo từng nhóm hàng"), by one of its names (_cut_names); the longest when several fit
+    ("tiểu nhóm sản phẩm" over "sản phẩm")."""
     text = f" {norm(question)} "
-    best = None
-    for d in vocab.dimensions:
-        if d.is_time or d.dimension_id not in allowed:
-            continue
-        name = norm(d.name)
-        named = bool(name) and re.search(rf" (theo|by) {re.escape(name)} ", text) is not None
-        if named and (best is None or len(name) > len(norm(best.name))):
-            best = d
-    return best.code if best else None
-
-
-_TWO_YEARS = re.compile(r"\bnam ((?:19|20)\d{2}) (?:va|voi|so voi|,) (?:nam )?((?:19|20)\d{2})\b")
+    hits = [
+        (name, code)
+        for name, code in _cut_names(vocab, allowed)
+        if any(re.search(rf"{pack.by.pattern}{re.escape(name)} ", text) for pack in PACKS)
+    ]
+    return max(hits, key=lambda h: len(h[0]))[1] if hits else None
 
 
 def two_years(question: str) -> tuple[int, int] | None:
     """The two adjacent years a question compares ("năm 2012 và 2013"), earlier first."""
-    m = _TWO_YEARS.search(norm(question))
+    m = search(norm(question), lambda pack: pack.two_years)
     if m is None:
         return None
     a, b = sorted((int(m.group(1)), int(m.group(2))))
     return (a, b) if b - a == 1 else None
 
-
-_MONTH = re.compile(r"\bthang (\d{1,2})[/-]((?:19|20)\d{2})\b")
-_QUARTER = re.compile(r"\b(?:quy |q)([1-4])[/-]((?:19|20)\d{2})\b")
-_ANY_YEARS = re.compile(r"\bnam ((?:19|20)\d{2}) (?:va|voi|so voi|,) (?:nam )?((?:19|20)\d{2})\b")
 
 Side = tuple[c.Period, str]
 
@@ -258,26 +241,34 @@ def two_periods(question: str) -> tuple[Side, Side] | None:
     quarters ("quý 3/2013 so với quý 4/2012") or years ("năm 2011 và 2013") — earlier first, each
     with the words it is said by. Adjacent years are two_years' (read as one comparison)."""
     text = norm(question)
+    for pack in PACKS:
+        if found := _two_sides(text, pack, question):
+            a, b = sorted(found, key=lambda s: s[0].start)
+            return a, b
+    return None
+
+
+def _two_sides(text: str, pack: Pack, question: str) -> list[Side]:
     found: list[Side] = []
-    for m, y in dict.fromkeys(_MONTH.findall(text)):
+    for m, y in dict.fromkeys(pack.month_named.findall(text)):
         if 1 <= int(m) <= 12:
             start = datetime.date(int(y), int(m), 1)
             found.append((c.Period(start, _months_on(start, 1)), f"tháng {int(m)}/{y}"))
-    if len(found) != 2:
-        found = []
-        for q, y in dict.fromkeys(_QUARTER.findall(text)):
-            start = datetime.date(int(y), 3 * int(q) - 2, 1)
-            found.append((c.Period(start, _months_on(start, 3)), f"quý {q}/{y}"))
-    if len(found) != 2:
-        found = []
-        years = _ANY_YEARS.search(text)
-        if years and years.group(1) != years.group(2) and two_years(question) is None:
-            for y in (int(years.group(1)), int(years.group(2))):
-                found.append((c.Period(datetime.date(y, 1, 1), datetime.date(y + 1, 1, 1)), str(y)))
-    if len(found) != 2:
-        return None
-    a, b = sorted(found, key=lambda s: s[0].start)
-    return a, b
+    if len(found) == 2:
+        return found
+    found = []
+    for q, y in dict.fromkeys(pack.quarter_named.findall(text)):
+        start = datetime.date(int(y), 3 * int(q) - 2, 1)
+        found.append((c.Period(start, _months_on(start, 3)), f"quý {q}/{y}"))
+    if len(found) == 2:
+        return found
+    years = pack.two_years.search(text)
+    if years and years.group(1) != years.group(2) and two_years(question) is None:
+        return [
+            (c.Period(datetime.date(y, 1, 1), datetime.date(y + 1, 1, 1)), str(y))
+            for y in (int(years.group(1)), int(years.group(2)))
+        ]
+    return []
 
 
 def side_by_side(
@@ -418,11 +409,18 @@ class QueryMetric(Tool):
         allowed_ids = set(version.allowed_dimension_ids)
         top = asked_top(ctx.question)
         counted = cut_after_count(ctx.question, vocab, allowed_ids) if top else None
-        if counted is not None and counted not in args.group_by:
-            # "3 nhóm sản phẩm có doanh thu đại lý cao nhất" was cut by Tiểu nhóm sản phẩm
-            # (holdout, 18/11): the cut the question counts is the one named after the count.
+        if counted is not None:
+            # "3 nhóm sản phẩm có doanh thu đại lý cao nhất" was cut by Tiểu nhóm sản phẩm, and
+            # "2 nhóm sản phẩm …" by both (holdout and new set, 18/11): the members counted are
+            # the cut named after the count, beside a time cut and a cut named with "theo"/"by".
+            also = named_cut(ctx.question, vocab, allowed_ids)
             args = args.model_copy(
-                update={"group_by": [g for g in args.group_by if g in times_all] + [counted]}
+                update={
+                    "group_by": [
+                        g for g in args.group_by if g in times_all or (g == also != counted)
+                    ]
+                    + [counted]
+                }
             )
         members = named_members(ctx.question, vocab, allowed_ids)
         if members:
@@ -472,7 +470,7 @@ class QueryMetric(Tool):
                 "value": f"{entry.name} {later}",
                 "base_value": f"{entry.name} {earlier}",
             }
-        if args.compare_to is not None and args.top_n and _CHANGE_ASKED.search(norm(ctx.question)):
+        if args.compare_to is not None and args.top_n and asks_change(norm(ctx.question)):
             # "Vùng nào giảm nhiều nhất?" over two years was read top_n=1: the compiler ranks by
             # the value, so it kept the largest region, which rose (F4, 17/11). Which member rose
             # or fell most is read from all of them.
@@ -545,11 +543,15 @@ class QueryMetric(Tool):
                 f" {', '.join(able[:5]) or 'không có'}",
                 failure="arguments",
             )
-        missing = without_glosses(ctx.question, missing, members)
+        asked_words = set(norm(ctx.question).split())
+        # A cut is named when its whole name is in the question: one word of it is not ("tính"
+        # of "tính theo số lượng" is the "tỉnh" of "Bang / tỉnh" once folded).
         cut_named = [
             d.name
             for d in vocab.dimensions
-            if not d.is_time and set(norm(d.name).split()) & set(missing)
+            if not d.is_time
+            and set(norm(d.name).split()) <= asked_words
+            and set(norm(d.name).split()) & set(missing)
         ]
         if (
             missing
@@ -566,6 +568,9 @@ class QueryMetric(Tool):
                 " lọc (filters) theo chiều đó: đọc lại, chia hoặc lọc theo đúng chiều câu hỏi nêu",
                 failure="arguments",
             )
+        if missing and names_metric(ctx.question, entry, vocab, member_named=bool(members)):
+            # The question calls this metric by its name: the words left are how it is said.
+            missing = []
         if missing:
             # RES-04: do not send the planner to invent the quantity with explore_sql.
             return ToolResult(

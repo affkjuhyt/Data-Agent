@@ -37,6 +37,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
 from services.worker_agent.agentic.prompts import BOUNDARY
 from services.worker_agent.llm import Gateway, ModelUnavailable
+from services.worker_agent.understand.packs import PACKS
 from services.worker_agent.understand.text import norm
 
 logger = logging.getLogger(__name__)
@@ -100,40 +101,7 @@ _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
 # Words that say something meant to last (a preference, a definition, a correction): a turn without
 # any is not read for memories, which saves a model call on most questions (RES-05).
-_LASTING = (
-    "toi ",
-    "minh ",
-    "chung toi",
-    "luon",
-    "tu nay",
-    "tu gio",
-    "lan sau",
-    "mac dinh",
-    "dinh nghia",
-    "nghia la",
-    "hieu la",
-    "duoc tinh",
-    "tinh bang",
-    "dung ",
-    "khong phai",
-    "y toi",
-    "toi muon",
-    "toi phu trach",
-    "toi quan tam",
-    "always",
-    "from now",
-    "by default",
-    "define",
-    "means",
-    "i mean",
-    "i am",
-    "i'm",
-    "my ",
-    "we ",
-    "don't",
-    "do not",
-    "instead",
-)
+_LASTING = tuple(w for pack in PACKS for w in pack.lasting)
 
 
 def _says(text: str, words: Sequence[str]) -> bool:
@@ -155,45 +123,8 @@ def content_hash(content: str) -> str:
 # tiếng Trung, liệt kê theo tiểu nhóm" as a preference from "3 tiểu nhóm sản phẩm có số lượng bán
 # Internet nhiều nhất năm 2013", which says nothing lasting (17/11).
 _SAID: dict[str, tuple[str, ...]] = {
-    "preference": (
-        "luon",
-        "tu nay",
-        "tu gio",
-        "lan sau",
-        "mac dinh",
-        "toi muon",
-        "toi thich",
-        "always",
-        "from now",
-        "by default",
-        "i prefer",
-        "i want",
-    ),
-    "definition": (
-        "dinh nghia",
-        "nghia la",
-        "hieu la",
-        "duoc tinh",
-        "tinh bang",
-        "la khi",
-        "define",
-        "means",
-        "is counted",
-    ),
-    "feedback": ("khong phai", "y toi", "sai roi", "dung dung", "i mean", "instead", "not what"),
-    "fact": (
-        "toi phu trach",
-        "toi quan tam",
-        "toi lam",
-        "minh phu trach",
-        "chung toi",
-        "ben toi",
-        "i am",
-        "i'm",
-        "i work",
-        "my ",
-        "we ",
-    ),
+    kind: tuple(w for pack in PACKS for w in pack.said.get(kind, ()))
+    for kind in ("preference", "definition", "feedback", "fact")
 }
 # Han, kana, hangul: a memory in a script the person did not write in is the model's, not theirs.
 _FOREIGN_SCRIPT = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")

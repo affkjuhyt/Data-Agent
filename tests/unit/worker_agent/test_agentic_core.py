@@ -966,6 +966,9 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
     colour = types.SimpleNamespace(
         dimension_id=uuid.uuid4(), code="mau_sac", name="Màu", is_time=False
     )
+    channel = types.SimpleNamespace(
+        dimension_id=uuid.uuid4(), code="kenh", name="Kênh", is_time=False
+    )
     day = types.SimpleNamespace(
         dimension_id=uuid.uuid4(), code="ngay_dat", name="Ngày", is_time=True
     )
@@ -973,12 +976,14 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
         vocabulary=types.SimpleNamespace(
             metrics=[revenue],
             synonyms={},
-            dimensions=[region, colour, day],
+            dimensions=[region, colour, channel, day],
             values=[],
             calendar=clock.DEFAULT,
         ),
         versions={
-            revenue.metric_id: types.SimpleNamespace(allowed_dimension_ids={region.dimension_id})
+            revenue.metric_id: types.SimpleNamespace(
+                allowed_dimension_ids={region.dimension_id, channel.dimension_id}
+            )
         },
         blocked_metric_ids=set(),
         layer=object(),
@@ -1024,6 +1029,14 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
         QueryMetric().run(ctx, QueryMetricArgs(metric="DOANH_THU_INTERNET", group_by=["vung"]))  # type: ignore[arg-type]
     )
     assert (compiled[-1].top_n, compiled[-1].top_desc) == (2, False)
+    # The members counted are the cut named after the count, whatever else the planner cut by;
+    # a cut the question names with "theo" stays beside it.
+    by_both = QueryMetricArgs(metric="DOANH_THU_INTERNET", group_by=["kenh", "vung"])
+    asyncio.run(QueryMetric().run(ctx, by_both))  # type: ignore[arg-type]
+    assert compiled[-1].group_by == ["vung"]
+    ctx.question = "2 vùng có doanh thu Internet thấp nhất theo kênh năm 2013"
+    asyncio.run(QueryMetric().run(ctx, by_both))  # type: ignore[arg-type]
+    assert compiled[-1].group_by == ["kenh", "vung"]
     # F4: which member fell most over two years is read from all of them, not the top value.
     ctx.question = (
         "Doanh thu Internet theo vùng năm 2013 so với năm 2012: Vùng nào giảm nhiều nhất?"
@@ -1058,7 +1071,8 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
     assert not refused.ok and refused.failure == "arguments"
     # The refusal says how to ask again, so the replan has something to change.
     assert (
-        "dùng grain" in refused.observation and "các chiều được phép: vung" in refused.observation
+        "dùng grain" in refused.observation
+        and "các chiều được phép: kenh, vung" in refused.observation
     )
 
 
@@ -2136,6 +2150,25 @@ def test_a_forbidden_step_is_not_replanned_and_its_dependents_are_skipped(
     assert w.state.failed is w.state.plan.steps[0] and w.engine.after_act(w.state) == "replan"
 
 
+def test_a_step_the_question_does_not_ask_for_is_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """New set of 18/11: the review added explain_change to "Doanh thu năm 2012 so với năm 2011",
+    and the answer showed the drivers of a change no one asked about. What moved a figure is
+    asked with a "why", in any language a pack reads."""
+    from services.worker_agent.agentic.tools.explain import ExplainChange
+
+    assert ExplainChange.asked("Vì sao doanh thu tháng 8/2013 giảm?")
+    assert ExplainChange.asked("Yếu tố nào làm doanh thu quý 3 giảm?")
+    assert ExplainChange.asked("Why did revenue fall in August 2013?")
+    assert not ExplainChange.asked("Doanh thu năm 2012 so với năm 2011")
+    assert not ExplainChange.asked("Doanh thu và lãi gộp Internet năm 2013")
+
+    w = _step_world(monkeypatch, ["ok"])
+    monkeypatch.setattr(type(w.engine.TOOLS["fake"]), "asked", classmethod(lambda _c, _q: False))
+    asyncio.run(w.engine.act(w.state))
+    assert w.runs == [] and w.state.plan.steps[0].status == "skipped"
+    assert p.ready(w.state.plan, 3) == [] and w.state.plan.steps[1].status == "skipped"
+
+
 def test_a_metric_the_asker_is_denied_is_a_forbidden_failure() -> None:
     import types
 
@@ -2291,13 +2324,27 @@ def test_what_the_space_does_not_measure_or_cut_by_is_said_before_any_plan() -> 
     # question; a metric named is answered.
     for question in ("Khách hàng rời bỏ là bao nhiêu?", "Xin chào", "Doanh thu năm 2013"):
         assert clarify_policy.out_of_scope(question, layer, today) is None, question
+    # A table the question names is the tables' to try, not out of the space.
+    loans = "Số khoản vay theo mã chi nhánh ngày 30/09/2026"
+    assert clarify_policy.out_of_scope(loans, layer, today) is not None
+    layer.table_names = ("Khoản vay",)
+    assert clarify_policy.out_of_scope(loans, layer, today) is None
+    # A column of the tables is the tables' to cut by.
+    assert clarify_policy.unknown_cut(loans, layer, today) is not None
+    layer.column_names = ("Mã chi nhánh",)
+    assert clarify_policy.unknown_cut(loans, layer, today) is None
 
     asked = clarify_policy.unknown_cut("Doanh thu theo lý do mua hàng năm 2013", layer, today)
     assert asked is not None and "“lý do mua hàng”" in asked.question
     # "lý" of "đại lý", "hàng" of "ngày đặt hàng": single words do not make a cut known.
     assert clarify_policy.unknown_cut("Doanh thu theo ngày giao hàng tháng 12/2013", layer, today)
+    # The cut's words are read after any pack's "by": English too.
+    asked = clarify_policy.unknown_cut("Revenue by sales reason in 2013", layer, today)
+    assert asked is not None and "“sales reason”" in asked.question
     for question in (
         "Doanh thu năm 2013 theo từng nhóm hàng",
+        "Doanh thu năm 2013 theo các nhóm hàng",
+        "Revenue by Nhóm sản phẩm in 2013",
         "Top 10 sản phẩm theo doanh thu năm 2013",
         "Doanh thu theo tháng năm 2013",
         "Doanh thu theo ngày",
@@ -2315,6 +2362,7 @@ def test_named_members_the_counted_cut_and_an_unasked_breakdown_are_read_from_th
     from services.worker_agent.agentic.tools.query import (
         _asks_breakdown,
         cut_after_count,
+        named_cut,
         named_members,
     )
     from services.worker_agent.understand.resolver import (
@@ -2362,6 +2410,15 @@ def test_named_members_the_counted_cut_and_an_unasked_breakdown_are_read_from_th
     }
     assert cut_after_count("3 nhóm sản phẩm có doanh thu cao nhất", vocab, allowed) == "nhom_hang"
     assert cut_after_count("Top 5 tiểu nhóm sản phẩm theo doanh thu", vocab, allowed) == "tieu_nhom"
+    # A cut is named by each side of "A / B" and by its synonyms too (main and new sets, 18/11).
+    state = DimensionEntry(uuid.uuid4(), "tinh_bang", "Bang / tỉnh")
+    vocab.dimensions.append(state)
+    vocab.synonyms["nhom hang"] = ("dimension", str(dims[5].dimension_id))
+    allowed.add(state.dimension_id)
+    assert cut_after_count("Top 3 bang có doanh thu cao nhất", vocab, allowed) == "tinh_bang"
+    assert named_cut("Doanh thu đại lý năm 2013 theo từng nhóm hàng", vocab, allowed) == "nhom_hang"
+    assert named_cut("Doanh thu theo tỉnh năm 2013", vocab, allowed) == "tinh_bang"
+    assert named_cut("Doanh thu theo tiểu nhóm sản phẩm", vocab, allowed) == "tieu_nhom"
     assert not _asks_breakdown("Doanh thu đại lý loại Specialty Bike Shop năm 2013", vocab, None)
     assert _asks_breakdown("Doanh thu đại lý theo khu vực năm 2013", vocab, None)
     assert _asks_breakdown("Cơ cấu doanh thu đại lý khu vực năm 2013", vocab, None)
@@ -2382,7 +2439,6 @@ def test_an_account_named_with_its_gloss_is_read_on_a_metric_that_cuts_by_accoun
         QueryMetric,
         QueryMetricArgs,
         named_members,
-        without_glosses,
     )
     from services.worker_agent.understand.resolver import (
         DimensionEntry,
@@ -2390,14 +2446,6 @@ def test_an_account_named_with_its_gloss_is_read_on_a_metric_that_cuts_by_accoun
         ValueEntry,
         Vocabulary,
     )
-
-    assert (
-        without_glosses(
-            "Chi phí lương Salaries thực tế năm 2013", ["phi"], {"tai_khoan": ["Salaries"]}
-        )
-        == []
-    )
-    assert without_glosses("Giá cổ phiếu năm 2013", ["phieu"], {}) == ["phieu"]
 
     account = DimensionEntry(uuid.uuid4(), "tai_khoan", "Tài khoản")
     actual = MetricEntry(uuid.uuid4(), "TAI_CHINH_THUC_TE", "Số tài chính thực tế", True)
@@ -2415,6 +2463,38 @@ def test_an_account_named_with_its_gloss_is_read_on_a_metric_that_cuts_by_accoun
     )
     everywhere = {account.dimension_id}
     assert named_members("Inventory cuối năm 2013", vocab, everywhere) == {}
+    # Principle A: a question that calls the metric by its name asks no other quantity; the
+    # words left are how it is said. More than half a name counts with a member of its cut.
+    from services.worker_agent.understand.resolver import names_metric
+
+    vocab.synonyms["so thuc te"] = ("metric", str(actual.metric_id))
+    assert names_metric("Cho mình xin số tài chính thực tế quý 3", actual, vocab)
+    # A filler ("số") may be left out when the words left call nothing else; more than half of
+    # the words that are no filler count with a member of a cut the metric is read by.
+    assert names_metric("Chi phí lương Salaries thực tế năm 2013", actual, vocab)
+    aov = MetricEntry(uuid.uuid4(), "GIA_TRI_DON", "Giá trị đơn bình quân Internet", True)
+    assert not names_metric("Giá trị đơn Internet nhóm Bikes", aov, vocab)
+    assert names_metric("Giá trị đơn Internet nhóm Bikes", aov, vocab, member_named=True)
+    assert not names_metric("Khách hàng rời bỏ năm 2013", actual, vocab, member_named=True)
+    # The main set of 18/11: "số khách hàng" is not named by "Tỷ lệ khách hàng rời bỏ"; the
+    # longest name held wins ("doanh thu bán sỉ", the reseller's, over "Doanh thu").
+    buyers = MetricEntry(uuid.uuid4(), "SO_KHACH_HANG", "Số khách hàng mua qua Internet", True)
+    revenue = MetricEntry(uuid.uuid4(), "DOANH_THU", "Doanh thu", True)
+    reseller = MetricEntry(uuid.uuid4(), "DOANH_THU_DAI_LY", "Doanh thu đại lý", True)
+    sales = Vocabulary(
+        metrics=[buyers, revenue, reseller],
+        dimensions=[DimensionEntry(uuid.uuid4(), "quoc_gia_khach", "Quốc gia khách hàng")],
+        values=[],
+        synonyms={
+            "so khach hang": ("metric", str(buyers.metric_id)),
+            "doanh thu ban si": ("metric", str(reseller.metric_id)),
+        },
+    )
+    assert not names_metric("Tỷ lệ khách hàng rời bỏ năm 2013", buyers, sales)
+    assert names_metric("Số khách hàng năm 2013", buyers, sales)
+    assert not names_metric("Tổng doanh thu bán sỉ năm 2012", revenue, sales)
+    assert names_metric("Tổng doanh thu bán sỉ năm 2012", reseller, sales)
+    assert names_metric("Tổng doanh thu năm 2012", revenue, sales)
     layer = types.SimpleNamespace(
         vocabulary=vocab,
         versions={

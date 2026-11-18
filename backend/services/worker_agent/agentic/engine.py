@@ -56,7 +56,7 @@ from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
 from services.worker_agent.agentic.grounded import ANALYSIS_WORDS, unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContext, ToolResult
 from services.worker_agent.agentic.tools.coverage import for_planning
-from services.worker_agent.agentic.tools.query import asked_top, two_periods, without_glosses
+from services.worker_agent.agentic.tools.query import asked_top, asks_change, two_periods
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Dataset, Workspace, number
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
@@ -65,9 +65,9 @@ from services.worker_agent.progress import is_cancel_requested, publish
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import analyst
-from services.worker_agent.understand.packs import PACKS
+from services.worker_agent.understand.packs import PACKS, search
 from services.worker_agent.understand.packs.base import iso_answer
-from services.worker_agent.understand.resolver import metric_words, quantity_words
+from services.worker_agent.understand.resolver import metric_words, names_metric, quantity_words
 from services.worker_agent.understand.text import find_period, norm
 from services.worker_agent.understand.value_retrieval import sem_value_retrieval
 
@@ -257,10 +257,10 @@ def _standalone(text: str, readings: list[dict[str, Any]], vocab: Any, today: da
         found = iso_answer(str(r.get("period") or "")) if r["metric"] == last["metric"] else None
         if found is not None and all(f.start != found.start for f in seen):
             seen.append(found)
-    asks_change = bool(_SAID_DOWN.search(folded) or _SAID_UP.search(folded))
+    change_asked = asks_change(folded)
     if own is not None:
         parts.append(own.label)
-    elif asks_change and len(seen) >= 2:
+    elif change_asked and len(seen) >= 2:
         later, earlier = sorted(seen[:2], key=lambda f: f.start, reverse=True)
         parts.append(f"{later.label} so với {earlier.label}")
     elif seen:
@@ -505,13 +505,8 @@ def _missing_period(s: State) -> p.Plan | None:
     entry = analyst._visible(ctx.layer).get(top)
     if (move is None and gap is None) or entry is None:
         return None
-    vocab = ctx.layer.vocabulary
-    cuts: set[str] = set()
-    for d in vocab.dimensions:
-        cuts |= set(norm(d.name).split())
-    if unnamed(
-        quantity_words(ctx.question, vocab, today=ctx.today), metric_words(entry, vocab) | cuts
-    ):
+    # The question must call that metric by its name: a quantity beyond it is the planner's.
+    if not names_metric(ctx.question, entry, ctx.layer.vocabulary):
         return None
     held = None
     if move is not None:
@@ -698,6 +693,9 @@ async def act(s: State) -> None:
     # A failure the planner was not asked about (replans spent) is on the step's record already.
     s.failed = None
     steps = p.ready(s.plan, MAX_PARALLEL)
+    for step in [st for st in steps if not TOOLS[st.tool].asked(s.ctx.question)]:
+        step.status, step.observation = "skipped", "câu hỏi không hỏi điều bước này trả lời"
+        steps.remove(step)
     if not steps:
         return
     s.step_runs += len(steps)
@@ -993,18 +991,20 @@ def _unnamed_quantity(s: State) -> list[str]:
         group_by=[g for r in readings for g in r.get("group_by", [])],
         filters={k: v for r in readings for k, v in (r.get("filters") or {}).items()},
     )
-    # The Vietnamese gloss before an account named in English ("Chi phí lương Salaries") is the
-    # member's, as query_metric reads it; the answer was handed over for "phí" (18/11).
-    words = without_glosses(
-        s.ctx.question,
-        words,
-        {k: list(v) for r in readings for k, v in (r.get("filters") or {}).items()},
-    )
     if any(d.tool == "explore_sql" for d in datasets):
         return unnamed(words, _catalogue_words(vocab))
     if not readings:
         return []
     by_code = {m.code: m for m in vocab.metrics}
+    # Every reading's metric called by its name: the words left are how the question is said.
+    if all(
+        r["metric"] in by_code
+        and names_metric(
+            s.ctx.question, by_code[r["metric"]], vocab, member_named=bool(r.get("filters"))
+        )
+        for r in readings
+    ):
+        return []
     named: set[str] = set()
     for r in readings:
         if r["metric"] in by_code:
@@ -1295,9 +1295,6 @@ async def compose(s: State) -> None:
 
 
 _DATA_BLOCKS = frozenset({"kpi", "table", "chart"})
-# The direction a "vì sao" question takes for granted ("Vì sao doanh thu tháng 8/2013 giảm?").
-_SAID_DOWN = re.compile(r"\b(?:giam|sut|tut|di xuong|decrease|decline|drop|fall|fell)\b")
-_SAID_UP = re.compile(r"\b(?:tang|di len|increase|rise|rose|grow|grew)\b")
 
 
 def _false_premise(s: State) -> str:
@@ -1309,7 +1306,14 @@ def _false_premise(s: State) -> str:
     text = norm(s.ctx.question)
     if not changes or not any(pack.why.search(text) for pack in PACKS):
         return ""
-    said = "giảm" if _SAID_DOWN.search(text) else "tăng" if _SAID_UP.search(text) else ""
+    # The direction a "vì sao" question takes for granted ("Vì sao doanh thu tháng 8/2013 giảm?").
+    said = (
+        "giảm"
+        if search(text, lambda pack: pack.falls)
+        else "tăng"
+        if search(text, lambda pack: pack.rises)
+        else ""
+    )
     if not said:
         return ""
     change = changes[0]
@@ -1337,7 +1341,6 @@ def _false_premise(s: State) -> str:
     )
 
 
-_MOST = re.compile(r"\b(?:giam|tang|sut|tut)\b.*\b(?:nhieu|manh|nhanh) nhat\b")
 _YEAR_END = re.compile(r"^(.*) ((?:19|20)\d{2})$")
 
 
@@ -1420,9 +1423,9 @@ def _most_changed(s: State) -> str:
     read. Empty when the question asks no such thing or nothing compared two periods by a cut."""
     assert s.ctx is not None
     text = norm(s.ctx.question)
-    if not _MOST.search(text):
+    if not search(text, lambda pack: pack.most_changed):
         return ""
-    down = bool(_SAID_DOWN.search(text))
+    down = search(text, lambda pack: pack.falls) is not None
     for ds in s.ctx.ws.datasets.values():
         found = _compared(ds) if ds.tool == "query_metric" else None
         if found is None or not found[2]:
@@ -1601,18 +1604,15 @@ def _label_only(text: str) -> bool:
 MAX_FOLLOW_UPS = 3
 
 
-_GRAIN_WORDS = ("ngay", "tuan", "thang", "quy", "nam")
-_BY = re.compile(r"\btheo (?:tung |cac )?(.+)")
-
-
 def _cut_exists(key: str, cuts: list[str]) -> bool:
     """A next question cut "theo X" names a cut there is: a dimension's name or a grain. "Biến
     động doanh thu theo từng dịch vụ Internet" named none (17/11)."""
-    m = _BY.search(key)
-    if m is None:
-        return True
-    after = m.group(1)
-    return after.split(" ", 1)[0] in _GRAIN_WORDS or any(after.startswith(c) for c in cuts if c)
+    for pack in PACKS:
+        if m := pack.unplaced_cut.search(key):
+            after = key[m.start(1) :]
+            unit = after.split(" ", 1)[0]
+            return unit in pack.grain_units or any(after.startswith(c) for c in cuts if c)
+    return True
 
 
 def runnable_follow_ups(items: list[str], question: str, vocab: Any) -> list[str]:

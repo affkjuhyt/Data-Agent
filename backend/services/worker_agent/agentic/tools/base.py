@@ -107,6 +107,12 @@ class Tool:
         raise NotImplementedError
 
     @classmethod
+    def asked(cls, question: str) -> bool:
+        """Whether the question asks what this tool answers: a tool that answers one kind of
+        question (why a figure moved) runs only when that kind is asked, whoever planned it."""
+        return True
+
+    @classmethod
     def schema(cls) -> dict[str, Any]:
         return cls.Args.model_json_schema()
 

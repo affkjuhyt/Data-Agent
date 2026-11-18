@@ -219,8 +219,6 @@ def test_a_member_filtered_on_and_a_compared_period_name_no_quantity() -> None:
     assert quantity_words("Tồn kho luỹ kế từ đầu năm đến hết tháng 6/2013", vocab, today=TODAY) == [
         "ton",
         "kho",
-        "luy",
-        "ke",
     ]
     # "đầu" folds to "dầu" (oil): only the whole phrase goes.
     assert quantity_words("Giá dầu năm trước", vocab, today=TODAY) == ["gia", "dau"]
@@ -238,3 +236,22 @@ def test_a_model_written_range_ending_on_a_month_end_includes_that_day() -> None
     ):
         found = iso_answer(written)
         assert found is not None and found.end == end, written
+
+
+@pytest.mark.parametrize(
+    ("question", "start", "end"),
+    [
+        ("Doanh thu luỹ kế từ đầu năm đến hết tháng 6/2013", (2013, 1, 1), (2013, 7, 1)),
+        ("Doanh thu luỹ kế đến hết quý 3/2013", (2013, 1, 1), (2013, 10, 1)),
+        ("Doanh thu từ đầu quý đến hết tháng 8/2013", (2013, 7, 1), (2013, 9, 1)),
+        ("Doanh thu đại lý 6 tháng đầu năm 2013", (2013, 1, 1), (2013, 7, 1)),
+        ("Doanh thu 3 tháng cuối năm 2012", (2012, 10, 1), (2013, 1, 1)),
+        ("Doanh thu nửa cuối năm 2012", (2012, 7, 1), (2013, 1, 1)),
+    ],
+)
+def test_a_span_to_a_period_is_read_as_one_period(
+    question: str, start: tuple[int, int, int], end: tuple[int, int, int]
+) -> None:
+    found = find_period(question, TODAY)
+    assert found is not None
+    assert (found.start, found.end) == (datetime.date(*start), datetime.date(*end))
