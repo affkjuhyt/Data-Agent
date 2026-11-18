@@ -2367,7 +2367,9 @@ def test_named_members_the_counted_cut_and_an_unasked_breakdown_are_read_from_th
     assert _asks_breakdown("Cơ cấu doanh thu đại lý khu vực năm 2013", vocab, None)
 
 
-def test_an_account_named_with_its_gloss_is_read_on_a_metric_that_cuts_by_accounts() -> None:
+def test_an_account_named_with_its_gloss_is_read_on_a_metric_that_cuts_by_accounts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Holdout of 18/11: "Chi phí lương Salaries thực tế" refused "phí", "Trade Sales" read on a
     metric with no accounts, "Inventory" taken for an account."""
     import asyncio
@@ -2379,8 +2381,8 @@ def test_an_account_named_with_its_gloss_is_read_on_a_metric_that_cuts_by_accoun
     from services.worker_agent.agentic.tools.query import (
         QueryMetric,
         QueryMetricArgs,
-        _glossed,
         named_members,
+        without_glosses,
     )
     from services.worker_agent.understand.resolver import (
         DimensionEntry,
@@ -2390,17 +2392,20 @@ def test_an_account_named_with_its_gloss_is_read_on_a_metric_that_cuts_by_accoun
     )
 
     assert (
-        _glossed("Chi phí lương Salaries thực tế năm 2013", ["phi"], {"tai_khoan": ["Salaries"]})
+        without_glosses(
+            "Chi phí lương Salaries thực tế năm 2013", ["phi"], {"tai_khoan": ["Salaries"]}
+        )
         == []
     )
-    assert _glossed("Giá cổ phiếu năm 2013", ["phieu"], {}) == ["phieu"]
+    assert without_glosses("Giá cổ phiếu năm 2013", ["phieu"], {}) == ["phieu"]
 
     account = DimensionEntry(uuid.uuid4(), "tai_khoan", "Tài khoản")
     actual = MetricEntry(uuid.uuid4(), "TAI_CHINH_THUC_TE", "Số tài chính thực tế", True)
+    budget = MetricEntry(uuid.uuid4(), "TAI_CHINH_NGAN_SACH", "Số tài chính ngân sách", True)
     quota = MetricEntry(uuid.uuid4(), "CHI_TIEU_DOANH_SO", "Chỉ tiêu doanh số", True)
     stock = MetricEntry(uuid.uuid4(), "TON_KHO", "Tồn kho", True)
     vocab = Vocabulary(
-        metrics=[actual, quota, stock],
+        metrics=[actual, budget, quota, stock],
         dimensions=[account],
         values=[
             ValueEntry("tai_khoan", "Trade Sales", "Trade Sales"),
@@ -2414,16 +2419,20 @@ def test_an_account_named_with_its_gloss_is_read_on_a_metric_that_cuts_by_accoun
         vocabulary=vocab,
         versions={
             actual.metric_id: SimpleNamespace(allowed_dimension_ids=[account.dimension_id]),
+            budget.metric_id: SimpleNamespace(allowed_dimension_ids=[account.dimension_id]),
             quota.metric_id: SimpleNamespace(allowed_dimension_ids=[]),
             stock.metric_id: SimpleNamespace(allowed_dimension_ids=[]),
         },
         blocked_metric_ids=set(),
+        layer=object(),
     )
+    # Two metrics cut by accounts, neither named more: the step is sent back with both.
     ctx = types.SimpleNamespace(
         layer=layer,
-        question="Doanh số Trade Sales thực tế năm 2011",
+        question="Doanh số Trade Sales năm 2011",
         today=datetime.date(2026, 11, 18),
         period=None,
+        period_moves={},
     )
     vocab.calendar = clock.DEFAULT
     done = asyncio.run(
@@ -2431,6 +2440,20 @@ def test_an_account_named_with_its_gloss_is_read_on_a_metric_that_cuts_by_accoun
     )
     assert not done.ok and done.failure == "arguments"
     assert "Số tài chính thực tế" in done.observation and "Tài khoản" in done.observation
+    # "thực tế" names one of them: the step is read on it, filtered on the account.
+    from services.worker_agent.semantic import compiler as c
+
+    compiled: list[Any] = []
+
+    def stop(request: Any, *_a: Any, **_k: Any) -> Any:
+        compiled.append(request)
+        raise c.CompileError("NO_JOIN_PATH", "stop here")
+
+    monkeypatch.setattr(c, "compile_metric", stop)
+    ctx.question = "Doanh số Trade Sales thực tế năm 2011"
+    asyncio.run(QueryMetric().run(ctx, QueryMetricArgs(metric="CHI_TIEU_DOANH_SO")))  # type: ignore[arg-type]
+    assert compiled[-1].metric is layer.versions[actual.metric_id]
+    assert compiled[-1].filters == {"tai_khoan": ["Trade Sales"]}
 
 
 def test_a_member_withheld_from_the_index_is_named_by_its_synonym() -> None:

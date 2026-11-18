@@ -162,7 +162,7 @@ def _asks_breakdown(question: str, vocab: Vocabulary, top: tuple[int, bool] | No
     return any(f" {name} " in text for name in names if name)
 
 
-def _glossed(question: str, missing: list[str], members: dict[str, list[str]]) -> list[str]:
+def without_glosses(question: str, missing: list[str], members: dict[str, list[str]]) -> list[str]:
     """The unnamed words left once a member's gloss is set aside: "Chi phí lương Salaries",
     "Chi phí thuê Rent", "Phúc lợi nhân viên Employee Benefits" name an account in English after
     saying it in Vietnamese, and "phí", "thuê" were refused as quantities no metric measures
@@ -523,11 +523,21 @@ class QueryMetric(Tool):
             # names the cut; the metrics that cut by it are offered for the step read again.
             dim = next(iter(foreign))
             by_id = {d.code: d for d in vocab.dimensions}
-            able = [
-                m.name
+            able_entries = [
+                m
                 for m in analyst._visible(ctx.layer).values()
                 if by_id[dim].dimension_id in ctx.layer.versions[m.metric_id].allowed_dimension_ids
             ]
+            able = [m.name for m in able_entries]
+            # The 4B executor read the error and kept the metric (18/11): when one metric that
+            # cuts by the member's dimension is named by the question more than any other ("thực
+            # tế" → Số tài chính thực tế), the step is read on it.
+            asked = set(norm(ctx.question).split())
+            scored = sorted(
+                ((len(metric_words(m, vocab) & asked), m.code) for m in able_entries), reverse=True
+            )
+            if scored and scored[0][0] > 0 and (len(scored) == 1 or scored[1][0] < scored[0][0]):
+                return await self.run(ctx, args.model_copy(update={"metric": scored[0][1]}))
             return ToolResult(
                 False,
                 f"“{', '.join(foreign[dim])}” thuộc chiều {by_id[dim].name}, chỉ số {entry.name}"
@@ -535,7 +545,7 @@ class QueryMetric(Tool):
                 f" {', '.join(able[:5]) or 'không có'}",
                 failure="arguments",
             )
-        missing = _glossed(ctx.question, missing, members)
+        missing = without_glosses(ctx.question, missing, members)
         cut_named = [
             d.name
             for d in vocab.dimensions

@@ -56,7 +56,7 @@ from services.worker_agent.agentic.graph import END, Node, Router, StateGraph
 from services.worker_agent.agentic.grounded import ANALYSIS_WORDS, unnamed
 from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContext, ToolResult
 from services.worker_agent.agentic.tools.coverage import for_planning
-from services.worker_agent.agentic.tools.query import asked_top, two_periods
+from services.worker_agent.agentic.tools.query import asked_top, two_periods, without_glosses
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Dataset, Workspace, number
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
@@ -993,6 +993,13 @@ def _unnamed_quantity(s: State) -> list[str]:
         group_by=[g for r in readings for g in r.get("group_by", [])],
         filters={k: v for r in readings for k, v in (r.get("filters") or {}).items()},
     )
+    # The Vietnamese gloss before an account named in English ("Chi phí lương Salaries") is the
+    # member's, as query_metric reads it; the answer was handed over for "phí" (18/11).
+    words = without_glosses(
+        s.ctx.question,
+        words,
+        {k: list(v) for r in readings for k, v in (r.get("filters") or {}).items()},
+    )
     if any(d.tool == "explore_sql" for d in datasets):
         return unnamed(words, _catalogue_words(vocab))
     if not readings:
@@ -1465,7 +1472,8 @@ def _data_block(s: State, block_id: str) -> dict[str, Any] | None:
     column = ds.columns[measure]
     draft = (
         b.BlockDraft(type="kpi", kpis=[b.KpiDraft(label=column, dataset=ds.id, column=column)])
-        if len(ds.rows) == 1 and not names
+        if len(ds.rows) == 1 and not names and _compared(ds) is None
+        # A comparison shows both periods: a KPI of one row said this year alone (18/11).
         else b.BlockDraft(type="table", dataset=ds.id)
     )
     try:
