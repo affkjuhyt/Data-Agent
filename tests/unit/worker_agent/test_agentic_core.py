@@ -2248,3 +2248,58 @@ def test_a_fiscal_cut_a_span_from_the_year_start_and_a_relative_comparison_are_r
     assert qoq.compare_to == "previous_period" and qoq.period == "2013-04-01/2013-07-01"
     plain = read("Doanh thu Internet năm 2013", period="2013")
     assert plain.compare_to is None and plain.period == "2013"
+
+
+def test_what_the_space_does_not_measure_or_cut_by_is_said_before_any_plan() -> None:
+    """Eval and holdout of 18/11: refused or asked back, never read as the nearest metric/cut."""
+    import datetime
+    import uuid
+
+    from services.worker_agent.agentic import clarify_policy
+    from services.worker_agent.understand.resolver import (
+        DimensionEntry,
+        MetricEntry,
+        ValueEntry,
+        Vocabulary,
+    )
+
+    buyers, revenue, stock = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    group = uuid.uuid4()
+    layer = SimpleNamespace(
+        vocabulary=Vocabulary(
+            metrics=[
+                MetricEntry(revenue, "DOANH_THU", "Doanh thu", True),
+                MetricEntry(buyers, "SO_KHACH_HANG", "Số khách hàng mua qua Internet", True),
+                MetricEntry(stock, "GIA_TRI_TON_KHO", "Giá trị tồn kho", True),
+            ],
+            dimensions=[
+                DimensionEntry(group, "nhom_hang", "Nhóm sản phẩm"),
+                DimensionEntry(uuid.uuid4(), "ten_dai_ly", "Đại lý"),
+                DimensionEntry(uuid.uuid4(), "ngay_dat", "Ngày đặt hàng"),
+            ],
+            values=[ValueEntry("nhom_hang", "Bikes", "Bikes")],
+            synonyms={
+                "so khach hang": ("metric", str(buyers)),
+                "nhom hang": ("dimension", str(group)),
+            },
+        ),
+    )
+    today = datetime.date(2026, 11, 18)
+    refused = clarify_policy.out_of_scope("Giá cổ phiếu của công ty hôm nay", layer, today)
+    assert refused is not None and "“Giá cổ phiếu của công ty”" in refused
+    # Half a metric named: asked back with the closest metrics elsewhere; a greeting is no data
+    # question; a metric named is answered.
+    for question in ("Khách hàng rời bỏ là bao nhiêu?", "Xin chào", "Doanh thu năm 2013"):
+        assert clarify_policy.out_of_scope(question, layer, today) is None, question
+
+    asked = clarify_policy.unknown_cut("Doanh thu theo lý do mua hàng năm 2013", layer, today)
+    assert asked is not None and "“lý do mua hàng”" in asked.question
+    # "lý" of "đại lý", "hàng" of "ngày đặt hàng": single words do not make a cut known.
+    assert clarify_policy.unknown_cut("Doanh thu theo ngày giao hàng tháng 12/2013", layer, today)
+    for question in (
+        "Doanh thu năm 2013 theo từng nhóm hàng",
+        "Top 10 sản phẩm theo doanh thu năm 2013",
+        "Doanh thu theo tháng năm 2013",
+        "Doanh thu theo ngày",
+    ):
+        assert clarify_policy.unknown_cut(question, layer, today) is None, question

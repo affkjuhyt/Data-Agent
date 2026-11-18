@@ -545,6 +545,30 @@ def _last_like(
     return at, _shift_months(at, months)
 
 
+def _out_of_scope(s: State) -> p.Plan | None:
+    """A data question naming none of the space's metrics is refused before any plan
+    (clarify_policy.out_of_scope); the turn goes straight to persist."""
+    if s.ctx is None or s.prior_clarify_rounds:
+        return None
+    said = clarify_policy.out_of_scope(s.ctx.question, s.ctx.layer, s.ctx.today)
+    if said is None:
+        return None
+    s.refused = said
+    return p.Plan(goal="Câu hỏi ngoài dữ liệu của Data Space", thought=said, mode="answer")
+
+
+def _unknown_cut(s: State) -> p.Plan | None:
+    """A cut the space does not model is asked back before any plan (clarify_policy.unknown_cut)."""
+    if s.ctx is None:
+        return None
+    ask = clarify_policy.unknown_cut(s.ctx.question, s.ctx.layer, s.ctx.today)
+    if ask is None:
+        return None
+    return _asking(
+        s, ask, "Làm rõ cách chia", "Câu hỏi chia theo một chiều dữ liệu chưa có; hỏi lại."
+    )
+
+
 def _same_named(s: State) -> p.Plan | None:
     """F2: a quantity two or more certified metrics are named after, none exactly ("Lãi gộp năm
     2013"), is asked back before any plan (clarify_policy.same_named)."""
@@ -576,7 +600,7 @@ def _asking(s: State, ask: Clarify, goal: str, thought: str) -> p.Plan | None:
 async def plan(s: State) -> None:
     system = _planner_system(s)
     async with turn_trace.stepping("plan", title="Lập kế hoạch", target="") as step:
-        early = _missing_period(s) or _same_named(s)
+        early = _out_of_scope(s) or _missing_period(s) or _same_named(s) or _unknown_cut(s)
         try:
             s.plan = early or await _ask_plan(s, system, _situation(s))
         except (ModelUnavailable, p.PlanInvalid) as exc:
@@ -1947,7 +1971,7 @@ def _graph() -> StateGraph[State]:
         else END
         if s.handed_back
         else "persist"
-        if s.clarify is not None
+        if s.clarify is not None or s.refused is not None
         else "compose"
         if s.plan is not None and s.plan.mode == "answer"
         else "act",
