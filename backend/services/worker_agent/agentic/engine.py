@@ -1354,6 +1354,13 @@ def _compared(ds: Dataset) -> tuple[int, int, list[int]] | None:
     return None
 
 
+def _read_nothing(s: State) -> bool:
+    """The turn read the data and every reading came back empty, and the answer shows no figure."""
+    assert s.ctx is not None
+    fetched = [d for d in s.ctx.ws.datasets.values() if d.tool in FETCHING]
+    return bool(fetched) and all(not d.rows for d in fetched) and not _figures(s)
+
+
 def _top_unsaid(s: State) -> str:
     """A ranking question ("3 đại lý …", "Top 5 …") whose text names not even its first member:
     the rows of the first table or chart, said by the server; empty otherwise."""
@@ -1883,6 +1890,12 @@ async def persist(s: State) -> None:
         )
     elif s.refused is not None and not s.composition:
         kind, status, text = "refusal", "refused", s.refused
+        refusal = {"code": "NO_DATA_FOR_PERIOD", "next_action": "rephrase"}
+    elif _read_nothing(s):
+        # Every reading came back empty and the answer holds no figure: it says there is no data
+        # ("… năm 2013 không khả dụng"), which is a refusal with its reason, not a data answer
+        # (the budget scenario ends in 2011; 18/11).
+        kind, status, text = "refusal", "refused", _text(s) or "Không có dữ liệu cho câu hỏi này."
         refusal = {"code": "NO_DATA_FOR_PERIOD", "next_action": "rephrase"}
     else:
         kind = "data" if ctx.ws.datasets else ("document" if ctx.ws.citations else "data")

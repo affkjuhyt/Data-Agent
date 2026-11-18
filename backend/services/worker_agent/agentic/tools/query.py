@@ -166,7 +166,7 @@ def without_glosses(question: str, missing: list[str], members: dict[str, list[s
     """The unnamed words left once a member's gloss is set aside: "Chi phí lương Salaries",
     "Chi phí thuê Rent", "Phúc lợi nhân viên Employee Benefits" name an account in English after
     saying it in Vietnamese, and "phí", "thuê" were refused as quantities no metric measures
-    (18/11). Up to three words right before a member the reading filters on are its gloss."""
+    (18/11). Up to four words right before a member the reading filters on are its gloss."""
     if not missing or not members:
         return missing
     words = norm(question).split()
@@ -175,7 +175,7 @@ def without_glosses(question: str, missing: list[str], members: dict[str, list[s
         name = norm(str(code)).split()
         for i in range(len(words) - len(name) + 1):
             if words[i : i + len(name)] == name:
-                glossed |= set(words[max(0, i - 3) : i])
+                glossed |= set(words[max(0, i - 4) : i])
     return [w for w in missing if w not in glossed]
 
 

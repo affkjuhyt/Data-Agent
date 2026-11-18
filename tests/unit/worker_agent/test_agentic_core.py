@@ -2477,3 +2477,23 @@ def test_a_member_withheld_from_the_index_is_named_by_its_synonym() -> None:
         asked, vocab, today=datetime.date(2026, 11, 18), filters={"gioi_tinh": ["F"]}
     )
     assert "nu" not in words and "khach" not in words
+
+
+def test_an_answer_over_readings_that_all_came_back_empty_is_a_refusal() -> None:
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+
+    ws = Workspace()
+    ws.add(title="t", columns=["value"], rows=[], trust="certified", tool="query_metric")
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(ws=ws),  # type: ignore[arg-type]
+        composition=[{"type": "markdown", "id": "b1", "content": "Không có dữ liệu năm 2013."}],
+    )
+    assert engine._read_nothing(state)
+    ws.add(title="t", columns=["value"], rows=[[5]], trust="certified", tool="query_metric")
+    assert not engine._read_nothing(state)
