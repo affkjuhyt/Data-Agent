@@ -2334,7 +2334,10 @@ def test_named_members_the_counted_cut_and_an_unasked_breakdown_are_read_from_th
         DimensionEntry(uuid.uuid4(), "tieu_nhom", "Tiểu nhóm sản phẩm"),
     ]
     vocab = Vocabulary(
-        metrics=[MetricEntry(uuid.uuid4(), "DOANH_THU_DAI_LY", "Doanh thu đại lý", True)],
+        metrics=[
+            MetricEntry(uuid.uuid4(), "DOANH_THU", "Doanh thu", True),
+            MetricEntry(uuid.uuid4(), "DOANH_THU_DAI_LY", "Doanh thu đại lý", True),
+        ],
         dimensions=dims,
         values=[
             ValueEntry("loai_dai_ly", "Specialty Bike Shop", "Specialty Bike Shop"),
@@ -2362,3 +2365,92 @@ def test_named_members_the_counted_cut_and_an_unasked_breakdown_are_read_from_th
     assert not _asks_breakdown("Doanh thu đại lý loại Specialty Bike Shop năm 2013", vocab, None)
     assert _asks_breakdown("Doanh thu đại lý theo khu vực năm 2013", vocab, None)
     assert _asks_breakdown("Cơ cấu doanh thu đại lý khu vực năm 2013", vocab, None)
+
+
+def test_an_account_named_with_its_gloss_is_read_on_a_metric_that_cuts_by_accounts() -> None:
+    """Holdout of 18/11: "Chi phí lương Salaries thực tế" refused "phí", "Trade Sales" read on a
+    metric with no accounts, "Inventory" taken for an account."""
+    import asyncio
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic.tools.query import (
+        QueryMetric,
+        QueryMetricArgs,
+        _glossed,
+        named_members,
+    )
+    from services.worker_agent.understand.resolver import (
+        DimensionEntry,
+        MetricEntry,
+        ValueEntry,
+        Vocabulary,
+    )
+
+    assert (
+        _glossed("Chi phí lương Salaries thực tế năm 2013", ["phi"], {"tai_khoan": ["Salaries"]})
+        == []
+    )
+    assert _glossed("Giá cổ phiếu năm 2013", ["phieu"], {}) == ["phieu"]
+
+    account = DimensionEntry(uuid.uuid4(), "tai_khoan", "Tài khoản")
+    actual = MetricEntry(uuid.uuid4(), "TAI_CHINH_THUC_TE", "Số tài chính thực tế", True)
+    quota = MetricEntry(uuid.uuid4(), "CHI_TIEU_DOANH_SO", "Chỉ tiêu doanh số", True)
+    stock = MetricEntry(uuid.uuid4(), "TON_KHO", "Tồn kho", True)
+    vocab = Vocabulary(
+        metrics=[actual, quota, stock],
+        dimensions=[account],
+        values=[
+            ValueEntry("tai_khoan", "Trade Sales", "Trade Sales"),
+            ValueEntry("tai_khoan", "Inventory", "Inventory"),
+        ],
+        synonyms={"inventory": ("metric", str(stock.metric_id))},
+    )
+    everywhere = {account.dimension_id}
+    assert named_members("Inventory cuối năm 2013", vocab, everywhere) == {}
+    layer = types.SimpleNamespace(
+        vocabulary=vocab,
+        versions={
+            actual.metric_id: SimpleNamespace(allowed_dimension_ids=[account.dimension_id]),
+            quota.metric_id: SimpleNamespace(allowed_dimension_ids=[]),
+            stock.metric_id: SimpleNamespace(allowed_dimension_ids=[]),
+        },
+        blocked_metric_ids=set(),
+    )
+    ctx = types.SimpleNamespace(
+        layer=layer,
+        question="Doanh số Trade Sales thực tế năm 2011",
+        today=datetime.date(2026, 11, 18),
+        period=None,
+    )
+    vocab.calendar = clock.DEFAULT
+    done = asyncio.run(
+        QueryMetric().run(ctx, QueryMetricArgs(metric="CHI_TIEU_DOANH_SO"))  # type: ignore[arg-type]
+    )
+    assert not done.ok and done.failure == "arguments"
+    assert "Số tài chính thực tế" in done.observation and "Tài khoản" in done.observation
+
+
+def test_a_member_withheld_from_the_index_is_named_by_its_synonym() -> None:
+    """ "Doanh thu Internet từ khách hàng nữ": Giới tính is personal data, its values are not
+    indexed; the steward's synonym "khách hàng nữ" → F names the member (18/11)."""
+    import datetime
+    import uuid
+
+    from services.worker_agent.agentic.tools.query import named_members
+    from services.worker_agent.understand.resolver import DimensionEntry, Vocabulary, quantity_words
+
+    gender = DimensionEntry(uuid.uuid4(), "gioi_tinh", "Giới tính")
+    vocab = Vocabulary(
+        metrics=[],
+        dimensions=[gender],
+        synonyms={"khach hang nu": ("value", "gioi_tinh", "F")},
+    )
+    asked = "Doanh thu Internet từ khách hàng nữ năm 2013"
+    assert named_members(asked, vocab, {gender.dimension_id}) == {"gioi_tinh": ["F"]}
+    words = quantity_words(
+        asked, vocab, today=datetime.date(2026, 11, 18), filters={"gioi_tinh": ["F"]}
+    )
+    assert "nu" not in words and "khach" not in words

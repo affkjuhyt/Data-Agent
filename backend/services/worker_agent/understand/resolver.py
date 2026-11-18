@@ -318,6 +318,10 @@ def quantity_words(
             # nothing, which the turn then says.
             for member in members:
                 chosen |= set(norm(str(member)).split())
+            # Its synonyms name it too ("khách hàng nữ" for Giới tính F).
+            for phrase, target in vocab.synonyms.items():
+                if target[0] == "value" and target[1] == dim_code and target[2] in members:
+                    chosen |= set(phrase.split())
         for v in vocab.values:
             if v.dimension_code == dim_code and v.value_code in members:
                 chosen |= set(norm(v.label).split()) | set(norm(v.value_code).split())

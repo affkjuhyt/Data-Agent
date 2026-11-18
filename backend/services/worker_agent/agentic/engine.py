@@ -1426,6 +1426,9 @@ def _measure(ds: Dataset) -> tuple[int, list[int]] | None:
     if not numeric:
         return None
     measure = numeric[-1]
+    if (compared := _compared(ds)) is not None:
+        # A comparison: this period, not the period compared, which is written last.
+        measure = compared[0]
     return measure, [i for i in range(len(ds.columns)) if i not in numeric]
 
 
@@ -1750,8 +1753,27 @@ def _figures(s: State) -> list[dict[str, Any]]:
             ]
             if not numeric:
                 continue
-            # The aggregate is written last (a year or a code may be a number too).
+            # The aggregate is written last (a year or a code may be a number too); in a
+            # comparison the last is the period compared, so this period is read first and, for
+            # one row, both are the figures ("Doanh thu Internet năm 2013 so với cùng kỳ năm
+            # trước" gave only last year's, 18/11).
             measure = numeric[-1]
+            base = next((c for c in numeric if c.endswith(" (kỳ so sánh)")), None)
+            if base is not None and base[: -len(" (kỳ so sánh)")] in numeric:
+                measure = base[: -len(" (kỳ so sánh)")]
+                if len(rows) == 1:
+                    return [
+                        _figure(
+                            f"{blk['id']}-{i}",
+                            col,
+                            number(rows[0].get(col)),
+                            blk.get("unit"),
+                            blk.get("trust_label"),
+                            blk.get("query_run_ids") or [],
+                            {},
+                        )
+                        for i, col in enumerate((measure, base))
+                    ]
         else:
             continue
         for i, row in enumerate(rows[:MAX_SHOWN_FIGURES]):

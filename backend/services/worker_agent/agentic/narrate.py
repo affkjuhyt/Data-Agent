@@ -73,9 +73,19 @@ def _highlight(ds: Dataset) -> str:
 
 def _dataset_line(ds: Dataset) -> str:
     if len(ds.rows) == 1 and len(ds.columns) >= 1:
+        cols = ds.columns
+        unit = f" {ds.unit}" if ds.unit else ""
+        base = next((i for i, c in enumerate(cols) if c.endswith(" (kỳ so sánh)")), None)
+        if base is not None and cols[base][: -len(" (kỳ so sánh)")] in cols:
+            # A comparison of one row: this period, then the period compared (the last column
+            # alone said last year's figure as this year's, 18/11).
+            now = number(ds.rows[0][cols.index(cols[base][: -len(" (kỳ so sánh)")])])
+            then = number(ds.rows[0][base])
+            if now is not None and then is not None:
+                return f"{ds.title}: {show(now)}{unit} (kỳ so sánh {show(then)}{unit})"
         value = number(ds.rows[0][-1])
         if value is not None:
-            return f"{ds.title}: {show(value)}{f' {ds.unit}' if ds.unit else ''}"
+            return f"{ds.title}: {show(value)}{unit}"
     return f"{ds.title}: {len(ds.rows)} dòng{_highlight(ds)}"
 
 

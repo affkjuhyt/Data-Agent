@@ -105,13 +105,25 @@ def named_members(
     overlap ("Trade Sales" over "Sales"); one-letter or numeric codes are never read as names."""
     text = f" {norm(question)} "
     dims = {d.code: d for d in vocab.dimensions if d.dimension_id in allowed and not d.is_time}
+    # A member named like a metric ("Inventory", "Gross Margin", "Revenue" are accounts too)
+    # is read as the metric, not as a filter.
+    metric_phrases = {f" {norm(m.name)} " for m in vocab.metrics} | {
+        f" {p} " for p, t in vocab.synonyms.items() if t[0] == "metric"
+    }
     found: list[tuple[str, str, str]] = []
     for v in vocab.values:
         label = norm(v.label)
         if v.dimension_code not in dims or len(label) < 3 or label.replace(" ", "").isdigit():
             continue
+        if any(f" {label} " in phrase for phrase in metric_phrases):
+            continue
         if f" {label} " in text:
             found.append((label, v.dimension_code, v.value_code))
+    # A member's approved synonyms name it too ("khách hàng nữ" → Giới tính F): a member whose
+    # values are withheld from the index (personal data) is still named by them.
+    for phrase, target in vocab.synonyms.items():
+        if target[0] == "value" and target[1] in dims and f" {phrase} " in text:
+            found.append((phrase, str(target[1]), str(target[2])))
     found.sort(key=lambda f: -len(f[0]))
     out: dict[str, list[str]] = {}
     taken: list[str] = []
@@ -142,11 +154,29 @@ def _asks_breakdown(question: str, vocab: Vocabulary, top: tuple[int, bool] | No
     if top is not None or _BREAKDOWN.search(text):
         return True
     # A metric's name is no cut's: "Doanh thu đại lý" holds the cut name "Đại lý".
-    for m in vocab.metrics:
-        text = text.replace(f" {norm(m.name)} ", " ")
+    # Longest first: "Doanh thu" taken out of "Doanh thu đại lý" left "đại lý", a cut's name.
+    for name in sorted((norm(m.name) for m in vocab.metrics), key=len, reverse=True):
+        text = text.replace(f" {name} ", " ")
     names = [norm(d.name) for d in vocab.dimensions if not d.is_time]
     names += [p for p, t in vocab.synonyms.items() if t[0] == "dimension"]
     return any(f" {name} " in text for name in names if name)
+
+
+def _glossed(question: str, missing: list[str], members: dict[str, list[str]]) -> list[str]:
+    """The unnamed words left once a member's gloss is set aside: "Chi phí lương Salaries",
+    "Chi phí thuê Rent", "Phúc lợi nhân viên Employee Benefits" name an account in English after
+    saying it in Vietnamese, and "phí", "thuê" were refused as quantities no metric measures
+    (18/11). Up to three words right before a member the reading filters on are its gloss."""
+    if not missing or not members:
+        return missing
+    words = norm(question).split()
+    glossed: set[str] = set()
+    for code in (member for codes in members.values() for member in codes):
+        name = norm(str(code)).split()
+        for i in range(len(words) - len(name) + 1):
+            if words[i : i + len(name)] == name:
+                glossed |= set(words[max(0, i - 3) : i])
+    return [w for w in missing if w not in glossed]
 
 
 def cut_after_count(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> str | None:
@@ -481,6 +511,31 @@ class QueryMetric(Tool):
             ),
             catalogue,
         )
+        everywhere = {d.dimension_id for d in vocab.dimensions}
+        foreign = {
+            dim: codes
+            for dim, codes in named_members(ctx.question, vocab, everywhere).items()
+            if dim not in {d.code for d in vocab.dimensions if d.dimension_id in allowed_ids}
+        }
+        if foreign:
+            # "Doanh số Trade Sales thực tế" read as Chỉ tiêu doanh số, which has no accounts:
+            # "trade" was refused as a quantity and the turn said "no data" (18/11). The member
+            # names the cut; the metrics that cut by it are offered for the step read again.
+            dim = next(iter(foreign))
+            by_id = {d.code: d for d in vocab.dimensions}
+            able = [
+                m.name
+                for m in analyst._visible(ctx.layer).values()
+                if by_id[dim].dimension_id in ctx.layer.versions[m.metric_id].allowed_dimension_ids
+            ]
+            return ToolResult(
+                False,
+                f"“{', '.join(foreign[dim])}” thuộc chiều {by_id[dim].name}, chỉ số {entry.name}"
+                f" không chia theo chiều này; chỉ số chia được theo {by_id[dim].name}:"
+                f" {', '.join(able[:5]) or 'không có'}",
+                failure="arguments",
+            )
+        missing = _glossed(ctx.question, missing, members)
         cut_named = [
             d.name
             for d in vocab.dimensions
@@ -575,6 +630,16 @@ class QueryMetric(Tool):
             args = args.model_copy(
                 update={"filters": {k: v for k, v in args.filters.items() if k not in stray}}
             )
+        # Nor a cut: "Doanh thu đại lý năm 2012 so với cùng kỳ năm trước" was cut by Năm tài
+        # chính, and two fiscal years of a calendar one were read against each other (18/11).
+        group_by = [
+            g
+            for g in group_by
+            if g not in by_code
+            or by_code[g].is_time
+            or not _CALENDAR_PART.match(g)
+            or f" {norm(by_code[g].name)} " in asked_text
+        ]
         bad = [g for g in [*group_by, *args.filters] if g not in allowed]
         if bad:
             cuts = ", ".join(sorted(allowed - {d.code for d in vocab.dimensions if d.is_time}))
