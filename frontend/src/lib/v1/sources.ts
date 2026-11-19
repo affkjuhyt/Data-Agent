@@ -466,9 +466,9 @@ export interface ConnectionTest {
     dataset_id?: string;
     personal_columns?: PersonalColumn[];
   }[];
-  /** Estimates for "Sau khi lưu". */
-  scan_minutes: number;
-  initial_load_hours: number;
+  /** Estimates for "Sau khi lưu"; PROPOSAL, null when the api gives none. */
+  scan_minutes: number | null;
+  initial_load_hours: number | null;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -495,8 +495,8 @@ function testFromSource(row: SourceRow): ConnectionTest {
     schema: '',
     table_count: 0,
     tables: [],
-    scan_minutes: 0,
-    initial_load_hours: 0,
+    scan_minutes: null,
+    initial_load_hours: null,
   };
 }
 

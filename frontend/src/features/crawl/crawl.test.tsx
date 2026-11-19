@@ -90,6 +90,53 @@ describe('CrawlRegisterPage', () => {
   });
 });
 
+describe('CrawlRegisterPage without the agent', () => {
+  it('registers the start pages typed in when the source search is not available', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('*/v1/crawl-sources\\:suggest', () =>
+        HttpResponse.json(
+          {
+            title: 'not_available',
+            status: 501,
+            code: 'not_available',
+            detail: 'Chưa có Agent Thu thập.',
+          },
+          { status: 501, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+      http.post('*/v1/crawl-sources', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 'cs-typed', status: 'draft' }, { status: 201 });
+      }),
+    );
+    wrap(<CrawlRegisterPage />);
+    fireEvent.change(screen.getByLabelText('Mục tiêu thu thập'), {
+      target: { value: 'Giá thép xây dựng' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tìm nguồn' }));
+    expect(await screen.findByText('Chưa có Agent Thu thập.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Trang bắt đầu'), {
+      target: { value: 'https://thep.example.vn/bang-gia\nnot a url' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu và suy ngược schema' }));
+    expect(await screen.findByText('Địa chỉ không hợp lệ: not a url')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Trang bắt đầu'), {
+      target: { value: 'https://thep.example.vn/bang-gia\nhttps://thep.example.vn/tin-tuc' },
+    });
+    expect(screen.getByText('1 miền của nguồn đã chọn')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu và suy ngược schema' }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('data', 'CRAWL_SOURCE', 'cs-typed'));
+    expect(sent).toMatchObject({
+      name: 'Giá thép xây dựng',
+      seed_urls: ['https://thep.example.vn/bang-gia', 'https://thep.example.vn/tin-tuc'],
+      allowed_domains: ['thep.example.vn'],
+    });
+  });
+});
+
 describe('CrawlRegisterPage while the agent searches', () => {
   it('shows the run waiting, then why it failed', async () => {
     let reads = 0;

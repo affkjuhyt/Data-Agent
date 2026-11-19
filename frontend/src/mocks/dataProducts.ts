@@ -276,6 +276,46 @@ const summary = (p: DataProductDetail): DataProduct => ({
   refreshed_at: p.refreshed_at,
 });
 
+/** The mart's fact table as the catalog holds it: what a product's contract is typed from. */
+const FACT_ID = 'ds-fact-loan-daily';
+const FACT_COLUMNS = [
+  ['loan_key', 'integer', true],
+  ['date_key', 'integer', false],
+  ['branch_key', 'integer', false],
+  ['product_key', 'integer', false],
+  ['customer_key', 'integer', false],
+  ['outstanding_amt', 'decimal', false],
+  ['overdue_days', 'integer', false],
+  ['debt_group', 'string', false],
+  ['provision_amt', 'decimal', false],
+] as const;
+
+/** DataMartView as the api sends it; the star drawing rides along under `display`. */
+const martWire = (mart: DataMart) => ({
+  id: mart.id,
+  name: mart.name,
+  data_space_id: 'ds-rui-ro-tin-dung',
+  fact_dataset_id: FACT_ID,
+  grain: 'một khoản vay mỗi ngày',
+  measures: [
+    { name: 'outstanding_amt', agg: 'sum' },
+    { name: 'provision_amt', agg: 'sum' },
+  ],
+  dimensions: mart.dimensions
+    .filter((d) => !d.suggested)
+    .map((d) => ({ name: d.name, key: d.lines[0] })),
+  relations: [],
+  checks: [],
+  suggested_dimensions: mart.dimensions
+    .filter((d) => d.suggested)
+    .map((d) => ({ name: d.name, key: d.lines[0] })),
+  relation_check_passed: true,
+  status: 'draft',
+  created_at: '2026-10-01T00:00:00Z',
+  updated_at: '2026-10-01T00:00:00Z',
+  display: mart,
+});
+
 export function createDataProductsHandlers() {
   let mart = martFixture();
   let products = productsFixture();
@@ -284,10 +324,24 @@ export function createDataProductsHandlers() {
   const fromMart = new Map<string, string>();
 
   return [
+    http.get('*/v1/datasets/:id', ({ params }) =>
+      params.id === FACT_ID
+        ? HttpResponse.json({
+            id: FACT_ID,
+            schema_name: 'mart',
+            table_name: 'fact_loan_daily',
+            columns: FACT_COLUMNS.map(([name, normalized_type, is_key]) => ({
+              name,
+              normalized_type,
+              is_key,
+            })),
+          })
+        : undefined,
+    ),
     http.get('*/v1/marts', () => page([{ id: mart.id, name: mart.name }])),
     http.get('*/v1/marts/:id', ({ params }) =>
       params.id === mart.id
-        ? HttpResponse.json(mart)
+        ? HttpResponse.json(martWire(mart))
         : problem(404, 'not_found', 'Không tìm thấy data mart.'),
     ),
     http.patch('*/v1/marts/:id', async ({ params, request }) => {

@@ -11,6 +11,7 @@ import {
   getRoutingLog,
   listModelRoutes,
   listProviders,
+  saveNotificationPreferences,
 } from './adminPlatform';
 
 const at = '2026-10-12T08:00:00Z';
@@ -182,5 +183,39 @@ describe('Quản trị from the api', () => {
     expect(prefs.events[1].channels.digest).toBe(true);
     expect(prefs.quiet_hours_text).toBe('Không gửi từ 22:00 đến 07:00');
     expect(prefs.grouping_text).toBe('Gộp vào bản tin hằng ngày');
+  });
+
+  it('saves the quiet hours and the 15-minute grouping it read, which the screen does not edit', async () => {
+    let sent: unknown;
+    server.use(
+      http.get('*/v1/me/notification-prefs', () =>
+        HttpResponse.json({
+          items: [
+            {
+              kind: 'alert',
+              channels: ['in_app'],
+              batch_mode: '15m',
+              quiet_hours: { from: '22:00', to: '07:00' },
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+      http.put('*/v1/me/notification-prefs', async ({ request }) => {
+        sent = await request.json();
+        return HttpResponse.json({ items: [], next_page_token: '' });
+      }),
+    );
+    await saveNotificationPreferences(await getNotificationPreferences());
+    expect(sent).toEqual({
+      prefs: [
+        {
+          kind: 'alert',
+          channels: ['in_app'],
+          batch_mode: '15m',
+          quiet_hours: { from: '22:00', to: '07:00' },
+        },
+      ],
+    });
   });
 });

@@ -124,6 +124,8 @@ describe('skills from the api', () => {
       scope_label: 'Toàn tổ chức',
       owner: { name: 'Đỗ Hải Yến' },
       runs_30d: 14,
+      // SkillView does not say which agents use a skill: unknown, not "no agent".
+      agent_count: null,
     });
     expect(personal).toMatchObject({ status: 'draft', scope_label: 'Cá nhân' });
   });

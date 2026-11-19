@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw';
+import { approvalRequest, type ApprovalSource } from './approvals';
 import type {
   CallRecording,
   DocumentAnswer,
@@ -1047,12 +1048,28 @@ export const documentApi = (id: string, title: string, display: unknown) => ({
   display,
 });
 
-export function createDocumentHandlers() {
+export function createDocumentHandlers(approvals: ApprovalSource[] = []) {
   let library = libraryFixture();
   const mails = mailRows();
   let views = viewsFixture();
   let issues = issuesFixture();
   const validity = validityFixture();
+  // A relation the agent proposed is a document_validity proposal in its reviewer's Cần bạn.
+  const validityProposal = (documentId: string) => `prop-validity-${documentId}`;
+  approvals.push(() =>
+    Object.values(validity)
+      .filter((v) => v.pending)
+      .map((v) =>
+        approvalRequest({
+          id: `hitl-validity-${v.document_id}`,
+          data_space_id: 'ds-rui-ro-tin-dung',
+          title: `${v.pending!.superseded_by_title} thay thế ${v.title}`,
+          source_ref: validityProposal(v.document_id),
+          created_at: '2026-09-02T08:00:00Z',
+          proposal_kind: 'document_validity',
+        }),
+      ),
+  );
   let schemas = schemasFixture();
   const created: { id: string; name: string }[] = [];
   // Questions recorded with the documents purpose, and the answer each one gets.
@@ -1064,8 +1081,25 @@ export function createDocumentHandlers() {
   };
 
   return [
-    // DocumentListItem with the library row under display; the category and the validity review
-    // are filtered by the client. Other collections' documents are the collection mock's.
+    http.get('*/v1/proposals/:id', ({ params }) => {
+      const v = Object.values(validity).find(
+        (x) => x.pending && validityProposal(x.document_id) === params.id,
+      );
+      return v
+        ? HttpResponse.json({
+            id: params.id,
+            kind: 'document_validity',
+            status: 'pending_review',
+            title: `${v.pending!.superseded_by_title} thay thế ${v.title}`,
+            target_service: 'document',
+            target_ref: v.document_id,
+            diff: { supersedes_id: v.document_id, effective_to: v.pending!.valid_to },
+          })
+        : undefined;
+    }),
+    // DocumentListItem with the library row under display; the category is filtered by the
+    // client, the validity review from the proposals above. Other collections' documents are the
+    // collection mock's.
     http.get('*/v1/documents', ({ request }) => {
       const q = new URL(request.url).searchParams;
       const collection = q.get('collection_id');
@@ -1074,10 +1108,7 @@ export function createDocumentHandlers() {
       if (q.get('status') === 'processing') rows = rows.filter((r) => r.processing);
       return page(
         rows.map((r) => ({
-          ...documentApi(r.id, r.title, {
-            ...r,
-            ...(validity[r.id]?.pending ? { validity_pending: true } : {}),
-          }),
+          ...documentApi(r.id, r.title, r),
           status: r.processing ? 'processing' : 'ready',
         })),
       );

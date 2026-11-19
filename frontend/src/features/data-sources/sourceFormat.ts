@@ -8,6 +8,29 @@ import type { IngestionJob, JobStatus, SourceRow } from '../../lib/v1/sources';
  */
 type DotTone = 'success' | 'warning' | 'error' | 'info' | 'idle';
 
+/**
+ * A REST source, edited on "Kết nối API". The api's kind is `rest_api` (SourceCreate); `rest` is the
+ * older catalogue code, still accepted so a cached row or an older gateway keeps the link.
+ */
+export const isRestConnector = (code: string) => code === 'rest_api' || code === 'rest';
+
+/*
+ * "Sau khi lưu" on Kết nối. The api's connection test gives no estimates yet (testFromSource), so
+ * a missing one is left out: "khoảng 0 phút" read as a promise the product cannot keep.
+ */
+export function scanText(
+  test: { table_count: number; scan_minutes: number | null },
+  selected: number,
+): string {
+  const tables = test.table_count > 0 ? `${test.table_count} bảng` : 'các bảng của nguồn';
+  const profile = selected > 0 ? `, lập hồ sơ ${selected} bảng đã chọn` : '';
+  const minutes = test.scan_minutes ? ` (khoảng ${test.scan_minutes} phút)` : '';
+  return `Quét cấu trúc ${tables}${profile}${minutes}`;
+}
+
+export const firstLoadLabel = (hours: number | null) =>
+  hours ? `Trong ${hours} giờ tới` : 'Lần nạp đầu';
+
 /** 12 → "12 giây", 540 → "9 phút", 21600 → "6 giờ". */
 export function formatLag(seconds: number): string {
   if (seconds < 60) return `${Math.round(seconds)} giây`;

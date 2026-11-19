@@ -46,7 +46,7 @@ export interface DocumentRow {
     from_text: string;
     severity: { level: 'high' | 'medium' | 'low'; text: string };
   } | null;
-  /** PROPOSAL: the validity relation the agent proposed waits for the person in charge. */
+  /** The validity relation the agent proposed waits for a decision; set by the validity review. */
   validity_pending?: boolean;
 }
 
@@ -139,8 +139,29 @@ function readLibraryRow(raw: LibraryWire): DocumentRow {
 }
 
 /*
- * GET /v1/documents takes the collection and the status; the category and the validity review
- * are PROPOSAL and are filtered here on the rows that carry them.
+ * The documents whose validity relation waits for a decision (UC-05-05). worker-agent opens each
+ * one as a document_validity proposal, which reaches its reviewers' Cần bạn through an
+ * approve_proposal request (source_ref = the proposal, worker_agent/proposals.py); the proposal's
+ * target_ref is the document. The inbox lists only what the caller may decide.
+ */
+async function pendingValidityDocuments(): Promise<Set<string>> {
+  const requests = await ok(
+    api.GET('/v1/inbox', { params: { query: { ...ALL, kind: 'approve_proposal' } } }),
+  );
+  const proposalIds = requests.items
+    .filter(
+      (r) => (r.context as { proposal_kind?: string } | null)?.proposal_kind === 'document_validity',
+    )
+    .flatMap((r) => (r.source_ref ? [r.source_ref] : []));
+  const proposals = await Promise.all(
+    proposalIds.map((id) => ok(api.GET('/v1/proposals/{id}', { params: { path: { id } } }))),
+  );
+  return new Set(proposals.flatMap((p) => (p.target_ref ? [p.target_ref] : [])));
+}
+
+/*
+ * GET /v1/documents takes the collection and the status; the category is PROPOSAL and is
+ * filtered here on the rows that carry it, the validity review from the open proposals.
  */
 export const listLibrary = async (query: LibraryQuery = {}): Promise<Page<DocumentRow>> => {
   const page = await ok<Page<LibraryWire>>(
@@ -156,7 +177,12 @@ export const listLibrary = async (query: LibraryQuery = {}): Promise<Page<Docume
   );
   let items = page.items.map(readLibraryRow);
   if (query.category) items = items.filter((r) => r.category === query.category);
-  if (query.validity_review) items = items.filter((r) => r.validity_pending);
+  if (query.validity_review) {
+    const pending = await pendingValidityDocuments();
+    items = items
+      .filter((r) => pending.has(r.id))
+      .map((r) => ({ ...r, validity_pending: true }));
+  }
   return { ...page, items };
 };
 

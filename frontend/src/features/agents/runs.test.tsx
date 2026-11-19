@@ -98,6 +98,19 @@ describe('RunDetailPage', () => {
     expect(screen.getByText(/· chạy 12 giây/)).toBeInTheDocument();
   });
 
+  it('leaves the trigger out of the header when the api sends none', async () => {
+    const run = runsFixture().find((r) => r.id === 'run-427')!;
+    server.use(
+      http.get('*/v1/runs/run-427', () =>
+        HttpResponse.json({ ...run, trigger_text: null, steps: undefined }),
+      ),
+    );
+    routeId = 'run-427';
+    wrap(<RunDetailPage />);
+    expect(await screen.findByText(/bắt đầu \d\d:\d\d/)).toBeInTheDocument();
+    expect(screen.queryByText(/null/)).toBeNull();
+  });
+
   it('leads a failed run with the error, what stayed safe, and reruns it', async () => {
     let body: unknown;
     // A2's :retry; answered here so the test sees the body the screen sends.

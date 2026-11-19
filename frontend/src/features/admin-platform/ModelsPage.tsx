@@ -25,11 +25,13 @@ import {
   getGpuLoad,
   getRoutingLog,
   listModelRoutes,
+  MODEL_CHANGE_PENDING,
   rollbackModel,
   runModelEvals,
   type GpuLoad,
   type ModelRoute,
 } from '../../lib/v1/adminPlatform';
+import { Unavailable } from '../../design-system/Unavailable';
 import type { Page } from '../../lib/v1/client';
 import { useV1, useV1Mutation, type V1State } from '../../lib/v1/useV1';
 import { formatHour, formatLatency, pct } from './format';
@@ -123,9 +125,15 @@ export default function ModelsPage() {
               <Button onClick={() => evaluate.run()} disabled={busy}>
                 Chạy bộ đánh giá
               </Button>
-              <Button kind="primary" onClick={() => setAdding(true)}>
-                Thêm mô hình
-              </Button>
+              <Unavailable reason={MODEL_CHANGE_PENDING}>
+                <Button
+                  kind="primary"
+                  disabled={MODEL_CHANGE_PENDING !== null}
+                  onClick={() => setAdding(true)}
+                >
+                  Thêm mô hình
+                </Button>
+              </Unavailable>
             </>
           ) : tab === 'providers' ? (
             <Button kind="primary" onClick={() => setAddingProvider(true)}>
@@ -337,7 +345,8 @@ function ModelRoutesTable({
                     )}
                   </td>
                   <td className="py-da-xs text-right">
-                    {route.previous && (
+                    {/* Rolling back is the same PUT as adding, refused with 501 for now. */}
+                    {route.previous && MODEL_CHANGE_PENDING === null && (
                       <Menu
                         label={`Thao tác với ${route.task}`}
                         items={[

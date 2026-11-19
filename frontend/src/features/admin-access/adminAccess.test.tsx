@@ -16,6 +16,7 @@ import DataSpacesPage from './DataSpacesPage';
 import PermissionComparePage from './PermissionComparePage';
 import PoliciesPage from './PoliciesPage';
 import PrivacyPage from './PrivacyPage';
+import { CreateDsrDialog } from './CreateDsrDialog';
 import UsersPage from './UsersPage';
 
 const navigate = vi.fn();
@@ -68,32 +69,16 @@ describe('UsersPage', () => {
     expect(within(admin).getAllByLabelText('Có')).toHaveLength(1);
   });
 
-  it('invites someone into a Data Space', async () => {
+  it('keeps the directory sync and the invitation, which the api answers 501, disabled', async () => {
     wrap(<UsersPage />);
     await screen.findByText('Đỗ Hải Yến');
-    fireEvent.click(screen.getByRole('button', { name: 'Thêm vào Data Space' }));
-    const dialog = screen.getByRole('dialog', { name: 'Mời người dùng' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Gửi lời mời' }));
-    expect(within(dialog).getByText('Nhập email, chọn vai trò và Data Space.')).toBeInTheDocument();
-
-    fireEvent.change(within(dialog).getByPlaceholderText('ten@congty.vn'), {
-      target: { value: 'minh.pd@congty.vn' },
-    });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Vai trò' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Chuyên viên phân tích' }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Data Space' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Rủi ro tín dụng' }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Gửi lời mời' }));
-
-    expect(await screen.findByText('Đã gửi lời mời tới minh.pd@congty.vn')).toBeInTheDocument();
-    expect(sent).toContainEqual({
-      path: '/admin/invitations',
-      body: expect.objectContaining({
-        email: 'minh.pd@congty.vn',
-        role_id: 'role-analyst',
-        row_scope: null,
-      }),
-    });
+    for (const name of ['Đồng bộ AD', 'Thêm vào Data Space']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(button);
+    }
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(sent.map((s) => s.path)).not.toContain('/admin/directory:sync');
   });
 });
 
@@ -208,8 +193,8 @@ describe('CreateDataSpacePage', () => {
     });
     fireEvent.click(await screen.findByRole('option', { name: 'Phạm Đức Long' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Core banking' }));
-    fireEvent.click(await screen.findByRole('checkbox', { name: /GRP_RISK_HEAD/ }));
-    expect(screen.getByText(/Đồng bộ từ nhóm AD: GRP_RISK_HEAD \(6 người\)/)).toBeInTheDocument();
+    // Groups are mapped org-wide on their own page: the form offers no choice it would drop.
+    expect(screen.queryByRole('checkbox', { name: /GRP_RISK_HEAD/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Tạo Data Space' }));
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('admin', 'DATA_SPACES', 'ds-6'));
@@ -227,6 +212,21 @@ describe('CreateDataSpacePage', () => {
       path: '/data-spaces/ds-6/sources',
       body: { source_ids: ['src-core'] },
     });
+    // The api opens every space as a draft; "Tạo Data Space" moves it on to onboarding.
+    expect(sent).toContainEqual({ path: '/data-spaces/ds-6', body: { status: 'onboarding' } });
+  });
+
+  it('leaves a space saved as a draft as the draft the api made', async () => {
+    wrap(<CreateDataSpacePage />);
+    fireEvent.change(await screen.findByPlaceholderText('Ví dụ: Rủi ro tín dụng'), {
+      target: { value: 'Thẻ tín dụng' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Người phụ trách dữ liệu' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Phạm Đức Long' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu nháp' }));
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('admin', 'DATA_SPACES', 'ds-6'));
+    expect(sent.map((s) => s.path)).toEqual(['/data-spaces']);
   });
 });
 
@@ -462,32 +462,13 @@ describe('PrivacyPage', () => {
     const memory = 'Bộ nhớ agent · agent.memory:Agent Phân tích';
     // The deletable items are selected in an effect after the request renders.
     await waitFor(() => expect(screen.getByRole('checkbox', { name: memory })).toBeChecked());
-    fireEvent.click(screen.getByRole('checkbox', { name: memory }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Xoá đã chọn' }));
-    const dialog = screen.getByRole('alertdialog', { name: 'Duyệt kế hoạch xoá DSR-000014?' });
-    expect(within(dialog).getByText(/Xoá dữ liệu ở 2 nơi/)).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Duyệt và thực hiện' }));
-    expect(
-      await within(dialog).findByText('Ghi căn cứ pháp lý cho mọi nơi được giữ lại.'),
-    ).toBeInTheDocument();
-    fireEvent.change(within(dialog).getByLabelText(`Căn cứ pháp lý giữ ${memory}`), {
-      target: { value: 'đang có tranh chấp' },
-    });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Duyệt và thực hiện' }));
-    await waitFor(() => expect(screen.getByText('Đã xong')).toBeInTheDocument());
-    expect(sent).toContainEqual({
-      path: `/dsr/${DSR}:execute`,
-      body: {
-        items: [
-          { id: item(1), action: 'delete' },
-          { id: item(2), action: 'delete' },
-          { id: item(3), action: 'retain', legal_basis: 'đang có tranh chấp' },
-          { id: item(4), action: 'retain', legal_basis: 'nghĩa vụ lưu trữ báo cáo' },
-          { id: item(5), action: 'provide' },
-        ],
-      },
-    });
+    // The api answers :execute with 501 until the DSR worker exists (governance/dsr.py).
+    const run = screen.getByRole('button', { name: 'Xoá đã chọn' });
+    expect(run).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(run);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(sent.map((s) => s.path)).not.toContain(`/dsr/${DSR}:execute`);
   });
 
   it('offers no rejection, which the api cannot record', async () => {
@@ -498,10 +479,18 @@ describe('PrivacyPage', () => {
     expect(screen.queryByRole('button', { name: 'Từ chối có lý do' })).toBeNull();
   });
 
-  it('creates a request with the day it was received', async () => {
+  it('keeps creating a request, which the api answers 501, disabled', async () => {
     wrap(<PrivacyPage />);
     await screen.findByText('DSR-000014');
-    fireEvent.click(screen.getByRole('button', { name: 'Tạo yêu cầu' }));
+    const create = screen.getByRole('button', { name: 'Tạo yêu cầu' });
+    expect(create).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(create);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('creates a request with the day it was received, once the api takes one', async () => {
+    const onCreated = vi.fn();
+    wrap(<CreateDsrDialog open onClose={() => {}} onCreated={onCreated} />);
     const dialog = screen.getByRole('dialog', { name: 'Tạo yêu cầu của chủ thể dữ liệu' });
     fireEvent.change(within(dialog).getByPlaceholderText(/Số CCCD/), {
       target: { value: '001088012345' },
@@ -512,7 +501,8 @@ describe('PrivacyPage', () => {
     await user.keyboard('20102026');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo yêu cầu' }));
     const created = '0192f1a2-7c3d-7e4f-8a9b-000000000018';
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('admin', 'PRIVACY', created));
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    expect(onCreated.mock.calls[0][0]).toMatchObject({ id: created });
     const body = sent.find((x) => x.path === '/dsr')?.body as Record<string, string>;
     expect(body.request_kind).toBe('access');
     expect(new Date(body.received_at).getDate()).toBe(20);

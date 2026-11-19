@@ -32,6 +32,7 @@ import {
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { ConnectorPicker } from './ConnectorPicker';
+import { firstLoadLabel, scanText } from './sourceFormat';
 import { LinkButton } from '../../components/shell/AppLink';
 
 /*
@@ -852,18 +853,17 @@ function Assign({
       </div>
       <aside className="flex w-[400px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1023px]:w-full max-[1023px]:border-l-0 max-[1023px]:border-t max-[1023px]:pb-da-xl">
         <h2 className="text-foreground da-heading-3">Sau khi lưu</h2>
-        <After label="Ngay bây giờ">
-          Quét cấu trúc {test.table_count} bảng, lập hồ sơ {tables.length} bảng đã chọn (khoảng{' '}
-          {test.scan_minutes} phút)
-        </After>
+        <After label="Ngay bây giờ">{scanText(test, tables.length)}</After>
         {mode === 'ingest' && (
           <>
-            <After label={`Trong ${test.initial_load_hours} giờ tới`}>
-              Nạp lần đầu khoảng{' '}
-              {rows >= 1_000_000
-                ? `${formatNumber(Math.round(rows / 1_000_000))} triệu`
-                : formatNumber(rows)}{' '}
-              dòng
+            <After label={firstLoadLabel(test.initial_load_hours)}>
+              {rows === 0
+                ? 'Nạp lần đầu toàn bộ bảng đã chọn'
+                : `Nạp lần đầu khoảng ${
+                    rows >= 1_000_000
+                      ? `${formatNumber(Math.round(rows / 1_000_000))} triệu`
+                      : formatNumber(rows)
+                  } dòng`}
             </After>
             <After label="Từ lần sau">Chỉ nạp phần thay đổi theo job đã đặt</After>
           </>

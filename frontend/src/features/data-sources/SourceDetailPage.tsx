@@ -10,7 +10,13 @@ import { useToast } from '../../design-system/Toast';
 import { formatNumber, formatTime } from '../../lib/formatVN';
 import { getSource, testSource, type SourceDetail } from '../../lib/v1/sources';
 import { useV1, useV1Mutation } from '../../lib/v1/useV1';
-import { dataSpacesText, freshnessText, modeLabel, sourceTone } from './sourceFormat';
+import {
+  dataSpacesText,
+  freshnessText,
+  isRestConnector,
+  modeLabel,
+  sourceTone,
+} from './sourceFormat';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { LinkButton } from '../../components/shell/AppLink';
 
@@ -78,7 +84,7 @@ function SourceView({ source }: { source: SourceDetail }) {
         description={`${source.connector} · ${source.endpoint} · ${modeLabel(source)} · dữ liệu mới nhất ${freshnessText(source)} · ${dataSpacesText(source)}`}
         actions={
           <>
-            {source.connector === 'rest' && (
+            {isRestConnector(source.connector) && (
               <LinkButton area="data" page="CONNECT_API" id={source.id} kind="ghost">
                 Sửa kết nối API
               </LinkButton>

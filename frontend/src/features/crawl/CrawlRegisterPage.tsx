@@ -36,6 +36,29 @@ const SCHEDULES = [
 const DEPTHS = [1, 2, 3].map((d) => ({ value: String(d), label: `${d} liên kết` }));
 const TRUST_LEVEL = 0.7;
 
+/*
+ * Start pages typed in, one per line: the way to register a source while the agent's search
+ * (:suggest) answers 501, or one it did not find. Nothing is skipped on the way: the crawler reads
+ * robots.txt before each fetch and a source runs only once its legal review is approved (BR-174).
+ */
+function readStartPages(text: string): { urls: string[]; domains: string[]; invalid: string[] } {
+  const urls: string[] = [];
+  const invalid: string[] = [];
+  for (const line of text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)) {
+    try {
+      const url = new URL(line);
+      if (url.protocol === 'http:' || url.protocol === 'https:') urls.push(url.href);
+      else invalid.push(line);
+    } catch {
+      invalid.push(line);
+    }
+  }
+  return { urls, domains: [...new Set(urls.map((u) => new URL(u).hostname))], invalid };
+}
+
 export default function CrawlRegisterPage() {
   const { navigate } = useAppState();
   const toast = useToast();
@@ -48,6 +71,7 @@ export default function CrawlRegisterPage() {
   const [busy, setBusy] = useState<'suggest' | 'save' | null>(null);
   const [error, setError] = useState<string>();
   const [progress, setProgress] = useState<SuggestProgress>();
+  const [typed, setTyped] = useState('');
   // The proposal is an agent run polled until it ends; leaving the screen stops the polling.
   const searching = useRef<AbortController | null>(null);
   useEffect(() => () => searching.current?.abort(), []);
@@ -84,7 +108,14 @@ export default function CrawlRegisterPage() {
 
   const chosen = suggestion?.sources.filter((s) => picked.has(s.key)) ?? [];
   const more = suggestion?.more && picked.has('more') ? suggestion.more : null;
-  const domainCount = chosen.length + (more?.allowed ?? 0);
+  const start = readStartPages(typed);
+  const seedUrls = [...chosen.map((s) => s.seed_url), ...(more?.seed_urls ?? []), ...start.urls];
+  const domains = [...chosen.map((s) => s.domain), ...(more?.domains ?? []), ...start.domains];
+  // `more` counts its allowed domains without listing them all; typed ones add what is new.
+  const domainCount =
+    chosen.length +
+    (more?.allowed ?? 0) +
+    start.domains.filter((d) => !chosen.some((s) => s.domain === d)).length;
   const forbidden = suggestion?.sources.filter((s) => s.robots === 'forbidden') ?? [];
   const sources = useTableView(suggestion?.sources ?? [], {
     search: (s) => `${s.label} ${s.seed_url} ${s.format_label}`,
@@ -105,19 +136,23 @@ export default function CrawlRegisterPage() {
   });
 
   const save = async () => {
-    if (!suggestion || domainCount === 0) {
-      setError('Tìm nguồn và chọn ít nhất một nguồn trước khi lưu.');
+    if (start.invalid.length > 0) {
+      setError(`Địa chỉ không hợp lệ: ${start.invalid.join(', ')}`);
+      return;
+    }
+    if (seedUrls.length === 0) {
+      setError('Chọn nguồn agent đề xuất hoặc nhập ít nhất một trang bắt đầu trước khi lưu.');
       return;
     }
     setBusy('save');
     setError(undefined);
     try {
       const { id } = await createCrawlSource({
-        name: suggestion.suggested_name,
+        name: suggestion?.suggested_name || goal.trim().slice(0, 120) || start.domains[0],
         goal: goal.trim(),
         kind: 'web_listing',
-        seed_urls: [...chosen.map((s) => s.seed_url), ...(more?.seed_urls ?? [])],
-        allowed_domains: [...chosen.map((s) => s.domain), ...(more?.domains ?? [])],
+        seed_urls: seedUrls,
+        allowed_domains: [...new Set(domains)],
         max_depth: Number(depth),
         schedule_cron: schedule,
         rate_limit_rps: 1,
@@ -270,12 +305,26 @@ export default function CrawlRegisterPage() {
               ))}
             </Card>
           )}
+          <Card title={suggestion ? 'Thêm trang bắt đầu' : '2 · Trang bắt đầu'}>
+            <textarea
+              aria-label="Trang bắt đầu"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              rows={3}
+              placeholder="Mỗi dòng một địa chỉ, ví dụ https://nhacungcap.vn/bang-gia"
+              className="rounded-sm border border-border-strong bg-card px-da-lg py-[10px] text-foreground da-body-small"
+            />
+            <p className="text-muted-foreground da-caption">
+              Crawler đọc robots.txt trước mỗi lần lấy trang; nguồn chỉ chạy sau khi được duyệt pháp
+              lý.
+            </p>
+          </Card>
         </div>
         <div className="flex w-[380px] shrink-0 flex-col gap-da-xl max-[1279px]:w-full">
           <Card title="3 · Phạm vi, lịch, tốc độ">
             <dl className="flex flex-col gap-da-lg da-body-small">
               <Row label="Miền cho phép">
-                {suggestion ? `${domainCount} miền của nguồn đã chọn` : 'Theo nguồn đã chọn'}
+                {domainCount > 0 ? `${domainCount} miền của nguồn đã chọn` : 'Theo nguồn đã chọn'}
               </Row>
               <Row label="Độ sâu tối đa">
                 <Select label="Độ sâu tối đa" value={depth} onChange={setDepth} options={DEPTHS} />

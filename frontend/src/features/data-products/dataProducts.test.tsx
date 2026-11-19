@@ -4,6 +4,7 @@
  * and the quality rules with a new rule.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { http } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -108,6 +109,14 @@ describe('ImportCatalogDialog', () => {
 
 describe('DataMartPage', () => {
   it('draws the first mart and sends a breaking change for approval', async () => {
+    let contract: unknown;
+    server.use(
+      // Read the contract the screen commits to, then let the mock create the product.
+      http.post('*/v1/data-products', async ({ request }) => {
+        contract = ((await request.clone().json()) as { contract: unknown }).contract;
+        return undefined;
+      }),
+    );
     wrap(<DataMartPage />);
     expect(await screen.findByRole('heading', { name: 'mart.credit_risk' })).toBeInTheDocument();
     expect(screen.getByText('fact_loan_daily')).toBeInTheDocument();
@@ -117,6 +126,17 @@ describe('DataMartPage', () => {
     expect(
       await screen.findByText('Đã gửi chứng nhận credit_risk_retail v2.0 · chờ chủ sở hữu'),
     ).toBeInTheDocument();
+    // The mart's own keys and measures, typed from the fact table: no made-up columns.
+    expect(contract).toEqual({
+      columns: [
+        { name: 'date_key', type: 'integer' },
+        { name: 'branch_key', type: 'integer' },
+        { name: 'product_key', type: 'integer' },
+        { name: 'customer_key', type: 'integer' },
+        { name: 'outstanding_amt', type: 'decimal' },
+        { name: 'provision_amt', type: 'decimal' },
+      ],
+    });
 
     fireEvent.click(screen.getByRole('link', { name: 'Kiểm tra' }));
     expect(navigate).toHaveBeenCalledWith('data', 'QUALITY');
