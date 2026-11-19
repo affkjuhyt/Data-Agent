@@ -733,6 +733,22 @@ class _Counters:
         return self.counts[key]
 
 
+async def test_ae_03_the_audience_is_the_askers_never_the_clients(world: World, seed: Seed) -> None:
+    async with api_for(world) as api:
+        asked = await ask(api, world)
+        reviewed = await ask(api, world, who="reviewer")
+        refused = await api.post(
+            "/v1/questions",
+            headers=as_(world, "asker"),
+            json={"text": "Doanh thu tháng 10?", "audience": "analyst"},
+        )
+    # Only asks: one clarification round; also reads the detail: an analyst's three.
+    assert events(seed, "qa", asked["id"])[0][2]["audience"] == "executive"
+    assert events(seed, "qa", reviewed["id"])[0][2]["audience"] == "analyst"
+    assert refused.status_code == 422, refused.text
+    assert sql(seed, "SELECT 1 FROM qa.question WHERE text = %s", "Doanh thu tháng 10?") == []
+
+
 async def test_a_question_that_overrides_the_instructions_is_refused_unstored(
     world: World, seed: Seed
 ) -> None:

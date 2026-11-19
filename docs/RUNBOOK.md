@@ -210,6 +210,16 @@ token, so sending your own identity headers is pointless.
 
 `make bench-e2e` breaks one real turn down per stage (`model/bench/e2e.py`).
 
+**Which engine answers** (AE-01, `backend/services/worker_agent/router.py`). A question the rule
+pass places on one certified metric, an ambiguous one and one it places nowhere go to the governed
+path; the dynamic agent gets "why", two metrics the question joins, a metric with the documents, a
+documents question and a turn asked to go deep. `ASK_ENGINE` in `worker-agent-env` sets the policy:
+`router` (default), `agentic` (the agent first for every question, as before 19/11/2026: the
+rollback) or `governed` (never the agent). Every route is counted in
+`dataagent_ask_route_total{path,reason}` on worker-agent's `/metrics`. The api adds the asker's
+`audience` to `question.received` (AE-03): `executive` when they only ask, `analyst` when they also
+read the detail, steward the data or build agents; it sets how often the agent may ask back.
+
 **Query result cache.** `worker-agent` reuses a query result for `QUERY_CACHE_TTL_S` seconds
 (default 600; `0` turns it off) when the Data Space, the source, the executed SQL (after row
 policies and scopes), the column and mask policies applied (and none of them changed since) and the

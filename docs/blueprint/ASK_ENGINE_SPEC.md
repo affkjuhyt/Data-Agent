@@ -121,7 +121,10 @@ Retry/idempotency: `decide` thuần, không I/O ngoài DB đọc; handler `quest
 (giữ như `questions.py:22`). Timeout: toàn lượt = `budget.seconds` (agentic) hoặc `GOVERNED_TIMEOUT_S=30`.
 
 Security: `audience` đọc từ `event.payload.audience`, **api** đặt từ vai của người hỏi trong Data Space (AC01/AC02 →
-`executive`, AC03/AC04 → `analyst`); client không được gửi `audience` (giữ nguyên tắc R0-5). `agent_allowed` đọc
+`executive`, AC03/AC04 → `analyst`); client không được gửi `audience` (giữ nguyên tắc R0-5). **Đã làm (AE-03,
+19/11/2026):** suy từ quyền, không từ mã vai (một tổ chức thêm vai của mình): có `view_detail`, `steward`,
+`prepare_data`, `admin_data`, `run_agent` hoặc `create_agent` → `analyst`, chỉ hỏi → `executive`
+(`api/modules/qa/questions.audience_of`); `QuestionCreate` cấm trường lạ nên body có `audience` nhận 422. `agent_allowed` đọc
 `org.data_space.policy.agent_enabled` (cột có sẵn dạng jsonb `ingest_profile`? không — dùng `agent_def.policy`; xem đề xuất
 §13).
 
