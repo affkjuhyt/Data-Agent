@@ -14827,6 +14827,61 @@
      "fk": null,
      "logic_ref": null,
      "pii": false
+    },
+    {
+     "name": "expected_action",
+     "type": "text",
+     "not_null": true,
+     "default": "'answer'",
+     "unique": false,
+     "comment": "Hành động đúng của câu hỏi (EV-08): answer, clarify, refuse_missing_source, refuse_permission, handover, flag_conflict; sai hành động là trượt dù con số đúng",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "failure_category",
+     "type": "text",
+     "not_null": true,
+     "default": "'none'",
+     "unique": false,
+     "comment": "Lỗ hổng ca âm nhắm tới: none, ambiguous, missing_source, wrong_schema, conflicting_metrics, unavailable_document, corrupted_file, duplicates, schema_drift, permission_violation, injection, stale_data, partial_ingestion",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "rubric",
+     "type": "text",
+     "not_null": true,
+     "default": "'exact'",
+     "unique": false,
+     "comment": "Cách chấm: exact, set_equality, contains_all, numeric_tolerance(pct), judge(prompt_id)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "verification_status",
+     "type": "text",
+     "not_null": true,
+     "default": "'draft'",
+     "unique": false,
+     "comment": "draft, sql_run_on_snapshot (SQL vàng đã chạy trên snapshot), human_verified (hai người giải mù khớp), disputed",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "snapshot_ref",
+     "type": "jsonb",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Snapshot đáp án dựa vào, ví dụ {\"dataset\":\"tlc\",\"snapshot\":\"TLC-2024Q1\",\"sources_sha256\":\"…\"}; trống với bộ không gắn snapshot",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
     }
    ],
    "common_columns": [
@@ -14853,6 +14908,22 @@
     {
      "kind": "check",
      "sql": "CHECK (status IN ('active','needs_update','retired'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (expected_action IN ('answer','clarify','refuse_missing_source','refuse_permission','handover','flag_conflict'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (failure_category IN ('none','ambiguous','missing_source','wrong_schema','conflicting_metrics','unavailable_document','corrupted_file','duplicates','schema_drift','permission_violation','injection','stale_data','partial_ingestion'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (rubric ~ '^(exact|set_equality|contains_all|numeric_tolerance[(][0-9]+([.][0-9]+)?[)]|judge[(][A-Za-z0-9_.-]+[)])$')"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (verification_status IN ('draft','sql_run_on_snapshot','human_verified','disputed'))"
     },
     {
      "kind": "fk",

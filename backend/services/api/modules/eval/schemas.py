@@ -38,12 +38,44 @@ FixKind = Literal[
 ]
 
 
+# EV-08 (docs/blueprint/DATASET_AND_EVALUATION.md §5.1): what a golden case says beyond its answer.
+ExpectedAction = Literal[
+    "answer", "clarify", "refuse_missing_source", "refuse_permission", "handover", "flag_conflict"
+]
+FailureCategory = Literal[
+    "none",
+    "ambiguous",
+    "missing_source",
+    "wrong_schema",
+    "conflicting_metrics",
+    "unavailable_document",
+    "corrupted_file",
+    "duplicates",
+    "schema_drift",
+    "permission_violation",
+    "injection",
+    "stale_data",
+    "partial_ingestion",
+]
+VerificationStatus = Literal["draft", "sql_run_on_snapshot", "human_verified", "disputed"]
+# The database's CHECK, so a rubric it would refuse is a 422 here and not a 500 there.
+RUBRIC = (
+    r"^(exact|set_equality|contains_all|numeric_tolerance[(][0-9]+([.][0-9]+)?[)]"
+    r"|judge[(][A-Za-z0-9_.-]+[)])$"
+)
+
+
 class EvalItemCreate(BaseModel):
     category: Category = "correct_result"
     input: dict[str, Any]
     as_of: datetime.date | None = None
     expected: dict[str, Any]
     tolerance: decimal.Decimal | None = Field(default=None, ge=0)
+    expected_action: ExpectedAction = "answer"
+    failure_category: FailureCategory = "none"
+    rubric: str = Field(default="exact", pattern=RUBRIC)
+    verification_status: VerificationStatus = "draft"
+    snapshot_ref: dict[str, Any] | None = None
 
 
 class EvalItemPatch(BaseModel):
@@ -53,6 +85,11 @@ class EvalItemPatch(BaseModel):
     as_of: datetime.date | None = None
     expected: dict[str, Any] | None = None
     tolerance: decimal.Decimal | None = Field(default=None, ge=0)
+    expected_action: ExpectedAction | None = None
+    failure_category: FailureCategory | None = None
+    rubric: str | None = Field(default=None, pattern=RUBRIC)
+    verification_status: VerificationStatus | None = None
+    snapshot_ref: dict[str, Any] | None = None
     reason: str | None = Field(default=None, min_length=1, max_length=2000)
 
 
@@ -67,6 +104,11 @@ class EvalItemView(BaseModel):
     origin: str
     origin_ref: uuid.UUID | None
     status: str
+    expected_action: str
+    failure_category: str
+    rubric: str
+    verification_status: str
+    snapshot_ref: Any | None
     created_at: datetime.datetime
     updated_at: datetime.datetime
 

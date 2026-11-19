@@ -16717,10 +16717,61 @@
       "title": "Expected",
       "type": "object"
      },
+     "expected_action": {
+      "default": "answer",
+      "enum": [
+       "answer",
+       "clarify",
+       "refuse_missing_source",
+       "refuse_permission",
+       "handover",
+       "flag_conflict"
+      ],
+      "title": "Expected Action",
+      "type": "string"
+     },
+     "failure_category": {
+      "default": "none",
+      "enum": [
+       "none",
+       "ambiguous",
+       "missing_source",
+       "wrong_schema",
+       "conflicting_metrics",
+       "unavailable_document",
+       "corrupted_file",
+       "duplicates",
+       "schema_drift",
+       "permission_violation",
+       "injection",
+       "stale_data",
+       "partial_ingestion"
+      ],
+      "title": "Failure Category",
+      "type": "string"
+     },
      "input": {
       "additionalProperties": true,
       "title": "Input",
       "type": "object"
+     },
+     "rubric": {
+      "default": "exact",
+      "pattern": "^(exact|set_equality|contains_all|numeric_tolerance[(][0-9]+([.][0-9]+)?[)]|judge[(][A-Za-z0-9_.-]+[)])$",
+      "title": "Rubric",
+      "type": "string"
+     },
+     "snapshot_ref": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Snapshot Ref"
      },
      "tolerance": {
       "anyOf": [
@@ -16737,6 +16788,17 @@
        }
       ],
       "title": "Tolerance"
+     },
+     "verification_status": {
+      "default": "draft",
+      "enum": [
+       "draft",
+       "sql_run_on_snapshot",
+       "human_verified",
+       "disputed"
+      ],
+      "title": "Verification Status",
+      "type": "string"
      }
     },
     "required": [
@@ -16773,6 +16835,51 @@
       ],
       "title": "Expected"
      },
+     "expected_action": {
+      "anyOf": [
+       {
+        "enum": [
+         "answer",
+         "clarify",
+         "refuse_missing_source",
+         "refuse_permission",
+         "handover",
+         "flag_conflict"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Expected Action"
+     },
+     "failure_category": {
+      "anyOf": [
+       {
+        "enum": [
+         "none",
+         "ambiguous",
+         "missing_source",
+         "wrong_schema",
+         "conflicting_metrics",
+         "unavailable_document",
+         "corrupted_file",
+         "duplicates",
+         "schema_drift",
+         "permission_violation",
+         "injection",
+         "stale_data",
+         "partial_ingestion"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failure Category"
+     },
      "input": {
       "anyOf": [
        {
@@ -16798,6 +16905,30 @@
       ],
       "title": "Reason"
      },
+     "rubric": {
+      "anyOf": [
+       {
+        "pattern": "^(exact|set_equality|contains_all|numeric_tolerance[(][0-9]+([.][0-9]+)?[)]|judge[(][A-Za-z0-9_.-]+[)])$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rubric"
+     },
+     "snapshot_ref": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Snapshot Ref"
+     },
      "tolerance": {
       "anyOf": [
        {
@@ -16813,6 +16944,23 @@
        }
       ],
       "title": "Tolerance"
+     },
+     "verification_status": {
+      "anyOf": [
+       {
+        "enum": [
+         "draft",
+         "sql_run_on_snapshot",
+         "human_verified",
+         "disputed"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Verification Status"
      }
     },
     "title": "EvalItemPatch",
@@ -16849,6 +16997,14 @@
      "expected": {
       "title": "Expected"
      },
+     "expected_action": {
+      "title": "Expected Action",
+      "type": "string"
+     },
+     "failure_category": {
+      "title": "Failure Category",
+      "type": "string"
+     },
      "id": {
       "format": "uuid",
       "title": "Id",
@@ -16873,6 +17029,19 @@
       ],
       "title": "Origin Ref"
      },
+     "rubric": {
+      "title": "Rubric",
+      "type": "string"
+     },
+     "snapshot_ref": {
+      "anyOf": [
+       {},
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Snapshot Ref"
+     },
      "status": {
       "title": "Status",
       "type": "string"
@@ -16896,6 +17065,10 @@
       "format": "date-time",
       "title": "Updated At",
       "type": "string"
+     },
+     "verification_status": {
+      "title": "Verification Status",
+      "type": "string"
      }
     },
     "required": [
@@ -16909,6 +17082,11 @@
      "origin",
      "origin_ref",
      "status",
+     "expected_action",
+     "failure_category",
+     "rubric",
+     "verification_status",
+     "snapshot_ref",
      "created_at",
      "updated_at"
     ],
@@ -93442,7 +93620,7 @@
   },
   "/v1/knowledge-pages:from-answer": {
    "post": {
-    "description": "BR-167 checks, the target page, then a saveback run Agent Tri thức executes: it turns the\nnumbers into placeholders and the citations into claims, cites the answer as a source and\nsubmits the version for review (UC-07-12 steps 2-4). Answered 202 with the run.",
+    "description": "BR-167 checks; the saveback run Agent Tri thức would execute (UC-07-12 steps 2-4: numbers to\nplaceholders, citations to claims, a version for review) waits on the page composer, so an\nanswer that passes them is refused with 501 not_available, nothing written.",
     "operationId": "saveAnswerAsKnowledge",
     "requestBody": {
      "content": {

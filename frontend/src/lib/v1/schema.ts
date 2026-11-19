@@ -4083,9 +4083,9 @@ export interface paths {
         put?: never;
         /**
          * Lưu câu trả lời thành trang hoặc đoạn, qua duyệt
-         * @description BR-167 checks, the target page, then a saveback run Agent Tri thức executes: it turns the
-         *     numbers into placeholders and the citations into claims, cites the answer as a source and
-         *     submits the version for review (UC-07-12 steps 2-4). Answered 202 with the run.
+         * @description BR-167 checks; the saveback run Agent Tri thức would execute (UC-07-12 steps 2-4: numbers to
+         *     placeholders, citations to claims, a version for review) waits on the page composer, so an
+         *     answer that passes them is refused with 501 not_available, nothing written.
          */
         post: operations["saveAnswerAsKnowledge"];
         delete?: never;
@@ -12569,12 +12569,39 @@ export interface components {
             expected: {
                 [key: string]: unknown;
             };
+            /**
+             * Expected Action
+             * @default answer
+             * @enum {string}
+             */
+            expected_action?: "answer" | "clarify" | "refuse_missing_source" | "refuse_permission" | "handover" | "flag_conflict";
+            /**
+             * Failure Category
+             * @default none
+             * @enum {string}
+             */
+            failure_category?: "none" | "ambiguous" | "missing_source" | "wrong_schema" | "conflicting_metrics" | "unavailable_document" | "corrupted_file" | "duplicates" | "schema_drift" | "permission_violation" | "injection" | "stale_data" | "partial_ingestion";
             /** Input */
             input: {
                 [key: string]: unknown;
             };
+            /**
+             * Rubric
+             * @default exact
+             */
+            rubric?: string;
+            /** Snapshot Ref */
+            snapshot_ref?: {
+                [key: string]: unknown;
+            } | null;
             /** Tolerance */
             tolerance?: number | string | null;
+            /**
+             * Verification Status
+             * @default draft
+             * @enum {string}
+             */
+            verification_status?: "draft" | "sql_run_on_snapshot" | "human_verified" | "disputed";
         };
         /**
          * EvalItemPatch
@@ -12587,14 +12614,26 @@ export interface components {
             expected?: {
                 [key: string]: unknown;
             } | null;
+            /** Expected Action */
+            expected_action?: ("answer" | "clarify" | "refuse_missing_source" | "refuse_permission" | "handover" | "flag_conflict") | null;
+            /** Failure Category */
+            failure_category?: ("none" | "ambiguous" | "missing_source" | "wrong_schema" | "conflicting_metrics" | "unavailable_document" | "corrupted_file" | "duplicates" | "schema_drift" | "permission_violation" | "injection" | "stale_data" | "partial_ingestion") | null;
             /** Input */
             input?: {
                 [key: string]: unknown;
             } | null;
             /** Reason */
             reason?: string | null;
+            /** Rubric */
+            rubric?: string | null;
+            /** Snapshot Ref */
+            snapshot_ref?: {
+                [key: string]: unknown;
+            } | null;
             /** Tolerance */
             tolerance?: number | string | null;
+            /** Verification Status */
+            verification_status?: ("draft" | "sql_run_on_snapshot" | "human_verified" | "disputed") | null;
         };
         /** EvalItemView */
         EvalItemView: {
@@ -12614,6 +12653,10 @@ export interface components {
             eval_set_id: string;
             /** Expected */
             expected: unknown;
+            /** Expected Action */
+            expected_action: string;
+            /** Failure Category */
+            failure_category: string;
             /**
              * Id
              * Format: uuid
@@ -12625,6 +12668,10 @@ export interface components {
             origin: string;
             /** Origin Ref */
             origin_ref: string | null;
+            /** Rubric */
+            rubric: string;
+            /** Snapshot Ref */
+            snapshot_ref: unknown | null;
             /** Status */
             status: string;
             /** Tolerance */
@@ -12634,6 +12681,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Verification Status */
+            verification_status: string;
         };
         /** EvalResultView */
         EvalResultView: {

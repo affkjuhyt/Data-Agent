@@ -3848,12 +3848,22 @@
     "input": true,
     "as_of": false,
     "expected": true,
-    "tolerance": false
+    "tolerance": false,
+    "expected_action": false,
+    "failure_category": false,
+    "rubric": false,
+    "verification_status": false,
+    "snapshot_ref": false
    },
    "query": [],
-   "returns": "EvalItem",
-   "errors": [],
-   "request_text": "category, input*, as_of, expected*, tolerance"
+   "returns": "EvalItem (EV-08: hành động đúng, loại lỗ hổng, cách chấm, trạng thái xác minh, snapshot)",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "category, input*, as_of, expected*, tolerance, expected_action, failure_category, rubric, verification_status, snapshot_ref"
   },
   "PATCH /v1/eval-items/{id}": {
    "group": "Cần bạn và đánh giá",
@@ -3865,10 +3875,15 @@
     "as_of": false,
     "expected": false,
     "tolerance": false,
+    "expected_action": false,
+    "failure_category": false,
+    "rubric": false,
+    "verification_status": false,
+    "snapshot_ref": false,
     "reason": false
    },
    "query": [],
-   "returns": "EvalItem. Đổi đáp án (expected, as_of, tolerance) cần reason và phát eval_item.answer_changed",
+   "returns": "EvalItem. Đổi đáp án (input, expected, as_of, tolerance, expected_action, failure_category, rubric, snapshot_ref) cần reason và phát eval_item.answer_changed; đổi verification_status thì không",
    "errors": [
     [
      404,
@@ -3879,7 +3894,7 @@
      "validation_failed"
     ]
    ],
-   "request_text": "input, as_of, expected, tolerance, reason"
+   "request_text": "input, as_of, expected, tolerance, expected_action, failure_category, rubric, verification_status, snapshot_ref, reason"
   },
   "POST /v1/eval-sets/{id}/runs": {
    "group": "Cần bạn và đánh giá",

@@ -347,7 +347,21 @@ async def update_eval_item(
         changes = body.model_dump(exclude_unset=True, exclude={"reason"})
         # The input is half of the contract: a new question under an old expected answer changes
         # what the eval proves as much as a new answer does, so it needs a reason and the event too.
-        answer_changed = any(key in changes for key in ("input", "expected", "as_of", "tolerance"))
+        # What to do with the question, the gap it probes, how it is scored and on which snapshot
+        # are the answer's contract as much as the number (EV-08); a verification status is not.
+        answer_changed = any(
+            key in changes
+            for key in (
+                "input",
+                "expected",
+                "as_of",
+                "tolerance",
+                "expected_action",
+                "failure_category",
+                "rubric",
+                "snapshot_ref",
+            )
+        )
         if answer_changed and not body.reason:
             raise Problem(422, "validation_failed", "A reason is required when changing an answer.")
         for key, value in changes.items():

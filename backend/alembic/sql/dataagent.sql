@@ -3151,6 +3151,11 @@ CREATE TABLE eval.eval_item (
   origin text NOT NULL DEFAULT 'manual',
   origin_ref uuid,
   status text NOT NULL DEFAULT 'active',
+  expected_action text NOT NULL DEFAULT 'answer',
+  failure_category text NOT NULL DEFAULT 'none',
+  rubric text NOT NULL DEFAULT 'exact',
+  verification_status text NOT NULL DEFAULT 'draft',
+  snapshot_ref jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -3159,7 +3164,11 @@ CREATE TABLE eval.eval_item (
   CHECK (category IN ('correct_result','ask_at_right_time','respect_permission','correct_format','refusal')),
   CHECK (origin IN ('manual','feedback','real_run','hitl_rule','generated','error_book')),
   CHECK (origin <> 'error_book' OR origin_ref IS NOT NULL),
-  CHECK (status IN ('active','needs_update','retired'))
+  CHECK (status IN ('active','needs_update','retired')),
+  CHECK (expected_action IN ('answer','clarify','refuse_missing_source','refuse_permission','handover','flag_conflict')),
+  CHECK (failure_category IN ('none','ambiguous','missing_source','wrong_schema','conflicting_metrics','unavailable_document','corrupted_file','duplicates','schema_drift','permission_violation','injection','stale_data','partial_ingestion')),
+  CHECK (rubric ~ '^(exact|set_equality|contains_all|numeric_tolerance[(][0-9]+([.][0-9]+)?[)]|judge[(][A-Za-z0-9_.-]+[)])$'),
+  CHECK (verification_status IN ('draft','sql_run_on_snapshot','human_verified','disputed'))
 );
 COMMENT ON TABLE eval.eval_item IS 'Một mục đánh giá kèm đáp án: câu hỏi chuẩn, ca kiểm thử kỹ năng, tình huống thử agent. Use case: UC-01-05, UC-03-03, UC-03-04, UC-07-06, UC-13-04.';
 COMMENT ON COLUMN eval.eval_item.eval_set_id IS 'FK eval_set';
@@ -3169,6 +3178,11 @@ COMMENT ON COLUMN eval.eval_item.expected IS 'Cách hiểu, con số kèm dung s
 COMMENT ON COLUMN eval.eval_item.origin IS 'manual, feedback, real_run, hitl_rule, generated, error_book (ca hồi quy từ Error Book, origin_ref = eval.error_book_entry.id, UC-07-14)';
 COMMENT ON COLUMN eval.eval_item.origin_ref IS 'Ví dụ qa.feedback.id';
 COMMENT ON COLUMN eval.eval_item.status IS 'active, needs_update, retired';
+COMMENT ON COLUMN eval.eval_item.expected_action IS 'Hành động đúng của câu hỏi (EV-08): answer, clarify, refuse_missing_source, refuse_permission, handover, flag_conflict; sai hành động là trượt dù con số đúng';
+COMMENT ON COLUMN eval.eval_item.failure_category IS 'Lỗ hổng ca âm nhắm tới: none, ambiguous, missing_source, wrong_schema, conflicting_metrics, unavailable_document, corrupted_file, duplicates, schema_drift, permission_violation, injection, stale_data, partial_ingestion';
+COMMENT ON COLUMN eval.eval_item.rubric IS 'Cách chấm: exact, set_equality, contains_all, numeric_tolerance(pct), judge(prompt_id)';
+COMMENT ON COLUMN eval.eval_item.verification_status IS 'draft, sql_run_on_snapshot (SQL vàng đã chạy trên snapshot), human_verified (hai người giải mù khớp), disputed';
+COMMENT ON COLUMN eval.eval_item.snapshot_ref IS 'Snapshot đáp án dựa vào, ví dụ {"dataset":"tlc","snapshot":"TLC-2024Q1","sources_sha256":"…"}; trống với bộ không gắn snapshot';
 
 CREATE TABLE eval.eval_run (
   id uuid NOT NULL,

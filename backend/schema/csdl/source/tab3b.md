@@ -1704,8 +1704,13 @@ Một mục đánh giá kèm đáp án: câu hỏi chuẩn, ca kiểm thử kỹ
 | origin | text, bắt buộc, mặc định 'manual' | manual, feedback, real\_run, hitl\_rule, generated, error\_book (ca hồi quy từ Error Book, origin\_ref = eval.error\_book\_entry.id, UC-07-14) |
 | origin\_ref | uuid | Ví dụ qa.feedback.id |
 | status | text, bắt buộc, mặc định 'active' | active, needs\_update, retired |
+| expected\_action | text, bắt buộc, mặc định 'answer' | Hành động đúng của câu hỏi (EV-08): answer, clarify, refuse\_missing\_source, refuse\_permission, handover, flag\_conflict; sai hành động là trượt dù con số đúng |
+| failure\_category | text, bắt buộc, mặc định 'none' | Lỗ hổng ca âm nhắm tới: none, ambiguous, missing\_source, wrong\_schema, conflicting\_metrics, unavailable\_document, corrupted\_file, duplicates, schema\_drift, permission\_violation, injection, stale\_data, partial\_ingestion |
+| rubric | text, bắt buộc, mặc định 'exact' | Cách chấm: exact, set\_equality, contains\_all, numeric\_tolerance(pct), judge(prompt\_id) |
+| verification\_status | text, bắt buộc, mặc định 'draft' | draft, sql\_run\_on\_snapshot (SQL vàng đã chạy trên snapshot), human\_verified (hai người giải mù khớp), disputed |
+| snapshot\_ref | jsonb | Snapshot đáp án dựa vào, ví dụ {"dataset":"tlc","snapshot":"TLC-2024Q1","sources\_sha256":"…"}; trống với bộ không gắn snapshot |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (category IN ('correct\_result','ask\_at\_right\_time','respect\_permission','correct\_format','refusal')); CHECK (origin IN ('manual','feedback','real\_run','hitl\_rule','generated','error\_book')); CHECK (origin <> 'error\_book' OR origin\_ref IS NOT NULL); CHECK (status IN ('active','needs\_update','retired')); FOREIGN KEY (eval\_set\_id) REFERENCES eval.eval\_set(id).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (category IN ('correct\_result','ask\_at\_right\_time','respect\_permission','correct\_format','refusal')); CHECK (origin IN ('manual','feedback','real\_run','hitl\_rule','generated','error\_book')); CHECK (origin <> 'error\_book' OR origin\_ref IS NOT NULL); CHECK (status IN ('active','needs\_update','retired')); CHECK (expected\_action IN ('answer','clarify','refuse\_missing\_source','refuse\_permission','handover','flag\_conflict')); CHECK (failure\_category IN ('none','ambiguous','missing\_source','wrong\_schema','conflicting\_metrics','unavailable\_document','corrupted\_file','duplicates','schema\_drift','permission\_violation','injection','stale\_data','partial\_ingestion')); CHECK (rubric ~ '^(exact|set\_equality|contains\_all|numeric\_tolerance[(][0-9]+([.][0-9]+)?[)]|judge[(][A-Za-z0-9\_.-]+[)])$'); CHECK (verification\_status IN ('draft','sql\_run\_on\_snapshot','human\_verified','disputed')); FOREIGN KEY (eval\_set\_id) REFERENCES eval.eval\_set(id).
 
 #### eval.eval\_run
 

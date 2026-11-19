@@ -341,6 +341,20 @@ semantic-import:  ## import SEMANTIC_FILE as SEMANTIC_AS (dry run unless SEMANTI
 	@$(SEMANTIC_YAML) import - --org "$(SEMANTIC_ORG)" --space "$(SEMANTIC_SPACE)" \
 		--as "$(SEMANTIC_AS)" $(if $(filter 1,$(SEMANTIC_APPLY)),,--dry-run) < "$(SEMANTIC_FILE)"
 
+# EV-08: a golden eval set written as YAML (services/api/modules/eval/cases_yaml.py) loaded into
+# the Data Space's eval set, in the api pod; a dry run unless EVAL_CASES_APPLY=1. Reloading
+# updates the same items, retires the ones that left the file and reports a changed answer.
+EVAL_CASES_ORG ?=
+EVAL_CASES_SPACE ?=
+EVAL_CASES_AS ?=
+EVAL_CASES_FILE ?=
+.PHONY: eval-cases-import
+
+eval-cases-import:  ## load EVAL_CASES_FILE into EVAL_CASES_SPACE's eval set (dry run unless EVAL_CASES_APPLY=1)
+	@kubectl -n dataagent-service exec -i deploy/api -- python -m services.api.modules.eval.cases_yaml \
+		import - --org "$(EVAL_CASES_ORG)" --space "$(EVAL_CASES_SPACE)" --as "$(EVAL_CASES_AS)" \
+		$(if $(filter 1,$(EVAL_CASES_APPLY)),,--dry-run) < "$(EVAL_CASES_FILE)"
+
 # Document retrieval scored against gold passages, in the worker-agent pod so it uses the
 # cluster's vector index and reranker; the report says which of them ran (RG-02).
 RETRIEVAL_ORG ?=

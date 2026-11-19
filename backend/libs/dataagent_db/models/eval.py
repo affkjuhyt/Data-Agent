@@ -100,6 +100,31 @@ class EvalItem(Base):
     status: Mapped[str] = mapped_column(
         Text, server_default=sql_text("'active'"), comment="active, needs_update, retired"
     )
+    expected_action: Mapped[str] = mapped_column(
+        Text,
+        server_default=sql_text("'answer'"),
+        comment="Hành động đúng của câu hỏi (EV-08): answer, clarify, refuse_missing_source, refuse_permission, handover, flag_conflict; sai hành động là trượt dù con số đúng",
+    )
+    failure_category: Mapped[str] = mapped_column(
+        Text,
+        server_default=sql_text("'none'"),
+        comment="Lỗ hổng ca âm nhắm tới: none, ambiguous, missing_source, wrong_schema, conflicting_metrics, unavailable_document, corrupted_file, duplicates, schema_drift, permission_violation, injection, stale_data, partial_ingestion",
+    )
+    rubric: Mapped[str] = mapped_column(
+        Text,
+        server_default=sql_text("'exact'"),
+        comment="Cách chấm: exact, set_equality, contains_all, numeric_tolerance(pct), judge(prompt_id)",
+    )
+    verification_status: Mapped[str] = mapped_column(
+        Text,
+        server_default=sql_text("'draft'"),
+        comment="draft, sql_run_on_snapshot (SQL vàng đã chạy trên snapshot), human_verified (hai người giải mù khớp), disputed",
+    )
+    snapshot_ref: Mapped[Any | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment='Snapshot đáp án dựa vào, ví dụ {"dataset":"tlc","snapshot":"TLC-2024Q1","sources_sha256":"…"}; trống với bộ không gắn snapshot',
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )

@@ -74,7 +74,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | PL-01 | P0 | 1 | Nâng `sqlglot` → 30.x (PoC-5) | — | BE | S | 3 suite guard/sqlgen/compiler xanh | done c77fd7be |
 | PL-03 | P0 | 1 | 3 sự kiện mồ côi → 501 `UNSUPPORTED`; ẩn vault/knowledge-compile/`Fuel*` | — | BE/FE | S | không còn 202 im | done 3dd8795d (backend 501 `not_available` theo quy ước kernel; FE: VAULT, FUEL_FORECAST ra khỏi route, nút biên soạn/rà soát tri thức khoá kèm lý do, bỏ “Lưu vào tri thức”; xoá hẳn `Fuel*` theo STRATEGY §6 vẫn là commit riêng) |
-| PL-07 | P0 | 1 | Tắt Kafka/ClickHouse/Langfuse ở local; pin tag image | — | DevOps | S | `make e2e` xanh, 3 pod biến mất | todo |
+| PL-07 | P0 | 1 | Tắt Kafka/ClickHouse/Langfuse ở local; pin tag image | — | DevOps | S | `make e2e` xanh, 3 pod biến mất | done 6be2676c, 534b9728 (cờ `enable_kafka`/`enable_langfuse`, deploy 17/11: 3 workload gỡ, volume giữ, request bộ nhớ node 98 % → 68 %; pgbouncer/litellm/clickhouse ghim digest). `make e2e` chưa chạy (cần mật khẩu E2E) |
 | PL-02 | P0 | 3 | Outbox `attempts/last_error/dead_at`; savepoint mỗi sự kiện; dead-letter + notify | — | BE/DB | M | handler lỗi không chặn lô; 5 lần → dead | todo |
 | PL-04 | P0 | 3 | Backup đủ 6 kho + restore drill | — | DevOps | M | drill ≤ 60 phút, e2e xanh sau khôi phục | doing: Postgres đủ 5 DB + roles, bỏ `\|\| true`; MinIO mirror; Qdrant snapshot; chạy thật trên cụm 17/11 (RUNBOOK §9a); MinIO đọc bằng user chỉ đọc; `make restore-drill` khôi phục vào pod tạm, 68,8 s, mọi bảng có mặt, MinIO khớp. Còn OpenBao (cần chuyển raft), cảnh báo job lỗi, drill khôi phục đè cụm thật |
 | PL-05 | P0 | 4 | `/metrics` Prometheus api + 3 worker; dashboard | — | BE/DevOps | M | p50/p95 câu hỏi trên dashboard | doing: `libs/metrics`, `/metrics` ở api + 3 worker, Service + NetworkPolicy, scrape + recording rules p50/p95 câu hỏi (RUNBOOK §4); chờ deploy để đo trên cụm |
@@ -92,7 +92,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 
 | ID | Ưu tiên | Tuần | Việc | Phụ thuộc | Vai | CS | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| DF-01 | P0 | 3 | Migration `v3_0036`: `dataset_snapshot`, `dataset_version.physical_table/retained_until`, `dataset_contract` (không gồm outbox) | — | DB | M | up/down xanh; ORM khớp | todo |
+| DF-01 | P0 | 3 | Migration `v3_0038`: `dataset_snapshot`, `dataset_version.physical_table/retained_until`, `dataset_contract` (không gồm outbox) | — | DB | M | up/down xanh; ORM khớp | todo |
 | DF-02 | P0 | 3 | `versioning.py`: staging `__v<n+1>`, swap view, retention | DF-01 | DE | M | lỗi giữa lô → view không đổi | todo |
 | DF-04 | P0 | 3 | `libs/snapshot` writer/reader + bucket `da-snapshots` lock (PoC-2 nhánh ở tuần 2) | DF-01 | BE | M | sha256 ổn định; PoC-2 đạt | todo |
 | DF-03 | P0 | 4 | Upload commit + pipeline materialize tạo version (bỏ `DROP`) | DF-02 | BE | S | grep DROP = 0 | todo |
@@ -191,7 +191,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | ID | Ưu tiên | Tuần | Việc | Phụ thuộc | Vai | CS | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | EV-01 | P0 | 1 | Snapshot dữ liệu thật ghim sha256, nạp nguyên trạng (16/11: TLC Trip Records thay NYC 311, cổng 311 trả 403; bộ thu 311 `make nyc311-snapshot` giữ làm dự phòng) | — | DE | M | file sai hash bị từ chối; số dòng mỗi file tái lập | done fa9ccce9 (`make tlc`, `TLC-2024Q1` trong `tlc_trips` của cụm: 9 554 778 chuyến vàng, 372 649 xanh) |
-| EV-08 | P0 | 1 | Cột mới `eval.eval_item` + loader YAML | — | DB | S | — | todo |
+| EV-08 | P0 | 1 | Cột mới `eval.eval_item` + loader YAML | — | DB | S | — | done (v3_0037; `make eval-cases-import`; API nhận và trả 5 trường, A3 cập nhật) |
 | EV-10 | P0 | 1 | Sửa `halves` thật + `dense_ok_rate`/`rerank_ok_rate` (gộp DI-14) | — | AI | S | báo cáo keyword-only không ghi `dense: true` | done (phần halves; gate đọc truy hồi ở EV-12) |
 | EV-03 | P0 | 5 | Data Space DS-TLC (truy vấn tại chỗ, `ds-tlc.yaml` 13 metric, value_index) | EV-01, AE-14 (hoặc metric đơn giản trước) | DE/AI | M | 13 metric reconcile với SQL tay | doing: seed + model + test xong, scan và import trên cụm 16/11; còn duyệt 9 quan hệ và 13 metric (admin) |
 | EV-05 | P0 | 6 | 60 case TLC (24/16/15/5) + SQL vàng | EV-03 | QA/AI | M | mỗi case fail đúng lý do trước | todo |

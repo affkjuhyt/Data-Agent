@@ -329,7 +329,7 @@ verification_status  draft | sql_run_on_snapshot | human_verified | disputed
 version              số nguyên; sửa case = version mới, case cũ giữ để so sánh lịch sử
 ```
 
-Ánh xạ sang `eval.eval_item`: `input` = {question, history, lang}; `expected` = {expected_result, output_contract,
+Đã làm ở EV-08 (19/11/2026): năm cột `expected_action`, `failure_category`, `rubric`, `verification_status`, `snapshot_ref` (migration `v3_0037`, mặc định giữ các mục cũ là answer · exact · draft); tệp YAML nạp bằng `make eval-cases-import` (`api/modules/eval/cases_yaml.py`, id mục suy từ id case, nạp lại thì cập nhật, case rời tệp thì retired). Ánh xạ sang `eval.eval_item`: `input` = {question, history, lang}; `expected` = {expected_result, output_contract,
 expected_evidence, expected_trust_code}; `category` = failure_category hoặc nhóm (structured/multiturn/document/
 analytical/hybrid); cột mới `expected_action`, `failure_category`, `rubric`, `verification_status`, `snapshot_ref`
 (EV-08). Trường `as_of` = ngày cuối snapshot.

@@ -721,3 +721,54 @@ def test_an_existing_cluster_gains_the_forecast_model_proposal_and_the_label_gra
         )
         is True
     )
+
+
+def test_an_eval_item_carries_what_a_golden_case_needs_on_a_migrated_cluster(admin):
+    # v3_0037 (19/11/2026, EV-08): a cluster migrated before it has no expected_action, rubric,
+    # failure_category, verification_status or snapshot_ref; the baseline is generated with them,
+    # so the test takes them away before the upgrade.
+    _fresh(admin, "chain_golden", "chain_golden_audit")
+    db = _db(admin, "chain_golden")
+    _alembic(db, "upgrade", "v3_0036")
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute(
+            "ALTER TABLE eval.eval_item DROP COLUMN expected_action, DROP COLUMN failure_category,"
+            " DROP COLUMN rubric, DROP COLUMN verification_status, DROP COLUMN snapshot_ref"
+        )
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    checks = _one(
+        db,
+        "SELECT string_agg(conname, ',' ORDER BY conname) FROM pg_constraint"
+        " WHERE conrelid = 'eval.eval_item'::regclass AND contype = 'c'",
+    )
+    for name in ("expected_action", "failure_category", "rubric", "verification_status"):
+        assert f"eval_item_{name}_check" in checks, name
+    org, item_set = str(uuid.uuid4()), str(uuid.uuid4())
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO eval.eval_set (id, org_id, subject_type, subject_id, name)"
+            " VALUES (%s, %s, 'skill', %s, 'g')",
+            (item_set, org, str(uuid.uuid4())),
+        )
+        insert = (
+            "INSERT INTO eval.eval_item (id, org_id, eval_set_id, input, expected, rubric)"
+            " VALUES (%s, %s, %s, '{}', '{}', %s)"
+        )
+        # An item written before EV-08 keeps what it was: an exact answer, a draft.
+        cur.execute(
+            "INSERT INTO eval.eval_item (id, org_id, eval_set_id, input, expected)"
+            " VALUES (%s, %s, %s, '{}', '{}') RETURNING expected_action, rubric, verification_status",
+            (str(uuid.uuid4()), org, item_set),
+        )
+        assert cur.fetchone() == ("answer", "exact", "draft")
+        for rubric in ("numeric_tolerance(0.5)", "judge(why-v1)", "set_equality"):
+            cur.execute(insert, (str(uuid.uuid4()), org, item_set, rubric))
+        for rubric in ("numeric_tolerance", "fuzzy", "judge()"):
+            with pytest.raises(psycopg2.errors.CheckViolation):
+                cur.execute(insert, (str(uuid.uuid4()), org, item_set, rubric))
+    conn.close()
