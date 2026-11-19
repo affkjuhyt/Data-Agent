@@ -7973,7 +7973,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON exec.handover_item TO svc_exec;
 GRANT SELECT ON exec.handover_item TO exec_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON exec.publication TO svc_exec;
 GRANT SELECT ON exec.publication TO exec_read;
-CREATE VIEW integration.v_outbox_dead AS
+CREATE VIEW integration.v_outbox_dead WITH (security_invoker = true) AS
   SELECT 'org' AS schema_name, id, org_id, aggregate_type, aggregate_id, event_type, attempts, last_error, created_at, dead_at FROM org.outbox WHERE dead_at IS NOT NULL AND org_id = NULLIF(current_setting('app.org_id', true), '')::uuid
   UNION ALL
   SELECT 'governance' AS schema_name, id, org_id, aggregate_type, aggregate_id, event_type, attempts, last_error, created_at, dead_at FROM governance.outbox WHERE dead_at IS NOT NULL AND org_id = NULLIF(current_setting('app.org_id', true), '')::uuid
@@ -8017,7 +8017,6 @@ CREATE VIEW integration.v_outbox_dead AS
   SELECT 'forecast' AS schema_name, id, org_id, aggregate_type, aggregate_id, event_type, attempts, last_error, created_at, dead_at FROM forecast.outbox WHERE dead_at IS NOT NULL AND org_id = NULLIF(current_setting('app.org_id', true), '')::uuid
   UNION ALL
   SELECT 'exec' AS schema_name, id, org_id, aggregate_type, aggregate_id, event_type, attempts, last_error, created_at, dead_at FROM exec.outbox WHERE dead_at IS NOT NULL AND org_id = NULLIF(current_setting('app.org_id', true), '')::uuid;
-GRANT SELECT ON integration.v_outbox_dead TO svc_integration, integration_read;
 
 -- ─── routines/org.sql ───
 -- routines/org.sql: the "two different people" rule of the approval tables, kept in one place

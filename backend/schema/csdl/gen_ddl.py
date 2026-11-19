@@ -197,18 +197,18 @@ def outbox(schema: str) -> list[str]:
 
 
 def dead_outbox_view(schemas: list[str]) -> list[str]:
-    """integration.v_outbox_dead (PL-02): every dead event of the organisation, for the Ops screen.
-    Owner's rights read the 22 outboxes; the filter on app.org_id keeps it to the caller's."""
+    """integration.v_outbox_dead (PL-02): every dead event of the organisation, for operators.
+    security_invoker: the reader's own grants and row policies apply to each outbox (exec's
+    per-owner ones included), so the view exposes nothing its reader could not select directly;
+    no service role is granted it. The operator reads it as the database's administrator
+    (RUNBOOK §10b) until the Ops screen has a role of its own."""
     union = "\n  UNION ALL\n".join(
         f"  SELECT '{s}' AS schema_name, id, org_id, aggregate_type, aggregate_id, event_type,"
         f" attempts, last_error, created_at, dead_at FROM {s}.outbox WHERE dead_at IS NOT NULL"
         f" AND org_id = {ORG_GUC}"
         for s in schemas
     )
-    return [
-        f"CREATE VIEW integration.v_outbox_dead AS\n{union};",
-        "GRANT SELECT ON integration.v_outbox_dead TO svc_integration, integration_read;",
-    ]
+    return [f"CREATE VIEW integration.v_outbox_dead WITH (security_invoker = true) AS\n{union};"]
 
 
 def grants(schema: str, tables: list[dict], with_outbox: bool) -> list[str]:

@@ -772,3 +772,21 @@ def test_an_eval_item_carries_what_a_golden_case_needs_on_a_migrated_cluster(adm
             with pytest.raises(psycopg2.errors.CheckViolation):
                 cur.execute(insert, (str(uuid.uuid4()), org, item_set, rubric))
     conn.close()
+
+
+def test_the_dead_outbox_view_reads_with_its_readers_rights(admin):
+    # v3_0039 (19/11/2026): integration.v_outbox_dead must not let a service role read another
+    # schema's outbox (exec's per-owner rows included) past its own grants.
+    _fresh(admin, "chain_dead_view", "chain_dead_view_audit")
+    db = _db(admin, "chain_dead_view")
+    _alembic(db, "upgrade", "head")
+    options = _one(
+        db,
+        "SELECT reloptions::text FROM pg_class WHERE oid = 'integration.v_outbox_dead'::regclass",
+    )
+    assert "security_invoker=true" in options
+    for role in ("svc_integration", "integration_read"):
+        assert (
+            _one(db, f"SELECT has_table_privilege('{role}', 'integration.v_outbox_dead', 'SELECT')")
+            is False
+        ), role

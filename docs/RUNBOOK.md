@@ -524,7 +524,8 @@ of the organisation once (`notify.notification`, kind `system`, high priority) a
 is logged and counted only.
 
 ```sql
--- dead events of one organisation (the view keeps to app.org_id, whoever reads it)
+-- dead events of one organisation, as the database's administrator: the view reads with its
+-- reader's rights (security_invoker) and no service role is granted it
 SET app.org_id = '<org id>';
 SELECT schema_name, event_type, attempts, last_error, dead_at FROM integration.v_outbox_dead;
 
