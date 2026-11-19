@@ -162,6 +162,8 @@ async def _build(
                 start=start,
                 legacy=legacy,
                 actor=actor,
+                kind="derive",
+                run_id=None,
             )
         dataset.schema_name, dataset.table_name = "workspace", table
         dataset.row_estimate, dataset.enabled = len(rows), True

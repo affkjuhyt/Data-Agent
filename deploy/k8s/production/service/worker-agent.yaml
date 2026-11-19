@@ -132,7 +132,9 @@ spec:
             memory: 192Mi
           limits:
             cpu: '1'
-            memory: 512Mi
+            # DF-05: a dataset version's snapshot peaks at ~180 MiB on top of the worker
+            # (model/eval/snapshot-poc2.md); the request stays, so nothing more is reserved.
+            memory: 768Mi
         volumeMounts:
         - name: tmp
           mountPath: /tmp

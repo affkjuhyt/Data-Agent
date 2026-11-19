@@ -291,3 +291,31 @@ async def test_an_unqualified_name_reads_the_schema_the_check_resolved_not_the_l
     )
     assert out.ok, out.error
     assert out.rows == [["registered"]]
+
+
+async def test_a_tile_does_not_read_a_table_its_quality_holds_back(
+    seed: Seed, warehouse: dict[str, object]
+) -> None:
+    # DF-08: tiles and reports ask the gate; a quality check or a replay does not.
+    org, space, user, source, secrets = _source(seed, warehouse)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE catalog.dataset SET quality_state = 'blocked' WHERE org_id = %s", (str(org),)
+        )
+    sql = "SELECT sum(balance) FROM dw.loan_balance"
+    common = {
+        "org_id": org,
+        "data_space_id": space,
+        "principal_id": user,
+        "caller_id": user,
+        "source": source,
+        "secrets": secrets,
+        "sql": sql,
+    }
+    held = await run_query(caller_kind="tile", quality_gate=True, **common)
+    assert not held.ok and "bị chặn" in (held.error or "")
+    assert (
+        seed.one("SELECT status FROM query.query_run WHERE id = %s", held.query_run_id) == "failed"
+    )
+    checked = await run_query(caller_kind="ad_hoc", **common)
+    assert checked.ok, checked.error

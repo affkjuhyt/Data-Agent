@@ -22,6 +22,7 @@ def build(
     cancelled: bool = False,
     dataset_trusts: dict[str, str] | None = None,
     audience: str = "analyst",
+    stopped: str | None = None,
 ) -> dict[str, Any]:
     steps = p.view(plan) if plan else []
     failed = [s for s in steps if s.get("status") == "failed"]
@@ -34,6 +35,7 @@ def build(
         clarify=clarify,
         handed_back=handed_back,
         cancelled=cancelled,
+        stopped=stopped,
     )
     return {
         "goal": plan.goal if plan else "",
@@ -48,6 +50,8 @@ def build(
         "cancelled": cancelled,
         "trusts": trusts,
         "audience": audience,
+        # AE-02: the budget the turn ran out of (budget_tokens, budget_duration, budget_steps).
+        "stopped": stopped,
         "why": why,
     }
 
@@ -60,9 +64,18 @@ def _why(
     clarify: bool,
     handed_back: bool,
     cancelled: bool,
+    stopped: str | None = None,
 ) -> str:
     if cancelled:
         return "Người hỏi đã dừng lượt."
+    if stopped is not None:
+        spent = {
+            "budget_tokens": "số token",
+            "budget_duration": "thời gian",
+            "budget_steps": "số bước",
+        }.get(stopped, stopped)
+        after = " rồi chuyển sang đường trả lời chuẩn" if handed_back else ""
+        return f"Dừng sớm vì hết ngân sách {spent} của lượt; trả lời từ những gì đã có{after}."
     if clarify:
         return "Đang chờ làm rõ từ người hỏi."
     if handed_back:

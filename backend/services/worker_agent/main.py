@@ -63,6 +63,7 @@ from services.worker_agent import (
     session_reports,
     skill_evals,
     skill_runs,
+    snapshots,
     source_tests,
     tiles,
     uploads,
@@ -159,6 +160,7 @@ HANDLERS: dict[str, Handler] = {
     **eval_runs.HANDLERS,
     **metric_changes.HANDLERS,
     **derived.HANDLERS,
+    **snapshots.HANDLERS,
     **semantic_review.HANDLERS,
     **reviews.HANDLERS,
     **pipelines.HANDLERS,
@@ -209,6 +211,8 @@ async def sources() -> list[EventSource]:
             types |= channels.NOTIFY_EVENTS
         if schema == "catalog":
             types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS) | set(derived.HANDLERS)
+            # DF-05: a version written whole becomes its Parquet snapshot.
+            types |= set(snapshots.HANDLERS)
         if schema == "query":
             types |= set(query_runs.HANDLERS)
         if schema == "governance":

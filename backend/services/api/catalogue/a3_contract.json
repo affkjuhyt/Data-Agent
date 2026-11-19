@@ -1531,9 +1531,77 @@
    ],
    "body": {},
    "query": [],
-   "returns": "Danh sách DatasetVersion",
+   "returns": "Danh sách DatasetVersion, mỗi phiên bản kèm physical_table, retained_until và snapshot (id, status, sha256, row_count, byte_size, available_at) hoặc null (DF-05)",
    "errors": [],
    "request_text": "—"
+  },
+  "GET /v1/datasets/{id}/versions/{version}/snapshot": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "302 tới đường dẫn ký sẵn 10 phút của tệp Parquet trong da-snapshots; ghi audit dataset.snapshot_downloaded",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     404,
+     "not_found"
+    ],
+    [
+     503,
+     "source_unavailable"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/datasets/{id}/contract": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ContractView (status none khi chưa có, version 0; schema_hash_current để ghim); ETag W/\"contract-<version>\"",
+   "errors": [],
+   "request_text": "—"
+  },
+  "PUT /v1/datasets/{id}/contract": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "status": false,
+    "schema_hash_expected": false,
+    "freshness_sla": false,
+    "required_rules": false
+   },
+   "query": [],
+   "returns": "ContractView; ETag phiên bản mới; sự kiện catalog.dataset.contract_changed",
+   "errors": [
+    [
+     428,
+     "precondition_required"
+    ],
+    [
+     412,
+     "precondition_failed"
+    ],
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "status, schema_hash_expected, freshness_sla, required_rules"
   },
   "POST /v1/dataset-versions/{id}:certify": {
    "group": "Nguồn và danh mục",

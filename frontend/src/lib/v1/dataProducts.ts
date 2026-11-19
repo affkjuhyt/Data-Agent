@@ -477,6 +477,8 @@ export const RULE_KIND: Record<RuleKind, string> = {
   sum_matches: 'Tổng khớp',
   freshness: 'Độ mới',
   custom_sql: 'SQL tuỳ chỉnh',
+  compound_unique: 'Không trùng theo khoá',
+  match_regex: 'Đúng mẫu',
 };
 
 type RuleWire = Schemas['QualityRuleView'] & { display?: QualityRule };

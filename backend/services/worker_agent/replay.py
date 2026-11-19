@@ -7,10 +7,13 @@ compares figure by figure: is the SQL the one that was compiled (sha256), is the
 answer/narrate.py wrote it).
 
 Outcome: `identical` when every figure matches; `differs` with a count and a cause otherwise;
-`not_reproducible` when a query cannot run any more. The replay runs on the source as it is now:
-time travel to the answer's knowledge_at needs the history route (dataset history_kind,
-period snapshots), which the executor does not take yet, so a source updated since the answer
-differs, and the cause says so. `figures_and_text` regenerates the text from the replayed figures
+`not_reproducible` when a query cannot run any more.
+
+DF-06: a figure read from workspace datasets is read again at the versions its receipt recorded
+(`dataset_versions`), when a dataset has moved on since: from each version's own table while it
+stands, else from its Parquet snapshot in DuckDB (query/executor.at_versions, route `history`),
+with the asker's policies written in as on the live path. A source outside the workspace is read
+as it is now: a source updated since the answer differs, and the cause says so. `figures_and_text` regenerates the text from the replayed figures
 with the same template the answer used.
 
 A figure computed from others (source_kind compute_run, answer/insights.py) is not read from a
@@ -28,20 +31,115 @@ import re
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, qa
 from libs.dataagent_db.models import query as q
 from services.worker_agent.answer.insights import ExprError, evaluate
 from services.worker_agent.events import Event, Handler
-from services.worker_agent.query.executor import QueryOutcome, run_query
-from services.worker_agent.questions import secrets
+from services.worker_agent.query.executor import (
+    INTERNAL_WORKSPACE,
+    QueryOutcome,
+    VersionRead,
+    run_query,
+)
+from services.worker_agent.query.executor import ROLE as QUERY_ROLE
+from services.worker_agent.questions import _internal_workspace_source, secrets
 
 logger = logging.getLogger(__name__)
 
 EVENT_TYPE = "receipt_replay.requested"
 LIVE_ONLY = "Nguồn chỉ được truy vấn trên dữ liệu hiện hành; số khác vì dữ liệu nguồn đã thay đổi từ lúc trả lời."
+AT_VERSION = "Đã đọc lại đúng phiên bản dữ liệu lúc trả lời mà số vẫn khác."
+
+
+async def versions_at(
+    org_id: uuid.UUID, requested_by: uuid.UUID, recorded: list[dict[str, Any]]
+) -> list[VersionRead]:
+    """Where the rows of each recorded workspace dataset version are now (DF-06): nothing when
+    no dataset moved on (the live tables are those versions), else every one of them, with its
+    version's table if it still stands and its snapshot if one was taken."""
+    wanted = {
+        uuid.UUID(str(r["dataset_id"])): int(r["version"])
+        for r in recorded
+        if r.get("dataset_id") and r.get("version") is not None
+    }
+    if not wanted:
+        return []
+    async with scoped_session(QUERY_ROLE, org_id, requested_by) as session:
+        datasets = (
+            await session.scalars(
+                select(catalog.Dataset).where(
+                    catalog.Dataset.id.in_(wanted), catalog.Dataset.schema_name == "workspace"
+                )
+            )
+        ).all()
+        if not any(d.current_version != wanted[d.id] for d in datasets):
+            return []
+        dv, ds = catalog.DatasetVersion, catalog.DatasetSnapshot
+        reads: list[VersionRead] = []
+        for d in datasets:
+            version = wanted[d.id]
+            physical = await session.scalar(
+                select(dv.physical_table).where(dv.dataset_id == d.id, dv.version == version)
+            )
+            # Before versioning the dataset's own table held the version it was at.
+            if physical is None and version == d.current_version:
+                physical = d.table_name
+            if physical is not None and not await session.scalar(
+                text("SELECT to_regclass(format('workspace.%I', CAST(:t AS text))) IS NOT NULL"),
+                {"t": physical},
+            ):
+                physical = None
+            snapshot = (
+                await session.execute(
+                    select(ds.object_key, ds.sha256).where(
+                        ds.dataset_id == d.id, ds.version == version, ds.status == "ok"
+                    )
+                )
+            ).first()
+            reads.append(
+                VersionRead(
+                    table=d.table_name,
+                    physical=physical,
+                    snapshot_key=snapshot[0] if snapshot else None,
+                    snapshot_sha256=snapshot[1] if snapshot else None,
+                )
+            )
+    return reads
+
+
+async def rerun_query(
+    *,
+    org_id: uuid.UUID,
+    requested_by: uuid.UUID,
+    replay_id: uuid.UUID,
+    original: q.QueryRun,
+    source: catalog.Source,
+    recorded: list[dict[str, Any]],
+) -> tuple[QueryOutcome, bool]:
+    """Run a figure's query again as its asker may now, at the versions its receipt recorded
+    when it read the workspace; True when it read earlier versions."""
+    versions = (
+        await versions_at(org_id, requested_by, recorded)
+        if source.secret_ref == INTERNAL_WORKSPACE
+        else []
+    )
+    outcome = await run_query(
+        org_id=org_id,
+        data_space_id=original.data_space_id,
+        principal_id=requested_by,
+        caller_kind="receipt_replay",
+        caller_id=replay_id,
+        source=source,
+        sql=original.sql_generated,
+        secrets=secrets(),
+        metric_version_ids=list(original.metric_version_ids or ()),
+        as_of=original.as_of,
+        versions=versions,
+    )
+    return outcome, bool(versions)
 
 
 def _value(
@@ -117,23 +215,33 @@ async def replay_receipt(event: Event) -> None:
         }
 
     reruns: dict[uuid.UUID, QueryOutcome | None] = {}
+    historic: set[uuid.UUID] = set()
     for run_id, original in originals.items():
         source = sources.get(original.source_id) if original.source_id else None
+        workspace = _internal_workspace_source(original.data_space_id, event.org_id)
+        # The workspace is no catalog.source row: one fixed id stands for it (questions.py).
+        if source is None and original.source_id == workspace.id:
+            source = workspace
         if source is None:
             reruns[run_id] = None
             continue
-        reruns[run_id] = await run_query(
+        recorded = [
+            v
+            for f in figures
+            if f.query_run_id == run_id
+            for v in (f.dataset_versions or [])
+            if isinstance(v, dict)
+        ]
+        reruns[run_id], at_version = await rerun_query(
             org_id=event.org_id,
-            data_space_id=original.data_space_id,
-            principal_id=requested_by,
-            caller_kind="receipt_replay",
-            caller_id=replay_id,
+            requested_by=requested_by,
+            replay_id=replay_id,
+            original=original,
             source=source,
-            sql=original.sql_generated,
-            secrets=secrets(),
-            metric_version_ids=list(original.metric_version_ids or ()),
-            as_of=original.as_of,
+            recorded=recorded,
         )
+        if at_version:
+            historic.add(run_id)
 
     results: list[dict[str, Any]] = []
     differs, unreproducible = 0, False
@@ -180,7 +288,7 @@ async def replay_receipt(event: Event) -> None:
                 "replay_value": _str(replayed),
                 "sql_sha256_match": sql_match,
                 "result_sha256_match": result_match,
-                "cause": None if same else LIVE_ONLY,
+                "cause": None if same else AT_VERSION if f.query_run_id in historic else LIVE_ONLY,
             }
         )
 
@@ -227,7 +335,11 @@ async def replay_receipt(event: Event) -> None:
         replay.outcome = outcome
         replay.figure_results = results
         replay.differs_count = differs
-        replay.cause_summary = LIVE_ONLY if outcome == "differs" else None
+        replay.cause_summary = (
+            next((r["cause"] for r in results if r["cause"]), LIVE_ONLY)
+            if outcome == "differs"
+            else None
+        )
         replay.query_run_ids = [r.query_run_id for r in reruns.values() if r is not None]
         replay.finished_at = datetime.datetime.now(datetime.UTC)
         if mode == "figures_and_text":

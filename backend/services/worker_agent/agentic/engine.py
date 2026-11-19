@@ -37,6 +37,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
 from services.worker_agent import turn_trace
 from services.worker_agent.agentic import blocks as b
+from services.worker_agent.agentic import budget as agent_budget
 from services.worker_agent.agentic import (
     clarify_policy,
     corpus,
@@ -146,6 +147,8 @@ class State:
     prior_clarify_rounds: int = 0
     # OP-6: deep analysis skill loaded into the planner when the turn asks for it.
     deep: bool = False
+    # AE-02: what the turn may spend; set once the audience and depth are known (prepare).
+    budget: agent_budget.Budget | None = None
 
 
 # ---------------------------------------------------------------- prepare
@@ -346,6 +349,7 @@ async def prepare(s: State) -> None:
         raw_audience = (event.payload or {}).get("audience")
         s.audience = "executive" if raw_audience == "executive" else clarify_policy.DEFAULT_AUDIENCE
         s.deep = deep_skill.requested(event.payload, question.purpose)
+        s.budget = agent_budget.Budget.for_(s.audience, deep=s.deep)
         s.conversation_id = conversation.id
         question_text = asked or question.text
         s.ctx = ToolContext(
@@ -834,12 +838,35 @@ def _shown_args(step: p.PlanStep) -> dict[str, Any]:
     return {k: v for k, v in step.args.items() if k != "sql"}
 
 
+def over_budget(s: State) -> bool:
+    """Whether the turn has spent its budget (AE-02): it then composes from what it found."""
+    if s.budget is None:
+        return False
+    first = s.budget.stopped is None
+    reason = s.budget.spent(s.step_runs)
+    if reason is None:
+        return False
+    if first:
+        turn_trace.stopped(reason)
+        logger.info(
+            "question %s: %s after %d tokens, %.1f s, %d steps",
+            s.question_id,
+            reason,
+            s.budget.tokens(),
+            s.budget.seconds(),
+            s.step_runs,
+        )
+    return True
+
+
 def after_act(s: State) -> str:
     assert s.plan is not None
     if s.cancelled:
         return "persist"
     if s.clarify is not None:
         return "persist"
+    if over_budget(s):
+        return "compose"
     if s.failed is not None:
         return "replan" if s.replans < MAX_REPLANS else "act"
     if s.step_runs >= MAX_STEP_RUNS:
@@ -949,6 +976,8 @@ async def review(s: State) -> None:
 
 def after_review(s: State) -> str:
     assert s.plan is not None
+    if over_budget(s):
+        return "compose"
     return "act" if any(st.status == "pending" for st in s.plan.steps) else "compose"
 
 
@@ -1930,6 +1959,7 @@ async def persist(s: State) -> None:
             cancelled=s.cancelled,
             dataset_trusts={ds.id: ds.trust for ds in ctx.ws.datasets.values() if ds.trust},
             audience=s.audience,
+            stopped=s.budget.stopped if s.budget is not None else None,
         ),
     }
     refusal: dict[str, str] | None = None
@@ -2116,7 +2146,10 @@ def _graph() -> StateGraph[State]:
     )
     g.node("act", _cancellable(act)).route("act", after_act)
     g.node("replan", _cancellable(replan)).route(
-        "replan", _or_stop(lambda s: "persist" if s.clarify is not None else "act")
+        "replan",
+        _or_stop(
+            lambda s: "persist" if s.clarify is not None else "compose" if over_budget(s) else "act"
+        ),
     )
     g.node("review", _cancellable(review)).route("review", _or_stop(after_review))
     g.node("compose", _cancellable(compose)).route(

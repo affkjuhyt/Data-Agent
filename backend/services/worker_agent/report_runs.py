@@ -129,6 +129,8 @@ async def _render(
         sql=sql,
         secrets=secrets(),
         limit=int(spec.get("limit") or ROWS),
+        # DF-08: a held-back table is left out of the report, which says so in its place.
+        quality_gate=True,
     )
     if not outcome.ok:
         return Rendered(title, note=outcome.error, sql=sql, source=source, ok=False)

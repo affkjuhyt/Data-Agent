@@ -295,9 +295,14 @@ class QualityRule(Base):
     )
     column_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     kind: Mapped[str] = mapped_column(
-        Text, comment="not_null, range, unique, in_list, sum_matches, freshness, custom_sql"
+        Text,
+        comment="not_null, range, unique, in_list, sum_matches, freshness, custom_sql, compound_unique, match_regex (DF-07: mỗi kind một expectation GX, libs/quality_vocab)",
     )
-    params: Mapped[Any] = mapped_column(JSONB, server_default=sql_text("'{}'"))
+    params: Mapped[Any] = mapped_column(
+        JSONB,
+        server_default=sql_text("'{}'"),
+        comment="Tham số của kind; chung: mostly (0 tới 1), row_condition (cột so hằng nối AND)",
+    )
     severity: Mapped[str] = mapped_column(
         Text,
         server_default=sql_text("'medium'"),
@@ -336,6 +341,11 @@ class QualityResult(Base):
     violations: Mapped[int] = mapped_column(BigInteger, server_default=sql_text("0"))
     sample_ref: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Mẫu dòng vi phạm, đã che"
+    )
+    result: Mapped[Any | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Kết quả dạng GX: expectation, success, element_count, unexpected_count, unexpected_percent, mostly (DF-07, thêm 20/11/2026)",
     )
     acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, comment="Người xác nhận dùng tiếp khi vi phạm mức cao"

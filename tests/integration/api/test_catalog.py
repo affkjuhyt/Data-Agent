@@ -1305,3 +1305,199 @@ async def test_activation_assigns_tables_only_where_the_caller_administers_data(
         )
         denied = await api.post(url, json={"tables": []}, headers=o.headers("analyst"))
         assert denied.status_code == 403
+
+
+class FakeSnapshotLinks:
+    def __init__(self) -> None:
+        self.signed: list[str] = []
+
+    async def sign(self, key: str) -> str | None:
+        self.signed.append(key)
+        return f"https://store.example/{key}?signature=x"
+
+
+@pytest.mark.req("DF-05")
+async def test_a_version_lists_its_snapshot_and_hands_out_its_file(o: Org) -> None:
+    dataset = _dataset(o, None, schema_name="workspace", table_name="p_doanh_thu")
+    for version, valid_to in ((1, "2026-11-02T00:00:00Z"), (2, None)):
+        o.seed.row(
+            "catalog.dataset_version",
+            org_id=o.org,
+            dataset_id=dataset,
+            version=version,
+            schema_hash="h",
+            change_kind="initial" if version == 1 else "reload",
+            valid_from=f"2026-11-0{version}T00:00:00Z",
+            valid_to=valid_to,
+            physical_table=f"p_doanh_thu__v{version}",
+        )
+    key = f"{o.org}/{dataset}/v1/abcdef012345.parquet"
+    o.seed.row(
+        "catalog.dataset_snapshot",
+        org_id=o.org,
+        dataset_id=dataset,
+        version=1,
+        status="ok",
+        object_key=key,
+        sha256="a" * 64,
+        row_count=7,
+        byte_size=1234,
+        columns=Json([]),
+        available_at="2026-11-01T00:00:00Z",
+        created_by_kind="pipeline_run",
+    )
+    o.seed.row(
+        "catalog.dataset_snapshot",
+        org_id=o.org,
+        dataset_id=dataset,
+        version=2,
+        status="skipped",
+        row_count=30_000_000,
+        columns=Json([]),
+        available_at="2026-11-02T00:00:00Z",
+        created_by_kind="pipeline_run",
+    )
+    links = FakeSnapshotLinks()
+    app = create_app(Settings(), token_verifier=Tokens(o))
+    app.state.snapshot_links = links
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://api"
+    ) as api:
+        h = o.headers("analyst")
+        listed = await api.get(f"/v1/datasets/{dataset}/versions", headers=h)
+        assert listed.status_code == 200, listed.text
+        two, one = listed.json()["items"]
+        assert one["physical_table"] == "p_doanh_thu__v1"
+        assert one["snapshot"]["status"] == "ok" and one["snapshot"]["row_count"] == 7
+        assert two["snapshot"]["status"] == "skipped" and two["snapshot"]["sha256"] is None
+
+        # The file is the version as written, unmasked: a reader of the catalogue does not get it.
+        refused = await api.get(f"/v1/datasets/{dataset}/versions/1/snapshot", headers=h)
+        assert refused.status_code == 403
+        admin = o.headers("admin")
+        got = await api.get(f"/v1/datasets/{dataset}/versions/1/snapshot", headers=admin)
+        assert got.status_code == 302, got.text
+        assert got.headers["location"] == f"https://store.example/{key}?signature=x"
+        assert links.signed == [key]
+        with o.seed.conn.cursor() as cur:
+            cur.execute(
+                "SELECT payload->>'action' FROM catalog.outbox"
+                " WHERE aggregate_id = %s AND event_type = 'audit.requested'",
+                (str(dataset),),
+            )
+            assert cur.fetchall() == [("dataset.snapshot_downloaded",)]
+        # Skipped, or not taken yet: no file to hand out.
+        for version in (2, 3):
+            missing = await api.get(
+                f"/v1/datasets/{dataset}/versions/{version}/snapshot", headers=admin
+            )
+            assert missing.status_code == 404, missing.text
+        # A dataset its reader cannot see has no snapshot either.
+        elsewhere = _dataset(o, None, o.other, table_name="khac")
+        hidden = await api.get(f"/v1/datasets/{elsewhere}/versions/1/snapshot", headers=h)
+        assert hidden.status_code in (403, 404)
+
+        # An access policy, even a draft, or a personal column: the file would show what the
+        # query path hides, so it is not handed out (security review of c75d5f67).
+        o.seed.row(
+            "catalog.column_meta",
+            org_id=o.org,
+            dataset_id=dataset,
+            dataset_version=1,
+            name="so_dien_thoai",
+            ordinal=9,
+            data_type="text",
+            normalized_type="string",
+            pii_label="phone",
+        )
+        personal = await api.get(f"/v1/datasets/{dataset}/versions/1/snapshot", headers=admin)
+        assert personal.status_code == 403 and "personal" in personal.text
+        with o.seed.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE catalog.column_meta SET pii_label = NULL WHERE dataset_id = %s",
+                (str(dataset),),
+            )
+        o.seed.row(
+            "governance.access_policy",
+            org_id=o.org,
+            data_space_id=o.space,
+            dataset_id=dataset,
+            name="Chi nhánh của mình",
+            kind="row",
+            condition_expr="branch = :branch",
+        )
+        governed = await api.get(f"/v1/datasets/{dataset}/versions/1/snapshot", headers=admin)
+        assert governed.status_code == 403
+        assert links.signed == [key]
+
+
+@pytest.mark.req("DF-09")
+async def test_contract_put_requires_if_match(o: Org) -> None:
+    dataset = _dataset(o, None, schema_name="workspace", table_name="doanh_thu")
+    path = f"/v1/datasets/{dataset}/contract"
+    body = {
+        "status": "draft",
+        "freshness_sla": {"kind": "max_age", "value": "26h"},
+        "required_rules": [
+            {"expectation": "expect_column_values_to_not_be_null", "column": "ngay"},
+            {
+                "expectation": "expect_compound_columns_to_be_unique",
+                "columns": ["ma_don", "dong"],
+                "severity": "high",
+            },
+        ],
+    }
+    async with client(o) as api:
+        maker, checker = o.headers("steward"), o.headers("steward2")
+        none = await api.get(path, headers=o.headers("analyst"))
+        assert none.status_code == 200, none.text
+        assert none.json()["status"] == "none" and none.json()["version"] == 0
+        assert none.headers["etag"] == 'W/"contract-0"'
+
+        # No If-Match: 428; a reader of the catalogue does not write one.
+        assert (await api.put(path, json=body, headers=maker)).status_code == 428
+        denied = await api.put(
+            path, json=body, headers={**o.headers("analyst"), "If-Match": 'W/"contract-0"'}
+        )
+        assert denied.status_code == 403
+        bad = await api.put(
+            path,
+            json={**body, "required_rules": [{"expectation": "expect_magic", "column": "x"}]},
+            headers={**maker, "If-Match": 'W/"contract-0"'},
+        )
+        assert bad.status_code == 422
+
+        made = await api.put(path, json=body, headers={**maker, "If-Match": 'W/"contract-0"'})
+        assert made.status_code == 200, made.text
+        assert made.json()["version"] == 1 and made.json()["status"] == "draft"
+        assert made.headers["etag"] == 'W/"contract-1"'
+        # The version read is gone: 412, nothing written.
+        stale = await api.put(
+            path,
+            json={**body, "status": "active"},
+            headers={**checker, "If-Match": 'W/"contract-0"'},
+        )
+        assert stale.status_code == 412
+
+        # Four eyes: its writer does not activate it; another steward does.
+        own = await api.put(
+            path, json={**body, "status": "active"}, headers={**maker, "If-Match": 'W/"contract-1"'}
+        )
+        assert own.status_code == 403 and own.json()["code"] == "policy_denied"
+        active = await api.put(
+            path,
+            json={**body, "status": "active"},
+            headers={**checker, "If-Match": 'W/"contract-1"'},
+        )
+        assert active.status_code == 200, active.text
+        assert active.json()["status"] == "active" and active.json()["version"] == 2
+        read = (await api.get(path, headers=o.headers("analyst"))).json()
+        assert read["required_rules"][1]["columns"] == ["ma_don", "dong"]
+        assert read["freshness_sla"] == {"kind": "max_age", "value": "26h"}
+        with o.seed.conn.cursor() as cur:
+            cur.execute(
+                "SELECT payload->>'status' FROM catalog.outbox WHERE aggregate_id = %s"
+                " AND event_type = 'dataset.contract_changed' ORDER BY created_at",
+                (str(dataset),),
+            )
+            assert [r[0] for r in cur.fetchall()] == ["draft", "active"]

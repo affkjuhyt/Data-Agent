@@ -143,6 +143,8 @@ class Trace:
     cost: decimal.Decimal = decimal.Decimal(0)
     started: datetime.datetime = field(default_factory=_now)
     cancelled: bool = False
+    # Why the agent stopped before it was done (AE-02, agentic/budget.py): the run's stop_reason.
+    stop_reason: str | None = None
 
 
 _current: contextvars.ContextVar[Trace | None] = contextvars.ContextVar("turn_trace", default=None)
@@ -395,6 +397,30 @@ def cancelled() -> None:
         trace.cancelled = True
 
 
+def tokens_used() -> int:
+    """The model tokens the turn has spent so far; 0 outside a turn."""
+    trace = _current.get()
+    return trace.tokens if trace is not None else 0
+
+
+def stopped(reason: str) -> None:
+    """The agent stopped early (AE-02): the run records why, whatever the answer turned out."""
+    trace = _current.get()
+    if trace is not None:
+        trace.stop_reason = reason
+
+
+def outcome(error: BaseException | None, trace: Trace, question_status: str) -> tuple[str, str]:
+    """(status, stop_reason) of the run: a failure and a cancellation say so; otherwise the
+    question's outcome, with the reason the agent stopped early when it did."""
+    if error is not None:
+        return "failed", "error"
+    if trace.cancelled:
+        return "cancelled", "user_cancelled"
+    status, stop_reason = QUESTION_OUTCOME.get(question_status, ("failed", "error"))
+    return status, trace.stop_reason or stop_reason
+
+
 @asynccontextmanager
 async def turn(
     org_id: uuid.UUID, question_id: uuid.UUID, user_id: uuid.UUID | None
@@ -440,12 +466,7 @@ async def _write(trace: Trace, error: BaseException | None) -> None:
         steward = await session.scalar(
             select(org.DataSpace.steward_id).where(org.DataSpace.id == space_id)
         )
-    if error is not None:
-        status, stop_reason = "failed", "error"
-    elif trace.cancelled:
-        status, stop_reason = "cancelled", "user_cancelled"
-    else:
-        status, stop_reason = QUESTION_OUTCOME.get(question_status, ("failed", "error"))
+    status, stop_reason = outcome(error, trace, question_status)
     finished = _now()
     run_id = uuid7()
     async with scoped_session(AGENT_ROLE, trace.org_id, trace.user_id) as session:

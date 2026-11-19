@@ -5205,6 +5205,17 @@
       "title": "Id",
       "type": "string"
      },
+     "physical_table": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Physical Table"
+     },
      "proposal_id": {
       "anyOf": [
        {
@@ -5216,6 +5227,18 @@
        }
       ],
       "title": "Proposal Id"
+     },
+     "retained_until": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Retained Until"
      },
      "scan_run_id": {
       "anyOf": [
@@ -5232,6 +5255,16 @@
      "schema_hash": {
       "title": "Schema Hash",
       "type": "string"
+     },
+     "snapshot": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SnapshotView"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "valid_from": {
       "format": "date-time",
@@ -8666,6 +8699,212 @@
      "updated_at"
     ],
     "title": "ConsolidationSpecView",
+    "type": "object"
+   },
+   "ContractPut": {
+    "additionalProperties": false,
+    "description": "PUT /v1/datasets/{id}/contract with If-Match: the contract's version as read.",
+    "properties": {
+     "freshness_sla": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FreshnessSla"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "required_rules": {
+      "items": {
+       "$ref": "#/components/schemas/ContractRule"
+      },
+      "maxItems": 50,
+      "title": "Required Rules",
+      "type": "array"
+     },
+     "schema_hash_expected": {
+      "anyOf": [
+       {
+        "maxLength": 128,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schema Hash Expected"
+     },
+     "status": {
+      "default": "draft",
+      "enum": [
+       "draft",
+       "active"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "title": "ContractPut",
+    "type": "object"
+   },
+   "ContractRule": {
+    "additionalProperties": false,
+    "description": "A rule the contract requires, in GX's vocabulary (libs/quality_vocab).",
+    "properties": {
+     "column": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Column"
+     },
+     "columns": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 20,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Columns"
+     },
+     "expectation": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Expectation",
+      "type": "string"
+     },
+     "severity": {
+      "default": "high",
+      "enum": [
+       "high",
+       "medium",
+       "low"
+      ],
+      "title": "Severity",
+      "type": "string"
+     }
+    },
+    "required": [
+     "expectation"
+    ],
+    "title": "ContractRule",
+    "type": "object"
+   },
+   "ContractView": {
+    "description": "DF-09: what a steward commits a dataset to. `none` (version 0) before one is written.",
+    "properties": {
+     "broken_reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Broken Reason"
+     },
+     "dataset_id": {
+      "format": "uuid",
+      "title": "Dataset Id",
+      "type": "string"
+     },
+     "freshness_sla": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FreshnessSla"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "required_rules": {
+      "items": {
+       "$ref": "#/components/schemas/ContractRule"
+      },
+      "title": "Required Rules",
+      "type": "array"
+     },
+     "schema_hash_current": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schema Hash Current"
+     },
+     "schema_hash_expected": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schema Hash Expected"
+     },
+     "status": {
+      "enum": [
+       "none",
+       "draft",
+       "active",
+       "broken"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     },
+     "updated_by": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated By"
+     },
+     "version": {
+      "title": "Version",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "dataset_id",
+     "status",
+     "version"
+    ],
+    "title": "ContractView",
     "type": "object"
    },
    "ConversationDetail": {
@@ -12671,6 +12910,17 @@
       "title": "Id",
       "type": "string"
      },
+     "physical_table": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Physical Table"
+     },
      "proposal_id": {
       "anyOf": [
        {
@@ -12682,6 +12932,18 @@
        }
       ],
       "title": "Proposal Id"
+     },
+     "retained_until": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Retained Until"
      },
      "scan_run_id": {
       "anyOf": [
@@ -12698,6 +12960,16 @@
      "schema_hash": {
       "title": "Schema Hash",
       "type": "string"
+     },
+     "snapshot": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SnapshotView"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "valid_from": {
       "format": "date-time",
@@ -21337,6 +21609,27 @@
      "datasets"
     ],
     "title": "FreshnessReport",
+    "type": "object"
+   },
+   "FreshnessSla": {
+    "additionalProperties": false,
+    "properties": {
+     "kind": {
+      "const": "max_age",
+      "default": "max_age",
+      "title": "Kind",
+      "type": "string"
+     },
+     "value": {
+      "pattern": "^[1-9][0-9]{0,3}[hd]$",
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "value"
+    ],
+    "title": "FreshnessSla",
     "type": "object"
    },
    "FromAnswer": {
@@ -35018,6 +35311,9 @@
       "title": "Passed",
       "type": "boolean"
      },
+     "result": {
+      "title": "Result"
+     },
      "rule_id": {
       "format": "uuid",
       "title": "Rule Id",
@@ -35102,7 +35398,9 @@
        "in_list",
        "sum_matches",
        "freshness",
-       "custom_sql"
+       "custom_sql",
+       "compound_unique",
+       "match_regex"
       ],
       "title": "Kind",
       "type": "string"
@@ -41173,6 +41471,67 @@
      "written_at"
     ],
     "title": "SnapshotFileView",
+    "type": "object"
+   },
+   "SnapshotView": {
+    "description": "A version's Parquet snapshot (DF-05): `skipped` has no file, and says so.",
+    "properties": {
+     "available_at": {
+      "format": "date-time",
+      "title": "Available At",
+      "type": "string"
+     },
+     "byte_size": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Byte Size"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "row_count": {
+      "title": "Row Count",
+      "type": "integer"
+     },
+     "sha256": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sha256"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "status",
+     "sha256",
+     "row_count",
+     "byte_size",
+     "available_at",
+     "created_at"
+    ],
+    "title": "SnapshotView",
     "type": "object"
    },
    "SourceAuthorityPut": {
@@ -70011,6 +70370,329 @@
     ]
    }
   },
+  "/v1/datasets/{id}/contract": {
+   "get": {
+    "description": "DF-09: the dataset's contract, `none` before one is written; its ETag is its version.",
+    "operationId": "getDatasetContract",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ContractView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Hợp đồng dữ liệu của bảng; ETag là phiên bản (DF-09, thêm 20/11/2026)",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-04-03"
+    ]
+   },
+   "put": {
+    "description": "DF-09: write the contract, holding If-Match to the version read (428 without it, 412 when\nit moved: OCC, invariant 10). Activating it is a second person's: whoever wrote what is being\nactivated does not, unless the organisation allows self-approval (recorded).",
+    "operationId": "putDatasetContract",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "if-match",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "If-Match"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ContractPut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ContractView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "428": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "precondition_required"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Ghi hợp đồng dữ liệu, bắt buộc If-Match; kích hoạt là người khác người viết (DF-09, thêm 20/11/2026)",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "steward"
+    ],
+    "x-use-cases": [
+     "UC-04-03"
+    ]
+   }
+  },
   "/v1/datasets/{id}/versions": {
    "get": {
     "operationId": "listDatasetVersions",
@@ -70190,6 +70872,164 @@
     ],
     "x-capability": [
      "ask"
+    ],
+    "x-use-cases": [
+     "UC-04-03"
+    ]
+   }
+  },
+  "/v1/datasets/{id}/versions/{version}/snapshot": {
+   "get": {
+    "description": "DF-05: the version's Parquet file, as a short signed link; 404 when it was skipped (too\nmany rows, store down) or is not taken yet.\n\nThe file is the version as written, every column and row: policies apply when it is read\n(libs/snapshot.reader), not here. So only a data administrator gets it, only for a dataset no\naccess policy shapes and no column of which is labelled personal (security review of\nc75d5f67), and every link handed out is in the audit trail.",
+    "operationId": "getDatasetSnapshot",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "version",
+      "required": true,
+      "schema": {
+       "minimum": 1,
+       "title": "Version",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "302": {
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     },
+     "503": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "source_unavailable"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Tải bản chụp Parquet của một phiên bản: 302 tới đường dẫn ký sẵn 10 phút, chỉ cho bảng không có chính sách truy cập và cột cá nhân (DF-05, thêm 19/11/2026)",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "admin_data"
     ],
     "x-use-cases": [
      "UC-04-03"

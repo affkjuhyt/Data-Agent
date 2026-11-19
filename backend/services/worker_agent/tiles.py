@@ -104,6 +104,8 @@ async def _query(
         secrets=secrets(),
         as_of=as_of,
         limit=int(spec.get("limit") or TABLE_ROWS),
+        # DF-08: a tile does not show a table its quality rules or contract hold back.
+        quality_gate=True,
     )
     return _of_query(outcome)
 

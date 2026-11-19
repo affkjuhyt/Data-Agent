@@ -469,6 +469,8 @@ async def materialize_requested(event: Event) -> None:
                 start=start,
                 legacy=legacy,
                 actor=actor,
+                kind="pipeline_run",
+                run_id=run.id,
             )
     async with scoped_session(ROLE, event.org_id, actor) as session:
         for d in ctx["datasets"]:

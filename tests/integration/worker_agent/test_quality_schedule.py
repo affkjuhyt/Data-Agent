@@ -349,3 +349,55 @@ async def test_an_edited_rule_is_checked_again_while_active(
     edited("disabled")
     await drain()
     assert seed.one("SELECT count(*) FROM ingest.quality_result WHERE rule_id = %s", rid) == 2
+
+
+@pytest.mark.req("DF-07")
+async def test_new_expectations_mostly_and_row_condition_on_the_data(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    ids = {
+        "compound": rule(
+            bank, "compound_unique", None, {"columns": ["branch_code", "group_code"]}, "medium"
+        ),
+        "regex": rule(bank, "match_regex", "branch_code", {"regex": "^HN"}, "medium"),
+        # One group 5 among 7 loans: 14 % break it, within 1 - 0.8.
+        "mostly": rule(
+            bank, "in_list", "group_code", {"values": [1, 3, 4], "mostly": 0.8}, "medium"
+        ),
+        # The group-5 loan is not looked at.
+        "scoped": rule(
+            bank,
+            "in_list",
+            "group_code",
+            {"values": [1, 3, 4], "row_condition": "group_code <> 5"},
+            "medium",
+        ),
+    }
+    await drain()
+    got = {
+        name: seed.one(
+            "SELECT passed, violations, result FROM ingest.quality_result WHERE rule_id = %s", rid
+        )
+        for name, rid in ids.items()
+    }
+    repeated = seed.one(
+        "SELECT coalesce(sum(c - 1), 0) FROM (SELECT count(*) AS c FROM bank.loan"
+        " GROUP BY branch_code, group_code HAVING count(*) > 1) d"
+    )
+    outside_hn = seed.one("SELECT count(*) FROM bank.loan WHERE branch_code !~ '^HN'")
+    assert got["compound"][1] == repeated and got["compound"][0] is (repeated == 0)
+    assert got["regex"][:2] == (outside_hn == 0, outside_hn)
+    assert got["mostly"][:2] == (True, 1)
+    assert got["mostly"][2] == {
+        "expectation": "expect_column_values_to_be_in_set",
+        "success": True,
+        "element_count": 7,
+        "unexpected_count": 1,
+        "unexpected_percent": pytest.approx(100 / 7),
+        "mostly": 0.8,
+    }
+    assert got["scoped"][:2] == (True, 0)
+    assert got["regex"][2]["expectation"] == "expect_column_values_to_match_regex"

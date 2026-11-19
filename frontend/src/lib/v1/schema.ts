@@ -1935,6 +1935,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/datasets/{id}/contract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hợp đồng dữ liệu của bảng; ETag là phiên bản (DF-09, thêm 20/11/2026)
+         * @description DF-09: the dataset's contract, `none` before one is written; its ETag is its version.
+         */
+        get: operations["getDatasetContract"];
+        /**
+         * Ghi hợp đồng dữ liệu, bắt buộc If-Match; kích hoạt là người khác người viết (DF-09, thêm 20/11/2026)
+         * @description DF-09: write the contract, holding If-Match to the version read (428 without it, 412 when
+         *     it moved: OCC, invariant 10). Activating it is a second person's: whoever wrote what is being
+         *     activated does not, unless the organisation allows self-approval (recorded).
+         */
+        put: operations["putDatasetContract"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/datasets/{id}/versions": {
         parameters: {
             query?: never;
@@ -1944,6 +1970,32 @@ export interface paths {
         };
         /** Lịch sử cấu trúc */
         get: operations["listDatasetVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/datasets/{id}/versions/{version}/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tải bản chụp Parquet của một phiên bản: 302 tới đường dẫn ký sẵn 10 phút, chỉ cho bảng không có chính sách truy cập và cột cá nhân (DF-05, thêm 19/11/2026)
+         * @description DF-05: the version's Parquet file, as a short signed link; 404 when it was skipped (too
+         *     many rows, store down) or is not taken yet.
+         *
+         *     The file is the version as written, every column and row: policies apply when it is read
+         *     (libs/snapshot.reader), not here. So only a data administrator gets it, only for a dataset no
+         *     access policy shapes and no column of which is labelled personal (security review of
+         *     c75d5f67), and every link handed out is in the audit trail.
+         */
+        get: operations["getDatasetSnapshot"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8831,12 +8883,17 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Physical Table */
+            physical_table?: string | null;
             /** Proposal Id */
             proposal_id: string | null;
+            /** Retained Until */
+            retained_until?: string | null;
             /** Scan Run Id */
             scan_run_id: string | null;
             /** Schema Hash */
             schema_hash: string;
+            snapshot?: components["schemas"]["SnapshotView"] | null;
             /**
              * Valid From
              * Format: date-time
@@ -9940,6 +9997,72 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * ContractPut
+         * @description PUT /v1/datasets/{id}/contract with If-Match: the contract's version as read.
+         */
+        ContractPut: {
+            freshness_sla?: components["schemas"]["FreshnessSla"] | null;
+            /** Required Rules */
+            required_rules?: components["schemas"]["ContractRule"][];
+            /** Schema Hash Expected */
+            schema_hash_expected?: string | null;
+            /**
+             * Status
+             * @default draft
+             * @enum {string}
+             */
+            status?: "draft" | "active";
+        };
+        /**
+         * ContractRule
+         * @description A rule the contract requires, in GX's vocabulary (libs/quality_vocab).
+         */
+        ContractRule: {
+            /** Column */
+            column?: string | null;
+            /** Columns */
+            columns?: string[] | null;
+            /** Expectation */
+            expectation: string;
+            /**
+             * Severity
+             * @default high
+             * @enum {string}
+             */
+            severity: "high" | "medium" | "low";
+        };
+        /**
+         * ContractView
+         * @description DF-09: what a steward commits a dataset to. `none` (version 0) before one is written.
+         */
+        ContractView: {
+            /** Broken Reason */
+            broken_reason?: string | null;
+            /**
+             * Dataset Id
+             * Format: uuid
+             */
+            dataset_id: string;
+            freshness_sla?: components["schemas"]["FreshnessSla"] | null;
+            /** Required Rules */
+            required_rules?: components["schemas"]["ContractRule"][];
+            /** Schema Hash Current */
+            schema_hash_current?: string | null;
+            /** Schema Hash Expected */
+            schema_hash_expected?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "none" | "draft" | "active" | "broken";
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+            /** Version */
+            version: number;
         };
         /**
          * ConversationDetail
@@ -11208,12 +11331,17 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Physical Table */
+            physical_table?: string | null;
             /** Proposal Id */
             proposal_id: string | null;
+            /** Retained Until */
+            retained_until?: string | null;
             /** Scan Run Id */
             scan_run_id: string | null;
             /** Schema Hash */
             schema_hash: string;
+            snapshot?: components["schemas"]["SnapshotView"] | null;
             /**
              * Valid From
              * Format: date-time
@@ -14309,6 +14437,17 @@ export interface components {
             data_product_id: string;
             /** Datasets */
             datasets: components["schemas"]["DatasetFreshness"][];
+        };
+        /** FreshnessSla */
+        FreshnessSla: {
+            /**
+             * Kind
+             * @default max_age
+             * @constant
+             */
+            kind: "max_age";
+            /** Value */
+            value: string;
         };
         /** FromAnswer */
         FromAnswer: {
@@ -19339,6 +19478,8 @@ export interface components {
             id: string;
             /** Passed */
             passed: boolean;
+            /** Result */
+            result?: unknown;
             /**
              * Rule Id
              * Format: uuid
@@ -19368,7 +19509,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "not_null" | "range" | "unique" | "in_list" | "sum_matches" | "freshness" | "custom_sql";
+            kind: "not_null" | "range" | "unique" | "in_list" | "sum_matches" | "freshness" | "custom_sql" | "compound_unique" | "match_regex";
             /** Params */
             params?: {
                 [key: string]: unknown;
@@ -21597,6 +21738,35 @@ export interface components {
              * Format: date-time
              */
             written_at: string;
+        };
+        /**
+         * SnapshotView
+         * @description A version's Parquet snapshot (DF-05): `skipped` has no file, and says so.
+         */
+        SnapshotView: {
+            /**
+             * Available At
+             * Format: date-time
+             */
+            available_at: string;
+            /** Byte Size */
+            byte_size: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Row Count */
+            row_count: number;
+            /** Sha256 */
+            sha256: string | null;
+            /** Status */
+            status: string;
         };
         /** SourceAuthorityPut */
         SourceAuthorityPut: {
@@ -39117,6 +39287,246 @@ export interface operations {
             };
         };
     };
+    getDatasetContract: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    putDatasetContract: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContractPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description precondition_required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
     listDatasetVersions: {
         parameters: {
             query?: {
@@ -39224,6 +39634,127 @@ export interface operations {
             };
             /** @description Rate limited */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    getDatasetSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description source_unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

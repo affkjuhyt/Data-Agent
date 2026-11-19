@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,18 @@ from services.api.kernel.screening import refuse_instructions
 from services.api.modules.qa import scope
 
 TITLE_LENGTH = 80
+# AE-03 (01 §2.1, F6): how much the agent may ask back. A person who only asks (AC01, AC02 and any
+# role like them) is an executive: one clarification round, three options at most. One who also
+# reads the detail, looks after the data or builds agents is an analyst. Read from what the asker
+# may do, never from the client: a request naming its own audience is refused (QuestionCreate
+# forbids unknown fields, 422).
+ANALYST_CAPABILITIES = frozenset(
+    {"view_detail", "steward", "prepare_data", "admin_data", "run_agent", "create_agent"}
+)
+
+
+def audience_of(principal: Principal) -> Literal["executive", "analyst"]:
+    return "analyst" if principal.capabilities & ANALYST_CAPABILITIES else "executive"
 
 
 def title_of(text: str) -> str | None:
@@ -108,6 +121,7 @@ async def insert_question(
             "parent_question_id": parent_question_id,
             "user_id": principal.user_id,
             "status": "received",
+            "audience": audience_of(principal),
         },
     )
     return question, conversation

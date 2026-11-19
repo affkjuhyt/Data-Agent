@@ -25,7 +25,7 @@ from fastapi._compat import get_cached_model_fields
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs import tabular
+from libs import quality_vocab, tabular
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, ingest
 from services.api.catalogue import endpoint
@@ -42,7 +42,7 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.kernel.problems import Problem
+from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.ingest.schemas import (
     Accepted,
     Acknowledge,
@@ -225,9 +225,7 @@ async def create_job(
     response: Response,
     dry_run: Annotated[
         bool,
-        Query(
-            description="Sample up to 1,000 source rows via worker-ingest; returns 202 Accepted"
-        ),
+        Query(description="Sample up to 1,000 source rows via worker-ingest; returns 202 Accepted"),
     ] = False,
 ) -> IngestionJobView | Accepted:
     async with transaction(ROLE, principal) as session:
@@ -1446,6 +1444,21 @@ async def list_quality_rules(
     )
 
 
+def _check_rule(kind: str, column: str | None, params: dict[str, Any]) -> None:
+    """DF-07: a rule's parameters make a check (libs/quality_vocab): `mostly` in (0, 1], a
+    row_condition of columns compared with constants, the columns of a compound key, a regex that
+    compiles. The seven older kinds keep accepting what they did."""
+    try:
+        quality_vocab.validate(kind, column, params)
+    except quality_vocab.RuleInvalid as exc:
+        raise Problem(
+            422,
+            "validation_failed",
+            str(exc),
+            errors=[FieldError(field="params", code="invalid", message=str(exc))],
+        ) from exc
+
+
 @router.post(
     "/v1/quality-rules",
     response_model=QualityRuleView,
@@ -1455,6 +1468,7 @@ async def list_quality_rules(
 async def create_quality_rule(
     body: QualityRuleCreate, principal: CurrentPrincipal, data_space: CurrentDataSpace
 ) -> QualityRuleView:
+    _check_rule(body.kind, body.column_name, body.params or {})
     async with transaction(ROLE, principal) as session:
         # UC-06-07 precondition: the table is in the catalog.
         if not await _dataset(session, body.dataset_id, principal, data_space):
@@ -1507,6 +1521,8 @@ async def update_quality_rule(
     changes = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     async with transaction(ROLE, principal) as session:
         row = await _rule(session, rule_id, principal, data_space)
+        if "params" in changes:
+            _check_rule(row.kind, row.column_name, changes["params"])
         for field, value in changes.items():
             setattr(row, field, value)
         row.updated_by, row.updated_at = principal.user_id, _now()
@@ -1543,6 +1559,7 @@ def _result_view(result: ingest.QualityResult, rule: ingest.QualityRule) -> Qual
         checked_at=result.checked_at,
         dataset_id=rule.dataset_id,
         severity=rule.severity,
+        result=result.result,
     )
 
 

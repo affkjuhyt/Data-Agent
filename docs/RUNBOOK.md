@@ -210,6 +210,16 @@ token, so sending your own identity headers is pointless.
 
 `make bench-e2e` breaks one real turn down per stage (`model/bench/e2e.py`).
 
+**Which engine answers** (AE-01, `backend/services/worker_agent/router.py`). A question the rule
+pass places on one certified metric, an ambiguous one and one it places nowhere go to the governed
+path; the dynamic agent gets "why", two metrics the question joins, a metric with the documents, a
+documents question and a turn asked to go deep. `ASK_ENGINE` in `worker-agent-env` sets the policy:
+`router` (default), `agentic` (the agent first for every question, as before 19/11/2026: the
+rollback) or `governed` (never the agent). Every route is counted in
+`dataagent_ask_route_total{path,reason}` on worker-agent's `/metrics`. The api adds the asker's
+`audience` to `question.received` (AE-03): `executive` when they only ask, `analyst` when they also
+read the detail, steward the data or build agents; it sets how often the agent may ask back.
+
 **Query result cache.** `worker-agent` reuses a query result for `QUERY_CACHE_TTL_S` seconds
 (default 600; `0` turns it off) when the Data Space, the source, the executed SQL (after row
 policies and scopes), the column and mask policies applied (and none of them changed since) and the
@@ -643,8 +653,25 @@ its end plus 90 days, and nothing drops one yet (that needs its Parquet snapshot
 loaded before versioning becomes `__v<its version>` at the next full run, renamed, never dropped.
 An incremental run appends to the current version's table and refreshes the view, which then shows
 a column it added. A version can be kept as an immutable Parquet file in the object-locked bucket
-`da-snapshots` (DF-04, `libs/snapshot`, 90-day retention; the writers call it from DF-05,
-`SNAPSHOT_ENABLED=0` turns it off). Uploads, saved pipelines and saved queries write the workspace the same way
+`da-snapshots` (DF-04, `libs/snapshot`, 90-day retention): every version written whole is
+announced as `dataset.version_created` and worker-agent snapshots it (DF-05,
+`services/worker_agent/snapshots.py`), recording `catalog.dataset_snapshot` as `ok` or `skipped`
+(over `SNAPSHOT_MAX_ROWS`, store down; the reason is in worker-agent's log). An appended version
+keeps the snapshot of when it was written. `SNAPSHOT_ENABLED=0` on worker-agent turns it off.
+`GET /v1/datasets/{id}/versions/{v}/snapshot` hands out a 10-minute signed link to the file.
+A dataset's contract (DF-09, `GET/PUT /v1/datasets/{id}/contract`, tab "Hợp đồng dữ liệu" of a
+table's profile) is written by one steward and activated by another (PUT needs If-Match: 428
+without, 412 when changed); a data product goes active only when every dataset in it has an
+active contract. The quality gate (DF-08, `worker_agent/quality_gate.py`) holds back a dataset whose high-severity
+rule failed and was not acknowledged within 24 h, or whose contract is `broken`: a governed answer
+refuses with `QUALITY_BLOCKED` before running, a tile or scheduled report leaves it out, the
+agent hands the turn to the governed path, a data product does not go active over it. A failing
+lower rule is a caveat. `QUALITY_GATE=warn` on worker-agent turns every block into a caveat.
+A quality rule (DF-07, `libs/quality_vocab`) is one GX expectation; a counting rule takes
+`mostly` and `row_condition` (columns compared with constants), and its result is also kept in
+GX's shape in `ingest.quality_result.result`. A receipt replay (DF-06) reads a workspace dataset at the version the answer read: its `__v<n>`
+table while it stands, else its snapshot in DuckDB, with the asker's policies as on the live path
+(query_run `route = history`); a source outside the workspace is still read as it is now. Uploads, saved pipelines and saved queries write the workspace the same way
 (DF-03, worker-agent): an upload into an existing table writes its next version (`replace`, the
 default) or appends to the current one (`keep`); saving a pipeline again writes the next version;
 none of them drops a table. `INGEST_VERSIONED=0` (worker-ingest and worker-agent) keeps the old

@@ -97,6 +97,16 @@ def product(bank: Bank, expected: int) -> uuid.UUID:
         sla_max_age="P1D",
         freshness_state="fresh",
     )
+    # DF-09: an active product's datasets are under an active contract.
+    if not seed.one(
+        "SELECT count(*) FROM catalog.dataset_contract WHERE dataset_id = %s", bank.loans
+    ):
+        seed.row(
+            "catalog.dataset_contract",
+            org_id=bank.org,
+            dataset_id=bank.loans,
+            status="active",
+        )
     seed.row(
         "context.outbox",
         org_id=bank.org,
@@ -299,4 +309,27 @@ async def test_an_accepted_supersession_ends_the_old_document(
     assert (
         str(seed.one("SELECT effective_to FROM document.document WHERE id = %s", old))
         == "2026-03-31"
+    )
+
+
+@pytest.mark.req("DF-09")
+async def test_a_product_whose_dataset_has_no_active_contract_stays_pending(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid_product = product(bank, 3000)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE catalog.dataset_contract SET status = 'draft' WHERE dataset_id = %s",
+            (str(bank.loans),),
+        )
+    await drain_all()
+    proposal = seed.one("SELECT proposal_id FROM context.data_product WHERE id = %s", pid_product)
+    decide(seed, bank.org, proposal, "accepted", person(seed, bank.org, "rv"))
+    await drain_all()
+    assert (
+        seed.one("SELECT status FROM context.data_product WHERE id = %s", pid_product)
+        == "pending_review"
     )

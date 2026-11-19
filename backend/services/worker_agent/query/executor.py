@@ -36,16 +36,19 @@ import decimal
 import hashlib
 import json
 import os
+import tempfile
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal, cast
 
 import asyncpg
 from sqlalchemy import select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
+from sqlglot import exp, parse_one
 
 from libs import source_drivers
 from libs.dataagent_db import scoped_session, uuid7
@@ -99,6 +102,120 @@ def _pg_type(code: Any) -> str:
     if isinstance(code, int):
         return _PG_OIDS.get(code, "unknown")
     return str(code or "unknown")
+
+
+# DuckDB's type names, as a snapshot read reports them, named as the workspace path names them.
+_DUCK_TYPES = {
+    "BOOLEAN": "bool",
+    "BIGINT": "int8",
+    "SMALLINT": "int2",
+    "INTEGER": "int4",
+    "VARCHAR": "text",
+    "FLOAT": "float4",
+    "DOUBLE": "float8",
+    "DATE": "date",
+    "TIMESTAMP": "timestamp",
+    "TIMESTAMP WITH TIME ZONE": "timestamptz",
+    "HUGEINT": "numeric",
+}
+
+
+def _duck_type(name: str) -> str:
+    return "numeric" if name.startswith("DECIMAL") else _DUCK_TYPES.get(name, "unknown")
+
+
+class SnapshotUnreadable(RuntimeError):
+    """A version's snapshot could not be fetched, was not the recorded file, or failed in DuckDB."""
+
+
+@dataclass(frozen=True)
+class VersionRead:
+    """A workspace dataset read as it was at an earlier version (DF-06, a receipt replay): `table`
+    is its name as the SQL names it, `physical` the version's own table while it stands, and the
+    version's Parquet snapshot (`snapshot_key`, `snapshot_sha256`) once it is gone."""
+
+    table: str
+    physical: str | None
+    snapshot_key: str | None = None
+    snapshot_sha256: str | None = None
+
+
+def at_versions(executed: str, versions: Mapping[str, VersionRead], *, files: bool) -> str:
+    """The bound SQL reading each versioned dataset where its version is: its version's table, or,
+    with `files`, the snapshot loaded under the dataset's own name in DuckDB (and DuckDB's
+    dialect). The column, mask and row policies are already written into `executed`, as a
+    subquery over the name: they apply to the version's rows unchanged. A query that also reads a
+    workspace table with no snapshot cannot be read from files, and is refused."""
+    tree = parse_one(executed, dialect="postgres")
+    ctes = {cte.alias for cte in tree.find_all(exp.CTE)}
+    for table in tree.find_all(exp.Table):
+        db = table.args.get("db")
+        if table.args.get("catalog") or (db is not None and db.name != "workspace"):
+            continue
+        if db is None and table.name in ctes:
+            continue
+        found = versions.get(table.name)
+        if found is None:
+            if files:
+                raise SqlRejected(
+                    f"{table.name} has no snapshot of the version the answer read: the others "
+                    "cannot be read from theirs alone"
+                )
+            continue
+        if files:
+            table.set("db", None)
+            table.set("this", exp.to_identifier(found.table, quoted=True))
+        else:
+            table.set("this", exp.to_identifier(found.physical, quoted=True))
+            table.set("db", exp.to_identifier("workspace"))
+    return tree.sql(dialect="duckdb" if files else "postgres")
+
+
+async def _read_snapshots(
+    sql: str, versions: Sequence[VersionRead], limit: int, timeout_s: int
+) -> tuple[list[dict[str, str]], list[list[Any]]]:
+    """Run `sql` (DuckDB's, policies written in) on the versions' snapshots (libs/snapshot).
+
+    One deadline, `timeout_s` from now, bounds the downloads and the read; DuckDB gets only what
+    is left and interrupts itself at it, so the thread ends by the deadline and the source's slot
+    is held until it has (security review of 9d7cdcfa: an outer wait_for let the slot go while
+    the read went on)."""
+    import duckdb
+
+    from libs.snapshot import reader
+    from libs.snapshot.store import StoreUnavailable
+    from services.worker_agent import snapshots
+
+    deadline = time.monotonic() + timeout_s
+    try:
+        store = snapshots.store()
+        with tempfile.TemporaryDirectory(prefix="replay-") as tmp:
+            files: dict[str, reader.SnapshotFile] = {}
+            for index, version in enumerate(versions):
+                assert version.snapshot_key and version.snapshot_sha256
+                path = Path(tmp) / f"{index}.parquet"
+                await asyncio.wait_for(
+                    store.get(version.snapshot_key, path),
+                    timeout=max(deadline - time.monotonic(), 0.001),
+                )
+                files[version.table] = reader.SnapshotFile(path, version.snapshot_sha256)
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise TimeoutError("the snapshots took the whole time limit to fetch")
+            read = await asyncio.to_thread(
+                reader.query, files, sql, max_rows=limit + 1, timeout_s=left
+            )
+    except reader.SnapshotMismatch as exc:
+        raise SnapshotUnreadable(f"a snapshot is not the file recorded: {exc}") from exc
+    except StoreUnavailable as exc:
+        raise SnapshotUnreadable(str(exc)) from exc
+    except duckdb.Error as exc:
+        raise SnapshotUnreadable(f"the snapshot could not be read ({type(exc).__name__})") from exc
+    columns = [
+        {"name": name, "type": _duck_type(kind)}
+        for name, kind in zip(read.columns, read.types, strict=True)
+    ]
+    return columns, [[_plain(value) for value in row] for row in read.rows]
 
 
 STORED_ROWS = 1_000  # query.query_result keeps at most this many (D4)
@@ -299,6 +416,7 @@ class Bound:
 
     executed: str
     policies: list[governance.AccessPolicy]
+    datasets: list[uuid.UUID] = field(default_factory=list)  # what the SQL reads (DF-08's gate)
 
 
 async def bound_sql(
@@ -382,7 +500,7 @@ async def bound_sql(
                 principal_id=reader,
             ),
         )
-    return Bound(executed, list(policies))
+    return Bound(executed, list(policies), [d.id for d in readable_datasets])
 
 
 async def run_query(
@@ -400,6 +518,8 @@ async def run_query(
     private: bool = False,
     run_id: uuid.UUID | None = None,
     limit: int = MAX_ROWS,
+    versions: Sequence[VersionRead] = (),
+    quality_gate: bool = False,
 ) -> QueryOutcome:
     """`private=True` is the channel of UC-16-02: the run is recorded (who, which source, status,
     counts, result hash) but neither its SQL, whose literals come from the question, nor its rows,
@@ -407,13 +527,26 @@ async def run_query(
     is left in a table.
 
     `run_id` names a run the api already recorded (POST /v1/query-runs, the explorer): that row is
-    completed instead of a new one written. `limit` (at most BR-03's 10 000) caps the rows."""
+    completed instead of a new one written. `limit` (at most BR-03's 10 000) caps the rows.
+
+    `versions` (DF-06, the internal workspace only) reads those datasets as they were at an
+    earlier version: their version's tables while every one stands, else their Parquet snapshots
+    in DuckDB. The swap comes after every check and policy rewrite (at_versions), so the asker's
+    limits are the live path's; the run is recorded with route `history`.
+
+    `quality_gate` (DF-08: tiles, scheduled reports) refuses to read a dataset its quality rules
+    or contract hold back (worker_agent/quality_gate), before the source is asked; the run is
+    recorded failed with why. A quality check, a replay, an eval or a pipeline does not ask it."""
     limit = min(limit, MAX_ROWS)
     existing = run_id is not None
     run_id = run_id or uuid7()
     started = time.monotonic()
     outcome = QueryOutcome(query_run_id=run_id, status="failed", sql=sql)
     executed = sql
+    historic = bool(versions) and source.secret_ref == INTERNAL_WORKSPACE
+    by_table = {v.table: v for v in versions} if historic else {}
+    # Every version's table stands: read them in place; else every one needs its snapshot.
+    from_files = historic and any(v.physical is None for v in versions)
     output_policies: list[governance.AccessPolicy] = []
     applied_policy_ids: list[uuid.UUID] = []
     applied_policies: list[governance.AccessPolicy] = []
@@ -432,6 +565,18 @@ async def run_query(
             applied_policies = bound.policies
             applied_policy_ids = [policy.id for policy in bound.policies]
             output_policies = [p for p in bound.policies if p.kind in {"column", "mask"}]
+            if quality_gate:
+                from services.worker_agent import quality_gate as gate
+
+                held = await gate.check(org_id, bound.datasets, principal_id)
+                if held.blocked:
+                    raise SqlRejected(held.message)
+            if from_files and any(v.snapshot_key is None for v in versions):
+                raise SqlRejected(
+                    "a version the answer read has neither its table nor a snapshot any more"
+                )
+            if historic:
+                executed = at_versions(executed, by_table, files=from_files)
         except SqlRejected as exc:
             outcome.error = str(exc)
         hit: tuple[q.QueryRun, q.QueryResult] | None = None
@@ -440,6 +585,7 @@ async def run_query(
         if (
             outcome.error is None
             and not private
+            and not historic
             and caller_kind in CACHEABLE_CALLERS
             and source.secret_ref != INTERNAL_WORKSPACE
         ):
@@ -474,7 +620,7 @@ async def run_query(
                     caller_kind=caller_kind,
                     caller_id=caller_id,
                     principal_id=principal_id,
-                    route="live",
+                    route="history" if historic else "live",
                     metric_version_ids=list(metric_version_ids),
                     as_of=as_of,
                     **recorded,
@@ -497,7 +643,10 @@ async def run_query(
     else:
         try:
             async with _slot(source):
-                if source.secret_ref == INTERNAL_WORKSPACE:
+                if from_files:
+                    # The source's limit, as a live read has it (_read_snapshots).
+                    columns, rows = await _read_snapshots(executed, versions, limit, timeout_s)
+                elif source.secret_ref == INTERNAL_WORKSPACE:
                     async with scoped_session(ROLE, org_id, principal_id) as local_session:
                         await local_session.execute(text("SET TRANSACTION READ ONLY"))
                         # Upload tables are materialized in the private workspace schema. The SQL
@@ -536,6 +685,8 @@ async def run_query(
         except SecretUnavailable as exc:
             outcome.error = str(exc)
         except SourceDriverError as exc:
+            outcome.error = str(exc)
+        except SnapshotUnreadable as exc:
             outcome.error = str(exc)
         except SQLAlchemyError as exc:
             outcome.error = f"local query failed ({type(exc).__name__})"

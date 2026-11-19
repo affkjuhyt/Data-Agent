@@ -13,6 +13,11 @@ The previous versions stay as tables (`physical_table` on catalog.dataset_versio
 KEEP_VERSIONS newest, a version is marked `retained_until` its end plus KEEP_DAYS; dropping one is
 for a job that first checks its Parquet snapshot exists (DF-04), never for a writer.
 
+A version written whole (a full run, an upload that replaces, a saved pipeline or query) is
+announced on catalog.outbox as `dataset.version_created`, in the transaction that catalogues it:
+worker-agent snapshots it to Parquet (DF-05, services/worker_agent/snapshots.py). An append is
+not announced; the snapshot of its version is the one taken when the version was written.
+
 INGEST_VERSIONED=0 keeps the replace-in-place path for one release.
 """
 
@@ -29,6 +34,7 @@ from typing import Any
 
 from sqlalchemy import select, text, update
 
+from .base import uuid7
 from .models import catalog
 
 ENABLED = os.environ.get("INGEST_VERSIONED", "1") != "0"
@@ -42,6 +48,8 @@ MAX_VERSION = 99_999
 
 
 DIGEST_CHARS = 16
+
+VERSION_CREATED = "dataset.version_created"
 
 
 def version_base(table_name: str) -> str:
@@ -159,10 +167,12 @@ async def record(
     start: Current,
     legacy: str | None,
     actor: uuid.UUID | None,
+    kind: str,
+    run_id: uuid.UUID | None,
 ) -> None:
     """Catalogue a version a write made (svc_catalog's session, the dataset row already there):
-    the version before ends, the table that stood where the view now is keeps it, and the dataset's
-    current version is this one."""
+    the version before ends, the table that stood where the view now is keeps it, the dataset's
+    current version is this one, and the version is announced for its snapshot."""
     known = {
         str(name): str(kind)
         for name, kind in (
@@ -211,9 +221,9 @@ async def record(
         )
         .values(valid_to=moment)
     )
-    kind, diff = change_kind(set(known), [str(c["name"]) for c in columns])
-    if kind == "initial" and (start.latest or legacy is not None):
-        kind = "reload"
+    change, diff = change_kind(set(known), [str(c["name"]) for c in columns])
+    if change == "initial" and (start.latest or legacy is not None):
+        change = "reload"
     session.add(
         catalog.DatasetVersion(
             id=uuid.uuid4(),
@@ -222,7 +232,7 @@ async def record(
             version=version,
             schema_hash=schema_hash(columns),
             diff=diff,
-            change_kind=kind,
+            change_kind=change,
             valid_from=moment,
             physical_table=physical,
             created_by=actor,
@@ -233,6 +243,49 @@ async def record(
         dataset.current_version = version
     await session.flush()
     await mark_retention(session, dataset_id, version)
+    announce(
+        session,
+        org_id=org_id,
+        dataset_id=dataset_id,
+        version=version,
+        physical=physical,
+        kind=kind,
+        run_id=run_id,
+        at=moment,
+    )
+
+
+def announce(
+    session: Any,
+    *,
+    org_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    version: int,
+    physical: str,
+    kind: str,
+    run_id: uuid.UUID | None,
+    at: datetime.datetime,
+) -> None:
+    """`dataset.version_created` on catalog.outbox, in the caller's catalog transaction. `kind` is
+    what wrote it, as catalog.dataset_snapshot.created_by_kind names it (job_run, pipeline_run,
+    upload, derive), `run_id` that run, `at` when its rows became the dataset's."""
+    session.add(
+        catalog.Outbox(
+            id=uuid7(),
+            org_id=org_id,
+            aggregate_type="dataset",
+            aggregate_id=dataset_id,
+            event_type=VERSION_CREATED,
+            payload={
+                "dataset_id": str(dataset_id),
+                "version": version,
+                "physical_table": physical,
+                "created_by_kind": kind,
+                "run_id": str(run_id) if run_id else None,
+                "available_at": at.isoformat(),
+            },
+        )
+    )
 
 
 async def mark_retention(session: Any, dataset_id: uuid.UUID, newest: int) -> None:

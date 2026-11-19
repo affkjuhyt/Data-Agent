@@ -47,7 +47,7 @@ from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
-from services.worker_agent import explore, suggestions, turn_trace
+from services.worker_agent import explore, quality_gate, suggestions, turn_trace
 from services.worker_agent.analyst_plan import build_analysis_plan
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.comparison import (
@@ -234,6 +234,8 @@ class Prepared:
     analysis: str | None = None
     # A requested cut was unavailable; the answer is still useful as an aggregate.
     best_effort_note: str | None = None
+    # DF-08: a dataset read with a failing quality rule (warning, or an acknowledged block).
+    quality_note: str | None = None
     # The next questions the answer offers, each read back and compiled (suggestions.py).
     follow_ups: list[str] = field(default_factory=list)
     # What the turn needs to look again when the asked period has no data (explore.py): the
@@ -1799,6 +1801,17 @@ async def _understand_and_plan(
                         message=str(exc),
                         detail_id=str(question.id),
                     )
+        # DF-08: no number from a dataset its quality rules or contract hold back; a failing lower
+        # rule, or an acknowledged block, goes out with the answer as a caveat.
+        quality_note: str | None = None
+        if u.decision == "proceed" and problem is None and compiled is not None:
+            held = await quality_gate.check(event.org_id, compiled.dataset_ids, user_id)
+            if held.blocked:
+                problem = Refusal.of(
+                    ErrorCode.QUALITY_BLOCKED, message=held.message, detail_id=str(question.id)
+                )
+            elif held.caveats:
+                quality_note = " ".join(held.caveats)
         if (
             u.decision == "proceed"
             and problem is None
@@ -1852,6 +1865,7 @@ async def _understand_and_plan(
                     u, layer, today=today, grain=grain, compared=compare_to is not None
                 ),
                 best_effort_note=best_effort_note,
+                quality_note=quality_note,
                 request=compile_request,
                 # Bound now (partial, not a closure over names this loop may rebind).
                 recompile=functools.partial(
@@ -2223,8 +2237,11 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             if u.period
             else "Không nêu kỳ: số liệu là dữ liệu mới nhất có trong nguồn."
         )
-        if p.best_effort_note:
-            latest_note = f"{p.best_effort_note} {latest_note}"
+        # latest_note is None for a period answered from filed numbers: a note stands alone then
+        # (it read "… None" before).
+        for note in (p.best_effort_note, p.quality_note):
+            if note:
+                latest_note = f"{note} {latest_note}" if latest_note else note
         # What the table and chart show, by arithmetic: each number a figure with its expression.
         ins = (
             comparison_insights(
@@ -2343,7 +2360,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             "sentences_dropped": 0,
             "untraceable_final": 0,
         }
-        notes = [n for n in (p.lead_note, p.best_effort_note) if n]
+        notes = [n for n in (p.lead_note, p.best_effort_note, p.quality_note) if n]
         if notes:
             # What the answer left out or changed and says so; drawn again among its caveats.
             check["notes"] = notes

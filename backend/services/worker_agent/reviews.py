@@ -26,9 +26,9 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import conflict, context, document
+from libs.dataagent_db.models import catalog, conflict, context, document
 from libs.dataagent_db.models import eval as ev
-from services.worker_agent import evaluation, self_approval
+from services.worker_agent import evaluation, quality_gate, self_approval
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
@@ -269,7 +269,27 @@ async def _still_at_the_bar(
                 member.sla_kind != "none",
             )
         )
-    return bool(certified) and bool(committed)
+        datasets = (
+            await session.scalars(
+                select(member.member_ref).where(
+                    member.data_product_id == product_id, member.member_kind == "dataset"
+                )
+            )
+        ).all()
+        # DF-09: every dataset of an active product is under an active contract.
+        contracted = await session.scalar(
+            select(func.count())
+            .select_from(catalog.DatasetContract)
+            .where(
+                catalog.DatasetContract.dataset_id.in_(list(datasets)),
+                catalog.DatasetContract.status == "active",
+            )
+        )
+    if not (certified and committed) or contracted != len(set(datasets)):
+        return False
+    # DF-08: a product does not go active over a dataset its quality rules or contract hold back.
+    held = await quality_gate.check(event.org_id, list(datasets), reviewer)
+    return not held.blocked
 
 
 async def _apply(event: Event, proposal: dict[str, Any]) -> bool:

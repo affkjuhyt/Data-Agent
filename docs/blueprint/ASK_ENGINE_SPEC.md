@@ -121,7 +121,10 @@ Retry/idempotency: `decide` thuần, không I/O ngoài DB đọc; handler `quest
 (giữ như `questions.py:22`). Timeout: toàn lượt = `budget.seconds` (agentic) hoặc `GOVERNED_TIMEOUT_S=30`.
 
 Security: `audience` đọc từ `event.payload.audience`, **api** đặt từ vai của người hỏi trong Data Space (AC01/AC02 →
-`executive`, AC03/AC04 → `analyst`); client không được gửi `audience` (giữ nguyên tắc R0-5). `agent_allowed` đọc
+`executive`, AC03/AC04 → `analyst`); client không được gửi `audience` (giữ nguyên tắc R0-5). **Đã làm (AE-03,
+19/11/2026):** suy từ quyền, không từ mã vai (một tổ chức thêm vai của mình): có `view_detail`, `steward`,
+`prepare_data`, `admin_data`, `run_agent` hoặc `create_agent` → `analyst`, chỉ hỏi → `executive`
+(`api/modules/qa/questions.audience_of`); `QuestionCreate` cấm trường lạ nên body có `audience` nhận 422. `agent_allowed` đọc
 `org.data_space.policy.agent_enabled` (cột có sẵn dạng jsonb `ingest_profile`? không — dùng `agent_def.policy`; xem đề xuất
 §13).
 
@@ -144,6 +147,19 @@ Logging/metrics: counter `ask_route_total{path,reason}`; histogram `ask_turn_sec
 - Đo 19/11 (DS-AW, 61 câu): 61 → governed; `agent-eval --engines router` 49/61, trùng từng câu với governed;
   853 token và 2,6 s mỗi câu.
 - Chưa có: ghi `reason` vào `qa.plan.steps.router` và timeline (AE-18 trace theo bước); `audience` (AE-03).
+
+#### Đã làm (AE-02, 19/11/2026)
+
+- `agentic/budget.py`: token, giây, bước theo `audience` (AE-03) và `deep` — executive 15k/30 s/6, analyst
+  40k/60 s/8, deep 120k/180 s/12 (provisional). Token đọc từ bộ đếm của `turn_trace` (mọi lần gọi model của lượt,
+  tính từ lúc đặt ngân sách); không cần hook riêng ở `llm.py`.
+- Kiểm ở điểm rẽ (`after_act`, `after_review`, route của `replan`), không giữa một bước: hết ngân sách thì sang
+  `compose` với cái đã có (`present_gate` vẫn quyết trả lời hay giao về governed). `agent.agent_run.stop_reason` =
+  `budget_tokens | budget_duration | budget_steps` (cột và CHECK đã có, không migration); `qa.plan.steps.operator.stopped`
+  và câu `why` nói lý do. Chưa có: `trust_code=INSUFFICIENT` cho câu trả lời dừng sớm (AE-04).
+- Đo 19/11, 20 câu DS-AW đầu, engine `agentic`: không ngân sách 19/20, p95 48 s, token p95 49k; analyst 19/20,
+  p95 50,7 s (≤ 60 s); executive 19/20, p95 29,6 s, token p95 30,5k. Token có thể vượt hạn mức một lần `compose`
+  (kiểm trước, không cắt ngang lời gọi model).
 
 ### C. OSS
 

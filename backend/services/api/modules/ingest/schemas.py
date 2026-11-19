@@ -16,8 +16,17 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 JobMode = Literal["full", "incremental", "cdc"]
 JobStatus = Literal["draft", "active", "paused", "failing", "schema_drift"]
+# DF-07: each kind is one expectation of GX's vocabulary (libs/quality_vocab).
 RuleKind = Literal[
-    "not_null", "range", "unique", "in_list", "sum_matches", "freshness", "custom_sql"
+    "not_null",
+    "range",
+    "unique",
+    "in_list",
+    "sum_matches",
+    "freshness",
+    "custom_sql",
+    "compound_unique",
+    "match_regex",
 ]
 Severity = Literal["high", "medium", "low"]
 
@@ -306,6 +315,9 @@ class QualityResultView(BaseModel):
     # From the rule, so the list reads without a second call.
     dataset_id: uuid.UUID
     severity: str
+    # DF-07: the outcome in GX's shape (expectation, success, element_count, unexpected_count,
+    # unexpected_percent, mostly); None for a result written before.
+    result: Any = None
 
 
 class Acknowledge(BaseModel):
