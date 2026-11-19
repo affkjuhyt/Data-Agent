@@ -30,7 +30,7 @@ from sqlalchemy import select, text
 from sqlglot import exp
 
 from libs import tabular
-from libs.dataagent_db import scoped_session, uuid7
+from libs.dataagent_db import scoped_session, uuid7, versioning
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import pipeline as pl
 from libs.sql_guard import SqlRejected, check_read_only, dialect_of, tables_of
@@ -128,17 +128,41 @@ async def _build(
         name = str(dataset.display_name or dataset.table_name)
     # The workspace schema is shared by every organisation: the table is the dataset's own.
     table = physical_name(name.split(".")[-1], dataset_id)
+    # DF-03: the table is its first version behind the view readers name, like every workspace
+    # table, so a later write keeps it.
+    start: versioning.Current | None = None
+    version: int | None = None
+    write_to, legacy = table, None
     async with scoped_session("svc_ingest", event.org_id, actor) as session:
+        if versioning.ENABLED:
+            # Not built yet: its row counts version 1, which no table holds.
+            start = versioning.Current(version=None, physical=None, latest=0)
+            version = await versioning.next_version(session, table, start)
+            write_to = versioning.physical_name(table, version)
         await session.execute(
             text(
                 "SELECT public.da_materialize_upload(:t, CAST(:c AS jsonb), CAST(:r AS jsonb), true)"
             ),
-            {"t": table, "c": json.dumps(columns), "r": json.dumps(rows)},
+            {"t": write_to, "c": json.dumps(columns), "r": json.dumps(rows)},
         )
+        if start is not None:
+            legacy = await versioning.publish(session, table, write_to, start)
     async with scoped_session("svc_catalog", event.org_id, actor) as session:
         dataset = await session.get(catalog.Dataset, dataset_id)
         if dataset is None:
             return
+        if version is not None and start is not None:
+            await versioning.record(
+                session,
+                org_id=event.org_id,
+                dataset_id=dataset_id,
+                version=version,
+                physical=write_to,
+                columns=columns,
+                start=start,
+                legacy=legacy,
+                actor=actor,
+            )
         dataset.schema_name, dataset.table_name = "workspace", table
         dataset.row_estimate, dataset.enabled = len(rows), True
         dataset.updated_by, dataset.updated_at = actor, _now()

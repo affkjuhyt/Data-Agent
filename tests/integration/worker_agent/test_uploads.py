@@ -7,6 +7,7 @@ import uuid
 
 import pytest
 
+from libs.dataagent_db import versioning
 from services.worker_agent import uploads
 from services.worker_agent.events import Event
 
@@ -188,3 +189,102 @@ async def test_an_ambiguous_column_reads_by_its_data_spaces_ingest_profile(
     )
     [(amount, day)] = seed.all(f'SELECT amount, day FROM workspace."{table}"')
     assert (str(amount), day.isoformat()) == ("1234", "2024-02-03")
+
+
+def _upload(
+    seed: Seed, org: uuid.UUID, space: uuid.UUID, user: uuid.UUID, **extra: object
+) -> uuid.UUID:
+    return seed.row(
+        "ingest.file_upload",
+        org_id=org,
+        data_space_id=space,
+        uploader_id=user,
+        file_name="chi_nhanh.csv",
+        size_bytes=1,
+        column_map=json.dumps(
+            [{"name": "branch", "type": "string"}, {"name": "n", "type": "number"}]
+        ),
+        error_ratio=0,
+        status="committed",
+        **extra,
+    )
+
+
+async def _commit(org: uuid.UUID, upload: uuid.UUID, user: uuid.UUID) -> None:
+    await uploads.handle(
+        Event(
+            uuid.uuid4(), org, uploads.COMMITTED, "file_upload", upload, {"uploader_id": str(user)}
+        )
+    )
+
+
+def _relkind(seed: Seed, name: str) -> object:
+    return seed.one(
+        "SELECT c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
+        " WHERE n.nspname = 'workspace' AND c.relname = %s",
+        name,
+    )
+
+
+@pytest.mark.parametrize("before_versioning", [False, True])
+async def test_an_upload_into_a_table_writes_its_next_version_and_keeps_the_one_before(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch, before_versioning: bool
+) -> None:
+    # DF-03: the second upload used to land in a table of its own that nothing pointed at, and a
+    # replace dropped what an answer had read. Now `replace` writes v2 and keeps v1 as it was,
+    # `keep` appends to the current version; a table uploaded before versioning becomes v1.
+    org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Versions")
+    user = seed.row("org.app_user", org_id=org, external_id="kc-v", username="v", display_name="V")
+    space = seed.row("org.data_space", org_id=org, code="DS-V", name="V", steward_id=user)
+    files = {
+        "v1": b"branch,n\nHN,1\nSG,2\n",
+        "v2": b"branch,n\nDN,3\n",
+        "v3": b"branch,n\nHP,4\n",
+    }
+
+    async def _read(key: str) -> bytes:
+        return files[key]
+
+    monkeypatch.setattr(uploads, "_read_object", _read)
+    dataset = uuid.uuid4()
+    monkeypatch.setattr(versioning, "ENABLED", not before_versioning)
+    await _commit(
+        org, _upload(seed, org, space, user, object_key="v1", target_dataset_id=dataset), user
+    )
+    monkeypatch.setattr(versioning, "ENABLED", True)
+    name = seed.one("SELECT table_name FROM catalog.dataset WHERE id = %s", dataset)
+    v1, v2 = versioning.physical_name(name, 1), versioning.physical_name(name, 2)
+
+    await _commit(
+        org,
+        _upload(
+            seed,
+            org,
+            space,
+            user,
+            object_key="v2",
+            target_dataset_id=dataset,
+            replace_mode="replace",
+        ),
+        user,
+    )
+    assert _relkind(seed, name) == "v" and _relkind(seed, v1) == "r"
+    assert seed.one(f'SELECT count(*) FROM workspace."{v1}"') == 2
+    assert seed.all(f'SELECT branch FROM workspace."{name}"') == [("DN",)]
+    assert seed.one("SELECT current_version FROM catalog.dataset WHERE id = %s", dataset) == 2
+    assert seed.all(
+        "SELECT version, change_kind, physical_table, valid_to IS NOT NULL"
+        " FROM catalog.dataset_version WHERE dataset_id = %s ORDER BY version",
+        dataset,
+    ) == [(1, "initial", v1, True), (2, "reload", v2, False)]
+
+    await _commit(
+        org,
+        _upload(
+            seed, org, space, user, object_key="v3", target_dataset_id=dataset, replace_mode="keep"
+        ),
+        user,
+    )
+    assert seed.all(f'SELECT branch FROM workspace."{name}" ORDER BY n') == [("DN",), ("HP",)]
+    assert seed.one(f'SELECT count(*) FROM workspace."{v1}"') == 2
+    assert seed.one("SELECT current_version FROM catalog.dataset WHERE id = %s", dataset) == 2

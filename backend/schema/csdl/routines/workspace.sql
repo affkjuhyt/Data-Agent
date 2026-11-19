@@ -205,7 +205,7 @@ GRANT EXECUTE ON FUNCTION public.da_materialize_upsert(text, jsonb, jsonb, text[
 -- show the columns it added. Names are checked as da_materialize_upload checks them; a version's
 -- name is its base then __v<n>: the name itself when it has 54 characters or fewer, else its first
 -- 38, `_` and 16 hex of the sha256 of the whole name, always 55, so a plain base never equals a
--- hashed one (worker_ingest/versioning.version_base). Not the name cut to 55, which dropped the job
+-- hashed one (libs/dataagent_db/versioning.version_base). Not the name cut to 55, which dropped the job
 -- id that makes an ingest table's name unique, so two jobs of two organisations could share
 -- version tables in the one workspace schema. The workspace schema is shared by every
 -- organisation, so the caller's organisation must be set and no other organisation's dataset may

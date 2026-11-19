@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from libs.dataagent_db import versioning
 from services.worker_agent import derived
 from services.worker_agent.events import OutboxTableSource
 from services.worker_agent.main import run_once
@@ -75,6 +76,13 @@ async def test_sql_saved_from_the_editor_becomes_a_table_with_lineage(
     )
     assert enabled and table.startswith("p_du_no_sach_") and rows == 6
     assert seed.one(f"SELECT sum(balance) FROM workspace.{table}") == 3500
+    # DF-03: its first version behind the view readers name, as every workspace table.
+    assert seed.all(
+        "SELECT version, change_kind, physical_table FROM catalog.dataset_version"
+        " WHERE dataset_id = %s",
+        dataset,
+    ) == [(1, "initial", versioning.physical_name(table, 1))]
+    assert seed.one("SELECT current_version FROM catalog.dataset WHERE id = %s", dataset) == 1
     assert (
         seed.one(
             "SELECT via FROM pipeline.lineage_edge WHERE from_id = %s AND to_id = %s",

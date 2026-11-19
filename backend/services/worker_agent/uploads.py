@@ -16,7 +16,7 @@ import aioboto3
 from sqlalchemy import select, text
 
 from libs import tabular
-from libs.dataagent_db import scoped_session
+from libs.dataagent_db import scoped_session, versioning
 from libs.dataagent_db.models import catalog, ingest
 from libs.tabular import profile as ingest_profile
 from services.worker_agent.events import Event, Handler
@@ -226,8 +226,10 @@ async def _materialize(
     column_map: list[dict[str, Any]],
     decimal_sep: str | None = None,
     profile: ingest_profile.Profile | None = None,
+    append: bool = False,
 ) -> list[dict[str, str | None]]:
-    """Writes the workspace table; returns its columns as created (name, PostgreSQL type, label)."""
+    """Writes the workspace table, a new one unless `append`; returns its columns as created
+    (name, PostgreSQL type, label)."""
     if not rows:
         raise ValueError("the upload has no readable rows")
     names = _column_names(rows[0], column_map)
@@ -255,7 +257,7 @@ async def _materialize(
                 "table_name": table_name,
                 "columns": json.dumps(columns),
                 "rows": json.dumps(rows_json[start : start + 1_000], default=_json_value),
-                "replace": start == 0,
+                "replace": start == 0 and not append,
             },
         )
     return columns
@@ -303,7 +305,24 @@ async def _register_dataset(event: Event) -> None:
         if row is None or row.target_dataset_id is None:
             return
         dataset_id = row.target_dataset_id
-        table_name = _table_name(row.file_name, row.id)
+        target = await session.get(catalog.Dataset, dataset_id)
+        if target is not None and target.schema_name != "workspace":
+            return  # the API only lets an upload join a manual table of the workspace
+        # An upload into a table that exists writes that table's next version (DF-03): `replace`
+        # (the default) a version of its own rows, the one before kept as it was; `keep` appends
+        # to the current version. It used to write a table of its own that nothing pointed at.
+        table_name = target.table_name if target is not None else _table_name(row.file_name, row.id)
+        append = target is not None and row.replace_mode == "keep"
+        start: versioning.Current | None = None
+        version: int | None = None
+        write_to = table_name
+        if versioning.ENABLED:
+            start = await versioning.current(session, dataset_id)
+            if append:
+                write_to = start.physical or table_name
+            else:
+                version = await versioning.next_version(session, table_name, start)
+                write_to = versioning.physical_name(table_name, version)
         data_space_id = row.data_space_id
         expires_at = row.expires_at
         row_count = (row.validation or {}).get("row_count", 0)
@@ -314,17 +333,22 @@ async def _register_dataset(event: Event) -> None:
         )
         columns = await _materialize(
             session,
-            table_name,
+            write_to,
             upload_rows,
             row.column_map or [],
             row.decimal_sep,
             await ingest_profile.load(session, data_space_id),
+            append=append,
         )
+        legacy: str | None = None
+        if start is not None and write_to != table_name:
+            legacy = await versioning.publish(session, table_name, write_to, start)
         row.validation = {**(row.validation or {}), "materialized": True, "table_name": table_name}
     async with scoped_session(
         CATALOG_ROLE, event.org_id, event.payload.get("uploader_id")
     ) as session:
-        if await session.get(catalog.Dataset, dataset_id) is None:
+        dataset = await session.get(catalog.Dataset, dataset_id)
+        if dataset is None:
             session.add(
                 catalog.Dataset(
                     id=dataset_id,
@@ -341,36 +365,58 @@ async def _register_dataset(event: Event) -> None:
                     scope="data_space",
                     expires_at=expires_at,
                     quality_state=quality_state,
+                    current_version=version or 1,
                     created_by=row.uploader_id,
                     updated_by=row.uploader_id,
                 )
             )
-        # The columns as materialized, so the semantic layer knows a text month from a date.
-        if (
-            await session.scalar(
-                select(catalog.ColumnMeta.id)
-                .where(catalog.ColumnMeta.dataset_id == dataset_id)
-                .limit(1)
-            )
-            is None
-        ):
             await session.flush()
-            session.add_all(
-                catalog.ColumnMeta(
-                    id=uuid.uuid4(),
-                    org_id=event.org_id,
-                    dataset_id=dataset_id,
-                    dataset_version=1,
-                    name=column["name"],
-                    ordinal=ordinal,
-                    data_type=str(column["type"]),
-                    normalized_type=_NORMALIZED[str(column["type"])],
-                    display_name=column["label"] if column["label"] != column["name"] else None,
-                    created_by=row.uploader_id,
-                    updated_by=row.uploader_id,
-                )
-                for ordinal, column in enumerate(columns)
+        elif not append:
+            dataset.row_estimate, dataset.quality_state = row_count, quality_state
+            dataset.updated_by, dataset.updated_at = (
+                row.uploader_id,
+                datetime.datetime.now(datetime.UTC),
             )
+        if version is not None and start is not None:
+            await versioning.record(
+                session,
+                org_id=event.org_id,
+                dataset_id=dataset_id,
+                version=version,
+                physical=write_to,
+                columns=columns,
+                start=start,
+                legacy=legacy,
+                actor=row.uploader_id,
+            )
+        # The columns as materialized, so the semantic layer knows a text month from a date; a
+        # later version adds the columns it brought.
+        known = set(
+            (
+                await session.scalars(
+                    select(catalog.ColumnMeta.name).where(
+                        catalog.ColumnMeta.dataset_id == dataset_id
+                    )
+                )
+            ).all()
+        )
+        await session.flush()
+        session.add_all(
+            catalog.ColumnMeta(
+                id=uuid.uuid4(),
+                org_id=event.org_id,
+                dataset_id=dataset_id,
+                dataset_version=version or 1,
+                name=column["name"],
+                ordinal=len(known) + ordinal,
+                data_type=str(column["type"]),
+                normalized_type=_NORMALIZED[str(column["type"])],
+                display_name=column["label"] if column["label"] != column["name"] else None,
+                created_by=row.uploader_id,
+                updated_by=row.uploader_id,
+            )
+            for ordinal, column in enumerate(c for c in columns if c["name"] not in known)
+        )
 
 
 async def handle(event: Event) -> None:

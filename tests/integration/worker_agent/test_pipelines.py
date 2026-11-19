@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from libs.dataagent_db import versioning
 from services.worker_agent import pipelines
 from services.worker_agent.events import OutboxTableSource
 from services.worker_agent.main import run_once
@@ -181,6 +182,41 @@ async def test_saving_writes_the_table_registers_it_and_links_its_inputs(
         )
         == "pipeline"
     )
+
+
+async def test_saving_again_writes_the_next_version_and_keeps_the_one_before(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # DF-03: saving over the target dropped the table an answer had read; now it is v2 behind
+    # the same view, and v1 stays as it was.
+    bank = build(seed, warehouse, monkeypatch)
+    pid = pipeline(bank, [SELECT, DROP_INTERNAL])
+    request(bank, pid, pipelines.MATERIALIZE, table_name="khoan_vay")
+    await drain()
+    target = seed.one("SELECT target_dataset_id FROM pipeline.pipeline WHERE id = %s", pid)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE pipeline.pipeline SET steps = %s WHERE id = %s",
+            (json.dumps([SELECT]), str(pid)),
+        )
+    request(
+        bank, pid, pipelines.MATERIALIZE, table_name="khoan_vay", overwrite_dataset_id=str(target)
+    )
+    await drain()
+    table, version = seed.one(
+        "SELECT table_name, current_version FROM catalog.dataset WHERE id = %s", target
+    )
+    v1, v2 = versioning.physical_name(table, 1), versioning.physical_name(table, 2)
+    assert version == 2
+    assert seed.one(f"SELECT count(*) FROM workspace.{table}") == 7
+    assert seed.one(f"SELECT count(*) FROM workspace.{v1}") == 6
+    assert seed.all(
+        "SELECT version, change_kind, physical_table, valid_to IS NOT NULL"
+        " FROM catalog.dataset_version WHERE dataset_id = %s ORDER BY version",
+        target,
+    ) == [(1, "initial", v1, True), (2, "reload", v2, False)]
 
 
 async def test_two_spaces_saving_the_same_name_never_share_a_table(

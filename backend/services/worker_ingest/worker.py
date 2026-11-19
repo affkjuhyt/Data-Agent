@@ -21,9 +21,8 @@ import asyncpg
 from sqlalchemy import func, select, text, update
 
 from libs import source_drivers, tabular
-from libs.dataagent_db import scoped_session
+from libs.dataagent_db import scoped_session, versioning
 from libs.dataagent_db.models import catalog, ingest
-from services.worker_ingest import versioning
 from services.worker_ingest.events import Event, Handler
 from services.worker_ingest.secrets import Reader, SecretUnavailable
 
@@ -612,7 +611,7 @@ async def handle(event: Event) -> None:
             new_version: int | None = None
             write_to = table_name
             if start is not None and mode_full:
-                new_version = start.latest + 1
+                new_version = await versioning.next_version(session, table_name, start)
                 write_to = versioning.physical_name(table_name, new_version)
             elif start is not None and start.physical:
                 write_to = start.physical
@@ -917,11 +916,7 @@ async def _filter_batch(
 
 
 def _schema_hash(columns: Columns) -> str:
-    payload = json.dumps(
-        [(c["name"], c["type"]) for c in sorted(columns, key=lambda c: c["name"])],
-        separators=(",", ":"),
-    )
-    return str(abs(hash(payload)))
+    return versioning.schema_hash(columns)
 
 
 async def _maybe_retry(event: Event, job_id: uuid.UUID, principal_id: Any) -> None:

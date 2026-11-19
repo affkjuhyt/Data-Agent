@@ -632,8 +632,9 @@ answers `SERVING`.
 A full ingestion job copies a source table into the workspace a batch at a time (RES-16): PostgreSQL
 through an asyncpg server-side cursor in a read-only transaction, MySQL through a server-side cursor,
 SQL Server through `fetchmany`, ClickHouse as one JSON row per line (`libs/source_drivers.stream`).
-Each full run builds a new **version** (DF-02, `worker_ingest/versioning.py`): its batches go into
-`workspace.<name>__v<n>` (the name cut to 55 characters), and in the same transaction
+Each full run builds a new **version** (DF-02, `libs/dataagent_db/versioning.py`): its batches go into
+`workspace.<base>__v<n>` (the base is the name up to 54 characters, else its first 38, `_` and 16 hex
+of its sha256), and in the same transaction
 `public.da_swap_version` points the view `workspace.<name>`, which every reader names, at it and
 `catalog.dataset.current_version` moves to `n`. A run that fails half way leaves the view, the
 version and the earlier tables as they were. The earlier versions stay readable as tables
@@ -641,7 +642,11 @@ version and the earlier tables as they were. The earlier versions stay readable 
 its end plus 90 days, and nothing drops one yet (that needs its Parquet snapshot, DF-04). A table
 loaded before versioning becomes `__v<its version>` at the next full run, renamed, never dropped.
 An incremental run appends to the current version's table and refreshes the view, which then shows
-a column it added. `INGEST_VERSIONED=0` keeps the old replace-in-place path for one release. `INGEST_BATCH_ROWS` (default 5000)
+a column it added. Uploads, saved pipelines and saved queries write the workspace the same way
+(DF-03, worker-agent): an upload into an existing table writes its next version (`replace`, the
+default) or appends to the current one (`keep`); saving a pipeline again writes the next version;
+none of them drops a table. `INGEST_VERSIONED=0` (worker-ingest and worker-agent) keeps the old
+replace-in-place path for one release. `INGEST_BATCH_ROWS` (default 5000)
 sets the batch, `INGEST_MAX_ROWS` (default 2 000 000) the ceiling: a larger table fails with "more
 than N rows; ingest it incrementally" and writes nothing. A driver's column types are read from the
 first batch's values; a later value that does not fit (a number column turning to text) fails the run

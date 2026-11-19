@@ -382,7 +382,7 @@ table_ids[], chunk_ids[], extractor_version, embed_model}`; `answer.sealed{answe
 | --- | --- |
 | `backend/libs/snapshot/` | Parquet writer/reader (pyarrow), sha256, metadata provenance, DuckDB reader |
 | `backend/libs/source_drivers/registry.py` | `REGISTRY: dict[kind, Driver]`; `discover()`, `stream()`, `type_map()` |
-| `backend/services/worker_ingest/versioning.py` | staging `__v<n>`, swap view, retention |
+| `backend/libs/dataagent_db/versioning.py` | staging `__v<n>`, swap view, retention (ingest, upload, pipeline, derived) |
 | `backend/services/worker_agent/quality_gate.py` | đọc `quality_state` + contract cho mọi dataset trong request |
 | `backend/services/worker_agent/router.py` | governed-first; quyết định đường; budget |
 | `backend/services/worker_agent/answer/envelope.py` | dựng `AnswerEnvelope` cho mọi đường; `trust_code = min(...)` |

@@ -12,7 +12,8 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from services.worker_ingest import versioning, worker
+from libs.dataagent_db import versioning
+from services.worker_ingest import worker
 from services.worker_ingest.events import Event
 from services.worker_ingest.secrets import Credentials
 

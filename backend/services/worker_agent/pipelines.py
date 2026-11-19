@@ -33,7 +33,7 @@ from sqlalchemy import select, text, update
 from sqlglot import exp
 
 from libs import tabular
-from libs.dataagent_db import scoped_session, uuid7
+from libs.dataagent_db import scoped_session, uuid7, versioning
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import pipeline as pl
 from libs.sql_guard import dialect_of
@@ -410,13 +410,24 @@ async def materialize_requested(event: Event) -> None:
     table = (
         target.table_name if target is not None else physical_name(str(p["table_name"]), dataset_id)
     )
+    # DF-03: saving again writes the table's next version and points its view at it; the version
+    # before stays as it was, never dropped.
+    start: versioning.Current | None = None
+    version: int | None = None
+    write_to, legacy = table, None
     async with scoped_session("svc_ingest", event.org_id, actor) as session:
+        if versioning.ENABLED:
+            start = await versioning.current(session, dataset_id)
+            version = await versioning.next_version(session, table, start)
+            write_to = versioning.physical_name(table, version)
         await session.execute(
             text(
                 "SELECT public.da_materialize_upload(:t, CAST(:c AS jsonb), CAST(:r AS jsonb), true)"
             ),
-            {"t": table, "c": json.dumps(columns), "r": json.dumps(rows)},
+            {"t": write_to, "c": json.dumps(columns), "r": json.dumps(rows)},
         )
+        if start is not None:
+            legacy = await versioning.publish(session, table, write_to, start)
     async with scoped_session("svc_catalog", event.org_id, actor) as session:
         existing = await session.get(catalog.Dataset, dataset_id)
         if existing is None:
@@ -433,17 +444,32 @@ async def materialize_requested(event: Event) -> None:
                     row_estimate=len(rows),
                     enabled=True,
                     scope=str(p.get("scope") or "data_space"),
+                    current_version=version or 1,
                     created_by=actor,
                     updated_by=actor,
                 )
             )
+            await session.flush()
         else:
             existing.row_estimate, existing.updated_by, existing.updated_at = (
                 len(rows),
                 actor,
                 _now(),
             )
-            existing.current_version = existing.current_version + 1
+            if version is None:
+                existing.current_version = existing.current_version + 1
+        if version is not None and start is not None:
+            await versioning.record(
+                session,
+                org_id=event.org_id,
+                dataset_id=dataset_id,
+                version=version,
+                physical=write_to,
+                columns=columns,
+                start=start,
+                legacy=legacy,
+                actor=actor,
+            )
     async with scoped_session(ROLE, event.org_id, actor) as session:
         for d in ctx["datasets"]:
             known = await session.scalar(
