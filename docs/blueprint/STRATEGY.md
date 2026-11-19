@@ -63,6 +63,7 @@ Chấm: Impact (I), Dependency (D = cái gì phải có trước), Effort (E: S 
 | F-28 | Semantic: chiều bắt buộc, quy tắc dấu/số dư (AGC-12), derived + ratio theo dbt-semantic-interfaces | — | M |
 | F-29 | Danh tính thực thi theo người hỏi (SET ROLE / per-role credential) ở Postgres; READ ONLY cho SQL Server | — | M |
 | F-30 | Trace ghi theo bước (AGC-05); OCC bắt buộc PATCH tài sản ngữ cảnh (AUD-09); prep steps thành bản nháp (AUD-04) | — | S |
+| F-31 | Độ tin cậy hiệu chỉnh (P(đúng) đo trên eval) cho resolver và vote SQL; vote theo cách viết; ngưỡng trả lời/duyệt/hỏi lại chọn từ rủi ro chấp nhận được; một thước chung cho router, planner, specialist ([CONFIDENCE_SPEC.md](CONFIDENCE_SPEC.md), bổ sung 19/11/2026) | F-04, F-10 | M |
 
 ### P2 — Advanced (chỉ khi P0 đạt cổng và P1 có baseline)
 

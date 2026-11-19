@@ -14,7 +14,7 @@
 | 3 | REA open source research (adopt / wrap / extract / reference / reject; PoC) | [OPEN_SOURCE_RESEARCH.md](OPEN_SOURCE_RESEARCH.md); chi tiết `evidence/oss-*.md` |
 | 4 | Product strategy & MVP (P0/P1/P2/Remove-Defer; mức tự chủ; cổng P0) | [STRATEGY.md](STRATEGY.md) |
 | 5 | Target technical architecture (3 phương án, chọn B+, diagrams, ADR-50…59, **sổ tên §9**) | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| 6 | Engineering specifications | [DATA_PIPELINE_SPEC.md](DATA_PIPELINE_SPEC.md), [ASK_ENGINE_SPEC.md](ASK_ENGINE_SPEC.md), [ANALYTICS_SPEC.md](ANALYTICS_SPEC.md), [DOCUMENT_INTELLIGENCE_SPEC.md](DOCUMENT_INTELLIGENCE_SPEC.md), [API_AND_SCHEMA_CONTRACTS.md](API_AND_SCHEMA_CONTRACTS.md) |
+| 6 | Engineering specifications | [DATA_PIPELINE_SPEC.md](DATA_PIPELINE_SPEC.md), [ASK_ENGINE_SPEC.md](ASK_ENGINE_SPEC.md), [ANALYTICS_SPEC.md](ANALYTICS_SPEC.md), [DOCUMENT_INTELLIGENCE_SPEC.md](DOCUMENT_INTELLIGENCE_SPEC.md), [API_AND_SCHEMA_CONTRACTS.md](API_AND_SCHEMA_CONTRACTS.md), [CONFIDENCE_SPEC.md](CONFIDENCE_SPEC.md) (bổ sung 19/11/2026) |
 | 7 | Real data & evaluation (NYC TLC trip records, SEC EDGAR, golden ≥ 150, scorecard, gates) | [DATASET_AND_EVALUATION.md](DATASET_AND_EVALUATION.md); chi tiết `evidence/datasets.md` |
 | 8 | Implementation roadmap (WBS theo tuần, task theo vai, phụ thuộc) | [IMPLEMENTATION_BACKLOG.md](IMPLEMENTATION_BACKLOG.md) |
 | 9 | Coding agent handoff | [CODING_AGENT_INSTRUCTIONS.md](CODING_AGENT_INSTRUCTIONS.md) |

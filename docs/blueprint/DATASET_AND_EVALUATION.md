@@ -459,6 +459,8 @@ Cột "Baseline" là số **đã đo** (ngày, điều kiện); "chưa đo" nế
 | Ask | `trust_overclaim_rate` | nhãn cao hơn mong đợi / case | E2E | §5.4 | chưa đo | 0 |
 | Ask | `unsupported_number_rate` | số trong câu không có nguồn / số | E2E, tất định | `number_check` | AW: 0 (verify.fill) | 0 |
 | Ask | `intent_accuracy` | (có sẵn, 32 case) | trung gian | tier online | **provisional ≥ 0,85, chưa đo** | rebase |
+| Ask | `calibration_ece`, `brier` | sai lệch giữa độ tin cậy và tỷ lệ đúng, theo bộ sinh `understanding`/`sqlgen_vote`, cross-fit 5 fold ([CONFIDENCE_SPEC.md](CONFIDENCE_SPEC.md) §2.3) | trung gian | `make calibrate` | chưa đo (EV-19) | báo cáo; ECE ≤ 0,05 trước khi bật AE-24 |
+| Ask | `aurc`, `selective_risk@τ_answer` | rủi ro trên các câu được trả lời theo coverage | trung gian | `make calibrate` | chưa đo (EV-19) | `selective_risk` ≤ `r_answer` |
 | SQL | `valid_sql_rate` | ứng viên qua `check.problems` / sinh | trung gian | sqlgen | chưa đo trên TLC | báo cáo |
 | SQL | `sql_accuracy` (offline, compiler) | 26 case contract | trung gian | tier offline | **1,0** (gate) | 1,0 |
 | SQL | `wrong_table_rate` | câu khám phá chọn sai bảng / câu khám phá | E2E | audit thủ công theo case | AW: 2/20 kiểu "sai bảng" (03/11) | 0 (PoC-3) |

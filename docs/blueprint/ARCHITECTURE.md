@@ -398,6 +398,7 @@ table_ids[], chunk_ids[], extractor_version, embed_model}`; `answer.sealed{answe
 | `backend/libs/sql_guard/lineage.py` | sqlglot lineage |
 | `model/eval/cases/golden/{tlc,edgar}/*.jsonl`, `model/eval/snapshots/*.manifest.json` | F-10 |
 | `tests/e2e/tlc/` (dự phòng `tests/e2e/nyc311/`), `deploy/docker/semantic/ds-tlc.yaml` | F-10 |
+| `backend/libs/calibration/` (+ `maps/*.json`), `model/eval/calibrate.py` | F-31: fit/áp map hiệu chỉnh, ECE/Brier/AURC (CONFIDENCE_SPEC) |
 | `deploy/ansible/roles/k8s_gvisor/`, `deploy/k8s/*/runtimeclass-gvisor.yaml` | F-12 |
 | `deploy/k8s/dev/service/tei.yaml` (CPU, cờ) | eval full stack |
 

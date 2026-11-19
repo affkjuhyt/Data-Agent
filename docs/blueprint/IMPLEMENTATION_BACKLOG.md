@@ -51,6 +51,7 @@ gantt
   section Phase 4 · Analytics & hybrid
   AL-02,03,04,05,06,08,09 insights·chart_check·DuckDB·blocks    :p4a, 2027-02-09, 21d
   AE-13 reconcile · AE-11 slots · AE-12 verified fuzzy          :p4b, 2027-02-16, 14d
+  EV-19 · AE-23 · AE-24 độ tin cậy hiệu chỉnh (shadow trước on) :p4c, 2027-01-12, 28d
   section Phase 5 · Hardening & release
   EV-16 tiêm lỗi · EV-17 giải mù · EV-14 rebase ngưỡng · PL-12,14,15 · AE-18,20,21 · AL-12,13,14 :p5, 2027-03-02, 14d
 ```
@@ -139,6 +140,8 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | AE-20 | P1 | 13 | `plan.validate` bắt buộc trước `act` (AUD-11) | AE-02 | AI | S | plan lỗi không chạy | todo |
 | AE-21 | P1 | 13 | Signals hạ nhãn | AE-04, DF-08 | AI | S | warning → ≤ EXPLORATORY | todo |
 | AE-22 | P2 | — | Correction memory consolidation (RES-10) | — | AI/FE | M | — | todo |
+| AE-23 | P1 | 10 | Vote SQL theo cách viết, trọng số `logit(a_m)` từ ablation; `margin` ([CONFIDENCE_SPEC.md](CONFIDENCE_SPEC.md) §4) | EV-19 | AI | S | chấm lại offline cùng ablation DS-AW: AURC ≤ vote k/6 | todo |
+| AE-24 | P1 | 12 | `CalibratedConfidence` + map + ngưỡng từ rủi ro cho resolver, vote, Workspace, present_gate, router; cờ `off\|shadow\|on` (CONFIDENCE_SPEC §5) | EV-19, AE-23, EV-09, AE-01 | AI/BE | M | ECE ≤ 0,05 cross-fit (provisional); 20/20 governed giữ; ≥ 7 đêm `shadow` trước `on` | todo |
 
 ### 3.4 Analytics (AL) — [ANALYTICS_SPEC.md](ANALYTICS_SPEC.md) §9
 
@@ -206,6 +209,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | EV-06 | P1 | 12 | 82 case SEC (16/14/22/10/20) + fact id | EV-04 | QA/AI | M | — | todo |
 | EV-07 | P1 | 12 | 8 case tiếng Việt vbpl.vn (nếu giấy phép) | quyết định giấy phép | QA | S | — | todo |
 | EV-18 | P1 | 16 | Scorecard tự sinh từ `eval.eval_run` | EV-13 | FE/BE | S | — | todo |
+| EV-19 | P1 | 9 | Đo hiệu chỉnh độ tin cậy: `libs/calibration`, `make calibrate`, ECE/Brier/AURC cross-fit; baseline điểm thô DS-AW ([CONFIDENCE_SPEC.md](CONFIDENCE_SPEC.md) §2–3, §6) | — | AI/QA | S | báo cáo hai bộ sinh có `snapshot`/`commit`; baseline ghi vào DATASET §6.2 | todo |
 
 ## 4. Platform tasks — 12 trường đầy đủ
 
