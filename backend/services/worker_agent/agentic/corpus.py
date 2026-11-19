@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from libs.dataagent_db.models import context, document
+from services.worker_agent.semantic.loader import SpaceLayer
+from services.worker_agent.sqlgen.space import Space, load_space
+from services.worker_agent.understand import analyst
 
 _MAX_TABLES = 30
 _MAX_COLUMNS = 40
@@ -87,3 +96,108 @@ def render_corpus(brief: CorpusBrief) -> str:
         _section("Trang tri thức", page_lines),
     ]
     return "\n".join(sections)
+
+
+def build_corpus(
+    space: Space,
+    *,
+    certified: tuple[CorpusMetric, ...],
+    drafts: tuple[CorpusMetric, ...],
+    dimensions: tuple[str, ...],
+    documents: tuple[CorpusDoc, ...],
+    pages: tuple[CorpusPage, ...],
+) -> CorpusBrief:
+    by_id = {table.dataset_id: table for table in space.schema.tables}
+    tables = tuple(
+        CorpusTable(
+            table.qualified,
+            table.label,
+            table.description,
+            tuple(f"{col.name} ({col.kind}): {col.label}" for col in table.columns),
+        )
+        for table in space.schema.tables
+    )
+    joins: list[str] = []
+    for fk in space.schema.fks:
+        src = by_id.get(fk.from_table)
+        dst = by_id.get(fk.to_table)
+        # load_space already dropped a table the asker may not read (personal, policy, or only
+        # pii columns). A join that still names it would put that table back into the brief.
+        if src is None or dst is None:
+            continue
+        joins.append(
+            f"{src.qualified}.{', '.join(fk.from_columns)} = "
+            f"{dst.qualified}.{', '.join(fk.to_columns)}"
+        )
+    return CorpusBrief(
+        tables=tables,
+        joins=tuple(joins),
+        metrics=certified + drafts,
+        dimensions=dimensions,
+        documents=documents,
+        pages=pages,
+    )
+
+
+async def load_corpus(
+    session: AsyncSession,
+    space_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    layer: SpaceLayer,
+) -> CorpusBrief:
+    space = await load_space(session, space_id, principal_id)
+    # Draft rows are not added to analyst._visible: that set is what the asker may query.
+    # They are listed beside it, uncertified, so the planner can name them as chưa chứng nhận.
+    certified = tuple(
+        CorpusMetric(code, entry.name, True) for code, entry in analyst._visible(layer).items()
+    )
+    latest_version = (
+        select(
+            context.MetricVersion.metric_id.label("metric_id"),
+            func.max(context.MetricVersion.version).label("version"),
+        )
+        .group_by(context.MetricVersion.metric_id)
+        .subquery()
+    )
+    draft_rows = (
+        await session.execute(
+            select(context.Metric.code, context.MetricVersion.display_name)
+            .join(latest_version, latest_version.c.metric_id == context.Metric.id)
+            .join(
+                context.MetricVersion,
+                (context.MetricVersion.metric_id == context.Metric.id)
+                & (context.MetricVersion.version == latest_version.c.version),
+            )
+            .where(
+                context.Metric.data_space_id == space_id,
+                context.Metric.status == "draft",
+            )
+        )
+    ).all()
+    drafts = tuple(CorpusMetric(code, display_name, False) for code, display_name in draft_rows)
+    dimensions = tuple(f"{item.code}: {item.name}" for item in layer.vocabulary.dimensions)
+    collections = (
+        await session.scalars(
+            select(document.Collection).where(
+                document.Collection.data_space_id == space_id,
+                document.Collection.status == "active",
+                document.Collection.deleted_at.is_(None),
+            )
+        )
+    ).all()
+    knowledge_pages = (
+        await session.scalars(
+            select(context.KnowledgePage).where(
+                context.KnowledgePage.data_space_id == space_id,
+                context.KnowledgePage.status == "active",
+            )
+        )
+    ).all()
+    return build_corpus(
+        space,
+        certified=certified,
+        drafts=drafts,
+        dimensions=dimensions,
+        documents=tuple(CorpusDoc(row.name, tuple(row.media_kinds)) for row in collections),
+        pages=tuple(CorpusPage(row.title, row.kind, row.index_summary) for row in knowledge_pages),
+    )
