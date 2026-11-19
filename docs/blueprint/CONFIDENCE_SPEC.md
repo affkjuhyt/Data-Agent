@@ -216,6 +216,9 @@ khi AE-24 đạt tiêu chí trên lượt eval có SHA.
   jsonb sẵn có (`eval.eval_result.actual`), không migration.
 - Metrics (PL-05): histogram `ask_confidence_p_low{producer}`, counter `ask_confidence_decision_total{producer,decision,mode}`.
   Ở `shadow` có thêm `…{disagree="true"}` khi quyết định mới khác quyết định cũ, để thấy trước những gì sẽ đổi khi bật `on`.
+- Image worker-agent chỉ COPY các thư viện được liệt kê trong `backend/services/worker_agent/Dockerfile`, và
+  `libs/calibration` chưa nằm trong đó (EV-19 chưa cần: chỉ `model/eval` dùng nó). AE-24 phải thêm
+  `COPY backend/libs/calibration/ ./libs/calibration/` trong cùng commit với dòng import đầu tiên ở worker.
 
 ## 7. Test
 
