@@ -84,7 +84,7 @@ def classify(question: str, u: Understanding, *, deep: bool) -> Route:
         return Route("agentic", "DOC_ONLY")
     if u.decision == "clarify":
         return Route("governed", "AMBIGUOUS")
-    return Route("governed", "UNCATALOGUED")
+    return Route("agentic", "UNCATALOGUED")
 
 
 async def decide(event: Event, question_id: uuid.UUID) -> Route:

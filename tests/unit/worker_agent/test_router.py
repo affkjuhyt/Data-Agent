@@ -47,8 +47,9 @@ def route(text: str, *, deep: bool = False) -> router.Route:
         ("Revenue in 2013", "governed", "RESOLVED"),
         # A name said in part: the governed path asks which, under the clarify policy.
         ("Lãi gộp năm 2013", "governed", "AMBIGUOUS"),
-        # Nothing placed: the governed path's model reader, analyst, SQL and documents.
-        ("Giá cổ phiếu của công ty hôm nay", "governed", "UNCATALOGUED"),
+        # Nothing placed: the planner.
+        ("Giá cổ phiếu của công ty hôm nay", "agentic", "UNCATALOGUED"),
+        ("Các dữ liệu ở đây là về gì?", "agentic", "UNCATALOGUED"),
         # What only the agent does.
         ("Vì sao doanh thu năm 2013 giảm?", "agentic", "WHY"),
         ("Why did revenue fall in 2013?", "agentic", "WHY"),
