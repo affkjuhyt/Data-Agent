@@ -24,11 +24,11 @@ export function useTestRun() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string>();
 
-  const start = useCallback(async (agentId: string, configVersion: number) => {
+  const start = useCallback(async (agentId: string, configVersion: number, agentName = '') => {
     setStarting(true);
     setError(undefined);
     try {
-      setRun(await startTestRun(agentId, configVersion));
+      setRun(await startTestRun(agentId, configVersion, agentName));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -40,7 +40,7 @@ export function useTestRun() {
   useEffect(() => {
     if (!pending || !run) return;
     const timer = window.setTimeout(() => {
-      getTestRun(run.id)
+      getTestRun(run.id, run.agent_name)
         .then(setRun)
         .catch((e: Error) => setError(e.message));
     }, POLL_MS);
@@ -125,11 +125,14 @@ export function TestRunDrawer({
                 value={String(report.policy_violations)}
                 tone={report.policy_violations === 0 ? 'success' : 'error'}
               />
-              <Check
-                label="Bộ thử"
-                value={`${report.eval_passed}/${report.eval_total} đạt`}
-                tone={report.eval_passed === report.eval_total ? 'success' : 'warning'}
-              />
+              {/* A test run is not scored against the eval set on the api: no suite, no card. */}
+              {report.eval_total !== null && (
+                <Check
+                  label="Bộ thử"
+                  value={`${report.eval_passed}/${report.eval_total} đạt`}
+                  tone={report.eval_passed === report.eval_total ? 'success' : 'warning'}
+                />
+              )}
             </div>
 
             <section className="flex flex-col">

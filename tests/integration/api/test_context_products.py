@@ -317,6 +317,44 @@ async def test_each_layer_needs_its_own_capability(ds: Space) -> None:
         assert mixed.status_code == 422
 
 
+async def test_the_published_layer_is_listed_for_its_own_data_space(ds: Space) -> None:
+    """P06's list reads layer=published; without it the list stays the context layer's."""
+    published = {
+        "layer": "published",
+        "code": "gia_ban_le_danh_sach",
+        "name": "Giá bán lẻ (danh sách)",
+        "dataset_id": str(ds.dataset),
+        "contract": {"columns": [{"name": "gia", "type": "numeric"}]},
+        "owner_id": str(ds.users["owner"]),
+    }
+    async with client(ds) as api:
+        made = await api.post("/v1/data-products", json=published, headers=ds.headers("dataadmin"))
+        assert made.status_code == 201, made.text
+        context = await api.post("/v1/data-products", json=_body(ds), headers=ds.headers("steward"))
+        assert context.status_code == 201, context.text
+
+        listed = await api.get(
+            "/v1/data-products?layer=published", headers=ds.headers("analyst")
+        )
+        assert listed.status_code == 200, listed.text
+        rows = {p["id"]: p for p in listed.json()["items"]}
+        assert made.json()["id"] in rows and context.json()["id"] not in rows
+        row = rows[made.json()["id"]]
+        assert row["layer"] == "published" and row["status"] == "draft"
+        assert row["contract"] == {"columns": [{"name": "gia", "type": "numeric"}]}
+
+        default = await api.get("/v1/data-products", headers=ds.headers("analyst"))
+        assert {p["layer"] for p in default.json()["items"]} == {"context"}
+        assert made.json()["id"] not in {p["id"] for p in default.json()["items"]}
+
+        elsewhere = await api.get(
+            "/v1/data-products?layer=published", headers=ds.headers("steward", ds.other)
+        )
+        assert made.json()["id"] not in {p["id"] for p in elsewhere.json()["items"]}
+        bogus = await api.get("/v1/data-products?layer=x", headers=ds.headers("analyst"))
+        assert bogus.status_code == 422
+
+
 # AC-07-13-02
 async def test_members_are_checked_before_they_join(ds: Space) -> None:
     async with client(ds) as api:

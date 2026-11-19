@@ -3,6 +3,7 @@ import { type Page, V1Error, api, ok, okAs } from './client';
 import type { components } from './schema';
 import type { AgentDef, AgentRun, AgentWire } from './types';
 import { getOnboarding } from './explore';
+import { formatDate, formatDuration } from '../formatVN';
 
 /*
  * P13 agent authoring on the v1 API ("Đặc tả API" A2/A3, group Agent; tables agent.agent_config,
@@ -147,8 +148,9 @@ export interface TestReport {
   completed: boolean;
   human_questions: number;
   policy_violations: number;
-  eval_passed: number;
-  eval_total: number;
+  /** The test suite's result; null when the run was not scored against one (the api's never is). */
+  eval_passed: number | null;
+  eval_total: number | null;
   preview: { label: string; text: string } | null;
   failures: string[];
   /** Where the run read its data, "Trên dữ liệu tuần 40". */
@@ -383,20 +385,66 @@ function readDraft(raw: DraftWire, description: string): AgentDraft {
 type TestRunWire = Schemas['RunView'] &
   Partial<Pick<TestRun, 'agent_name' | 'test_steps' | 'test_report'>>;
 
-/** PROPOSAL: the drawer's steps and report; without them it shows the run's status only. */
-const readTestRun = (raw: TestRunWire): TestRun => ({
-  id: raw.id,
-  agent_id: raw.agent_id,
-  config_version: raw.config_version,
-  status: raw.status as TestRun['status'],
-  cost: raw.cost,
-  started_at: raw.started_at,
-  finished_at: raw.finished_at,
-  is_test: true,
-  agent_name: raw.agent_name ?? '',
-  test_steps: raw.test_steps ?? [],
-  test_report: raw.test_report ?? null,
-});
+type StepWire = Schemas['StepView'];
+
+/** What a run that has ended ended as (worker_agent/runs.py TERMINAL). */
+const ENDED = new Set(['succeeded', 'failed', 'cancelled']);
+
+const stepTitle = (s: StepWire) => s.summary?.trim() || s.name;
+
+/*
+ * The drawer from the run itself, as worker-agent records a test run (runs.py `authority`): a tool
+ * the config does not grant is a `skipped` step (a permission the agent lacked), one that would
+ * write or send is a `simulated` step (what it would have done), and every question to a person
+ * counts in hitl_count. A test run is not scored against the eval set, so the suite stays null.
+ */
+function stepsFromRun(steps: StepWire[]): TestStep[] {
+  return steps.map((s) => ({
+    title: stepTitle(s),
+    detail: [s.name, s.duration_ms != null ? formatDuration(s.duration_ms) : null]
+      .filter(Boolean)
+      .join(' · '),
+    state: s.status === 'skipped' || s.status === 'error' ? 'error' : 'done',
+  }));
+}
+
+function reportFromRun(raw: Schemas['RunView'], steps: StepWire[]): TestReport | null {
+  if (!ENDED.has(raw.status)) return null;
+  const refused = steps.filter((s) => s.status === 'skipped');
+  const simulated = steps.find((s) => s.status === 'simulated');
+  return {
+    completed: raw.status === 'succeeded',
+    human_questions: raw.hitl_count,
+    policy_violations: refused.length,
+    eval_passed: null,
+    eval_total: null,
+    data_text: raw.as_of ? `Trên dữ liệu ngày ${formatDate(raw.as_of)}` : 'Trên dữ liệu hiện tại',
+    preview: simulated ? { label: 'Sẽ gửi (chưa gửi)', text: stepTitle(simulated) } : null,
+    failures: [...refused.map(stepTitle), ...(raw.error ? [raw.error] : [])],
+  };
+}
+
+/**
+ * The drawer's steps and report. A PROPOSAL `test_report` (the mock's) is taken as it is; the api
+ * sends none, so they are read from the run's own steps once it has ended. The agent's name is
+ * the caller's: RunView does not carry it.
+ */
+const readTestRun = (raw: TestRunWire, agentName = ''): TestRun => {
+  const steps = raw.steps ?? [];
+  return {
+    id: raw.id,
+    agent_id: raw.agent_id,
+    config_version: raw.config_version,
+    status: raw.status as TestRun['status'],
+    cost: raw.cost,
+    started_at: raw.started_at,
+    finished_at: raw.finished_at,
+    is_test: true,
+    agent_name: raw.agent_name || agentName,
+    test_steps: raw.test_steps ?? stepsFromRun(steps),
+    test_report: raw.test_report ?? reportFromRun(raw, steps),
+  };
+};
 
 const DAY = 86_400_000;
 
@@ -537,7 +585,7 @@ export const putTriggers = async (id: string, triggers: Omit<AgentTrigger, 'id'>
 };
 
 /** 202 with the run's id (RunAccepted); the drawer then reads the run. */
-export const startTestRun = async (id: string, configVersion: number) => {
+export const startTestRun = async (id: string, configVersion: number, agentName = '') => {
   const accepted = await ok<Schemas['RunAccepted']>(
     api.POST('/v1/agents/{id}/test-runs', {
       params: { path: { id } },
@@ -546,11 +594,19 @@ export const startTestRun = async (id: string, configVersion: number) => {
       },
     }),
   );
-  return getTestRun(accepted.id);
+  return getTestRun(accepted.id, agentName);
 };
 
-export const getTestRun = async (runId: string) =>
-  readTestRun(await ok<TestRunWire>(api.GET('/v1/runs/{id}', { params: { path: { id: runId } } })));
+/** The technical view carries the steps the report is read from. */
+export const getTestRun = async (runId: string, agentName = '') =>
+  readTestRun(
+    await ok<TestRunWire>(
+      api.GET('/v1/runs/{id}', {
+        params: { path: { id: runId }, query: { view: 'technical' } },
+      }),
+    ),
+    agentName,
+  );
 
 const EVAL_WAIT_MS = 10 * 60_000;
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
