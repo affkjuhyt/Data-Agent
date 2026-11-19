@@ -15,12 +15,12 @@ import datetime
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs import cron
+from libs import cron, quality_vocab
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, org
 from services.api.catalogue import endpoint
@@ -64,6 +64,9 @@ from services.api.modules.catalog.schemas import (
     ColumnView,
     ConnectorForm,
     ConnectorView,
+    ContractPut,
+    ContractRule,
+    ContractView,
     DatasetDeriveRequest,
     DatasetDetail,
     DatasetPatch,
@@ -72,6 +75,7 @@ from services.api.modules.catalog.schemas import (
     DerivedDatasetAccepted,
     DerivedTableCreate,
     DerivedTableView,
+    FreshnessSla,
     RestTryRequest,
     RestTryResult,
     RevokeRequest,
@@ -1525,6 +1529,207 @@ async def get_dataset_snapshot(
             )
         )
     return RedirectResponse(link, status_code=302)
+
+
+# --- dataset contract (DF-09) --------------------------------------------------------------------
+
+CONTRACT_CHANGED = "dataset.contract_changed"
+_GX_NAMES = {e.name: kind for kind, e in quality_vocab.EXPECTATIONS.items()}
+
+
+def _contract_tag(version: int) -> str:
+    """The contract's own ETag: its version, so the kernel's If-Match check (kernel/etag.py) and
+    the handler's lock compare the same thing."""
+    return f'W/"contract-{version}"'
+
+
+def _seen_version(if_match: str) -> int:
+    tag = if_match.strip().removeprefix("W/").strip('"')
+    try:
+        return int(tag.removeprefix("contract-"))
+    except ValueError as exc:
+        raise Problem(
+            412, "precondition_failed", "If-Match is not a contract version read here."
+        ) from exc
+
+
+def _contract_view(
+    dataset_id: uuid.UUID, row: catalog.DatasetContract | None, current_hash: str | None
+) -> ContractView:
+    if row is None:
+        return ContractView(
+            dataset_id=dataset_id, status="none", version=0, schema_hash_current=current_hash
+        )
+    return ContractView.model_validate(
+        {
+            "dataset_id": dataset_id,
+            "status": row.status,
+            "version": row.version,
+            "schema_hash_expected": row.schema_hash_expected,
+            "schema_hash_current": current_hash,
+            "freshness_sla": FreshnessSla(**row.freshness_sla) if row.freshness_sla else None,
+            "required_rules": [ContractRule(**r) for r in row.required_rules or []],
+            "broken_reason": row.broken_reason,
+            "updated_at": row.updated_at,
+            "updated_by": row.updated_by,
+        }
+    )
+
+
+async def _schema_hash_now(session: AsyncSession, dataset_id: uuid.UUID) -> str | None:
+    dv = catalog.DatasetVersion
+    found: str | None = await session.scalar(
+        select(dv.schema_hash)
+        .where(dv.dataset_id == dataset_id, dv.valid_to.is_(None))
+        .order_by(dv.version.desc())
+        .limit(1)
+    )
+    return found
+
+
+def _checked_rules(rules: list[ContractRule]) -> list[dict[str, Any]]:
+    """Each required rule names a GX expectation the platform checks, on the columns it needs."""
+    out = []
+    for index, rule in enumerate(rules):
+        kind = _GX_NAMES.get(rule.expectation)
+        where = f"required_rules[{index}]"
+        if kind is None:
+            raise Problem(
+                422,
+                "validation_failed",
+                f"{rule.expectation} is not an expectation the platform checks.",
+                errors=[FieldError(field=where, code="invalid", message="unknown expectation")],
+            )
+        if kind == "compound_unique" and len(rule.columns or []) < 2:
+            raise Problem(
+                422,
+                "validation_failed",
+                "A compound key names two columns or more.",
+                errors=[FieldError(field=where, code="invalid", message="columns")],
+            )
+        if quality_vocab.EXPECTATIONS[kind].column and not rule.column:
+            raise Problem(
+                422,
+                "validation_failed",
+                f"{rule.expectation} names a column.",
+                errors=[FieldError(field=where, code="invalid", message="column")],
+            )
+        out.append(rule.model_dump(exclude_none=True))
+    return out
+
+
+@router.get(
+    "/v1/datasets/{id}/contract",
+    response_model=ContractView,
+    **endpoint("GET", "/v1/datasets/{id}/contract", operation_id="getDatasetContract"),
+)
+async def get_dataset_contract(
+    dataset_id: PathId, response: Response, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> ContractView:
+    """DF-09: the dataset's contract, `none` before one is written; its ETag is its version."""
+    async with transaction(ROLE, principal) as session:
+        await _dataset(session, principal, space, dataset_id)
+        row = await session.scalar(
+            select(catalog.DatasetContract).where(catalog.DatasetContract.dataset_id == dataset_id)
+        )
+        view = _contract_view(dataset_id, row, await _schema_hash_now(session, dataset_id))
+    response.headers["ETag"] = _contract_tag(view.version)
+    return view
+
+
+@router.put(
+    "/v1/datasets/{id}/contract",
+    response_model=ContractView,
+    **endpoint("PUT", "/v1/datasets/{id}/contract", operation_id="putDatasetContract"),
+)
+async def put_dataset_contract(
+    dataset_id: PathId,
+    body: ContractPut,
+    response: Response,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+    if_match: Annotated[str | None, Header()] = None,
+) -> ContractView:
+    """DF-09: write the contract, holding If-Match to the version read (428 without it, 412 when
+    it moved: OCC, invariant 10). Activating it is a second person's: whoever wrote what is being
+    activated does not, unless the organisation allows self-approval (recorded)."""
+    if not if_match:
+        raise Problem(
+            428,
+            "precondition_required",
+            "Send If-Match with the contract version you read (GET …/contract).",
+        )
+    seen = _seen_version(if_match)
+    rules = _checked_rules(body.required_rules)
+    sla = body.freshness_sla.model_dump() if body.freshness_sla else {}
+    expected = (body.schema_hash_expected or "").strip() or None
+    now = _now()
+    async with transaction(ROLE, principal) as session:
+        await _dataset(session, principal, space, dataset_id)
+        row = await session.scalar(
+            select(catalog.DatasetContract)
+            .where(catalog.DatasetContract.dataset_id == dataset_id)
+            .with_for_update()
+        )
+        if (row.version if row else 0) != seen:
+            raise Problem(
+                412, "precondition_failed", "The contract changed since you read it; read it again."
+            )
+        changed = row is None or (
+            row.schema_hash_expected != expected
+            or (row.freshness_sla or {}) != sla
+            or list(row.required_rules or []) != rules
+        )
+        self_approved = False
+        if body.status == "active":
+            # The maker of what goes active: the caller when they change it now, else its writer.
+            maker = principal.user_id if changed or row is None else row.updated_by
+            self_approved = two_people(
+                principal,
+                maker,
+                message="Whoever wrote a contract does not activate it; another steward does.",
+                code="policy_denied",
+            )
+        if row is None:
+            row = catalog.DatasetContract(
+                id=uuid7(),
+                org_id=principal.org_id,
+                dataset_id=dataset_id,
+                version=1,
+                created_by=principal.user_id,
+            )
+            session.add(row)
+        else:
+            row.version += 1
+        if changed:
+            row.schema_hash_expected = expected
+            row.freshness_sla = sla
+            row.required_rules = rules
+            row.updated_by = principal.user_id
+        row.status = body.status
+        row.broken_reason = None
+        row.updated_at = now
+        session.add(
+            _event(
+                principal,
+                "dataset",
+                dataset_id,
+                CONTRACT_CHANGED,
+                dataset_id=dataset_id,
+                data_space_id=space,
+                version=row.version,
+                status=row.status,
+                changed=changed,
+            )
+        )
+        await session.flush()
+        view = _contract_view(dataset_id, row, await _schema_hash_now(session, dataset_id))
+    if self_approved:
+        await record_self_approval(
+            principal, step="dataset_contract.activate", object_kind="dataset", object_id=dataset_id
+        )
+    response.headers["ETag"] = _contract_tag(view.version)
+    return view
 
 
 # --- certification of consolidated versions (BR-156) --------------------------------------------

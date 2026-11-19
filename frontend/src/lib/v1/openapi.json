@@ -8701,6 +8701,212 @@
     "title": "ConsolidationSpecView",
     "type": "object"
    },
+   "ContractPut": {
+    "additionalProperties": false,
+    "description": "PUT /v1/datasets/{id}/contract with If-Match: the contract's version as read.",
+    "properties": {
+     "freshness_sla": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FreshnessSla"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "required_rules": {
+      "items": {
+       "$ref": "#/components/schemas/ContractRule"
+      },
+      "maxItems": 50,
+      "title": "Required Rules",
+      "type": "array"
+     },
+     "schema_hash_expected": {
+      "anyOf": [
+       {
+        "maxLength": 128,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schema Hash Expected"
+     },
+     "status": {
+      "default": "draft",
+      "enum": [
+       "draft",
+       "active"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "title": "ContractPut",
+    "type": "object"
+   },
+   "ContractRule": {
+    "additionalProperties": false,
+    "description": "A rule the contract requires, in GX's vocabulary (libs/quality_vocab).",
+    "properties": {
+     "column": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Column"
+     },
+     "columns": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 20,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Columns"
+     },
+     "expectation": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Expectation",
+      "type": "string"
+     },
+     "severity": {
+      "default": "high",
+      "enum": [
+       "high",
+       "medium",
+       "low"
+      ],
+      "title": "Severity",
+      "type": "string"
+     }
+    },
+    "required": [
+     "expectation"
+    ],
+    "title": "ContractRule",
+    "type": "object"
+   },
+   "ContractView": {
+    "description": "DF-09: what a steward commits a dataset to. `none` (version 0) before one is written.",
+    "properties": {
+     "broken_reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Broken Reason"
+     },
+     "dataset_id": {
+      "format": "uuid",
+      "title": "Dataset Id",
+      "type": "string"
+     },
+     "freshness_sla": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FreshnessSla"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "required_rules": {
+      "items": {
+       "$ref": "#/components/schemas/ContractRule"
+      },
+      "title": "Required Rules",
+      "type": "array"
+     },
+     "schema_hash_current": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schema Hash Current"
+     },
+     "schema_hash_expected": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schema Hash Expected"
+     },
+     "status": {
+      "enum": [
+       "none",
+       "draft",
+       "active",
+       "broken"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     },
+     "updated_by": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated By"
+     },
+     "version": {
+      "title": "Version",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "dataset_id",
+     "status",
+     "version"
+    ],
+    "title": "ContractView",
+    "type": "object"
+   },
    "ConversationDetail": {
     "description": "Conversation with ordered turns for Ask URL hydrate (R1-13).",
     "properties": {
@@ -21403,6 +21609,27 @@
      "datasets"
     ],
     "title": "FreshnessReport",
+    "type": "object"
+   },
+   "FreshnessSla": {
+    "additionalProperties": false,
+    "properties": {
+     "kind": {
+      "const": "max_age",
+      "default": "max_age",
+      "title": "Kind",
+      "type": "string"
+     },
+     "value": {
+      "pattern": "^[1-9][0-9]{0,3}[hd]$",
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "value"
+    ],
+    "title": "FreshnessSla",
     "type": "object"
    },
    "FromAnswer": {
@@ -69936,6 +70163,329 @@
     ],
     "x-use-cases": [
      "UC-04-02"
+    ]
+   }
+  },
+  "/v1/datasets/{id}/contract": {
+   "get": {
+    "description": "DF-09: the dataset's contract, `none` before one is written; its ETag is its version.",
+    "operationId": "getDatasetContract",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ContractView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Hợp đồng dữ liệu của bảng; ETag là phiên bản (DF-09, thêm 20/11/2026)",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-04-03"
+    ]
+   },
+   "put": {
+    "description": "DF-09: write the contract, holding If-Match to the version read (428 without it, 412 when\nit moved: OCC, invariant 10). Activating it is a second person's: whoever wrote what is being\nactivated does not, unless the organisation allows self-approval (recorded).",
+    "operationId": "putDatasetContract",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "if-match",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "If-Match"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ContractPut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ContractView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "428": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "precondition_required"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Ghi hợp đồng dữ liệu, bắt buộc If-Match; kích hoạt là người khác người viết (DF-09, thêm 20/11/2026)",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "steward"
+    ],
+    "x-use-cases": [
+     "UC-04-03"
     ]
    }
   },

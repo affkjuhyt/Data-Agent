@@ -659,7 +659,10 @@ announced as `dataset.version_created` and worker-agent snapshots it (DF-05,
 (over `SNAPSHOT_MAX_ROWS`, store down; the reason is in worker-agent's log). An appended version
 keeps the snapshot of when it was written. `SNAPSHOT_ENABLED=0` on worker-agent turns it off.
 `GET /v1/datasets/{id}/versions/{v}/snapshot` hands out a 10-minute signed link to the file.
-The quality gate (DF-08, `worker_agent/quality_gate.py`) holds back a dataset whose high-severity
+A dataset's contract (DF-09, `GET/PUT /v1/datasets/{id}/contract`, tab "Hợp đồng dữ liệu" of a
+table's profile) is written by one steward and activated by another (PUT needs If-Match: 428
+without, 412 when changed); a data product goes active only when every dataset in it has an
+active contract. The quality gate (DF-08, `worker_agent/quality_gate.py`) holds back a dataset whose high-severity
 rule failed and was not acknowledged within 24 h, or whose contract is `broken`: a governed answer
 refuses with `QUALITY_BLOCKED` before running, a tile or scheduled report leaves it out, the
 agent hands the turn to the governed path, a data product does not go active over it. A failing

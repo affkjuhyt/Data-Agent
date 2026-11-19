@@ -418,6 +418,51 @@ class DatasetVersionView(BaseModel):
     snapshot: SnapshotView | None = None
 
 
+class ContractRule(BaseModel):
+    """A rule the contract requires, in GX's vocabulary (libs/quality_vocab)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expectation: str = Field(min_length=1, max_length=100)
+    column: str | None = Field(default=None, max_length=200)
+    columns: list[str] | None = Field(default=None, max_length=20)
+    severity: Literal["high", "medium", "low"] = "high"
+
+
+class FreshnessSla(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["max_age"] = "max_age"
+    # Hours or days: "26h", "2d".
+    value: str = Field(pattern=r"^[1-9][0-9]{0,3}[hd]$")
+
+
+class ContractView(BaseModel):
+    """DF-09: what a steward commits a dataset to. `none` (version 0) before one is written."""
+
+    dataset_id: uuid.UUID
+    status: Literal["none", "draft", "active", "broken"]
+    version: int
+    schema_hash_expected: str | None = None
+    schema_hash_current: str | None = None
+    freshness_sla: FreshnessSla | None = None
+    required_rules: list[ContractRule] = Field(default_factory=list)
+    broken_reason: str | None = None
+    updated_at: datetime.datetime | None = None
+    updated_by: uuid.UUID | None = None
+
+
+class ContractPut(BaseModel):
+    """PUT /v1/datasets/{id}/contract with If-Match: the contract's version as read."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["draft", "active"] = "draft"
+    schema_hash_expected: str | None = Field(default=None, max_length=128)
+    freshness_sla: FreshnessSla | None = None
+    required_rules: list[ContractRule] = Field(default_factory=list, max_length=50)
+
+
 class CertificationView(BaseModel):
     id: uuid.UUID
     dataset_version_id: uuid.UUID

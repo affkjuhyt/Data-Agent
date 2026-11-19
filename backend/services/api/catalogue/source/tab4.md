@@ -173,7 +173,7 @@ Dịch vụ: Skill service (skill). 14 endpoint.
 
 ### Nguồn và danh mục
 
-Dịch vụ: Connector service (catalog). 18 endpoint. Hai endpoint chứng nhận dataset hợp nhất (thêm 10/10/2026, BR-156) nằm ở tệp OpenAPI bổ sung cho tới lần gộp (A4); chỉ người phụ trách dữ liệu (steward\_id hoặc backup\_steward\_id) của Data Space chứa dataset gọi được, ngoài năng lực steward.
+Dịch vụ: Connector service (catalog). 20 endpoint. Hai endpoint chứng nhận dataset hợp nhất (thêm 10/10/2026, BR-156) nằm ở tệp OpenAPI bổ sung cho tới lần gộp (A4); chỉ người phụ trách dữ liệu (steward\_id hoặc backup\_steward\_id) của Data Space chứa dataset gọi được, ngoài năng lực steward.
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
@@ -195,6 +195,8 @@ Dịch vụ: Connector service (catalog). 18 endpoint. Hai endpoint chứng nh�
 | PATCH | /v1/datasets/{id} | Bật, tắt, người phụ trách, mô tả | 04-04 | admin\_data |
 | GET | /v1/datasets/{id}/versions | Lịch sử cấu trúc | 04-03 | ask |
 | GET | /v1/datasets/{id}/versions/{version}/snapshot | Tải bản chụp Parquet của một phiên bản: 302 tới đường dẫn ký sẵn 10 phút, chỉ cho bảng không có chính sách truy cập và cột cá nhân (DF-05, thêm 19/11/2026) | 04-03 | admin\_data |
+| GET | /v1/datasets/{id}/contract | Hợp đồng dữ liệu của bảng; ETag là phiên bản (DF-09, thêm 20/11/2026) | 04-03 | ask |
+| PUT | /v1/datasets/{id}/contract | Ghi hợp đồng dữ liệu, bắt buộc If-Match; kích hoạt là người khác người viết (DF-09, thêm 20/11/2026) | 04-03 | steward |
 | POST | /v1/dataset-versions/{id}:certify | Chứng nhận phiên bản dataset hợp nhất | 14-05 | steward |
 | POST | /v1/dataset-versions/{id}:revoke-certification | Thu hồi chứng nhận, bắt buộc lý do | 14-05 | steward |
 | POST | /v1/connectors/rest:try | Xếp hàng kiểm tra một request REST không lưu bí mật (thêm 17/10/2026) | 04-01 | admin_data |
@@ -806,6 +808,8 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | PATCH /v1/datasets/{id} | enabled, steward\_id, display\_name, description, description\_status, business\_date\_col, knowledge\_time\_col, columns | Dataset | 422 business\_rule\_violated (bật bảng có cột cá nhân chưa xác nhận cách che, BR-102) |
 | GET /v1/datasets/{id}/versions | — | Danh sách DatasetVersion, mỗi phiên bản kèm physical\_table, retained\_until và snapshot (id, status, sha256, row\_count, byte\_size, available\_at) hoặc null (DF-05) | — |
 | GET /v1/datasets/{id}/versions/{version}/snapshot | — | 302 tới đường dẫn ký sẵn 10 phút của tệp Parquet trong da-snapshots; ghi audit dataset.snapshot\_downloaded | 403 policy\_denied (bảng có chính sách truy cập dòng, cột, che, hoặc cột gắn nhãn dữ liệu cá nhân: tệp là bản gốc, chính sách chỉ áp khi đọc qua đường truy vấn); 404 not\_found (phiên bản chưa có bản chụp hoặc bản chụp skipped: quá SNAPSHOT\_MAX\_ROWS, kho đối tượng lỗi); 503 source\_unavailable (kho đối tượng không cấu hình hoặc không ký được) |
+| GET /v1/datasets/{id}/contract | — | ContractView (status none khi chưa có, version 0; schema\_hash\_current để ghim); ETag W/"contract-<version>" | — |
+| PUT /v1/datasets/{id}/contract | status, schema\_hash\_expected, freshness\_sla, required\_rules | ContractView; ETag phiên bản mới; sự kiện catalog.dataset.contract\_changed | 428 precondition\_required (thiếu If-Match); 412 precondition\_failed (phiên bản đã đổi); 403 policy\_denied (người viết tự kích hoạt khi tổ chức không cho tự duyệt); 422 validation\_failed (expectation lạ, thiếu cột) |
 | POST /v1/dataset-versions/{id}:certify | note | DatasetVersion (certified\_at, certified\_by điền), kèm DatasetVersionCertification vừa ghi; sự kiện catalog.dataset\_version.certified. Từ đây phiên bản dùng được cho số báo cáo cơ quan quản lý (BR-156) | 403 policy\_denied (người gọi không phải người phụ trách dữ liệu của Data Space chứa dataset; người chứng nhận trùng người tạo phiên bản, BR-156); 409 invalid\_state (phiên bản đã được chứng nhận); 422 business\_rule\_violated (dataset không có origin consolidated, BR-156) |
 | POST /v1/dataset-versions/{id}:revoke-certification | reason\* | DatasetVersion (certified\_at, certified\_by về null), kèm DatasetVersionCertification vừa ghi; sự kiện catalog.dataset\_version.certification\_revoked: báo cáo cơ quan quản lý, báo cáo phát hành và tệp kỳ chốt đang dùng phiên bản bị gắn cờ cần xem lại (BR-156) | 403 policy\_denied (người gọi không phải người phụ trách dữ liệu của Data Space chứa dataset); 409 invalid\_state (phiên bản chưa được chứng nhận) |
 

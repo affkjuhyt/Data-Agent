@@ -1429,3 +1429,75 @@ async def test_a_version_lists_its_snapshot_and_hands_out_its_file(o: Org) -> No
         governed = await api.get(f"/v1/datasets/{dataset}/versions/1/snapshot", headers=admin)
         assert governed.status_code == 403
         assert links.signed == [key]
+
+
+@pytest.mark.req("DF-09")
+async def test_contract_put_requires_if_match(o: Org) -> None:
+    dataset = _dataset(o, None, schema_name="workspace", table_name="doanh_thu")
+    path = f"/v1/datasets/{dataset}/contract"
+    body = {
+        "status": "draft",
+        "freshness_sla": {"kind": "max_age", "value": "26h"},
+        "required_rules": [
+            {"expectation": "expect_column_values_to_not_be_null", "column": "ngay"},
+            {
+                "expectation": "expect_compound_columns_to_be_unique",
+                "columns": ["ma_don", "dong"],
+                "severity": "high",
+            },
+        ],
+    }
+    async with client(o) as api:
+        maker, checker = o.headers("steward"), o.headers("steward2")
+        none = await api.get(path, headers=o.headers("analyst"))
+        assert none.status_code == 200, none.text
+        assert none.json()["status"] == "none" and none.json()["version"] == 0
+        assert none.headers["etag"] == 'W/"contract-0"'
+
+        # No If-Match: 428; a reader of the catalogue does not write one.
+        assert (await api.put(path, json=body, headers=maker)).status_code == 428
+        denied = await api.put(
+            path, json=body, headers={**o.headers("analyst"), "If-Match": 'W/"contract-0"'}
+        )
+        assert denied.status_code == 403
+        bad = await api.put(
+            path,
+            json={**body, "required_rules": [{"expectation": "expect_magic", "column": "x"}]},
+            headers={**maker, "If-Match": 'W/"contract-0"'},
+        )
+        assert bad.status_code == 422
+
+        made = await api.put(path, json=body, headers={**maker, "If-Match": 'W/"contract-0"'})
+        assert made.status_code == 200, made.text
+        assert made.json()["version"] == 1 and made.json()["status"] == "draft"
+        assert made.headers["etag"] == 'W/"contract-1"'
+        # The version read is gone: 412, nothing written.
+        stale = await api.put(
+            path,
+            json={**body, "status": "active"},
+            headers={**checker, "If-Match": 'W/"contract-0"'},
+        )
+        assert stale.status_code == 412
+
+        # Four eyes: its writer does not activate it; another steward does.
+        own = await api.put(
+            path, json={**body, "status": "active"}, headers={**maker, "If-Match": 'W/"contract-1"'}
+        )
+        assert own.status_code == 403 and own.json()["code"] == "policy_denied"
+        active = await api.put(
+            path,
+            json={**body, "status": "active"},
+            headers={**checker, "If-Match": 'W/"contract-1"'},
+        )
+        assert active.status_code == 200, active.text
+        assert active.json()["status"] == "active" and active.json()["version"] == 2
+        read = (await api.get(path, headers=o.headers("analyst"))).json()
+        assert read["required_rules"][1]["columns"] == ["ma_don", "dong"]
+        assert read["freshness_sla"] == {"kind": "max_age", "value": "26h"}
+        with o.seed.conn.cursor() as cur:
+            cur.execute(
+                "SELECT payload->>'status' FROM catalog.outbox WHERE aggregate_id = %s"
+                " AND event_type = 'dataset.contract_changed' ORDER BY created_at",
+                (str(dataset),),
+            )
+            assert [r[0] for r in cur.fetchall()] == ["draft", "active"]

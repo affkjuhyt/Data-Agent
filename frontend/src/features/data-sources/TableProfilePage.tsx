@@ -18,6 +18,7 @@ import {
 import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { LinkButton } from '../../components/shell/AppLink';
+import { ContractPanel } from '../data/ContractPanel';
 
 /*
  * "P04 · Nguồn · Hồ sơ bảng" (2280:16974, UC-04-02): the profile of one table — per column its
@@ -26,7 +27,7 @@ import { LinkButton } from '../../components/shell/AppLink';
  * "Xem ánh xạ" and "Đặt quy tắc chất lượng" of the agent panel have no screen yet and are not drawn.
  * "Dùng trong Khám phá" opens Khám phá bảng.
  */
-type Tab = 'profile' | 'sample' | 'schema' | 'lineage' | 'access';
+type Tab = 'profile' | 'sample' | 'schema' | 'contract' | 'lineage' | 'access';
 
 export default function TableProfilePage() {
   const { routeId } = useAppState();
@@ -92,6 +93,7 @@ function ProfileView({ profile }: { profile: TableProfile }) {
           { value: 'profile', label: 'Hồ sơ dữ liệu' },
           { value: 'sample', label: 'Mẫu dữ liệu' },
           { value: 'schema', label: 'Cấu trúc & lịch sử' },
+          { value: 'contract', label: 'Hợp đồng dữ liệu' },
           { value: 'lineage', label: 'Dòng dữ liệu' },
           { value: 'access', label: 'Quyền' },
         ]}
@@ -124,6 +126,10 @@ function ProfileView({ profile }: { profile: TableProfile }) {
               <p className="text-muted-foreground da-caption">{profile.review.footnote}</p>
             </aside>
           )}
+        </div>
+      ) : tab === 'contract' ? (
+        <div className="max-w-[880px] px-da-3xl py-da-xl">
+          <ContractPanel datasetId={profile.id} />
         </div>
       ) : (
         <p className="px-da-3xl py-da-xl text-muted-foreground da-body-small">
