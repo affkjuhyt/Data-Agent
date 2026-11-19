@@ -57,6 +57,27 @@ async def published_products(
     ]
 
 
+async def space_products(
+    principal: Principal, data_space: uuid.UUID, *, limit: int
+) -> list[dict[str, Any]]:
+    """The P06 products one Data Space owns, every version and status, as JSON.
+
+    GET /v1/data-products?layer=published (P06's own list); published_products above reads the
+    other spaces' published ones for the picker. Newest version first within a code."""
+    query = (
+        select(pl.DataProduct)
+        .where(
+            pl.DataProduct.org_id == principal.org_id,
+            pl.DataProduct.data_space_id == data_space,
+        )
+        .order_by(pl.DataProduct.code, pl.DataProduct.version.desc())
+        .limit(limit)
+    )
+    async with transaction(ROLE, principal) as session:
+        rows = list((await session.scalars(query)).all())
+        return [jsonable_encoder(DataProductView.model_validate(r)) for r in rows]
+
+
 async def create_published_product(
     principal: Principal,
     data_space: uuid.UUID,
