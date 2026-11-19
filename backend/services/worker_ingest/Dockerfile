@@ -14,6 +14,7 @@ COPY backend/libs/language/ ./libs/language/
 COPY backend/libs/source_drivers/ ./libs/source_drivers/
 COPY backend/libs/pii/ ./libs/pii/
 COPY backend/libs/openbao/ ./libs/openbao/
+COPY backend/libs/snapshot/ ./libs/snapshot/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/worker_ingest/ ./services/worker_ingest/
 USER app

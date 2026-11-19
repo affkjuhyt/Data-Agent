@@ -13,3 +13,5 @@ babel==2.18.0
 aioboto3==13.2.0
 # PL-05: /metrics (libs/metrics).
 prometheus-client==0.26.0
+# DF-04: a dataset version as Parquet (libs/snapshot.writer); the same pin as worker-agent.
+pyarrow==26.0.1

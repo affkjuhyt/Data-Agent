@@ -116,7 +116,8 @@ def write_snapshot(conn, dataset, version) -> Snapshot:
     emit catalog.outbox 'dataset.snapshot_created' {dataset_id, version, snapshot_id, sha256}
 ```
 
-Giới hạn: snapshot chỉ cho `row_count ≤ SNAPSHOT_MAX_ROWS` (mặc định 20 000 000) và viết theo row group 1 048 576; trên ngưỡng
+Giới hạn: snapshot chỉ cho `row_count ≤ SNAPSHOT_MAX_ROWS` (mặc định 20 000 000) và viết theo row group 131 072 (PoC-2,
+`model/eval/snapshot-poc2.md`: 1 048 576 tốn gấp 4 bộ nhớ cho file nhỏ hơn 8 %); trên ngưỡng
 ghi `dataset_snapshot` với `object_key = null`, `status = skipped` (cột `status` — đề xuất thêm §9) và cảnh báo.
 
 **Retention**: xoá `__v<k>` khi `k < current − KEEP_VERSIONS(3)` **và** `valid_to < now() − KEEP_DAYS(90)` **và** không có

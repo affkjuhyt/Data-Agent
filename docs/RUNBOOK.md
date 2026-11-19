@@ -642,7 +642,9 @@ version and the earlier tables as they were. The earlier versions stay readable 
 its end plus 90 days, and nothing drops one yet (that needs its Parquet snapshot, DF-04). A table
 loaded before versioning becomes `__v<its version>` at the next full run, renamed, never dropped.
 An incremental run appends to the current version's table and refreshes the view, which then shows
-a column it added. Uploads, saved pipelines and saved queries write the workspace the same way
+a column it added. A version can be kept as an immutable Parquet file in the object-locked bucket
+`da-snapshots` (DF-04, `libs/snapshot`, 90-day retention; the writers call it from DF-05,
+`SNAPSHOT_ENABLED=0` turns it off). Uploads, saved pipelines and saved queries write the workspace the same way
 (DF-03, worker-agent): an upload into an existing table writes its next version (`replace`, the
 default) or appends to the current one (`keep`); saving a pipeline again writes the next version;
 none of them drops a table. `INGEST_VERSIONED=0` (worker-ingest and worker-agent) keeps the old

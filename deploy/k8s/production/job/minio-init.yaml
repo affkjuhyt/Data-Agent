@@ -23,6 +23,9 @@ data:
   # COMPLIANCE: no one, root included, deletes an object before its retention ends.
   RAW_RETENTION_MODE: COMPLIANCE
   RAW_RETENTION_DAYS: '3650'
+  # DF-04: a dataset version's Parquet snapshot outlives its table by at least KEEP_DAYS
+  # (libs/dataagent_db/versioning.py).
+  SNAPSHOT_RETENTION_DAYS: '90'
   MC_CONFIG_DIR: /tmp/mc
 
 ---
@@ -95,6 +98,14 @@ spec:
           printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject"],"Resource":["arn:aws:s3:::da-forecast-models/forecast/*"]}]}' > /tmp/worker-agent-forecast.json
           mc admin policy create local worker-agent-forecast-v1 /tmp/worker-agent-forecast.json
           mc admin policy attach local worker-agent-forecast-v1 --user worker-agent || mc admin user info local worker-agent
+          # DF-04: a dataset version's snapshot cannot be deleted or rewritten before its retention
+          # ends (libs/snapshot); worker-agent writes and reads them, worker-ingest writes them as
+          # MinIO's root until it has a user of its own.
+          mc mb --ignore-existing --with-lock local/da-snapshots
+          mc retention set --default "$RAW_RETENTION_MODE" "${SNAPSHOT_RETENTION_DAYS}d" local/da-snapshots
+          printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject","s3:GetObject"],"Resource":["arn:aws:s3:::da-snapshots/*"]}]}' > /tmp/worker-agent-snapshots.json
+          mc admin policy create local worker-agent-snapshots-v1 /tmp/worker-agent-snapshots.json
+          mc admin policy attach local worker-agent-snapshots-v1 --user worker-agent || mc admin user info local worker-agent
           mc mb --ignore-existing --with-lock local/raw
           # BR-150: crawled originals are immutable and kept 400 days (crawl_page.retain_until).
           mc mb --ignore-existing --with-lock local/da-raw-crawl

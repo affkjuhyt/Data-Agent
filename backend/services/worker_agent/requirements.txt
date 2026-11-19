@@ -38,3 +38,7 @@ qdrant-client==1.20.0
 babel==2.18.0
 # PL-05: /metrics (libs/metrics).
 prometheus-client==0.26.0
+# DF-04: a dataset version as Parquet (libs/snapshot.writer), and SQL on snapshots with the
+# reader's column policies (libs/snapshot.reader).
+pyarrow==26.0.1
+duckdb==2.0.0
