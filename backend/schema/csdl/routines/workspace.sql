@@ -203,7 +203,10 @@ GRANT EXECUTE ON FUNCTION public.da_materialize_upsert(text, jsonb, jsonb, text[
 -- still standing where the view goes (written before versioning) becomes the version it was,
 -- renamed to p_legacy, never dropped. An incremental run calls it on the current version too, to
 -- show the columns it added. Names are checked as da_materialize_upload checks them; a version's
--- name is its base, cut to 55 characters, then __v<n>.
+-- name is its base then __v<n>: the name itself when it fits in 55 characters, else its first 46,
+-- `_` and 8 hex of the sha256 of the whole name (worker_ingest/versioning.version_base). Not the
+-- name cut to 55, which dropped the job id that makes an ingest table's name unique, so two jobs
+-- of two organisations could share version tables in the one workspace schema.
 CREATE OR REPLACE FUNCTION public.da_swap_version(
   p_name text,
   p_physical text,
@@ -215,14 +218,18 @@ SET search_path = pg_catalog, public
 AS $fn$
 DECLARE
   kind "char";
+  base text;
   version_name text;
   renamed boolean := false;
 BEGIN
   IF p_name !~ '^[a-z][a-z0-9_]{0,62}$' THEN
     RAISE EXCEPTION 'invalid workspace name';
   END IF;
-  -- p_name is [a-z0-9_] only, so it is safe inside the pattern.
-  version_name := '^' || left(p_name, 55) || '__v[0-9]{1,5}$';
+  base := CASE WHEN length(p_name) <= 55 THEN p_name
+               ELSE left(p_name, 46) || '_' || left(encode(sha256(convert_to(p_name, 'UTF8')), 'hex'), 8)
+          END;
+  -- base is [a-z0-9_] only, so it is safe inside the pattern.
+  version_name := '^' || base || '__v[0-9]{1,5}$';
   IF p_physical !~ version_name THEN
     RAISE EXCEPTION 'invalid version table name';
   END IF;

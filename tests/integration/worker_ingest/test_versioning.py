@@ -212,3 +212,25 @@ def test_a_version_name_fits_postgres() -> None:
     assert len(versioning.physical_name(long, versioning.MAX_VERSION)) == 63
     with pytest.raises(ValueError):
         versioning.physical_name(long, versioning.MAX_VERSION + 1)
+
+
+def test_long_names_alike_in_55_characters_keep_their_own_versions(seed: Seed) -> None:
+    # Two ingest tables of two jobs whose stems start alike differ only in the job id at the end:
+    # their versions must not share a table (security review of 5d59b877).
+    one, two = ("ingest_" + "s" * 45 + f"_{job}" for job in ("0a1b2c3d", "0a1b2c3e"))
+    assert one[:55] == two[:55]
+    assert versioning.version_base(one) != versioning.version_base(two)
+    assert versioning.version_base("ingest_short_0a1b2c3d") == "ingest_short_0a1b2c3d"
+    # The routine derives the same base: it takes the worker's name and refuses the other job's.
+    physical = versioning.physical_name(one, 1)
+    with seed.conn.cursor() as cur:
+        cur.execute("SET ROLE da_owner")
+        cur.execute(f'CREATE TABLE workspace."{physical}" (n int)')
+        cur.execute(f'CREATE TABLE workspace."{versioning.physical_name(two, 1)}" (n int)')
+        cur.execute("RESET ROLE")
+        cur.execute("SELECT public.da_swap_version(%s, %s)", (one, physical))
+    assert _relkind(seed, one) == "v"
+    with pytest.raises(Exception, match="version"), seed.conn.cursor() as cur:
+        cur.execute(
+            "SELECT public.da_swap_version(%s, %s)", (one, versioning.physical_name(two, 1))
+        )

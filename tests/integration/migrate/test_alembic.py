@@ -1,5 +1,6 @@
 """The Alembic chain the migrate Job runs: dataagent, then the audit database apart from it."""
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -906,4 +907,15 @@ def test_a_migrated_cluster_swaps_versions_and_takes_a_reload(admin):
         for physical in ("other__v1", "sales__v123456", "sales"):
             with pytest.raises(psycopg2.errors.RaiseException):
                 cur.execute("SELECT public.da_swap_version('sales', %s)", (physical,))
+        # v3_0042: a name past 55 characters keeps its identity in its versions' base, so the
+        # name cut to 55, shared by every job whose stem starts alike, is refused.
+        long = "ingest_" + "a" * 45 + "_deadbeef"
+        base = long[:46] + "_" + hashlib.sha256(long.encode()).hexdigest()[:8]
+        cur.execute("SET ROLE da_owner")
+        cur.execute(f"CREATE TABLE workspace.{long[:55]}__v1 (n int)")
+        cur.execute(f"CREATE TABLE workspace.{base}__v1 (n int)")
+        cur.execute("RESET ROLE")
+        with pytest.raises(psycopg2.errors.RaiseException):
+            cur.execute("SELECT public.da_swap_version(%s, %s)", (long, f"{long[:55]}__v1"))
+        cur.execute("SELECT public.da_swap_version(%s, %s)", (long, f"{base}__v1"))
     conn.close()
