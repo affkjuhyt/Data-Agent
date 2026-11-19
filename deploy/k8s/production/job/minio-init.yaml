@@ -134,7 +134,9 @@ spec:
             memory: 64Mi
           limits:
             cpu: 250m
-            memory: 128Mi
+            # 128Mi was OOMKilled at exit on 19/11/2026 (deploy of f1a2d13c), once mc ran
+            # every bucket's retention and policy steps; the job still completed.
+            memory: 256Mi
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false
