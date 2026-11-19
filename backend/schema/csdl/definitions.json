@@ -31,9 +31,9 @@
   {
    "name": "catalog",
    "owner_service": "Connector service",
-   "content": "Nguồn, bảng, cột, hồ sơ dữ liệu, lịch sử schema, lượt quét, lịch sử chứng nhận dataset hợp nhất",
+   "content": "Nguồn, bảng, cột, hồ sơ dữ liệu, lịch sử schema, lượt quét, lịch sử chứng nhận dataset hợp nhất, snapshot phiên bản, hợp đồng chất lượng",
    "modules": "P04",
-   "table_count": 7,
+   "table_count": 9,
    "database": "dataagent",
    "intro": ""
   },
@@ -5513,6 +5513,28 @@
      "fk": null,
      "logic_ref": "org.app_user",
      "pii": false
+    },
+    {
+     "name": "physical_table",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Bảng vật lý của phiên bản (F-01, DF-01): workspace.<physical_name>__v<version>; view workspace.<physical_name> trỏ phiên bản hiện hành; trống với bảng của nguồn bên ngoài",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "retained_until",
+     "type": "timestamptz",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Bảng vật lý của phiên bản được giữ tới lúc này (≥ 3 phiên bản và ≥ 90 ngày); sau đó chỉ còn snapshot Parquet",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
     }
    ],
    "common_columns": [
@@ -5661,6 +5683,318 @@
    "notes": [
     "Trigger sau INSERT: certify khi phiên bản đã chứng nhận thì báo lỗi, không thì điền certified_at = created_at, certified_by = actor_id và phát catalog.dataset_version.certified; revoke khi phiên bản chưa chứng nhận thì báo lỗi, không thì đưa certified_at, certified_by về null và phát catalog.dataset_version.certification_revoked (payload: dataset_version_id, dataset_id, revoked_by, reason, người và lúc chứng nhận trước đó). Chứng nhận lại sau thu hồi là một dòng certify mới. svc_catalog chỉ có SELECT, INSERT; không có UPDATE, DELETE. Chọn bảng lịch sử thay cho cột revoked_at, revoked_by, revoke_reason vì cột sẽ bị ghi đè ở lần thu hồi thứ hai, trái nguyên tắc chỉ ghi thêm."
    ]
+  },
+  {
+   "schema": "catalog",
+   "name": "dataset_snapshot",
+   "qualified": "catalog.dataset_snapshot",
+   "description": "Bản chụp Parquet của một phiên bản dataset (F-01, DF-01): số câu trả lời và receipt đọc lại được sau khi bảng vật lý của phiên bản đã bỏ. Chỉ ghi thêm. Use case: UC-04-06, UC-10-01, UC-06-05.",
+   "use_cases": [
+    "UC-04-06",
+    "UC-06-05",
+    "UC-10-01"
+   ],
+   "columns": [
+    {
+     "name": "dataset_id",
+     "type": "uuid",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "FK dataset",
+     "fk": "dataset",
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "version",
+     "type": "integer",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Bằng catalog.dataset_version.version",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "not_null": true,
+     "default": "'ok'",
+     "unique": false,
+     "comment": "ok; skipped khi quá ngưỡng kích thước hoặc kho đối tượng lỗi (có dòng, không có tệp)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "object_key",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "da-snapshots/<org>/<dataset>/v<version>.parquet; trống khi skipped",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "sha256",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Băm toàn tệp sau khi tải lên, không dùng ETag của kho; trống khi skipped",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "row_count",
+     "type": "bigint",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "byte_size",
+     "type": "bigint",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Kích thước tệp; trống khi skipped",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "columns",
+     "type": "jsonb",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "[{name, normalized_type, arrow_type}]",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "available_at",
+     "type": "timestamptz",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Lúc dữ liệu dùng được cho câu hỏi (bất biến 9)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "created_by_run_id",
+     "type": "uuid",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "logic → ingest.job_run hoặc pipeline.pipeline_run",
+     "fk": null,
+     "logic_ref": "ingest.job_run",
+     "pii": false
+    },
+    {
+     "name": "created_by_kind",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "job_run, pipeline_run, upload, derive",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    }
+   ],
+   "common_columns": [
+    "id",
+    "org_id",
+    "created_at"
+   ],
+   "constraints": [
+    {
+     "kind": "unique",
+     "sql": "UNIQUE (dataset_id, version)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (status IN ('ok','skipped'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (created_by_kind IN ('job_run','pipeline_run','upload','derive'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (status = 'skipped' OR (object_key IS NOT NULL AND sha256 IS NOT NULL AND byte_size IS NOT NULL))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (sha256 IS NULL OR sha256 ~ '^[0-9a-f]{64}$')"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (row_count >= 0)"
+    },
+    {
+     "kind": "fk",
+     "sql": "FOREIGN KEY (dataset_id) REFERENCES catalog.dataset(id)"
+    }
+   ],
+   "indexes": [
+    {
+     "unique": false,
+     "method": "btree",
+     "expr": "dataset_id, version DESC",
+     "where": null,
+     "comment": null
+    }
+   ],
+   "partition": null,
+   "immutable": true,
+   "notes": []
+  },
+  {
+   "schema": "catalog",
+   "name": "dataset_contract",
+   "qualified": "catalog.dataset_contract",
+   "description": "Hợp đồng chất lượng của một dataset (F-02, DF-01): schema khoá, độ tươi cam kết và các luật bắt buộc; người phụ trách dữ liệu sửa, lượt kiểm chất lượng chỉ đổi trạng thái giữa active và broken. Use case: UC-04-08, UC-07-02.",
+   "use_cases": [
+    "UC-04-08",
+    "UC-07-02"
+   ],
+   "columns": [
+    {
+     "name": "dataset_id",
+     "type": "uuid",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "FK dataset; mỗi dataset một hợp đồng",
+     "fk": "dataset",
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "version",
+     "type": "integer",
+     "not_null": true,
+     "default": "1",
+     "unique": false,
+     "comment": "Khoá lạc quan: sửa phải gửi phiên bản đang có",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "schema_hash_expected",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Khớp catalog.dataset_version.schema_hash; trống là chưa khoá schema",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "freshness_sla",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'{}'",
+     "unique": false,
+     "comment": "Độ tươi cam kết: {\"kind\":\"max_age\",\"max_age_hours\":24} hoặc {\"kind\":\"schedule\",\"cron\":\"…\"}",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "required_rules",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'[]'",
+     "unique": false,
+     "comment": "Luật bắt buộc theo từ vựng expectation (DF-07)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "not_null": true,
+     "default": "'draft'",
+     "unique": false,
+     "comment": "draft, active, broken",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "broken_reason",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Vì sao hợp đồng hỏng; bắt buộc khi status = broken",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    }
+   ],
+   "common_columns": [
+    "id",
+    "org_id",
+    "created_at",
+    "created_by",
+    "updated_at",
+    "updated_by"
+   ],
+   "constraints": [
+    {
+     "kind": "unique",
+     "sql": "UNIQUE (dataset_id)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (status IN ('draft','active','broken'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (status <> 'broken' OR (broken_reason IS NOT NULL AND btrim(broken_reason) <> ''))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (version >= 1)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (jsonb_typeof(freshness_sla) = 'object')"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (jsonb_typeof(required_rules) = 'array')"
+    },
+    {
+     "kind": "fk",
+     "sql": "FOREIGN KEY (dataset_id) REFERENCES catalog.dataset(id)"
+    }
+   ],
+   "indexes": [],
+   "partition": null,
+   "immutable": false,
+   "notes": []
   },
   {
    "schema": "catalog",

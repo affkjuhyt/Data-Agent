@@ -32,7 +32,7 @@ Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case
 | org | Identity & tenancy (Admin service) | Tổ chức, người dùng, nhóm, vai trò, Data Space, thành viên, lịch làm việc, yêu cầu quyền | P11 | 12 |
 | governance | Policy engine, Admin service | Chính sách dữ liệu và hành vi, thời hạn lưu, chủ thể dữ liệu, cấu hình và sử dụng mô hình AI | P11 | 11 |
 | integration | Gateway, MCP server | Client API và MCP, webhook, hạn mức, chống gửi trùng | P12 | 5 |
-| catalog | Connector service | Nguồn, bảng, cột, hồ sơ dữ liệu, lịch sử schema, lượt quét, lịch sử chứng nhận dataset hợp nhất | P04 | 7 |
+| catalog | Connector service | Nguồn, bảng, cột, hồ sơ dữ liệu, lịch sử schema, lượt quét, lịch sử chứng nhận dataset hợp nhất, snapshot phiên bản, hợp đồng chất lượng | P04 | 9 |
 | context | Context service | Mô hình ngữ nghĩa, chỉ số và phiên bản, từ đồng nghĩa, ví dụ, thuật ngữ, trang tri thức và phiên bản, khẳng định, ràng buộc số, liên kết, lượt và phát hiện rà soát | P07 | 22 |
 | qa | Agent runtime (hỏi đáp) | Hội thoại, câu hỏi, kế hoạch, câu trả lời, phản hồi, xuất tệp, trí nhớ dài hạn | P01 | 10 |
 | query | Query engine | Lượt chạy SQL và kết quả rút gọn | P01, P02 | 2 |
@@ -52,7 +52,7 @@ Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case
 | acquire | Acquisition service | Nguồn thu thập, phiên bản schema thu thập, lượt thu, trang gốc, bản ghi trích, quyết định duyệt, thay đổi cấu trúc, liên kết thực thể, danh mục thực thể chuẩn, đặc tả và lượt hợp nhất | P14 | 11 |
 | forecast | Forecast service | Việc dự báo, mô hình và phiên bản, backtest, kết quả dự báo, kịch bản, nhật ký độ chính xác, mô hình và tham số công thức, sổ dự báo | P15 | 10 |
 | exec | Exec vault service | Kho riêng lãnh đạo: kho và khoá bọc, luận điểm mã hoá, bằng chứng và điểm chấm niêm phong, bộ nhớ riêng, sổ truy cập khoá, bàn giao, bản công bố | P16 | 10 |
-| Tổng |  |  |  | 182 bảng, cộng một bảng outbox trong mỗi schema của dataagent (22 outbox) |
+| Tổng |  |  |  | 184 bảng, cộng một bảng outbox trong mỗi schema của dataagent (22 outbox) |
 
 ## D3. Danh mục thực thể
 

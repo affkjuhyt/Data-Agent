@@ -629,6 +629,8 @@ Phiên bản cấu trúc của một bảng; ánh xạ cũ đóng valid\_to thay
 | scan\_run\_id | uuid | FK scan\_run |
 | certified\_at | timestamptz | Lúc người phụ trách dữ liệu chứng nhận phiên bản dataset hợp nhất; null là chưa chứng nhận hoặc đã thu hồi, khi đó không dùng làm số báo cáo cơ quan quản lý (BR-156). Trạng thái hiện hành, lịch sử ở dataset\_version\_certification |
 | certified\_by | uuid | logic → org.app\_user; người phụ trách dữ liệu (steward\_id hoặc backup\_steward\_id của Data Space chứa dataset), khác created\_by trừ khi tổ chức bật tự duyệt (org.two\_people) (BR-156) |
+| physical\_table | text | Bảng vật lý của phiên bản (F-01, DF-01): workspace.<physical\_name>\_\_v<version>; view workspace.<physical\_name> trỏ phiên bản hiện hành; trống với bảng của nguồn bên ngoài |
+| retained\_until | timestamptz | Bảng vật lý của phiên bản được giữ tới lúc này (≥ 3 phiên bản và ≥ 90 ngày); sau đó chỉ còn snapshot Parquet |
 
 Cột chung: id, org\_id, created\_at, created\_by (thêm 10/10/2026: người tạo phiên bản; với dataset hợp nhất là người sửa nội dung đặc tả hợp nhất gần nhất, lấy từ acquire.consolidation\_run.spec\_editor\_id khi phát hành, bắt buộc và không đổi được; null với phiên bản do lượt quét tạo. Vì người chứng nhận phải khác created\_by (trừ khi tổ chức bật tự duyệt), phiên bản hợp nhất cần người thứ hai chứng nhận khi tổ chức chưa bật). Ràng buộc: UNIQUE (dataset\_id, version); CHECK (change\_kind IN ('initial','additive','breaking')); CHECK (change\_kind <> 'breaking' OR proposal\_id IS NOT NULL); CHECK (valid\_to IS NULL OR valid\_to > valid\_from); FOREIGN KEY (dataset\_id) REFERENCES catalog.dataset(id); FOREIGN KEY (scan\_run\_id) REFERENCES catalog.scan\_run(id); CHECK ((certified\_at IS NULL) = (certified\_by IS NULL)); CONSTRAINT dataset\_version\_certifier\_created\_check CHECK (certified\_by IS NULL OR created\_by IS NOT NULL). Trigger: phiên bản mới ở trạng thái chưa chứng nhận; dataset origin = 'consolidated' bắt buộc có created\_by; created\_by không sửa được; certified\_at, certified\_by chỉ đổi qua trigger của catalog.dataset\_version\_certification (ghi thẳng bị chặn) và chỉ cho dataset origin = 'consolidated' (BR-156). Semantic compiler chặn dùng phiên bản hợp nhất chưa chứng nhận cho số báo cáo cơ quan quản lý (tab 5 G5.2).
 
@@ -645,6 +647,42 @@ Lịch sử chứng nhận và thu hồi chứng nhận phiên bản dataset h�
 | reason | text | Lý do thu hồi; bắt buộc khi action = revoke |
 
 Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (action IN ('certify','revoke')); CHECK (action <> 'revoke' OR (reason IS NOT NULL AND btrim(reason) <> '')); FOREIGN KEY (dataset\_version\_id) REFERENCES catalog.dataset\_version(id). Chỉ mục: (dataset\_version\_id, created\_at DESC). Trigger sau INSERT: certify khi phiên bản đã chứng nhận thì báo lỗi, không thì điền certified\_at = created\_at, certified\_by = actor\_id và phát catalog.dataset\_version.certified; revoke khi phiên bản chưa chứng nhận thì báo lỗi, không thì đưa certified\_at, certified\_by về null và phát catalog.dataset\_version.certification\_revoked (payload: dataset\_version\_id, dataset\_id, revoked\_by, reason, người và lúc chứng nhận trước đó). Chứng nhận lại sau thu hồi là một dòng certify mới. svc\_catalog chỉ có SELECT, INSERT; không có UPDATE, DELETE. Chọn bảng lịch sử thay cho cột revoked\_at, revoked\_by, revoke\_reason vì cột sẽ bị ghi đè ở lần thu hồi thứ hai, trái nguyên tắc chỉ ghi thêm.
+
+#### catalog.dataset\_snapshot
+
+Bản chụp Parquet của một phiên bản dataset (F-01, DF-01): số câu trả lời và receipt đọc lại được sau khi bảng vật lý của phiên bản đã bỏ. Chỉ ghi thêm. Use case: UC-04-06, UC-10-01, UC-06-05.
+
+| Cột | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| dataset\_id | uuid, bắt buộc | FK dataset |
+| version | integer, bắt buộc | Bằng catalog.dataset\_version.version |
+| status | text, bắt buộc, mặc định 'ok' | ok; skipped khi quá ngưỡng kích thước hoặc kho đối tượng lỗi (có dòng, không có tệp) |
+| object\_key | text | da-snapshots/<org>/<dataset>/v<version>.parquet; trống khi skipped |
+| sha256 | text | Băm toàn tệp sau khi tải lên, không dùng ETag của kho; trống khi skipped |
+| row\_count | bigint, bắt buộc |  |
+| byte\_size | bigint | Kích thước tệp; trống khi skipped |
+| columns | jsonb, bắt buộc | [{name, normalized\_type, arrow\_type}] |
+| available\_at | timestamptz, bắt buộc | Lúc dữ liệu dùng được cho câu hỏi (bất biến 9) |
+| created\_by\_run\_id | uuid | logic → ingest.job\_run hoặc pipeline.pipeline\_run |
+| created\_by\_kind | text, bắt buộc | job\_run, pipeline\_run, upload, derive |
+
+Cột chung: id, org\_id, created\_at. Bản ghi bất biến. Ràng buộc: UNIQUE (dataset\_id, version); CHECK (status IN ('ok','skipped')); CHECK (created\_by\_kind IN ('job\_run','pipeline\_run','upload','derive')); CHECK (status = 'skipped' OR (object\_key IS NOT NULL AND sha256 IS NOT NULL AND byte\_size IS NOT NULL)); CHECK (sha256 IS NULL OR sha256 \~ '^\[0-9a-f\]{64}$'); CHECK (row\_count >= 0); FOREIGN KEY (dataset\_id) REFERENCES catalog.dataset(id). Chỉ mục: (dataset\_id, version DESC).
+
+#### catalog.dataset\_contract
+
+Hợp đồng chất lượng của một dataset (F-02, DF-01): schema khoá, độ tươi cam kết và các luật bắt buộc; người phụ trách dữ liệu sửa, lượt kiểm chất lượng chỉ đổi trạng thái giữa active và broken. Use case: UC-04-08, UC-07-02.
+
+| Cột | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| dataset\_id | uuid, bắt buộc | FK dataset; mỗi dataset một hợp đồng |
+| version | integer, bắt buộc, mặc định 1 | Khoá lạc quan: sửa phải gửi phiên bản đang có |
+| schema\_hash\_expected | text | Khớp catalog.dataset\_version.schema\_hash; trống là chưa khoá schema |
+| freshness\_sla | jsonb, bắt buộc, mặc định '{}' | Độ tươi cam kết: {"kind":"max\_age","max\_age\_hours":24} hoặc {"kind":"schedule","cron":"…"} |
+| required\_rules | jsonb, bắt buộc, mặc định '[]' | Luật bắt buộc theo từ vựng expectation (DF-07) |
+| status | text, bắt buộc, mặc định 'draft' | draft, active, broken |
+| broken\_reason | text | Vì sao hợp đồng hỏng; bắt buộc khi status = broken |
+
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (dataset\_id); CHECK (status IN ('draft','active','broken')); CHECK (status <> 'broken' OR (broken\_reason IS NOT NULL AND btrim(broken\_reason) <> '')); CHECK (version >= 1); CHECK (jsonb\_typeof(freshness\_sla) = 'object'); CHECK (jsonb\_typeof(required\_rules) = 'array'); FOREIGN KEY (dataset\_id) REFERENCES catalog.dataset(id).
 
 #### catalog.column\_meta
 

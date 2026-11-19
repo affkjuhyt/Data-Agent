@@ -790,3 +790,80 @@ def test_the_dead_outbox_view_reads_with_its_readers_rights(admin):
             _one(db, f"SELECT has_table_privilege('{role}', 'integration.v_outbox_dead', 'SELECT')")
             is False
         ), role
+
+
+def test_a_version_keeps_its_table_and_snapshot_and_a_dataset_has_a_contract(admin):
+    # v3_0040 (19/11/2026, DF-01): a cluster migrated before it has neither table nor the two
+    # version columns; the baseline is generated with them, so the test takes them away first.
+    _fresh(admin, "chain_df01", "chain_df01_audit")
+    db = _db(admin, "chain_df01")
+    _alembic(db, "upgrade", "v3_0039")
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("DROP TABLE catalog.dataset_snapshot, catalog.dataset_contract")
+        cur.execute(
+            "ALTER TABLE catalog.dataset_version DROP COLUMN physical_table,"
+            " DROP COLUMN retained_until"
+        )
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    # Append-only: the owning service may not rewrite a snapshot.
+    for verb, held in (("INSERT", True), ("UPDATE", False), ("DELETE", False)):
+        assert (
+            _one(
+                db,
+                f"SELECT has_table_privilege('svc_catalog', 'catalog.dataset_snapshot', '{verb}')",
+            )
+            is held
+        ), verb
+    assert (
+        _one(
+            db,
+            "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'catalog'"
+            " AND table_name = 'dataset_version' AND column_name IN ('physical_table', 'retained_until')",
+        )
+        == 2
+    )
+    org, steward, space, dataset = (str(uuid.uuid4()) for _ in range(4))
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO org.organization (id, code, name) VALUES (%s, %s, 'o')", (org, org[:8])
+        )
+        cur.execute(
+            "INSERT INTO org.app_user (id, org_id, external_id, username, display_name)"
+            " VALUES (%s, %s, 'kc', 'u', 'U')",
+            (steward, org),
+        )
+        cur.execute(
+            "INSERT INTO org.data_space (id, org_id, code, name, steward_id)"
+            " VALUES (%s, %s, 'DS-1', 'S', %s)",
+            (space, org, steward),
+        )
+        cur.execute(
+            "INSERT INTO catalog.dataset (id, org_id, data_space_id, origin, schema_name, table_name)"
+            " VALUES (%s, %s, %s, 'derived', 'silver', 't')",
+            (dataset, org, space),
+        )
+        snapshot = (
+            "INSERT INTO catalog.dataset_snapshot (id, org_id, dataset_id, version, status,"
+            " object_key, sha256, row_count, byte_size, columns, available_at, created_by_kind)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, 10, %s, '[]', now(), 'upload')"
+        )
+        cur.execute(snapshot, (str(uuid.uuid4()), org, dataset, 1, "ok", "k", "a" * 64, 100))
+        cur.execute(snapshot, (str(uuid.uuid4()), org, dataset, 2, "skipped", None, None, None))
+        for bad in (
+            (3, "ok", None, None, None),  # an ok snapshot has its file
+            (4, "ok", "k", "A" * 64, 100),  # a sha256 is lowercase hex
+        ):
+            with pytest.raises(psycopg2.errors.CheckViolation):
+                cur.execute(snapshot, (str(uuid.uuid4()), org, dataset, *bad))
+        with pytest.raises(psycopg2.errors.UniqueViolation):
+            cur.execute(snapshot, (str(uuid.uuid4()), org, dataset, 1, "ok", "k", "b" * 64, 1))
+        contract = "INSERT INTO catalog.dataset_contract (id, org_id, dataset_id, status, broken_reason) VALUES (%s, %s, %s, %s, %s)"
+        with pytest.raises(psycopg2.errors.CheckViolation):
+            cur.execute(contract, (str(uuid.uuid4()), org, dataset, "broken", None))
+        cur.execute(contract, (str(uuid.uuid4()), org, dataset, "broken", "schema changed"))
+    conn.close()

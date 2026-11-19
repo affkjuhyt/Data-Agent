@@ -1297,6 +1297,8 @@ CREATE TABLE catalog.dataset_version (
   scan_run_id uuid,
   certified_at timestamptz,
   certified_by uuid,
+  physical_table text,
+  retained_until timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
   CONSTRAINT dataset_version_pkey PRIMARY KEY (id),
@@ -1316,6 +1318,8 @@ COMMENT ON COLUMN catalog.dataset_version.proposal_id IS 'logic → inbox.propos
 COMMENT ON COLUMN catalog.dataset_version.scan_run_id IS 'FK scan_run';
 COMMENT ON COLUMN catalog.dataset_version.certified_at IS 'Lúc người phụ trách dữ liệu chứng nhận phiên bản dataset hợp nhất; null là chưa chứng nhận hoặc đã thu hồi, khi đó không dùng làm số báo cáo cơ quan quản lý (BR-156). Trạng thái hiện hành, lịch sử ở dataset_version_certification';
 COMMENT ON COLUMN catalog.dataset_version.certified_by IS 'logic → org.app_user; người phụ trách dữ liệu (steward_id hoặc backup_steward_id của Data Space chứa dataset), khác created_by trừ khi tổ chức bật tự duyệt (org.two_people) (BR-156)';
+COMMENT ON COLUMN catalog.dataset_version.physical_table IS 'Bảng vật lý của phiên bản (F-01, DF-01): workspace.<physical_name>__v<version>; view workspace.<physical_name> trỏ phiên bản hiện hành; trống với bảng của nguồn bên ngoài';
+COMMENT ON COLUMN catalog.dataset_version.retained_until IS 'Bảng vật lý của phiên bản được giữ tới lúc này (≥ 3 phiên bản và ≥ 90 ngày); sau đó chỉ còn snapshot Parquet';
 
 CREATE TABLE catalog.dataset_version_certification (
   id uuid NOT NULL,
@@ -1336,6 +1340,72 @@ COMMENT ON COLUMN catalog.dataset_version_certification.action IS 'certify, revo
 COMMENT ON COLUMN catalog.dataset_version_certification.actor_id IS 'logic → org.app_user; người phụ trách dữ liệu chứng nhận hoặc thu hồi';
 COMMENT ON COLUMN catalog.dataset_version_certification.note IS 'Ghi chú khi chứng nhận';
 COMMENT ON COLUMN catalog.dataset_version_certification.reason IS 'Lý do thu hồi; bắt buộc khi action = revoke';
+
+CREATE TABLE catalog.dataset_snapshot (
+  id uuid NOT NULL,
+  org_id uuid NOT NULL,
+  dataset_id uuid NOT NULL,
+  version integer NOT NULL,
+  status text NOT NULL DEFAULT 'ok',
+  object_key text,
+  sha256 text,
+  row_count bigint NOT NULL,
+  byte_size bigint,
+  columns jsonb NOT NULL,
+  available_at timestamptz NOT NULL,
+  created_by_run_id uuid,
+  created_by_kind text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT dataset_snapshot_pkey PRIMARY KEY (id),
+  UNIQUE (dataset_id, version),
+  CHECK (status IN ('ok','skipped')),
+  CHECK (created_by_kind IN ('job_run','pipeline_run','upload','derive')),
+  CHECK (status = 'skipped' OR (object_key IS NOT NULL AND sha256 IS NOT NULL AND byte_size IS NOT NULL)),
+  CHECK (sha256 IS NULL OR sha256 ~ '^[0-9a-f]{64}$'),
+  CHECK (row_count >= 0)
+);
+COMMENT ON TABLE catalog.dataset_snapshot IS 'Bản chụp Parquet của một phiên bản dataset (F-01, DF-01): số câu trả lời và receipt đọc lại được sau khi bảng vật lý của phiên bản đã bỏ. Chỉ ghi thêm. Use case: UC-04-06, UC-10-01, UC-06-05.';
+COMMENT ON COLUMN catalog.dataset_snapshot.dataset_id IS 'FK dataset';
+COMMENT ON COLUMN catalog.dataset_snapshot.version IS 'Bằng catalog.dataset_version.version';
+COMMENT ON COLUMN catalog.dataset_snapshot.status IS 'ok; skipped khi quá ngưỡng kích thước hoặc kho đối tượng lỗi (có dòng, không có tệp)';
+COMMENT ON COLUMN catalog.dataset_snapshot.object_key IS 'da-snapshots/<org>/<dataset>/v<version>.parquet; trống khi skipped';
+COMMENT ON COLUMN catalog.dataset_snapshot.sha256 IS 'Băm toàn tệp sau khi tải lên, không dùng ETag của kho; trống khi skipped';
+COMMENT ON COLUMN catalog.dataset_snapshot.byte_size IS 'Kích thước tệp; trống khi skipped';
+COMMENT ON COLUMN catalog.dataset_snapshot.columns IS '[{name, normalized_type, arrow_type}]';
+COMMENT ON COLUMN catalog.dataset_snapshot.available_at IS 'Lúc dữ liệu dùng được cho câu hỏi (bất biến 9)';
+COMMENT ON COLUMN catalog.dataset_snapshot.created_by_run_id IS 'logic → ingest.job_run hoặc pipeline.pipeline_run';
+COMMENT ON COLUMN catalog.dataset_snapshot.created_by_kind IS 'job_run, pipeline_run, upload, derive';
+
+CREATE TABLE catalog.dataset_contract (
+  id uuid NOT NULL,
+  org_id uuid NOT NULL,
+  dataset_id uuid NOT NULL,
+  version integer NOT NULL DEFAULT 1,
+  schema_hash_expected text,
+  freshness_sla jsonb NOT NULL DEFAULT '{}',
+  required_rules jsonb NOT NULL DEFAULT '[]',
+  status text NOT NULL DEFAULT 'draft',
+  broken_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  created_by uuid,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by uuid,
+  CONSTRAINT dataset_contract_pkey PRIMARY KEY (id),
+  UNIQUE (dataset_id),
+  CHECK (status IN ('draft','active','broken')),
+  CHECK (status <> 'broken' OR (broken_reason IS NOT NULL AND btrim(broken_reason) <> '')),
+  CHECK (version >= 1),
+  CHECK (jsonb_typeof(freshness_sla) = 'object'),
+  CHECK (jsonb_typeof(required_rules) = 'array')
+);
+COMMENT ON TABLE catalog.dataset_contract IS 'Hợp đồng chất lượng của một dataset (F-02, DF-01): schema khoá, độ tươi cam kết và các luật bắt buộc; người phụ trách dữ liệu sửa, lượt kiểm chất lượng chỉ đổi trạng thái giữa active và broken. Use case: UC-04-08, UC-07-02.';
+COMMENT ON COLUMN catalog.dataset_contract.dataset_id IS 'FK dataset; mỗi dataset một hợp đồng';
+COMMENT ON COLUMN catalog.dataset_contract.version IS 'Khoá lạc quan: sửa phải gửi phiên bản đang có';
+COMMENT ON COLUMN catalog.dataset_contract.schema_hash_expected IS 'Khớp catalog.dataset_version.schema_hash; trống là chưa khoá schema';
+COMMENT ON COLUMN catalog.dataset_contract.freshness_sla IS 'Độ tươi cam kết: {"kind":"max_age","max_age_hours":24} hoặc {"kind":"schedule","cron":"…"}';
+COMMENT ON COLUMN catalog.dataset_contract.required_rules IS 'Luật bắt buộc theo từ vựng expectation (DF-07)';
+COMMENT ON COLUMN catalog.dataset_contract.status IS 'draft, active, broken';
+COMMENT ON COLUMN catalog.dataset_contract.broken_reason IS 'Vì sao hợp đồng hỏng; bắt buộc khi status = broken';
 
 CREATE TABLE catalog.column_meta (
   id uuid NOT NULL,
@@ -1428,6 +1498,7 @@ CREATE UNIQUE INDEX scan_run_source_id_kind_key ON catalog.scan_run (source_id, 
 CREATE INDEX dataset_data_space_id_idx ON catalog.dataset (data_space_id) WHERE enabled AND deleted_at IS NULL;
 CREATE INDEX dataset_expires_at_idx ON catalog.dataset (expires_at) WHERE origin = 'upload';
 CREATE INDEX dataset_version_certification_dataset_version_id_created_at ON catalog.dataset_version_certification (dataset_version_id, created_at DESC);
+CREATE INDEX dataset_snapshot_dataset_id_version_idx ON catalog.dataset_snapshot (dataset_id, version DESC);
 CREATE INDEX column_meta_dataset_id_idx ON catalog.column_meta (dataset_id) WHERE removed_in_version IS NULL;
 CREATE INDEX column_meta_dataset_id_idx_2 ON catalog.column_meta (dataset_id) WHERE pii_label IS NOT NULL;
 
@@ -7037,6 +7108,8 @@ ALTER TABLE catalog.dataset ADD CONSTRAINT dataset_source_id_fkey FOREIGN KEY (s
 ALTER TABLE catalog.dataset_version ADD CONSTRAINT dataset_version_dataset_id_fkey FOREIGN KEY (dataset_id) REFERENCES catalog.dataset(id);
 ALTER TABLE catalog.dataset_version ADD CONSTRAINT dataset_version_scan_run_id_fkey FOREIGN KEY (scan_run_id) REFERENCES catalog.scan_run(id);
 ALTER TABLE catalog.dataset_version_certification ADD CONSTRAINT dataset_version_certification_dataset_version_id_fkey FOREIGN KEY (dataset_version_id) REFERENCES catalog.dataset_version(id);
+ALTER TABLE catalog.dataset_snapshot ADD CONSTRAINT dataset_snapshot_dataset_id_fkey FOREIGN KEY (dataset_id) REFERENCES catalog.dataset(id);
+ALTER TABLE catalog.dataset_contract ADD CONSTRAINT dataset_contract_dataset_id_fkey FOREIGN KEY (dataset_id) REFERENCES catalog.dataset(id);
 ALTER TABLE catalog.column_meta ADD CONSTRAINT column_meta_dataset_id_fkey FOREIGN KEY (dataset_id) REFERENCES catalog.dataset(id);
 ALTER TABLE catalog.column_profile ADD CONSTRAINT column_profile_column_id_fkey FOREIGN KEY (column_id) REFERENCES catalog.column_meta(id);
 ALTER TABLE catalog.column_profile ADD CONSTRAINT column_profile_scan_run_id_fkey FOREIGN KEY (scan_run_id) REFERENCES catalog.scan_run(id);
@@ -7258,6 +7331,10 @@ ALTER TABLE catalog.dataset_version ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON catalog.dataset_version USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE catalog.dataset_version_certification ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON catalog.dataset_version_certification USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+ALTER TABLE catalog.dataset_snapshot ENABLE ROW LEVEL SECURITY;
+CREATE POLICY org_isolation ON catalog.dataset_snapshot USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+ALTER TABLE catalog.dataset_contract ENABLE ROW LEVEL SECURITY;
+CREATE POLICY org_isolation ON catalog.dataset_contract USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE catalog.column_meta ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON catalog.column_meta USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE catalog.column_profile ENABLE ROW LEVEL SECURITY;
@@ -7639,6 +7716,10 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON catalog.dataset_version TO svc_catalog;
 GRANT SELECT ON catalog.dataset_version TO catalog_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON catalog.dataset_version_certification TO svc_catalog;
 GRANT SELECT ON catalog.dataset_version_certification TO catalog_read;
+GRANT SELECT, INSERT ON catalog.dataset_snapshot TO svc_catalog;
+GRANT SELECT ON catalog.dataset_snapshot TO catalog_read;
+GRANT SELECT, INSERT, UPDATE, DELETE ON catalog.dataset_contract TO svc_catalog;
+GRANT SELECT ON catalog.dataset_contract TO catalog_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON catalog.column_meta TO svc_catalog;
 GRANT SELECT ON catalog.column_meta TO catalog_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON catalog.column_profile TO svc_catalog;
