@@ -197,6 +197,26 @@ async def test_sql_on_a_snapshot_sees_only_what_its_reader_may(
         reader.query(files, "SELECT 1")
 
 
+async def test_a_snapshot_read_stops_at_its_time_limit(
+    seed: Seed, worker_database: str, tmp_path: Path
+) -> None:
+    # A replay reads snapshots under the source's query_timeout_s, as a live read: DuckDB is
+    # interrupted at it (security review of 055b135e).
+    store = FakeStore()
+    done = await _write(worker_database, _table(seed), store)
+    path = tmp_path / "v.parquet"
+    path.write_bytes(store.objects[done.object_key])
+    files = {"t": reader.SnapshotFile(path, done.sha256)}
+    with pytest.raises(TimeoutError):
+        reader.query(
+            files,
+            "SELECT sum(a.range * b.range) FROM range(200000) a, range(200000) b",
+            timeout_s=0.5,
+        )
+    # Within the limit, the same file reads as before.
+    assert reader.query(files, "SELECT count(*) FROM t", timeout_s=30).rows == [(3,)]
+
+
 @pytest.mark.performance
 def test_two_million_adventureworks_rows_within_the_budget(
     request: pytest.FixtureRequest,

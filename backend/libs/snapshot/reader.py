@@ -15,6 +15,8 @@ from __future__ import annotations
 import hashlib
 import re
 import tempfile
+import threading
+import time
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,11 +55,17 @@ def query(
     masks: Mapping[str, Mapping[str, str]] | None = None,
     max_rows: int = 10_000,
     memory_limit: str = "512MB",
+    timeout_s: float = 120,
 ) -> ReadResult:
     """Run `sql` (DuckDB's dialect) on the snapshots, each readable under its key in `tables`;
-    `hidden[table]` are the columns left out, `masks[table][column]` the method masking one."""
+    `hidden[table]` are the columns left out, `masks[table][column]` the method masking one.
+
+    Copying the snapshots and running the SQL share one deadline, `timeout_s`, as a source's
+    query_timeout_s bounds a live read: DuckDB is interrupted at it and TimeoutError raised
+    (security review of 055b135e: the replay's snapshot path had no limit)."""
     hidden = hidden or {}
     masks = masks or {}
+    deadline = time.monotonic() + timeout_s
     with tempfile.TemporaryDirectory(prefix="snapshot-read-") as tmp:
         database = Path(tmp) / "snapshots.duckdb"
         build = duckdb.connect(str(database), config={"threads": 2, "memory_limit": memory_limit})
@@ -74,8 +82,10 @@ def query(
                     name,
                 )
                 path = str(snapshot.path).replace("'", "''")
-                build.execute(
-                    f"CREATE TABLE \"{name}\" AS SELECT {projection} FROM read_parquet('{path}')"
+                _within(
+                    deadline,
+                    build,
+                    f"CREATE TABLE \"{name}\" AS SELECT {projection} FROM read_parquet('{path}')",
                 )
         finally:
             build.close()
@@ -92,13 +102,31 @@ def query(
             },
         )
         try:
-            cursor = read.execute(sql)
+            cursor, rows = _within(deadline, read, sql, fetch=max_rows + 1)
             names = [d[0] for d in cursor.description or []]
             types = [str(d[1]) for d in cursor.description or []]
-            rows = cursor.fetchmany(max_rows + 1)
         finally:
             read.close()
     return ReadResult(names, [tuple(r) for r in rows[:max_rows]], len(rows) > max_rows, types)
+
+
+def _within(
+    deadline: float, conn: duckdb.DuckDBPyConnection, sql: str, fetch: int = 0
+) -> tuple[duckdb.DuckDBPyConnection, list[Any]]:
+    """Execute (and fetch up to `fetch` rows) before `deadline`, else interrupt and time out."""
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise TimeoutError("the snapshot read ran past its time limit")
+    timer = threading.Timer(left, conn.interrupt)
+    timer.start()
+    try:
+        cursor = conn.execute(sql)
+        rows = cursor.fetchmany(fetch) if fetch else []
+    except duckdb.InterruptException as exc:
+        raise TimeoutError("the snapshot read ran past its time limit") from exc
+    finally:
+        timer.cancel()
+    return cursor, rows
 
 
 def _verify(snapshot: SnapshotFile) -> None:

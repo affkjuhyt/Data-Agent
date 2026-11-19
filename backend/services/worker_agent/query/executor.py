@@ -172,7 +172,7 @@ def at_versions(executed: str, versions: Mapping[str, VersionRead], *, files: bo
 
 
 async def _read_snapshots(
-    sql: str, versions: Sequence[VersionRead], limit: int
+    sql: str, versions: Sequence[VersionRead], limit: int, timeout_s: int
 ) -> tuple[list[dict[str, str]], list[list[Any]]]:
     """Run `sql` (DuckDB's, policies written in) on the versions' snapshots (libs/snapshot)."""
     import duckdb
@@ -190,7 +190,9 @@ async def _read_snapshots(
                 path = Path(tmp) / f"{index}.parquet"
                 await store.get(version.snapshot_key, path)
                 files[version.table] = reader.SnapshotFile(path, version.snapshot_sha256)
-            read = await asyncio.to_thread(reader.query, files, sql, max_rows=limit + 1)
+            read = await asyncio.to_thread(
+                reader.query, files, sql, max_rows=limit + 1, timeout_s=timeout_s
+            )
     except reader.SnapshotMismatch as exc:
         raise SnapshotUnreadable(f"a snapshot is not the file recorded: {exc}") from exc
     except StoreUnavailable as exc:
@@ -618,7 +620,12 @@ async def run_query(
         try:
             async with _slot(source):
                 if from_files:
-                    columns, rows = await _read_snapshots(executed, versions, limit)
+                    # The source's limit, as a live read has it: the download and the read share
+                    # it, and DuckDB itself is interrupted at it (reader.query).
+                    columns, rows = await asyncio.wait_for(
+                        _read_snapshots(executed, versions, limit, timeout_s),
+                        timeout=timeout_s + 5,
+                    )
                 elif source.secret_ref == INTERNAL_WORKSPACE:
                     async with scoped_session(ROLE, org_id, principal_id) as local_session:
                         await local_session.execute(text("SET TRANSACTION READ ONLY"))
