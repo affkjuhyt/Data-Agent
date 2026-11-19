@@ -16,7 +16,7 @@ import hashlib
 import re
 import tempfile
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +42,7 @@ class ReadResult:
     columns: list[str]
     rows: list[tuple[Any, ...]]
     truncated: bool
+    types: list[str] = field(default_factory=list)  # DuckDB's names: DECIMAL(38,2), VARCHAR, …
 
 
 def query(
@@ -93,10 +94,11 @@ def query(
         try:
             cursor = read.execute(sql)
             names = [d[0] for d in cursor.description or []]
+            types = [str(d[1]) for d in cursor.description or []]
             rows = cursor.fetchmany(max_rows + 1)
         finally:
             read.close()
-    return ReadResult(names, [tuple(r) for r in rows[:max_rows]], len(rows) > max_rows)
+    return ReadResult(names, [tuple(r) for r in rows[:max_rows]], len(rows) > max_rows, types)
 
 
 def _verify(snapshot: SnapshotFile) -> None:
