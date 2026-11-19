@@ -63,7 +63,10 @@ def before_write(
     """First failing check before the reporter writes. None means PRESENT may proceed."""
     if out_of_time:
         return GateHit(
-            target=f"Dữ liệu {', '.join(out_of_time)} quá hạn cập nhật; chuyển sang cách trả lời chuẩn.",
+            # Out of date (BR-178) or held back by its quality rules (DF-08): the governed path
+            # then says which and why.
+            target=f"Dữ liệu {', '.join(out_of_time)} chưa dùng được (quá hạn cập nhật hoặc bị"
+            " chặn vì chất lượng); chuyển sang cách trả lời chuẩn.",
             detail={"out_of_time": out_of_time},
             feedback="",  # BR-178: hand over immediately, no replan
         )

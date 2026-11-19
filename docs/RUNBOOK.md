@@ -659,6 +659,11 @@ announced as `dataset.version_created` and worker-agent snapshots it (DF-05,
 (over `SNAPSHOT_MAX_ROWS`, store down; the reason is in worker-agent's log). An appended version
 keeps the snapshot of when it was written. `SNAPSHOT_ENABLED=0` on worker-agent turns it off.
 `GET /v1/datasets/{id}/versions/{v}/snapshot` hands out a 10-minute signed link to the file.
+The quality gate (DF-08, `worker_agent/quality_gate.py`) holds back a dataset whose high-severity
+rule failed and was not acknowledged within 24 h, or whose contract is `broken`: a governed answer
+refuses with `QUALITY_BLOCKED` before running, a tile or scheduled report leaves it out, the
+agent hands the turn to the governed path, a data product does not go active over it. A failing
+lower rule is a caveat. `QUALITY_GATE=warn` on worker-agent turns every block into a caveat.
 A quality rule (DF-07, `libs/quality_vocab`) is one GX expectation; a counting rule takes
 `mostly` and `row_condition` (columns compared with constants), and its result is also kept in
 GX's shape in `ingest.quality_result.result`. A receipt replay (DF-06) reads a workspace dataset at the version the answer read: its `__v<n>`

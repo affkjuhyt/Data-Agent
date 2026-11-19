@@ -2,8 +2,10 @@
 from the model (RES-07, after OpenMetadata's AI context envelope): for each source table a
 governed figure was read from,
 
-* its quality: the latest result of each of its active rules (catalog.dataset.quality_state):
-  `blocked` when a high-severity rule fails, `warning` for any other failing rule;
+* its quality, as the one gate every path asks (worker_agent/quality_gate, DF-08): a table held
+  back (a high-severity rule failing, unacknowledged, or a broken contract) hands the turn to the
+  governed path, which refuses with QUALITY_BLOCKED; a failing lower rule or an acknowledged block
+  is a caveat;
 * its freshness against the data product it belongs to (data_product_member.freshness_state):
   `overdue` or `missing` means the data is not in time, which BR-178 does not let an answer state
   a figure from;
@@ -24,6 +26,7 @@ from sqlalchemy import select
 
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, context
+from services.worker_agent import quality_gate
 from services.worker_agent.agentic.tools.base import ToolContext
 
 ROLE = "svc_qa"
@@ -53,15 +56,13 @@ async def read(ctx: ToolContext) -> Signals:
         else str(i)
         for i in sources
     }
-    for i in sources:
-        state = getattr(ctx.layer.datasets.get(i), "quality_state", None)
-        if state == "blocked":
-            found.caveats.append(
-                f"Bảng {names[i]} đang có kiểm tra chất lượng mức cao không đạt: số liệu từ bảng"
-                " này cần được kiểm lại trước khi dùng."
-            )
-        elif state == "warning":
-            found.caveats.append(f"Bảng {names[i]} có kiểm tra chất lượng chưa đạt.")
+    # DF-08: one gate for every path (worker_agent/quality_gate). A held-back table is not
+    # stated from: the turn goes to the governed path, which refuses with QUALITY_BLOCKED and
+    # why; a failing lower rule or an acknowledged block is a caveat.
+    held = await quality_gate.check(ctx.org_id, list(sources), ctx.user_id)
+    for h in held.blocked:
+        found.out_of_time.append(names.get(h.dataset_id, h.name))
+    found.caveats.extend(held.caveats)
     async with scoped_session(ROLE, ctx.org_id, ctx.user_id) as session:
         members = (
             await session.scalars(

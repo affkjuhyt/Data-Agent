@@ -28,7 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import conflict, context, document
 from libs.dataagent_db.models import eval as ev
-from services.worker_agent import evaluation, self_approval
+from services.worker_agent import evaluation, quality_gate, self_approval
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
@@ -269,7 +269,18 @@ async def _still_at_the_bar(
                 member.sla_kind != "none",
             )
         )
-    return bool(certified) and bool(committed)
+        datasets = (
+            await session.scalars(
+                select(member.member_ref).where(
+                    member.data_product_id == product_id, member.member_kind == "dataset"
+                )
+            )
+        ).all()
+    if not (certified and committed):
+        return False
+    # DF-08: a product does not go active over a dataset its quality rules or contract hold back.
+    held = await quality_gate.check(event.org_id, list(datasets), reviewer)
+    return not held.blocked
 
 
 async def _apply(event: Event, proposal: dict[str, Any]) -> bool:

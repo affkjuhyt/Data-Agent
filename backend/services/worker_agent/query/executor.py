@@ -416,6 +416,7 @@ class Bound:
 
     executed: str
     policies: list[governance.AccessPolicy]
+    datasets: list[uuid.UUID] = field(default_factory=list)  # what the SQL reads (DF-08's gate)
 
 
 async def bound_sql(
@@ -499,7 +500,7 @@ async def bound_sql(
                 principal_id=reader,
             ),
         )
-    return Bound(executed, list(policies))
+    return Bound(executed, list(policies), [d.id for d in readable_datasets])
 
 
 async def run_query(
@@ -518,6 +519,7 @@ async def run_query(
     run_id: uuid.UUID | None = None,
     limit: int = MAX_ROWS,
     versions: Sequence[VersionRead] = (),
+    quality_gate: bool = False,
 ) -> QueryOutcome:
     """`private=True` is the channel of UC-16-02: the run is recorded (who, which source, status,
     counts, result hash) but neither its SQL, whose literals come from the question, nor its rows,
@@ -530,7 +532,11 @@ async def run_query(
     `versions` (DF-06, the internal workspace only) reads those datasets as they were at an
     earlier version: their version's tables while every one stands, else their Parquet snapshots
     in DuckDB. The swap comes after every check and policy rewrite (at_versions), so the asker's
-    limits are the live path's; the run is recorded with route `history`."""
+    limits are the live path's; the run is recorded with route `history`.
+
+    `quality_gate` (DF-08: tiles, scheduled reports) refuses to read a dataset its quality rules
+    or contract hold back (worker_agent/quality_gate), before the source is asked; the run is
+    recorded failed with why. A quality check, a replay, an eval or a pipeline does not ask it."""
     limit = min(limit, MAX_ROWS)
     existing = run_id is not None
     run_id = run_id or uuid7()
@@ -559,6 +565,12 @@ async def run_query(
             applied_policies = bound.policies
             applied_policy_ids = [policy.id for policy in bound.policies]
             output_policies = [p for p in bound.policies if p.kind in {"column", "mask"}]
+            if quality_gate:
+                from services.worker_agent import quality_gate as gate
+
+                held = await gate.check(org_id, bound.datasets, principal_id)
+                if held.blocked:
+                    raise SqlRejected(held.message)
             if from_files and any(v.snapshot_key is None for v in versions):
                 raise SqlRejected(
                     "a version the answer read has neither its table nor a snapshot any more"

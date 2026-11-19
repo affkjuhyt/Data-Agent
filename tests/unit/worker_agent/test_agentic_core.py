@@ -1958,11 +1958,38 @@ def test_signals_turn_quality_freshness_and_moved_structure_into_caveats(
         yield Session()
 
     monkeypatch.setattr(signals, "scoped_session", scoped)
+    from services.worker_agent import quality_gate
+
+    # DF-08: the one gate decides; a held-back table hands the turn to the governed path, which
+    # refuses with QUALITY_BLOCKED, and a failing lower rule is a caveat.
+    gates = iter(
+        [
+            quality_gate.Gate(
+                blocked=[quality_gate.Held(table, "Bán hàng", "có kiểm tra chất lượng mức cao")]
+            ),
+            quality_gate.Gate(
+                warnings=[quality_gate.Held(table, "Bán hàng", "có kiểm tra chất lượng chưa đạt")]
+            ),
+        ]
+    )
+
+    async def check(*_a: object, **_k: object) -> quality_gate.Gate:
+        return next(gates)
+
+    monkeypatch.setattr(signals.quality_gate, "check", check)
     ctx = types.SimpleNamespace(ws=ws, layer=layer, org_id=uuid.uuid4(), user_id=uuid.uuid4())
     found = asyncio.run(signals.read(ctx))  # type: ignore[arg-type]
-    assert not found.out_of_time
-    assert any("chất lượng mức cao" in c for c in found.caveats)
+    assert found.out_of_time == ["Bán hàng"]
     assert any("đổi cấu trúc" in c for c in found.caveats)
+    results = iter(
+        [
+            [types.SimpleNamespace(member_ref=table, freshness_state="fresh")],
+            [],
+        ]
+    )
+    found = asyncio.run(signals.read(ctx))  # type: ignore[arg-type]
+    assert not found.out_of_time
+    assert found.caveats == ["Bảng Bán hàng có kiểm tra chất lượng chưa đạt."]
 
 
 def _cancel_state() -> Any:

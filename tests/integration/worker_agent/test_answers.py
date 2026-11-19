@@ -1734,3 +1734,90 @@ async def test_an_answer_says_which_members_are_over_the_metrics_threshold(
         for f in figures
         if f.get("source", {}).get("expr")
     ]
+
+
+def _hold_back(bank: Bank, *, acknowledged: bool = False) -> None:
+    """A high-severity rule on the loans table failed its last check (BR-116)."""
+    rule = bank.seed.row(
+        "ingest.quality_rule",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        dataset_id=bank.loans,
+        column_name="balance",
+        kind="range",
+        params=json.dumps({"max": 4000}),
+        severity="high",
+        created_by=bank.user,
+    )
+    extra: dict[str, Any] = (
+        {
+            "acknowledged_by": bank.user,
+            "acknowledged_at": datetime.datetime.now(datetime.UTC),
+            "acknowledged_note": "Khoản 5000 đã được kiểm, dùng tiếp",
+        }
+        if acknowledged
+        else {}
+    )
+    bank.seed.row(
+        "ingest.quality_result",
+        org_id=bank.org,
+        rule_id=rule,
+        run_kind="manual",
+        passed=False,
+        violations=1,
+        **extra,
+    )
+    with bank.seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE catalog.dataset SET quality_state = 'blocked' WHERE id = %s", (str(bank.loans),)
+        )
+
+
+@pytest.mark.req("DF-08")
+async def test_blocked_dataset_refuses_with_quality_blocked(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    _hold_back(bank)
+    q = bank.ask("Tỷ lệ nợ xấu theo vùng tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, answer = answer_of(seed, q)
+    assert (status, kind) == ("refused", "refusal")
+    assert "bị chặn" in text and not figures
+    check = seed.one("SELECT number_check FROM qa.answer WHERE id = %s", answer)
+    assert check["refusal"] == {"code": "QUALITY_BLOCKED", "next_action": "contact_steward"}
+    # No number left the source: the governed path stopped before running.
+    assert (
+        seed.one(
+            "SELECT count(*) FROM qa.answer_receipt_figure f JOIN qa.answer_receipt r"
+            " ON r.id = f.receipt_id WHERE r.answer_id = %s",
+            answer,
+        )
+        == 0
+    )
+
+
+async def test_an_acknowledged_block_or_warn_mode_answers_with_a_caveat(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    _hold_back(bank, acknowledged=True)
+    q = bank.ask("Tỷ lệ nợ xấu theo vùng tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert kind != "refusal" and figures, text
+    assert "đã được người phụ trách xác nhận" in text
+
+    # QUALITY_GATE=warn, the rollback: an unacknowledged block is a caveat too.
+    with bank.seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE ingest.quality_result SET acknowledged_by = NULL, acknowledged_at = NULL,"
+            " acknowledged_note = NULL"
+        )
+    monkeypatch.setenv("QUALITY_GATE", "warn")
+    q = bank.ask("Tỷ lệ nợ xấu theo vùng tháng 9/2026")
+    await drain()
+    _, kind, text, figures, _, _ = answer_of(seed, q)
+    assert kind != "refusal" and figures and "kiểm tra chất lượng mức cao không đạt" in text

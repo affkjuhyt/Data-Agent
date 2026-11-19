@@ -48,6 +48,10 @@ SNAPSHOT = {
     ),
     "TOOL_UNAVAILABLE": ("Công cụ cần để trả lời đang tạm thời không dùng được.", "retry"),
     "CANCELLED": ("Đã dừng lượt phân tích theo yêu cầu của bạn.", "retry"),
+    "QUALITY_BLOCKED": (
+        "Dữ liệu cần cho câu hỏi này đang bị chặn vì chưa qua kiểm tra chất lượng.",
+        "contact_steward",
+    ),
 }
 
 
