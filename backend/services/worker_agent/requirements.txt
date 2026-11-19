@@ -5,7 +5,7 @@ sqlalchemy[asyncio]==2.0.35
 asyncpg==0.29.0
 PyMySQL==1.1.1
 pymssql==2.3.7
-redis>=5.0
+redis==8.1.0
 # The read-only guard parses SQL per source dialect; OpenBao is read over HTTP (query/).
 sqlglot==30.31.0
 # The scheduler fires on libs/cron, the reading the api validated: the same pin.

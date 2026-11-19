@@ -5,8 +5,14 @@ rate_limited with Retry-After.
 Counted per organisation and token subject in fixed one-minute windows in a shared store (Redis
 in deployment), so every api pod sees the same count. An api_client calling /mcp has its own
 quotas (integration.api_client, mcp.py) and is not counted here. A request without a verified
-token is not counted: its route answers 401 anyway. Without REDIS_URL the limit is off (a
-warning at start), the same fail-open choice as Idempotency-Key.
+token is not counted: its route answers 401 anyway.
+
+PL-08: when the counter store is missing or down, a write (POST, PUT, PATCH, DELETE) gets 503
+source_unavailable with Retry-After and is not run; a read goes through uncounted, since it cannot
+be repeated into a second write and its cost is bounded by the database pool. A route's own quota
+(within_quota, the questions' 10 a minute) refuses either way: it guards the most expensive
+actions there are. API_REDIS_FAIL_OPEN=true turns the limit off instead, as before
+(redis_client.fail_open).
 """
 
 from __future__ import annotations
@@ -21,6 +27,7 @@ from fastapi import Request, Response
 
 from services.api.kernel.auth import bearer_claims
 from services.api.kernel.problems import Problem, problem_response
+from services.api.kernel.redis_client import fail_open, unavailable
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +39,9 @@ WINDOW_SECONDS = 60
 # model servers for everyone else.
 QUESTIONS_PER_MINUTE_ENV = "API_QUESTIONS_PER_MINUTE"
 DEFAULT_QUESTIONS_PER_MINUTE = 10
+# Methods that only read: let through uncounted when the counters cannot be reached.
+READS = frozenset({"GET", "HEAD", "OPTIONS"})
+GUARD = "the rate limit"
 
 
 class CounterStore(Protocol):
@@ -57,7 +67,10 @@ class RedisCounterStore:
 def counter_store_from_env() -> CounterStore | None:
     url = os.environ.get("REDIS_URL")
     if not url:
-        logger.warning("api | REDIS_URL is not set: the per-user rate limit is off")
+        if fail_open():
+            logger.warning("api | REDIS_URL is not set: the per-user rate limit is off")
+        else:
+            logger.error("api | REDIS_URL is not set: every /v1 write gets 503")
         return None
     return RedisCounterStore(url)
 
@@ -73,18 +86,23 @@ def questions_per_minute() -> int:
 async def within_quota(request: Request, name: str, caller: str, limit: int) -> None:
     """A route's own quota, under the per-person limit: `limit` calls of `name` a minute by
     `caller`, in the same store and windows; over it raises 429 rate_limited with Retry-After.
-    Fails open like the middleware: no store, or a store that is down, counts nothing."""
+    No store, or a store that is down, raises 503 (PL-08), or counts nothing with
+    API_REDIS_FAIL_OPEN."""
     store: CounterStore | None = getattr(request.app.state, "counter_store", None)
     if store is None:
-        return
+        if fail_open():
+            return
+        raise unavailable(f"the {name} quota")
     now = time.time()
     window = int(now // WINDOW_SECONDS)
     reset = WINDOW_SECONDS - int(now % WINDOW_SECONDS)
     try:
         count = await store.hit(f"quota:{name}:{caller}:{window}", reset + 1)
-    except Exception:  # noqa: BLE001 - a store outage must not take the api down with it
-        logger.warning("api | quota store unavailable; %s not counted", name, exc_info=True)
-        return
+    except Exception:  # noqa: BLE001 - any store failure
+        logger.warning("api | quota store unavailable for %s", name, exc_info=True)
+        if fail_open():
+            return
+        raise unavailable(f"the {name} quota") from None
     if count > limit:
         raise Problem(
             429,
@@ -100,19 +118,23 @@ async def rate_limit_middleware(
     store: CounterStore | None,
     limit: int,
 ) -> Response:
-    if store is None or not request.url.path.startswith("/v1/"):
+    if not request.url.path.startswith("/v1/") or (store is None and fail_open()):
         return await call_next(request)
     claims = await bearer_claims(request)
     if claims is None or "org_id" not in claims or "sub" not in claims:
         return await call_next(request)
+    if store is None:
+        return await _uncounted(request, call_next)
     now = time.time()
     window = int(now // WINDOW_SECONDS)
     reset = WINDOW_SECONDS - int(now % WINDOW_SECONDS)
     try:
         count = await store.hit(f"ratelimit:{claims['org_id']}:{claims['sub']}:{window}", reset + 1)
-    except Exception:  # noqa: BLE001 - a store outage must not take the api down with it
-        logger.warning("api | rate limit store unavailable; request not counted", exc_info=True)
-        return await call_next(request)
+    except Exception:  # noqa: BLE001 - any store failure
+        logger.warning("api | rate limit store unavailable", exc_info=True)
+        if fail_open():
+            return await call_next(request)
+        return await _uncounted(request, call_next)
     headers = {
         "RateLimit-Limit": str(limit),
         "RateLimit-Remaining": str(max(limit - count, 0)),
@@ -132,3 +154,12 @@ async def rate_limit_middleware(
         response = await call_next(request)
     response.headers.update(headers)
     return response
+
+
+async def _uncounted(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """No counter to check against: a read goes through, a write is refused (PL-08)."""
+    if request.method in READS:
+        return await call_next(request)
+    return problem_response(unavailable(GUARD))

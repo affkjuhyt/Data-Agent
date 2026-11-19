@@ -105,8 +105,12 @@ Idempotency-Key (A1.5) nằm ở kernel (`kernel/idempotency.py`), áp cho mọi
 thêm. Khoá giữ trong `integration.idempotency_key` theo tổ chức và người gửi (suy từ `sub` của token), được ghi
 trước khi handler chạy nên bản gửi trùng lúc bản đầu còn chạy nhận 409. Phản hồi đầu (mã, Content-Type,
 Location, ETag, thân) lưu 24 giờ ở Redis (`REDIS_URL`); gửi lại trả đúng phản hồi đó kèm `Idempotent-Replayed:
-true`, cùng khoá khác thân trả 422 `idempotency_mismatch`, lỗi 5xx nhả khoá để gửi lại chạy lại. Thiếu
-`REDIS_URL` thì header bị bỏ qua (cảnh báo khi khởi động). Bản phát lại chỉ trả sau khi route chạy xong xác thực
+true`, cùng khoá khác thân trả 422 `idempotency_mismatch`, lỗi 5xx nhả khoá để gửi lại chạy lại. Mất Redis thì
+**fail-closed** (PL-08): thiếu `REDIS_URL` hoặc Redis không trả lời `PING` thì POST có khoá nhận 503
+`source_unavailable` kèm `Retry-After` trước khi khoá được ghi và handler chạy, nên không ghi gì; đọc phản hồi cũ lỗi
+cũng trả 503. Nếu Redis mất sau khi handler đã chạy xong, client vẫn nhận phản hồi 2xx; khoá được giữ lại với mã trạng
+thái và không có thân, nên gửi lại nhận 409 thay vì chạy lần hai. `API_REDIS_FAIL_OPEN=true` (chỉ cho máy không có
+Redis; manifest đặt `false`) trả về hành vi cũ: bỏ qua header, nhả khoá. Bản phát lại chỉ trả sau khi route chạy xong xác thực
 và kiểm năng lực (`replay_guard`, `catalogue.endpoint` gắn cho mọi POST), nên người đã mất quyền nhận 401/403 chứ
 không nhận lại phản hồi cũ.
 
@@ -131,6 +135,9 @@ câu mỗi phút mỗi người (mặc định 10, `ratelimit.within_quota`, AGC
 hướng dẫn", "system prompt", `libs/pii/injection.py`) bị trả 422 `validation_failed` (lỗi trường `text`,
 `instruction_override`) trước khi lưu, ở cả web lẫn `/mcp`, và ở câu hỏi riêng (`/v1/exec/private-questions`,
 cả mục ngữ cảnh đính kèm; `kernel/screening.py`). Sửa kế hoạch và câu hỏi riêng tính chung hạn mức câu hỏi.
+Mất Redis (PL-08): lời gọi ghi (POST, PUT, PATCH, DELETE) nhận 503 `source_unavailable` kèm `Retry-After` và không
+chạy; lời gọi đọc vẫn đi qua mà không đếm; hạn mức câu hỏi luôn trả 503. `API_REDIS_FAIL_OPEN=true` tắt hạn mức như
+trước.
 Client gọi `/mcp` dùng hạn mức riêng của `api_client`. `kernel/access_log.py`: mọi lời gọi `/v1` thêm một dòng
 `audit.audit_log` sau khi có mã phản hồi (`action` = `api.<operation_id>`, đối tượng là `{id}` của đường dẫn,
 `outcome` ok / denied cho 401, 403, 429 / error); không ghi thân. Ghi lỗi thì chỉ ghi log ứng dụng, vì lời gọi đã

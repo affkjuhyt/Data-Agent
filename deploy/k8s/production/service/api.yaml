@@ -20,6 +20,9 @@ data:
   # Document search embeds the question with the TEI the chunks were embedded with (GEN-06).
   DOCUMENT_EMBED_URL: __DOCUMENT_EMBED_URL__
   OTEL_SERVICE_NAME: api
+  # PL-08: without Redis, Idempotency-Key, the rate limit and the questions' quota refuse a write
+  # (503) instead of letting it run unguarded. 'true' only on a box with no Redis.
+  API_REDIS_FAIL_OPEN: 'false'
   PROMETHEUS_URL: http://prometheus.dataagent-service.svc.cluster.local:8400
   API_OIDC_AUDIENCE: dataagent-api
   API_OIDC_JWKS_URL: http://keycloak.dataagent-service.svc.cluster.local:8110/realms/aeroflow/protocol/openid-connect/certs

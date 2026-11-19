@@ -11,6 +11,13 @@ only `response_ref`, design tab 3b); a 5xx releases the claim so the client may 
 The key belongs to the caller: principal_id is derived from the token's subject (a user's or a
 service account's), so two people using the same key never see each other's responses. A request
 whose token does not verify is passed on untouched and refused by the route's own authentication.
+
+PL-08, fail closed (redis_client.fail_open): a keyed POST whose store is missing or does not answer
+a ping gets 503 before its key is claimed or its handler runs, so nothing is written; a replay whose
+stored body cannot be read gets 503, not a conflict. When the store fails only after the handler
+succeeded, the claim is kept with the status and no body: a retry then answers 409 instead of
+running the write a second time. With API_REDIS_FAIL_OPEN the key is ignored without a store and
+that claim is released, as before.
 """
 
 from __future__ import annotations
@@ -34,6 +41,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import integration as ig
 from services.api.kernel.auth import bearer_claims
 from services.api.kernel.problems import Problem, problem_response
+from services.api.kernel.redis_client import fail_open, unavailable
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +60,10 @@ class ResponseStore(Protocol):
 
     async def get(self, ref: str) -> str | None: ...
 
+    async def ping(self) -> None:
+        """Raise when the store cannot be reached."""
+        ...
+
 
 class RedisResponseStore:
     def __init__(self, url: str) -> None:
@@ -66,11 +78,17 @@ class RedisResponseStore:
         value = await self._redis.get(ref)
         return str(value) if value is not None else None
 
+    async def ping(self) -> None:
+        await self._redis.ping()
+
 
 def response_store_from_env() -> ResponseStore | None:
     url = os.environ.get("REDIS_URL")
     if not url:
-        logger.warning("api | REDIS_URL is not set: Idempotency-Key is not honoured")
+        if fail_open():
+            logger.warning("api | REDIS_URL is not set: Idempotency-Key is not honoured")
+        else:
+            logger.error("api | REDIS_URL is not set: every POST with an Idempotency-Key gets 503")
         return None
     return RedisResponseStore(url)
 
@@ -161,6 +179,16 @@ async def _claim(org_id: uuid.UUID, principal_id: uuid.UUID, key: str, request_h
             )
         )
     if first.response_ref is None:
+        if first.response_status is not None:
+            # Done, but its response could not be kept (PL-08): never run it a second time.
+            return _Claim(
+                answer=_problem(
+                    409,
+                    "conflict",
+                    "The first request with this key succeeded but its response was not kept; "
+                    "it is not run again.",
+                )
+            )
         return _Claim(
             answer=_problem(409, "conflict", "The first request with this key is still running.")
         )
@@ -196,12 +224,9 @@ async def idempotency_middleware(
     store: ResponseStore | None,
 ) -> Response:
     key = request.headers.get(HEADER)
-    if (
-        key is None
-        or store is None
-        or request.method != "POST"
-        or not request.url.path.startswith("/v1/")
-    ):
+    if key is None or request.method != "POST" or not request.url.path.startswith("/v1/"):
+        return await call_next(request)
+    if store is None and fail_open():
         return await call_next(request)
     if not key or len(key) > MAX_KEY_LENGTH:
         return problem_response(
@@ -214,6 +239,15 @@ async def idempotency_middleware(
     if caller is None:
         return await call_next(request)
     org_id, principal_id = caller
+    if store is None:
+        return problem_response(unavailable(HEADER))
+    if not fail_open():
+        # Checked before the claim: a write that could not be guarded is not run at all.
+        try:
+            await store.ping()
+        except Exception:  # noqa: BLE001 - any store failure refuses the write
+            logger.warning("api | idempotency response store unavailable", exc_info=True)
+            return problem_response(unavailable(HEADER))
     body = await request.body()
     claim = await _claim(org_id, principal_id, key, _request_hash(request, body))
     if claim.row_id is None:
@@ -224,10 +258,13 @@ async def idempotency_middleware(
         if claim.replay_ref is not None:
             try:
                 stored = await store.get(claim.replay_ref)
-            except Exception:  # noqa: BLE001 - Redis outage: treat as missing body
+            except Exception:  # noqa: BLE001 - Redis outage
                 logger.warning(
                     "api | idempotency response store unavailable on replay", exc_info=True
                 )
+                if not fail_open():
+                    request.state.idempotent_answer = problem_response(unavailable(HEADER))
+                    return await call_next(request)
                 stored = None
             answer = (
                 _replay(stored)
@@ -262,8 +299,9 @@ async def _finish(
         await _release(org_id, row_id)
     else:
         # The handler already succeeded. A Redis blip must not turn that into
-        # ``internal_error`` for the client (Ask always sends Idempotency-Key): keep the
-        # 2xx body and release the claim so a retry is not stuck on ``conflict``.
+        # ``internal_error`` for the client (Ask always sends Idempotency-Key): the 2xx body is
+        # returned either way. Fail closed, the claim keeps the status with no body, so a retry
+        # answers 409 rather than running the write again; fail open, it is released as before.
         ref = f"idempotency:{row_id}"
         try:
             await store.put(
@@ -279,10 +317,15 @@ async def _finish(
             )
         except Exception:  # noqa: BLE001 - store outage after success
             logger.warning(
-                "api | idempotency response store unavailable after success; releasing claim",
-                exc_info=True,
+                "api | idempotency response store unavailable after success", exc_info=True
             )
-            await _release(org_id, row_id)
+            if fail_open():
+                await _release(org_id, row_id)
+            else:
+                async with scoped_session(ROLE, org_id) as session:
+                    row = await session.get(ig.IdempotencyKey, row_id)
+                    if row is not None:
+                        row.response_status = response.status_code
         else:
             ik = ig.IdempotencyKey
             async with scoped_session(ROLE, org_id) as session:

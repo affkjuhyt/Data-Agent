@@ -957,7 +957,7 @@ class TestImageReferencesAreIntact:
 
     KNOWN: ClassVar[set[str]] = {
         "postgres:16-alpine",
-        "redis:7-alpine",
+        "redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
         "qdrant/qdrant:v1.13.6",
         "apache/kafka:3.7.0",
         "bitnamilegacy/minio:2024.12.18-debian-12-r0",

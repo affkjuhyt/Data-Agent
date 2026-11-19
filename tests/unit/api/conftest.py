@@ -19,6 +19,13 @@ from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, DataSpa
 ORG = uuid.UUID("01920000-0000-7000-8000-000000000001")
 
 
+@pytest.fixture(autouse=True)
+def _redis_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests run without Redis: the guards Redis backs are skipped, as API_REDIS_FAIL_OPEN
+    does on a dev box (PL-08). A test of the fail-closed default removes it."""
+    monkeypatch.setenv("API_REDIS_FAIL_OPEN", "true")
+
+
 class FakeVerifier:
     """Tokens are the claims as JSON-ish keys of TOKENS; anything else is invalid."""
 

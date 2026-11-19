@@ -21,6 +21,9 @@ data:
   # A1.8's 120 a minute per person is the production default. A tester working through Cần bạn
   # (each proposal page reloads the inbox and the proposal) passes it in a minute.
   API_RATE_LIMIT_PER_MINUTE: '1200'
+  # PL-08: without Redis, Idempotency-Key, the rate limit and the questions' quota refuse a write
+  # (503) instead of letting it run unguarded. 'true' only on a box with no Redis.
+  API_REDIS_FAIL_OPEN: 'false'
   PROMETHEUS_URL: http://prometheus.dataagent-service.svc.cluster.local:8400
   API_OIDC_AUDIENCE: dataagent-api
   API_OIDC_JWKS_URL: http://keycloak.dataagent-service.svc.cluster.local:8110/realms/aeroflow/protocol/openid-connect/certs

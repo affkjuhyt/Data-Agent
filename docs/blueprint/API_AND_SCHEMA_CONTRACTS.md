@@ -29,7 +29,9 @@ không bao giờ 422 cho lỗi nghiệp vụ (422 là của FastAPI). Lỗi CSDL
 
 - `Idempotency-Key` bắt buộc hỗ trợ trên mọi POST `/v1` (`kernel/idempotency.py`): khoá ghi `integration.idempotency_key`
   trước handler; trùng khi đang chạy → 409; phản hồi đầu giữ 24 h Redis; khác thân → 422 `idempotency_mismatch`.
-  **Mới (F-11):** thiếu `REDIS_URL` → **fail-closed** (503 `TOOL_UNAVAILABLE`) thay vì bỏ qua header.
+  **Mới (F-11, PL-08, đã làm):** thiếu `REDIS_URL` hoặc Redis không trả lời → **fail-closed**: 503 `source_unavailable`
+  (mã 503 sẵn có của kernel cho Redis, không thêm mã mới) kèm `Retry-After`, trước khi ghi; rate limit chặn lời gọi ghi,
+  cho lời gọi đọc đi qua. `API_REDIS_FAIL_OPEN=true` giữ hành vi cũ cho máy không có Redis.
 - ETag trên mọi GET JSON; `If-Match` kiểm ở kernel (`kernel/etag.py:1-16`). **Mới (F-30, AUD-09): bắt buộc** `If-Match`
   (412 nếu thiếu) cho PATCH/PUT của: `/v1/metrics/{id}`, `/v1/metric-versions/{id}`, `/v1/data-products/{id}`,
   `/v1/datasets/{id}`, `/v1/datasets/{id}/columns/{col}`, `/v1/pipelines/{id}` (và `steps`), `/v1/workspaces/{id}`,

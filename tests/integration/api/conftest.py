@@ -23,6 +23,13 @@ from tests.integration.migrate.conftest import ddl_server  # noqa: F401  (fixtur
 PASSWORD = "api-integration"
 
 
+@pytest.fixture(autouse=True)
+def _redis_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests run without Redis: the guards Redis backs are skipped, as API_REDIS_FAIL_OPEN
+    does on a dev box (PL-08). A test of the fail-closed default removes it."""
+    monkeypatch.setenv("API_REDIS_FAIL_OPEN", "true")
+
+
 def _login_url(dsn: str, role: str) -> str:
     parts = urlsplit(dsn)
     netloc = f"{role}:{PASSWORD}@{parts.hostname}:{parts.port}"

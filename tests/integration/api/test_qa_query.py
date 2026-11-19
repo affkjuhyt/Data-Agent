@@ -762,6 +762,20 @@ async def test_a_person_asks_at_most_their_question_quota_a_minute(
         await ask(api, world, who="reviewer")
 
 
+async def test_pl_08_without_redis_a_question_is_refused_unstored(
+    world: World, seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("API_REDIS_FAIL_OPEN")
+    text = "Doanh thu tháng 9 khi Redis mất?"
+    async with api_for(world) as api:
+        r = await api.post("/v1/questions", headers=as_(world, "asker"), json={"text": text})
+        assert r.status_code == 503 and r.json()["code"] == "source_unavailable", r.text
+        assert sql(seed, "SELECT 1 FROM qa.question WHERE text = %s", text) == []
+        # Reading goes on: the asker's conversations are still listed.
+        listed = await api.get("/v1/conversations", headers=as_(world, "asker"))
+        assert listed.status_code == 200, listed.text
+
+
 async def test_an_edited_plan_counts_against_the_question_quota(
     world: World, seed: Seed, monkeypatch: pytest.MonkeyPatch
 ) -> None:

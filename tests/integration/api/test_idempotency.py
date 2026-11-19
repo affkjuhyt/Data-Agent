@@ -28,6 +28,9 @@ class MemoryStore:
     async def get(self, ref: str) -> str | None:
         return self.values.get(ref)
 
+    async def ping(self) -> None:
+        return None
+
 
 class FailingStore:
     """Redis-shaped store that drops the body after a successful handler (idle kill)."""
@@ -37,6 +40,16 @@ class FailingStore:
 
     async def get(self, ref: str) -> str | None:
         raise ConnectionError("Connection closed by server.")
+
+    async def ping(self) -> None:
+        return None  # the idle kill comes after the ping
+
+
+class DownStore(FailingStore):
+    """Redis that is not there at all: the ping fails too."""
+
+    async def ping(self) -> None:
+        raise ConnectionError("Connection refused")
 
 
 class _Tokens:
@@ -56,8 +69,17 @@ def build(seed: Seed) -> uuid.UUID:
     return o
 
 
+class Counters:
+    """The rate limit's store, up: these tests are about the response store."""
+
+    async def hit(self, key: str, ttl_seconds: int) -> int:
+        return 1
+
+
 def client(org: uuid.UUID, store: MemoryStore, who: str = "kc-ac06") -> httpx.AsyncClient:
-    app = create_app(Settings(), token_verifier=_Tokens(org), response_store=store)
+    app = create_app(
+        Settings(), token_verifier=_Tokens(org), response_store=store, counter_store=Counters()
+    )
     return httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://api",
@@ -65,8 +87,9 @@ def client(org: uuid.UUID, store: MemoryStore, who: str = "kc-ac06") -> httpx.As
     )
 
 
-async def test_a_store_outage_after_success_still_returns_the_handler_body(seed: Seed) -> None:
-    """Ask always sends Idempotency-Key; a Redis blip must not become internal_error."""
+async def test_fail_open_a_store_outage_after_success_releases_the_key(seed: Seed) -> None:
+    """With API_REDIS_FAIL_OPEN (conftest): Ask always sends Idempotency-Key; a Redis blip must
+    not become internal_error, and the key is released, so a retry runs again."""
     org = build(seed)
     key = {"Idempotency-Key": "store-down-after-ok"}
     async with client(org, FailingStore()) as c:  # type: ignore[arg-type]
@@ -133,3 +156,41 @@ async def test_a1_5_no_replay_for_a_caller_who_lost_access(seed: Seed) -> None:
         )
         again = await c.post("/v1/audit:export", json={"filters": {}}, headers=key)
     assert again.status_code == 403 and "Idempotent-Replayed" not in again.headers
+
+
+def keys(seed: Seed, org: uuid.UUID) -> list[tuple[Any, ...]]:
+    cur = seed.conn.cursor()
+    cur.execute(
+        "SELECT key, response_status, response_ref FROM integration.idempotency_key "
+        "WHERE org_id = %s",
+        (str(org),),
+    )
+    return cur.fetchall()
+
+
+async def test_pl_08_a_keyed_post_without_its_store_is_not_run(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("API_REDIS_FAIL_OPEN")
+    org = build(seed)
+    async with client(org, DownStore()) as c:  # type: ignore[arg-type]
+        r = await c.post(
+            "/v1/audit:export", json={"filters": {}}, headers={"Idempotency-Key": "redis-down"}
+        )
+    assert r.status_code == 503 and r.json()["code"] == "source_unavailable", r.text
+    assert int(r.headers["Retry-After"]) > 0
+    assert keys(seed, org) == []
+
+
+async def test_pl_08_a_store_lost_after_success_never_runs_the_write_twice(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("API_REDIS_FAIL_OPEN")
+    org = build(seed)
+    key = {"Idempotency-Key": "lost-after-ok"}
+    async with client(org, FailingStore()) as c:  # type: ignore[arg-type]
+        first = await c.post("/v1/audit:export", json={"filters": {}}, headers=key)
+        again = await c.post("/v1/audit:export", json={"filters": {}}, headers=key)
+    assert first.status_code == 202, first.text
+    assert again.status_code == 409 and "not run again" in again.json()["detail"], again.text
+    assert keys(seed, org) == [("lost-after-ok", 202, None)]
