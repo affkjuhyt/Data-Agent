@@ -174,13 +174,19 @@ def at_versions(executed: str, versions: Mapping[str, VersionRead], *, files: bo
 async def _read_snapshots(
     sql: str, versions: Sequence[VersionRead], limit: int, timeout_s: int
 ) -> tuple[list[dict[str, str]], list[list[Any]]]:
-    """Run `sql` (DuckDB's, policies written in) on the versions' snapshots (libs/snapshot)."""
+    """Run `sql` (DuckDB's, policies written in) on the versions' snapshots (libs/snapshot).
+
+    One deadline, `timeout_s` from now, bounds the downloads and the read; DuckDB gets only what
+    is left and interrupts itself at it, so the thread ends by the deadline and the source's slot
+    is held until it has (security review of 9d7cdcfa: an outer wait_for let the slot go while
+    the read went on)."""
     import duckdb
 
     from libs.snapshot import reader
     from libs.snapshot.store import StoreUnavailable
     from services.worker_agent import snapshots
 
+    deadline = time.monotonic() + timeout_s
     try:
         store = snapshots.store()
         with tempfile.TemporaryDirectory(prefix="replay-") as tmp:
@@ -188,10 +194,16 @@ async def _read_snapshots(
             for index, version in enumerate(versions):
                 assert version.snapshot_key and version.snapshot_sha256
                 path = Path(tmp) / f"{index}.parquet"
-                await store.get(version.snapshot_key, path)
+                await asyncio.wait_for(
+                    store.get(version.snapshot_key, path),
+                    timeout=max(deadline - time.monotonic(), 0.001),
+                )
                 files[version.table] = reader.SnapshotFile(path, version.snapshot_sha256)
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise TimeoutError("the snapshots took the whole time limit to fetch")
             read = await asyncio.to_thread(
-                reader.query, files, sql, max_rows=limit + 1, timeout_s=timeout_s
+                reader.query, files, sql, max_rows=limit + 1, timeout_s=left
             )
     except reader.SnapshotMismatch as exc:
         raise SnapshotUnreadable(f"a snapshot is not the file recorded: {exc}") from exc
@@ -620,12 +632,8 @@ async def run_query(
         try:
             async with _slot(source):
                 if from_files:
-                    # The source's limit, as a live read has it: the download and the read share
-                    # it, and DuckDB itself is interrupted at it (reader.query).
-                    columns, rows = await asyncio.wait_for(
-                        _read_snapshots(executed, versions, limit, timeout_s),
-                        timeout=timeout_s + 5,
-                    )
+                    # The source's limit, as a live read has it (_read_snapshots).
+                    columns, rows = await _read_snapshots(executed, versions, limit, timeout_s)
                 elif source.secret_ref == INTERNAL_WORKSPACE:
                     async with scoped_session(ROLE, org_id, principal_id) as local_session:
                         await local_session.execute(text("SET TRANSACTION READ ONLY"))
