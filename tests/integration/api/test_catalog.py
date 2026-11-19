@@ -1371,21 +1371,61 @@ async def test_a_version_lists_its_snapshot_and_hands_out_its_file(o: Org) -> No
         assert one["snapshot"]["status"] == "ok" and one["snapshot"]["row_count"] == 7
         assert two["snapshot"]["status"] == "skipped" and two["snapshot"]["sha256"] is None
 
-        got = await api.get(f"/v1/datasets/{dataset}/versions/1/snapshot", headers=h)
-        assert got.status_code == 302
+        # The file is the version as written, unmasked: a reader of the catalogue does not get it.
+        refused = await api.get(f"/v1/datasets/{dataset}/versions/1/snapshot", headers=h)
+        assert refused.status_code == 403
+        admin = o.headers("admin")
+        got = await api.get(f"/v1/datasets/{dataset}/versions/1/snapshot", headers=admin)
+        assert got.status_code == 302, got.text
         assert got.headers["location"] == f"https://store.example/{key}?signature=x"
         assert links.signed == [key]
+        with o.seed.conn.cursor() as cur:
+            cur.execute(
+                "SELECT payload->>'action' FROM catalog.outbox"
+                " WHERE aggregate_id = %s AND event_type = 'audit.requested'",
+                (str(dataset),),
+            )
+            assert cur.fetchall() == [("dataset.snapshot_downloaded",)]
         # Skipped, or not taken yet: no file to hand out.
         for version in (2, 3):
             missing = await api.get(
-                f"/v1/datasets/{dataset}/versions/{version}/snapshot", headers=h
+                f"/v1/datasets/{dataset}/versions/{version}/snapshot", headers=admin
             )
             assert missing.status_code == 404, missing.text
         # A dataset its reader cannot see has no snapshot either.
         elsewhere = _dataset(o, None, o.other, table_name="khac")
         hidden = await api.get(f"/v1/datasets/{elsewhere}/versions/1/snapshot", headers=h)
-        assert hidden.status_code == 404
-        no_ask = await api.get(
-            f"/v1/datasets/{dataset}/versions/1/snapshot", headers=o.headers("adminonly")
+        assert hidden.status_code in (403, 404)
+
+        # An access policy, even a draft, or a personal column: the file would show what the
+        # query path hides, so it is not handed out (security review of c75d5f67).
+        o.seed.row(
+            "catalog.column_meta",
+            org_id=o.org,
+            dataset_id=dataset,
+            dataset_version=1,
+            name="so_dien_thoai",
+            ordinal=9,
+            data_type="text",
+            normalized_type="string",
+            pii_label="phone",
         )
-        assert no_ask.status_code == 403
+        personal = await api.get(f"/v1/datasets/{dataset}/versions/1/snapshot", headers=admin)
+        assert personal.status_code == 403 and "personal" in personal.text
+        with o.seed.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE catalog.column_meta SET pii_label = NULL WHERE dataset_id = %s",
+                (str(dataset),),
+            )
+        o.seed.row(
+            "governance.access_policy",
+            org_id=o.org,
+            data_space_id=o.space,
+            dataset_id=dataset,
+            name="Chi nhánh của mình",
+            kind="row",
+            condition_expr="branch = :branch",
+        )
+        governed = await api.get(f"/v1/datasets/{dataset}/versions/1/snapshot", headers=admin)
+        assert governed.status_code == 403
+        assert links.signed == [key]

@@ -1542,8 +1542,12 @@
    ],
    "body": {},
    "query": [],
-   "returns": "302 tới đường dẫn ký sẵn 10 phút của tệp Parquet trong da-snapshots",
+   "returns": "302 tới đường dẫn ký sẵn 10 phút của tệp Parquet trong da-snapshots; ghi audit dataset.snapshot_downloaded",
    "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
     [
      404,
      "not_found"

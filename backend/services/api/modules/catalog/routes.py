@@ -87,6 +87,7 @@ from services.api.modules.catalog.schemas import (
     SourceView,
 )
 from services.api.modules.catalog.snapshot_links import snapshot_links
+from services.api.modules.governance.public import dataset_has_access_policies
 from services.api.modules.org import capabilities_of
 
 router = APIRouter()
@@ -1470,12 +1471,25 @@ async def get_dataset_snapshot(
     space: CurrentDataSpace,
 ) -> RedirectResponse:
     """DF-05: the version's Parquet file, as a short signed link; 404 when it was skipped (too
-    many rows, store down) or is not taken yet."""
+    many rows, store down) or is not taken yet.
+
+    The file is the version as written, every column and row: policies apply when it is read
+    (libs/snapshot.reader), not here. So only a data administrator gets it, only for a dataset no
+    access policy shapes and no column of which is labelled personal (security review of
+    c75d5f67), and every link handed out is in the audit trail."""
     ds = catalog.DatasetSnapshot
     async with transaction(ROLE, principal) as session:
         await _dataset(session, principal, space, dataset_id)
         found = await session.scalar(
             select(ds).where(ds.dataset_id == dataset_id, ds.version == version)
+        )
+        personal = await session.scalar(
+            select(catalog.ColumnMeta.id)
+            .where(
+                catalog.ColumnMeta.dataset_id == dataset_id,
+                catalog.ColumnMeta.pii_label.is_not(None),
+            )
+            .limit(1)
         )
     if found is None or found.status != "ok" or not found.object_key:
         raise Problem(
@@ -1483,10 +1497,33 @@ async def get_dataset_snapshot(
             "not_found",
             "This version has no snapshot file" + (" (skipped)." if found is not None else " yet."),
         )
+    if personal is not None or await dataset_has_access_policies(principal, dataset_id):
+        raise Problem(
+            403,
+            "policy_denied",
+            "This dataset has personal columns or access policies: its snapshot is read through "
+            "the query path, which applies them, and is not handed out as a file.",
+        )
     links = getattr(request.app.state, "snapshot_links", None) or snapshot_links()
     link = await links.sign(found.object_key)
     if link is None:
         raise Problem(503, "source_unavailable", "Snapshot storage is not configured.")
+    async with transaction(ROLE, principal) as session:
+        session.add(
+            _event(
+                principal,
+                "dataset",
+                dataset_id,
+                "audit.requested",
+                action="dataset.snapshot_downloaded",
+                object_kind="dataset_snapshot",
+                object_id=found.id,
+                actor_id=principal.user_id,
+                client_id=principal.client_id,
+                before=None,
+                after={"dataset_id": str(dataset_id), "version": version, "sha256": found.sha256},
+            )
+        )
     return RedirectResponse(link, status_code=302)
 
 

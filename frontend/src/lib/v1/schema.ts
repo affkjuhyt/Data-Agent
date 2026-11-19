@@ -1960,9 +1960,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Tải bản chụp Parquet của một phiên bản: 302 tới đường dẫn ký sẵn 10 phút (DF-05, thêm 19/11/2026)
+         * Tải bản chụp Parquet của một phiên bản: 302 tới đường dẫn ký sẵn 10 phút, chỉ cho bảng không có chính sách truy cập và cột cá nhân (DF-05, thêm 19/11/2026)
          * @description DF-05: the version's Parquet file, as a short signed link; 404 when it was skipped (too
          *     many rows, store down) or is not taken yet.
+         *
+         *     The file is the version as written, every column and row: policies apply when it is read
+         *     (libs/snapshot.reader), not here. So only a data administrator gets it, only for a dataset no
+         *     access policy shapes and no column of which is labelled personal (security review of
+         *     c75d5f67), and every link handed out is in the audit trail.
          */
         get: operations["getDatasetSnapshot"];
         put?: never;

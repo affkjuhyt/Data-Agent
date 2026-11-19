@@ -70121,7 +70121,7 @@
   },
   "/v1/datasets/{id}/versions/{version}/snapshot": {
    "get": {
-    "description": "DF-05: the version's Parquet file, as a short signed link; 404 when it was skipped (too\nmany rows, store down) or is not taken yet.",
+    "description": "DF-05: the version's Parquet file, as a short signed link; 404 when it was skipped (too\nmany rows, store down) or is not taken yet.\n\nThe file is the version as written, every column and row: policies apply when it is read\n(libs/snapshot.reader), not here. So only a data administrator gets it, only for a dataset no\naccess policy shapes and no column of which is labelled personal (security review of\nc75d5f67), and every link handed out is in the audit trail.",
     "operationId": "getDatasetSnapshot",
     "parameters": [
      {
@@ -70265,12 +70265,12 @@
       "HTTPBearer": []
      }
     ],
-    "summary": "Tải bản chụp Parquet của một phiên bản: 302 tới đường dẫn ký sẵn 10 phút (DF-05, thêm 19/11/2026)",
+    "summary": "Tải bản chụp Parquet của một phiên bản: 302 tới đường dẫn ký sẵn 10 phút, chỉ cho bảng không có chính sách truy cập và cột cá nhân (DF-05, thêm 19/11/2026)",
     "tags": [
      "Nguồn và danh mục"
     ],
     "x-capability": [
-     "ask"
+     "admin_data"
     ],
     "x-use-cases": [
      "UC-04-03"
