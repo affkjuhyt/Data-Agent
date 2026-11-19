@@ -82,7 +82,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | PL-08 | P0 | 4 | Idempotency/rate-limit fail-closed khi mất Redis; pin redis | — | BE | S | không Redis → 503 | done 19/11: 503 `source_unavailable` trước khi ghi (ghi bị chặn, đọc đi qua); khoá giữ khi Redis mất sau khi chạy; `API_REDIS_FAIL_OPEN`; `redis==8.1.0`, image 7.4.11 theo digest |
 | PL-09 | P0 | 4 | Cross-org sweep tự sinh theo schema/vai | — | QA/DB | M | 184 bảng × role, 0 rò | done 19/11: `tests/integration/migrate/test_cross_org_sweep.py`, 208 bảng có `org_id` (2 CSDL) × mọi `svc_*`, 1 335 phép đọc/sửa/xoá chéo, 0 rò; ngoại lệ duy nhất là relay đọc outbox (ADR-06); 12 bảng theo chủ sở hữu kiểm bằng cấu trúc policy |
 | PL-10 | P0 | 4 | gVisor RuntimeClass cho sandbox (gộp AL-07) | — | DevOps | M | 10 escape test chặn; `analyze` e2e xanh | todo |
-| PL-11 | P0 | 4 | TEI embed+rerank ở cụm eval (gộp EV-11) | — | DevOps | S | `dense_ok_rate ≥ 0,95` khi bật | todo |
+| PL-11 | P0 | 4 | TEI embed+rerank ở cụm eval (gộp EV-11) | — | DevOps | S | `dense_ok_rate ≥ 0,95` khi bật | done 19/11: TEI GPU trên LAN (bge-m3 :8003, bge-reranker-v2-m3 :8004) phục vụ cụm, không dựng TEI CPU trong cụm (node arm64 ~6 GiB, image CPU của TEI là amd64); `k8s_verify` kiểm `/health` mỗi lần deploy và cảnh báo; `make eval-retrieval` dense 1,0, rerank 1,0, r@10 0,91 |
 | PL-12 | P1 | 13 | `LLM_PRICES` local > 0; `max_cost_per_run` nổ; ngân sách theo org | AE-02 | BE | S | lượt vượt → `BUDGET_EXCEEDED` | todo |
 | PL-06 | P1 | 13 | OTel → collector → Tempo; cờ `enable_observability_stack` | PL-05 | DevOps/BE | M | 1 câu = 1 trace xuyên | todo |
 | PL-14 | P1 | 14 | HA tối thiểu: api ×2, worker-agent ×2, PDB, probes | PL-02 | DevOps | S | giết 1 pod không hỏng câu đang chạy | todo |

@@ -76,9 +76,54 @@
     success_msg: "{{ deployed_images | length }} deployments on {{ image_tag }}"
   when: image_tag != 'latest' and (apply_services | bool)
 
+# PL-11: document search's dense and rerank halves call TEI outside the cluster
+# (DOCUMENT_EMBED_URL, DOCUMENT_RERANK_URL of worker-agent-env; the GPU host serves bge-m3 and
+# bge-reranker-v2-m3). When it does not answer, search falls back to keywords without an error
+# (documents/search.py), which is how a keyword-only eval was once reported as full stack. Said
+# here on every deploy; a warning, not a failure: the host is not part of this deploy.
+- name: Check the document TEI endpoints from worker-agent
+  ansible.builtin.command:
+    argv:
+      - "{{ kubectl }}"
+      - -n
+      - "{{ ns_service }}"
+      - exec
+      - deploy/worker-agent
+      - -c
+      - worker-agent
+      - --
+      - python
+      - -c
+      - |
+        import os, urllib.request
+        out = []
+        for name, var in (("embed", "DOCUMENT_EMBED_URL"), ("rerank", "DOCUMENT_RERANK_URL")):
+            url = os.environ.get(var)
+            if not url:
+                out.append(f"{name}=not-configured")
+                continue
+            try:
+                ok = urllib.request.urlopen(url.rstrip("/") + "/health", timeout=5).status == 200
+                out.append(f"{name}=ok" if ok else f"{name}=unhealthy")
+            except Exception as exc:
+                out.append(f"{name}=unreachable({type(exc).__name__})")
+        print(" ".join(out))
+  register: tei_health
+  changed_when: false
+  failed_when: false
+
+- name: Warn when TEI does not answer
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: document TEI {{ tei_health.stdout | default(tei_health.stderr, true) | trim }}:
+      document search runs on keywords only, and `make eval-retrieval` fails on the half that is
+      configured but silent.
+  when: tei_health.rc != 0 or 'unreachable' in tei_health.stdout or 'unhealthy' in tei_health.stdout
+
 - name: Report summary
   ansible.builtin.debug:
     msg:
       - "tag:       {{ image_tag }}"
       - "deployed:  {{ deployed_images | join(' ') | default('none', true) }}"
       - "not ready: {{ bad_pods.stdout | trim | default('none', true) }}"
+      - "tei:       {{ tei_health.stdout | trim | default('not checked', true) }}"

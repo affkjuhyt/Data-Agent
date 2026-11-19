@@ -472,8 +472,8 @@ Cột "Baseline" là số **đã đo** (ngày, điều kiện); "chưa đo" nế
 | Documents | `table_cell_f1` | ô đúng (text, row, col) / ô vàng | trung gian | bake-off PoC-1, 30 tài liệu | chưa đo (bảng hiện bị dẹt) | ≥ 0,85 PDF text / ≥ 0,70 scan |
 | Documents | `ocr_cer` | CER có dấu, NFC | trung gian | 8 scan × 5 trang | chưa đo (chưa có scan) | không tệ hơn Tesseract hiện tại |
 | Documents | `extraction_f1` | trường trích đúng / vàng | trung gian | `extraction_schema.test` | `sample_accuracy` khi kích hoạt ≥ 0,95 (ngưỡng), chưa có số ghi | báo cáo |
-| Retrieval | `recall@1/3/10`, `mrr` | 156 case | trung gian | `make eval-retrieval` | **keyword-only** 12/11: r@1 0,7519, r@3 0,8045, r@10 0,8045, MRR 0,7744; khong-dau r@1 0,10; da-ngon-ngu 0,0; full-stack **chưa đo** (TEI vắng, báo cáo ghi sai halves) | r@10 ≥ 0,85 full-stack; khong-dau ≥ 0,7 |
-| Retrieval | `not_found_accuracy` | case không có đáp án trả rỗng | trung gian | như trên | 0,7391 (keyword-only) | ≥ 0,85 |
+| Retrieval | `recall@1/3/10`, `mrr` | 156 case | trung gian | `make eval-retrieval` | **keyword-only** 12/11: r@1 0,7519, r@3 0,8045, r@10 0,8045, MRR 0,7744; khong-dau r@1 0,10; da-ngon-ngu 0,0; **full-stack** 19/11 (PL-11; dense 156/156, rerank 152/152 trả lời): r@1 0,8947, r@3 0,9098, r@10 0,9098, MRR 0,9023; khong-dau r@1 0,40; da-ngon-ngu 0,0; tieng-anh r@1 0,9583 | r@10 ≥ 0,85 full-stack; khong-dau ≥ 0,7 |
+| Retrieval | `not_found_accuracy` | case không có đáp án trả rỗng | trung gian | như trên | 0,7391 (keyword-only 12/11); 0,8696 (full-stack 19/11) | ≥ 0,85 |
 | Retrieval | `forbidden_rate` | trả văn bản hết hiệu lực/bị thay / case | trung gian | như trên | 0,0 | 0 |
 | Retrieval | `citation_accuracy` | trích dẫn đúng tài liệu + trang/ô / trích dẫn | E2E | contains_all | chưa đo | ≥ 0,95 |
 | Hybrid | `cross_source_correctness` | kết luận đúng hoặc từ chối đúng / 25 case | E2E | tier golden | chưa đo | ≥ 70 % |
