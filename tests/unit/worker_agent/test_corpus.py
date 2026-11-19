@@ -103,6 +103,122 @@ def test_build_corpus_names_the_table_and_both_join_column_lists() -> None:
     assert brief.pages == pages
 
 
+class _Rows:
+    def __init__(self, rows: list[object]) -> None:
+        self._rows = rows
+
+    def all(self) -> list[object]:
+        return self._rows
+
+
+class _Session:
+    """Records statements. No database: the knowledge-page policy is not what this proves."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str, dict[str, str] | None]] = []
+
+    async def execute(self, statement: object, params: dict[str, str] | None = None) -> _Rows:
+        self.events.append(("execute", str(statement), params))
+        return _Rows([])
+
+    async def scalars(self, statement: object) -> _Rows:
+        self.events.append(("scalars", str(statement), None))
+        return _Rows([])
+
+
+def _layer(*metrics: object) -> object:
+    import types
+
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    entries = [m for m in metrics if isinstance(m, MetricEntry)]
+    return types.SimpleNamespace(
+        vocabulary=types.SimpleNamespace(metrics=entries, dimensions=[]),
+        versions={m.metric_id: object() for m in entries},
+        blocked_metric_ids=frozenset(),
+    )
+
+
+async def _load(
+    monkeypatch: pytest.MonkeyPatch, session: _Session, layer: object, space_id: object
+) -> object:
+    import uuid
+
+    from services.worker_agent.agentic.corpus import load_corpus
+    from services.worker_agent.sqlgen.schema import Schema
+    from services.worker_agent.sqlgen.space import Space
+
+    async def load_space(*_a: object, **_k: object) -> Space:
+        return Space(Schema([]))
+
+    monkeypatch.setattr("services.worker_agent.agentic.corpus.load_space", load_space)
+    return await load_corpus(session, space_id, uuid.uuid4(), layer)  # type: ignore[arg-type]
+
+
+async def test_uncertified_in_force_metric_is_not_the_certified_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import uuid
+
+    from services.worker_agent.agentic import prompts
+    from services.worker_agent.agentic.corpus import render_corpus
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    space_id = uuid.uuid4()
+    plain = MetricEntry(uuid.uuid4(), "DOANH_THU_VANG", "Doanh thu taxi vàng", False)
+    standard = MetricEntry(uuid.uuid4(), "DOANH_THU", "Doanh thu", True)
+    brief = await _load(monkeypatch, _Session(), _layer(plain, standard), space_id)
+
+    by_code = {metric.code: metric for metric in brief.metrics}
+    assert by_code["DOANH_THU_VANG"].certified is False
+    assert by_code["DOANH_THU"].certified is True
+    rendered = render_corpus(brief)
+    certified_shelf = rendered.split("Chỉ số đã chứng nhận:\n", 1)[1].split("\nChỉ số nháp:", 1)[0]
+    draft_shelf = rendered.split("Chỉ số nháp:\n", 1)[1].split("\nChiều:", 1)[0]
+    assert "DOANH_THU_VANG" not in certified_shelf
+    assert "DOANH_THU_VANG" in draft_shelf and "chưa chứng nhận" in draft_shelf
+    assert "DOANH_THU:" in certified_shelf
+
+    rule = prompts.PLANNER.split("\n3. ", 1)[0].split("\n2. ", 1)[1]
+    assert 'mục "Chỉ số đã chứng nhận"' in rule
+    assert "thì query_metric" in rule
+    assert "Khớp tên một chỉ số chưa chứng nhận không phải đường chỉ số chuẩn" in rule
+    assert "không cấm explore_sql" in rule
+    assert "Tên gần với một mã trong danh mục" not in rule
+    assert "không tự tính" not in prompts.PLANNER
+
+
+async def test_load_corpus_sets_the_reader_settings_for_this_space(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import uuid
+
+    from libs.dataagent_db.session import reader_settings_for
+
+    space_id = uuid.uuid4()
+    session = _Session()
+    await _load(monkeypatch, session, _layer(), space_id)
+
+    # The keys and values reader_settings returns for an asker of this space
+    # (reader_settings_for is what that function returns). Not a skipped setting.
+    expected = {
+        "knowledge_reader": "on",
+        "data_space_ids": "{" + str(space_id) + "}",
+        "clearance": "1",
+    }
+    assert reader_settings_for([space_id]) == expected
+    applied = [
+        (params["name"].removeprefix("app."), params["value"])
+        for _kind, sql, params in session.events
+        if params is not None and "set_config" in sql
+    ]
+    assert applied == list(expected.items())
+    setting_at = next(i for i, (_k, sql, _p) in enumerate(session.events) if "set_config" in sql)
+    page_at = next(i for i, (_k, sql, _p) in enumerate(session.events) if "knowledge_page" in sql)
+    assert setting_at < page_at
+    assert "set role" not in session.events[page_at][1].lower()
+
+
 def test_planner_answers_a_non_figure_question_from_the_corpus() -> None:
     from services.worker_agent.agentic import prompts
     from services.worker_agent.agentic.tools.query import ExploreSql

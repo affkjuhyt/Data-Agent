@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from functools import cache
 
@@ -29,6 +29,39 @@ ENV_PREFIX = "DATAAGENT_DB_URL__"
 EXTRA_SETTINGS = frozenset(
     {"knowledge_reader", "data_space_ids", "clearance", "exec_workflow", "exec_admin", "caller_id"}
 )
+
+# context.classification_rank('internal'). No per-reader clearance is stored yet, so a reader
+# sees public and internal and nothing higher (BR-163). The context API's reader_settings uses
+# this same rank.
+READER_CLEARANCE = "1"
+
+
+def reader_settings_for(space_ids: Sequence[uuid.UUID]) -> dict[str, str]:
+    """The settings `reader_settings` puts on a reader transaction for these Data Spaces.
+
+    `knowledge_reader_allows` is false when `data_space_ids` or `clearance` is unset, so a
+    reader sees no knowledge row. `knowledge_reader` is the switch that makes svc_context read
+    as that reader; roles that already hold context_read (svc_qa) do not need it, and setting
+    it does not widen them. An empty space list fails closed.
+    """
+    listed = "{" + ",".join(str(i) for i in sorted(space_ids, key=str)) + "}"
+    return {
+        "knowledge_reader": "on",
+        "data_space_ids": listed,
+        "clearance": READER_CLEARANCE,
+    }
+
+
+async def apply_app_settings(session: AsyncSession, settings: Mapping[str, str]) -> None:
+    """Transaction-local `app.*` values the policies read. Unknown names are refused."""
+    unknown = set(settings) - EXTRA_SETTINGS
+    if unknown:
+        raise ValueError(f"unknown app settings: {sorted(unknown)}")
+    for name, value in settings.items():
+        await session.execute(
+            text("SELECT set_config(:name, :value, true)"),
+            {"name": f"app.{name}", "value": value},
+        )
 
 
 def database_url(role: str) -> str:
@@ -76,11 +109,7 @@ async def scoped_session(
             ),
             {"org": str(org_id), "uid": str(user_id) if user_id else ""},
         )
-        for name, value in settings.items():
-            await session.execute(
-                text("SELECT set_config(:name, :value, true)"),
-                {"name": f"app.{name}", "value": value},
-            )
+        await apply_app_settings(session, settings)
         yield session
 
 

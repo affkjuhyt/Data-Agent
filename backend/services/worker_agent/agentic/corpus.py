@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db.models import context, document
+from libs.dataagent_db.session import apply_app_settings, reader_settings_for
 from services.worker_agent.semantic.loader import SpaceLayer
 from services.worker_agent.sqlgen.space import Space, load_space
 from services.worker_agent.understand import analyst
@@ -146,10 +147,17 @@ async def load_corpus(
     layer: SpaceLayer,
 ) -> CorpusBrief:
     space = await load_space(session, space_id, principal_id)
-    # Draft rows are not added to analyst._visible: that set is what the asker may query.
-    # They are listed beside it, uncertified, so the planner can name them as chưa chứng nhận.
+    # _visible is a version in force that is not blocked. The loader can leave that version
+    # uncertified, and a draft row is not in the set at all. Only entry.certified is the
+    # certified shelf; both other kinds are listed chưa chứng nhận.
+    visible = analyst._visible(layer)
     certified = tuple(
-        CorpusMetric(code, entry.name, True) for code, entry in analyst._visible(layer).items()
+        CorpusMetric(code, entry.name, True) for code, entry in visible.items() if entry.certified
+    )
+    uncertified = tuple(
+        CorpusMetric(code, entry.name, False)
+        for code, entry in visible.items()
+        if not entry.certified
     )
     latest_version = (
         select(
@@ -174,7 +182,9 @@ async def load_corpus(
             )
         )
     ).all()
-    drafts = tuple(CorpusMetric(code, display_name, False) for code, display_name in draft_rows)
+    drafts = uncertified + tuple(
+        CorpusMetric(code, display_name, False) for code, display_name in draft_rows
+    )
     dimensions = tuple(f"{item.code}: {item.name}" for item in layer.vocabulary.dimensions)
     collections = (
         await session.scalars(
@@ -185,6 +195,11 @@ async def load_corpus(
             )
         )
     ).all()
+    # svc_qa is NOBYPASSRLS. knowledge_reader_allows is false until this pair is set, which
+    # hides every page. The asked space is the one this transaction may read (prepare already
+    # checked can_ask); clearance is the same internal rank reader_settings sets. The select
+    # stays on this role. A page whose sources sit outside this space stays hidden.
+    await apply_app_settings(session, reader_settings_for([space_id]))
     knowledge_pages = (
         await session.scalars(
             select(context.KnowledgePage).where(

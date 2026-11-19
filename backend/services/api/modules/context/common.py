@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs import language
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import context, org
+from libs.dataagent_db.session import READER_CLEARANCE, reader_settings_for
 from services.api.kernel.auth import Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -45,6 +46,9 @@ CLEARANCE = {"public": 0, "internal": 1, "confidential": 2, "restricted": 3}
 # org.data_space_member carry no classification), so every reader reads at `internal`: pages
 # whose strictest source is confidential or restricted stay hidden (BR-163 fails closed).
 DEFAULT_CLEARANCE = CLEARANCE["internal"]
+# reader_settings_for carries this rank as text. The two must stay the same clearance.
+if str(DEFAULT_CLEARANCE) != READER_CLEARANCE:
+    raise RuntimeError("reader clearance drifted from DEFAULT_CLEARANCE")
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -236,18 +240,10 @@ def page_readable(
     )
 
 
-def uuid_array(ids: Sequence[uuid.UUID]) -> str:
-    return "{" + ",".join(str(i) for i in ids) + "}"
-
-
 async def reader_settings(principal: Principal) -> dict[str, str]:
     """app.knowledge_reader, app.data_space_ids and app.clearance for a reader transaction
     (docs/v3/07-database.md "Kết nối từ ứng dụng"): with them svc_context sees knowledge rows only
     as the caller may (BR-163)."""
     async with transaction(ROLE, principal) as session:
         spaces = await readable_data_spaces(session, principal)
-    return {
-        "knowledge_reader": "on",
-        "data_space_ids": uuid_array(spaces),
-        "clearance": str(DEFAULT_CLEARANCE),
-    }
+    return reader_settings_for(spaces)

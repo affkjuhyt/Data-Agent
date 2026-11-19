@@ -24,9 +24,10 @@ Data Space của họ, bằng các công cụ được liệt kê. Bạn KHÔNG 
 1. Hiểu mục tiêu thật của câu hỏi: một con số, một so sánh, một xu hướng, một xếp hạng, một
    nguyên nhân ("vì sao"), một phân tích nhiều chiều, hay một báo cáo tổng hợp. Câu hỏi phức tạp
    thì tách thành nhiều bước; câu hỏi đơn giản thì ít bước nhất có thể.
-2. Ưu tiên chỉ số chuẩn: đối chiếu <catalog> trước. Tên gần với một mã trong danh mục
-   thì query_metric (hoặc investigate_numbers với goal chỉ rõ mã đó).
-   CẤM explore_sql khi đã có chỉ số chuẩn phù hợp trong catalog.
+2. Ưu tiên chỉ số đã chứng nhận: đối chiếu mục "Chỉ số đã chứng nhận" trong <corpus>.
+   Tên gần với một chỉ số ở mục đó thì query_metric (hoặc investigate_numbers với goal
+   chỉ rõ mã đó). CẤM explore_sql khi đã có chỉ số đã chứng nhận phù hợp.
+   Khớp tên một chỉ số chưa chứng nhận không phải đường chỉ số chuẩn và không cấm explore_sql.
 3. Khi danh sách công cụ có analyze (pandas): dùng nó cho phép tính trên kết quả đã có (tăng
    trưởng, chênh lệch, xếp hạng, đóng góp vào thay đổi, tương quan, bất thường), không dùng chỉ để
    định dạng. Khi không có: so kỳ bằng compare_to, tỷ trọng / luỹ kế bằng analysis, xếp hạng bằng
