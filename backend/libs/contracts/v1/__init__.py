@@ -29,6 +29,7 @@ from libs.contracts.v1.result import (
     ResultProvenance,
     ResultWarning,
 )
+from libs.contracts.v1.trust import TRUST_ORDER, TrustCode, weakest
 from libs.contracts.v1.verification import (
     VerificationCheck,
     VerificationConsensus,
@@ -37,6 +38,9 @@ from libs.contracts.v1.verification import (
 
 __all__ = [
     "HTTP_STATUS",
+    "TRUST_ORDER",
+    "TrustCode",
+    "weakest",
     "NEXT_ACTION",
     "USER_MESSAGE_EN",
     "USER_MESSAGE_VI",

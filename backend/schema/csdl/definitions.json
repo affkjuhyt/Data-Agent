@@ -11098,6 +11098,28 @@
      "fk": null,
      "logic_ref": null,
      "pii": false
+    },
+    {
+     "name": "trust_code",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Nhãn tin cậy của cả câu trả lời: VERIFIED, GOVERNED, DERIVED, EXPLORATORY, DOCUMENT, INSUFFICIENT; nhãn yếu nhất trong các số và khối, do server đặt (AE-04, ARCHITECTURE §9.5, thêm 19/11/2026). Null: câu trả lời trước v3_0045",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "envelope",
+     "type": "jsonb",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Bản đồ tin cậy của câu trả lời (AE-04): đường trả lời, nhãn từng số và từng khối, lý do dừng sớm; phần còn lại của AnswerEnvelope đọc từ các cột khác (`worker_agent/answer/envelope.py`)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
     }
    ],
    "common_columns": [
@@ -11133,6 +11155,14 @@
     {
      "kind": "check",
      "sql": "CHECK ((product_scope = 'in_scope') = (data_product_id IS NOT NULL))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (trust_code IS NULL OR trust_code IN ('VERIFIED','GOVERNED','DERIVED','EXPLORATORY','DOCUMENT','INSUFFICIENT'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (envelope IS NULL OR jsonb_typeof(envelope) = 'object')"
     }
    ],
    "indexes": [

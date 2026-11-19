@@ -2410,13 +2410,17 @@ CREATE TABLE qa.answer (
   lineage_hash text,
   data_product_id uuid,
   product_scope text NOT NULL DEFAULT 'not_applicable',
+  trust_code text,
+  envelope jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT answer_pkey PRIMARY KEY (id),
   CHECK (kind IN ('data','document','mixed','clarification','refusal','forecast')),
   CHECK (kind <> 'forecast' OR forecast_job_id IS NOT NULL),
   CHECK (reconcile_badge IS NULL OR reconcile_badge IN ('matched_filed','differs_from_filed','not_filed')),
   CHECK (product_scope IN ('in_scope','out_of_scope','not_applicable')),
-  CHECK ((product_scope = 'in_scope') = (data_product_id IS NOT NULL))
+  CHECK ((product_scope = 'in_scope') = (data_product_id IS NOT NULL)),
+  CHECK (trust_code IS NULL OR trust_code IN ('VERIFIED','GOVERNED','DERIVED','EXPLORATORY','DOCUMENT','INSUFFICIENT')),
+  CHECK (envelope IS NULL OR jsonb_typeof(envelope) = 'object')
 );
 COMMENT ON TABLE qa.answer IS 'Câu trả lời: văn bản, số, biểu đồ, trích dẫn và trạng thái kiểm tra. Use case: UC-01-01, UC-01-02, UC-01-03, UC-01-04, UC-01-05, UC-05-04.';
 COMMENT ON COLUMN qa.answer.question_id IS 'FK question';
@@ -2434,6 +2438,8 @@ COMMENT ON COLUMN qa.answer.agent_name IS 'Ví dụ Agent Phân tích';
 COMMENT ON COLUMN qa.answer.lineage_hash IS 'SHA-256 khi dùng kỳ đã chốt (UC-01-02)';
 COMMENT ON COLUMN qa.answer.data_product_id IS 'logic → context.data_product; có khi product_scope = in_scope (BR-175, thêm 10/10/2026)';
 COMMENT ON COLUMN qa.answer.product_scope IS 'in_scope, out_of_scope, not_applicable (làm rõ, từ chối); out_of_scope hiển thị nhãn “Ngoài phạm vi data product, không có biên nhận”';
+COMMENT ON COLUMN qa.answer.trust_code IS 'Nhãn tin cậy của cả câu trả lời: VERIFIED, GOVERNED, DERIVED, EXPLORATORY, DOCUMENT, INSUFFICIENT; nhãn yếu nhất trong các số và khối, do server đặt (AE-04, ARCHITECTURE §9.5, thêm 19/11/2026). Null: câu trả lời trước v3_0045';
+COMMENT ON COLUMN qa.answer.envelope IS 'Bản đồ tin cậy của câu trả lời (AE-04): đường trả lời, nhãn từng số và từng khối, lý do dừng sớm; phần còn lại của AnswerEnvelope đọc từ các cột khác (`worker_agent/answer/envelope.py`)';
 
 CREATE TABLE qa.feedback (
   id uuid NOT NULL,

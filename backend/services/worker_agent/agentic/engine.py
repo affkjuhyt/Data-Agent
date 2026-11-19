@@ -58,6 +58,7 @@ from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContex
 from services.worker_agent.agentic.tools.coverage import for_planning
 from services.worker_agent.agentic.tools.query import asked_top, asks_change, two_periods
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Dataset, Workspace, number
+from services.worker_agent.answer import envelope as answer_trust
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
 from services.worker_agent.llm import Gateway, ModelUnavailable
@@ -2008,6 +2009,14 @@ async def persist(s: State) -> None:
         }
         if refusal is not None:
             number_check = {"refusal": refusal}
+        code, envelope = answer_trust.trust(
+            "agentic",
+            kind,
+            figures=figures,
+            blocks=[blk for blk in s.composition if isinstance(blk, dict)],
+            cited=bool(ctx.ws.citations),
+            stopped=s.budget.stopped if s.budget is not None else None,
+        )
         session.add(
             qa.Answer(
                 id=answer_id,
@@ -2021,6 +2030,8 @@ async def persist(s: State) -> None:
                 citations=ctx.ws.citations,
                 follow_ups=follow_ups,
                 blocks=s.composition,
+                trust_code=code.value,
+                envelope=envelope,
                 number_check=verify_answer(
                     kind,
                     number_check,
@@ -2059,6 +2070,7 @@ async def persist(s: State) -> None:
         blocks=list(s.composition),
         trust_summary=" · ".join(trusts) if trusts else None,
     )
+    payload["trust_code"] = code.value
     event = {"clarification": "clarification", "refusal": "answer"}.get(kind, "answer")
     await publish(str(s.question_id), event, payload)
     await publish(str(s.question_id), "done", {**payload, "status": status})
