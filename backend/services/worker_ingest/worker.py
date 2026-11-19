@@ -23,6 +23,7 @@ from sqlalchemy import func, select, text, update
 from libs import source_drivers, tabular
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, ingest
+from services.worker_ingest import versioning
 from services.worker_ingest.events import Event, Handler
 from services.worker_ingest.secrets import Reader, SecretUnavailable
 
@@ -605,9 +606,22 @@ async def handle(event: Event) -> None:
                 if not nothing_new
                 else _no_batches()
             )
+            # DF-02: a full run writes a new version's table and points the view at it; any other
+            # run writes the current version's table. Before versioning, the table itself.
+            start = await versioning.current(session, dataset_id) if versioning.ENABLED else None
+            new_version: int | None = None
+            write_to = table_name
+            if start is not None and mode_full:
+                new_version = start.latest + 1
+                write_to = versioning.physical_name(table_name, new_version)
+            elif start is not None and start.physical:
+                write_to = start.physical
+            legacy: str | None = None
             existing: dict[str, str] | None = None
             merge_keys = list(job.merge_key_columns or []) or None
-            on_schema = getattr(job, "on_schema_change", "accept_new_columns") or "accept_new_columns"
+            on_schema = (
+                getattr(job, "on_schema_change", "accept_new_columns") or "accept_new_columns"
+            )
             async for columns, batch in batches:
                 if existing is None and cursor_mode:
                     existing = await _workspace_columns(session, table_name)
@@ -649,12 +663,17 @@ async def handle(event: Event) -> None:
                     if good or mode_full:
                         await _materialize(
                             session,
-                            table_name,
+                            write_to,
                             columns,
                             good,
                             replace=mode_full and read == len(batch),
                             merge_keys=None if mode_full else merge_keys,
                         )
+            if columns and start is not None and write_to != table_name:
+                # A table written before versioning becomes the version it held.
+                legacy = versioning.physical_name(table_name, start.version or max(start.latest, 1))
+                if not await versioning.swap(session, table_name, write_to, legacy):
+                    legacy = None
             if advance_cursor and window is not None:
                 await session.execute(
                     update(ingest.IngestionJob)
@@ -689,6 +708,9 @@ async def handle(event: Event) -> None:
             return
         async with scoped_session(CATALOG_ROLE, event.org_id, principal_id) as session:
             dataset = await session.get(catalog.Dataset, dataset_id)
+            now = versioning.now()
+            # DF-02: the table a version's rows are in; None for a table written before versioning.
+            physical = write_to if write_to != table_name else None
             if dataset is None:
                 session.add(
                     catalog.Dataset(
@@ -705,11 +727,12 @@ async def handle(event: Event) -> None:
                         enabled=True,
                         scope="data_space",
                         quality_state="unknown",
+                        current_version=new_version or 1,
                         created_by=principal_id,
                         updated_by=principal_id,
                     )
                 )
-                version_no = 1
+                version_no = new_version or 1
                 session.add(
                     catalog.DatasetVersion(
                         id=uuid.uuid4(),
@@ -719,7 +742,8 @@ async def handle(event: Event) -> None:
                         schema_hash=_schema_hash(columns),
                         diff={"added": [c["name"] for c in columns]},
                         change_kind="initial",
-                        valid_from=datetime.datetime.now(datetime.UTC),
+                        valid_from=now,
+                        physical_table=physical,
                         created_by=principal_id,
                     )
                 )
@@ -747,8 +771,48 @@ async def handle(event: Event) -> None:
                 ).all()
             )
             added = [column for column in columns if column["name"] not in known]
+            versioned_full = dataset is not None and new_version is not None
+            if versioned_full:
+                # A full run's new version: its own table, the one before ended.
+                kind, diff = versioning.change_kind(known, [c["name"] for c in columns])
+                if legacy is not None and start is not None:
+                    # The table that stood where the view now is holds the version before.
+                    await session.execute(
+                        update(catalog.DatasetVersion)
+                        .where(
+                            catalog.DatasetVersion.dataset_id == dataset_id,
+                            catalog.DatasetVersion.version == (start.version or version_no),
+                        )
+                        .values(physical_table=legacy)
+                    )
+                await session.execute(
+                    update(catalog.DatasetVersion)
+                    .where(
+                        catalog.DatasetVersion.dataset_id == dataset_id,
+                        catalog.DatasetVersion.valid_to.is_(None),
+                    )
+                    .values(valid_to=now)
+                )
+                version_no = int(new_version)
+                session.add(
+                    catalog.DatasetVersion(
+                        id=uuid.uuid4(),
+                        org_id=event.org_id,
+                        dataset_id=dataset_id,
+                        version=version_no,
+                        schema_hash=_schema_hash(columns),
+                        diff=diff,
+                        change_kind=kind if kind != "initial" else "reload",
+                        valid_from=now,
+                        physical_table=physical,
+                        created_by=principal_id,
+                    )
+                )
+                dataset.current_version = version_no
+                await session.flush()
+                await versioning.mark_retention(session, dataset_id, version_no)
             if added:
-                if known:
+                if known and not versioned_full:
                     version_no = int(version_no) + 1
                     session.add(
                         catalog.DatasetVersion(
@@ -759,10 +823,14 @@ async def handle(event: Event) -> None:
                             schema_hash=_schema_hash(columns),
                             diff={"added": [c["name"] for c in added]},
                             change_kind="additive",
-                            valid_from=datetime.datetime.now(datetime.UTC),
+                            valid_from=now,
+                            # Same table: an incremental run's columns join the current version's.
+                            physical_table=physical,
                             created_by=principal_id,
                         )
                     )
+                    if dataset is not None:
+                        dataset.current_version = version_no
                 await session.flush()
                 session.add_all(
                     catalog.ColumnMeta(
@@ -963,9 +1031,14 @@ async def handle_replay(event: Event) -> None:
             from services.worker_ingest.dlq import load_payload
 
             columns, row = await load_payload(record.payload_ref)
+            # DF-02: into the current version's table; the view in front of it takes no rows.
+            target = _table_name(job)
+            if versioning.ENABLED and job.target_dataset_id:
+                start = await versioning.current(session, job.target_dataset_id)
+                target = start.physical or target
             await _materialize(
                 session,
-                _table_name(job),
+                target,
                 columns,
                 [row],
                 replace=False,

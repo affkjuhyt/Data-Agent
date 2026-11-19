@@ -94,7 +94,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | ID | Ưu tiên | Tuần | Việc | Phụ thuộc | Vai | CS | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | DF-01 | P0 | 3 | Migration `v3_0040`: `dataset_snapshot`, `dataset_version.physical_table/retained_until`, `dataset_contract` (không gồm outbox) | — | DB | M | up/down xanh; ORM khớp | done (thiết kế tab 3b, DDL/ORM sinh lại, v3_0040; snapshot chỉ ghi thêm, có `status ok/skipped` theo §8 DATA_PIPELINE_SPEC; contract có `id` + UNIQUE (dataset_id) theo quy ước sinh bảng thay vì khoá chính dataset_id) |
-| DF-02 | P0 | 3 | `versioning.py`: staging `__v<n+1>`, swap view, retention | DF-01 | DE | M | lỗi giữa lô → view không đổi | todo |
+| DF-02 | P0 | 3 | `versioning.py`: staging `__v<n+1>`, swap view, retention | DF-01 | DE | M | lỗi giữa lô → view không đổi | done (`worker_ingest/versioning.py`, `da_swap_version`, v3_0041; full ×2 → `__v1`, `__v2`, view v2, v1 đọc được; lỗi giữa lượt → view và version không đổi; bảng cũ đổi tên thành phiên bản, không DROP; retention chỉ đánh dấu `retained_until`, xoá bảng chờ DF-04; `change_kind` thêm `reload`; cờ `INGEST_VERSIONED`) |
 | DF-04 | P0 | 3 | `libs/snapshot` writer/reader + bucket `da-snapshots` lock (PoC-2 nhánh ở tuần 2) | DF-01 | BE | M | sha256 ổn định; PoC-2 đạt | todo |
 | DF-03 | P0 | 4 | Upload commit + pipeline materialize tạo version (bỏ `DROP`) | DF-02 | BE | S | grep DROP = 0 | todo |
 | DF-05 | P0 | 4 | Snapshot cuối lượt + `dataset.snapshot_created` + API versions/snapshot | DF-02, DF-04 | BE | S | 2 endpoint trong A2 | todo |

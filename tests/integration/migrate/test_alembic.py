@@ -867,3 +867,43 @@ def test_a_version_keeps_its_table_and_snapshot_and_a_dataset_has_a_contract(adm
             cur.execute(contract, (str(uuid.uuid4()), org, dataset, "broken", None))
         cur.execute(contract, (str(uuid.uuid4()), org, dataset, "broken", "schema changed"))
     conn.close()
+
+
+def test_a_migrated_cluster_swaps_versions_and_takes_a_reload(admin):
+    # v3_0041 (19/11/2026, DF-02): da_swap_version and the `reload` change kind.
+    _fresh(admin, "chain_df02", "chain_df02_audit")
+    db = _db(admin, "chain_df02")
+    _alembic(db, "upgrade", "v3_0040")
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("DROP FUNCTION public.da_swap_version(text, text, text)")
+        cur.execute(
+            "ALTER TABLE catalog.dataset_version DROP CONSTRAINT dataset_version_change_kind_check"
+        )
+        cur.execute(
+            "ALTER TABLE catalog.dataset_version ADD CONSTRAINT dataset_version_change_kind_check"
+            " CHECK (change_kind IN ('initial','additive','breaking'))"
+        )
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    assert "'reload'" in _one(
+        db,
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+        " WHERE conname = 'dataset_version_change_kind_check'",
+    )
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        # As da_materialize_upload makes them: da_owner's.
+        cur.execute("SET ROLE da_owner")
+        cur.execute("CREATE TABLE workspace.sales__v1 (n int)")
+        cur.execute("INSERT INTO workspace.sales__v1 VALUES (1), (2)")
+        cur.execute("RESET ROLE")
+        cur.execute("SELECT public.da_swap_version('sales', 'sales__v1')")
+        cur.execute("SELECT count(*) FROM workspace.sales")
+        assert cur.fetchone() == (2,)
+        for physical in ("other__v1", "sales__v123456", "sales"):
+            with pytest.raises(psycopg2.errors.RaiseException):
+                cur.execute("SELECT public.da_swap_version('sales', %s)", (physical,))
+    conn.close()

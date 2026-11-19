@@ -5443,7 +5443,7 @@
      "not_null": true,
      "default": "'initial'",
      "unique": false,
-     "comment": "initial, additive, breaking",
+     "comment": "initial, additive, breaking, reload (lượt nạp full tạo phiên bản mới cùng hoặc khác schema, DF-02)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -5550,7 +5550,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (change_kind IN ('initial','additive','breaking'))"
+     "sql": "CHECK (change_kind IN ('initial','additive','breaking','reload'))"
     },
     {
      "kind": "check",

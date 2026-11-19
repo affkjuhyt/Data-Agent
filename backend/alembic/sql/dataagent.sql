@@ -1303,7 +1303,7 @@ CREATE TABLE catalog.dataset_version (
   created_by uuid,
   CONSTRAINT dataset_version_pkey PRIMARY KEY (id),
   UNIQUE (dataset_id, version),
-  CHECK (change_kind IN ('initial','additive','breaking')),
+  CHECK (change_kind IN ('initial','additive','breaking','reload')),
   CHECK (change_kind <> 'breaking' OR proposal_id IS NOT NULL),
   CHECK (valid_to IS NULL OR valid_to > valid_from),
   CHECK ((certified_at IS NULL) = (certified_by IS NULL)),
@@ -1313,7 +1313,7 @@ COMMENT ON TABLE catalog.dataset_version IS 'Phiên bản cấu trúc của mộ
 COMMENT ON COLUMN catalog.dataset_version.dataset_id IS 'FK dataset';
 COMMENT ON COLUMN catalog.dataset_version.schema_hash IS 'Băm danh sách cột và kiểu';
 COMMENT ON COLUMN catalog.dataset_version.diff IS 'So với bản trước: cột thêm, xoá, đổi tên, đổi kiểu';
-COMMENT ON COLUMN catalog.dataset_version.change_kind IS 'initial, additive, breaking';
+COMMENT ON COLUMN catalog.dataset_version.change_kind IS 'initial, additive, breaking, reload (lượt nạp full tạo phiên bản mới cùng hoặc khác schema, DF-02)';
 COMMENT ON COLUMN catalog.dataset_version.proposal_id IS 'logic → inbox.proposal; null khi chỉ thêm cột (UC-04-03 1a)';
 COMMENT ON COLUMN catalog.dataset_version.scan_run_id IS 'FK scan_run';
 COMMENT ON COLUMN catalog.dataset_version.certified_at IS 'Lúc người phụ trách dữ liệu chứng nhận phiên bản dataset hợp nhất; null là chưa chứng nhận hoặc đã thu hồi, khi đó không dùng làm số báo cáo cơ quan quản lý (BR-156). Trạng thái hiện hành, lịch sử ở dataset_version_certification';
@@ -10055,6 +10055,63 @@ END
 $fn$;
 ALTER FUNCTION public.da_materialize_upsert(text, jsonb, jsonb, text[]) OWNER TO da_owner;
 GRANT EXECUTE ON FUNCTION public.da_materialize_upsert(text, jsonb, jsonb, text[]) TO svc_ingest;
+-- DF-02 (F-01): a full ingest run writes a new table workspace.<name>__v<n> and this points the
+-- view workspace.<name>, which every reader names, at it, in the run's transaction: a run that
+-- fails leaves the view and the version it shows as they were, and no version is dropped. A table
+-- still standing where the view goes (written before versioning) becomes the version it was,
+-- renamed to p_legacy, never dropped. An incremental run calls it on the current version too, to
+-- show the columns it added. Names are checked as da_materialize_upload checks them; a version's
+-- name is its base, cut to 55 characters, then __v<n>.
+CREATE OR REPLACE FUNCTION public.da_swap_version(
+  p_name text,
+  p_physical text,
+  p_legacy text DEFAULT NULL
+) RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $fn$
+DECLARE
+  kind "char";
+  version_name text;
+  renamed boolean := false;
+BEGIN
+  IF p_name !~ '^[a-z][a-z0-9_]{0,62}$' THEN
+    RAISE EXCEPTION 'invalid workspace name';
+  END IF;
+  -- p_name is [a-z0-9_] only, so it is safe inside the pattern.
+  version_name := '^' || left(p_name, 55) || '__v[0-9]{1,5}$';
+  IF p_physical !~ version_name THEN
+    RAISE EXCEPTION 'invalid version table name';
+  END IF;
+  IF to_regclass(format('workspace.%I', p_physical)) IS NULL THEN
+    RAISE EXCEPTION 'no version table %', p_physical;
+  END IF;
+  SELECT c.relkind INTO kind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'workspace' AND c.relname = p_name;
+  IF kind = 'r' THEN
+    IF p_legacy IS NULL OR p_legacy !~ version_name OR p_legacy = p_physical THEN
+      RAISE EXCEPTION 'a table stands where the view goes: name the version it becomes';
+    END IF;
+    EXECUTE format('ALTER TABLE workspace.%I RENAME TO %I', p_name, p_legacy);
+    renamed := true;
+  ELSIF kind IS NOT NULL AND kind <> 'v' THEN
+    RAISE EXCEPTION 'workspace.% is neither a table nor a view', p_name;
+  END IF;
+  BEGIN
+    EXECUTE format('CREATE OR REPLACE VIEW workspace.%I AS SELECT * FROM workspace.%I', p_name, p_physical);
+  EXCEPTION WHEN invalid_table_definition THEN
+    -- A version that lost or retyped a column cannot replace the view in place. Dropping it fails,
+    -- and the run with it, when something depends on the view: nothing is dropped behind a reader.
+    EXECUTE format('DROP VIEW workspace.%I', p_name);
+    EXECUTE format('CREATE VIEW workspace.%I AS SELECT * FROM workspace.%I', p_name, p_physical);
+  END;
+  EXECUTE format('GRANT SELECT ON TABLE workspace.%I TO svc_query', p_name);
+  RETURN renamed;
+END
+$fn$;
+ALTER FUNCTION public.da_swap_version(text, text, text) OWNER TO da_owner;
+GRANT EXECUTE ON FUNCTION public.da_swap_version(text, text, text) TO svc_ingest;
 
 -- ─── routines/skill.sql ───
 -- routines/skill.sql: what the skill schema enforces beyond its CHECKs (tab 3b D4, tab 8).

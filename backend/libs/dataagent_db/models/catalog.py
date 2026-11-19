@@ -271,7 +271,9 @@ class DatasetVersion(Base):
         JSONB, nullable=True, comment="So với bản trước: cột thêm, xoá, đổi tên, đổi kiểu"
     )
     change_kind: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'initial'"), comment="initial, additive, breaking"
+        Text,
+        server_default=sql_text("'initial'"),
+        comment="initial, additive, breaking, reload (lượt nạp full tạo phiên bản mới cùng hoặc khác schema, DF-02)",
     )
     proposal_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
