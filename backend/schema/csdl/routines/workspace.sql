@@ -203,10 +203,14 @@ GRANT EXECUTE ON FUNCTION public.da_materialize_upsert(text, jsonb, jsonb, text[
 -- still standing where the view goes (written before versioning) becomes the version it was,
 -- renamed to p_legacy, never dropped. An incremental run calls it on the current version too, to
 -- show the columns it added. Names are checked as da_materialize_upload checks them; a version's
--- name is its base then __v<n>: the name itself when it fits in 55 characters, else its first 46,
--- `_` and 8 hex of the sha256 of the whole name (worker_ingest/versioning.version_base). Not the
--- name cut to 55, which dropped the job id that makes an ingest table's name unique, so two jobs
--- of two organisations could share version tables in the one workspace schema.
+-- name is its base then __v<n>: the name itself when it has 54 characters or fewer, else its first
+-- 38, `_` and 16 hex of the sha256 of the whole name, always 55, so a plain base never equals a
+-- hashed one (worker_ingest/versioning.version_base). Not the name cut to 55, which dropped the job
+-- id that makes an ingest table's name unique, so two jobs of two organisations could share
+-- version tables in the one workspace schema. The workspace schema is shared by every
+-- organisation, so the caller's organisation must be set and no other organisation's dataset may
+-- hold the name, and a name shaped like a version table is refused: its view would stand on
+-- another dataset's version.
 CREATE OR REPLACE FUNCTION public.da_swap_version(
   p_name text,
   p_physical text,
@@ -218,15 +222,24 @@ SET search_path = pg_catalog, public
 AS $fn$
 DECLARE
   kind "char";
+  org uuid;
   base text;
   version_name text;
   renamed boolean := false;
 BEGIN
-  IF p_name !~ '^[a-z][a-z0-9_]{0,62}$' THEN
+  IF p_name !~ '^[a-z][a-z0-9_]{0,62}$' OR p_name ~ '__v[0-9]+$' THEN
     RAISE EXCEPTION 'invalid workspace name';
   END IF;
-  base := CASE WHEN length(p_name) <= 55 THEN p_name
-               ELSE left(p_name, 46) || '_' || left(encode(sha256(convert_to(p_name, 'UTF8')), 'hex'), 8)
+  org := NULLIF(current_setting('app.org_id', true), '')::uuid;
+  IF org IS NULL THEN
+    RAISE EXCEPTION 'no organisation set for this session';
+  END IF;
+  IF EXISTS (SELECT 1 FROM catalog.dataset d WHERE d.schema_name = 'workspace'
+             AND d.table_name = p_name AND d.org_id <> org) THEN
+    RAISE EXCEPTION 'workspace.% belongs to another organisation', p_name;
+  END IF;
+  base := CASE WHEN length(p_name) <= 54 THEN p_name
+               ELSE left(p_name, 38) || '_' || left(encode(sha256(convert_to(p_name, 'UTF8')), 'hex'), 16)
           END;
   -- base is [a-z0-9_] only, so it is safe inside the pattern.
   version_name := '^' || base || '__v[0-9]{1,5}$';

@@ -901,16 +901,23 @@ def test_a_migrated_cluster_swaps_versions_and_takes_a_reload(admin):
         cur.execute("CREATE TABLE workspace.sales__v1 (n int)")
         cur.execute("INSERT INTO workspace.sales__v1 VALUES (1), (2)")
         cur.execute("RESET ROLE")
+        with pytest.raises(psycopg2.errors.RaiseException, match="organisation"):
+            cur.execute("SELECT public.da_swap_version('sales', 'sales__v1')")
+        # v3_0043: the caller's organisation is set, as scoped_session sets it.
+        cur.execute("SELECT set_config('app.org_id', %s, false)", (str(uuid.uuid4()),))
         cur.execute("SELECT public.da_swap_version('sales', 'sales__v1')")
         cur.execute("SELECT count(*) FROM workspace.sales")
         assert cur.fetchone() == (2,)
         for physical in ("other__v1", "sales__v123456", "sales"):
             with pytest.raises(psycopg2.errors.RaiseException):
                 cur.execute("SELECT public.da_swap_version('sales', %s)", (physical,))
-        # v3_0042: a name past 55 characters keeps its identity in its versions' base, so the
-        # name cut to 55, shared by every job whose stem starts alike, is refused.
+        # A name shaped like a version table would put its view on another dataset's version.
+        with pytest.raises(psycopg2.errors.RaiseException, match="invalid workspace name"):
+            cur.execute("SELECT public.da_swap_version('sales__v1', 'sales__v1__v1')")
+        # v3_0042, v3_0043: a name past 54 characters keeps its identity in its versions' base, so
+        # the name cut to 55, shared by every job whose stem starts alike, is refused.
         long = "ingest_" + "a" * 45 + "_deadbeef"
-        base = long[:46] + "_" + hashlib.sha256(long.encode()).hexdigest()[:8]
+        base = long[:38] + "_" + hashlib.sha256(long.encode()).hexdigest()[:16]
         cur.execute("SET ROLE da_owner")
         cur.execute(f"CREATE TABLE workspace.{long[:55]}__v1 (n int)")
         cur.execute(f"CREATE TABLE workspace.{base}__v1 (n int)")

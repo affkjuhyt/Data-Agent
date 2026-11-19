@@ -36,18 +36,22 @@ BASE_CHARS = 55
 MAX_VERSION = 99_999
 
 
+DIGEST_CHARS = 16
+
+
 def version_base(table_name: str) -> str:
-    """The stem every version of `table_name` shares, unique to it: the name itself when it fits
-    in 55 characters, else its first 46, `_` and 8 hex of the sha256 of the whole name.
+    """The stem every version of `table_name` shares, unique to it: the name itself when it has 54
+    characters or fewer, else its first 38, `_` and 16 hex of the sha256 of the whole name, always
+    55 characters, so a plain stem never equals a hashed one.
 
     Not the name cut to 55: an ingest table is `ingest_<stem, 45>_<job id, 8 hex>`, and the cut
     dropped most of the job id, so two long-named jobs, of two organisations as well, shared their
-    version tables in the one workspace schema (security review of 5d59b877).
+    version tables in the one workspace schema (security reviews of 5d59b877 and ba8fee4c).
     public.da_swap_version derives the same stem and refuses any other."""
-    if len(table_name) <= BASE_CHARS:
+    if len(table_name) < BASE_CHARS:
         return table_name
-    digest = hashlib.sha256(table_name.encode()).hexdigest()[:8]
-    return f"{table_name[: BASE_CHARS - 9]}_{digest}"
+    digest = hashlib.sha256(table_name.encode()).hexdigest()[:DIGEST_CHARS]
+    return f"{table_name[: BASE_CHARS - DIGEST_CHARS - 1]}_{digest}"
 
 
 def physical_name(table_name: str, version: int) -> str:
