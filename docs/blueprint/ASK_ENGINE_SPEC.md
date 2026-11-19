@@ -139,9 +139,10 @@ Logging/metrics: counter `ask_route_total{path,reason}`; histogram `ask_turn_sec
   `understand/asked.py`, và `_understand_and_plan` cũng dùng nó.
 - `knowledge` của pack là chế độ thời điểm (số đã nộp hay hiện tại), không phải "hỏi tài liệu". Ý định tài liệu là
   trường mới `documents` của pack. `≥ 2 metric` = `Understanding.named_metrics` (resolver đếm metric được gọi tên).
-- Lý do: `RESOLVED`, `AMBIGUOUS`, `UNCATALOGUED` → governed; `WHY`, `MULTI_METRIC`, `HYBRID`, `DOC_ONLY`, `DEEP`
-  → agent; `FORBIDDEN`, `GONE` → governed (nó trả lời từ chối). `ASK_ENGINE=router` (mặc định) | `agentic` (agent
-  trước mọi câu, như trước AE-01: đường lui) | `governed`. Đếm ở `dataagent_ask_route_total{path,reason}`.
+- Lý do: `RESOLVED` → governed; `AMBIGUOUS` → governed (cho tới khi planner hỏi lại với candidate metric đã
+  certified); `UNCATALOGUED` → agentic (planner trả lời câu không phải số từ corpus); `WHY`, `MULTI_METRIC`, `HYBRID`,
+  `DOC_ONLY`, `DEEP` → agent; `FORBIDDEN`, `GONE` → governed (nó trả lời từ chối). `ASK_ENGINE=router` (mặc định) |
+  `agentic` (agent trước mọi câu, như trước AE-01: đường lui) | `governed`. Đếm ở `dataagent_ask_route_total{path,reason}`.
 - `MULTI_METRIC` chỉ khi hai metric hoà điểm **và** câu nối chúng (trường `joins` của pack: và, với, so sánh; and,
   vs). DS-AW aw057/aw058 "Doanh số Trade Sales theo ngân sách" gọi tên hai metric nhưng hỏi một; agent sai cả hai.
 - Đo 19/11 (DS-AW, 61 câu): 61 → governed; `agent-eval --engines router` 49/61, trùng từng câu với governed;
