@@ -813,10 +813,11 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
         event, question_id, secrets=secrets(), workspace_source=_internal_workspace_source
     ):
         return
-    # The router (router.py, AE-01) sends a question to the dynamic agent (agentic/engine.py) only
-    # when it is more than one certified metric can answer; the agent hands it back untouched when
-    # there is no model or the model fails before planning. An edited plan and an eval run's
-    # narrowed data scope are this path's contracts and never go to the agent.
+    # The router (router.py, AE-01) sends a question to the dynamic agent (agentic/engine.py) when
+    # it is more than one certified metric can answer; the agent also runs when the rules place no
+    # certified metric. The agent hands it back untouched when there is no model or the model fails
+    # before planning. An edited plan and an eval run's narrowed data scope are this path's
+    # contracts and never go to the agent.
     if edited_plan_id is None and not event.payload.get("data_scope"):
         from services.worker_agent import router
         from services.worker_agent.agentic import engine

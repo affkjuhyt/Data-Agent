@@ -133,7 +133,8 @@ Logging/metrics: counter `ask_route_total{path,reason}`; histogram `ask_turn_sec
 #### Đã làm (AE-01, 19/11/2026): khác thiết kế ở đâu
 
 - `router.py` chỉ quyết **agent có chạy trước hay không**. Các nhánh `clarify`, `explore`, `refuse` vẫn là của
-  đường governed như hiện có (clarify của resolver, model reader → analyst → SQL khám phá → tài liệu, từ chối quyền).
+  đường governed như hiện có (clarify của resolver, model reader → analyst → SQL khám phá → tài liệu, từ chối quyền);
+  câu mà luật không đặt là planner, không phải chuỗi governed đó.
   Vì vậy `RouteDecision` rút gọn thành `Route(path ∈ {governed, agentic}, reason)`. `Budget` thuộc AE-02.
 - Router đọc câu hỏi **đúng như đường governed**: phần bóc so sánh, grain, phân tích, điều kiện chuyển sang
   `understand/asked.py`, và `_understand_and_plan` cũng dùng nó.

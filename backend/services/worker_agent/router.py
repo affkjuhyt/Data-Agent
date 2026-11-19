@@ -3,11 +3,9 @@ answers a question, decided by rules before any model is called.
 
 Measured on DS-AW (12 and 16/11/2026): the governed path answered the first 20 questions 20/20 in
 2.3 s and 536 tokens, the dynamic agent 14 to 17/20 in 16 s and 22.6k tokens, and the misses were
-the agent over-answering single-metric questions. So a question the rule pass places on one
-certified metric goes to the governed path, which also asks back when the reading is ambiguous
-and falls back on the model reader, the analyst pass, exploratory SQL and the documents when it
-places none. The agent gets what that path does not do: "why" a metric moved, two metrics at
-once, a question that wants the documents too, a documents question, and a turn asked to go deep.
+the agent over-answering single-metric questions. A question the rules place on one certified
+metric stays governed; an ambiguous reading stays governed; a question the rules do not place
+goes to the planner (agentic, UNCATALOGUED).
 
 The reading is the governed path's own (understand/asked.py, then the rule resolver), so the
 router never routes on a reading the answer does not use. No model, no write: a route is a log
