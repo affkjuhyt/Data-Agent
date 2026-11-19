@@ -32,6 +32,7 @@ from libs.dataagent_db.models import org
 from services.worker_agent import (
     agent_evals,
     audit_exports,
+    dead_letter,
     derived,
     eval_runs,
     exports,
@@ -110,15 +111,27 @@ SERVICE = "worker-agent"
 async def run_once(source: EventSource, handlers: Mapping[str, Handler], batch: int = BATCH) -> int:
     """Claim one batch and handle it; returns how many events were handled."""
     async with source.claim(batch) as events:
+        # PL-02: an outbox claim settles each event on its own (libs/dataagent_db/outbox_relay):
+        # a handler that raises is recorded and retried later, and the next event runs. A source
+        # without `fail` keeps the old meaning: the error leaves the whole batch for the next claim.
+        fail = getattr(events, "fail", None)
         for event in events:
-            # What the handler writes for a person (a number, a chip, a refusal's sentence) is in
-            # the organisation's locale (GEN-41).
-            with language.use_locale(await org_locale(event.org_id)):
-                # Within one claim a failure aborts the batch: nothing is acknowledged and the
-                # events come back on the next claim, already-handled ones as no-ops.
-                await metrics.timed_event(
-                    SERVICE, event.event_type, partial(handlers[event.event_type], event)
+            try:
+                # What the handler writes for a person (a number, a chip, a refusal's sentence) is
+                # in the organisation's locale (GEN-41).
+                with language.use_locale(await org_locale(event.org_id)):
+                    await metrics.timed_event(
+                        SERVICE, event.event_type, partial(handlers[event.event_type], event)
+                    )
+            except Exception as error:
+                if fail is None:
+                    raise
+                logger.exception(
+                    "worker-agent | %s %s failed; recorded for a later try",
+                    event.event_type,
+                    event.event_id,
                 )
+                fail(event.event_id, error)
         return len(events)
 
 
@@ -139,6 +152,7 @@ HANDLERS: dict[str, Handler] = {
     **exports.HANDLERS,
     **liked.HANDLERS,
     **runs.HANDLERS,
+    **dead_letter.HANDLERS,
     **agent_evals.HANDLERS,
     **skill_runs.HANDLERS,
     **policy_backtests.HANDLERS,
@@ -201,6 +215,9 @@ async def sources() -> list[EventSource]:
             types |= set(policy_backtests.HANDLERS)
         if schema == "eval":
             types |= set(eval_runs.HANDLERS)
+        if schema == "integration":
+            # PL-02: the relay's notice of an event that died (dead_letter.py).
+            types |= set(dead_letter.HANDLERS)
         if schema == "workspace":
             # session_report.status_changed is claimed whatever its status (publish, approval):
             # nothing else consumes it yet, and session_reports acts on `checking` alone.

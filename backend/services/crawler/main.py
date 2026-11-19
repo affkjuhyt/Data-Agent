@@ -37,7 +37,12 @@ async def run(stop: asyncio.Event) -> None:
             # One run per claim: a run can take minutes at one request per second.
             async with source.claim(1) as events:
                 for event in events:
-                    await HANDLERS[event.event_type](event, store)
+                    # PL-02: a failed event is recorded and retried later; the next one runs.
+                    try:
+                        await HANDLERS[event.event_type](event, store)
+                    except Exception as error:
+                        log.exception("crawler | %s %s failed", event.event_type, event.event_id)
+                        events.fail(event.event_id, error)
                 handled = len(events)
         except Exception:
             log.exception("crawler batch failed")

@@ -220,8 +220,13 @@ async def test_an_error_while_understanding_ends_that_step_failed(
     monkeypatch.setattr(turn_trace, "publish", publish)
     monkeypatch.setattr(questions, "_understand_and_plan", broken)
     asked = ask(seed)
-    with pytest.raises(RuntimeError):
-        await run_once(source(), HANDLERS, batch=50)
+    # PL-02: the error no longer leaves the loop; it is recorded on the event, retried later.
+    await run_once(source(), HANDLERS, batch=50)
     understand = [e for e in published if e.get("action") == "understand"]
     assert [e["status"] for e in understand] == ["running", "failed"]
     assert seed.one("SELECT count(*) FROM agent.agent_run WHERE org_id = %s", asked.org) == 1
+    assert seed.all(
+        "SELECT attempts, last_error FROM qa.outbox WHERE org_id = %s"
+        " AND event_type = 'question.received'",
+        asked.org,
+    ) == [(1, "RuntimeError: catalogue unreadable")]

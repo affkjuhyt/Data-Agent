@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 from sqlalchemy import text
 
-from libs.dataagent_db import unscoped_session
+from libs.dataagent_db import outbox_relay, unscoped_session
 
 
 @dataclass(frozen=True)
@@ -35,20 +35,20 @@ class OutboxTableSource:
         self._types = sorted(event_types)
 
     @asynccontextmanager
-    async def claim(self, batch: int) -> AsyncIterator[list[Event]]:
+    async def claim(self, batch: int) -> AsyncIterator[outbox_relay.Claimed[Event]]:
         async with unscoped_session("svc_outbox_relay") as session:
             rows = (
                 await session.execute(
                     text(
                         "SELECT id, org_id, event_type, aggregate_type, aggregate_id, payload "
-                        "FROM ingest.outbox WHERE published_at IS NULL "
+                        f"FROM ingest.outbox WHERE {outbox_relay.DUE} "
                         "AND event_type = ANY(:types) ORDER BY created_at LIMIT :batch "
                         "FOR UPDATE SKIP LOCKED"
                     ),
                     {"types": self._types, "batch": batch},
                 )
             ).all()
-            events = [
+            events = outbox_relay.Claimed(
                 Event(
                     r.id,
                     r.org_id,
@@ -58,10 +58,10 @@ class OutboxTableSource:
                     dict(r.payload or {}),
                 )
                 for r in rows
-            ]
+            )
             yield events
             if events:
-                await session.execute(
-                    text("UPDATE ingest.outbox SET published_at = now() WHERE id = ANY(:ids)"),
-                    {"ids": [event.event_id for event in events]},
+                # PL-02: each event on its own (libs/dataagent_db/outbox_relay).
+                await outbox_relay.settle(
+                    session, "ingest", [e.event_id for e in events], events.failures
                 )

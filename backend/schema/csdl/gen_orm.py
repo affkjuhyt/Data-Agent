@@ -49,6 +49,11 @@ OUTBOX = [
     ("payload", "jsonb", True, "'{}'"),
     ("created_at", "timestamptz", True, "now()"),
     ("published_at", "timestamptz", False, None),
+    # PL-02, gen_ddl.OUTBOX_COLUMNS: the relay's record of failed tries.
+    ("attempts", "integer", True, "0"),
+    ("last_error", "text", False, None),
+    ("next_attempt_at", "timestamptz", False, None),
+    ("dead_at", "timestamptz", False, None),
 ]
 
 

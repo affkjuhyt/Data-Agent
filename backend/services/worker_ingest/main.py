@@ -25,9 +25,16 @@ async def run(stop: asyncio.Event) -> None:
         try:
             async with source.claim(int(os.environ.get("WORKER_INGEST_BATCH", "10"))) as events:
                 for event in events:
-                    await metrics.timed_event(
-                        SERVICE, event.event_type, partial(HANDLERS[event.event_type], event)
-                    )
+                    # PL-02: a failed event is recorded and retried later; the next one runs.
+                    try:
+                        await metrics.timed_event(
+                            SERVICE, event.event_type, partial(HANDLERS[event.event_type], event)
+                        )
+                    except Exception as error:
+                        logging.getLogger(__name__).exception(
+                            "worker-ingest | %s %s failed", event.event_type, event.event_id
+                        )
+                        events.fail(event.event_id, error)
                 handled = len(events)
         except Exception:
             logging.getLogger(__name__).exception("worker-ingest batch failed")

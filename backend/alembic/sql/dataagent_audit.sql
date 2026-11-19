@@ -158,16 +158,21 @@ CREATE TABLE audit.outbox (
   payload jsonb NOT NULL DEFAULT '{}',
   created_at timestamptz NOT NULL DEFAULT now(),
   published_at timestamptz,
+  attempts integer NOT NULL DEFAULT 0,
+  last_error text,
+  next_attempt_at timestamptz,
+  dead_at timestamptz,
   CONSTRAINT outbox_pkey PRIMARY KEY (id)
 );
 COMMENT ON TABLE audit.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka (D5.3), ghi cùng giao dịch với thay đổi nghiệp vụ.';
-CREATE INDEX outbox_unpublished_idx ON audit.outbox (created_at) WHERE published_at IS NULL;
+CREATE INDEX outbox_unpublished_idx ON audit.outbox (created_at) WHERE published_at IS NULL AND dead_at IS NULL;
 ALTER TABLE audit.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON audit.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 GRANT USAGE ON SCHEMA audit TO svc_outbox_relay;
-GRANT SELECT, UPDATE (published_at) ON audit.outbox TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at, attempts, last_error, next_attempt_at, dead_at) ON audit.outbox TO svc_outbox_relay;
 CREATE POLICY outbox_relay_read ON audit.outbox FOR SELECT TO svc_outbox_relay USING (true);
 CREATE POLICY outbox_relay_publish ON audit.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
+CREATE POLICY outbox_relay_retry ON audit.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL AND dead_at IS NULL) WITH CHECK (published_at IS NULL);
 CREATE INDEX audit_log_actor_id_occurred_at_idx ON audit.audit_log (actor_id, occurred_at);
 CREATE INDEX audit_log_object_kind_object_id_idx ON audit.audit_log (object_kind, object_id);
 CREATE INDEX audit_log_org_id_seq_idx ON audit.audit_log (org_id, seq);

@@ -510,7 +510,30 @@ worker-agent handles `question.received` (qa), `hitl.resolved` (inbox), `writeba
 
 ```sql
 -- what is waiting in one schema (should be ~0 and drain within seconds)
-SELECT event_type, count(*), min(created_at) FROM qa.outbox WHERE published_at IS NULL GROUP BY 1;
+SELECT event_type, count(*), min(created_at) FROM qa.outbox
+WHERE published_at IS NULL AND dead_at IS NULL GROUP BY 1;
+```
+
+**A handler that fails** (PL-02, `libs/dataagent_db/outbox_relay.py`, every relay: worker-agent,
+worker-ingest, worker-document, crawler) no longer holds its batch. The event is settled on its own:
+`attempts` + 1, `last_error`, and not claimed again before `next_attempt_at` (5, 15, 60, 180
+minutes); the events behind it go on. At the fifth failure it is **dead** (`dead_at`): never claimed
+again, written as `outbox.dead_letter` on `integration.outbox`, and worker-agent tells each admin
+of the organisation once (`notify.notification`, kind `system`, high priority) and counts it
+(`dataagent_outbox_dead_total`). The audit database has no `integration.outbox`: a dead audit event
+is logged and counted only.
+
+```sql
+-- dead events of one organisation (the view keeps to app.org_id, whoever reads it)
+SET app.org_id = '<org id>';
+SELECT schema_name, event_type, attempts, last_error, dead_at FROM integration.v_outbox_dead;
+
+-- events failing but not dead yet
+SELECT event_type, attempts, next_attempt_at, last_error FROM qa.outbox
+WHERE published_at IS NULL AND attempts > 0 AND dead_at IS NULL;
+
+-- retry a dead event once its cause is fixed (it is claimed at the next poll)
+UPDATE qa.outbox SET dead_at = NULL, attempts = 0, next_attempt_at = NULL WHERE id = '<event id>';
 ```
 
 ## 10c. Nightly eval runs

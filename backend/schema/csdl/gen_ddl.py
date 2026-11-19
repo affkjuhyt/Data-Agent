@@ -28,7 +28,15 @@ OUTBOX_COLUMNS = [
     ("payload", "jsonb NOT NULL DEFAULT '{}'"),
     ("created_at", "timestamptz NOT NULL DEFAULT now()"),
     ("published_at", "timestamptz"),
+    # PL-02: a handler that fails is retried with a backoff and, after DEAD_AFTER failures, left
+    # dead with its last error, instead of blocking its batch and coming back forever.
+    ("attempts", "integer NOT NULL DEFAULT 0"),
+    ("last_error", "text"),
+    ("next_attempt_at", "timestamptz"),
+    ("dead_at", "timestamptz"),
 ]
+# The relay's own columns: what it may write on a row it claimed.
+RELAY_COLUMNS = "published_at, attempts, last_error, next_attempt_at, dead_at"
 ORG_GUC = "NULLIF(current_setting('app.org_id', true), '')::uuid"
 
 
@@ -157,19 +165,49 @@ def outbox(schema: str) -> list[str]:
     return [
         f"CREATE TABLE {qn} (\n{cols},\n  CONSTRAINT outbox_pkey PRIMARY KEY (id)\n);",
         f"COMMENT ON TABLE {qn} IS 'Sự kiện chờ Debezium đẩy sang Kafka (D5.3), ghi cùng giao dịch với thay đổi nghiệp vụ.';",
-        f"CREATE INDEX outbox_unpublished_idx ON {qn} (created_at) WHERE published_at IS NULL;",
+        f"CREATE INDEX outbox_unpublished_idx ON {qn} (created_at)"
+        " WHERE published_at IS NULL AND dead_at IS NULL;",
         f"ALTER TABLE {qn} ENABLE ROW LEVEL SECURITY;",
         f"CREATE POLICY org_isolation ON {qn} USING (org_id = {ORG_GUC}) WITH CHECK (org_id = {ORG_GUC});",
         # exec: every table, its outbox included, is FORCE RLS (D4.24, D5.1).
         *([f"ALTER TABLE {qn} FORCE ROW LEVEL SECURITY;"] if schema == "exec" else []),
         # Debezium reads outbox rows from the WAL, past RLS (ADR-06). Until it runs, a polling
         # relay publishes them: it sees every organisation's outbox rows, may only mark one
-        # published, and has no grant on any other table.
+        # published or record a failed try on one not yet published nor dead (PL-02), and has no
+        # grant on any other table.
         f"GRANT USAGE ON SCHEMA {schema} TO svc_outbox_relay;",
-        f"GRANT SELECT, UPDATE (published_at) ON {qn} TO svc_outbox_relay;",
+        f"GRANT SELECT, UPDATE ({RELAY_COLUMNS}) ON {qn} TO svc_outbox_relay;",
         f"CREATE POLICY outbox_relay_read ON {qn} FOR SELECT TO svc_outbox_relay USING (true);",
         f"CREATE POLICY outbox_relay_publish ON {qn} FOR UPDATE TO svc_outbox_relay "
         "USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);",
+        f"CREATE POLICY outbox_relay_retry ON {qn} FOR UPDATE TO svc_outbox_relay "
+        "USING (published_at IS NULL AND dead_at IS NULL) WITH CHECK (published_at IS NULL);",
+        # PL-02: an event that died is announced on integration.outbox, the only insert the relay
+        # may make anywhere, and only of that event (worker_agent/ops/dead_letter.py reads it).
+        *(
+            [
+                f"GRANT INSERT ON {qn} TO svc_outbox_relay;",
+                f"CREATE POLICY outbox_relay_dead_letter ON {qn} FOR INSERT TO svc_outbox_relay "
+                "WITH CHECK (event_type = 'outbox.dead_letter');",
+            ]
+            if schema == "integration"
+            else []
+        ),
+    ]
+
+
+def dead_outbox_view(schemas: list[str]) -> list[str]:
+    """integration.v_outbox_dead (PL-02): every dead event of the organisation, for the Ops screen.
+    Owner's rights read the 22 outboxes; the filter on app.org_id keeps it to the caller's."""
+    union = "\n  UNION ALL\n".join(
+        f"  SELECT '{s}' AS schema_name, id, org_id, aggregate_type, aggregate_id, event_type,"
+        f" attempts, last_error, created_at, dead_at FROM {s}.outbox WHERE dead_at IS NOT NULL"
+        f" AND org_id = {ORG_GUC}"
+        for s in schemas
+    )
+    return [
+        f"CREATE VIEW integration.v_outbox_dead AS\n{union};",
+        "GRANT SELECT ON integration.v_outbox_dead TO svc_integration, integration_read;",
     ]
 
 
@@ -311,6 +349,8 @@ def build(d: dict, database: str) -> str:
     out.append("")
     for s in schemas:
         out += grants(s, [t for t in tables if t["schema"] == s], True)
+    if "integration" in schemas:
+        out += dead_outbox_view(schemas)
     out.append("")
     for s in schemas:
         body = routine(s)

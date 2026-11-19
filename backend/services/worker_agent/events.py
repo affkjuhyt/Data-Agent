@@ -24,7 +24,7 @@ from typing import Any, Protocol
 
 from sqlalchemy import text
 
-from libs.dataagent_db import unscoped_session
+from libs.dataagent_db import outbox_relay, unscoped_session
 
 
 @dataclass(frozen=True)
@@ -56,24 +56,21 @@ class OutboxTableSource:
         self._role = role
 
     @asynccontextmanager
-    async def claim(self, batch: int) -> AsyncIterator[list[Event]]:
+    async def claim(self, batch: int) -> AsyncIterator[outbox_relay.Claimed[Event]]:
         # The schema name is ours, never input: it is formatted, the rest is bound.
         # A row whose payload names `not_before` is a durable timer (runs.py: reminders, the
         # waiting timeout, retries): it stays unclaimed until then (tab 5 G1.1, until Temporal).
         claim_sql = text(
             f"SELECT id, org_id, event_type, aggregate_type, aggregate_id, payload "
             f"FROM {self._schema}.outbox "
-            f"WHERE published_at IS NULL AND event_type = ANY(:types) "
+            f"WHERE {outbox_relay.DUE} AND event_type = ANY(:types) "
             f"AND (payload->>'not_before' IS NULL "
             f"OR (payload->>'not_before')::timestamptz <= now()) "
             f"ORDER BY created_at LIMIT :batch FOR UPDATE SKIP LOCKED"
         )
-        ack_sql = text(
-            f"UPDATE {self._schema}.outbox SET published_at = now() WHERE id = ANY(:ids)"
-        )
         async with unscoped_session(self._role) as session:
             rows = (await session.execute(claim_sql, {"types": self._types, "batch": batch})).all()
-            events = [
+            events = outbox_relay.Claimed(
                 Event(
                     event_id=r.id,
                     org_id=r.org_id,
@@ -83,7 +80,14 @@ class OutboxTableSource:
                     payload=dict(r.payload or {}),
                 )
                 for r in rows
-            ]
+            )
             yield events
             if events:
-                await session.execute(ack_sql, {"ids": [e.event_id for e in events]})
+                # PL-02: each event on its own; the audit database has no integration.outbox.
+                await outbox_relay.settle(
+                    session,
+                    self._schema,
+                    [e.event_id for e in events],
+                    events.failures,
+                    dead_letter=self._schema != "audit",
+                )

@@ -55,6 +55,11 @@ EVENT_SECONDS = Histogram(
     ["service", "event_type"],
     buckets=BUCKETS,
 )
+OUTBOX_DEAD = Counter(
+    "dataagent_outbox_dead_total",
+    "Outbox events left dead after their last failed try (PL-02), by schema and event type.",
+    ["schema", "event_type"],
+)
 LAST_POLL = Gauge(
     "dataagent_worker_last_poll_timestamp_seconds",
     "When the worker last finished a pass over its sources: a stale value is a stuck loop.",
