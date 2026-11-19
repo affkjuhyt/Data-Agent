@@ -3107,13 +3107,13 @@ Quy tắc chất lượng trên bảng hoặc cột kèm mức nghiêm trọng. 
 | data\_space\_id | uuid, bắt buộc |  |
 | dataset\_id | uuid, bắt buộc | logic → catalog.dataset |
 | column\_name | text |  |
-| kind | text, bắt buộc | not\_null, range, unique, in\_list, sum\_matches, freshness, custom\_sql |
-| params | jsonb, bắt buộc, mặc định '{}' |  |
+| kind | text, bắt buộc | not\_null, range, unique, in\_list, sum\_matches, freshness, custom\_sql, compound\_unique, match\_regex (DF-07: mỗi kind một expectation GX, libs/quality\_vocab) |
+| params | jsonb, bắt buộc, mặc định '{}' | Tham số của kind; chung: mostly (0 tới 1), row\_condition (cột so hằng nối AND) |
 | severity | text, bắt buộc, mặc định 'medium' | high (chặn báo cáo, BR-116), medium, low |
 | origin | text, bắt buộc, mặc định 'manual' | manual, agent\_suggested |
 | status | text, bắt buộc, mặc định 'active' | draft, active, disabled |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('not\_null','range','unique','in\_list','sum\_matches','freshness','custom\_sql')); CHECK (severity IN ('high','medium','low')); CHECK (origin IN ('manual','agent\_suggested')); CHECK (status IN ('draft','active','disabled')). Chỉ mục: (dataset\_id) WHERE status = 'active'.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('not\_null','range','unique','in\_list','sum\_matches','freshness','custom\_sql','compound\_unique','match\_regex')); CHECK (severity IN ('high','medium','low')); CHECK (origin IN ('manual','agent\_suggested')); CHECK (status IN ('draft','active','disabled')). Chỉ mục: (dataset\_id) WHERE status = 'active'.
 
 #### ingest.quality\_result
 
@@ -3127,6 +3127,7 @@ Kết quả một lần chạy quy tắc chất lượng sau nạp hoặc pipeli
 | passed | boolean, bắt buộc |  |
 | violations | bigint, bắt buộc, mặc định 0 |  |
 | sample\_ref | text | Mẫu dòng vi phạm, đã che |
+| result | jsonb | Kết quả dạng GX: expectation, success, element\_count, unexpected\_count, unexpected\_percent, mostly (DF-07, thêm 20/11/2026) |
 | acknowledged\_by | uuid | Người xác nhận dùng tiếp khi vi phạm mức cao |
 | acknowledged\_at | timestamptz | Thêm 12/10/2026 |
 | acknowledged\_note | text | Lý do dùng tiếp, bắt buộc khi có acknowledged\_by (BR-116, thêm 12/10/2026) |

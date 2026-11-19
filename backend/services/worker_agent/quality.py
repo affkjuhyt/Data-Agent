@@ -13,7 +13,15 @@ warning while another fails, ok when all pass.
 - in_list: rows whose value is not one of params.values;
 - sum_matches: 1 when the column's total is off params.expected by more than params.tolerance;
 - freshness: 1 when the newest value of the column is older than params.max_age_hours;
-- custom_sql: the rows params.sql returns (a query that selects the violating rows).
+- custom_sql: the rows params.sql returns (a query that selects the violating rows);
+- compound_unique (DF-07): rows beyond the first of each key over params.columns;
+- match_regex (DF-07): values that do not match params.regex.
+
+DF-07: each kind is one expectation of GX's vocabulary (libs/quality_vocab), and its result is
+kept in GX's shape (quality_result.result). A rule that counts rows takes `mostly` (it passes
+while at most 1 - mostly of the rows it looks at break it; the check then also counts those rows,
+`total`) and `row_condition` (the rows it looks at, compiled by sqlglot from columns compared with
+constants). Without either, a rule reads and judges exactly as before.
 
 quality_rule.created runs the new rule at once (the dry run of UC-06-07 step 2), and
 quality_rule.updated runs it again while it is active; the scheduler runs every active rule once a
@@ -32,6 +40,7 @@ import sqlglot
 from sqlalchemy import select, update
 from sqlglot import exp
 
+from libs import quality_vocab
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, ingest, org
 from libs.sql_guard import SqlRejected, dialect_of
@@ -52,6 +61,8 @@ KIND_TEXT = {
     "sum_matches": "khớp tổng",
     "freshness": "đủ mới",
     "custom_sql": "SQL riêng",
+    "compound_unique": "không trùng theo khoá",
+    "match_regex": "đúng mẫu",
 }
 
 
@@ -105,6 +116,87 @@ def _freshness_sql(rule: ingest.QualityRule, table: str) -> exp.Select:
 
 def _postgres_violation_sql(rule: ingest.QualityRule, table: str) -> str:
     p = dict(rule.params or {})
+    if rule.kind in {"compound_unique", "match_regex"} or quality_vocab.mostly(p) is not None:
+        return _counted_sql(rule, table, p)
+    scope = _condition(p)
+    sql = _plain_violation_sql(rule, table, p)
+    if scope is None:
+        return sql
+    # Every older check has one WHERE (unique too); the condition narrows it.
+    if " WHERE " in sql:
+        return f"{sql} AND ({scope})"
+    return f"{sql} WHERE {scope}"
+
+
+def _condition(p: dict[str, Any]) -> str | None:
+    text = p.get("row_condition")
+    return quality_vocab.row_condition(str(text)).sql(dialect="postgres") if text else None
+
+
+def _counted_sql(rule: ingest.QualityRule, table: str, p: dict[str, Any]) -> str:
+    """A DF-07 check: `n` the rows that break the rule, and with `mostly` also `total`, the rows
+    it looks at (the non-null ones for a column check, every one for not_null and a key)."""
+    scope = _condition(p)
+    where = f" WHERE {scope}" if scope else ""
+    and_scope = f" AND ({scope})" if scope else ""
+    counted = quality_vocab.mostly(p) is not None
+    if rule.kind == "compound_unique":
+        columns = p.get("columns")
+        if not isinstance(columns, list) or len(columns) < 2:
+            raise ValueError("a compound_unique rule names two columns or more in columns")
+        key = ", ".join(_ident(str(c)) for c in columns)
+        extra = (
+            f"SELECT coalesce(sum(c - 1), 0) FROM (SELECT count(*) AS c FROM {table}{where}"
+            f" GROUP BY {key} HAVING count(*) > 1) d"
+        )
+        if not counted:
+            return f"SELECT ({extra}) AS n"
+        return f"SELECT ({extra}) AS n, (SELECT count(*) FROM {table}{where}) AS total"
+    if not rule.column_name:
+        raise ValueError(f"a {rule.kind} rule names a column")
+    col = _ident(rule.column_name)
+    if rule.kind == "unique":
+        return (
+            f"SELECT count(*) - count(DISTINCT {col}) AS n, count(*) AS total FROM {table}"
+            f" WHERE {col} IS NOT NULL{and_scope}"
+        )
+    broken = _broken(rule, col, p)
+    total = "count(*)" if rule.kind == "not_null" else f"count({col})"
+    return (
+        f"SELECT coalesce(sum(CASE WHEN {broken} THEN 1 ELSE 0 END), 0) AS n"
+        + (f", {total} AS total" if counted else "")
+        + f" FROM {table}{where}"
+    )
+
+
+def _broken(rule: ingest.QualityRule, col: str, p: dict[str, Any]) -> str:
+    """A row that breaks a column rule, as a condition."""
+    if rule.kind == "not_null":
+        return f"{col} IS NULL"
+    if rule.kind == "range":
+        bounds = []
+        if p.get("min") is not None:
+            bounds.append(f"{col} < {_literal(p['min'])}")
+        if p.get("max") is not None:
+            bounds.append(f"{col} > {_literal(p['max'])}")
+        if not bounds:
+            raise ValueError("a range rule needs min or max")
+        return "(" + " OR ".join(bounds) + ")"
+    if rule.kind == "in_list":
+        values = ", ".join(_literal(str(v)) for v in p.get("values") or [])
+        if not values:
+            raise ValueError("an in_list rule needs values")
+        return f"({col} IS NOT NULL AND CAST({col} AS text) NOT IN ({values}))"
+    if rule.kind == "match_regex":
+        pattern = p.get("regex")
+        if not isinstance(pattern, str) or not pattern:
+            raise ValueError("a match_regex rule has a regex")
+        return f"({col} IS NOT NULL AND NOT (CAST({col} AS text) ~ {_literal(pattern)}))"
+    raise ValueError(f"a {rule.kind} rule does not take mostly")
+
+
+def _plain_violation_sql(rule: ingest.QualityRule, table: str, p: dict[str, Any]) -> str:
+    """The older checks, as they were before DF-07."""
     col = _ident(rule.column_name) if rule.column_name else None
     if col is None:
         raise ValueError(f"a {rule.kind} rule names a column")
@@ -190,6 +282,8 @@ async def evaluate(
     failure: str | None = None  # a fixed category, stored; the detail goes to the log only
     detail: str | None = None
     violations = 0
+    total: int | None = None
+    threshold: float | None = None
     query_run: uuid.UUID | None = None
     if source is None:
         failure = "source unavailable"
@@ -197,6 +291,7 @@ async def evaluate(
         table = f"{_ident(dataset.schema_name)}.{_ident(dataset.table_name)}"
         try:
             sql = violation_sql(rule, table, dialect_of(source.kind))
+            threshold = quality_vocab.mostly(dict(rule.params or {}))
         except (KeyError, ValueError, SqlRejected) as exc:
             failure, detail = "rule incomplete", str(exc)
         else:
@@ -218,7 +313,9 @@ async def evaluate(
                 if principal == author:
                     query_run = outcome.query_run_id
                     violations = int(outcome.rows[0][0] or 0)
-    passed = failure is None and violations == 0
+                    if len(outcome.rows[0]) > 1 and outcome.rows[0][1] is not None:
+                        total = int(outcome.rows[0][1])
+    passed = failure is None and quality_vocab.passes(violations, total, threshold)
     steward = dataset.steward_id
     if not passed and rule.severity == "high" and steward is None:
         async with scoped_session("svc_catalog", org_id, author) as session:
@@ -242,6 +339,17 @@ async def evaluate(
                 passed=passed,
                 violations=violations,
                 sample_ref=f"error: {failure}" if failure else str(query_run),
+                result=(
+                    quality_vocab.result(
+                        rule.kind,
+                        violations=violations,
+                        total=total,
+                        threshold=threshold,
+                        success=passed,
+                    )
+                    if failure is None and rule.kind in quality_vocab.KINDS
+                    else None
+                ),
             )
         )
         if not passed and rule.severity == "high" and before is not False and steward:

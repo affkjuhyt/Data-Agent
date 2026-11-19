@@ -926,3 +926,37 @@ def test_a_migrated_cluster_swaps_versions_and_takes_a_reload(admin):
             cur.execute("SELECT public.da_swap_version(%s, %s)", (long, f"{long[:55]}__v1"))
         cur.execute("SELECT public.da_swap_version(%s, %s)", (long, f"{base}__v1"))
     conn.close()
+
+
+def test_a_migrated_cluster_takes_the_new_expectations(admin):
+    # v3_0044 (20/11/2026, DF-07): two new kinds and a GX-shaped result.
+    _fresh(admin, "chain_df07", "chain_df07_audit")
+    db = _db(admin, "chain_df07")
+    _alembic(db, "upgrade", "v3_0043")
+    # The generated DDL is already at head: put back what a cluster at v3_0043 has.
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("ALTER TABLE ingest.quality_rule DROP CONSTRAINT quality_rule_kind_check")
+        cur.execute(
+            "ALTER TABLE ingest.quality_rule ADD CONSTRAINT quality_rule_kind_check CHECK (kind IN"
+            " ('not_null','range','unique','in_list','sum_matches','freshness','custom_sql'))"
+        )
+        cur.execute("ALTER TABLE ingest.quality_result DROP COLUMN result")
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    definition = _one(
+        db,
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+        " WHERE conname = 'quality_rule_kind_check'",
+    )
+    assert "'compound_unique'" in definition and "'match_regex'" in definition
+    assert (
+        _one(
+            db,
+            "SELECT data_type FROM information_schema.columns"
+            " WHERE table_schema = 'ingest' AND table_name = 'quality_result'"
+            " AND column_name = 'result'",
+        )
+        == "jsonb"
+    )

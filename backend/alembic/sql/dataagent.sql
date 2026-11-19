@@ -5641,14 +5641,15 @@ CREATE TABLE ingest.quality_rule (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT quality_rule_pkey PRIMARY KEY (id),
-  CHECK (kind IN ('not_null','range','unique','in_list','sum_matches','freshness','custom_sql')),
+  CHECK (kind IN ('not_null','range','unique','in_list','sum_matches','freshness','custom_sql','compound_unique','match_regex')),
   CHECK (severity IN ('high','medium','low')),
   CHECK (origin IN ('manual','agent_suggested')),
   CHECK (status IN ('draft','active','disabled'))
 );
 COMMENT ON TABLE ingest.quality_rule IS 'Quy tắc chất lượng trên bảng hoặc cột kèm mức nghiêm trọng. Use case: UC-04-08, UC-06-06, UC-06-07.';
 COMMENT ON COLUMN ingest.quality_rule.dataset_id IS 'logic → catalog.dataset';
-COMMENT ON COLUMN ingest.quality_rule.kind IS 'not_null, range, unique, in_list, sum_matches, freshness, custom_sql';
+COMMENT ON COLUMN ingest.quality_rule.kind IS 'not_null, range, unique, in_list, sum_matches, freshness, custom_sql, compound_unique, match_regex (DF-07: mỗi kind một expectation GX, libs/quality_vocab)';
+COMMENT ON COLUMN ingest.quality_rule.params IS 'Tham số của kind; chung: mostly (0 tới 1), row_condition (cột so hằng nối AND)';
 COMMENT ON COLUMN ingest.quality_rule.severity IS 'high (chặn báo cáo, BR-116), medium, low';
 COMMENT ON COLUMN ingest.quality_rule.origin IS 'manual, agent_suggested';
 COMMENT ON COLUMN ingest.quality_rule.status IS 'draft, active, disabled';
@@ -5662,6 +5663,7 @@ CREATE TABLE ingest.quality_result (
   passed boolean NOT NULL,
   violations bigint NOT NULL DEFAULT 0,
   sample_ref text,
+  result jsonb,
   acknowledged_by uuid,
   acknowledged_at timestamptz,
   acknowledged_note text,
@@ -5674,6 +5676,7 @@ COMMENT ON TABLE ingest.quality_result IS 'Kết quả một lần chạy quy t�
 COMMENT ON COLUMN ingest.quality_result.rule_id IS 'FK quality_rule';
 COMMENT ON COLUMN ingest.quality_result.run_kind IS 'job_run, pipeline_run, scheduled, manual';
 COMMENT ON COLUMN ingest.quality_result.sample_ref IS 'Mẫu dòng vi phạm, đã che';
+COMMENT ON COLUMN ingest.quality_result.result IS 'Kết quả dạng GX: expectation, success, element_count, unexpected_count, unexpected_percent, mostly (DF-07, thêm 20/11/2026)';
 COMMENT ON COLUMN ingest.quality_result.acknowledged_by IS 'Người xác nhận dùng tiếp khi vi phạm mức cao';
 COMMENT ON COLUMN ingest.quality_result.acknowledged_at IS 'Thêm 12/10/2026';
 COMMENT ON COLUMN ingest.quality_result.acknowledged_note IS 'Lý do dùng tiếp, bắt buộc khi có acknowledged_by (BR-116, thêm 12/10/2026)';

@@ -19322,6 +19322,8 @@ export interface components {
             id: string;
             /** Passed */
             passed: boolean;
+            /** Result */
+            result?: unknown;
             /**
              * Rule Id
              * Format: uuid
@@ -19351,7 +19353,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "not_null" | "range" | "unique" | "in_list" | "sum_matches" | "freshness" | "custom_sql";
+            kind: "not_null" | "range" | "unique" | "in_list" | "sum_matches" | "freshness" | "custom_sql" | "compound_unique" | "match_regex";
             /** Params */
             params?: {
                 [key: string]: unknown;

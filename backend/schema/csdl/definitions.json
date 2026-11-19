@@ -26369,7 +26369,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "not_null, range, unique, in_list, sum_matches, freshness, custom_sql",
+     "comment": "not_null, range, unique, in_list, sum_matches, freshness, custom_sql, compound_unique, match_regex (DF-07: mỗi kind một expectation GX, libs/quality_vocab)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -26380,7 +26380,7 @@
      "not_null": true,
      "default": "'{}'",
      "unique": false,
-     "comment": "",
+     "comment": "Tham số của kind; chung: mostly (0 tới 1), row_condition (cột so hằng nối AND)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -26430,7 +26430,7 @@
    "constraints": [
     {
      "kind": "check",
-     "sql": "CHECK (kind IN ('not_null','range','unique','in_list','sum_matches','freshness','custom_sql'))"
+     "sql": "CHECK (kind IN ('not_null','range','unique','in_list','sum_matches','freshness','custom_sql','compound_unique','match_regex'))"
     },
     {
      "kind": "check",
@@ -26530,6 +26530,17 @@
      "default": null,
      "unique": false,
      "comment": "Mẫu dòng vi phạm, đã che",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "result",
+     "type": "jsonb",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Kết quả dạng GX: expectation, success, element_count, unexpected_count, unexpected_percent, mostly (DF-07, thêm 20/11/2026)",
      "fk": null,
      "logic_ref": null,
      "pii": false

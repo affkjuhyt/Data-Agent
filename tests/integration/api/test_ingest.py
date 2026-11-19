@@ -979,6 +979,42 @@ async def test_quality_rules_are_declared_on_a_catalogued_table(ds: Space) -> No
         assert bad_kind.status_code == 422
         forbidden = await api.post("/v1/quality-rules", json=body, headers=ds.headers("analyst"))
         assert forbidden.status_code == 403
+        # DF-07: the new expectations and the parameters every counting rule takes.
+        compound = await api.post(
+            "/v1/quality-rules",
+            json={
+                "dataset_id": str(ds.dataset),
+                "kind": "compound_unique",
+                "params": {"columns": ["ma_kh", "ky"], "mostly": 0.99},
+            },
+            headers=ds.headers("engineer"),
+        )
+        assert compound.status_code == 201, compound.text
+        for params in (
+            {"mostly": 1.5},
+            {"row_condition": "du_no > 0 OR 1 = 1"},
+            {"row_condition": "du_no > (SELECT 1)"},
+        ):
+            refused = await api.post(
+                "/v1/quality-rules",
+                json={**body, "params": params},
+                headers=ds.headers("engineer"),
+            )
+            assert refused.status_code == 422, params
+            assert refused.json()["errors"][0]["field"] == "params"
+        regex = await api.post(
+            "/v1/quality-rules",
+            json={**body, "kind": "match_regex", "params": {"regex": "("}},
+            headers=ds.headers("engineer"),
+        )
+        assert regex.status_code == 422
+        # An edit is held to the same.
+        bad_edit = await api.patch(
+            f"/v1/quality-rules/{rule['id']}",
+            json={"params": {"mostly": 0}},
+            headers=ds.headers("engineer"),
+        )
+        assert bad_edit.status_code == 422
 
         # Reading the rules needs only `ask`.
         listed = await api.get(
@@ -991,7 +1027,7 @@ async def test_quality_rules_are_declared_on_a_catalogued_table(ds: Space) -> No
             params={"dataset_id": str(ds.dataset)},
             headers=ds.headers("analyst"),
         )
-        assert len(by_dataset.json()["items"]) == 2
+        assert len(by_dataset.json()["items"]) == 3
         other = await api.get("/v1/quality-rules", headers=ds.headers("engineer", ds.other))
         assert other.json()["items"] == []
 

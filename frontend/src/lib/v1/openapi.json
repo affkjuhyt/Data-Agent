@@ -34880,6 +34880,9 @@
       "title": "Passed",
       "type": "boolean"
      },
+     "result": {
+      "title": "Result"
+     },
      "rule_id": {
       "format": "uuid",
       "title": "Rule Id",
@@ -34964,7 +34967,9 @@
        "in_list",
        "sum_matches",
        "freshness",
-       "custom_sql"
+       "custom_sql",
+       "compound_unique",
+       "match_regex"
       ],
       "title": "Kind",
       "type": "string"
