@@ -388,6 +388,8 @@ async def _register_dataset(event: Event) -> None:
                 start=start,
                 legacy=legacy,
                 actor=row.uploader_id,
+                kind="upload",
+                run_id=row.id,
             )
         # The columns as materialized, so the semantic layer knows a text month from a date; a
         # later version adds the columns it brought.

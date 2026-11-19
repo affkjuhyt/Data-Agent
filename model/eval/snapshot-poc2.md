@@ -39,5 +39,6 @@ wheel.
 - At ~4 s per million rows, `SNAPSHOT_MAX_ROWS` keeps its 20 000 000 default (~80 s, under the
   120 s budget). The temporary CSV of that many rows is ~5 GB of the pod's disk, which DF-05 must
   give it (an `emptyDir` with a `sizeLimit`) before raising the bar.
-- worker-ingest's memory limit is 256Mi. The writer alone peaks at 179 MiB, but on top of the
-  worker's own memory that is tight: DF-05 raises the limit to 512Mi when it calls the writer.
+- worker-ingest's memory limit is 256Mi, too tight for the writer's 179 MiB on top of the worker.
+  DF-05 therefore takes snapshots in worker-agent (`services/worker_agent/snapshots.py`, on
+  `dataset.version_created`), whose limit went from 512Mi to 768Mi; its request is unchanged.

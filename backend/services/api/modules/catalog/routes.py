@@ -15,7 +15,8 @@ import datetime
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Query, Response
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -79,11 +80,13 @@ from services.api.modules.catalog.schemas import (
     ScheduleUpdate,
     SecretReference,
     SecretRefView,
+    SnapshotView,
     SourceCreate,
     SourcePatch,
     SourceSchedule,
     SourceView,
 )
+from services.api.modules.catalog.snapshot_links import snapshot_links
 from services.api.modules.org import capabilities_of
 
 router = APIRouter()
@@ -1425,12 +1428,66 @@ async def list_dataset_versions(
     async with transaction(ROLE, principal) as session:
         await _dataset(session, principal, space, dataset_id)
         rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
+        more = len(rows) > page.page_size
+        rows = rows[: page.page_size]
+        ds = catalog.DatasetSnapshot
+        snapshots = {
+            s.version: s
+            for s in (
+                await session.scalars(
+                    select(ds).where(
+                        ds.dataset_id == dataset_id, ds.version.in_([r.version for r in rows])
+                    )
+                )
+            ).all()
+        }
+    items = []
+    for r in rows:
+        view = DatasetVersionView.model_validate(r, from_attributes=True)
+        found = snapshots.get(r.version)
+        if found is not None:
+            view.snapshot = SnapshotView.model_validate(found, from_attributes=True)
+        items.append(view)
     return Page(
-        items=[DatasetVersionView.model_validate(r, from_attributes=True) for r in rows],
+        items=items,
         next_page_token=encode_page_token({"version": rows[-1].version} if more else None),
     )
+
+
+@router.get(
+    "/v1/datasets/{id}/versions/{version}/snapshot",
+    response_class=RedirectResponse,
+    status_code=302,
+    **endpoint(
+        "GET", "/v1/datasets/{id}/versions/{version}/snapshot", operation_id="getDatasetSnapshot"
+    ),
+)
+async def get_dataset_snapshot(
+    dataset_id: PathId,
+    version: Annotated[int, Path(ge=1)],
+    request: Request,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+) -> RedirectResponse:
+    """DF-05: the version's Parquet file, as a short signed link; 404 when it was skipped (too
+    many rows, store down) or is not taken yet."""
+    ds = catalog.DatasetSnapshot
+    async with transaction(ROLE, principal) as session:
+        await _dataset(session, principal, space, dataset_id)
+        found = await session.scalar(
+            select(ds).where(ds.dataset_id == dataset_id, ds.version == version)
+        )
+    if found is None or found.status != "ok" or not found.object_key:
+        raise Problem(
+            404,
+            "not_found",
+            "This version has no snapshot file" + (" (skipped)." if found is not None else " yet."),
+        )
+    links = getattr(request.app.state, "snapshot_links", None) or snapshot_links()
+    link = await links.sign(found.object_key)
+    if link is None:
+        raise Problem(503, "source_unavailable", "Snapshot storage is not configured.")
+    return RedirectResponse(link, status_code=302)
 
 
 # --- certification of consolidated versions (BR-156) --------------------------------------------

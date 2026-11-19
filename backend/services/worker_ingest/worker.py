@@ -746,6 +746,19 @@ async def handle(event: Event) -> None:
                         created_by=principal_id,
                     )
                 )
+                if physical is not None:
+                    # DF-05: worker-agent snapshots the version (versioning.announce).
+                    await session.flush()
+                    versioning.announce(
+                        session,
+                        org_id=event.org_id,
+                        dataset_id=dataset_id,
+                        version=version_no,
+                        physical=physical,
+                        kind="job_run",
+                        run_id=run_id,
+                        at=now,
+                    )
             else:
                 if dataset.source_id is None:
                     dataset.source_id = job.source_id
@@ -810,6 +823,17 @@ async def handle(event: Event) -> None:
                 dataset.current_version = version_no
                 await session.flush()
                 await versioning.mark_retention(session, dataset_id, version_no)
+                if physical is not None:
+                    versioning.announce(
+                        session,
+                        org_id=event.org_id,
+                        dataset_id=dataset_id,
+                        version=version_no,
+                        physical=physical,
+                        kind="job_run",
+                        run_id=run_id,
+                        at=now,
+                    )
             if added:
                 if known and not versioned_full:
                     version_no = int(version_no) + 1

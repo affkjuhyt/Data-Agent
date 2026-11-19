@@ -1531,8 +1531,28 @@
    ],
    "body": {},
    "query": [],
-   "returns": "Danh sách DatasetVersion",
+   "returns": "Danh sách DatasetVersion, mỗi phiên bản kèm physical_table, retained_until và snapshot (id, status, sha256, row_count, byte_size, available_at) hoặc null (DF-05)",
    "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/datasets/{id}/versions/{version}/snapshot": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "302 tới đường dẫn ký sẵn 10 phút của tệp Parquet trong da-snapshots",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ],
+    [
+     503,
+     "source_unavailable"
+    ]
+   ],
    "request_text": "—"
   },
   "POST /v1/dataset-versions/{id}:certify": {

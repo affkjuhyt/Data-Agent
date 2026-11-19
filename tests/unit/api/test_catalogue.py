@@ -23,8 +23,9 @@ def test_snapshot_holds_all_of_a2() -> None:
     # Book's propose-to-pack), dropped on 01/11/2026, plus the question cancel and the
     # question steps and the organisation's self-approval switch (02/11/2026), plus defining
     # a forecast model and its job workbench (05/11/2026), plus an ingestion job's dry-run
-    # sample and its schema-drift resolution (12/11/2026).
-    assert len(data["endpoints"]) == 463
+    # sample and its schema-drift resolution (12/11/2026), plus a dataset version's snapshot
+    # file (DF-05, 19/11/2026).
+    assert len(data["endpoints"]) == 464
     assert len(data["groups"]) == 21
     assert {e["group"] for e in data["endpoints"]} == set(data["groups"])
 

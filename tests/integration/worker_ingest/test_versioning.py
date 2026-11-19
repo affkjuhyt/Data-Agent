@@ -128,6 +128,19 @@ async def test_two_full_runs_leave_two_versions_and_the_view_on_the_second(
     # The version before is still there, as it was.
     assert seed.one(f'SELECT count(*) FROM workspace."{v1}"') == 2
     assert _versions(seed, job) == [(1, "initial", v1, True), (2, "reload", v2, False)]
+    # DF-05: each version is announced for its snapshot, with the run that wrote it.
+    announced = seed.all(
+        "SELECT payload FROM catalog.outbox WHERE org_id = %s AND event_type = %s"
+        " ORDER BY created_at",
+        job.org,
+        versioning.VERSION_CREATED,
+    )
+    assert [
+        (a[0]["version"], a[0]["physical_table"], a[0]["created_by_kind"]) for a in announced
+    ] == [
+        (1, v1, "job_run"),
+        (2, v2, "job_run"),
+    ]
     # Readers of the workspace read the view as they read the table.
     assert seed.one("SELECT has_table_privilege('svc_query', %s, 'SELECT')", f"workspace.{name}")
 

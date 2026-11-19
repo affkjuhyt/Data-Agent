@@ -1305,3 +1305,87 @@ async def test_activation_assigns_tables_only_where_the_caller_administers_data(
         )
         denied = await api.post(url, json={"tables": []}, headers=o.headers("analyst"))
         assert denied.status_code == 403
+
+
+class FakeSnapshotLinks:
+    def __init__(self) -> None:
+        self.signed: list[str] = []
+
+    async def sign(self, key: str) -> str | None:
+        self.signed.append(key)
+        return f"https://store.example/{key}?signature=x"
+
+
+@pytest.mark.req("DF-05")
+async def test_a_version_lists_its_snapshot_and_hands_out_its_file(o: Org) -> None:
+    dataset = _dataset(o, None, schema_name="workspace", table_name="p_doanh_thu")
+    for version, valid_to in ((1, "2026-11-02T00:00:00Z"), (2, None)):
+        o.seed.row(
+            "catalog.dataset_version",
+            org_id=o.org,
+            dataset_id=dataset,
+            version=version,
+            schema_hash="h",
+            change_kind="initial" if version == 1 else "reload",
+            valid_from=f"2026-11-0{version}T00:00:00Z",
+            valid_to=valid_to,
+            physical_table=f"p_doanh_thu__v{version}",
+        )
+    key = f"{o.org}/{dataset}/v1/abcdef012345.parquet"
+    o.seed.row(
+        "catalog.dataset_snapshot",
+        org_id=o.org,
+        dataset_id=dataset,
+        version=1,
+        status="ok",
+        object_key=key,
+        sha256="a" * 64,
+        row_count=7,
+        byte_size=1234,
+        columns=Json([]),
+        available_at="2026-11-01T00:00:00Z",
+        created_by_kind="pipeline_run",
+    )
+    o.seed.row(
+        "catalog.dataset_snapshot",
+        org_id=o.org,
+        dataset_id=dataset,
+        version=2,
+        status="skipped",
+        row_count=30_000_000,
+        columns=Json([]),
+        available_at="2026-11-02T00:00:00Z",
+        created_by_kind="pipeline_run",
+    )
+    links = FakeSnapshotLinks()
+    app = create_app(Settings(), token_verifier=Tokens(o))
+    app.state.snapshot_links = links
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://api"
+    ) as api:
+        h = o.headers("analyst")
+        listed = await api.get(f"/v1/datasets/{dataset}/versions", headers=h)
+        assert listed.status_code == 200, listed.text
+        two, one = listed.json()["items"]
+        assert one["physical_table"] == "p_doanh_thu__v1"
+        assert one["snapshot"]["status"] == "ok" and one["snapshot"]["row_count"] == 7
+        assert two["snapshot"]["status"] == "skipped" and two["snapshot"]["sha256"] is None
+
+        got = await api.get(f"/v1/datasets/{dataset}/versions/1/snapshot", headers=h)
+        assert got.status_code == 302
+        assert got.headers["location"] == f"https://store.example/{key}?signature=x"
+        assert links.signed == [key]
+        # Skipped, or not taken yet: no file to hand out.
+        for version in (2, 3):
+            missing = await api.get(
+                f"/v1/datasets/{dataset}/versions/{version}/snapshot", headers=h
+            )
+            assert missing.status_code == 404, missing.text
+        # A dataset its reader cannot see has no snapshot either.
+        elsewhere = _dataset(o, None, o.other, table_name="khac")
+        hidden = await api.get(f"/v1/datasets/{elsewhere}/versions/1/snapshot", headers=h)
+        assert hidden.status_code == 404
+        no_ask = await api.get(
+            f"/v1/datasets/{dataset}/versions/1/snapshot", headers=o.headers("adminonly")
+        )
+        assert no_ask.status_code == 403

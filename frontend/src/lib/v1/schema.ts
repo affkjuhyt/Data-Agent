@@ -1952,6 +1952,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/datasets/{id}/versions/{version}/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tải bản chụp Parquet của một phiên bản: 302 tới đường dẫn ký sẵn 10 phút (DF-05, thêm 19/11/2026)
+         * @description DF-05: the version's Parquet file, as a short signed link; 404 when it was skipped (too
+         *     many rows, store down) or is not taken yet.
+         */
+        get: operations["getDatasetSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/datasets/{id}:derive": {
         parameters: {
             query?: never;
@@ -8814,12 +8835,17 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Physical Table */
+            physical_table?: string | null;
             /** Proposal Id */
             proposal_id: string | null;
+            /** Retained Until */
+            retained_until?: string | null;
             /** Scan Run Id */
             scan_run_id: string | null;
             /** Schema Hash */
             schema_hash: string;
+            snapshot?: components["schemas"]["SnapshotView"] | null;
             /**
              * Valid From
              * Format: date-time
@@ -11191,12 +11217,17 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Physical Table */
+            physical_table?: string | null;
             /** Proposal Id */
             proposal_id: string | null;
+            /** Retained Until */
+            retained_until?: string | null;
             /** Scan Run Id */
             scan_run_id: string | null;
             /** Schema Hash */
             schema_hash: string;
+            snapshot?: components["schemas"]["SnapshotView"] | null;
             /**
              * Valid From
              * Format: date-time
@@ -21544,6 +21575,35 @@ export interface components {
              * Format: date-time
              */
             written_at: string;
+        };
+        /**
+         * SnapshotView
+         * @description A version's Parquet snapshot (DF-05): `skipped` has no file, and says so.
+         */
+        SnapshotView: {
+            /**
+             * Available At
+             * Format: date-time
+             */
+            available_at: string;
+            /** Byte Size */
+            byte_size: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Row Count */
+            row_count: number;
+            /** Sha256 */
+            sha256: string | null;
+            /** Status */
+            status: string;
         };
         /** SourceAuthorityPut */
         SourceAuthorityPut: {
@@ -39171,6 +39231,127 @@ export interface operations {
             };
             /** @description Rate limited */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    getDatasetSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description source_unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

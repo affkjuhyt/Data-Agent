@@ -643,8 +643,12 @@ its end plus 90 days, and nothing drops one yet (that needs its Parquet snapshot
 loaded before versioning becomes `__v<its version>` at the next full run, renamed, never dropped.
 An incremental run appends to the current version's table and refreshes the view, which then shows
 a column it added. A version can be kept as an immutable Parquet file in the object-locked bucket
-`da-snapshots` (DF-04, `libs/snapshot`, 90-day retention; the writers call it from DF-05,
-`SNAPSHOT_ENABLED=0` turns it off). Uploads, saved pipelines and saved queries write the workspace the same way
+`da-snapshots` (DF-04, `libs/snapshot`, 90-day retention): every version written whole is
+announced as `dataset.version_created` and worker-agent snapshots it (DF-05,
+`services/worker_agent/snapshots.py`), recording `catalog.dataset_snapshot` as `ok` or `skipped`
+(over `SNAPSHOT_MAX_ROWS`, store down; the reason is in worker-agent's log). An appended version
+keeps the snapshot of when it was written. `SNAPSHOT_ENABLED=0` on worker-agent turns it off.
+`GET /v1/datasets/{id}/versions/{v}/snapshot` hands out a 10-minute signed link to the file. Uploads, saved pipelines and saved queries write the workspace the same way
 (DF-03, worker-agent): an upload into an existing table writes its next version (`replace`, the
 default) or appends to the current one (`keep`); saving a pipeline again writes the next version;
 none of them drops a table. `INGEST_VERSIONED=0` (worker-ingest and worker-agent) keeps the old

@@ -385,6 +385,18 @@ class DerivedTableView(BaseModel):
     version: int
 
 
+class SnapshotView(BaseModel):
+    """A version's Parquet snapshot (DF-05): `skipped` has no file, and says so."""
+
+    id: uuid.UUID
+    status: str
+    sha256: str | None
+    row_count: int
+    byte_size: int | None
+    available_at: datetime.datetime
+    created_at: datetime.datetime
+
+
 class DatasetVersionView(BaseModel):
     id: uuid.UUID
     dataset_id: uuid.UUID
@@ -399,6 +411,11 @@ class DatasetVersionView(BaseModel):
     certified_at: datetime.datetime | None
     certified_by: uuid.UUID | None
     created_at: datetime.datetime
+    # DF-02, DF-05: the workspace table that holds the version (None before versioning), how long
+    # it is kept once superseded, and its snapshot (None until worker-agent has taken it).
+    physical_table: str | None = None
+    retained_until: datetime.datetime | None = None
+    snapshot: SnapshotView | None = None
 
 
 class CertificationView(BaseModel):
