@@ -22,7 +22,7 @@ from services.worker_agent.sqlgen.generate import (
     repair,
 )
 from services.worker_agent.sqlgen.schema import Linked
-from services.worker_agent.sqlgen.vote import Decision, vote
+from services.worker_agent.sqlgen.vote import Decision, signature, vote
 
 
 @dataclass
@@ -35,8 +35,14 @@ class Exploration:
     rows: list[list[Any]] = field(default_factory=list)
     truncated: bool = False
     query_run_id: uuid.UUID | None = None
-    # What each candidate did, for the plan and the evidence: method, sql, problems, status.
+    # What each candidate did, for the plan and the evidence: method, sql, problems, status, and
+    # for one that ran, `group`: candidates of the same group returned the same result (vote.py),
+    # numbered in the order they first appear. A vote can be counted again from these alone
+    # (AE-23).
     tried: list[dict[str, Any]] = field(default_factory=list)
+    # The run of each candidate, aligned with `tried` (None when it did not run or failed): the
+    # ablation scores every candidate's own result. Kept in memory only, never stored.
+    outcomes: list[QueryOutcome | None] = field(default_factory=list, repr=False)
     tokens: int = 0
     models: list[str] = field(default_factory=list)
 
@@ -117,6 +123,10 @@ async def explore(
             }
         )
     v = vote(results, total=len(written))
+    groups: dict[str, int] = {}
+    for entry, rows in zip(tried, results, strict=True):
+        if rows is not None:
+            entry["group"] = groups.setdefault(signature(rows), len(groups))
     found_out = Exploration(
         v.decision,
         v.confidence,
@@ -124,6 +134,7 @@ async def explore(
         tried=tried,
         tokens=sum(c.tokens for c, _ in reviewed),
         models=sorted({c.model for c, _ in reviewed if c.model}),
+        outcomes=outcomes,
     )
     if v.winner is not None:
         best = outcomes[v.winner]

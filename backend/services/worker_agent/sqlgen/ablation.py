@@ -9,6 +9,11 @@ and its one figure is within 0.5 % of the expected value. The report gives, per 
 many it answered, how many it got right, its precision when it answered, and the mean confidence
 of its right and wrong answers (the vote's share, the confidence meter of R1-14).
 
+`--json` also gives, per item, what calibrating the vote needs (EV-19, CONFIDENCE_SPEC §3): whether
+the vote's winner was right whatever the vote decided (`winner_correct`: scoring only the answered
+items would call every low-share item wrong by construction), and each candidate's way of writing,
+result group and own value, so a vote can be counted again offline (AE-23).
+
 It writes nothing but the query runs (caller_kind eval) and reads as the person named, so it sees
 what they may. In the worker pod:
     make sqlgen-ablation ABLATION_ORG=<org id> ABLATION_SPACE=DS-AW ABLATION_AS=<username> \\
@@ -24,6 +29,7 @@ import sys
 import uuid
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
+from typing import Any
 
 from sqlalchemy import select
 
@@ -34,7 +40,7 @@ from libs.sql_guard import dialect_of
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.sqlgen.answer import QUERYABLE, _keep_one_source, figures_of
 from services.worker_agent.sqlgen.generate import METHODS
-from services.worker_agent.sqlgen.run import explore
+from services.worker_agent.sqlgen.run import Exploration, explore
 from services.worker_agent.sqlgen.schema import link
 from services.worker_agent.sqlgen.space import load_space
 from services.worker_agent.sqlgen.vote import ANSWER_AT, CANDIDATES, REVIEW_AT
@@ -54,6 +60,10 @@ class Outcome:
     value: float | None
     expected: float
     correct: bool
+    # Whether the winning group's value is right, whatever the vote decided; None without one.
+    winner_correct: bool | None = None
+    # Per candidate: method, status, group (vote.py), value, correct.
+    candidates: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -82,6 +92,50 @@ def decision_of(decision: str, confidence: float) -> str:
 
 def close(value: float | None, expected: float) -> bool:
     return value is not None and abs(value - expected) <= abs(expected) * RELATIVE_TOLERANCE
+
+
+def value_of(columns: list[str], rows: list[list[Any]]) -> float | None:
+    """The one figure of a result, or None when it holds none or several."""
+    figures = figures_of(columns, rows)
+    if len(figures) == 1 and figures[0].value is not None:
+        return float(figures[0].value)
+    return None
+
+
+def outcome_of(item_id: str, question: str, expected: float, e: Exploration) -> Outcome:
+    """An item scored from its exploration: the vote's decision and figure as production would
+    show it, the winner whatever was decided, and every candidate on its own."""
+    decided = decision_of(e.decision, e.confidence)
+    value = value_of(e.columns, e.rows) if decided in ("answer", "review") else None
+    winner = value_of(e.columns, e.rows) if e.sql is not None else None
+    runs = e.outcomes or [None] * len(e.tried)
+    candidates = []
+    for entry, out in zip(e.tried, runs, strict=True):
+        own = (
+            value_of([str(col.get("name")) for col in out.columns], out.rows)
+            if out is not None
+            else None
+        )
+        candidates.append(
+            {
+                "method": entry.get("method"),
+                "status": entry.get("status"),
+                "group": entry.get("group"),
+                "value": own,
+                "correct": close(own, expected),
+            }
+        )
+    return Outcome(
+        item_id,
+        question,
+        decided,
+        round(e.confidence, 4),
+        value,
+        expected,
+        decided in ("answer", "review") and close(value, expected),
+        winner_correct=close(winner, expected) if e.sql is not None else None,
+        candidates=candidates,
+    )
 
 
 def summarize(variant: str, outcomes: Sequence[Outcome]) -> Summary:
@@ -212,24 +266,7 @@ async def run(
                 run_sql,
                 methods=VARIANTS[v],
             )
-            decided = decision_of(e.decision, e.confidence)
-            figures = figures_of(e.columns, e.rows) if decided in ("answer", "review") else []
-            value = (
-                float(figures[0].value)
-                if len(figures) == 1 and figures[0].value is not None
-                else None
-            )
-            found[v].append(
-                Outcome(
-                    str(item.id),
-                    text,
-                    decided,
-                    round(e.confidence, 4),
-                    value,
-                    expected,
-                    decided in ("answer", "review") and close(value, expected),
-                )
-            )
+            found[v].append(outcome_of(str(item.id), text, expected, e))
     return [summarize(v, found[v]) for v in variants]
 
 

@@ -387,6 +387,22 @@ agent-eval:  ## the dynamic agent on a Data Space's eval set (AGENT_EVAL_ORG, AG
 		python -m services.worker_agent.agentic.evaluate --org "$(AGENT_EVAL_ORG)" \
 		--space "$(AGENT_EVAL_SPACE)" --as "$(AGENT_EVAL_AS)" $(AGENT_EVAL_ARGS)
 
+# EV-19: how well a producer's confidence says how often it is right (model/eval/calibrate.py,
+# docs/blueprint/CONFIDENCE_SPEC.md), from a report of the two targets above, read on stdin:
+# sqlgen_vote from `make sqlgen-ablation ABLATION_ARGS="--variants all --json"`, understanding
+# from `make agent-eval AGENT_EVAL_ARGS="--engines governed --json"`. Standard library only, in
+# the api image like bench-gate; `--json` or `--write <path>` go in CALIBRATE_ARGS.
+CALIBRATE_PRODUCER ?= sqlgen_vote
+CALIBRATE_FROM ?=
+CALIBRATE_ARGS ?=
+.PHONY: calibrate
+
+calibrate:  ## ECE, Brier, AURC and bars of a producer's confidence (CALIBRATE_PRODUCER, CALIBRATE_FROM)
+	@test -n "$(CALIBRATE_FROM)" || { echo "CALIBRATE_FROM=<report.json> is required"; exit 2; }
+	@docker run --rm -i --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE) \
+		python -m model.eval.calibrate --producer "$(CALIBRATE_PRODUCER)" \
+		--commit "$$(git rev-parse --short HEAD)" $(CALIBRATE_ARGS) < "$(CALIBRATE_FROM)"
+
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
 

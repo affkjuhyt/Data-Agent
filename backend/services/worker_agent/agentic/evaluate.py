@@ -54,6 +54,12 @@ class Outcome:
     tokens: int
     seconds: float
     answer: str = ""
+    # What calibrating the reading of a question needs (EV-19, CONFIDENCE_SPEC §3): the metric
+    # the item expects, the one the answer was read as, and the reading's raw score (the plan's
+    # confidence; None when the path writes none).
+    expected_metric: str | None = None
+    understood: str | None = None
+    confidence: float | None = None
 
 
 @dataclass
@@ -67,6 +73,11 @@ class Summary:
     mean_tokens: float
     mean_seconds: float
     outcomes: list[Outcome] = field(default_factory=list)
+
+
+def _expected_metric(item: ev.EvalItem) -> str | None:
+    expected = item.expected if isinstance(item.expected, dict) else {}
+    return str(expected["metric"]) if expected.get("metric") else None
 
 
 def _any_order(item: ev.EvalItem, answer: qa.Answer | None) -> bool | None:
@@ -194,6 +205,11 @@ async def _ask(
         tokens,
         round(seconds, 1),
         (answer.text or "")[:160] if answer else "",
+        expected_metric=_expected_metric(item),
+        understood=understood,
+        confidence=float(plan.confidence)
+        if plan is not None and plan.confidence is not None
+        else None,
     )
 
 

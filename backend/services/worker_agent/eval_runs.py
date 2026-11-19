@@ -267,6 +267,11 @@ async def run_eval(event: Event) -> None:
                     answer = await qa_session.scalar(
                         select(qa.Answer).where(qa.Answer.question_id == question_id)
                     )
+                    plan = (
+                        await qa_session.get(qa.Plan, answer.plan_id)
+                        if answer is not None
+                        else None
+                    )
                 wants_metric = isinstance(item.expected, dict) and bool(item.expected.get("metric"))
                 understood = (
                     await _understood_metric(event.org_id, asker, question_id)
@@ -278,6 +283,9 @@ async def run_eval(event: Event) -> None:
                 )
                 # The api shows this answer only to whom it was answered as (routes._result_view).
                 actual["answered_as"] = str(asker)
+                # The reading's raw score beside understanding_ok, for calibrating it (EV-19).
+                if wants_metric and plan is not None and plan.confidence is not None:
+                    actual["confidence"] = {"understanding": float(plan.confidence)}
             changed = item.id in baseline and baseline[item.id] != item_passed
             regressions += int(changed and baseline[item.id] and not item_passed)
             passed += int(item_passed)

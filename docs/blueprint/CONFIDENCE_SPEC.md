@@ -55,11 +55,13 @@ liệu cho phép.
 
 | Bộ sinh | `x` | Kiểu |
 | --- | --- | --- |
-| `understanding` | `(source, unique)`, với `source` ∈ {`name`, `synonym`, `model_reader`, `analyst`} là nguồn của chip metric (chip yếu nhất trong metric/filter), `unique` = chỉ một metric ở điểm cao nhất | rời rạc, ≤ 8 lớp |
-| `sqlgen_vote` | `margin` = (S₁ − S₂) / W của vote theo cách viết (§4) | liên tục trên [0, 1], chia bin |
+| `understanding` | điểm thô `Understanding.confidence` như `qa.plan.confidence` lưu: 1,0 tên/mã, 0,9 synonym, 0,8 model reader hoặc analyst (cả hai chặn ở 0,8), giá trị khác khi một chip filter khớp gần đúng | rời rạc, mỗi giá trị một bin |
+| `sqlgen_vote` | EV-19 (baseline): share `k/total` của vote hiện tại. Từ AE-23: `margin` = (S₁ − S₂) / W của vote theo cách viết (§4) | liên tục trên [0, 1], chia bin |
 
-Điểm hiện tại của resolver (1,0 / 0,9 / 0,8) chỉ là nhãn của `source`, nên hiệu chỉnh nó là tra bảng theo lớp. Hàm liên tục
-kiểu Platt không có ý nghĩa trên ba giá trị.
+Điểm hiện tại của resolver (1,0 / 0,9 / 0,8) chỉ là nhãn của nguồn đọc, nên hiệu chỉnh nó là tra bảng theo lớp. Hàm liên tục
+kiểu Platt không có ý nghĩa trên ba giá trị. Model reader và analyst hiện không phân biệt được từ dữ liệu đã lưu (cùng 0,8),
+và một lượt đã `proceed` luôn có đúng một metric ở điểm cao nhất. Vì vậy EV-19 dùng chính điểm thô; việc tách nguồn đọc thuộc
+AE-24, và chỉ làm khi dữ liệu cho thấy hai bộ đọc đúng khác nhau.
 
 ### 2.2 Ánh xạ hiệu chỉnh (`CalibrationMap`)
 
@@ -69,8 +71,9 @@ Fit offline, áp dụng lúc chạy bằng tra bảng (worker không cần numpy
 1. Chia bin: lớp rời rạc giữ nguyên; x liên tục chia equal-mass, B = 5 khi N < 200, 10 khi N ≥ 200.
 2. Prior Beta theo empirical Bayes: a₀ = n₀·ā, b₀ = n₀·(1 − ā), với ā = độ đúng chung của bộ sinh, n₀ = 4.
 3. Mỗi bin b có n_b lượt, c_b lượt đúng:  p̂_b = (c_b + a₀) / (n_b + a₀ + b₀).
-4. x liên tục: ép đơn điệu không giảm theo x bằng PAVA (trọng số n_b + n₀).
-5. p_low_b = cận dưới Wilson (z = 1,645) trên (c_b + a₀, n_b + n₀).
+4. Ép đơn điệu không giảm theo x bằng PAVA (trọng số n_b + n₀), cả với lớp rời rạc: điểm thô cao hơn không được tin
+   ít hơn. Báo cáo vẫn in độ đúng thô từng bin, để thấy bin nào đã bị gộp.
+5. p_low = cận dưới Wilson (z = 1,645) của khối đã gộp: (p̂_khối · W_khối, W_khối), W_khối = Σ (n_b + n₀).
 ```
 
 Một giá trị `x` chưa gặp (lớp mới, ngoài khoảng bin) lấy bin gần nhất về phía yếu hơn, tức là bảo thủ. Map là một tệp JSON
@@ -122,8 +125,12 @@ Mức rủi ro đề xuất (provisional): `r_answer = 0,05`, `r_review = 0,20` 
 
 | Bộ sinh | `y = 1` khi | Nguồn dữ liệu |
 | --- | --- | --- |
-| `understanding` | metric đọc ra = `expected.metric` của item (`eval_result.understanding_ok`) | `eval_runs.run_eval`; chỉ item có `expected.metric` |
-| `sqlgen_vote` | quyết định `answer`/`review` và giá trị lệch ≤ 0,5 % (`Outcome.correct`) | `make sqlgen-ablation --json`, variant `all`; mỗi item số của eval set đều đi đường khám phá, nên có nhãn cho cả câu mà governed sẽ trả lời |
+| `understanding` | metric đọc ra = `expected.metric` của item | `make agent-eval --engines governed --json` (`expected_metric`, `understood`, `confidence` mỗi item); lượt eval chạy đêm ghi `actual.confidence.understanding` cạnh `eval_result.understanding_ok`. Chỉ item có `expected.metric` và đã được đọc thành một metric |
+| `sqlgen_vote` | giá trị của **nhóm thắng** lệch ≤ 0,5 % (`Outcome.winner_correct`), bất kể vote quyết gì | `make sqlgen-ablation --variants all --json`; mỗi item số của eval set đều đi đường khám phá, nên có nhãn cho cả câu mà governed sẽ trả lời. Item không có nhóm thắng (mọi ứng viên hỏng) không vào hiệu chỉnh |
+
+Nhãn của vote là "nhóm thắng có đúng không", không phải `Outcome.correct` ("đã trả lời và đúng"). Lý do: `correct` coi mọi
+lượt bị quyết `ask` là sai, nên các share thấp sẽ bị gán sai do chính cách đo chứ không phải do dữ liệu. Ablation `--json`
+cũng ghi mỗi ứng viên: cách viết, nhóm kết quả, giá trị riêng và đúng/sai, để AE-23 đếm lại vote offline.
 
 Rủi ro dữ liệu (đã biết): DS-AW chỉ có 61 item, và governed đúng 20/20 câu đầu, nên `understanding` có rất ít lượt sai. Khi
 đó map bị prior chi phối và `p_low` thấp. Đó là hành vi đúng: thiếu bằng chứng thì không nới ngưỡng. Fit thật cần 60 case
@@ -148,6 +155,11 @@ winner = argmax S_g (hoà: chỉ số ứng viên nhỏ nhất, như hiện tạ
   Dawid–Skene). Có `a_m ≤ 0,5` thì `w_m ≤ 0`; khi đó kẹp `w_m` về `0,05`, để một cách viết kém vẫn góp phiếu nhỏ chứ không
   phiếu âm. Thiếu ablation cho Data Space thì dùng trọng số toàn cục; không có cả hai thì `w_m = 1`, tức vote đa số theo
   cách viết.
+- **Đo ở EV-19 (19/11/2026, DS-AW):** từng ứng viên đúng 36–39 % với cả ba cách, nên cả ba `w_m` bị kẹp và vote có trọng
+  số thoái hoá thành vote đa số theo cách viết. Chỉ 14/35 item có ít nhất một ứng viên đúng; vote chọn sai khi đã có ứng
+  viên đúng chỉ 2 lần ([báo cáo](../v3/eval/2026-11-19-calibration-baseline.md)). Trước khi làm AE-23: đo lại trên TLC, và
+  cân nhắc đặt `a_m` theo độ đúng *có điều kiện* (khi cách viết m đồng thuận với nhóm thắng) thay vì độ đúng trần của ứng
+  viên.
 - Cách `examples` không có example nào của Data Space thì thoái hoá thành chỉ dẫn chung (`generate.py:99`). Trọng số đo
   trên Data Space đó tự phản ánh điều này.
 - `Vote` giữ `confidence = k/total` cho đồng hồ R1-14 (UI không đổi) và thêm `margin`, `support: dict[str, float]`.
@@ -207,7 +219,7 @@ khi AE-24 đạt tiêu chí trên lượt eval có SHA.
 
 ## 7. Test
 
-- `tests/unit/libs/test_calibration.py`: PAVA cho ra dãy đơn điệu; Wilson khớp bảng tra; ECE = 0 trên dữ liệu hiệu chỉnh
+- `tests/unit/repo/test_calibration.py` (suite `repo`: thư viện chỉ dùng stdlib, không cần image dịch vụ): PAVA cho ra dãy đơn điệu; Wilson khớp bảng tra; ECE = 0 trên dữ liệu hiệu chỉnh
   hoàn hảo dựng sẵn; `choose_thresholds` trên dữ liệu tổng hợp; cross-fit không để rò fold; map `identity` tái tạo hành vi
   cũ (0,8 / 4-3).
 - `tests/unit/worker_agent/test_sqlgen_vote.py` (mở rộng): 2 cách × 2 mẫu cùng nhóm thắng 1 cách × 2 mẫu + 2 cách × 1 mẫu

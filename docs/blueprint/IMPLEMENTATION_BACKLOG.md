@@ -209,7 +209,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | EV-06 | P1 | 12 | 82 case SEC (16/14/22/10/20) + fact id | EV-04 | QA/AI | M | — | todo |
 | EV-07 | P1 | 12 | 8 case tiếng Việt vbpl.vn (nếu giấy phép) | quyết định giấy phép | QA | S | — | todo |
 | EV-18 | P1 | 16 | Scorecard tự sinh từ `eval.eval_run` | EV-13 | FE/BE | S | — | todo |
-| EV-19 | P1 | 9 | Đo hiệu chỉnh độ tin cậy: `libs/calibration`, `make calibrate`, ECE/Brier/AURC cross-fit; baseline điểm thô DS-AW ([CONFIDENCE_SPEC.md](CONFIDENCE_SPEC.md) §2–3, §6) | — | AI/QA | S | báo cáo hai bộ sinh có `snapshot`/`commit`; baseline ghi vào DATASET §6.2 | todo |
+| EV-19 | P1 | 9 | Đo hiệu chỉnh độ tin cậy: `libs/calibration`, `make calibrate`, ECE/Brier/AURC cross-fit; baseline điểm thô DS-AW ([CONFIDENCE_SPEC.md](CONFIDENCE_SPEC.md) §2–3, §6) | — | AI/QA | S | báo cáo hai bộ sinh có `snapshot`/`commit`; baseline ghi vào DATASET §6.2 | done 19/11: `docs/v3/eval/2026-11-19-calibration-baseline.md`; vote 4/6 sai 56 %, AE-23 nên đo lại trên TLC trước |
 
 ## 4. Platform tasks — 12 trường đầy đủ
 
