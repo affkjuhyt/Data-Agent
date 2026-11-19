@@ -484,7 +484,7 @@ Cột "Baseline" là số **đã đo** (ngày, điều kiện); "chưa đo" nế
 | Reliability | `restore_drill` | khôi phục 6 kho từ backup | — | runbook | chưa làm | xanh 1 lần/quý |
 | Security | `policy_violation_rate` | 27 case | trung gian | offline | 0 | 0 |
 | Security | `sandbox_escape` | 10 case | trung gian | test pod | chưa có bộ | 0 |
-| Security | `cross_org_leak` | sweep org A đọc org B theo schema/vai | trung gian | migrate tests | 141 test RLS theo tính năng; chưa sweep | 0 |
+| Security | `cross_org_leak` | sweep org A đọc org B theo schema/vai | trung gian | migrate tests | **0** (19/11, PL-09: 208 bảng × mọi `svc_*`, 1 335 phép đọc/sửa/xoá; mọi bảng `org_id` có đúng `org_isolation`, policy permissive khác chỉ của relay outbox) | 0 |
 | Business | `task_completion` | người dùng chấp nhận câu trả lời / câu hỏi | E2E | feedback | chưa đo | báo cáo pilot |
 | Business | `analyst_time_saved` | thời gian hỏi → chấp nhận vs baseline thủ công | E2E | đo trước pilot (02 §4.3) | chưa đo | báo cáo pilot |
 
