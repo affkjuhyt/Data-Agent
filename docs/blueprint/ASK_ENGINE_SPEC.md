@@ -127,6 +127,24 @@ Security: `audience` đọc từ `event.payload.audience`, **api** đặt từ v
 
 Logging/metrics: counter `ask_route_total{path,reason}`; histogram `ask_turn_seconds{path}`; gauge `ask_budget_used_ratio`.
 
+#### Đã làm (AE-01, 19/11/2026): khác thiết kế ở đâu
+
+- `router.py` chỉ quyết **agent có chạy trước hay không**. Các nhánh `clarify`, `explore`, `refuse` vẫn là của
+  đường governed như hiện có (clarify của resolver, model reader → analyst → SQL khám phá → tài liệu, từ chối quyền).
+  Vì vậy `RouteDecision` rút gọn thành `Route(path ∈ {governed, agentic}, reason)`. `Budget` thuộc AE-02.
+- Router đọc câu hỏi **đúng như đường governed**: phần bóc so sánh, grain, phân tích, điều kiện chuyển sang
+  `understand/asked.py`, và `_understand_and_plan` cũng dùng nó.
+- `knowledge` của pack là chế độ thời điểm (số đã nộp hay hiện tại), không phải "hỏi tài liệu". Ý định tài liệu là
+  trường mới `documents` của pack. `≥ 2 metric` = `Understanding.named_metrics` (resolver đếm metric được gọi tên).
+- Lý do: `RESOLVED`, `AMBIGUOUS`, `UNCATALOGUED` → governed; `WHY`, `MULTI_METRIC`, `HYBRID`, `DOC_ONLY`, `DEEP`
+  → agent; `FORBIDDEN`, `GONE` → governed (nó trả lời từ chối). `ASK_ENGINE=router` (mặc định) | `agentic` (agent
+  trước mọi câu, như trước AE-01: đường lui) | `governed`. Đếm ở `dataagent_ask_route_total{path,reason}`.
+- `MULTI_METRIC` chỉ khi hai metric hoà điểm **và** câu nối chúng (trường `joins` của pack: và, với, so sánh; and,
+  vs). DS-AW aw057/aw058 "Doanh số Trade Sales theo ngân sách" gọi tên hai metric nhưng hỏi một; agent sai cả hai.
+- Đo 19/11 (DS-AW, 61 câu): 61 → governed; `agent-eval --engines router` 49/61, trùng từng câu với governed;
+  853 token và 2,6 s mỗi câu.
+- Chưa có: ghi `reason` vào `qa.plan.steps.router` và timeline (AE-18 trace theo bước); `audience` (AE-03).
+
 ### C. OSS
 
 Không phụ thuộc mới. Ý tưởng `check_answerable` (NVIDIA auto-ontology, Apache-2.0, [evidence/oss-agents.md](evidence/oss-agents.md) §6)

@@ -83,10 +83,9 @@ from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.sqlgen.answer import answer_by_sql, answer_verified_first
 from services.worker_agent.understand import analyst, llm_reader
-from services.worker_agent.understand.analysis import TO_DATE, find_analysis
-from services.worker_agent.understand.comparison import find_comparison
-from services.worker_agent.understand.condition import find_conditions, numeric_dimensions
-from services.worker_agent.understand.grain import GRAIN_LABELS, find_grain
+from services.worker_agent.understand.analysis import TO_DATE
+from services.worker_agent.understand.asked import asked_of
+from services.worker_agent.understand.grain import GRAIN_LABELS
 from services.worker_agent.understand.packs import PACKS
 from services.worker_agent.understand.resolver import (
     Understanding,
@@ -808,13 +807,17 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
         event, question_id, secrets=secrets(), workspace_source=_internal_workspace_source
     ):
         return
-    # The dynamic agent (agentic/engine.py) answers first; it hands the question back untouched
-    # when there is no model, the model fails before planning, or for an edited plan and an eval
-    # run's narrowed data scope, which are this path's contracts.
+    # The router (router.py, AE-01) sends a question to the dynamic agent (agentic/engine.py) only
+    # when it is more than one certified metric can answer; the agent hands it back untouched when
+    # there is no model or the model fails before planning. An edited plan and an eval run's
+    # narrowed data scope are this path's contracts and never go to the agent.
     if edited_plan_id is None and not event.payload.get("data_scope"):
+        from services.worker_agent import router
         from services.worker_agent.agentic import engine
 
-        if await engine.run(event, question_id, gateway()):
+        route = await router.decide(event, question_id)
+        router.count(question_id, route)
+        if route.path == "agentic" and await engine.run(event, question_id, gateway()):
             return
     await publish(str(question_id), "planning", {"question_id": str(question_id)})
     # Ended inside _understand_and_plan once the reading is final, before any path it takes.
@@ -1323,11 +1326,12 @@ async def _understand_and_plan(
                 message="Bạn không thuộc Data Space hoặc chưa được cấp quyền hỏi dữ liệu.",
                 detail_id=str(question.id),
             )
-        # R1-06: "so với tháng trước" is read first and taken out of the text, or "tháng trước"
-        # would be read as the period asked.
-        found = find_comparison(question.text) if edited is None else None
-        asked = found.rest if found is not None else question.text
-        if knowledge_hint is not None:
+        # What would be misread is taken out before the rule pass reads the rest (R1-06, GEN-22),
+        # the one way the router reads it too (understand/asked.py).
+        parts = asked_of(question.text, layer) if edited is None else None
+        found = parts.comparison if parts is not None else None
+        asked = parts.text if parts is not None else question.text
+        if parts is None and knowledge_hint is not None:
             asked = re.sub(rf"\b{re.escape(knowledge_hint.span)}\b", " ", norm(asked), count=1)
         compare_to = (
             found.compare_to
@@ -1342,9 +1346,7 @@ async def _understand_and_plan(
             )
         )
         # R1-06: "theo tháng" names the grain of a cut along time, taken out like a comparison.
-        grain_found = find_grain(asked) if edited is None else None
-        if grain_found is not None:
-            asked = grain_found.rest
+        grain_found = parts.grain if parts is not None else None
         grain = (
             grain_found.grain
             if grain_found is not None
@@ -1359,9 +1361,7 @@ async def _understand_and_plan(
         )
         # The Holistics review (19/10/2026): "tỷ trọng", "luỹ kế", "từ đầu năm" ask for an
         # analysis over the metric, taken out like a grain, or "từ đầu năm" would be a period.
-        analysis_found = find_analysis(asked) if edited is None else None
-        if analysis_found is not None:
-            asked = analysis_found.rest
+        analysis_found = parts.analysis if parts is not None else None
         analysis_chip = next(
             (
                 chip
@@ -1371,13 +1371,7 @@ async def _understand_and_plan(
             None,
         )
         # GEN-22/31: "giá trị trên 1 tỷ" on a number dimension, taken out like an analysis.
-        conditions_found = (
-            find_conditions(asked, numeric_dimensions(layer.layer.dimensions))
-            if edited is None
-            else None
-        )
-        if conditions_found is not None:
-            asked = conditions_found.rest
+        conditions_found = parts.conditions if parts is not None else None
         conditions = (
             [(f.condition, f.label) for f in conditions_found.conditions]
             if conditions_found is not None

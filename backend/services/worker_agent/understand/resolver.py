@@ -124,6 +124,9 @@ class Understanding:
     # The one option is a model's reading the question's own words only partly name (grounding
     # "partial"): the asker confirms it. It is never taken as the lone candidate (invariant 3).
     to_confirm: bool = False
+    # How many different metrics the question names (AE-01): two named as strongly as each other
+    # ("doanh thu và lợi nhuận") ask for both, which this pass reads as a clarification.
+    named_metrics: int = 0
 
     @property
     def confidence(self) -> float:
@@ -251,6 +254,7 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
             out.decision = "clarify"
             out.options = sorted(carrying, key=lambda m: m.name)[:MAX_OPTIONS]
         return out
+    out.named_metrics = len(metric_hits)
     best = max(metric_hits.values())
     top = [metrics[mid] for mid, score in metric_hits.items() if score == best]
     if len(top) > 1 or best < PROCEED_AT:

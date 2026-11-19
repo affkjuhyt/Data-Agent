@@ -119,7 +119,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | ID | Ưu tiên | Tuần | Việc | Phụ thuộc | Vai | CS | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | AE-07 | P0 | 2 (PoC-3) → 6 | `sqlgen/audit_rules.py` R1–R5 cả hai đường | — | AI/BE | S | PoC-3: sai bảng 2/20 → 0; từ chối sai ≤ +5 | done 8cb8670e: offline 0/48 từ chối sai, 4/4 lỗi đã ghi bị chặn; 16/11 chạy thật: không câu sai nào đi qua explore_sql (ds-aw-agent-eval.md) |
-| AE-01 | P0 | 5 | `router.py` governed-first + classify tất định | — | BE/AI | M | 20 câu DS-AW đầu → governed | todo |
+| AE-01 | P0 | 5 | `router.py` governed-first + classify tất định | — | BE/AI | M | 20 câu DS-AW đầu → governed | done 19/11: `ASK_ENGINE=router` mặc định; DS-AW 61/61 → governed, `agent-eval --engines router` 49/61 (= governed), 853 token, 2,6 s/câu; agent nhận WHY/MULTI_METRIC (có từ nối)/HYBRID/DOC_ONLY/DEEP |
 | AE-03 | P0 | 5 | `audience` từ api theo vai | — | BE | S | 422 khi client gửi | todo |
 | AE-02 | P0 | 6 | `agentic/budget.py`; partial compose | AE-01 | BE | S | agentic p95 ≤ 60 s; `used_tokens` ghi | todo |
 | AE-04 | P0 | 6 | `answer/envelope.py` + `TrustCode` + overall | — | BE | M | mọi đường trả envelope | todo |

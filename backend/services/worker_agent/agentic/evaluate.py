@@ -1,6 +1,7 @@
 """What the dynamic agent earns on a Data Space's eval set, beside the governed path: each item is
 asked as a question would be (POST /v1/questions does the same two inserts) and answered by the
-production handler, once per engine (ASK_ENGINE), then scored by the eval runs' own scorer
+production handler, once per engine (ASK_ENGINE: `router`, the production default since AE-01,
+`agentic` the agent first, `governed` never the agent), then scored by the eval runs' own scorer
 (eval_runs._score), so a pass here is a pass there.
 
 Per engine the report gives how many items passed, how many had the right values in any order
@@ -11,7 +12,7 @@ tokens and seconds each took.
 It writes what asking writes: a conversation, a question, its answer and its run per item and
 engine, as the person named. In the worker pod:
     make agent-eval AGENT_EVAL_ORG=<org id> AGENT_EVAL_AS=<username> \\
-         AGENT_EVAL_ARGS="--limit 10 --engines agentic,governed"
+         AGENT_EVAL_ARGS="--limit 10 --engines router,agentic,governed"
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ from services.worker_agent.sqlgen.ablation import _items, _who
 
 QA_ROLE = "svc_qa"
 AGENT_ROLE = "svc_agent"
-ENGINES = ("agentic", "governed")
+ENGINES = ("router", "agentic", "governed")
 
 
 @dataclass
@@ -284,7 +285,7 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--space", default="DS-AW")
     parser.add_argument("--as", dest="username", required=True)
     parser.add_argument("--set", dest="set_name", default="Câu hỏi AdventureWorks")
-    parser.add_argument("--engines", default="agentic")
+    parser.add_argument("--engines", default="router")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--json", action="store_true")

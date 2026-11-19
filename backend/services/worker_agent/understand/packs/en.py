@@ -207,6 +207,11 @@ PACK = Pack(
     ),
     quantity=re.compile(r"\b(?:number of|how many|count of)\s+\w"),
     why=re.compile(r"\b(?:why|what caused|what drove|reason for|reasons for|explain)\b"),
+    documents=re.compile(
+        r"\b(?:according to|policy|policies|procedure|procedures|guideline|guidelines|manual"
+        r"|handbook|definition|defined as|document|documents|terms and conditions)\b"
+    ),
+    joins=re.compile(r"\b(?:and|vs|versus|against|compare|compared|both)\b"),
     knowledge=(
         ("as filed", "period_close"),
         ("as submitted", "period_close"),

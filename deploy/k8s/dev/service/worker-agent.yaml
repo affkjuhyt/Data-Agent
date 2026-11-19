@@ -27,6 +27,10 @@ data:
   TEMPORAL_ADDRESS: temporal.dataagent-service.svc.cluster.local:8380
   TEMPORAL_NAMESPACE: dataagent
   WORKER_AGENT_POLL_SECONDS: "0.5"
+  # AE-01: which engine answers a question (router.py). router: one certified metric goes to the
+  # governed path, the agent gets why / several metrics / documents / deep; agentic: the agent
+  # first for every question (before AE-01, the rollback); governed: never the agent.
+  ASK_ENGINE: router
   WORKER_AGENT_BATCH: "10"
   # The dynamic agent's analysis code runs in the python-sandbox pod (libs/code_sandbox):
   # off leaves the `analyze` tool out, local runs it in this pod (a trusted install only).

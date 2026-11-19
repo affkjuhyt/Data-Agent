@@ -60,6 +60,11 @@ OUTBOX_DEAD = Counter(
     "Outbox events left dead after their last failed try (PL-02), by schema and event type.",
     ["schema", "event_type"],
 )
+ASK_ROUTES = Counter(
+    "dataagent_ask_route_total",
+    "Questions the router sent to an engine (AE-01), by path (governed, agentic) and reason.",
+    ["path", "reason"],
+)
 LAST_POLL = Gauge(
     "dataagent_worker_last_poll_timestamp_seconds",
     "When the worker last finished a pass over its sources: a stale value is a stuck loop.",

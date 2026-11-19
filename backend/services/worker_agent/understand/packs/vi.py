@@ -229,6 +229,11 @@ PACK = Pack(
         ("theo du lieu hien tai", "latest"),
         ("tinh tren du lieu hien tai", "latest"),
     ),
+    documents=re.compile(
+        r"\b(?:theo (?:tai lieu|van ban|quy dinh|chinh sach)|tai lieu|van ban|chinh sach|quy dinh"
+        r"|quy che|quy trinh|dieu khoan|dinh nghia|huong dan su dung|so tay)\b"
+    ),
+    joins=re.compile(r"\b(?:va|cung|voi|so sanh|lan)\b"),
     # Without accents "tăng" is also "tầng", "tặng": a question about floors or gifts would read
     # as a rise, which no Data Space has needed telling apart yet.
     rises=re.compile(rf"\b(?:{_RISES})\b"),

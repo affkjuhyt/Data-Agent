@@ -65,6 +65,12 @@ class Pack:
     why: re.Pattern[str]
     # (phrase, knowledge mode)
     knowledge: tuple[tuple[str, str], ...]
+    # A question that asks what the documents say (a policy, a definition, a procedure), not
+    # only a figure: the router (AE-01) sends it to the agent, which cites passages.
+    documents: re.Pattern[str]
+    # Words that put two things side by side ("và", "so sánh", "and", "vs"): two metrics a question
+    # joins are both asked for; "doanh số … theo ngân sách" names two but asks one (AE-01).
+    joins: re.Pattern[str]
     # A movement the question names ("giảm", "fell"), and one it asks the largest of ("giảm nhiều
     # nhất", "fell the most").
     rises: re.Pattern[str]

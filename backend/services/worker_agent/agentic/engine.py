@@ -24,7 +24,6 @@ import dataclasses
 import datetime
 import json
 import logging
-import os
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -88,7 +87,10 @@ ACTION_OF = {"analyze": "run_python"}
 
 
 def engine_enabled() -> bool:
-    return os.environ.get("ASK_ENGINE", "agentic").strip().lower() == "agentic"
+    """False only when ASK_ENGINE=governed; which questions the agent gets is router.py's call."""
+    from services.worker_agent import router
+
+    return router.engine() != "governed"
 
 
 class ExecutorReply(BaseModel):
