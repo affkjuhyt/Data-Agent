@@ -39,6 +39,7 @@ from services.worker_agent import turn_trace
 from services.worker_agent.agentic import blocks as b
 from services.worker_agent.agentic import (
     clarify_policy,
+    corpus,
     deep_skill,
     memory,
     narrate,
@@ -333,6 +334,8 @@ async def prepare(s: State) -> None:
             return
         today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         layer = await load(session, space_id)
+        # Same session, space, principal and layer: load_corpus opens no second layer load.
+        space_corpus = await corpus.load_corpus(session, space_id, user_id, layer)
         s.history = await _history(session, question)
         asked = _standalone(
             question.text, await _readings(session, question), layer.vocabulary, today
@@ -358,6 +361,7 @@ async def prepare(s: State) -> None:
             model=s.model,
             ws=Workspace(),
             period=find_period(question_text, today, layer.vocabulary.calendar),
+            corpus=space_corpus,
         )
     try:
         known = await memory.load(event.org_id, space_id, user_id)
@@ -422,12 +426,29 @@ def _tool_cards() -> str:
     return "\n".join(t.card() for t in TOOLS.values())
 
 
+def _planner_corpus(s: State) -> corpus.CorpusBrief:
+    """The brief on the context, or an empty one when prepare did not store one."""
+    brief = None if s.ctx is None else s.ctx.corpus
+    if brief is None:
+        return corpus.CorpusBrief(
+            tables=(),
+            joins=(),
+            metrics=(),
+            dimensions=(),
+            documents=(),
+            pages=(),
+        )
+    return brief
+
+
 def _planner_system(s: State) -> str:
     base = (
         prompts.PLANNER.replace("{tools}", _tool_cards())
         .replace("{specialists}", specialists.planner_cards())
         .replace("{catalog}", _catalog(s))
     )
+    block = f"\n<corpus>\n{corpus.render_corpus(_planner_corpus(s))}\n</corpus>"
+    base = base.replace("</catalog>", "</catalog>" + block, 1)
     return deep_skill.inject(base, active=s.deep)
 
 
@@ -961,6 +982,10 @@ def _ask_for_unnamed_question(s: State) -> bool:
         quantity_words(s.ctx.question, vocab, today=s.ctx.today), _catalogue_words(vocab)
     )
     ask = clarify_policy.unnamed_quantity(s.ctx.question, words, s.ctx.layer) if words else None
+    # The catalogue names no metric for the quantity: the ask would be an empty option list.
+    # Answer from the tables instead of asking which metric.
+    if ask is not None and not ask.options:
+        return False
     if ask is None and not s.ctx.period_moves:
         # Nothing read and no period to blame (a period with no data is moved, AGC-10, not asked).
         found = s.ctx.period
@@ -974,16 +999,18 @@ def _ask_for_unnamed_question(s: State) -> bool:
 
 
 def _unnamed_quantity(s: State) -> list[str]:
-    """The question's quantity words no certified metric covers (invariant 3 / RES-04).
+    """The question's quantity words no certified reading covers.
 
-    When the turn read certified metrics, those readings must name the quantity. When it answered
-    with explore_sql, the space's catalogue must still name the quantity — exploratory SQL must
-    not invent a KPI the warehouse does not define (churn, made-up rates).
+    When the turn read certified metrics, those readings must name the quantity. A turn whose
+    only readings are explore_sql is the space's tables: the catalogue not naming the quantity
+    is not a gap to hand back.
     """
     assert s.ctx is not None and s.plan is not None
     if s.plan.mode != "analyze":
         return []
     datasets = list(s.ctx.ws.datasets.values())
+    if datasets and all(d.tool == "explore_sql" for d in datasets):
+        return []
     vocab = s.ctx.layer.vocabulary
     readings = [d.reading for d in datasets if d.reading]
     words = quantity_words(
@@ -993,8 +1020,6 @@ def _unnamed_quantity(s: State) -> list[str]:
         group_by=[g for r in readings for g in r.get("group_by", [])],
         filters={k: v for r in readings for k, v in (r.get("filters") or {}).items()},
     )
-    if any(d.tool == "explore_sql" for d in datasets):
-        return unnamed(words, _catalogue_words(vocab))
     if not readings:
         return []
     by_code = {m.code: m for m in vocab.metrics}

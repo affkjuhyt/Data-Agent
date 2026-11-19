@@ -16,6 +16,7 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel
 
+from services.worker_agent.agentic.corpus import CorpusBrief
 from services.worker_agent.agentic.workspace import Workspace
 from services.worker_agent.llm import Gateway
 from services.worker_agent.semantic.loader import SpaceLayer
@@ -46,6 +47,9 @@ class ToolContext:
     # The period the question names, read by rule (find_period): a year or a month in the
     # question is a period, never a member to look up.
     period: FoundPeriod | None = None
+    # Tables, drafts and documents prepare loaded for the planner. None until that load;
+    # the planner renders an empty brief rather than failing the turn.
+    corpus: CorpusBrief | None = None
     # AGC-10: a metric whose data never reaches the asked period, mapped to the latest whole period
     # of the same length (semantic/coverage.py); query_metric reads that one instead and says so.
     period_moves: dict[str, tuple[Any, Any]] = field(default_factory=dict)

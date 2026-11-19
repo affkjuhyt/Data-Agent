@@ -109,7 +109,10 @@ what was fixed:
 
 - Both stock items were refused by the RES-04 check: "cuối" in "cuối tháng 12/2013" was left over
   after the period was read and taken for a quantity no metric names. Fixed in the vi pack
-  (0ad096a8); `query_metric` now reads TON_KHO for 2013-12.
+  (0ad096a8); `query_metric` now reads TON_KHO for 2013-12. The half of RES-04 that forbade
+  exploratory SQL for a quantity no metric names is withdrawn: that question is exploratory SQL
+  on the space's tables, or “không có cột để tính” when `link` finds none. The “refused correctly”
+  threshold has to be re-scored and is not re-run in this change.
 - "Giá trị tồn kho cuối tháng 6/2014" then failed on `analysis: "none"` written by the planner;
   fixed (33cb5869). The agent now answers 23 603 975.57, the gold value.
 - Both stock items still fail the scorer: the planner adds what was not asked (a same-period

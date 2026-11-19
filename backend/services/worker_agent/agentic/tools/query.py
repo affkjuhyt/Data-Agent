@@ -37,12 +37,7 @@ from services.worker_agent.understand.comparison import find_comparison
 from services.worker_agent.understand.grain import GRAIN_LABELS, find_grain
 from services.worker_agent.understand.packs import PACKS, search
 from services.worker_agent.understand.packs.base import Pack, iso_answer
-from services.worker_agent.understand.resolver import (
-    Vocabulary,
-    metric_words,
-    names_metric,
-    quantity_words,
-)
+from services.worker_agent.understand.resolver import Vocabulary, metric_words, quantity_words
 from services.worker_agent.understand.text import norm
 
 ROLE = "svc_qa"
@@ -624,18 +619,6 @@ class QueryMetric(Tool):
                 " lọc (filters) theo chiều đó: đọc lại, chia hoặc lọc theo đúng chiều câu hỏi nêu",
                 failure="arguments",
             )
-        if missing and names_metric(ctx.question, entry, vocab, member_named=bool(members)):
-            # The question calls this metric by its name: the words left are how it is said.
-            missing = []
-        if missing:
-            # RES-04: do not send the planner to invent the quantity with explore_sql.
-            return ToolResult(
-                False,
-                f"không chỉ số chuẩn nào đo '{' '.join(missing)}' mà câu hỏi hỏi; "
-                "không tự tính bằng SQL thăm dò — tìm chỉ số khác (search_catalog) hoặc "
-                "nói rõ không trả lời được",
-                detail={"unnamed": missing},
-            )
         period = None
         moved: tuple[c.Period, c.Period] | None = None
         if args.period:
@@ -968,31 +951,12 @@ class ExploreSql(Tool):
     # Several candidate queries, each under the source's timeout, and a model audit.
     timeout_seconds = 300.0
     description = (
-        "khi danh mục đã có chỉ số khớp ý hỏi nhưng cần SQL thăm dò: viết SQL trên các bảng của "
-        "Data Space (nhiều cách viết, bỏ phiếu kết quả); kết quả 'exploratory'. Cấm tự tính chỉ "
-        "số không có trong danh mục"
+        "khi không có chỉ số đã chứng nhận khớp: viết SQL trên các bảng trong corpus "
+        "(nhiều cách viết, bỏ phiếu kết quả); kết quả 'exploratory'"
     )
     Args = ExploreSqlArgs
 
     async def run(self, ctx: ToolContext, args: ExploreSqlArgs) -> ToolResult:  # type: ignore[override]
-        # RES-04: refuse before writing SQL when no metric in the space names the quantity
-        # (churn, made-up rates). Catalogued quantities may still be explored.
-        vocab = ctx.layer.vocabulary
-        catalogue: set[str] = set()
-        for m in vocab.metrics:
-            catalogue |= metric_words(m, vocab)
-        missing = unnamed(
-            quantity_words(args.question or ctx.question, vocab, today=ctx.today),
-            catalogue,
-        )
-        if missing:
-            return ToolResult(
-                False,
-                f"không chỉ số nào trong danh mục đo '{' '.join(missing)}' mà câu hỏi hỏi; "
-                "không tự tính bằng SQL thăm dò — tìm chỉ số (search_catalog) hoặc nói rõ "
-                "không trả lời được",
-                detail={"unnamed": missing},
-            )
         async with scoped_session(ROLE, ctx.org_id, ctx.user_id) as session:
             space = await load_space(session, ctx.space_id, ctx.user_id)
             linked = link(args.question, space.schema)

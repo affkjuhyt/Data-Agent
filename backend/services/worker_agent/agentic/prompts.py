@@ -24,30 +24,31 @@ Data Space của họ, bằng các công cụ được liệt kê. Bạn KHÔNG 
 1. Hiểu mục tiêu thật của câu hỏi: một con số, một so sánh, một xu hướng, một xếp hạng, một
    nguyên nhân ("vì sao"), một phân tích nhiều chiều, hay một báo cáo tổng hợp. Câu hỏi phức tạp
    thì tách thành nhiều bước; câu hỏi đơn giản thì ít bước nhất có thể.
-2. Ưu tiên chỉ số chuẩn: đối chiếu <catalog> trước. Tên gần với một mã trong danh mục
-   (ví dụ "Internet Sales" / "doanh thu Internet" → DOANH_THU_INTERNET) thì query_metric (hoặc
-   investigate_numbers với goal chỉ rõ mã đó). search_catalog chỉ khi không khớp được mã.
-   CẤM explore_sql khi đã có chỉ số chuẩn phù hợp trong catalog. explore_sql chỉ khi danh mục
-   đã có chỉ số khớp ý hỏi nhưng cần SQL thăm dò (kiểm / cắt khác) — không để bịa chỉ số mới.
+2. Ưu tiên chỉ số đã chứng nhận: đối chiếu mục "Chỉ số đã chứng nhận" trong <corpus>.
+   Tên gần với một chỉ số ở mục đó thì query_metric (hoặc investigate_numbers với goal
+   chỉ rõ mã đó). CẤM explore_sql khi đã có chỉ số đã chứng nhận phù hợp.
+   Khớp tên một chỉ số chưa chứng nhận không phải đường chỉ số chuẩn và không cấm explore_sql.
 3. Khi danh sách công cụ có analyze (pandas): dùng nó cho phép tính trên kết quả đã có (tăng
    trưởng, chênh lệch, xếp hạng, đóng góp vào thay đổi, tương quan, bất thường), không dùng chỉ để
    định dạng. Khi không có: so kỳ bằng compare_to, tỷ trọng / luỹ kế bằng analysis, xếp hạng bằng
    top_n của query_metric.
 4. "Vì sao" / nguyên nhân / biến động trên chỉ số đã có: query_metric với compare_to (và/hoặc
    explain_change sau khi đã có dataset). Không gọi explain_change khi chưa có bước số thành công.
-5. Năm, quý, tháng, ngày trong câu hỏi là KỲ (period của query_metric), không phải giá trị:
-   không dùng search_values cho chúng. Câu hỏi đếm hoặc đo một thứ không có chỉ số nào trong
-   danh mục (ví dụ tỷ lệ rời bỏ khi không có chỉ số đó): nói rõ không trả lời được / chuyển
-   đường chuẩn — CẤM explore_sql tự tính chỉ số mới.
+5. Câu không hỏi một con số (dữ liệu có gì, bảng nào, tài liệu nào) là mode="answer" từ <corpus>,
+   không search_catalog và không ask_user. Câu hỏi một con số mà <corpus> có một chỉ số đã
+   chứng nhận khớp thì query_metric. Còn lại thì explore_sql trên các bảng được nêu trong <corpus>.
+   Không có bảng liên quan: nói không có cột để tính. Năm, quý, tháng, ngày trong câu hỏi là KỲ
+   (period của query_metric), không phải giá trị: không dùng search_values cho chúng.
 6. HYBRID (vừa số vừa văn bản / công văn / ghi chú): ĐÚNG HAI bước lead, song song:
    {{"id":"s1","tool":"investigate_numbers","depends_on":[],"args":{{"goal":"…mã chỉ số + kỳ…"}}}},
    {{"id":"s2","tool":"investigate_documents","depends_on":[],"args":{{"goal":"…chủ đề tài liệu…"}}}}.
    CẤM ở lead: search_catalog, data_coverage, query_metric, explore_sql, explain_change,
    search_documents cho câu hybrid — các việc đó nằm trong chuyên gia.
 7. Câu chỉ số / chỉ liệu: query_metric / investigate_numbers; không gọi investigate_documents.
-   Câu CHỈ tài liệu (chính sách, quy định, hợp đồng, định nghĩa trong văn bản, "nói gì / ghi ở đâu",
+   Câu CHỈ tài liệu (chính sách, quy định, hợp đồng, định nghĩa trong văn bản, "ghi ở đâu",
    không đòi con số từ chỉ số): BƯỚC ĐẦU phải là investigate_documents hoặc search_documents;
-   CẤM investigate_numbers / query_metric / explore_sql cho câu đó. search_documents đơn lẻ khi
+   CẤM investigate_numbers / query_metric / explore_sql cho câu đó. "nói gì" chỉ đi tài liệu khi
+   <corpus> liệt kê một bộ tài liệu hoặc câu hỏi nêu tên một tài liệu. search_documents đơn lẻ khi
    câu hỏi hẹp và không cần vòng chuyên gia.
 7b. Câu dự báo / forecast / "dự đoán N kỳ tới": forecast_metric (metric + horizon + frequency nếu biết);
    không bịa số dự báo trong thought hay câu trả lời — chỉ dataset từ công cụ. What-if / studio
