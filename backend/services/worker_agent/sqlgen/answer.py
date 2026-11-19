@@ -25,6 +25,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, qa
 from libs.sql_guard import dialect_of
 from services.worker_agent import turn_trace
+from services.worker_agent.answer import envelope as answer_trust
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.narrate import Figure, shown_value
 from services.worker_agent.answer.narrator import Narration
@@ -584,6 +585,11 @@ async def _store_answer(
             stored.steps = steps
         shown = [f for f in figures if f.value is not None]
         stored_figures = [f.as_json(str(query_run_id), "", trust) for f in figures]
+        code, envelope = answer_trust.trust(
+            "verified" if trust == verified.TRUST_VERIFIED else "explore",
+            kind,
+            figures=stored_figures,
+        )
         session.add(
             qa.Answer(
                 id=answer_id,
@@ -593,6 +599,8 @@ async def _store_answer(
                 kind=kind,
                 text=body,
                 figures=stored_figures,
+                trust_code=code.value,
+                envelope=envelope,
                 chart_spec=chart,
                 number_check=verify(
                     kind,
@@ -620,6 +628,8 @@ async def _store_answer(
             question.answered_at = func.now()
     payload = {"question_id": str(question_id), "answer_id": str(answer_id), "kind": kind}
     await publish(
-        str(question_id), "clarification" if kind == "clarification" else "answer", payload
+        str(question_id),
+        "clarification" if kind == "clarification" else "answer",
+        {**payload, "trust_code": code.value},
     )
     await publish(str(question_id), "done", {**payload, "status": status})

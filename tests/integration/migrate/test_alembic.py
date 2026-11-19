@@ -960,3 +960,28 @@ def test_a_migrated_cluster_takes_the_new_expectations(admin):
         )
         == "jsonb"
     )
+
+
+def test_a_migrated_cluster_keeps_an_answers_trust_code(admin):
+    # v3_0045 (19/11/2026, AE-04): qa.answer.trust_code and envelope.
+    _fresh(admin, "chain_ae04", "chain_ae04_audit")
+    db = _db(admin, "chain_ae04")
+    _alembic(db, "upgrade", "v3_0044")
+    # The generated DDL is already at head: put back what a cluster at v3_0044 has.
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("ALTER TABLE qa.answer DROP COLUMN trust_code, DROP COLUMN envelope")
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    conn = psycopg2.connect(db)
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint"
+            " WHERE conrelid = 'qa.answer'::regclass AND conname IN"
+            " ('answer_trust_code_check', 'answer_envelope_check')"
+        )
+        checks = dict(cur.fetchall())
+    conn.close()
+    assert "'INSUFFICIENT'" in checks["answer_trust_code_check"]
+    assert "jsonb_typeof(envelope)" in checks["answer_envelope_check"]

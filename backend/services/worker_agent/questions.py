@@ -49,6 +49,7 @@ from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
 from services.worker_agent import explore, quality_gate, suggestions, turn_trace
 from services.worker_agent.analyst_plan import build_analysis_plan
+from services.worker_agent.answer import envelope as answer_trust
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.comparison import (
     PERIOD_CODE,
@@ -373,6 +374,7 @@ async def _finish(
 ) -> uuid.UUID:
     """A refusal or clarification: the answer row and the question's end state."""
     answer_id = uuid7()
+    code, envelope = answer_trust.trust("governed", kind)
     async with scoped_session(ROLE, org_id, user_id) as session:
         question = await session.get(qa.Question, question_id, with_for_update=True)
         session.add(
@@ -385,6 +387,8 @@ async def _finish(
                 text=text,
                 agent_name=AGENT_NAME,
                 product_scope="not_applicable",
+                trust_code=code.value,
+                envelope=envelope,
                 **(extra or {}),
             )
         )
@@ -2107,6 +2111,7 @@ async def _answer_from_documents(
             " Nếu bạn cần số liệu, hãy gọi tên chỉ số như trong danh mục chỉ số của Data Space."
         )
     answer_id = uuid7()
+    doc_code, doc_envelope = answer_trust.trust("document", "document", cited=bool(told.citations))
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         question = await session.get(qa.Question, question_id, with_for_update=True)
         if question is None or question.status != "received":
@@ -2122,6 +2127,8 @@ async def _answer_from_documents(
                 plan_id=plan_id,
                 kind="document",
                 text=told.text,
+                trust_code=doc_code.value,
+                envelope=doc_envelope,
                 citations=[c.as_json() for c in told.citations],
                 number_check=verify(
                     "document",
@@ -2143,7 +2150,11 @@ async def _answer_from_documents(
         question.status = "answered"
         question.answered_at = func.now()
     payload = {"question_id": str(question_id), "answer_id": str(answer_id), "kind": "document"}
-    await publish(str(question_id), "answer", {**payload, "citations": len(told.citations)})
+    await publish(
+        str(question_id),
+        "answer",
+        {**payload, "citations": len(told.citations), "trust_code": doc_code.value},
+    )
     await publish(str(question_id), "done", {**payload, "status": "answered"})
     return True
 
@@ -2440,6 +2451,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
         if p.lead_note:
             text = f"{p.lead_note} {text}"
         number_check = verify("data", check, figures=stored_figures, reconcile_badge=badge)
+        data_code, data_envelope = answer_trust.trust("governed", "data", figures=stored_figures)
         checks = number_check.get("verification", {}).get("checks", [])
         await turn_trace.record_step(
             "validate",
@@ -2479,6 +2491,8 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                 kind="data",
                 text=text,
                 figures=stored_figures,
+                trust_code=data_code.value,
+                envelope=data_envelope,
                 filed_vs_current=(
                     {"period": p.filed_period_label, "items": filed_items} if filed_items else None
                 ),
@@ -2503,7 +2517,9 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
         question.status = "answered"
         question.answered_at = func.now()
     payload = {"question_id": str(question_id), "answer_id": str(answer_id), "kind": "data"}
-    await publish(str(question_id), "answer", {**payload, "trust": trust})
+    await publish(
+        str(question_id), "answer", {**payload, "trust": trust, "trust_code": data_code.value}
+    )
     await publish(str(question_id), "done", {**payload, "status": "answered"})
 
 

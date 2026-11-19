@@ -238,6 +238,16 @@ class Answer(Base):
         server_default=sql_text("'not_applicable'"),
         comment="in_scope, out_of_scope, not_applicable (làm rõ, từ chối); out_of_scope hiển thị nhãn “Ngoài phạm vi data product, không có biên nhận”",
     )
+    trust_code: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Nhãn tin cậy của cả câu trả lời: VERIFIED, GOVERNED, DERIVED, EXPLORATORY, DOCUMENT, INSUFFICIENT; nhãn yếu nhất trong các số và khối, do server đặt (AE-04, ARCHITECTURE §9.5, thêm 19/11/2026). Null: câu trả lời trước v3_0045",
+    )
+    envelope: Mapped[Any | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Bản đồ tin cậy của câu trả lời (AE-04): đường trả lời, nhãn từng số và từng khối, lý do dừng sớm; phần còn lại của AnswerEnvelope đọc từ các cột khác (`worker_agent/answer/envelope.py`)",
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
