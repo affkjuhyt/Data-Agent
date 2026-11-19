@@ -119,7 +119,12 @@ async def _trace(
 
 
 async def _ask(
-    org_id: uuid.UUID, space: uuid.UUID, user: uuid.UUID, item: ev.EvalItem, engine: str
+    org_id: uuid.UUID,
+    space: uuid.UUID,
+    user: uuid.UUID,
+    item: ev.EvalItem,
+    engine: str,
+    audience: str | None = None,
 ) -> Outcome:
     from services.worker_agent.questions import answer_question
 
@@ -158,7 +163,14 @@ async def _ask(
             "question",
             question_id,
             # Asked as the person, not by them: nothing is kept in their memory.
-            {"question_id": str(question_id), "user_id": str(user), "remember": False},
+            {
+                "question_id": str(question_id),
+                "user_id": str(user),
+                "remember": False,
+                # As the api would set it for the person (AE-03); the agent's budget and clarify
+                # policy read it (AE-02). Without --audience, the worker's default.
+                **({"audience": audience} if audience else {}),
+            },
         )
     )
     seconds = time.monotonic() - started
@@ -240,13 +252,14 @@ async def run(
     engines: Sequence[str],
     limit: int | None,
     offset: int,
+    audience: str | None = None,
 ) -> list[Summary]:
     space, user = await _who(org_id, space_code, username)
     items = (await _items(org_id, user, space, set_name))[offset:][:limit]
     found: dict[str, list[Outcome]] = {e: [] for e in engines}
     for item in items:
         for engine in engines:
-            outcome = await _ask(org_id, space, user, item, engine)
+            outcome = await _ask(org_id, space, user, item, engine, audience)
             found[engine].append(outcome)
             # One line per answer as it comes, so a long run shows its progress.
             print(
@@ -289,12 +302,24 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--audience", choices=("executive", "analyst"), default=None, help="as AE-03 would set it"
+    )
     args = parser.parse_args(argv)
     engines = [e for e in args.engines.split(",") if e in ENGINES]
     if not engines:
         raise SystemExit(f"--engines takes {', '.join(ENGINES)}")
     summaries = asyncio.run(
-        run(args.org, args.space, args.username, args.set_name, engines, args.limit, args.offset)
+        run(
+            args.org,
+            args.space,
+            args.username,
+            args.set_name,
+            engines,
+            args.limit,
+            args.offset,
+            args.audience,
+        )
     )
     if args.json:
         print(json.dumps([asdict(s) for s in summaries], ensure_ascii=False, indent=2))

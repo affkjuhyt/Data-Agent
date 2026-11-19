@@ -148,6 +148,19 @@ Logging/metrics: counter `ask_route_total{path,reason}`; histogram `ask_turn_sec
   853 token và 2,6 s mỗi câu.
 - Chưa có: ghi `reason` vào `qa.plan.steps.router` và timeline (AE-18 trace theo bước); `audience` (AE-03).
 
+#### Đã làm (AE-02, 19/11/2026)
+
+- `agentic/budget.py`: token, giây, bước theo `audience` (AE-03) và `deep` — executive 15k/30 s/6, analyst
+  40k/60 s/8, deep 120k/180 s/12 (provisional). Token đọc từ bộ đếm của `turn_trace` (mọi lần gọi model của lượt,
+  tính từ lúc đặt ngân sách); không cần hook riêng ở `llm.py`.
+- Kiểm ở điểm rẽ (`after_act`, `after_review`, route của `replan`), không giữa một bước: hết ngân sách thì sang
+  `compose` với cái đã có (`present_gate` vẫn quyết trả lời hay giao về governed). `agent.agent_run.stop_reason` =
+  `budget_tokens | budget_duration | budget_steps` (cột và CHECK đã có, không migration); `qa.plan.steps.operator.stopped`
+  và câu `why` nói lý do. Chưa có: `trust_code=INSUFFICIENT` cho câu trả lời dừng sớm (AE-04).
+- Đo 19/11, 20 câu DS-AW đầu, engine `agentic`: không ngân sách 19/20, p95 48 s, token p95 49k; analyst 19/20,
+  p95 50,7 s (≤ 60 s); executive 19/20, p95 29,6 s, token p95 30,5k. Token có thể vượt hạn mức một lần `compose`
+  (kiểm trước, không cắt ngang lời gọi model).
+
 ### C. OSS
 
 Không phụ thuộc mới. Ý tưởng `check_answerable` (NVIDIA auto-ontology, Apache-2.0, [evidence/oss-agents.md](evidence/oss-agents.md) §6)
