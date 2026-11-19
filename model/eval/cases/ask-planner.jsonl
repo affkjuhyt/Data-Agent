@@ -1,0 +1,5 @@
+{"id": "orient-what-data", "question": "Các dữ liệu ở đây là về gì?", "purpose": "orient", "numeric_intent": "none"}
+{"id": "orient-which-tables", "question": "Có những bảng nào?", "purpose": "orient", "numeric_intent": "none"}
+{"id": "orient-which-docs", "question": "Có tài liệu gì?", "purpose": "document", "numeric_intent": "none"}
+{"id": "resolved-revenue", "question": "Doanh thu năm 2013", "purpose": "answer", "numeric_intent": "required"}
+{"id": "ambiguous-margin", "question": "Lãi gộp năm 2013", "purpose": "answer", "numeric_intent": "required"}
