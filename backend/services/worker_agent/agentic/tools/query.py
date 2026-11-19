@@ -968,9 +968,8 @@ class ExploreSql(Tool):
     # Several candidate queries, each under the source's timeout, and a model audit.
     timeout_seconds = 300.0
     description = (
-        "khi danh mục đã có chỉ số khớp ý hỏi nhưng cần SQL thăm dò: viết SQL trên các bảng của "
-        "Data Space (nhiều cách viết, bỏ phiếu kết quả); kết quả 'exploratory'. Cấm tự tính chỉ "
-        "số không có trong danh mục"
+        "khi không có chỉ số đã chứng nhận khớp: viết SQL trên các bảng trong corpus "
+        "(nhiều cách viết, bỏ phiếu kết quả); kết quả 'exploratory'"
     )
     Args = ExploreSqlArgs
 

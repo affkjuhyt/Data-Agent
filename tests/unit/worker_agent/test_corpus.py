@@ -101,3 +101,15 @@ def test_build_corpus_names_the_table_and_both_join_column_lists() -> None:
     assert brief.dimensions == ("thoi_diem_don: Thời điểm đón",)
     assert brief.documents == documents
     assert brief.pages == pages
+
+
+def test_planner_answers_a_non_figure_question_from_the_corpus() -> None:
+    from services.worker_agent.agentic import prompts
+    from services.worker_agent.agentic.tools.query import ExploreSql
+
+    assert "DOANH_THU_INTERNET" not in prompts.PLANNER
+    assert (
+        "Câu không hỏi một con số (dữ liệu có gì, bảng nào, tài liệu nào) "
+        'là mode="answer" từ <corpus>'
+    ) in prompts.PLANNER
+    assert "Cấm tự tính" not in ExploreSql.description

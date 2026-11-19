@@ -40,6 +40,7 @@ from services.worker_agent import turn_trace
 from services.worker_agent.agentic import blocks as b
 from services.worker_agent.agentic import (
     clarify_policy,
+    corpus,
     deep_skill,
     memory,
     narrate,
@@ -331,6 +332,8 @@ async def prepare(s: State) -> None:
             return
         today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         layer = await load(session, space_id)
+        # Same session, space, principal and layer: load_corpus opens no second layer load.
+        space_corpus = await corpus.load_corpus(session, space_id, user_id, layer)
         s.history = await _history(session, question)
         asked = _standalone(
             question.text, await _readings(session, question), layer.vocabulary, today
@@ -356,6 +359,7 @@ async def prepare(s: State) -> None:
             model=s.model,
             ws=Workspace(),
             period=find_period(question_text, today, layer.vocabulary.calendar),
+            corpus=space_corpus,
         )
     try:
         known = await memory.load(event.org_id, space_id, user_id)
@@ -420,12 +424,29 @@ def _tool_cards() -> str:
     return "\n".join(t.card() for t in TOOLS.values())
 
 
+def _planner_corpus(s: State) -> corpus.CorpusBrief:
+    """The brief on the context, or an empty one when prepare did not store one."""
+    brief = None if s.ctx is None else s.ctx.corpus
+    if brief is None:
+        return corpus.CorpusBrief(
+            tables=(),
+            joins=(),
+            metrics=(),
+            dimensions=(),
+            documents=(),
+            pages=(),
+        )
+    return brief
+
+
 def _planner_system(s: State) -> str:
     base = (
         prompts.PLANNER.replace("{tools}", _tool_cards())
         .replace("{specialists}", specialists.planner_cards())
         .replace("{catalog}", _catalog(s))
     )
+    block = f"\n<corpus>\n{corpus.render_corpus(_planner_corpus(s))}\n</corpus>"
+    base = base.replace("</catalog>", "</catalog>" + block, 1)
     return deep_skill.inject(base, active=s.deep)
 
 
