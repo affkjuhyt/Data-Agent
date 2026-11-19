@@ -5,7 +5,8 @@ import type { components } from './schema';
 /*
  * A metric of the context layer (context.metric, context.metric_version) for "P07 · Chỉ số ·
  * Định nghĩa" (2301:19011, UC-07-01). A2: GET /v1/metrics/{id} "kèm danh sách phiên bản và nơi
- * đang dùng", POST /v1/metrics/{id}/versions (a draft), POST /v1/metric-versions/{id}:preview
+ * đang dùng", POST /v1/metrics/{id}/versions (a draft), PATCH /v1/metric-versions/{id}
+ * (edit that draft while it is still a draft), POST /v1/metric-versions/{id}:preview
  * (202; six periods against the version in use and the filed figures). The api's MetricDetail
  * and MetricVersionView are read into the screen's shapes below; the PROPOSAL fields fall back
  * to what the api has.
@@ -158,6 +159,29 @@ export const createMetric = async (metric: NewMetric): Promise<string> => {
   );
   return created.id;
 };
+
+/** Fields a steward can change on a draft version. A certified version is not edited. */
+export interface MetricDraftEdit {
+  display_name: string;
+  expression: string;
+  unit: string | null;
+  decimals: number;
+  direction: MetricVersion['direction'];
+  period_semantics: MetricVersion['period_semantics'];
+  time_grain: MetricVersion['time_grain'];
+  change_note: string | null;
+}
+
+/** PATCH /v1/metric-versions/{id}: write the draft in place. Refused once it leaves draft. */
+export const updateMetricDraft = async (versionId: string, edit: MetricDraftEdit) =>
+  readVersion(
+    await ok<VersionWire>(
+      api.PATCH('/v1/metric-versions/{id}', {
+        params: { path: { id: versionId } },
+        body: edit satisfies Schemas['MetricVersionPatch'],
+      }),
+    ),
+  );
 
 export const previewMetricVersion = async (versionId: string) =>
   ok<Schemas['services__api__modules__context__schemas__Accepted']>(

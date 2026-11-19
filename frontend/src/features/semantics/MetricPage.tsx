@@ -11,6 +11,7 @@ import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { formatDate } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
+import { EditMetricDraftDialog } from './EditMetricDraftDialog';
 import {
   createMetricDraft,
   getMetric,
@@ -25,8 +26,8 @@ import { useV1, useV1Mutation } from '../../lib/v1/useV1';
  * "P07 · Chỉ số · Định nghĩa" (2301:19011, UC-07-01): one metric of the context layer. The
  * definition of the version shown (by default the one in use), who owns and uses it, and its
  * versions on the right. A certified version is never edited in place: "Sửa" opens the draft
- * (or creates one from the version in use), and a draft is backtested on six periods before its
- * owner can certify it.
+ * (or creates one from the version in use). A draft already on screen is edited on that row,
+ * then backtested on six periods before its owner can certify it.
  */
 type Tone = 'success' | 'warning' | 'info' | 'idle' | 'error';
 
@@ -80,7 +81,10 @@ function MetricBody({ metric }: { metric: MetricDetail }) {
   const inUse = metric.versions.find((v) => v.status === 'certified');
   const draft = metric.versions.find((v) => v.status === 'draft' || v.status === 'testing');
   const [shownId, setShownId] = useState(inUse?.id ?? metric.versions[0]?.id);
+  const [editing, setEditing] = useState(false);
   const shown = metric.versions.find((v) => v.id === shownId) ?? inUse ?? metric.versions[0];
+  // Only a version still in draft is written in place. testing has already left the editor.
+  const editingDraft = shown?.status === 'draft';
   const stewards = useTableView(metric.stewardship, {
     search: (row) => `${row.role} ${row.who} ${row.note}`,
     filters: [{ id: 'role', label: 'Vai trò', value: (row) => row.role }],
@@ -112,6 +116,10 @@ function MetricBody({ metric }: { metric: MetricDetail }) {
   const error = (createDraft.error ?? runPreview.error)?.message;
 
   const edit = () => {
+    if (editingDraft) {
+      setEditing(true);
+      return;
+    }
     if (draft) {
       setShownId(draft.id);
       return;
@@ -155,7 +163,11 @@ function MetricBody({ metric }: { metric: MetricDetail }) {
               </Button>
             </Tooltip>
             <Button loading={busy === 'draft'} disabled={busy !== null} onClick={edit}>
-              {draft ? `Sửa → bản nháp v${draft.version}` : 'Sửa → tạo bản nháp'}
+              {editingDraft && shown
+                ? `Sửa bản nháp v${shown.version}`
+                : draft
+                  ? `Sửa → bản nháp v${draft.version}`
+                  : 'Sửa → tạo bản nháp'}
             </Button>
           </>
         }
@@ -238,11 +250,20 @@ function MetricBody({ metric }: { metric: MetricDetail }) {
             })}
           </ul>
           <p className="text-foreground da-body-small">
-            Sửa chỉ số đã chứng nhận luôn tạo bản nháp mới; bản nháp chạy thử trên 6 kỳ và cần chủ
-            sở hữu chứng nhận trước khi thay bản đang dùng.
+            Sửa chỉ số đã chứng nhận luôn tạo bản nháp mới. Bản nháp sửa tại chỗ, chạy thử trên 6
+            kỳ và cần chủ sở hữu chứng nhận trước khi thay bản đang dùng.
           </p>
         </aside>
       </div>
+      <EditMetricDraftDialog
+        version={editing && editingDraft && shown ? shown : null}
+        onClose={() => setEditing(false)}
+        onSaved={(saved) => {
+          toast({ tone: 'success', message: `Đã lưu bản nháp v${saved.version}` });
+          setShownId(saved.id);
+          setEditing(false);
+        }}
+      />
     </div>
   );
 }

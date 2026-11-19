@@ -4486,6 +4486,23 @@ export interface paths {
         patch: operations["patchMemory"];
         trace?: never;
     };
+    "/v1/metric-versions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Sửa phiên bản nháp */
+        patch: operations["updateMetricVersion"];
+        trace?: never;
+    };
     "/v1/metric-versions/{id}:preview": {
         parameters: {
             query?: never;
@@ -16359,6 +16376,42 @@ export interface components {
              * @enum {string}
              */
             period_semantics: "end_of_period" | "sum_over_period" | "average_over_period";
+            /** Time Dimension Id */
+            time_dimension_id?: string | null;
+            /** Time Grain */
+            time_grain?: ("day" | "week" | "month" | "quarter" | "year" | "fiscal_quarter" | "fiscal_year") | null;
+            /** Unit */
+            unit?: string | null;
+        };
+        /**
+         * MetricVersionPatch
+         * @description A draft version edited in place. A version that left draft is not edited (BR-26).
+         */
+        MetricVersionPatch: {
+            /** Additivity */
+            additivity?: ("full" | "semi" | "none") | null;
+            /** Allowed Dimensions */
+            allowed_dimensions?: string[] | null;
+            /** Change Note */
+            change_note?: string | null;
+            /** Decimals */
+            decimals?: number | null;
+            /** Description */
+            description?: string | null;
+            /** Direction */
+            direction?: ("higher_better" | "lower_better" | "neutral") | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Expression */
+            expression?: string | null;
+            /** Filters */
+            filters?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Legal Basis */
+            legal_basis?: string | null;
+            /** Period Semantics */
+            period_semantics?: ("end_of_period" | "sum_over_period" | "average_over_period") | null;
             /** Time Dimension Id */
             time_dimension_id?: string | null;
             /** Time Grain */
@@ -58442,6 +58495,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemoryView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    updateMetricVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetricVersionPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricVersionView"];
                 };
             };
             /** @description Invalid request */

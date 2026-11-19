@@ -52,6 +52,29 @@ class MetricVersionCreate(BaseModel):
     change_note: str | None = Field(default=None, max_length=2_000)
 
 
+class MetricVersionPatch(BaseModel):
+    """A draft version edited in place. A version that left draft is not edited (BR-26)."""
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=4_000)
+    expression: str | None = Field(default=None, min_length=1, max_length=8_000)
+    filters: list[dict[str, Any]] | None = None
+    unit: str | None = Field(default=None, max_length=50)
+    decimals: int | None = Field(default=None, ge=0, le=10)
+    direction: Literal["higher_better", "lower_better", "neutral"] | None = None
+    period_semantics: Literal["end_of_period", "sum_over_period", "average_over_period"] | None = (
+        None
+    )
+    time_grain: (
+        Literal["day", "week", "month", "quarter", "year", "fiscal_quarter", "fiscal_year"] | None
+    ) = None
+    time_dimension_id: uuid.UUID | None = None
+    allowed_dimensions: list[uuid.UUID] | None = None
+    additivity: Literal["full", "semi", "none"] | None = None
+    legal_basis: str | None = Field(default=None, max_length=1_000)
+    change_note: str | None = Field(default=None, max_length=2_000)
+
+
 class MetricCreate(BaseModel):
     code: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{1,63}$")
     owner_id: uuid.UUID

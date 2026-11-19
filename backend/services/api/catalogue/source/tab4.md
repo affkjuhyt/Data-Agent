@@ -295,7 +295,7 @@ Dịch vụ: Pipeline service (pipeline). 18 endpoint.
 
 ### Lớp ngữ cảnh
 
-Dịch vụ: Context service (context). 39 endpoint, trong đó 16 endpoint lớp tri thức (/v1/knowledge\*) và 11 endpoint data product (/v1/data-products\*).
+Dịch vụ: Context service (context). 40 endpoint, trong đó 16 endpoint lớp tri thức (/v1/knowledge\*) và 11 endpoint data product (/v1/data-products\*).
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
@@ -305,6 +305,7 @@ Dịch vụ: Context service (context). 39 endpoint, trong đó 16 endpoint lớ
 | PATCH | /v1/metrics/{id} | Sửa thuộc tính chỉ số | 07-01 | steward |
 | DELETE | /v1/metrics/{id} | Ngừng dùng chỉ số | 07-01 | steward |
 | POST | /v1/metrics/{id}/versions | Tạo phiên bản nháp | 07-01 | steward |
+| PATCH | /v1/metric-versions/{id} | Sửa phiên bản nháp (chỉ khi còn draft) | 07-01 | steward |
 | POST | /v1/metric-versions/{id}:preview | Chạy thử, so với bản đang dùng và số đã nộp | 07-01 | steward |
 | POST | /v1/relationships | Khai báo quan hệ | 07-02 | steward |
 | POST | /v1/relationships/{id}:retire | Gỡ quan hệ đang dùng: mở đề xuất, người khác duyệt (thêm 01/11/2026) | 07-02 | steward |
@@ -903,6 +904,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | PATCH /v1/metrics/{id} | code, consumer\_group | Metric | 409 immutable (đổi mã chỉ số) |
 | DELETE /v1/metrics/{id} | — | 204. Chỉ số chuyển retired, không xoá dòng | 409 in\_use (đang dùng trong báo cáo đã nộp); 409 invalid\_state (đã retired) |
 | POST /v1/metrics/{id}/versions | display\_name\*, description, expression\*, filters, unit, decimals, direction, period\_semantics\*, time\_grain, time\_dimension\_id, allowed\_dimensions, additivity, legal\_basis, change\_note | MetricVersion | 422 business\_rule\_violated (đổi mã chỉ số đã phát hành, BR-26) |
+| PATCH /v1/metric-versions/{id} | display\_name, description, expression, filters, unit, decimals, direction, period\_semantics, time\_grain, time\_dimension\_id, allowed\_dimensions, additivity, legal\_basis, change\_note | MetricVersion | 409 invalid\_state (bản không còn là nháp) |
 | POST /v1/metric-versions/{id}:preview | periods | 202, Location tới eval\_run. Chạy trên 6 kỳ, so với bản đang dùng và số đã nộp; tạo đề xuất metric\_change khi gửi duyệt | — |
 | POST /v1/relationships | from\_dataset\_id\*, from\_columns\*, to\_dataset\_id\*, to\_columns\*, cardinality\* | Relationship. Tạo ở trạng thái pending\_review (BR-100) | — |
 | POST /v1/relationships/{id}:retire | reason\* | 202, Relationship (vẫn active cho tới khi đề xuất gỡ được chấp nhận) | 409 invalid\_state (quan hệ không active) |

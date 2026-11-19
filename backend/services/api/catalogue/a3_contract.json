@@ -2875,6 +2875,37 @@
    ],
    "request_text": "display_name*, description, expression*, filters, unit, decimals, direction, period_semantics*, time_grain, time_dimension_id, allowed_dimensions, additivity, legal_basis, change_note"
   },
+  "PATCH /v1/metric-versions/{id}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "display_name": false,
+    "description": false,
+    "expression": false,
+    "filters": false,
+    "unit": false,
+    "decimals": false,
+    "direction": false,
+    "period_semantics": false,
+    "time_grain": false,
+    "time_dimension_id": false,
+    "allowed_dimensions": false,
+    "additivity": false,
+    "legal_basis": false,
+    "change_note": false
+   },
+   "query": [],
+   "returns": "MetricVersion",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "display_name, description, expression, filters, unit, decimals, direction, period_semantics, time_grain, time_dimension_id, allowed_dimensions, additivity, legal_basis, change_note"
+  },
   "POST /v1/metric-versions/{id}:preview": {
    "group": "Lớp ngữ cảnh",
    "groups": [

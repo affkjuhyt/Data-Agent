@@ -57,6 +57,7 @@ from services.api.modules.context.schemas import (
     MetricPreview,
     MetricUsage,
     MetricVersionCreate,
+    MetricVersionPatch,
     MetricVersionView,
     MetricView,
     RelationshipCreate,
@@ -235,10 +236,17 @@ def _check_filters(filters: list[dict[str, Any]]) -> None:
 
 
 async def _check_dimensions(
-    session: AsyncSession, body: MetricVersionCreate, data_space: uuid.UUID
+    session: AsyncSession,
+    body: MetricVersionCreate | MetricVersionPatch,
+    data_space: uuid.UUID,
+    *,
+    fields: set[str] | None = None,
 ) -> None:
-    _check_filters(body.filters or [])
-    if body.time_dimension_id is not None:
+    # A patch checks only the fields it sends; a create checks all of them.
+    check = (lambda _name: True) if fields is None else fields.__contains__
+    if check("filters"):
+        _check_filters(body.filters or [])
+    if check("time_dimension_id") and body.time_dimension_id is not None:
         is_time = await session.scalar(
             select(context.SemanticDimension.is_time).where(
                 context.SemanticDimension.id == body.time_dimension_id,
@@ -249,6 +257,8 @@ async def _check_dimensions(
             raise field_error(
                 "time_dimension_id", "time_dimension_id is not a time dimension of this Data Space."
             )
+    if not check("allowed_dimensions"):
+        return
     wanted = set(body.allowed_dimensions or [])
     if not wanted:
         return
@@ -480,6 +490,72 @@ async def create_metric_version(
             status=row.status,
             created_by=principal.user_id,
         )
+        await session.flush()
+        await session.refresh(row)
+        return MetricVersionView.model_validate(row)
+
+
+# Null clears these. The rest are required on the row, so a null in the patch is refused.
+_CLEARABLE = {"description", "unit", "time_dimension_id", "legal_basis", "change_note"}
+
+
+def _apply_version_patch(row: context.MetricVersion, body: MetricVersionPatch) -> None:
+    for name in body.model_fields_set:
+        value = getattr(body, name)
+        if value is None and name in ("filters", "allowed_dimensions"):
+            value = []
+        elif value is None and name not in _CLEARABLE:
+            raise field_error(name, "Cannot be null.")
+        setattr(row, name, value)
+
+
+@router.patch(
+    "/v1/metric-versions/{id}",
+    response_model=MetricVersionView,
+    **endpoint("PATCH", "/v1/metric-versions/{id}", operation_id="updateMetricVersion"),
+)
+async def update_metric_version(
+    body: MetricVersionPatch,
+    version_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> MetricVersionView:
+    async with transaction(ROLE, principal) as session:
+        # Writers of one metric lock the parent first, then the version.
+        metric = await session.scalar(
+            select(context.Metric)
+            .join(
+                context.MetricVersion,
+                context.MetricVersion.metric_id == context.Metric.id,
+            )
+            .where(
+                context.MetricVersion.id == version_id,
+                context.Metric.org_id == principal.org_id,
+                context.Metric.data_space_id == data_space,
+            )
+            .with_for_update(of=context.Metric)
+        )
+        if metric is None:
+            raise Problem(404, "not_found", "Metric version not found.")
+        if metric.status == "retired":
+            raise Problem(409, "invalid_state", "The metric is retired.")
+        row = await session.scalar(
+            select(context.MetricVersion)
+            .where(context.MetricVersion.id == version_id)
+            .with_for_update()
+        )
+        # BR-26: a certified formula is never edited. A version that left draft is the one
+        # that was tested or submitted, so the change is a new version, not this row.
+        if row is None or row.status != "draft":
+            status = row.status if row is not None else "missing"
+            raise Problem(
+                409,
+                "invalid_state",
+                f"Only a draft version is edited; this one is {status}.",
+            )
+        await _check_dimensions(session, body, data_space, fields=set(body.model_fields_set))
+        _apply_version_patch(row, body)
+        metric.updated_by, metric.updated_at = principal.user_id, now()
         await session.flush()
         await session.refresh(row)
         return MetricVersionView.model_validate(row)

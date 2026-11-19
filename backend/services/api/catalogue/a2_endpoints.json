@@ -2086,6 +2086,18 @@
   },
   {
    "group": "Lớp ngữ cảnh",
+   "method": "PATCH",
+   "path": "/v1/metric-versions/{id}",
+   "summary": "Sửa phiên bản nháp",
+   "use_cases": [
+    "07-01"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
    "method": "POST",
    "path": "/v1/metric-versions/{id}:preview",
    "summary": "Chạy thử, so với bản đang dùng và số đã nộp",
