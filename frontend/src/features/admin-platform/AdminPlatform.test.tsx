@@ -79,24 +79,17 @@ describe('AgentOperationsPage', () => {
 });
 
 describe('ModelsPage', () => {
-  it('lists the model per task and rolls a task back after confirming', async () => {
+  it('lists the model per task, offering no change of model the api answers 501', async () => {
     renderPage(<ModelsPage />);
     expect(await screen.findByText('Qwen3-72B · GPU cụm A')).toBeInTheDocument();
     expect(screen.getByText('4,1 giây')).toBeInTheDocument();
     expect(await screen.findByText(/Cao điểm 83% lúc 15:00/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Thao tác với Soạn báo cáo' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /Quay lại LLM-L 32B/ }));
-    const dialog = screen.getByRole('alertdialog', { name: 'Quay lại LLM-L 32B?' });
-    expect(
-      within(dialog).getByText(
-        'Chi phí soạn báo cáo tăng khoảng 3,5 lần. Bộ đánh giá của Agent Báo cáo sẽ chạy lại.',
-      ),
-    ).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Quay lại' }));
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    const row = (await screen.findByText('LLM-L 32B')).closest('tr')!;
-    expect(within(row).getByText('Soạn báo cáo')).toBeInTheDocument();
+    // PUT /v1/admin/models/{task} is refused until serving reads model_config (admin_models.py).
+    expect(screen.queryByRole('button', { name: 'Thao tác với Soạn báo cáo' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Thêm mô hình' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   it('starts the eval run', async () => {
@@ -105,25 +98,6 @@ describe('ModelsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Chạy bộ đánh giá' }));
     expect(
       await screen.findByText('Đã bắt đầu chạy bộ đánh giá cho mọi tác vụ.'),
-    ).toBeInTheDocument();
-  });
-
-  it('adds a model, which shows as being evaluated', async () => {
-    renderPage(<ModelsPage />);
-    await screen.findByText('Sinh SQL');
-    fireEvent.click(screen.getByRole('button', { name: 'Thêm mô hình' }));
-    const dialog = screen.getByRole('dialog', { name: 'Thêm mô hình' });
-    const submit = within(dialog).getByRole('button', { name: 'Thêm & đánh giá' });
-    expect(submit).toHaveAttribute('aria-disabled', 'true');
-    fireEvent.change(within(dialog).getByLabelText('Tên'), { target: { value: 'LLM-M 24B' } });
-    fireEvent.change(within(dialog).getByLabelText('Địa chỉ'), {
-      target: { value: 'http://llm-gw.noibo/m24' },
-    });
-    fireEvent.click(submit);
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    // The routing table's row; a Select's hidden native <select> holds the model's name too.
-    expect(
-      await screen.findByRole('row', { name: /LLM-M 24B.*đang đánh giá/ }),
     ).toBeInTheDocument();
   });
 });

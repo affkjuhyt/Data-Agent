@@ -13,6 +13,8 @@ import {
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import {
+  DIRECTORY_SYNC_PENDING,
+  INVITATION_PENDING,
   listAdminUsers,
   listRoles,
   syncDirectory,
@@ -23,13 +25,15 @@ import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { clock, count, dayMonth } from './format';
 import { InviteDialog } from './InviteDialog';
 import { SelfApprovalSwitch } from './SelfApprovalSwitch';
+import { Unavailable } from '../../design-system/Unavailable';
 
 /*
  * "P11 · Người dùng & vai trò" (2305:19433, UC-11-01 · UC-11-08): everyone with access, people
  * synced from the identity source and agents, with their effective role, Data Spaces, row
  * scope and expiry; a narrowed row scope is drawn in warning. On the right, on --background,
  * what each role may do. "Thêm vào Data Space" opens "Hộp thoại · invite". Above the list, the
- * organisation's self-approval switch.
+ * organisation's self-approval switch. The sync and the invitation stay disabled, with the
+ * api's reason, while it answers them with 501.
  */
 export default function UsersPage() {
   const toast = useToast();
@@ -47,7 +51,8 @@ export default function UsersPage() {
     null,
   );
   const summary = users.data
-    ? `${count(people.length)} người từ ${people[0]?.identity_source ?? 'nguồn danh tính'} · đồng bộ ${clock(lastSync)} · vai trò gán theo nhóm AD, Data Space gán theo thành viên`
+    ? // identity_source is '' when the api does not name it, so `||`, not `??`.
+      `${count(people.length)} người từ ${people[0]?.identity_source || 'nguồn danh tính'} · đồng bộ ${clock(lastSync)} · vai trò gán theo nhóm AD, Data Space gán theo thành viên`
     : undefined;
 
   const sync = useV1Mutation(syncDirectory, {
@@ -66,12 +71,24 @@ export default function UsersPage() {
         description={summary}
         actions={
           <>
-            <Button loading={sync.pending} onClick={() => sync.run()}>
-              Đồng bộ AD
-            </Button>
-            <Button kind="primary" onClick={() => setInviting(true)}>
-              Thêm vào Data Space
-            </Button>
+            <Unavailable reason={DIRECTORY_SYNC_PENDING}>
+              <Button
+                disabled={DIRECTORY_SYNC_PENDING !== null}
+                loading={sync.pending}
+                onClick={() => sync.run()}
+              >
+                Đồng bộ AD
+              </Button>
+            </Unavailable>
+            <Unavailable reason={INVITATION_PENDING}>
+              <Button
+                kind="primary"
+                disabled={INVITATION_PENDING !== null}
+                onClick={() => setInviting(true)}
+              >
+                Thêm vào Data Space
+              </Button>
+            </Unavailable>
           </>
         }
       />
@@ -87,7 +104,11 @@ export default function UsersPage() {
               <EmptyState
                 icon="users"
                 title="Chưa có người dùng"
-                description="Người dùng được đồng bộ từ Active Directory. Bấm “Đồng bộ AD” để lấy danh sách."
+                description={
+                  DIRECTORY_SYNC_PENDING
+                    ? 'Người dùng được đồng bộ từ Active Directory.'
+                    : 'Người dùng được đồng bộ từ Active Directory. Bấm “Đồng bộ AD” để lấy danh sách.'
+                }
               />
             }
           >

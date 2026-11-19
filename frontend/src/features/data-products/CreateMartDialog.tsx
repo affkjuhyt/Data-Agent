@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Dialog } from '../../design-system/Dialog';
 import { Select } from '../../design-system/Select';
-import { createMart } from '../../lib/v1/dataProducts';
+import { createMart, listMeasureColumns } from '../../lib/v1/dataProducts';
 import { listDatasets } from '../../lib/v1/api';
 import type { Dataset } from '../../lib/v1/types';
 
@@ -45,9 +45,33 @@ export function CreateMartDialog({
 
   const fact = facts.find((d) => d.id === factId);
 
+  // The measure is one of the fact's own number columns, never a name the screen assumes.
+  const [measures, setMeasures] = useState<string[] | null>(null);
+  const [measure, setMeasure] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || !factId) return;
+    let live = true;
+    setMeasures(null);
+    setMeasure(null);
+    void listMeasureColumns(factId)
+      .then((names) => {
+        if (!live) return;
+        setMeasures(names);
+        setMeasure(names[0] ?? null);
+      })
+      .catch((e) => live && setError((e as Error).message));
+    return () => {
+      live = false;
+    };
+  }, [open, factId]);
+
   const submit = async () => {
     if (!fact) {
       setError('Chọn bảng sự kiện.');
+      return;
+    }
+    if (!measure) {
+      setError('Bảng sự kiện này không có cột số nào để làm độ đo.');
       return;
     }
     setSending(true);
@@ -58,7 +82,7 @@ export function CreateMartDialog({
         name,
         fact_dataset_id: fact.id,
         grain: 'theo khoá của bảng sự kiện',
-        measures: [{ name: 'sales_amount', agg: 'sum' }],
+        measures: [{ name: measure, agg: 'sum' }],
       });
       onCreated(created.id);
     } catch (e) {
@@ -89,6 +113,16 @@ export function CreateMartDialog({
           label: d.display_name || `${d.schema_name}.${d.table_name}`,
         }))}
         placeholder={loading ? 'Đang tải…' : 'Chọn bảng'}
+      />
+      <Select
+        label="Độ đo (cộng tổng)"
+        value={measure}
+        disabled={!measures || measures.length === 0}
+        onChange={setMeasure}
+        options={(measures ?? []).map((name) => ({ value: name, label: name }))}
+        placeholder={
+          measures === null ? 'Đang tải…' : measures.length ? 'Chọn cột' : 'Không có cột số'
+        }
       />
     </Dialog>
   );

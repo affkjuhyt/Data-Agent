@@ -810,6 +810,7 @@ export function createAdminAccessHandlers() {
     http.get('*/v1/admin/users', () => page(users.map(userWire))),
     http.get('*/v1/admin/roles', () => page(roles)),
     http.get('*/v1/admin/groups', () => page(groupsFixture())),
+
     http.post(/\/v1\/admin\/directory:sync$/, () =>
       HttpResponse.json({ status: 'accepted' }, { status: 202 }),
     ),
@@ -850,8 +851,8 @@ export function createAdminAccessHandlers() {
         id: `ds-${spaces.length + 1}`,
         code: body.name.trim().toUpperCase().replace(/\s+/g, '_'),
         name: body.name.trim(),
-        // DataSpaceCreate has no status: the api opens the space as onboarding.
-        status: 'onboarding',
+        // DataSpaceCreate has no status: the api opens every space as a draft.
+        status: 'draft',
         steward_id: body.steward_id,
         opened_at: null,
         my_roles: [STEWARD_ROLE],
@@ -862,6 +863,14 @@ export function createAdminAccessHandlers() {
       };
       spaces = [...spaces, created];
       return HttpResponse.json(created, { status: 201 });
+    }),
+    http.patch('*/v1/data-spaces/:id', async ({ params, request }) => {
+      const space = spaces.find((s) => s.id === params.id);
+      if (!space) return problem(404, 'not_found', 'Không tìm thấy Data Space.');
+      const patch = (await request.json()) as Partial<DataSpaceSummary>;
+      const updated = { ...space, ...patch };
+      spaces = spaces.map((s) => (s.id === space.id ? updated : s));
+      return HttpResponse.json(updated);
     }),
     // The sources chosen on create follow in their own PUT (A2).
     http.put('*/v1/data-spaces/:id/sources', ({ params }) => {

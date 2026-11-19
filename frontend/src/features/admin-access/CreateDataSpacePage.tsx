@@ -11,12 +11,7 @@ import { Select } from '../../design-system/Select';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import { listSources } from '../../lib/v1/api';
-import {
-  createDataSpace,
-  listAdminUsers,
-  listGroups,
-  type DefaultPolicy,
-} from '../../lib/v1/adminAccess';
+import { createDataSpace, listAdminUsers, type DefaultPolicy } from '../../lib/v1/adminAccess';
 import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
@@ -52,13 +47,11 @@ export default function CreateDataSpacePage() {
   const toast = useToast();
   const users = useV1(['listAdminUsers'], listAdminUsers);
   const sources = useV1(['listSources'], listSources);
-  const groups = useV1(['listGroups'], listGroups);
 
   const [name, setName] = useState('');
   const [stewardId, setStewardId] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [sourceIds, setSourceIds] = useState<string[]>([]);
-  const [groupIds, setGroupIds] = useState<string[]>([]);
   const [policy, setPolicy] = useState<DefaultPolicy>({
     mask_pii: true,
     agent_write_derived_only: true,
@@ -78,7 +71,6 @@ export default function CreateDataSpacePage() {
         steward_id: stewardId,
         default_policy: policy,
         source_ids: sourceIds,
-        group_ids: groupIds,
         status,
       }),
     {
@@ -105,7 +97,6 @@ export default function CreateDataSpacePage() {
   };
 
   const people = (users.data?.items ?? []).filter((u) => u.kind === 'person');
-  const chosenGroups = (groups.data?.items ?? []).filter((g) => groupIds.includes(g.id));
 
   return (
     <div className="flex min-h-full">
@@ -187,30 +178,15 @@ export default function CreateDataSpacePage() {
             ))}
           </div>
         </Section>
+        {/*
+         * The design picks AD groups here, but a group mapping carries a role and
+         * PUT /v1/admin/group-mappings replaces the organisation's whole set, which A2 cannot
+         * read back; ticking groups the request then dropped told the admin something untrue.
+         */}
         <Section title="4. Thành viên">
-          <AsyncRegion state={groups} what="nhóm AD">
-            {(p) => (
-              <div className="flex flex-col gap-da-sm">
-                <div className="flex flex-wrap gap-x-da-xl gap-y-da-sm">
-                  {p.items.map((g) => (
-                    <Checkbox
-                      key={g.id}
-                      checked={groupIds.includes(g.id)}
-                      onChange={() => setGroupIds((list) => toggle(list, g.id))}
-                    >
-                      {g.name} · {g.member_count} người
-                    </Checkbox>
-                  ))}
-                </div>
-                {chosenGroups.length > 0 && (
-                  <p className="text-foreground da-caption">
-                    Đồng bộ từ nhóm AD:{' '}
-                    {chosenGroups.map((g) => `${g.name} (${g.member_count} người)`).join(' · ')}
-                  </p>
-                )}
-              </div>
-            )}
-          </AsyncRegion>
+          <p className="text-muted-foreground da-body">
+            Thêm thành viên ở trang của Data Space sau khi tạo, từng người kèm vai trò.
+          </p>
         </Section>
         {error && <Notice tone="error">{error}</Notice>}
         <div className="flex gap-da-md">

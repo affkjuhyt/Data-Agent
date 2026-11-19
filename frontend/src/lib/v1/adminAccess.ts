@@ -141,6 +141,19 @@ export const listAdminUsers = async () => {
 };
 export const listRoles = () => ok<Page<Role>>(api.GET('/v1/admin/roles'));
 export const listGroups = () => okAs<Page<UserGroup>>(api.GET('/v1/admin/groups'));
+/*
+ * The api answers directory:sync, invitations and the DSR writes with 501 until their workers
+ * exist (org/admin/directory.py, governance/dsr.py): the screens disable those actions with the
+ * api's own reason instead of letting each click fail. The calls and the dialogs stay: once the
+ * api serves one, its reason becomes null and the action is enabled again.
+ */
+export const DIRECTORY_SYNC_PENDING: string | null =
+  'Chưa có kết nối quản trị tới Keycloak hay AD, nên chưa đồng bộ được danh bạ người dùng.';
+export const INVITATION_PENDING: string | null =
+  'Chưa có kết nối quản trị tới Keycloak hay AD và chưa có nơi lưu lời mời, nên chưa gửi được lời mời. Thêm người đã có ở trang thành viên của Data Space.';
+export const DSR_PENDING: string | null =
+  'Chưa có chức năng tìm và xử lý dữ liệu cá nhân trên các kho của Data Agent, nên chưa nhận hay thực hiện được yêu cầu của chủ thể dữ liệu.';
+
 /** PROPOSAL: re-read people and groups from the identity source now (202). */
 export const syncDirectory = () => ok<{ status: string }>(api.POST('/v1/admin/directory:sync'));
 export const inviteUser = (body: Invitation) =>
@@ -186,8 +199,6 @@ export interface CreateDataSpace {
   default_policy: DefaultPolicy;
   /** PUT /v1/data-spaces/{id}/sources is a separate call in A2; PROPOSAL: accept them on create. */
   source_ids: Uuid[];
-  /** PROPOSAL: group mappings created with the Data Space. */
-  group_ids: Uuid[];
   /** "Lưu nháp" keeps it draft; "Tạo Data Space" moves it to onboarding. */
   status: 'draft' | 'onboarding';
 }
@@ -299,8 +310,9 @@ export const getDataSpace = async (id: string) => {
 };
 /**
  * DataSpaceCreate carries the name, steward and default policy; the sources follow in
- * PUT /v1/data-spaces/{id}/sources. Group mappings and the draft/onboarding choice are PROPOSAL:
- * the api opens the space as it is and maps groups through PUT /v1/admin/group-mappings.
+ * PUT /v1/data-spaces/{id}/sources. The api opens every space as a draft, so "Tạo Data Space"
+ * moves it on with PATCH. Group mappings are not made here: PUT /v1/admin/group-mappings
+ * replaces the organisation's whole set, with a role per group, and A2 has no read of that set.
  */
 export const createDataSpace = async (body: CreateDataSpace) => {
   const created = await ok<Schemas['DataSpaceView']>(
@@ -322,6 +334,13 @@ export const createDataSpace = async (body: CreateDataSpace) => {
         body: {
           source_ids: body.source_ids,
         },
+      }),
+    );
+  if (body.status === 'onboarding' && created.status !== 'onboarding')
+    return ok<Schemas['DataSpaceView']>(
+      api.PATCH('/v1/data-spaces/{id}', {
+        params: { path: { id: created.id } },
+        body: { status: 'onboarding' },
       }),
     );
   return created;

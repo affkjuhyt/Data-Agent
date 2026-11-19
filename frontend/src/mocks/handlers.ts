@@ -30,6 +30,7 @@ import { createAnswerProductHandlers } from './answerProducts';
 import { createDataProductsHandlers } from './dataProducts';
 import { createErrorBookHandlers } from './errorBook';
 import { createExecHandlers } from './exec';
+import { createApprovalsHandler, type ApprovalSource } from './approvals';
 import { createDocumentHandlers } from './documents';
 import { createExploreHandlers } from './explore';
 import { createForecastHandlers } from './forecast';
@@ -85,8 +86,11 @@ export function createHandlers() {
   // With the lead run and child runs of "Điều phối nhiều agent" (mocks/agentOps.ts).
   let runs: RunWire[] = [...runsFixture(), ...teamRunsFixture()];
   let agents = agentsFixture();
+  // The open approve_proposal requests the skills and documents mocks hold, answered together.
+  const approvals: ApprovalSource[] = [];
 
   return [
+    createApprovalsHandler(approvals),
     // First: these serve paths the handlers below also answer, with richer rows
     // (/runs/:id for test runs, /sources, /admin/models, /admin/users, /data-spaces, /policies),
     // and pass the rest through.
@@ -94,10 +98,10 @@ export function createHandlers() {
     // explore: marks a requested Data Space, then falls through to the access-request mock;
     // forecast: its own HITL request; skills before skill authoring (shared /skills/:id).
     ...createAnswerReceiptHandlers(),
-    ...createDocumentHandlers(),
+    ...createDocumentHandlers(approvals),
     ...createExploreHandlers(),
     ...createForecastHandlers(),
-    ...createSkillsHandlers(),
+    ...createSkillsHandlers(approvals),
     ...createSkillAuthoringHandlers(),
     // Before the data prep mock (a metric's lineage) and the metric mock: it answers GET
     // /v1/metrics?view=catalog and its own metric ids, and falls through otherwise.

@@ -75,6 +75,8 @@ const linesOf = (value: unknown): string[] => {
 
 /** Adapt A3's DataMartView to the star-model presentation shape. */
 export function readDataMart(raw: DataMartWire, datasets: Map<string, string>): DataMart {
+  const display = (raw as DataMartWire & { display?: DataMart }).display;
+  if (display) return display;
   if (!raw.fact_dataset_id) return raw as unknown as DataMart;
   const dimensions = Array.isArray(raw.dimensions) ? raw.dimensions : [];
   const measures = Array.isArray(raw.measures) ? raw.measures : [];
@@ -175,12 +177,59 @@ export async function getMart(id: string) {
   return readDataMart(mart, tablesFor(datasets));
 }
 
+type ColumnView = Schemas['ColumnView'];
+
+/** The fact table's columns, as the catalog holds them. */
+const factColumns = async (datasetId: string): Promise<ColumnView[]> =>
+  (await ok(api.GET('/v1/datasets/{id}', { params: { path: { id: datasetId } } }))).columns ?? [];
+
+/** The number columns a mart can sum: not a key, nor a foreign key (`…_key`, `…_id`). */
+export const measureColumns = (
+  columns: Pick<ColumnView, 'name' | 'normalized_type' | 'is_key'>[],
+) =>
+  columns
+    .filter(
+      (c) =>
+        !c.is_key &&
+        !/(_key|_id)$/i.test(c.name) &&
+        (c.normalized_type === 'integer' || c.normalized_type === 'decimal'),
+    )
+    .map((c) => c.name);
+
+export const listMeasureColumns = async (datasetId: string) =>
+  measureColumns(await factColumns(datasetId));
+
+/**
+ * A published product commits to the mart's columns: each dimension's key on the fact and each
+ * measure, typed as the fact table has them (UC-06-06 step 4). Nothing is made up: a mart with
+ * neither gives no columns, and the api refuses an empty contract.
+ */
+export function martContract(
+  mart: Pick<DataMartWire, 'dimensions' | 'measures'>,
+  columns: Pick<ColumnView, 'name' | 'normalized_type'>[],
+) {
+  const nameOf = (value: unknown, field: 'key' | 'name') =>
+    typeof value === 'object' && value !== null
+      ? String((value as Record<string, unknown>)[field] ?? '')
+      : '';
+  const names = [
+    ...(Array.isArray(mart.dimensions) ? mart.dimensions : []).map((d) => nameOf(d, 'key')),
+    ...(Array.isArray(mart.measures) ? mart.measures : []).map((m) => nameOf(m, 'name')),
+  ].filter(Boolean);
+  return {
+    columns: [...new Set(names)].map((name) => ({
+      name,
+      type: columns.find((c) => c.name === name)?.normalized_type ?? 'string',
+    })),
+  };
+}
+
 /** A2: POST /v1/marts — empty dimensions bootstrap from the fact's active relationships. */
 export async function createMart(body: {
   name: string;
   fact_dataset_id: string;
   grain: string;
-  measures?: { name: string; agg?: string }[];
+  measures: { name: string; agg?: string }[];
 }) {
   const [raw, datasets] = await Promise.all([
     ok<DataMartWire>(
@@ -189,7 +238,7 @@ export async function createMart(body: {
           name: body.name,
           fact_dataset_id: body.fact_dataset_id,
           grain: body.grain,
-          measures: body.measures ?? [{ name: 'sales_amount', agg: 'sum' }],
+          measures: body.measures,
           dimensions: [],
           relations: [],
           checks: [],
@@ -331,7 +380,13 @@ export const createDataProduct = async (body: {
   name: string;
   version: string;
 }) => {
-  const me = await getMe();
+  const [me, mart] = await Promise.all([
+    getMe(),
+    ok<DataMartWire>(api.GET('/v1/marts/{id}', { params: { path: { id: body.mart_id } } })),
+  ]);
+  const contract = martContract(mart, await factColumns(mart.fact_dataset_id));
+  if (contract.columns.length === 0)
+    throw new Error('Mart chưa có chiều hay độ đo nào để cam kết trong hợp đồng sản phẩm.');
   return ok<{ id: string }>(
     api.POST('/v1/data-products', {
       body: {
@@ -340,12 +395,7 @@ export const createDataProduct = async (body: {
         layer: 'published',
         data_mart_id: body.mart_id,
         owner_id: me.id,
-        contract: {
-          columns: [
-            { name: 'grain', type: 'text' },
-            { name: 'measure', type: 'numeric' },
-          ],
-        },
+        contract,
       } satisfies components['schemas']['DataProductCreate'],
     }),
   );

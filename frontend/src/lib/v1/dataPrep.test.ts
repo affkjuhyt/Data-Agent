@@ -167,6 +167,31 @@ describe('readWriteback', () => {
       ],
     });
   });
+
+  it('keeps the proposal a pending writeback is decided through', () => {
+    const writeback = readWriteback({
+      id: 'writeback-2',
+      data_space_id: 'space-1',
+      source_id: 'source-1',
+      target_table: 'crm_staging.credit_tier',
+      from_dataset_id: 'dataset-1',
+      requested_by: 'user-1',
+      diff_summary: { row_count: 3 },
+      diff_ref: null,
+      deletes: 0,
+      write_window: null,
+      snapshot_ref: null,
+      approved_by: null,
+      proposal_id: 'proposal-1',
+      status: 'submitted',
+      executed_at: null,
+      totals_check: null,
+      created_at: '2026-10-13T00:00:00Z',
+      updated_at: '2026-10-13T00:00:00Z',
+    } as WritebackWire);
+
+    expect(writeback).toMatchObject({ proposal_id: 'proposal-1', can_decide: true });
+  });
 });
 
 describe('sendPrepMessage', () => {

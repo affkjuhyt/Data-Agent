@@ -120,16 +120,17 @@ export default function SkillsToolsPage() {
 }
 
 function SkillCard({ skill, onOpen }: { skill: Skill; onOpen: () => void }) {
+  // agent_count is null when the api does not say: only a known 0 reads "chưa gán agent".
   const usage =
     skill.agent_count === 0
       ? 'chưa gán agent'
       : [
-          `${skill.agent_count} agent`,
+          skill.agent_count !== null && `${skill.agent_count} agent`,
           skill.runs_30d !== null && `${formatNumber(skill.runs_30d)} lần`,
           skill.pass_rate_pct !== null && `đạt ${skill.pass_rate_pct}%`,
         ]
           .filter(Boolean)
-          .join(' · ');
+          .join(' · ') || 'chưa chạy trong 30 ngày';
   return (
     <button
       type="button"

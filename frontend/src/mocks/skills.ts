@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import type { components } from '../lib/v1/schema';
+import { approvalRequest, type ApprovalSource } from './approvals';
 import type { Skill, SkillSuggestion, SkillVersion } from '../lib/v1/skills';
 
 type Schemas = components['schemas'];
@@ -436,11 +437,26 @@ const skillWire = (s: Skill) => ({
   display: s,
 });
 
-export function createSkillsHandlers() {
+export function createSkillsHandlers(approvals: ApprovalSource[] = []) {
   const skills = skillsFixture();
   let versions = versionsFixture();
   let proposal = publishProposalFixture();
   let suggestions = suggestionsFixture();
+  // The caller's open approve_proposal requests: v3's publish proposal.
+  approvals.push(() =>
+    proposal.status === 'pending_review'
+      ? [
+          approvalRequest({
+            id: 'hitl-skv-segment-3',
+            data_space_id: 'ds-rui-ro-tin-dung',
+            title: proposal.title,
+            source_ref: PROPOSAL_ID,
+            created_at: proposal.created_at,
+            proposal_kind: 'skill_publish',
+          }),
+        ]
+      : [],
+  );
   const tools = toolsFixture();
   let created = 0;
 
@@ -511,41 +527,6 @@ export function createSkillsHandlers() {
       // skill keeps the Data Space scope it has.
       await request.json();
       return HttpResponse.json({ ...skillWire(skill), scope: 'data_space' });
-    }),
-    // The caller's open approve_proposal requests: v3's publish proposal. Every other inbox
-    // read falls through to the inbox mock.
-    http.get('*/v1/inbox', ({ request }) => {
-      if (new URL(request.url).searchParams.get('kind') !== 'approve_proposal') return undefined;
-      return page(
-        proposal.status === 'pending_review'
-          ? [
-              {
-                id: 'hitl-skv-segment-3',
-                data_space_id: 'ds-rui-ro-tin-dung',
-                kind: 'approve_proposal',
-                risk: 'medium',
-                title: proposal.title,
-                context: {},
-                options: [],
-                source_service: 'inbox',
-                source_ref: PROPOSAL_ID,
-                parent_run_label: null,
-                assignee_id: 'me',
-                assignee_group: null,
-                assignee_capability: null,
-                due_at: null,
-                status: 'open',
-                response: null,
-                remember_as_rule: false,
-                resolved_by: null,
-                resolved_at: null,
-                channel_card_ids: [],
-                created_at: proposal.created_at,
-                updated_at: proposal.updated_at,
-              },
-            ]
-          : [],
-      );
     }),
     http.get('*/v1/proposals/:id', ({ params }) =>
       params.id === PROPOSAL_ID ? HttpResponse.json(proposal) : undefined,

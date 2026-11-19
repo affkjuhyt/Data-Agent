@@ -229,6 +229,48 @@ describe('documents from the api', () => {
     expect((await listLibrary({ category: 'regulation' })).items).toEqual([]);
   });
 
+  it('lists for validity review the documents an open document_validity proposal is about', async () => {
+    let inboxQuery = '';
+    server.use(
+      http.get('*/v1/documents', () =>
+        HttpResponse.json({
+          items: [
+            { ...doc, step: 'done', status: 'ready' },
+            { ...doc, id: 'd-2', step: 'done', status: 'ready' },
+          ],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/inbox', ({ request }) => {
+        inboxQuery = new URL(request.url).search;
+        return HttpResponse.json({
+          items: [
+            {
+              id: 'h-1',
+              kind: 'approve_proposal',
+              source_ref: 'p-1',
+              context: { proposal_kind: 'document_validity' },
+            },
+            {
+              id: 'h-2',
+              kind: 'approve_proposal',
+              source_ref: 'p-2',
+              context: { proposal_kind: 'metric_version' },
+            },
+          ],
+          next_page_token: '',
+        });
+      }),
+      http.get('*/v1/proposals/p-1', () =>
+        HttpResponse.json({ id: 'p-1', kind: 'document_validity', target_ref: 'd-2' }),
+      ),
+    );
+    const { items } = await listLibrary({ validity_review: true });
+    expect(inboxQuery).toContain('kind=approve_proposal');
+    expect(items.map((r) => r.id)).toEqual(['d-2']);
+    expect(items[0].validity_pending).toBe(true);
+  });
+
   it('lists the chunks of the document in order, numbered', async () => {
     let asked: string | null = null;
     server.use(

@@ -129,7 +129,9 @@ function RunBody({ run, view, onView }: { run: AgentRun; view: View; onView: (v:
         }
         description={[
           `${run.agent_name} v${run.config_version}`,
-          run.started_at ? `bắt đầu ${hhmm(run.started_at)} ${run.trigger_text}` : null,
+          run.started_at
+            ? `bắt đầu ${hhmm(run.started_at)}${run.trigger_text ? ` ${run.trigger_text}` : ''}`
+            : null,
           minutes ? `${minutes} phút` : null,
           `${formatNumber(Number(run.cost))} đ`,
         ]

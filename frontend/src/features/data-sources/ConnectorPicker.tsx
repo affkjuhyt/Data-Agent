@@ -18,7 +18,7 @@ import {
   type SourceRow,
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
-import { freshnessText, sourceTone } from './sourceFormat';
+import { freshnessText, isRestConnector, sourceTone } from './sourceFormat';
 
 /*
  * "v3.1 · Kết nối dữ liệu · Chưa có nguồn" (2165:17285, UC-04-01): step 1 of connecting, and
@@ -98,7 +98,7 @@ function targetOf(connector: Connector): { page: string; id?: string } | null {
   // Keep the old aliases so cached fixtures or an older gateway remain navigable.
   if (TABLE_INGEST_UNSUPPORTED.has(connector.code)) return null;
   if (connector.code === 'file' || connector.code === 'csv') return { page: 'UPLOAD' };
-  if (connector.code === 'rest_api' || connector.code === 'rest') return { page: 'CONNECT_API' };
+  if (isRestConnector(connector.code)) return { page: 'CONNECT_API' };
   if (connector.form) return { page: 'CONNECT', id: connector.code };
   return null;
 }

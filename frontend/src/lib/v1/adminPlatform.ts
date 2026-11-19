@@ -605,6 +605,14 @@ export const getGpuLoad = async (): Promise<GpuLoad> => {
   };
 };
 
+/*
+ * The api answers PUT /v1/admin/models/{task} with 501 until serving reads model_config
+ * (governance/admin_models.py): adding a model and rolling one back are disabled with this
+ * reason; null re-enables them once it does.
+ */
+export const MODEL_CHANGE_PENDING: string | null =
+  'Hệ thống phục vụ mô hình chưa đọc cấu hình mô hình theo tác vụ, nên chưa đổi được mô hình cho tác vụ.';
+
 /**
  * PUT /v1/admin/models/{task}: a new model for the task starts as a testing version and goes
  * active only after the eval sets of every Data Space pass (BR-140); the old one keeps serving.
@@ -1138,6 +1146,12 @@ export interface NotificationPreferences {
     channels: Record<NotificationChannel, boolean>;
     /** Channels the user cannot turn off (high-risk work always reaches the app). */
     locked: NotificationChannel[];
+    /*
+     * What the row holds that the screen does not edit. PUT replaces each row whole, so a save
+     * that left them out would wipe the quiet hours and turn a 15-minute grouping into instant.
+     */
+    quiet_hours?: Schemas['QuietHours'] | null;
+    batch_mode?: Schemas['PrefIn']['batch_mode'];
   }[];
   quiet_hours_text: string;
   grouping_text: string;
@@ -1195,6 +1209,8 @@ function readPrefs(page: PrefsWire): NotificationPreferences {
         ]),
       ) as Record<NotificationChannel, boolean>,
       locked: LOCKED[r.kind] ?? [],
+      quiet_hours: (r.quiet_hours as Schemas['QuietHours'] | null | undefined) ?? null,
+      batch_mode: r.batch_mode as Schemas['PrefIn']['batch_mode'],
     })),
     quiet_hours_text:
       quiet?.from && quiet.to
@@ -1216,7 +1232,13 @@ export const saveNotificationPreferences = async (body: NotificationPreferences)
           prefs: body.events.map((e) => ({
             kind: e.key as Schemas['PrefIn']['kind'],
             channels: CHANNELS.filter((c) => c !== 'digest' && e.channels[c]) as PrefChannel[],
-            batch_mode: e.channels.digest ? 'daily' : 'instant',
+            // "Bản tin" toggles daily; turning it off keeps a 15-minute grouping, not instant.
+            batch_mode: e.channels.digest
+              ? 'daily'
+              : e.batch_mode === 'daily'
+                ? 'instant'
+                : (e.batch_mode ?? 'instant'),
+            quiet_hours: e.quiet_hours ?? null,
           })),
         } satisfies Schemas['PrefsPut'],
       }),

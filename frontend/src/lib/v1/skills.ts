@@ -37,8 +37,9 @@ export interface Skill {
   owner: PersonRef;
   created_by: PersonRef;
   step_count: number;
-  /** PROPOSAL: usage over the last 30 days; null when it never ran. */
-  agent_count: number;
+  /** PROPOSAL: the agents using it; null when the api does not say (SkillView has no field). */
+  agent_count: number | null;
+  /** Usage over the last 30 days; null when it never ran. */
   runs_30d: number | null;
   pass_rate_pct: number | null;
   /** PROPOSAL: the version waiting for review, if any ("Đang chờ duyệt"). */
@@ -98,7 +99,7 @@ function readSkill(raw: SkillWire, names: Map<string, string>): Skill {
     owner,
     created_by: owner,
     step_count: Array.isArray(steps) ? steps.length : (raw.step_count ?? 0),
-    agent_count: 0,
+    agent_count: null,
     runs_30d: raw.run_count_30d || null,
     pass_rate_pct: null,
     pending_version_id: pending,

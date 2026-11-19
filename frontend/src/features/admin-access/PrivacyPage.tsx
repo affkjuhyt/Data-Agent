@@ -19,6 +19,7 @@ import {
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import {
+  DSR_PENDING,
   executeDsr,
   getDsr,
   listDsr,
@@ -30,6 +31,7 @@ import { csvCell } from '../../lib/csv';
 import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { CreateDsrDialog, DSR_KINDS } from './CreateDsrDialog';
 import { dayMonth } from './format';
+import { Unavailable } from '../../design-system/Unavailable';
 
 /*
  * Rail item "Quyền riêng tư" (UC-11-06). With an id it is "P11 · Yêu cầu của chủ thể dữ liệu"
@@ -79,10 +81,13 @@ function DsrList() {
     pageSize: 50,
   });
 
+  // The api answers POST /v1/dsr and :execute with 501 until the DSR worker exists.
   const create = (
-    <Button kind="primary" onClick={() => setCreating(true)}>
-      Tạo yêu cầu
-    </Button>
+    <Unavailable reason={DSR_PENDING}>
+      <Button kind="primary" disabled={DSR_PENDING !== null} onClick={() => setCreating(true)}>
+        Tạo yêu cầu
+      </Button>
+    </Unavailable>
   );
 
   return (
@@ -282,20 +287,23 @@ function DsrDetail({ id }: { id: string }) {
                       <Button disabled={d.items.length === 0} onClick={() => exportList(d)}>
                         Xuất danh sách
                       </Button>
-                      <Button
-                        kind="primary"
-                        disabled={
-                          d.status !== 'review' ||
-                          pending.length === 0 ||
-                          (deletes && chosen.length === 0)
-                        }
-                        onClick={() => {
-                          setMissing(false);
-                          setConfirming(true);
-                        }}
-                      >
-                        {deletes ? 'Xoá đã chọn' : 'Cung cấp dữ liệu'}
-                      </Button>
+                      <Unavailable reason={DSR_PENDING}>
+                        <Button
+                          kind="primary"
+                          disabled={
+                            DSR_PENDING !== null ||
+                            d.status !== 'review' ||
+                            pending.length === 0 ||
+                            (deletes && chosen.length === 0)
+                          }
+                          onClick={() => {
+                            setMissing(false);
+                            setConfirming(true);
+                          }}
+                        >
+                          {deletes ? 'Xoá đã chọn' : 'Cung cấp dữ liệu'}
+                        </Button>
+                      </Unavailable>
                     </>
                   )
                 }

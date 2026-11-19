@@ -845,6 +845,8 @@ export function readWriteback(raw: WritebackWire): Writeback {
           },
         ]
       : [],
+    // decideWriteback decides the writeback through this proposal; without it every decision fails.
+    proposal_id: raw.proposal_id ?? null,
     can_decide: pending && Boolean(raw.proposal_id),
     after_approval_text: 'Yêu cầu sẽ được xử lý theo quy trình phê duyệt của tổ chức.',
     rollback_text: raw.snapshot_ref
