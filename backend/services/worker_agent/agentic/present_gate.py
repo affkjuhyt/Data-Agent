@@ -1,9 +1,10 @@
 """Deterministic VERIFY before PRESENT (OP-5 / AGC-11).
 
 Compose must not invent figures when nothing was fetched, named members were dropped, every
-measure is empty, tables are out of time, or the metrics read do not measure what was asked.
-Column mismatches on kpi/chart/table drafts are also a gate (output contract: right calc, wrong
-column → replan or hand over, not a silent full-table fallback).
+measure is empty, or tables are out of time. A quantity the catalogue does not name is
+exploratory SQL, not a gate. Column mismatches on kpi/chart/table drafts are also a gate
+(output contract: right calc, wrong column → replan or hand over, not a silent full-table
+fallback).
 """
 
 from __future__ import annotations
@@ -60,7 +61,11 @@ def before_write(
     out_of_time: list[str],
     plan_steps: list[dict[str, Any]] | None = None,
 ) -> GateHit | None:
-    """First failing check before the reporter writes. None means PRESENT may proceed."""
+    """First failing check before the reporter writes. None means PRESENT may proceed.
+
+    `unnamed` stays on the signature because compose still passes the quantity words. Those
+    words no longer stop the answer: an uncatalogued quantity is explore_sql.
+    """
     if out_of_time:
         return GateHit(
             target=f"Dữ liệu {', '.join(out_of_time)} quá hạn cập nhật; chuyển sang cách trả lời chuẩn.",
@@ -94,17 +99,6 @@ def before_write(
                 "mọi số liệu lấy được đều rỗng hoặc bằng 0 cho kỳ hoặc bộ lọc được hỏi; gọi"
                 " data_coverage để biết kỳ có dữ liệu, rồi truy vấn kỳ đầy đủ gần nhất (cùng độ dài)"
                 " và kỳ để so sánh"
-            ),
-        )
-    if unnamed:
-        joined = " ".join(unnamed)
-        return GateHit(
-            target=f"Chỉ số đã dùng không đo '{joined}'",
-            detail={"unnamed": unnamed},
-            feedback=(
-                f"không chỉ số nào trong danh mục đo '{joined}' mà câu hỏi hỏi; tìm chỉ số khác"
-                " (search_catalog) hoặc chuyển sang cách trả lời chuẩn — không tự tính bằng"
-                " SQL thăm dò"
             ),
         )
     return None

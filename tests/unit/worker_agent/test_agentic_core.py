@@ -830,13 +830,15 @@ def test_an_analysis_that_fetched_nothing_hands_the_question_back() -> None:
     assert state.handed_back and state.composition == []
 
 
-def test_a_metric_that_does_not_measure_what_was_asked_hands_the_question_back() -> None:
+def test_unnamed_words_on_a_certified_reading_are_not_a_gate() -> None:
+    """A certified reading can leave quantity words unnamed. Those words are still computed;
+    they no longer hand the question back — `unnamed` is not a present_gate hit."""
     import datetime
     import types
     import uuid
 
     from libs import clock
-    from services.worker_agent.agentic import engine
+    from services.worker_agent.agentic import engine, present_gate
     from services.worker_agent.understand.resolver import MetricEntry
 
     units = MetricEntry(uuid.uuid4(), "SO_LUONG_BAN_INTERNET", "Số lượng bán Internet", True)
@@ -868,31 +870,55 @@ def test_a_metric_that_does_not_measure_what_was_asked_hands_the_question_back()
         )
 
     asked_customers = state("Có bao nhiêu khách hàng mua qua Internet năm 2013")
-    assert engine._unnamed_quantity(asked_customers) == ["khach", "hang", "mua"]
-    asked_customers.gate_retries = engine.MAX_GATE_RETRIES
-    asyncio.run(engine.compose(asked_customers))
-    assert asked_customers.handed_back
+    unnamed = engine._unnamed_quantity(asked_customers)
+    assert unnamed == ["khach", "hang", "mua"]
+    assert (
+        present_gate.before_write(
+            mode="analyze",
+            ws=ws,
+            dropped_members=[],
+            unnamed=unnamed,
+            out_of_time=[],
+        )
+        is None
+    )
     assert engine._unnamed_quantity(state("Vì sao số lượng bán Internet năm 2013 giảm")) == []
     # "Cơ cấu" folds to "co cau": how to read the quantity, not one the catalogue lacks.
     assert engine._unnamed_quantity(state("Cơ cấu số lượng bán Internet năm 2013")) == []
 
 
 def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql() -> None:
+    """Leftover words are not a catalogue refusal. The step continues, and a metric that does
+    not compile comes back as a compile error with no unnamed detail."""
     import datetime
     import types
     import uuid
 
     from libs import clock
     from services.worker_agent.agentic.tools.query import QueryMetric, QueryMetricArgs
+    from services.worker_agent.semantic import compiler as c
     from services.worker_agent.understand.resolver import MetricEntry
 
     units = MetricEntry(uuid.uuid4(), "SO_LUONG_BAN_INTERNET", "Số lượng bán Internet", True)
+    version = c.MetricVersion(
+        id=uuid.uuid4(),
+        metric_code="SO_LUONG_BAN_INTERNET",
+        display_name="Số lượng bán Internet",
+        expression="so_luong",
+        filters=(),
+        unit="đơn vị",
+        decimals=0,
+        period_semantics="sum_over_period",
+        allowed_dimension_ids=frozenset(),
+        certified=True,
+    )
     layer = types.SimpleNamespace(
         vocabulary=types.SimpleNamespace(
             metrics=[units], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
         ),
-        versions={units.metric_id: SimpleNamespace(allowed_dimension_ids=[])},
+        versions={units.metric_id: version},
         blocked_metric_ids=set(),
+        layer=c.Layer(measures={}, dimensions={}, entity_tables={}),
     )
     ctx = types.SimpleNamespace(
         layer=layer,
@@ -903,9 +929,9 @@ def test_query_metric_refuses_a_quantity_no_metric_names_without_inventing_sql()
         QueryMetric().run(ctx, QueryMetricArgs(metric="SO_LUONG_BAN_INTERNET"))  # type: ignore[arg-type]
     )
     assert not done.ok
-    assert "explore_sql" not in done.observation
-    assert "không tự tính" in done.observation
-    assert done.detail["unnamed"] == ["khach", "hang", "mua"]
+    assert "không tự tính" not in done.observation
+    assert "unnamed" not in done.detail
+    assert "không compile được" in done.observation
 
 
 def test_query_metric_sends_a_missed_cut_back_as_an_argument_error() -> None:
@@ -1099,43 +1125,30 @@ def test_query_metric_drops_a_made_up_calendar_cut_when_a_grain_is_set(monkeypat
 
 
 def test_explore_sql_refuses_a_quantity_no_metric_in_the_catalogue_names() -> None:
-    """RES-04: churn / invented KPIs must not be computed by exploratory SQL."""
-    import datetime
-    import types
-    import uuid
+    """An explore_sql row is an answer even when the catalogue does not name the quantity."""
+    from services.worker_agent.agentic import present_gate
 
-    from libs import clock
-    from services.worker_agent.agentic.tools.query import ExploreSql, ExploreSqlArgs
-    from services.worker_agent.understand.resolver import MetricEntry
-
-    units = MetricEntry(uuid.uuid4(), "SO_LUONG_BAN_INTERNET", "Số lượng bán Internet", True)
-    ctx = types.SimpleNamespace(
-        layer=types.SimpleNamespace(
-            vocabulary=types.SimpleNamespace(
-                metrics=[units], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
-            )
-        ),
-        question="Tỷ lệ rời bỏ khách hàng năm 2013",
-        today=datetime.date(2026, 11, 3),
-        org_id=uuid.uuid4(),
-        space_id=uuid.uuid4(),
-        user_id=uuid.uuid4(),
-        question_id=uuid.uuid4(),
-        ws=Workspace(),
-        refused_sql=[],
-        models=[],
-        step_id="s1",
+    ws = Workspace()
+    ws.add(
+        title="Tỷ lệ",
+        columns=["ty_le"],
+        rows=[[0.12]],
+        trust="exploratory",
+        tool="explore_sql",
+        sql="SELECT 0.12",
     )
-    done = asyncio.run(
-        ExploreSql().run(ctx, ExploreSqlArgs(question="Tỷ lệ rời bỏ khách hàng năm 2013"))  # type: ignore[arg-type]
+    hit = present_gate.before_write(
+        mode="analyze",
+        ws=ws,
+        dropped_members=[],
+        unnamed=["ty", "le"],
+        out_of_time=[],
     )
-    assert not done.ok
-    assert "không tự tính" in done.observation
-    assert done.detail["unnamed"]
+    assert hit is None
 
 
 def test_explore_sql_answer_for_an_uncatalogued_quantity_hands_the_question_back() -> None:
-    """Compose still catches an exploratory dataset that invented a quantity (RES-04)."""
+    """explore_sql is the reading: the catalogue gap is not handed back, and nothing is asked."""
     import datetime
     import types
     import uuid
@@ -1169,10 +1182,32 @@ def test_explore_sql_answer_for_an_uncatalogued_quantity_hands_the_question_back
         ),
         plan=_plan({"id": "s1", "tool": "explore_sql", "instruction": "x", "status": "done"}),
     )
-    assert engine._unnamed_quantity(state)
-    state.gate_retries = engine.MAX_GATE_RETRIES
-    asyncio.run(engine.compose(state))
-    assert state.handed_back
+    assert engine._unnamed_quantity(state) == []
+    assert engine._ask_for_unnamed_question(state) is False
+
+
+def test_no_figure_still_blocks_an_all_zero_period() -> None:
+    from services.worker_agent.agentic import present_gate
+
+    ws = Workspace()
+    ws.add(title="t", columns=["Năm", "Doanh thu"], rows=[[2009, 0]], trust="certified")
+    hit = present_gate.before_write(
+        mode="analyze",
+        ws=ws,
+        dropped_members=[],
+        unnamed=[],
+        out_of_time=[],
+    )
+    assert hit is not None
+    assert hit.target.startswith("Không có số liệu")
+
+
+def test_certified_metric_still_binds_the_audit() -> None:
+    from services.worker_agent.sqlgen import audit_rules
+    from tests.unit.worker_agent.test_audit_rules import SPACE, TODAY
+
+    ctx = audit_rules.context_for("Doanh thu năm 2013", SPACE, today=TODAY)
+    assert ctx.metric == "Doanh thu"
 
 
 def test_explore_sql_for_a_catalogued_quantity_is_not_an_unnamed_gate() -> None:

@@ -980,6 +980,10 @@ def _ask_for_unnamed_question(s: State) -> bool:
         quantity_words(s.ctx.question, vocab, today=s.ctx.today), _catalogue_words(vocab)
     )
     ask = clarify_policy.unnamed_quantity(s.ctx.question, words, s.ctx.layer) if words else None
+    # The catalogue names no metric for the quantity: the ask would be an empty option list.
+    # Answer from the tables instead of asking which metric.
+    if ask is not None and not ask.options:
+        return False
     if ask is None and not s.ctx.period_moves:
         # Nothing read and no period to blame (a period with no data is moved, AGC-10, not asked).
         found = s.ctx.period
@@ -993,16 +997,18 @@ def _ask_for_unnamed_question(s: State) -> bool:
 
 
 def _unnamed_quantity(s: State) -> list[str]:
-    """The question's quantity words no certified metric covers (invariant 3 / RES-04).
+    """The question's quantity words no certified reading covers.
 
-    When the turn read certified metrics, those readings must name the quantity. When it answered
-    with explore_sql, the space's catalogue must still name the quantity — exploratory SQL must
-    not invent a KPI the warehouse does not define (churn, made-up rates).
+    When the turn read certified metrics, those readings must name the quantity. A turn whose
+    only readings are explore_sql is the space's tables: the catalogue not naming the quantity
+    is not a gap to hand back.
     """
     assert s.ctx is not None and s.plan is not None
     if s.plan.mode != "analyze":
         return []
     datasets = list(s.ctx.ws.datasets.values())
+    if datasets and all(d.tool == "explore_sql" for d in datasets):
+        return []
     vocab = s.ctx.layer.vocabulary
     readings = [d.reading for d in datasets if d.reading]
     words = quantity_words(
@@ -1012,8 +1018,6 @@ def _unnamed_quantity(s: State) -> list[str]:
         group_by=[g for r in readings for g in r.get("group_by", [])],
         filters={k: v for r in readings for k, v in (r.get("filters") or {}).items()},
     )
-    if any(d.tool == "explore_sql" for d in datasets):
-        return unnamed(words, _catalogue_words(vocab))
     if not readings:
         return []
     by_code = {m.code: m for m in vocab.metrics}
