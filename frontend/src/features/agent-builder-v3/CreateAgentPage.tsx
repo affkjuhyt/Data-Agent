@@ -106,7 +106,7 @@ export default function CreateAgentPage() {
     try {
       const agent = await ensureAgent(draft.data);
       if (kind === 'test') {
-        await test.start(agent.id, agent.config?.version ?? 1);
+        await test.start(agent.id, agent.config?.version ?? 1, agent.name);
       } else {
         toast({ tone: 'success', message: `Đã tạo ${agent.name}` });
         navigate('agents', 'AGENT', agent.id);

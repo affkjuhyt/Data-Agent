@@ -1,5 +1,5 @@
 import { listDatasets } from './api';
-import { type Page, api, ok, okAs } from './client';
+import { type Page, V1Error, api, ok, okAs } from './client';
 import { getMe } from './me';
 import type { components } from './schema';
 
@@ -338,19 +338,145 @@ export interface DataProductDetail extends DataProduct {
   agent_note: { text: string; action_label: string } | null;
 }
 
-/**
- * PROPOSAL: the published products' list. The api's GET /v1/data-products serves the context
- * layer (P07, lib/v1/answerProducts.ts) and has no read for published ones yet, so its context
- * rows are left out here and the list is empty until A2 adds one.
- */
-export const listDataProducts = async () => {
-  const page = await okAs<Page<DataProduct & { layer?: string }>>(api.GET('/v1/data-products'));
-  return { ...page, items: page.items.filter((p) => p.layer !== 'context') };
+/** pipeline.data_product as GET /v1/data-products?layer=published sends it, one row per version. */
+export type PublishedProductWire = Schemas['PublishedDataProductView'];
+/** The mock sends the screen's row under `display`. */
+type PublishedListWire = PublishedProductWire & { display?: DataProduct };
+
+const VERSION_STATE: Record<string, VersionState> = {
+  draft: 'draft',
+  published: 'current',
+  deprecated: 'supported',
+  retired: 'retired',
 };
 
-/** PROPOSAL: GET /v1/data-products/{id}. */
-export async function getDataProduct(id: string) {
-  return okAs<DataProductDetail>(api.GET('/v1/data-products/{id}', { params: { path: { id } } }));
+const contractColumns = (contract: unknown) => {
+  const columns = (contract as { columns?: unknown } | null)?.columns;
+  return Array.isArray(columns)
+    ? columns.flatMap((c) =>
+        c && typeof c === 'object' && 'name' in c
+          ? [{ name: String(c.name), type: String((c as { type?: unknown }).type ?? '') }]
+          : [],
+      )
+    : [];
+};
+
+/** The versions of one code, newest first; the one it serves, and a draft above that. */
+function versionsOf(rows: PublishedProductWire[], code: string) {
+  const versions = rows.filter((r) => r.code === code).sort((a, b) => b.version - a.version);
+  const serving = versions.find((r) => r.status === 'published' || r.status === 'deprecated');
+  const draft = versions.find(
+    (r) => r.status === 'draft' && (!serving || r.version > serving.version),
+  );
+  return { versions, serving, draft };
+}
+
+/**
+ * Each product once, at the version it serves (the newest draft when none is served yet), with
+ * a draft above it as its next version. Quality is not measured per refresh on the api: null.
+ */
+export function readPublishedProducts(rows: PublishedProductWire[]): DataProduct[] {
+  return [...new Set(rows.map((r) => r.code))].flatMap((code) => {
+    const { versions, serving, draft } = versionsOf(rows, code);
+    const row = serving ?? versions[0];
+    if (!row) return [];
+    return [
+      {
+        id: row.id,
+        name: row.name,
+        code: row.code,
+        version: String(row.version),
+        next_version: serving && draft ? String(draft.version) : null,
+        description: '',
+        status: serving ? 'published' : 'draft',
+        breaking_change: Boolean(serving && draft?.breaking_notice_at),
+        used_by_spaces: serving ? (serving.consumers ?? []).length : null,
+        quality_pct: null,
+        refreshed_at: row.updated_at,
+      } satisfies DataProduct,
+    ];
+  });
+}
+
+/**
+ * The drawer of a published product from its version rows: the contract it serves (a column the
+ * next draft drops or retypes is `changed`), the Data Spaces reading it, and its versions. The
+ * api records no refresh checks and no agent note for this layer, so those stay empty.
+ */
+export function readPublishedDetail(
+  rows: PublishedProductWire[],
+  id: string,
+  spaceNames: ReadonlyMap<string, string>,
+): DataProductDetail | null {
+  const picked = rows.find((r) => r.id === id);
+  const summary = picked && readPublishedProducts(rows).find((p) => p.code === picked.code);
+  if (!picked || !summary) return null;
+  const { versions, serving, draft } = versionsOf(rows, picked.code);
+  const row = serving ?? picked;
+  const next = draft && draft !== row ? contractColumns(draft.contract) : null;
+  const consumers = row.consumers ?? [];
+  return {
+    ...summary,
+    contract: contractColumns(row.contract).map((c) => ({
+      ...c,
+      description: '',
+      changed: next !== null && !next.some((n) => n.name === c.name && n.type === c.type),
+    })),
+    checks: [],
+    checked_at: '',
+    consumers: consumers.map((space) => ({
+      data_space_name: spaceNames.get(space) ?? 'Data Space khác',
+      used_for: '',
+      version: String(row.version),
+    })),
+    consumer_spaces_total: consumers.length,
+    affected_by_next: draft?.breaking_notice_at ? consumers.length : 0,
+    versions: versions.map((v) => ({
+      version: String(v.version),
+      change: v.breaking_notice_at ? 'Thay đổi phá vỡ hợp đồng' : '',
+      state: VERSION_STATE[v.status] ?? 'retired',
+    })),
+    agent_note: null,
+  };
+}
+
+const listPublishedRows = async () =>
+  (
+    await okAs<Page<PublishedListWire>>(
+      api.GET('/v1/data-products', { params: { query: { layer: 'published', page_size: 500 } } }),
+    )
+  ).items;
+
+/** GET /v1/data-products?layer=published: the P06 products of the Data Space in use. */
+export const listDataProducts = async (): Promise<Page<DataProduct>> => {
+  const rows = await listPublishedRows();
+  const shown =
+    rows.length > 0 && rows.every((r) => r.display)
+      ? rows.map((r) => r.display!)
+      : readPublishedProducts(rows);
+  return { items: shown, next_page_token: '' };
+};
+
+/**
+ * One published product. GET /v1/data-products/{id} reads the context layer only, so a product
+ * it does not know is read from the layer's list (the mock still answers the detail route).
+ */
+export async function getDataProduct(id: string): Promise<DataProductDetail> {
+  try {
+    return await okAs<DataProductDetail>(
+      api.GET('/v1/data-products/{id}', { params: { path: { id } } }),
+    );
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+  }
+  const [rows, spaces] = await Promise.all([
+    listPublishedRows(),
+    ok(api.GET('/v1/data-spaces')).catch(() => null),
+  ]);
+  const names = new Map((spaces?.items ?? []).map((s) => [s.id, s.name] as const));
+  const detail = readPublishedDetail(rows, id, names);
+  if (!detail) throw new V1Error(404, 'not_found', 'Không tìm thấy sản phẩm dữ liệu.');
+  return detail;
 }
 
 /** PROPOSAL: POST /v1/data-products/{id}:draft-version — the agent drafts the next version. */

@@ -170,7 +170,10 @@ function AgentBody({ agent }: { agent: AgentDetail & { config: AgentConfig } }) 
             Lịch sử
           </Button>
         </Tooltip>
-        <Button loading={test.starting} onClick={() => test.start(agent.id, agent.config.version)}>
+        <Button
+          loading={test.starting}
+          onClick={() => test.start(agent.id, agent.config.version, agent.name)}
+        >
           Chạy thử
         </Button>
         <Tooltip content={configDirty || triggersDirty ? 'Phiên bản mới phải qua bộ đánh giá trước khi chạy thật.' : 'Chưa có thay đổi.'}>

@@ -62,7 +62,30 @@ export type MetricWire = Omit<Schemas['MetricDetail'], 'versions'> & {
   usage_counts?: { artifacts: number; agents: number; reports: number };
 };
 
-const readVersion = (raw: VersionWire): MetricVersion => ({
+/** Said for an allowed dimension no entity of the Data Space names any more. */
+const UNKNOWN_DIMENSION = 'chiều không còn trong mô hình';
+
+/**
+ * allowed_dimensions are ids of context.semantic_dimension; the names are the entities' (A2 has no
+ * dimension list, so one GET per entity, as the Explore model reads them). Without names a
+ * version's dimensions would be printed as UUIDs.
+ */
+async function dimensionNames(): Promise<Map<string, string>> {
+  const entities = await ok(
+    api.GET('/v1/entities', { params: { query: { page_size: 500 } } }),
+  );
+  const details = await Promise.all(
+    entities.items.map((e) =>
+      ok(api.GET('/v1/entities/{key}', { params: { path: { key: e.key } } })).catch(() => null),
+    ),
+  );
+  return new Map(details.flatMap((d) => (d?.dimensions ?? []).map((x) => [x.id, x.name] as const)));
+}
+
+const readVersion = (
+  raw: VersionWire,
+  names: ReadonlyMap<string, string> = new Map(),
+): MetricVersion => ({
   id: raw.id,
   version: raw.version,
   display_name: raw.display_name,
@@ -72,8 +95,10 @@ const readVersion = (raw: VersionWire): MetricVersion => ({
   direction: raw.direction as MetricVersion['direction'],
   period_semantics: raw.period_semantics as MetricVersion['period_semantics'],
   time_grain: raw.time_grain as MetricVersion['time_grain'],
-  // allowed_dimensions are what the version allows; their names are PROPOSAL.
-  dimension_labels: raw.dimension_labels ?? raw.allowed_dimensions,
+  // allowed_dimensions are what the version allows, by id; the screen says their names.
+  dimension_labels:
+    raw.dimension_labels ??
+    (raw.allowed_dimensions ?? []).map((id) => names.get(id) ?? UNKNOWN_DIMENSION),
   change_note: raw.change_note,
   status: raw.status as MetricVersionStatus,
   certified_at: raw.certified_at,
@@ -91,18 +116,24 @@ function usageText(raw: MetricWire): string {
   return `dùng ở ${products} data product, ${pages} trang tri thức`;
 }
 
-const readMetric = (raw: MetricWire): MetricDetail => ({
+const readMetric = (raw: MetricWire, names: ReadonlyMap<string, string>): MetricDetail => ({
   id: raw.id,
   code: raw.code,
   status: raw.status as MetricDetail['status'],
   current_version: raw.current_version,
-  versions: (raw.versions ?? []).map(readVersion),
+  versions: (raw.versions ?? []).map((v) => readVersion(v, names)),
   usage_text: usageText(raw),
   stewardship: raw.stewardship ?? [],
 });
 
-export const getMetric = async (id: string) =>
-  readMetric(await ok<MetricWire>(api.GET('/v1/metrics/{id}', { params: { path: { id } } })));
+export const getMetric = async (id: string) => {
+  const raw = await ok<MetricWire>(api.GET('/v1/metrics/{id}', { params: { path: { id } } }));
+  const named = (raw.versions ?? []).every(
+    (v) => v.dimension_labels || !v.allowed_dimensions?.length,
+  );
+  // The names only cost reads when a version allows dimensions the api sent without names.
+  return readMetric(raw, named ? new Map() : await dimensionNames().catch(() => new Map()));
+};
 
 /** A new draft starts as a copy of the version in use; the change note says why. */
 export const createMetricDraft = async (id: string, from: MetricVersion, changeNote: string) =>

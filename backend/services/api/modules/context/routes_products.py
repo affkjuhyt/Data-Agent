@@ -21,7 +21,7 @@ from __future__ import annotations
 import datetime
 import json
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response
@@ -74,6 +74,7 @@ from services.api.modules.pipeline import (
     create_published_product,
     published_products,
     shared_product_usable,
+    space_products,
 )
 
 router = APIRouter()
@@ -326,7 +327,7 @@ async def data_product_index(
 
 @router.get(
     "/v1/data-products",
-    response_model=Page[DataProductView],
+    response_model=Page[DataProductView] | Page[PublishedDataProductView],
     **endpoint("GET", "/v1/data-products", operation_id="listDataProducts"),
 )
 async def list_data_products(
@@ -337,7 +338,17 @@ async def list_data_products(
     owner_id: uuid.UUID | None = None,
     steward_id: uuid.UUID | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
-) -> Page[DataProductView]:
+    layer: Literal["context", "published"] = "context",
+) -> Page[DataProductView] | Page[PublishedDataProductView]:
+    # One operation for both layers, as POST is: `published` is P06's own list, read through the
+    # pipeline module (ADR-28). It is one page, newest version first within a code; the filters
+    # of the context layer do not apply to it.
+    if layer == "published":
+        rows = await space_products(principal, data_space, limit=page.page_size)
+        return Page[PublishedDataProductView](
+            items=[PublishedDataProductView.model_validate(r) for r in rows],
+            next_page_token="",
+        )
     dp = context.DataProduct
     query = select(dp).where(dp.org_id == principal.org_id, dp.data_space_id == data_space)
     if status:
