@@ -139,3 +139,54 @@ async def test_without_a_model_the_agent_says_so(
     await drain()
     assert steps_of(seed, pid) == [SELECT]
     assert "Chưa nối được mô hình" in answers(seed, pid)[-1]["text"]
+
+
+@pytest.mark.req("DF-17")
+async def test_agent_steps_on_active_pipeline_open_a_proposal(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # AUD-04: an active pipeline runs on its schedule; what the model proposes waits for review.
+    from .test_reviews import decide, drain_all, person
+
+    bank = build(seed, warehouse, monkeypatch)
+    pid = pipeline(bank, [SELECT])
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE pipeline.pipeline SET status = 'active' WHERE id = %s", (str(pid),))
+    reply = {"reply": "Đã thêm bước.", "question": None, "steps": [SELECT, DROP_INTERNAL]}
+    model(monkeypatch, reply)
+    say(bank, pid, "Bỏ các khoản cho vay nội bộ")
+    await drain()
+    assert [s["kind"] for s in steps_of(seed, pid)] == ["compute"]
+    proposal, status, assignee = seed.one(
+        "SELECT id, status, assignee_id FROM inbox.proposal"
+        " WHERE kind = 'pipeline_steps' AND target_ref = %s",
+        pid,
+    )
+    assert status == "pending_review"
+    assert assignee == seed.one("SELECT owner_id FROM pipeline.pipeline WHERE id = %s", pid)
+    assert "gửi duyệt" in answers(seed, pid)[-1]["text"]
+
+    decide(seed, bank.org, proposal, "accepted", person(seed, bank.org, "rv"))
+    await drain_all()
+    assert [s["kind"] for s in steps_of(seed, pid)] == ["compute", "filter"]
+
+    # A proposal over steps that have moved since is not applied (OCC).
+    say(bank, pid, "Bỏ tiếp các khoản nội bộ")
+    model(monkeypatch, {**reply, "steps": [SELECT]})
+    await drain()
+    later = seed.one(
+        "SELECT id FROM inbox.proposal WHERE kind = 'pipeline_steps' AND target_ref = %s"
+        " AND status = 'pending_review'",
+        pid,
+    )
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE pipeline.pipeline SET steps = %s WHERE id = %s",
+            (json.dumps([SELECT, DROP_INTERNAL, SELECT]), str(pid)),
+        )
+    decide(seed, bank.org, later, "accepted", person(seed, bank.org, "rv2"))
+    await drain_all()
+    assert len(steps_of(seed, pid)) == 3
+    assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", later) == "apply_failed"

@@ -985,3 +985,24 @@ def test_a_migrated_cluster_keeps_an_answers_trust_code(admin):
     conn.close()
     assert "'INSUFFICIENT'" in checks["answer_trust_code_check"]
     assert "jsonb_typeof(envelope)" in checks["answer_envelope_check"]
+
+
+def test_a_migrated_cluster_takes_pipeline_steps_proposals(admin):
+    # v3_0046 (21/11/2026, DF-17): an agent's steps for an active pipeline wait in the inbox.
+    _fresh(admin, "chain_df17", "chain_df17_audit")
+    db = _db(admin, "chain_df17")
+    _alembic(db, "upgrade", "v3_0045")
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("ALTER TABLE inbox.proposal DROP CONSTRAINT proposal_kind_check")
+        cur.execute(
+            "ALTER TABLE inbox.proposal ADD CONSTRAINT proposal_kind_check CHECK (kind IN"
+            " ('metric_change','data_product'))"
+        )
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    assert "'pipeline_steps'" in _one(
+        db,
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'proposal_kind_check'",
+    )

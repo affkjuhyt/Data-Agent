@@ -114,7 +114,8 @@ def check_steps(
     return steps, None
 
 
-def _same(a: dict[str, Any], b: dict[str, Any]) -> bool:
+def same_step(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """The same step as far as running it goes (DF-17's review compares steps by it too)."""
     keys = ("kind", "description", "code", "drop_condition")
     return all(a.get(k) == b.get(k) for k in keys)
 
@@ -260,7 +261,7 @@ async def requested(event: Event) -> None:
         return
     for i, step in enumerate(steps):
         # What the screen previews first: the steps this answer added or changed.
-        step["is_new"] = i >= len(before) or not _same(step, before[i])
+        step["is_new"] = i >= len(before) or not same_step(step, before[i])
     async with scoped_session(ROLE, event.org_id, actor) as session:
         locked = await session.scalar(
             select(pl.Pipeline).where(pl.Pipeline.id == pipeline_id).with_for_update()
@@ -269,7 +270,7 @@ async def requested(event: Event) -> None:
             return
         current = [dict(s) for s in locked.steps or [] if isinstance(s, dict)]
         if len(current) != len(before) or not all(
-            _same(a, b) for a, b in zip(current, before, strict=True)
+            same_step(a, b) for a, b in zip(current, before, strict=True)
         ):
             # Someone edited the steps while the model was thinking: theirs stand (no
             # last-write-wins), the answer says so.
@@ -281,8 +282,37 @@ async def requested(event: Event) -> None:
                 rejected=True,
             )
             return
-        locked.steps = steps
-        locked.updated_by, locked.updated_at = actor, _now()
+        review = locked.status == "active"
+        if not review:
+            locked.steps = steps
+            locked.updated_by, locked.updated_at = actor, _now()
+        space, owner, name = locked.data_space_id, locked.owner_id, locked.name
+    if review:
+        # DF-17 (AUD-04): an active pipeline runs on its schedule; the model's steps wait in the
+        # Review Inbox, applied by its reviewer over the steps they were proposed against.
+        from services.worker_agent import reviews
+
+        await reviews._open(
+            event,
+            data_space_id=space,
+            kind="pipeline_steps",
+            target_service="pipeline",
+            target_ref=pipeline_id,
+            title=f"Các bước mới cho pipeline {name}",
+            diff={"steps": steps, "base_steps": before},
+            proposed_by=actor,
+            eval_run_id=None,
+            assignee_id=owner,
+        )
+        await _answer(
+            event.org_id,
+            pipeline_id,
+            actor,
+            "Pipeline đang chạy theo lịch nên các bước này được gửi duyệt trong Cần bạn;"
+            " chúng được áp khi người duyệt chấp nhận.",
+            changed=[i + 1 for i, s in enumerate(steps) if s["is_new"]],
+        )
+        return
     await _answer(
         event.org_id,
         pipeline_id,

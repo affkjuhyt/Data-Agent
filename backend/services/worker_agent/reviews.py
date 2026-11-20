@@ -28,7 +28,8 @@ from sqlalchemy.exc import IntegrityError
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, conflict, context, document
 from libs.dataagent_db.models import eval as ev
-from services.worker_agent import evaluation, quality_gate, self_approval
+from libs.dataagent_db.models import pipeline as pl
+from services.worker_agent import evaluation, prep, quality_gate, self_approval
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 PRODUCT = "data_product.submitted"
 AUTHORITY = "source_authority.drafted"
 VALIDITY = "document.validity_proposed"
-KINDS = ("data_product", "source_authority", "document_validity")
+KINDS = ("data_product", "source_authority", "document_validity", "pipeline_steps")
 
 
 def _now() -> datetime.datetime:
@@ -322,6 +323,8 @@ async def _apply(event: Event, proposal: dict[str, Any]) -> bool:
             row.status, row.activated_by, row.activated_at = "active", reviewer, now
             row.updated_by, row.updated_at = reviewer, now
             return True
+    if proposal["kind"] == "pipeline_steps":
+        return await _apply_steps(event, accepted, reviewer, ref, requested)
     if proposal["kind"] == "source_authority":
         async with scoped_session("svc_conflict", event.org_id, reviewer) as session:
             authority = await session.get(conflict.SourceAuthority, ref, with_for_update=True)
@@ -353,6 +356,32 @@ async def _apply(event: Event, proposal: dict[str, Any]) -> bool:
                 old.effective_to = doc_row.effective_from - datetime.timedelta(days=1)
                 old.updated_by, old.updated_at = reviewer, now
         doc_row.updated_by, doc_row.updated_at = reviewer, now
+        return True
+
+
+async def _apply_steps(
+    event: Event,
+    accepted: bool,
+    reviewer: uuid.UUID,
+    pipeline_id: uuid.UUID,
+    requested: dict[str, Any],
+) -> bool:
+    """DF-17: the agent's steps, accepted, replace the steps they were proposed against; if the
+    pipeline's steps moved meanwhile (OCC, invariant 10) the proposal ends apply_failed."""
+    if not accepted:
+        return True
+    async with scoped_session("svc_pipeline", event.org_id, reviewer) as session:
+        row = await session.get(pl.Pipeline, pipeline_id, with_for_update=True)
+        if row is None or row.deleted_at is not None:
+            return False
+        base = list(requested.get("base_steps") or [])
+        now_steps = [s for s in row.steps or [] if isinstance(s, dict)]
+        if len(now_steps) != len(base) or not all(
+            prep.same_step(a, b) for a, b in zip(now_steps, base, strict=True)
+        ):
+            return False
+        row.steps = list(requested.get("steps") or [])
+        row.updated_by, row.updated_at = reviewer, _now()
         return True
 
 

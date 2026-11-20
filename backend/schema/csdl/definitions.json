@@ -16325,7 +16325,7 @@
    "constraints": [
     {
      "kind": "check",
-     "sql": "CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product','forecast_model'))"
+     "sql": "CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product','forecast_model','pipeline_steps'))"
     },
     {
      "kind": "check",
