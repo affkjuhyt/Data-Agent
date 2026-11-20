@@ -138,8 +138,29 @@ async function failure(res: Response): Promise<V1Error> {
   }
 }
 
+/*
+ * DF-18 (A1.5, AUD-09): the api refuses a PATCH of a context asset without If-Match (428) and one
+ * over a version someone else changed (412). The ETag of the last GET of each path is kept, and a
+ * PATCH of that path sends it; a write forgets it, so the next edit reads again. A PATCH of a
+ * path this tab never read reads it first: the server's check then guards the edit from that read.
+ */
+const etags = new Map<string, string>();
+// Paths below ROOT (which ends in /v1), as kernel/etag.py REQUIRED lists them.
+const IF_MATCH_REQUIRED = /^\/(pipelines|data-products|datasets|metrics|workspaces)\/[^/:]+$/;
+
+async function readTag(request: Request, path: string): Promise<string | null> {
+  const headers = new Headers({ Accept: 'application/json' });
+  for (const name of ['Authorization', 'X-Data-Space']) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  const url = `${new URL(request.url).origin}${ROOT}${path}`;
+  const res = await globalThis.fetch(new Request(url, { headers }));
+  return res.ok ? res.headers.get('ETag') : null;
+}
+
 const v1Middleware: Middleware = {
-  onRequest({ request }) {
+  async onRequest({ request }) {
     const { pathname } = new URL(request.url);
     if (!pathname.startsWith(`${ROOT}/`))
       throw new V1Error(400, 'invalid_request', 'Đường dẫn API không hợp lệ.');
@@ -150,10 +171,22 @@ const v1Middleware: Middleware = {
     if (dataSpace && !headers.has('X-Data-Space')) headers.set('X-Data-Space', dataSpace);
     if (request.method === 'POST' && !headers.has('Idempotency-Key'))
       headers.set('Idempotency-Key', crypto.randomUUID());
+    const path = pathname.slice(ROOT.length);
+    if (request.method === 'PATCH' && !headers.has('If-Match')) {
+      const tag =
+        etags.get(path) ?? (IF_MATCH_REQUIRED.test(path) ? await readTag(request, path) : null);
+      if (tag) headers.set('If-Match', tag);
+    }
     return request;
   },
   async onResponse({ request, response }) {
-    if (response.ok) return undefined;
+    const path = new URL(request.url).pathname.slice(ROOT.length);
+    if (response.ok) {
+      const tag = response.headers.get('ETag');
+      if (request.method === 'GET' && tag) etags.set(path, tag);
+      else if (request.method !== 'GET') etags.delete(path);
+      return undefined;
+    }
     const error = await failure(response);
     // A refused write is told once, app-wide (useForbiddenToast); a refused read is drawn by its screen.
     if (response.status === 403 && request.method !== 'GET')

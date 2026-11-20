@@ -19,6 +19,7 @@ context is this table, `published` the P06 shared product, written by the pipeli
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
 import uuid
 from typing import Annotated, Any, Literal
@@ -569,6 +570,7 @@ async def get_data_product(
     product_id: ProductId,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
+    response: Response,
     version: Annotated[int | None, Query(ge=1)] = None,
 ) -> DataProductDetail:
     async with transaction(ROLE, principal) as session:
@@ -589,6 +591,13 @@ async def get_data_product(
     detail.freshness = freshness
     detail.latest_eval_run = summary.latest_run
     detail.open_error_book_entries = summary.open_error_book_entries
+    # The ETag of what an editor writes over, not of the whole answer: freshness is measured
+    # against now() and the eval summary moves on its own, so a tag of the body changed every
+    # second and every If-Match (required since DF-18) was a 412.
+    stable = detail.model_dump_json(
+        exclude={"freshness", "freshness_state", "latest_eval_run", "open_error_book_entries"}
+    )
+    response.headers["ETag"] = f'W/"{hashlib.sha256(stable.encode()).hexdigest()[:32]}"'
     return detail
 
 

@@ -8,6 +8,11 @@ the handler runs. A write whose resource has no GET route, or that sends no If-M
 checked here: A1 makes If-Match a "should", and a route that requires one (POST
 /v1/me/clients/{id}:confirm) checks its own.
 
+DF-18 (AUD-09): a PATCH of a context asset (REQUIRED below: what answers are built from or how
+they are shown) must send If-Match; without it the write is refused with 428
+precondition_required, so two editors of one metric or data product cannot overwrite each other
+blind. The frontend sends the ETag of its last GET of the resource (lib/v1/client.ts).
+
 The comparison is not a lock: two writers that both read the same ETag can still both pass the
 check within milliseconds of each other. Tables where that matters keep their own OCC (D5.3,
 invariant "OCC thay cho last-write-wins"); this gives every other resource the lost-update guard
@@ -26,6 +31,9 @@ from fastapi import Request, Response
 from services.api.kernel.problems import Problem, problem_response
 
 _VERB = re.compile(r"^(?P<resource>/v1/.+/[^/:]+):[a-z][a-z-]*$")
+# DF-18: the PATCH routes that require If-Match. A monitor is not here: the api has no GET
+# /v1/monitors/{id}, so there is no version to compare an If-Match with.
+REQUIRED = re.compile(r"^/v1/(pipelines|data-products|datasets|metrics|workspaces)/[^/:]+$")
 _WRITES = ("PATCH", "PUT")
 # Read back with the caller's own identity and Data Space, nothing else of the write.
 _FORWARDED = ("authorization", "x-data-space", "accept-language")
@@ -88,6 +96,21 @@ async def etag_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
     if_match = request.headers.get("If-Match")
+    # Only for a resource the caller can read: one they cannot gets the route's own 404 or 403,
+    # not a 428 that would say it exists.
+    if (
+        request.method == "PATCH"
+        and not if_match
+        and REQUIRED.match(request.url.path)
+        and await _current_etag(request, request.url.path) is not None
+    ):
+        return problem_response(
+            Problem(
+                428,
+                "precondition_required",
+                "Send If-Match with the ETag of the resource as you read it (GET).",
+            )
+        )
     resource = _resource_of(request) if if_match else None
     if if_match and resource:
         current = await _current_etag(request, resource)

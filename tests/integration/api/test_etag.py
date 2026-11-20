@@ -49,3 +49,17 @@ async def test_a1_5_a_stale_if_match_is_412_and_changes_nothing(team: Team) -> N
     assert stale.status_code == 412 and stale.json()["code"] == "precondition_failed"
     assert current.json()["title"] == "Của B"
     assert fresh.status_code == 200 and fresh.json()["title"] == "Của A"
+
+
+@pytest.mark.req("DF-18")
+async def test_a_context_asset_patch_without_if_match_is_428(team: Team) -> None:
+    # AUD-09: two editors of one workspace cannot overwrite each other blind.
+    owner = _as(team, "owner")
+    async with _api(team) as api:
+        workspace_id = await _workspace(api, team)
+        blind = await api.request(
+            "PATCH", f"/v1/workspaces/{workspace_id}", headers=owner, json={"title": "Mù"}
+        )
+        assert blind.status_code == 428 and blind.json()["code"] == "precondition_required"
+        title = (await api.get(f"/v1/workspaces/{workspace_id}", headers=owner)).json()["title"]
+        assert title != "Mù"

@@ -14,6 +14,7 @@ from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+import httpx
 import psycopg2
 import pytest
 
@@ -28,6 +29,28 @@ def _redis_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
     """These tests run without Redis: the guards Redis backs are skipped, as API_REDIS_FAIL_OPEN
     does on a dev box (PL-08). A test of the fail-closed default removes it."""
     monkeypatch.setenv("API_REDIS_FAIL_OPEN", "true")
+
+
+@pytest.fixture(autouse=True)
+def _patch_with_if_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DF-18: a PATCH of a context asset needs If-Match (kernel/etag.py REQUIRED). As the
+    frontend's client does (lib/v1/client.ts), a test's PATCH without one reads the resource with
+    the same headers and sends its ETag; a test that sets If-Match keeps its own, and one that
+    means to send none uses api.request("PATCH", …)."""
+    from services.api.kernel.etag import REQUIRED
+
+    original = httpx.AsyncClient.patch
+
+    async def patch(self: httpx.AsyncClient, url: Any, **kwargs: Any) -> httpx.Response:
+        headers = dict(kwargs.get("headers") or {})
+        path = httpx.URL(str(url)).path
+        if REQUIRED.match(path) and not any(k.lower() == "if-match" for k in headers):
+            read = await self.get(url, headers=headers)
+            if read.status_code == 200 and read.headers.get("etag"):
+                kwargs["headers"] = {**headers, "If-Match": read.headers["etag"]}
+        return await original(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "patch", patch)
 
 
 def _login_url(dsn: str, role: str) -> str:
