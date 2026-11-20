@@ -122,7 +122,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | AE-01 | P0 | 5 | `router.py` governed-first + classify tất định | — | BE/AI | M | 20 câu DS-AW đầu → governed | done 19/11: `ASK_ENGINE=router` mặc định; DS-AW 61/61 → governed, `agent-eval --engines router` 49/61 (= governed), 853 token, 2,6 s/câu; agent nhận WHY/MULTI_METRIC (có từ nối)/HYBRID/DOC_ONLY/DEEP |
 | AE-03 | P0 | 5 | `audience` từ api theo vai | — | BE | S | 422 khi client gửi | done 19/11: `question.received.audience` từ quyền của người hỏi (AC01/AC02 → executive; AC03/04/08/09 → analyst); body có `audience` → 422, không ghi |
 | AE-02 | P0 | 6 | `agentic/budget.py`; partial compose | AE-01 | BE | S | agentic p95 ≤ 60 s; `used_tokens` ghi | done 19/11: ngân sách theo audience/deep, dừng thì compose; `agent_run.stop_reason` budget_*; DS-AW 20 câu agentic: analyst p95 50,7 s, executive p95 29,6 s, cả hai 19/20 như không ngân sách |
-| AE-04 | P0 | 6 | `answer/envelope.py` + `TrustCode` + overall | — | BE | M | mọi đường trả envelope | todo |
+| AE-04 | P0 | 6 | `answer/envelope.py` + `TrustCode` + overall | — | BE | M | mọi đường trả envelope | done 20/11: v3_0045 `qa.answer.trust_code` + `envelope`; năm đường ghi mã server đặt (nhãn yếu nhất); SSE `answer.trust_code` |
 | AE-05 | P0 | 7 | `receipts.py` chung; `answer.sealed`; nới `answer_receipt.data_product_id` nullable | AE-04, AL-01 | BE/DB | M | 61/61 câu có receipt | todo |
 | AE-06 | P0 | 7 | `GET /v1/answers/{id}` envelope; SSE; A2; `make api-types`; FE `trust.ts` | AE-04 | BE/FE | M | FE không map chuỗi tiếng Việt | todo |
 | AE-08 | P0 | 7 | `static_check` + `qualify(on_qualify)` + EXPLAIN dry-run | PL-01 | BE | S | `TABLE_OUT_OF_SCOPE` bắt được | todo |

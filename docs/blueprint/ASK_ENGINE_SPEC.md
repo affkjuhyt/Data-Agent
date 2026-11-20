@@ -469,6 +469,20 @@ chỉ map enum → chuỗi; bỏ suy luận từ `generated_by`.
 
 Sự kiện `answer.sealed{answer_id, trust_code, receipt_id}` vào `qa.outbox` (dùng cho eval nightly và correction gate).
 
+#### Đã làm (AE-04, 19–20/11/2026): phạm vi
+
+- `libs/contracts/v1/trust.py`: `TrustCode` (StrEnum) + `TRUST_ORDER` + `weakest`. Migration **v3_0045**:
+  `qa.answer.trust_code` (CHECK theo enum) và `qa.answer.envelope` jsonb, cả hai nullable (câu trả lời cũ không có).
+- `worker_agent/answer/envelope.py`: một bảng đổi các câu nhãn tiếng Việt worker đang ghi (`LABELS`) sang mã, quy tắc
+  nhãn yếu nhất, figure không hiển thị → INSUFFICIENT, figure có `expr` → DERIVED khi nguồn ≥ GOVERNED, từ chối/hỏi lại
+  → INSUFFICIENT, không số không khối → DOCUMENT nếu có trích dẫn. Năm đường ghi `qa.answer` (`_finish`, tài liệu,
+  governed, `sqlgen._store_answer` khám phá/verified, `engine.persist`) ghi `trust_code` + `envelope`; sự kiện SSE
+  `answer` mang `trust_code`.
+- `envelope` lưu **bản đồ tin cậy** (path, mã từng figure và block, `stopped` của AE-02), không chép lại text/figures/
+  blocks đã có cột riêng; API dựng `AnswerEnvelope` đầy đủ ở AE-06, receipt chung ở AE-05.
+- Chưa có: signals hạ nhãn (AE-21), receipt/`answer.sealed` (AE-05), `GET /v1/answers/{id}` trả envelope và FE bỏ map
+  chuỗi (AE-06).
+
 ### C. OSS — không.
 
 ### D. Test
