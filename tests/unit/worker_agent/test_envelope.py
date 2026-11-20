@@ -6,8 +6,8 @@ from __future__ import annotations
 import pytest
 
 from libs.contracts.v1 import TrustCode
+from libs.contracts.v1.trust import LABELS, code_of, trust
 from services.worker_agent.agentic.workspace import TRUST_LABEL
-from services.worker_agent.answer.envelope import LABELS, code_of, trust
 from services.worker_agent.questions import NOT_STANDARD, OUT_OF_SCOPE, STANDARD
 from services.worker_agent.sqlgen.answer import TRUST
 from services.worker_agent.sqlgen.verified import TRUST_VERIFIED

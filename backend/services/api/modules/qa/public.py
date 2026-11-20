@@ -21,6 +21,7 @@ from libs.dataagent_db.models import query as query_models
 from services.api.kernel.auth import Principal
 from services.api.kernel.db import transaction
 from services.api.modules.qa import scope
+from services.api.modules.qa.answer_trust import answer_view
 from services.api.modules.qa.questions import insert_question
 from services.api.modules.qa.schemas import AnswerView, QueryRunView
 
@@ -75,7 +76,7 @@ async def answer_of(
             .order_by(qa.Answer.created_at.desc(), qa.Answer.id.desc())
             .limit(1)
         )
-        return str(status), AnswerView.model_validate(answer) if answer else None
+        return str(status), answer_view(answer) if answer else None
 
 
 PREVIEW_ROWS = 50

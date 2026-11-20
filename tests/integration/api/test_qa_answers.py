@@ -37,6 +37,7 @@ async def answered(
     *,
     figures: list[dict[str, object]] | None = None,
     in_scope: bool = False,
+    **stored: object,
 ) -> tuple[uuid.UUID, uuid.UUID]:
     """A question the worker has answered: (answer id, plan id)."""
     question = await ask(api, world)
@@ -51,6 +52,7 @@ async def answered(
         figures=jsonb(figures or []),
         product_scope="in_scope" if in_scope else "not_applicable",
         data_product_id=product,
+        **stored,
     )
     return answer, plan
 
@@ -491,3 +493,44 @@ async def test_a_replay_is_recorded_for_the_worker(world: World, seed: Seed) -> 
             f"/v1/receipts/{old_number}:replay", headers=as_(world, "asker"), json={}
         )
         assert gone.status_code == 410 and gone.json()["code"] == "gone"
+
+
+def _figure(key: str, trust: str) -> dict[str, object]:
+    return {"key": key, "value": "1", "trust": trust, "display_state": "shown"}
+
+
+async def test_ae_06_an_answer_says_how_far_it_can_be_trusted(world: World, seed: Seed) -> None:
+    """The code the worker stored is served as it is; an answer older than v3_0045 has none and
+    is read by the same rule (libs/contracts/v1/trust.py), so every answer carries one."""
+    async with api_for(world) as api:
+        stored, _ = await answered(
+            api,
+            seed,
+            world,
+            trust_code="DERIVED",
+            envelope=jsonb(
+                {
+                    "version": 1,
+                    "path": "agentic",
+                    "trust_code": "DERIVED",
+                    "figures": {"F1": "DERIVED"},
+                    "blocks": [None, "DERIVED"],
+                    "stopped": "budget_steps",
+                }
+            ),
+        )
+        old, _ = await answered(
+            api,
+            seed,
+            world,
+            figures=[
+                _figure("F1", "Theo chỉ số chuẩn"),
+                _figure("F2", "Khám phá (truy vấn do mô hình viết)"),
+            ],
+        )
+        got = (await api.get(f"/v1/answers/{stored}", headers=as_(world, "asker"))).json()
+        assert got["trust_code"] == "DERIVED"
+        assert got["trust"]["path"] == "agentic" and got["trust"]["stopped"] == "budget_steps"
+        got = (await api.get(f"/v1/answers/{old}", headers=as_(world, "asker"))).json()
+        assert got["trust_code"] == "EXPLORATORY" and got["trust"]["path"] is None
+        assert got["trust"]["figures"] == {"F1": "GOVERNED", "F2": "EXPLORATORY"}

@@ -416,6 +416,9 @@ function artifactAnswer(queryRunId: string): Schemas['AnswerView'] {
     data_product_id: null,
     product_scope: 'out_of_scope',
     created_at: '2026-10-08T09:58:00+07:00',
+    // A metric outside every data product: exploratory (AE-04/06).
+    trust_code: 'EXPLORATORY',
+    trust: { version: 1, path: 'governed', trust_code: 'EXPLORATORY', figures: {}, blocks: [], stopped: null },
   };
 }
 

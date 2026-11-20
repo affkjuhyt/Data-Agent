@@ -33,7 +33,7 @@ describe('useQuestionStream', () => {
     expect(answer.chartSpecs?.[0]).toMatchObject({ chart_type: 'bar', x_key: 'Vùng', y_keys: ['Tỷ lệ nợ xấu'] });
     expect(answer.chartSpecs?.[0].data).toHaveLength(3);
     expect(answer.evidence?.runs[0].columns).toEqual(['Vùng', 'Tỷ lệ nợ xấu']);
-    expect(answer.trust?.label).toBe('Theo chỉ số chuẩn');
+    expect(answer.trust?.label).toBe('Có quản trị');
     // The steps it went through, as the stream sent them, and the answer's blocks.
     expect(answer.steps?.map((step) => [step.action, step.status])).toEqual([
       ['understand', 'done'],

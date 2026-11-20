@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 
 from libs import clock, language
+from libs.contracts.v1 import trust as answer_trust
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
 from services.worker_agent import turn_trace
@@ -59,7 +60,6 @@ from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContex
 from services.worker_agent.agentic.tools.coverage import for_planning
 from services.worker_agent.agentic.tools.query import asked_top, asks_change, two_periods
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Dataset, Workspace, number
-from services.worker_agent.answer import envelope as answer_trust
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
 from services.worker_agent.llm import Gateway, ModelUnavailable

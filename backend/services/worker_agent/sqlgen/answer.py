@@ -20,12 +20,12 @@ from typing import Any
 from sqlalchemy import func, select
 
 from libs import clock
+from libs.contracts.v1 import trust as answer_trust
 from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, qa
 from libs.sql_guard import dialect_of
 from services.worker_agent import turn_trace
-from services.worker_agent.answer import envelope as answer_trust
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.narrate import Figure, shown_value
 from services.worker_agent.answer.narrator import Narration

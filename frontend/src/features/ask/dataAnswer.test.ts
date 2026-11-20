@@ -4,7 +4,6 @@ import {
   figureChart,
   figureDrill,
   figureRun,
-  figureTrust,
   readChartSpec,
   readFigures,
   readPlan,
@@ -117,43 +116,14 @@ describe('dataAnswer', () => {
     ).toBeNull();
   });
 
-  it('keeps the label the server gave, and never reads an unknown one as stronger than exploratory', () => {
-    expect(figureTrust([fig('F1', {}, '1')])).toMatchObject({
-      label: 'Theo chỉ số chuẩn',
-      level: 'GOVERNED',
-    });
-    expect(figureTrust([fig('F1', {}, '1', { trust: 'chưa có định nghĩa chuẩn' })])).toMatchObject({
-      label: 'Chưa có định nghĩa chuẩn',
-      tone: 'warning',
-    });
-    expect(figureTrust([fig('F1', {}, '1', { trust: 'khác' })])).toMatchObject({
-      label: 'Khác',
-      level: 'EXPLORATORY',
-    });
-    expect(figureTrust([fig('F1', {}, '1', { trust: '' })])).toBeNull();
-    // worker-agent sqlgen/answer.py: SQL the model wrote, voted on, never a metric's definition.
-    expect(
-      figureTrust([fig('F1', {}, '1', { trust: 'Khám phá (truy vấn do mô hình viết)' })]),
-    ).toMatchObject({
-      label: 'Khám phá (truy vấn do mô hình viết)',
-      level: 'EXPLORATORY',
-      tone: 'warning',
-    });
-  });
-
-  it("labels the dynamic agent's figures as it does, and an answer by its weakest figure", () => {
-    const explored = fig('F2', {}, '2', { trust: 'SQL thăm dò, chưa qua chỉ số chuẩn' });
-    expect(figureTrust([explored])).toMatchObject({ level: 'EXPLORATORY', tone: 'warning' });
-    expect(figureRun([explored], null)?.generated_by).toBe('llm');
-    expect(
-      figureTrust([fig('F1', {}, '1', { trust: 'Tính thêm từ dữ liệu đã truy vấn' })]),
-    ).toMatchObject({ level: 'EXPLORATORY' });
-    // A certified KPI first and an exploratory one second: the answer is exploratory.
-    const mixed = figureTrust([fig('F1', {}, '1'), explored]);
-    expect(mixed).toMatchObject({ level: 'EXPLORATORY', label: 'SQL thăm dò, chưa qua chỉ số chuẩn' });
-    expect(mixed?.breakdown).toBe('1 số Theo chỉ số chuẩn · 1 số SQL thăm dò, chưa qua chỉ số chuẩn');
-    expect(figureRun([fig('F1', {}, '1'), explored], null)?.generated_by).toBe('llm');
-    expect(figureRun([fig('F1', {}, '1')], null)?.generated_by).toBe('semantic_layer');
+  it('names the path that computed the numbers from the code the server set (AE-06)', () => {
+    const figures = [fig('F1', {}, '1')];
+    expect(figureRun(figures, null, null, 'VERIFIED')?.generated_by).toBe('verified_query');
+    expect(figureRun(figures, null, null, 'GOVERNED')?.generated_by).toBe('semantic_layer');
+    // Anything weaker than governed, or no code, never reads as the semantic layer.
+    expect(figureRun(figures, null, null, 'DERIVED')?.generated_by).toBe('llm');
+    expect(figureRun(figures, null, null, 'EXPLORATORY')?.generated_by).toBe('llm');
+    expect(figureRun(figures, null)?.generated_by).toBe('llm');
   });
 
   it('counts the query rows when the figures keep only the first of them', () => {

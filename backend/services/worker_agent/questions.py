@@ -42,6 +42,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs import clock
+from libs.contracts.v1 import trust as answer_trust
 from libs.contracts.v1.errors import ErrorCode, NextAction, Refusal
 from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
@@ -49,7 +50,6 @@ from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
 from services.worker_agent import explore, quality_gate, suggestions, turn_trace
 from services.worker_agent.analyst_plan import build_analysis_plan
-from services.worker_agent.answer import envelope as answer_trust
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.comparison import (
     PERIOD_CODE,

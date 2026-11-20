@@ -7,11 +7,11 @@ import {
   figureChart,
   figureDrill,
   figureRun,
-  figureTrust,
   readChartSpec,
   readFigures,
 } from './dataAnswer';
 import { interpretationChips } from './interpretation';
+import { trustOfCode } from './trust';
 import type { AskMessage, Citation, Refusal, VerificationFrame } from './types';
 
 /** One entry of qa.answer.citations as worker-agent writes it. */
@@ -117,21 +117,26 @@ export function fromAnswer(answer: Answer): Partial<AskMessage> {
     ...(citations.length > 0 && { citations }),
     ...(verification && { verification }),
     ...(suggestions.length > 0 && { suggestions }),
+    // AE-06: the badge is the code the server set, for every kind of answer.
+    trust: trustOfCode(answer.trust_code, answer.trust),
   };
   if (answer.kind !== 'data') return drawn;
   const figures = readFigures(answer.figures);
   const spec = readChartSpec(answer.chart_spec);
   const check = answer.number_check as { rows_total?: unknown } | null | undefined;
-  const run = figureRun(figures, spec, typeof check?.rows_total === 'number' ? check.rows_total : null);
+  const run = figureRun(
+    figures,
+    spec,
+    typeof check?.rows_total === 'number' ? check.rows_total : null,
+    answer.trust_code,
+  );
   const chart = figureChart(figures, spec);
-  const trust = figureTrust(figures);
   const drill = figureDrill(spec);
   return {
     ...drawn,
     ...(drill && { drill }),
     ...(run && { evidence: { runs: [run], clarifications: [], warnings: [] } }),
     ...(chart && { chartSpecs: [chart] }),
-    ...(trust && { trust }),
   };
 }
 

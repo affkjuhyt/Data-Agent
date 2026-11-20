@@ -480,8 +480,11 @@ Sự kiện `answer.sealed{answer_id, trust_code, receipt_id}` vào `qa.outbox` 
   `answer` mang `trust_code`.
 - `envelope` lưu **bản đồ tin cậy** (path, mã từng figure và block, `stopped` của AE-02), không chép lại text/figures/
   blocks đã có cột riêng; API dựng `AnswerEnvelope` đầy đủ ở AE-06, receipt chung ở AE-05.
-- Chưa có: signals hạ nhãn (AE-21), receipt/`answer.sealed` (AE-05), `GET /v1/answers/{id}` trả envelope và FE bỏ map
-  chuỗi (AE-06).
+- Chưa có: signals hạ nhãn (AE-21), receipt/`answer.sealed` (AE-05).
+- **AE-06 (21/11/2026):** quy tắc chuyển sang `libs/contracts/v1/trust.py` (worker và api dùng chung).
+  `GET /v1/answers/{id}` (và MCP) trả `AnswerView` + `trust_code` + `trust` {path, trust_code, figures, blocks, stopped};
+  câu trả lời trước v3_0045 được tính lúc đọc (`api/modules/qa/answer_trust.py`, `path` = null). FE: `trust.ts trustOfCode`
+  dựng nhãn từ mã (thêm DERIVED), chi tiết từ `trust.figures`; bảng nhãn tiếng Việt trong `dataAnswer.ts` đã bỏ.
 
 ### C. OSS — không.
 

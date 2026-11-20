@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { answerTrust, runTrust } from './trust';
+import { answerTrust, runTrust, trustOfCode } from './trust';
 import type { EvidenceRun } from './types';
 
 const run = (over: Partial<EvidenceRun>): EvidenceRun => ({
@@ -31,4 +31,16 @@ describe('trust label', () => {
     expect(answerTrust([], [{ index: 1, source: 'Thông tư', type: 'document', snippet: '' }]).label).toBe('Giả thuyết từ tài liệu');
     expect(answerTrust([]).label).toBe('Chưa đủ bằng chứng');
   });
+
+  it('AE-06: draws the badge from the code the server set, never from a label', () => {
+    expect(trustOfCode('GOVERNED')).toMatchObject({ level: 'GOVERNED', label: 'Có quản trị', breakdown: undefined });
+    expect(trustOfCode('DERIVED')).toMatchObject({ level: 'DERIVED', tone: 'primary' });
+    expect(trustOfCode('DOCUMENT')).toMatchObject({ level: 'DOCUMENTS', label: 'Giả thuyết từ tài liệu' });
+    expect(trustOfCode('INSUFFICIENT').label).toBe('Chưa đủ bằng chứng');
+    // The weakest code is the badge; the figures' codes say how it breaks down.
+    const mixed = trustOfCode('EXPLORATORY', { figures: { F1: 'GOVERNED', F2: 'GOVERNED', F3: 'EXPLORATORY', F4: null } });
+    expect(mixed).toMatchObject({ level: 'EXPLORATORY', label: 'Khám phá' });
+    expect(mixed.breakdown).toBe('2 số Có quản trị · 1 số Khám phá');
+  });
 });
+

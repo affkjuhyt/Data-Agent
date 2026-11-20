@@ -13,6 +13,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from libs.contracts.v1 import TrustCode
+
 KnowledgeMode = Literal["latest", "period_close", "at"]
 ErrorKind = Literal[
     "wrong_metric", "wrong_scope", "wrong_period", "wrong_number", "wrong_document", "other"
@@ -170,6 +172,19 @@ class ConversationDetail(_Row):
 # ─── answers, lineage, feedback ───
 
 
+class AnswerTrust(BaseModel):
+    """What qa.answer.envelope keeps (AE-04): the answer's path, each figure's and block's code,
+    why an agent turn stopped early. `path` is null for an answer older than v3_0045, whose codes
+    the api works out when it is read."""
+
+    version: int = 1
+    path: Literal["verified", "governed", "agentic", "explore", "document"] | None = None
+    trust_code: TrustCode
+    figures: dict[str, TrustCode | None] = Field(default_factory=dict)
+    blocks: list[TrustCode | None] = Field(default_factory=list)
+    stopped: str | None = None
+
+
 class AnswerView(_Row):
     id: uuid.UUID
     question_id: uuid.UUID
@@ -192,6 +207,10 @@ class AnswerView(_Row):
     # The next questions the answer offers, each read back and compiled by the worker.
     follow_ups: list[str] = Field(default_factory=list)
     blocks: list[dict[str, Any]] = Field(default_factory=list)
+    # AE-06: how far the answer can be trusted, as the server set it (ARCHITECTURE §9.5); a
+    # screen maps the code to its own words and never reads a level out of a label.
+    trust_code: TrustCode
+    trust: AnswerTrust
 
 
 class MetricVersionRef(BaseModel):

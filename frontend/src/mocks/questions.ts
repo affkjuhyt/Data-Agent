@@ -121,6 +121,16 @@ function dataAnswer(id: string, questionId: string, text: string): Answer {
     data_product_id: null,
     product_scope: 'not_applicable',
     forecast_job_id: null,
+    // As the worker sets it (AE-04): every figure certified.
+    trust_code: 'GOVERNED',
+    trust: {
+      version: 1,
+      path: 'governed',
+      trust_code: 'GOVERNED',
+      figures: { F1: 'GOVERNED', F2: 'GOVERNED', F3: 'GOVERNED' },
+      blocks: [],
+      stopped: null,
+    },
     // As worker_agent/answer/verification.py writes it with the answer (R0-8).
     number_check: {
       numbers_total: 3,

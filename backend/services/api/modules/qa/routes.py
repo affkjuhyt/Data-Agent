@@ -41,7 +41,7 @@ from services.api.kernel.sse import last_event_id as get_last_event_id
 from services.api.modules.agent import turn_steps
 from services.api.modules.eval.public import eval_set_accepts_items
 from services.api.modules.qa import progress, scope
-from services.api.modules.qa.answer_blocks import blocks_of
+from services.api.modules.qa.answer_trust import answer_view
 from services.api.modules.qa.export_storage import export_links
 from services.api.modules.qa.questions import insert_question
 from services.api.modules.qa.schemas import (
@@ -662,9 +662,7 @@ async def get_answer(
 ) -> AnswerView:
     async with transaction(ROLE, principal) as session:
         answer = await _answer(session, answer_id, principal, data_space)
-    view = AnswerView.model_validate(answer)
-    view.blocks = blocks_of(answer)
-    return view
+    return answer_view(answer, with_blocks=True)
 
 
 def _figure_key(figure: dict[str, Any]) -> str | None:

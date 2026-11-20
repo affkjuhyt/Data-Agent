@@ -1,7 +1,7 @@
 /**
- * R1-14: every answer the Ask screen draws carries the trust label its numbers earn (invariant 14),
- * read from what the worker stored with it (figures[].trust, citations), and an answer whose query
- * the model wrote shows how far its ways of writing it agreed.
+ * R1-14, AE-06: every answer the Ask screen draws carries the trust label its numbers earn
+ * (invariant 14): the code the server set (trust_code, ARCHITECTURE §9.5), never a level read out of
+ * a sentence; and an answer whose query the model wrote shows how far its ways of writing agreed.
  */
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
@@ -53,8 +53,16 @@ const answer = (over: Partial<Record<keyof Answer, unknown>>): Answer =>
     data_product_id: null,
     product_scope: 'not_applicable',
     created_at: at,
+    trust_code: 'GOVERNED',
+    trust: { version: 1, path: 'governed', trust_code: 'GOVERNED', figures: {}, blocks: [], stopped: null },
     ...over,
   }) as Answer;
+const coded = (code: string, over: Partial<Record<keyof Answer, unknown>> = {}) =>
+  answer({
+    trust_code: code,
+    trust: { version: 1, path: 'governed', trust_code: code, figures: {}, blocks: [], stopped: null },
+    ...over,
+  });
 
 function drawn(a: Answer) {
   const msg: AskMessage = {
@@ -76,21 +84,28 @@ function drawn(a: Answer) {
 
 describe('the trust label of an answer', () => {
   it.each([
-    ['a certified metric in a data product', 'Theo chỉ số chuẩn', 'Theo chỉ số chuẩn'],
-    ['a metric with no approved definition', 'chưa có định nghĩa chuẩn', 'Chưa có định nghĩa chuẩn'],
-    ['a query the model wrote', 'Khám phá (truy vấn do mô hình viết)', 'Khám phá (truy vấn do mô hình viết)'],
-  ])('%s is labelled from its figures', (_, trust, shown) => {
-    expect(drawn(answer({ figures: [figure(trust)] })).getByText(shown)).toBeInTheDocument();
+    ['a query a steward approved', 'VERIFIED', 'Đã kiểm'],
+    ['a certified metric', 'GOVERNED', 'Có quản trị'],
+    ['a figure worked out from certified ones', 'DERIVED', 'Tính từ số có quản trị'],
+    ['a query the model wrote, or a metric with no approved definition', 'EXPLORATORY', 'Khám phá'],
+  ])('%s is labelled by the code the server set', (_, code, shown) => {
+    expect(drawn(coded(code, { figures: [figure('Theo chỉ số chuẩn')] })).getByText(shown)).toBeInTheDocument();
   });
 
-  it('AC-01-07-03 an answer outside any data product is labelled so and offers no receipt', () => {
+  it("never reads a level out of a figure's sentence: the server's code decides", () => {
+    const label = drawn(coded('EXPLORATORY', { figures: [figure('Theo chỉ số chuẩn')] }));
+    expect(label.getByText('Khám phá')).toBeInTheDocument();
+    expect(label.queryByText('Theo chỉ số chuẩn')).toBeNull();
+  });
+
+  it('AC-01-07-03 an answer outside any data product is exploratory and offers no receipt', () => {
     const outside = drawn(
-      answer({
+      coded('EXPLORATORY', {
         product_scope: 'out_of_scope',
         figures: [figure('Ngoài phạm vi data product, không có biên nhận')],
       }),
     );
-    expect(outside.getByText('Ngoài phạm vi data product, không có biên nhận')).toBeInTheDocument();
+    expect(outside.getByText('Khám phá')).toBeInTheDocument();
     const shown = (a: Answer) => {
       const m = fromAnswer(a);
       return hasReceipt({ answerId: a.id, content: m.content ?? '', productScope: m.productScope });
@@ -100,7 +115,7 @@ describe('the trust label of an answer', () => {
   });
 
   it('a document answer is a hypothesis from documents, and one with no source has no evidence', () => {
-    const cited = answer({
+    const cited = coded('DOCUMENT', {
       kind: 'document',
       text: 'Theo quy định, kỳ chốt là ngày 5 [1].',
       number_check: verification(),
@@ -121,7 +136,7 @@ describe('the trust label of an answer', () => {
   });
 
   it('a document answer that found nothing says there is no evidence', () => {
-    const empty = answer({
+    const empty = coded('INSUFFICIENT', {
       kind: 'document',
       text: 'Không tìm thấy trong tài liệu được phép nội dung trả lời câu hỏi này.',
     });
@@ -130,7 +145,7 @@ describe('the trust label of an answer', () => {
 
   it('a query the model wrote shows how far its ways of writing agreed', () => {
     drawn(
-      answer({
+      coded('EXPLORATORY', {
         figures: [figure('Khám phá (truy vấn do mô hình viết)')],
         number_check: verification({ confidence: 0.6667, consensus: { agreeing: 4, written: 6 } }),
       }),
@@ -141,7 +156,7 @@ describe('the trust label of an answer', () => {
   });
 
   it('a governed answer has no vote, so no meter', () => {
-    drawn(answer({ figures: [figure('Theo chỉ số chuẩn')] }));
+    drawn(coded('GOVERNED', { figures: [figure('Theo chỉ số chuẩn')] }));
     expect(screen.queryByTestId('confidence-meter')).toBeNull();
   });
 });

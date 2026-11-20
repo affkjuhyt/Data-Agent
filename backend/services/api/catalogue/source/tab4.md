@@ -710,7 +710,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | PATCH /v1/questions/{id}/plan | chips\*, edit\_note | 202, Location tới plan. Tạo phiên bản plan mới và chạy lại; mỗi chip ghi nguồn gốc người sửa | 409 invalid\_state (câu hỏi đang chạy); 422 validation\_failed (chip không ánh xạ được) |
 | GET /v1/conversations | ?q, ?from, ?to | Danh sách Conversation | — |
 | GET /v1/conversations/{id} | — | ConversationDetail. Kèm turns theo seq (question\_id, text, status, answer\_id) | 404 not\_found |
-| GET /v1/answers/{id} | — | Answer. figures kèm query\_run\_id, metric\_version\_id; số ngoài quyền đã bị che theo chính sách | 404 not\_found |
+| GET /v1/answers/{id} | — | Answer. figures kèm query\_run\_id, metric\_version\_id; số ngoài quyền đã bị che theo chính sách; trust\_code (VERIFIED, GOVERNED, DERIVED, EXPLORATORY, DOCUMENT, INSUFFICIENT: nhãn yếu nhất, server đặt) và trust {path, trust\_code, figures, blocks, stopped} (AE-06) | 404 not\_found |
 | GET /v1/answers/{id}/lineage | ?figure | JSON. Cây truy nguồn: chỉ số và phiên bản, bảng, cột, bộ lọc, lượt chạy SQL, kỳ chốt, mã băm (UC-01-02) | 403 policy\_denied (bước ngoài quyền hiện “ngoài quyền”, không lộ tên bảng) |
 | POST /v1/answers/{id}/feedback | rating\*, error\_kind, expected\_value, comment | Feedback | 422 validation\_failed (rating = wrong thiếu error\_kind) |
 | PATCH /v1/feedback/{id} | status\*, reason | Feedback | 409 invalid\_state; 412 precondition\_failed |

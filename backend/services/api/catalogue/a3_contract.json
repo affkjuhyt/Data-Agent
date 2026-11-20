@@ -171,7 +171,7 @@
    ],
    "body": {},
    "query": [],
-   "returns": "Answer. figures kèm query_run_id, metric_version_id; số ngoài quyền đã bị che theo chính sách",
+   "returns": "Answer. figures kèm query_run_id, metric_version_id; số ngoài quyền đã bị che theo chính sách; trust_code (VERIFIED, GOVERNED, DERIVED, EXPLORATORY, DOCUMENT, INSUFFICIENT: nhãn yếu nhất, server đặt) và trust {path, trust_code, figures, blocks, stopped} (AE-06)",
    "errors": [
     [
      404,

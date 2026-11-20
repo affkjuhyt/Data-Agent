@@ -7802,6 +7802,30 @@ export interface components {
             /** Value */
             value: number | string | null;
         };
+        /**
+         * AnswerTrust
+         * @description What qa.answer.envelope keeps (AE-04): the answer's path, each figure's and block's code,
+         *     why an agent turn stopped early. `path` is null for an answer older than v3_0045, whose codes
+         *     the api works out when it is read.
+         */
+        AnswerTrust: {
+            /** Blocks */
+            blocks?: (components["schemas"]["TrustCode"] | null)[];
+            /** Figures */
+            figures?: {
+                [key: string]: components["schemas"]["TrustCode"] | null;
+            };
+            /** Path */
+            path?: ("verified" | "governed" | "agentic" | "explore" | "document") | null;
+            /** Stopped */
+            stopped?: string | null;
+            trust_code: components["schemas"]["TrustCode"];
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
         /** AnswerView */
         AnswerView: {
             /** Agent Name */
@@ -7858,6 +7882,8 @@ export interface components {
             reconcile_badge: string | null;
             /** Text */
             text: string;
+            trust: components["schemas"]["AnswerTrust"];
+            trust_code: components["schemas"]["TrustCode"];
         };
         /** ApiClientCreate */
         ApiClientCreate: {
@@ -22842,6 +22868,11 @@ export interface components {
             /** Triggers */
             triggers: components["schemas"]["TriggerIn"][];
         };
+        /**
+         * TrustCode
+         * @enum {string}
+         */
+        TrustCode: "VERIFIED" | "GOVERNED" | "DERIVED" | "EXPLORATORY" | "DOCUMENT" | "INSUFFICIENT";
         /**
          * TryRequest
          * @description POST /v1/skill-versions/{id}:try: one trial of a draft with these parameters.

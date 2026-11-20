@@ -2182,6 +2182,81 @@
     "title": "AlertView",
     "type": "object"
    },
+   "AnswerTrust": {
+    "description": "What qa.answer.envelope keeps (AE-04): the answer's path, each figure's and block's code,\nwhy an agent turn stopped early. `path` is null for an answer older than v3_0045, whose codes\nthe api works out when it is read.",
+    "properties": {
+     "blocks": {
+      "items": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/TrustCode"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "title": "Blocks",
+      "type": "array"
+     },
+     "figures": {
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/TrustCode"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "title": "Figures",
+      "type": "object"
+     },
+     "path": {
+      "anyOf": [
+       {
+        "enum": [
+         "verified",
+         "governed",
+         "agentic",
+         "explore",
+         "document"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Path"
+     },
+     "stopped": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stopped"
+     },
+     "trust_code": {
+      "$ref": "#/components/schemas/TrustCode"
+     },
+     "version": {
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "trust_code"
+    ],
+    "title": "AnswerTrust",
+    "type": "object"
+   },
    "AnswerView": {
     "properties": {
      "agent_name": {
@@ -2325,6 +2400,12 @@
      "text": {
       "title": "Text",
       "type": "string"
+     },
+     "trust": {
+      "$ref": "#/components/schemas/AnswerTrust"
+     },
+     "trust_code": {
+      "$ref": "#/components/schemas/TrustCode"
      }
     },
     "required": [
@@ -2345,7 +2426,9 @@
      "lineage_hash",
      "data_product_id",
      "product_scope",
-     "created_at"
+     "created_at",
+     "trust_code",
+     "trust"
     ],
     "title": "AnswerView",
     "type": "object"
@@ -44500,6 +44583,18 @@
     ],
     "title": "TriggersPut",
     "type": "object"
+   },
+   "TrustCode": {
+    "enum": [
+     "VERIFIED",
+     "GOVERNED",
+     "DERIVED",
+     "EXPLORATORY",
+     "DOCUMENT",
+     "INSUFFICIENT"
+    ],
+    "title": "TrustCode",
+    "type": "string"
    },
    "TryRequest": {
     "description": "POST /v1/skill-versions/{id}:try: one trial of a draft with these parameters.",

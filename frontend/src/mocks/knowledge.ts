@@ -379,6 +379,8 @@ const answerWire = (id: string, text: string): components['schemas']['AnswerView
   forecast_job_id: null,
   number_check: {},
   created_at: '2026-10-09T09:12:00+07:00',
+  trust_code: 'INSUFFICIENT',
+  trust: { version: 1, path: null, trust_code: 'INSUFFICIENT', figures: {}, blocks: [], stopped: null },
 });
 
 const NPL_INDEX_ENTRY: components['schemas']['KnowledgeIndexEntry'] = {
