@@ -817,3 +817,31 @@ async def test_an_active_relationship_is_retired_through_a_proposal(ctx: Ctx) ->
             json={"reason": "x"},
         )
     assert gone.status_code == 409, gone.text
+
+
+async def test_only_its_author_edits_a_draft_version(ctx: Ctx) -> None:
+    """Maker-checker (metric_changes._author): the review takes a version's author from its
+    creation, so a second steward who rewrote someone's draft could then certify it. They add a
+    version instead, of which they are the author."""
+    metric = ctx.rows["by_dimension"]
+    async with client(ctx) as api:
+        made = await api.post(
+            f"/v1/metrics/{metric}/versions",
+            json={
+                "display_name": "Dư nợ nháp",
+                "expression": "sum(balance)",
+                "period_semantics": "end_of_period",
+            },
+            headers=ctx.headers("steward"),
+        )
+        assert made.status_code == 201, made.text
+        url = f"/v1/metric-versions/{made.json()['id']}"
+        other = await api.patch(
+            url, json={"expression": "sum(balance) * 2"}, headers=ctx.headers("steward_b")
+        )
+        assert other.status_code == 403, other.text
+        own = await api.patch(
+            url, json={"description": "Số dư cuối kỳ"}, headers=ctx.headers("steward")
+        )
+        assert own.status_code == 200, own.text
+        assert own.json()["expression"] == "sum(balance)"

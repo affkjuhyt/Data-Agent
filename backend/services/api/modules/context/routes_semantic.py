@@ -499,6 +499,22 @@ async def create_metric_version(
 _CLEARABLE = {"description", "unit", "time_dimension_id", "legal_basis", "change_note"}
 
 
+async def _version_author(session: AsyncSession, version_id: uuid.UUID) -> uuid.UUID | None:
+    """Who wrote the version, as worker_agent/metric_changes._author reads it: metric_version has
+    no author column, so it is the created_by of the event that created it; None before the api
+    recorded authors."""
+    payload = await session.scalar(
+        select(context.Outbox.payload)
+        .where(
+            context.Outbox.event_type.in_(("metric.created", "metric_version.created")),
+            context.Outbox.payload.op("->>")("version_id") == str(version_id),
+        )
+        .limit(1)
+    )
+    created_by = (payload or {}).get("created_by")
+    return uuid.UUID(str(created_by)) if created_by else None
+
+
 def _apply_version_patch(row: context.MetricVersion, body: MetricVersionPatch) -> None:
     for name in body.model_fields_set:
         value = getattr(body, name)
@@ -552,6 +568,18 @@ async def update_metric_version(
                 409,
                 "invalid_state",
                 f"Only a draft version is edited; this one is {status}.",
+            )
+        # Maker-checker: the review reads the version's author from its creation event, so a draft
+        # edited by another steward would keep its first author and could be certified by the one
+        # who wrote the formula. Only its author edits a draft; anyone else adds a version, of
+        # which they are then the author. A draft with no recorded author is never certified
+        # (metric_changes fails closed), so its edits stay open.
+        author = await _version_author(session, version_id)
+        if author is not None and author != principal.user_id:
+            raise Problem(
+                403,
+                "forbidden",
+                "Only the steward who wrote this draft edits it; add a new version to change it.",
             )
         await _check_dimensions(session, body, data_space, fields=set(body.model_fields_set))
         _apply_version_patch(row, body)
