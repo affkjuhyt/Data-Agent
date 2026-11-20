@@ -1,4 +1,4 @@
-import { type Page, api, ok } from './client';
+import { type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 
 /*
@@ -206,9 +206,9 @@ function readProduct(raw: ProductDetailWire): AnswerProduct {
   return { ...derived, ...raw.display, monitoring: raw.stats ?? null };
 }
 
-/** The api lists the context layer's products only (A2 has no read for published ones). */
+/** The context layer's products: GET /v1/data-products answers one layer, the one asked for. */
 export const listAnswerProducts = async (status?: ProductStatus) => {
-  const page = await ok<Page<ProductSummaryWire>>(
+  const page = await okAs<Page<ProductSummaryWire>>(
     api.GET('/v1/data-products', {
       params: {
         query: {

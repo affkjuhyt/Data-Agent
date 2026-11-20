@@ -383,7 +383,12 @@ export function createDataProductsHandlers() {
       return HttpResponse.json(mart);
     }),
 
-    http.get('*/v1/data-products', () => page(products.map(summary))),
+    // ?layer=published (P06's own list); the screen's row rides along under `display`.
+    http.get('*/v1/data-products', () =>
+      page(
+        products.map((p) => ({ id: p.id, code: p.code, layer: 'published', display: summary(p) })),
+      ),
+    ),
     // Before /data-products/:id, which would read "catalog" as an id.
     http.get('*/v1/data-products/catalog', () => page(catalogFixture())),
     http.post('*/v1/data-products\\:request-use', async ({ request }) => {

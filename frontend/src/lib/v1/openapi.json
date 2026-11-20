@@ -31501,6 +31501,27 @@
     "title": "Page[PublishedCatalogProduct]",
     "type": "object"
    },
+   "Page_PublishedDataProductView_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/PublishedDataProductView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "next_page_token": {
+      "default": "",
+      "title": "Next Page Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "Page[PublishedDataProductView]",
+    "type": "object"
+   },
    "Page_QualityIssueView_": {
     "properties": {
      "items": {
@@ -65813,6 +65834,20 @@
      },
      {
       "in": "query",
+      "name": "layer",
+      "required": false,
+      "schema": {
+       "default": "context",
+       "enum": [
+        "context",
+        "published"
+       ],
+       "title": "Layer",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
       "name": "page_size",
       "required": false,
       "schema": {
@@ -65859,7 +65894,15 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/Page_DataProductView_"
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/Page_DataProductView_"
+          },
+          {
+           "$ref": "#/components/schemas/Page_PublishedDataProductView_"
+          }
+         ],
+         "title": "Response Listdataproducts"
         }
        }
       },

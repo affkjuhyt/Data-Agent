@@ -18005,6 +18005,16 @@ export interface components {
              */
             next_page_token: string;
         };
+        /** Page[PublishedDataProductView] */
+        Page_PublishedDataProductView_: {
+            /** Items */
+            items: components["schemas"]["PublishedDataProductView"][];
+            /**
+             * Next Page Token
+             * @default
+             */
+            next_page_token: string;
+        };
         /** Page[QualityIssueView] */
         Page_QualityIssueView_: {
             /** Items */
@@ -36067,6 +36077,7 @@ export interface operations {
                 owner_id?: string | null;
                 steward_id?: string | null;
                 q?: string | null;
+                layer?: "context" | "published";
                 page_size?: number;
                 page_token?: string;
                 /** @description A3's name for page_token */
@@ -36084,7 +36095,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Page_DataProductView_"];
+                    "application/json": components["schemas"]["Page_DataProductView_"] | components["schemas"]["Page_PublishedDataProductView_"];
                 };
             };
             /** @description Invalid request */
