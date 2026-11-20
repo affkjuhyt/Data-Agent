@@ -333,9 +333,7 @@ async def test_the_published_layer_is_listed_for_its_own_data_space(ds: Space) -
         context = await api.post("/v1/data-products", json=_body(ds), headers=ds.headers("steward"))
         assert context.status_code == 201, context.text
 
-        listed = await api.get(
-            "/v1/data-products?layer=published", headers=ds.headers("analyst")
-        )
+        listed = await api.get("/v1/data-products?layer=published", headers=ds.headers("analyst"))
         assert listed.status_code == 200, listed.text
         rows = {p["id"]: p for p in listed.json()["items"]}
         assert made.json()["id"] in rows and context.json()["id"] not in rows
@@ -347,10 +345,12 @@ async def test_the_published_layer_is_listed_for_its_own_data_space(ds: Space) -
         assert {p["layer"] for p in default.json()["items"]} == {"context"}
         assert made.json()["id"] not in {p["id"] for p in default.json()["items"]}
 
+        # Not a member of the other Data Space: it does not exist for the steward there, so its
+        # published products are not listed either.
         elsewhere = await api.get(
             "/v1/data-products?layer=published", headers=ds.headers("steward", ds.other)
         )
-        assert made.json()["id"] not in {p["id"] for p in elsewhere.json()["items"]}
+        assert elsewhere.status_code == 404, elsewhere.text
         bogus = await api.get("/v1/data-products?layer=x", headers=ds.headers("analyst"))
         assert bogus.status_code == 422
 
