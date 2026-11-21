@@ -153,13 +153,54 @@ def asks_breakdown(question: str, vocab: Vocabulary, top: tuple[int, bool] | Non
     text = f" {norm(question)} "
     if top is not None or any(p.by.search(text) or p.several.search(text) for p in PACKS):
         return True
-    # A metric's name is no cut's: "Doanh thu đại lý" holds the cut name "Đại lý".
-    # Longest first: "Doanh thu" taken out of "Doanh thu đại lý" left "đại lý", a cut's name.
-    for name in sorted((norm(m.name) for m in vocab.metrics), key=len, reverse=True):
-        text = text.replace(f" {name} ", " ")
+    text = _metric_words_out(question, vocab)
     names = [norm(d.name) for d in vocab.dimensions if not d.is_time]
     names += [p for p, t in vocab.synonyms.items() if t[0] == "dimension"]
     return any(f" {name} " in text for name in names if name)
+
+
+# What a word a metric's name holds is replaced by: it matches no cut's name.
+_HELD = "·"
+
+
+def _metric_words_out(question: str, vocab: Vocabulary) -> str:
+    """The question, folded, with the words a metric's name holds put out, so that no cut is read
+    in them. A metric's name or synonym written whole holds its words wherever it is ("Doanh thu
+    đại lý" holds the cut name "Đại lý"), longest first ("Doanh thu" taken out of "Doanh thu đại
+    lý" left "đại lý"). A metric the question names with words between them holds each of its
+    words once: "Lãi gộp của kênh đại lý" names Lãi gộp đại lý, not a cut by Đại lý, which the
+    contract showed and the 4B planner cut by, with every other cut beside it (21/11)."""
+    tokens = norm(question).split()
+    asked = set(tokens)
+    metrics = [norm(m.name) for m in vocab.metrics]
+    metrics += [p for p, target in vocab.synonyms.items() if target[0] == "metric"]
+    # A cut's name longer than a metric's keeps its words, as it did beside the metric names.
+    cuts = [norm(part) for d in vocab.dimensions if not d.is_time for part in d.name.split("/")]
+    cuts += [norm(d.name) for d in vocab.dimensions if not d.is_time]
+    cuts += [p for p, target in vocab.synonyms.items() if target[0] == "dimension"]
+    claimed = [False] * len(tokens)
+    whole: set[str] = set()
+    names = [(p, True) for p in metrics if p] + [(p, False) for p in cuts if p]
+    for name, held in sorted(names, key=lambda n: -len(n[0])):
+        words = name.split()
+        for i in range(len(tokens) - len(words) + 1):
+            if tokens[i : i + len(words)] == words and not any(claimed[i : i + len(words)]):
+                claimed[i : i + len(words)] = [True] * len(words)
+                if held:
+                    tokens[i : i + len(words)] = [_HELD] * len(words)
+                    whole.add(name)
+    for m in vocab.metrics:
+        words = norm(m.name).split()
+        if (
+            words
+            and norm(m.name) not in whole
+            and set(words) <= asked
+            and names_metric(question, m, vocab)
+        ):
+            for w in words:
+                if w in tokens:
+                    tokens[tokens.index(w)] = _HELD
+    return f" {' '.join(tokens)} "
 
 
 def _cut_names(vocab: Vocabulary, allowed: set[uuid.UUID]) -> list[tuple[str, str]]:
@@ -186,18 +227,15 @@ def _cut_names(vocab: Vocabulary, allowed: set[uuid.UUID]) -> list[tuple[str, st
 def named_cuts(question: str, vocab: Vocabulary, allowed: set[uuid.UUID]) -> set[str]:
     """Every cut the question names anywhere, by one of its names (_cut_names); a longer name
     holds its words, so "nhóm sản phẩm" names Nhóm sản phẩm and not also Sản phẩm, and a metric's
-    name holds its own ("đại lý" of "doanh thu đại lý" names no cut Đại lý)."""
-    text = f" {norm(question)} "
-    metrics: list[tuple[str, str | None]] = [(norm(m.name), None) for m in vocab.metrics]
-    metrics += [(p, None) for p, target in vocab.synonyms.items() if target[0] == "metric"]
+    name holds its own (_metric_words_out: "đại lý" of "doanh thu đại lý" names no cut Đại lý)."""
+    text = _metric_words_out(question, vocab)
     taken: list[tuple[int, int]] = []
     found: set[str] = set()
-    for name, code in sorted([*_cut_names(vocab, allowed), *metrics], key=lambda n: -len(n[0])):
+    for name, code in sorted(_cut_names(vocab, allowed), key=lambda n: -len(n[0])):
         for m in re.finditer(rf"(?<= ){re.escape(name)}(?= )", text) if name else ():
             if not any(m.start() < end and start < m.end() for start, end in taken):
                 taken.append(m.span())
-                if code is not None:
-                    found.add(code)
+                found.add(code)
     return found
 
 

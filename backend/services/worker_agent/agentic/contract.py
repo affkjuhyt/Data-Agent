@@ -13,6 +13,7 @@ of the figure asked."""
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -62,12 +63,12 @@ class Contract:
     # How many members a ranking asks, and whether the highest; or a ranking with no count.
     top: tuple[int, bool] | None
     ranked: bool
-    # The cuts the question names, by their names, and whether it asks a breakdown at all.
-    cuts: tuple[str, ...]
+    # The cuts the question names, as (code, name), and whether it asks a breakdown at all.
+    cuts: tuple[tuple[str, str], ...]
     breakdown: bool
     grain: str | None
-    # The members it names whole, as "label (cut)".
-    members: tuple[str, ...]
+    # The members it names whole, as (cut code, member code, "label (cut)").
+    members: tuple[tuple[str, str, str], ...]
     why: bool
 
     @property
@@ -113,7 +114,9 @@ class Contract:
             ranked = f"{self.top[0]} {'cao' if self.top[1] else 'thấp'} nhất"
         else:
             ranked = "có" if self.ranked else "không"
-        cut = ", ".join(self.cuts) or (
+        # Each cut and member by the code query_metric takes, as the period is: shown "Nhóm sản
+        # phẩm" alone, the 4B planner cut by tieu_nhom (Tiểu nhóm sản phẩm) (21/11).
+        cut = ", ".join(f'{name} (group_by "{code}")' for code, name in self.cuts) or (
             "có, theo chiều câu hỏi nêu" if self.breakdown else "không, một con số"
         )
         if self.grain:
@@ -126,7 +129,11 @@ class Contract:
             f"- chia theo: {cut}",
         ]
         if self.members:
-            lines.append(f"- lọc: {', '.join(self.members)}")
+            filters: dict[str, list[str]] = {}
+            for dimension, member, _ in self.members:
+                filters.setdefault(dimension, []).append(member)
+            shown = ", ".join(label for _, _, label in self.members)
+            lines.append(f"- lọc: {shown} = filters {json.dumps(filters, ensure_ascii=False)}")
         if self.why:
             lines.append("- hỏi vì sao: có")
         return "\n".join(lines)
@@ -174,6 +181,13 @@ def read(question: str, layer: Any, period: FoundPeriod | None) -> Contract:
         for m in vocab.metrics
         if names_metric(question, m, vocab, member_named=bool(member_cuts & cuts_of(m.code)))
     ]
+    if len(named) > 1 and member_cuts:
+        # Several metrics named, and a member one alone cuts by: that one. "Doanh số Trade Sales
+        # theo ngân sách" names Doanh thu and Số tài chính ngân sách, and Trade Sales is an
+        # account only the second has; shown both, the 4B planner read Doanh thu first (21/11).
+        cutting = [m for m in named if member_cuts & cuts_of(m.code)]
+        if len(cutting) == 1:
+            named = cutting
     seen = [m.code for m in named if m.code in visible]
     metric = seen[0] if len(named) == 1 and seen else None
     foreign = member_cuts - cuts_of(metric) if metric else member_cuts
@@ -209,15 +223,20 @@ def read(question: str, layer: Any, period: FoundPeriod | None) -> Contract:
         ranked=asks_ranking(text),
         cuts=tuple(
             sorted(
-                by_code[c]
-                for c in named_cuts(question, vocab, every)
-                if _written(question, c, vocab)
+                (
+                    (c, by_code[c])
+                    for c in named_cuts(question, vocab, every)
+                    if _written(question, c, vocab)
+                ),
+                key=lambda cut: cut[1],
             )
         ),
         breakdown=asks_breakdown(question, vocab, top),
         grain=grain.grain if grain else None,
         members=tuple(
-            f"{labels.get((d, c), c)} ({by_code[d]})" for d, codes in members.items() for c in codes
+            (d, c, f"{labels.get((d, c), c)} ({by_code[d]})")
+            for d, codes in members.items()
+            for c in codes
         ),
         why=search(text, lambda pack: pack.why) is not None,
     )

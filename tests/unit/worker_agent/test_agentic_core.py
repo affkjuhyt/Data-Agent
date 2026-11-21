@@ -1023,6 +1023,70 @@ def test_the_answer_reads_what_answers_the_question_whatever_else_the_plan_read(
     assert '"s2"' not in engine._progress(s, only={"d2"})
 
 
+def test_the_contract_reads_a_metric_and_its_cuts_as_query_metric_takes_them() -> None:
+    """21/11, the 4B planner held to the contract: "kênh đại lý" shown as a cut by Đại lý, "Nhóm
+    sản phẩm" read as Tiểu nhóm, Doanh thu read beside the budget its account belongs to."""
+    import types
+    import uuid
+
+    from services.worker_agent.agentic.contract import read as read_contract
+    from services.worker_agent.understand.resolver import (
+        DimensionEntry,
+        MetricEntry,
+        ValueEntry,
+        Vocabulary,
+    )
+
+    account = DimensionEntry(uuid.uuid4(), "tai_khoan", "Tài khoản")
+    group = DimensionEntry(uuid.uuid4(), "nhom_hang", "Nhóm sản phẩm")
+    sub = DimensionEntry(uuid.uuid4(), "tieu_nhom", "Tiểu nhóm sản phẩm")
+    dealer = DimensionEntry(uuid.uuid4(), "ten_dai_ly", "Đại lý")
+    revenue = MetricEntry(uuid.uuid4(), "DOANH_THU", "Doanh thu", True)
+    budget = MetricEntry(uuid.uuid4(), "TAI_CHINH_NGAN_SACH", "Số tài chính ngân sách", True)
+    margin = MetricEntry(uuid.uuid4(), "LAI_GOP_DAI_LY", "Lãi gộp đại lý", True)
+    vocab = Vocabulary(
+        metrics=[revenue, budget, margin],
+        dimensions=[account, group, sub, dealer],
+        values=[ValueEntry("tai_khoan", "Trade Sales", "Trade Sales")],
+        synonyms={
+            "doanh so": ("metric", str(revenue.metric_id)),
+            "ngan sach": ("metric", str(budget.metric_id)),
+        },
+    )
+    sales = [group.dimension_id, sub.dimension_id, dealer.dimension_id]
+    layer = types.SimpleNamespace(
+        vocabulary=vocab,
+        versions={
+            revenue.metric_id: types.SimpleNamespace(allowed_dimension_ids=sales),
+            margin.metric_id: types.SimpleNamespace(allowed_dimension_ids=sales),
+            budget.metric_id: types.SimpleNamespace(allowed_dimension_ids=[account.dimension_id]),
+        },
+        blocked_metric_ids=set(),
+    )
+
+    # A metric's name holds its words even with others between them: no cut, no breakdown.
+    margin_asked = read_contract("Lãi gộp của kênh đại lý trong quý 4 năm 2012", layer, None)
+    assert (margin_asked.metric, margin_asked.cuts, margin_asked.breakdown) == (
+        "LAI_GOP_DAI_LY",
+        (),
+        False,
+    )
+    # Written whole elsewhere, the same words still name the cut.
+    assert read_contract("Lãi gộp đại lý theo đại lý năm 2012", layer, None).cuts == (
+        ("ten_dai_ly", "Đại lý"),
+    )
+    # Each cut and member is shown by the code query_metric takes.
+    by_group = read_contract("Doanh thu theo các nhóm sản phẩm năm 2011", layer, None)
+    assert by_group.cuts == (("nhom_hang", "Nhóm sản phẩm"),)
+    assert '- chia theo: Nhóm sản phẩm (group_by "nhom_hang")' in by_group.render({})
+    # Two metrics named and a member only one of them cuts by: that one.
+    trade = read_contract("Doanh số Trade Sales theo ngân sách năm 2011", layer, None)
+    assert trade.metric == "TAI_CHINH_NGAN_SACH"
+    assert '- lọc: Trade Sales (Tài khoản) = filters {"tai_khoan": ["Trade Sales"]}' in (
+        trade.render({})
+    )
+
+
 def test_the_contract_names_a_cut_only_as_the_question_writes_it() -> None:
     """19/11: "tính theo số lượng" folds to the "tỉnh" of "Bang / tỉnh"; the planner was to be
     shown a cut by province the question never asked."""
@@ -2627,6 +2691,7 @@ def test_named_members_the_counted_cut_and_an_unasked_breakdown_are_read_from_th
         "loai_dai_ly",
         "khu_vuc",
     }
+    assert named_cuts("Doanh thu đại lý theo đại lý năm 2013", vocab, allowed) == {"ten_dai_ly"}
     assert not asks_breakdown("Doanh thu đại lý loại Specialty Bike Shop năm 2013", vocab, None)
     assert asks_breakdown("Doanh thu đại lý theo khu vực năm 2013", vocab, None)
     assert asks_breakdown("Cơ cấu doanh thu đại lý khu vực năm 2013", vocab, None)
