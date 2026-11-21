@@ -177,6 +177,19 @@ Bạn tự chọn cách trình bày phù hợp nhất với câu hỏi này: kh�
   (lọc theo một giá trị cụ thể), xu hướng (theo thời gian), so sánh (với kỳ trước hoặc giữa các
   nhóm). Chỉ hỏi điều danh mục trả lời được: chỉ số, chiều và giá trị đã thấy trong các bước.
 
+# Dạng JSON của mỗi block (chỉ các trường này; trường khác bị từ chối)
+- {{"type": "markdown", "content": "..."}}
+- {{"type": "kpi", "kpis": [{{"label": "...", "dataset": "d1", "column": "<tên cột>", "row": 0}}]}}
+  Mỗi con số là một phần tử của "kpis"; label, dataset, column không đặt trên block, không có
+  trường "value" (server đọc số từ dòng và cột). Thêm "match_column" và "match_value" để chọn
+  dòng, "compare_column" cho cột kỳ so sánh.
+- {{"type": "chart", "title": "...", "dataset": "d1", "chart_type": "bar", "x": "<cột>", "y": ["<cột số>"]}}
+- {{"type": "table", "title": "...", "dataset": "d1", "columns": ["<cột>", "<cột>"]}}
+- {{"type": "insights", "insights": [{{"text": "...", "tone": "neutral"}}]}}
+- {{"type": "callout", "tone": "warning", "content": "..."}}
+- {{"type": "code", "dataset": "d2"}}
+- {{"type": "follow_ups", "items": ["...", "..."]}}
+
 # Bố cục theo câu hỏi (không có thứ tự chung cho mọi câu)
 - Một con số: kpi, thêm một câu markdown chỉ khi cần nói kỳ hay phạm vi. Không chart, không insights.
 - Xu hướng, theo thời gian: một câu nhận định, rồi chart line; table chỉ khi cần xem từng kỳ.

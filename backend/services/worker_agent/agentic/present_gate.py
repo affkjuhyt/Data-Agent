@@ -3,7 +3,8 @@
 Compose must not invent figures when nothing was fetched, named members were dropped, every
 measure is empty, tables are out of time, or the metrics read do not measure what was asked.
 Column mismatches on kpi/chart/table drafts are also a gate (output contract: right calc, wrong
-column → replan or hand over, not a silent full-table fallback).
+column → hand over, not a silent full-table fallback). The reporter has rewritten its blocks with
+the errors by then; a replan does not change what it writes.
 """
 
 from __future__ import annotations
@@ -117,17 +118,19 @@ def after_drafts(
     made: int,
     ws: Workspace,
 ) -> GateHit | None:
-    """When every figure draft fails the column contract, stop instead of inventing a layout."""
+    """When every figure draft fails the column contract, stop instead of inventing a layout.
+
+    Handed over at once: the blocks are the reporter's writing, which it was already asked to fix
+    with the errors. The replan this used to send added a step to a plan that had read the right
+    figures (a run_python of the one number, 21/11) and passed only when the longer prompt
+    happened to make the reporter write otherwise."""
     if mode != "analyze" or made > 0 or not drafts:
         return None
     errors = draft_column_errors(drafts, ws)
     if not errors:
         return None
     return GateHit(
-        target="Khối số liệu không khớp cột của dataset",
+        target="Khối số liệu không khớp cột của dataset; chuyển sang cách trả lời chuẩn.",
         detail={"errors": errors[:8]},
-        feedback=(
-            "các khối kpi/chart/table trỏ dataset hoặc cột không có trong kết quả đã lấy;"
-            " chọn đúng id dataset và tên cột từ <datasets>, hoặc lấy lại đúng cột"
-        ),
+        feedback="",
     )

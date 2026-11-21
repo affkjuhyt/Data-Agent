@@ -128,6 +128,17 @@ def test_a_chart_and_a_kpi_take_their_figures_from_the_dataset() -> None:
         b.materialize(b.BlockDraft(type="chart", dataset="d1", x="Năm"), ws, "b4")
 
 
+def test_a_kpi_written_on_its_block_is_refused_by_the_field_misplaced() -> None:
+    from pydantic import ValidationError
+
+    # The 14B reporter's own reply (21/11): dropped, these fields left a kpi with no number.
+    flat = {"type": "kpi", "label": "Doanh thu Internet quý 4/2013", "dataset": "d1"}
+    with pytest.raises(ValidationError, match="label"):
+        b.Composition.model_validate({"headline": "", "blocks": [{**flat, "column": "x"}]})
+    with pytest.raises(ValidationError, match="value"):
+        b.KpiDraft.model_validate({"label": "a", "dataset": "d1", "column": "x", "value": "1"})
+
+
 def test_the_cut_a_question_names_is_found_by_its_full_name() -> None:
     import uuid
 

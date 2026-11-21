@@ -61,6 +61,8 @@ def test_wrong_column_drafts_gate_after_zero_made() -> None:
     hit = gate.after_drafts(mode="analyze", drafts=drafts, made=0, ws=ws)
     assert hit is not None
     assert "không khớp cột" in hit.target
+    # The reporter has rewritten its blocks by then: handed over, not replanned.
+    assert hit.feedback == ""
 
 
 def test_successful_materialize_skips_after_drafts_gate() -> None:

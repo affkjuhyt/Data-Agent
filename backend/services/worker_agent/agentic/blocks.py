@@ -1,7 +1,7 @@
 """The answer as the agent composes it: a list of typed blocks in the order it chose.
 
-The reporter model writes block *drafts* (`BlockDraft`, one flat shape so constrained decoding
-stays simple). The server turns each into the block the client draws (`materialize`): a chart or
+The reporter model writes block *drafts* (`BlockDraft`, one flat shape). The server turns each
+into the block the client draws (`materialize`): a chart or
 table gets its data from the named dataset, a KPI its value from a dataset cell. The model
 chooses what to show and how; it never writes a figure into a chart, a table or a KPI.
 """
@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from services.worker_agent.agentic.workspace import (
     MAX_BLOCK_ROWS,
@@ -244,6 +244,13 @@ def fitting_charts(x_kind: str, measures: list[list[float | None]], rows: int) -
 
 
 class KpiDraft(BaseModel):
+    # A field the draft does not have is refused, not dropped: the reporter thinks before it
+    # answers, so its JSON is not held to the schema while decoded, and the 14B reporter wrote
+    # a kpi's label, column and row on the block itself. Dropped, they left a kpi with no number
+    # ("kpi rỗng"); written again at temperature 0, the same block; 10 of the 11 handovers of
+    # a DS-AW run (21/11). Refused, the gateway's repair pass names the field and where it goes.
+    model_config = ConfigDict(extra="forbid")
+
     label: str
     dataset: str
     column: str
@@ -261,6 +268,9 @@ class InsightDraft(BaseModel):
 
 
 class BlockDraft(BaseModel):
+    # As KpiDraft: a field of a kpi written on the block is refused by name.
+    model_config = ConfigDict(extra="forbid")
+
     type: BlockType
     title: str | None = None
     # markdown, callout: the text (markdown allowed); code: shown as is.
@@ -405,7 +415,10 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
                     item["change_pct"] = round((value - previous) / abs(previous) * 100, 2)
             items.append(item)
         if not items:
-            raise BlockError("kpi rỗng")
+            raise BlockError(
+                'kpi rỗng: mỗi số là một phần tử của "kpis": [{"label", "dataset", "column",'
+                ' "row"}]'
+            )
         return {**base, "items": items}
     if t == "table":
         ds = _dataset(ws, draft.dataset)

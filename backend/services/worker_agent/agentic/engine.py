@@ -1307,7 +1307,7 @@ async def _compose(s: State) -> None:
                 str(s.question_id), "block", {"question_id": str(s.question_id), "block": block}
             )
         # OP-5: figure drafts that all miss the column contract must not fall through to a
-        # silent full-table PRESENT — replan once, then hand over.
+        # silent full-table PRESENT: the reporter has rewritten them once, so hand over.
         contract_hit = present_gate.after_drafts(mode=s.plan.mode, drafts=drafts, made=made, ws=ws)
         if contract_hit is not None:
             handle.detail = {
