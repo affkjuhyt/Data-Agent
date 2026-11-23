@@ -371,10 +371,17 @@ Khoản, trích dẫn mức Điều); (3) `context_header = "{title} | Số {doc
 rerank (như `handler.py:73-74`), **và** đưa vào `text_folded` để nửa từ khoá cũng đọc header (RG-06 còn); (4) kích thước
 hiệu chỉnh bằng RG-02 trên bộ 156 case trước khi chốt.
 
+**Đã làm (DI-08, 23/11/2026):** `legal_headings.relevel` chỉ áp khi tài liệu có ít nhất một Điều/Article (báo cáo có "1. …"
+không thành Khoản). `chunker.chunks_of`: section mở ở tiêu đề cấp ≤ 4 (tới Điều); Khoản/Điểm (cấp 5–6) là điểm cắt bên trong
+Điều nên cha = Điều, con = nhóm Khoản (nhãn "Khoản 1-2" như chunker cũ), cắt ở Khoản khi miếng đã quá nửa `MAX_CHARS`.
+DOCX/HTML (không trang) trích dẫn như trang 1 (`chunk.page_from` bắt buộc).
+
 ### 5.4 Chunk tóm tắt bảng
 
 Một bảng → một chunk `kind="table"`, `text` = caption + header path + 3 hàng đầu dạng `"{col}: {val}"` (tất định, không
-LLM) + ghi chú "bảng {n_rows}×{n_cols}, trang {page_from}–{page_to}", `element_ids=[table.element_id]`. Mục đích: truy
+LLM) + ghi chú "bảng {n_rows}×{n_cols}, trang {page_from}–{page_to}", `element_ids=[table.element_id]`.
+**Đã làm (DI-08):** để giữ DoD "không chunk nào chứa text của `table_cell`" cho số, chunk tóm tắt chỉ có chú thích, tiêu đề cột
+và nhãn của 3 hàng đầu (cột đầu, không phải số), không có giá trị. Mục đích: truy
 hồi tìm được bảng; **số** không lấy từ chunk này mà từ `table_cell` qua `table_query`.
 
 ## 6. Stage 9 (phần truy hồi): F-08 và ngưỡng
