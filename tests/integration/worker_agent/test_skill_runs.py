@@ -26,7 +26,11 @@ warehouse = test_answers.warehouse
 
 
 def run_decomposition(
-    bank: Bank, params: dict[str, Any], *, steps: list[dict[str, Any]] | None = None
+    bank: Bank,
+    params: dict[str, Any],
+    *,
+    steps: list[dict[str, Any]] | None = None,
+    category: str = "decomposition",
 ) -> uuid.UUID:
     seed = bank.seed
     skill = seed.row(
@@ -35,7 +39,7 @@ def run_decomposition(
         data_space_id=bank.space,
         code=f"phan_ra_{uuid.uuid4().hex[:6]}",
         name="Phân rã biến động",
-        category="decomposition",
+        category=category,
         scope="data_space",
         owner_id=bank.user,
         current_version=1,
@@ -257,3 +261,65 @@ async def test_what_it_cannot_run_fails_saying_why(
     status, result, error = outcome(seed, run)
     assert (status, result) == ("failed", None)
     assert says in error, error
+
+
+# Five regions with September balances near the bank's own two (Miền Bắc 2 000, Miền Nam 1 000)
+# and one far above them all (AL-14).
+REGIONS = [("R1", 1200), ("R2", 1500), ("R3", 1300), ("R4", 1800), ("R5", 1600), ("R6", 50000)]
+
+
+@pytest.mark.req("AL-14")
+async def test_the_anomaly_skill_names_the_member_far_from_the_others(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    # The bank schema is the module's: the rows added here are taken out again.
+    with seed.conn.cursor() as cur:
+        for code, balance in REGIONS:
+            cur.execute("INSERT INTO bank.branch VALUES (%s, %s)", (code, f"Vùng {code}"))
+            cur.execute(
+                "INSERT INTO bank.loan VALUES (%s, 1, %s, 'TD', '2026-09-30')", (code, balance)
+            )
+    try:
+        run = run_decomposition(
+            bank,
+            {"metric": "DU_NO", "dimension": "vung", "period": "2026-09"},
+            steps=[{"kind": "anomaly"}],
+            category="quality",
+        )
+        await drain()
+    finally:
+        with seed.conn.cursor() as cur:
+            cur.execute("DELETE FROM bank.loan WHERE branch_code LIKE 'R_'")
+            cur.execute("DELETE FROM bank.branch WHERE code LIKE 'R_'")
+    status, result, error = outcome(seed, run)
+    assert (status, error) == ("succeeded", None)
+    found = result["anomaly"]
+    assert [o["member"] for o in found["outliers"]] == ["Vùng R6"]
+    assert found["n_members"] == 8  # the six and Miền Bắc, Miền Nam
+    assert (result["dimension"], result["period"]) == ("vung", "09/2026")
+    assert "không phải nguyên nhân" in result["summary"]
+    # One query through the Query engine as the run's, then the check.
+    steps = seed.one(
+        "SELECT json_agg(json_build_array(s.status, q.caller_kind) ORDER BY s.seq) "
+        "FROM skill.skill_run_step s LEFT JOIN query.query_run q ON q.id = s.query_run_id "
+        "WHERE s.skill_run_id = %s",
+        run,
+    )
+    assert steps == [["ok", "skill_run"], ["ok", None]]
+
+
+async def test_the_anomaly_skill_needs_five_members(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    run = run_decomposition(
+        bank,
+        {"metric": "DU_NO", "dimension": "vung", "period": "2026-09"},
+        steps=[{"kind": "anomaly"}],
+        category="quality",
+    )
+    await drain()
+    status, result, error = outcome(seed, run)
+    assert (status, result) == ("failed", None)
+    assert "Không đủ nhóm" in error, error

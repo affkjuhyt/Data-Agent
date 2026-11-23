@@ -12,6 +12,11 @@ months "YYYY-MM" or quarters "YYYY-Qn" (base_period defaults to the period befor
 query run through the Query engine as caller_kind skill_run (AC-03-01-06): no connection of its
 own and no sandbox. A step kind this worker does not run (python, external factors, …) fails the
 run saying so, rather than producing something it did not compute.
+
+AL-14: the step kind `anomaly` (skill category `quality`, "Phát hiện bất thường",
+skills/anomaly.py) with the params {metric, dimension, period}: the metric cut by one dimension
+over the period, one query, and the members whose robust z-score (MAD) passes 3.5, with at least
+five members. A statistical observation, never a cause.
 """
 
 from __future__ import annotations
@@ -42,6 +47,7 @@ from services.worker_agent.questions import (
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.analysis import additive_measures
 from services.worker_agent.semantic.loader import SpaceLayer, load
+from services.worker_agent.skills import anomaly
 from services.worker_agent.skills.decomposition import (
     NO_VALUE,
     RECONCILE_TOLERANCE,
@@ -132,7 +138,8 @@ async def run_skill(event: Event) -> None:
         cannot = unrunnable(category, steps)
         if cannot is not None:
             raise RunFailed(cannot)
-        result = await _decompose(event.org_id, run_id, principal, space, params)
+        run_steps = _anomaly if _kinds(steps) == ["anomaly"] else _decompose
+        result = await run_steps(event.org_id, run_id, principal, space, params)
     except RunFailed as exc:
         await _finish(event.org_id, run_id, about, status="failed", error=str(exc))
         return
@@ -145,16 +152,24 @@ async def run_skill(event: Event) -> None:
     await _finish(event.org_id, run_id, about, status="succeeded", result=result)
 
 
+# What this worker runs: a skill category and the one step kind it holds.
+RUNNABLE = {("decomposition", "decompose"), ("quality", "anomaly")}
+
+
+def _kinds(steps: list[Any]) -> list[str]:
+    return [str(s.get("kind")) for s in steps if isinstance(s, dict)]
+
+
 def unrunnable(category: str, steps: list[Any]) -> str | None:
     """Why this worker cannot run a version with these steps, or None when it can. The eval of a
     version (skill_evals.py) asks before it runs any case, so it fails once, saying so."""
-    kinds = [str(s.get("kind")) for s in steps if isinstance(s, dict)]
-    if category == "decomposition" and kinds == ["decompose"]:
+    kinds = _kinds(steps)
+    if len(kinds) == 1 and (category, kinds[0]) in RUNNABLE:
         return None
     return (
         "Kỹ năng có bước mà worker chưa chạy được ("
         + ", ".join(kinds or ["không có bước"])
-        + "); hiện chỉ chạy được bước decompose."
+        + "); hiện chỉ chạy được bước decompose (phân rã) và anomaly (bất thường)."
     )
 
 
@@ -351,6 +366,61 @@ async def _decompose(
     )
 
 
+async def _anomaly(
+    org_id: uuid.UUID,
+    run_id: uuid.UUID,
+    principal: uuid.UUID,
+    space: uuid.UUID,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    period = period_of(params.get("period"), "period")
+    async with scoped_session(LAYER_ROLE, org_id, principal) as session:
+        layer = await load(session, space)
+        version, metric_name, dimensions = _metric_and_dimensions(layer, params)
+        if len(dimensions) != 1:
+            raise RunFailed("Tìm bất thường theo đúng một chiều.")
+        dimension = dimensions[0]
+        source = await _source(session, layer, version, dimension, space=space, org_id=org_id)
+    rows = await _query(
+        org_id,
+        run_id,
+        1,
+        principal,
+        space,
+        layer,
+        source,
+        version,
+        dimension,
+        period,
+        name=f"Truy vấn {metric_name} theo {dimension.name} kỳ {period.label}",
+    )
+    # A row without a member or a value is not a group to compare.
+    points = [anomaly.Point(m, v) for m, v in rows if v is not None and m != NO_VALUE]
+    started = time.monotonic()
+    try:
+        result = anomaly.result_of(
+            points,
+            metric_name=metric_name,
+            dimension_name=dimension.name,
+            unit=version.unit,
+            decimals=version.decimals,
+        )
+    except anomaly.NotEnough as exc:
+        await _step(org_id, run_id, 2, "Tìm nhóm lệch hẳn", status="error", started=started)
+        raise RunFailed(f"Không đủ nhóm để tìm bất thường: {exc}") from exc
+    found = result["anomaly"]
+    await _step(
+        org_id,
+        run_id,
+        2,
+        "Tìm nhóm lệch hẳn",
+        status="ok",
+        started=started,
+        output={"members": found["n_members"], "outliers": len(found["outliers"])},
+    )
+    return {**result, "dimension": dimension.code, "period": period.label}
+
+
 async def _query(
     org_id: uuid.UUID,
     run_id: uuid.UUID,
@@ -418,6 +488,19 @@ MAX_DIMENSIONS = 5
 def _plan(
     layer: SpaceLayer, params: dict[str, Any]
 ) -> tuple[c.MetricVersion, str, Shape, list[c.Dimension]]:
+    version, name, dimensions = _metric_and_dimensions(layer, params)
+    try:
+        shape = shape_of(version.expression, additive_measures(layer.layer))
+    except NotDecomposable as exc:
+        raise RunFailed(
+            f"{name} không phải tổng hay tỷ lệ của hai tổng nên không phân rã chính xác được."
+        ) from exc
+    return version, name, shape, dimensions
+
+
+def _metric_and_dimensions(
+    layer: SpaceLayer, params: dict[str, Any]
+) -> tuple[c.MetricVersion, str, list[c.Dimension]]:
     code = str(params.get("metric") or "")
     entry = next((m for m in layer.vocabulary.metrics if m.code == code), None)
     if entry is None or entry.metric_id not in layer.versions:
@@ -441,15 +524,9 @@ def _plan(
         if dimension is None or dimension.id not in version.allowed_dimension_ids:
             raise RunFailed(f"{entry.name} không được phép chia theo “{name}”.")
         if dimension.is_time:
-            raise RunFailed("Phân rã theo một chiều không phải thời gian; kỳ đã là tham số riêng.")
+            raise RunFailed("Chia theo một chiều không phải thời gian; kỳ đã là tham số riêng.")
         dimensions.append(dimension)
-    try:
-        shape = shape_of(version.expression, additive_measures(layer.layer))
-    except NotDecomposable as exc:
-        raise RunFailed(
-            f"{entry.name} không phải tổng hay tỷ lệ của hai tổng nên không phân rã chính xác được."
-        ) from exc
-    return version, entry.name, shape, dimensions
+    return version, entry.name, dimensions
 
 
 async def _source(
