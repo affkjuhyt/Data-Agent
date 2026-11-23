@@ -39403,6 +39403,38 @@
     "title": "RoleGrant",
     "type": "object"
    },
+   "RoleMapping": {
+    "additionalProperties": false,
+    "description": "AE-17: the role of a PostgreSQL source a user's or a group's queries run as (SET LOCAL\nROLE); an asker it does not name runs as the source's service account.",
+    "properties": {
+     "groups": {
+      "additionalProperties": {
+       "pattern": "^[a-z_][a-z0-9_]{0,62}$",
+       "type": "string"
+      },
+      "maxProperties": 1000,
+      "propertyNames": {
+       "format": "uuid"
+      },
+      "title": "Groups",
+      "type": "object"
+     },
+     "users": {
+      "additionalProperties": {
+       "pattern": "^[a-z_][a-z0-9_]{0,62}$",
+       "type": "string"
+      },
+      "maxProperties": 1000,
+      "propertyNames": {
+       "format": "uuid"
+      },
+      "title": "Users",
+      "type": "object"
+     }
+    },
+    "title": "RoleMapping",
+    "type": "object"
+   },
    "RoleRef": {
     "properties": {
      "code": {
@@ -42829,6 +42861,16 @@
       ],
       "title": "Query Timeout S"
      },
+     "role_mapping": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/RoleMapping"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "scan_schemas": {
       "anyOf": [
        {
@@ -43052,6 +43094,9 @@
      "query_timeout_s": {
       "title": "Query Timeout S",
       "type": "integer"
+     },
+     "role_mapping": {
+      "title": "Role Mapping"
      },
      "scan_cron": {
       "anyOf": [
@@ -48025,6 +48070,9 @@
      "query_timeout_s": {
       "title": "Query Timeout S",
       "type": "integer"
+     },
+     "role_mapping": {
+      "title": "Role Mapping"
      },
      "scan_cron": {
       "anyOf": [

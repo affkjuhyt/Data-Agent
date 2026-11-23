@@ -67,6 +67,11 @@ class QueryRun(Base):
     result_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_ref: Mapped[str | None] = mapped_column(Text, nullable=True, comment="MinIO da-results")
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    executed_as: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Role CSDL đã chạy truy vấn: role ánh xạ của người hỏi (SET LOCAL ROLE), tài khoản dịch vụ của nguồn, hoặc role của phiên workspace; null với lượt trước AE-17. Thêm 23/11/2026",
+    )
     status: Mapped[str] = mapped_column(
         Text,
         server_default=sql_text("'running'"),

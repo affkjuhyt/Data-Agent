@@ -94,6 +94,20 @@ class SourceCreate(_Limits):
     writeback_credentials: SecretReference | None = None
 
 
+# A PostgreSQL role as an unquoted identifier (worker_agent/query/identity.ROLE_NAME).
+RoleName = Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_]{0,62}$")]
+
+
+class RoleMapping(BaseModel):
+    """AE-17: the role of a PostgreSQL source a user's or a group's queries run as (SET LOCAL
+    ROLE); an asker it does not name runs as the source's service account."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    users: dict[uuid.UUID, RoleName] = Field(default_factory=dict, max_length=1000)
+    groups: dict[uuid.UUID, RoleName] = Field(default_factory=dict, max_length=1000)
+
+
 class SourcePatch(_Limits):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     authority_level: AuthorityLevel | None = None
@@ -107,6 +121,7 @@ class SourcePatch(_Limits):
         list[Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$")]]
         | None
     ) = Field(default=None, max_length=500)
+    role_mapping: RoleMapping | None = None
 
 
 class ScheduleUpdate(BaseModel):
@@ -160,6 +175,8 @@ class SourceView(BaseModel):
     has_credentials: bool = False
     has_writeback_credentials: bool = False
     writeback_tables: list[str] = Field(default_factory=list)
+    # AE-17: who runs as which role on the source; role names only, no secret.
+    role_mapping: Any = Field(default_factory=dict)
     mode: str
     authority_level: str
     freshness_sla: datetime.timedelta | None

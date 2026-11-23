@@ -1155,6 +1155,7 @@ CREATE TABLE catalog.source (
   freshness_sla interval,
   max_concurrency smallint NOT NULL DEFAULT 4,
   query_timeout_s integer NOT NULL DEFAULT 120,
+  role_mapping jsonb NOT NULL DEFAULT '{}',
   scan_schemas text[] NOT NULL DEFAULT '{}',
   scan_cron text,
   profile_cron text,
@@ -1192,6 +1193,7 @@ COMMENT ON COLUMN catalog.source.authority_level IS 'level_1, level_2, level_3, 
 COMMENT ON COLUMN catalog.source.freshness_sla IS 'Hạn độ mới; quá hạn thì trạng thái needs_fix (BR-56)';
 COMMENT ON COLUMN catalog.source.max_concurrency IS 'BR-99';
 COMMENT ON COLUMN catalog.source.query_timeout_s IS 'BR-99';
+COMMENT ON COLUMN catalog.source.role_mapping IS 'Danh tính thực thi (AE-17, F-29): {users: {user_id: role}, groups: {group_id: role}}; nguồn PostgreSQL chạy truy vấn của người được ánh xạ với SET LOCAL ROLE; rỗng là tài khoản dịch vụ như cũ. Thêm 23/11/2026';
 COMMENT ON COLUMN catalog.source.scan_schemas IS 'Schema được quét';
 COMMENT ON COLUMN catalog.source.scan_window IS 'Khung giờ được phép quét theo ngày trong tuần (BR-103)';
 COMMENT ON COLUMN catalog.source.work_calendar_id IS 'logic → org.work_calendar';
@@ -2809,6 +2811,7 @@ CREATE TABLE query.query_run (
   result_hash text,
   result_ref text,
   duration_ms integer,
+  executed_as text,
   status text NOT NULL DEFAULT 'running',
   error text,
   started_at timestamptz NOT NULL DEFAULT now(),
@@ -2828,6 +2831,7 @@ COMMENT ON COLUMN query.query_run.period_close_id IS 'logic → period.period_cl
 COMMENT ON COLUMN query.query_run.sql_executed IS 'Sau khi Policy engine viết lại';
 COMMENT ON COLUMN query.query_run.policies_applied IS 'logic → governance.access_policy';
 COMMENT ON COLUMN query.query_run.result_ref IS 'MinIO da-results';
+COMMENT ON COLUMN query.query_run.executed_as IS 'Role CSDL đã chạy truy vấn: role ánh xạ của người hỏi (SET LOCAL ROLE), tài khoản dịch vụ của nguồn, hoặc role của phiên workspace; null với lượt trước AE-17. Thêm 23/11/2026';
 COMMENT ON COLUMN query.query_run.status IS 'queued, running, succeeded, failed, cancelled, timeout';
 
 CREATE TABLE query.query_result (

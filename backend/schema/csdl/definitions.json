@@ -4744,6 +4744,17 @@
      "pii": false
     },
     {
+     "name": "role_mapping",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'{}'",
+     "unique": false,
+     "comment": "Danh tính thực thi (AE-17, F-29): {users: {user_id: role}, groups: {group_id: role}}; nguồn PostgreSQL chạy truy vấn của người được ánh xạ với SET LOCAL ROLE; rỗng là tài khoản dịch vụ như cũ. Thêm 23/11/2026",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "scan_schemas",
      "type": "text[]",
      "not_null": true,
@@ -13041,6 +13052,17 @@
      "default": null,
      "unique": false,
      "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "executed_as",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Role CSDL đã chạy truy vấn: role ánh xạ của người hỏi (SET LOCAL ROLE), tài khoản dịch vụ của nguồn, hoặc role của phiên workspace; null với lượt trước AE-17. Thêm 23/11/2026",
      "fk": null,
      "logic_ref": null,
      "pii": false

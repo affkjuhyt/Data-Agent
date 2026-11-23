@@ -82,6 +82,7 @@ from services.api.modules.catalog.schemas import (
     RestTryRequest,
     RestTryResult,
     RevokeRequest,
+    RoleMapping,
     ScanRequest,
     ScanRunView,
     ScheduleUpdate,
@@ -610,6 +611,8 @@ async def update_source(
             raise Problem(422, "validation_failed", f"{name} cannot be null.")
     if "credentials" in sent and body.credentials is None:
         raise Problem(422, "validation_failed", "credentials cannot be removed, only replaced.")
+    if "role_mapping" in sent and body.role_mapping is None:
+        raise Problem(422, "validation_failed", "role_mapping cannot be null; send {} to clear it.")
     # A path is only checked. A typed account is stored after _source locks the row, on a new
     # version path, so a caller who cannot see the source never overwrites its account.
     checked_ref = (
@@ -645,6 +648,11 @@ async def update_source(
                 if getattr(row, name) != value:
                     setattr(row, name, value)
                     changed.append(name)
+        if body.role_mapping is not None:
+            mapping = await _role_mapping(session, principal, row, body.role_mapping)
+            if mapping != (row.role_mapping or {}):
+                row.role_mapping = mapping
+                changed.append("role_mapping")
         if body.status is not None and body.status != row.status:
             refused = rules.status_change(
                 row.status, body.status, tested=row.last_checked_at is not None
@@ -682,6 +690,57 @@ async def update_source(
         await session.flush()
         await session.refresh(row)
         return SourceView.of(row)
+
+
+async def _role_mapping(
+    session: AsyncSession, principal: Principal, row: catalog.Source, body: RoleMapping
+) -> dict[str, Any]:
+    """AE-17: the mapping as stored, {} when it names no one. Only a PostgreSQL source sets a role
+    per transaction (SET LOCAL ROLE); every user and group named is of this organisation."""
+    users = {str(k): v for k, v in body.users.items()}
+    groups = {str(k): v for k, v in body.groups.items()}
+    if not users and not groups:
+        return {}
+    if row.kind != "postgresql":
+        raise _invalid_field(
+            "role_mapping", f"A role mapping is applied on a PostgreSQL source, not {row.kind}."
+        )
+    if users:
+        known = set(
+            (
+                await session.scalars(
+                    select(org.AppUser.id).where(
+                        org.AppUser.org_id == principal.org_id, org.AppUser.id.in_(body.users)
+                    )
+                )
+            ).all()
+        )
+        if len(known) != len(users):
+            raise _invalid_field("role_mapping", "A user in role_mapping.users is not of this org.")
+    if groups:
+        known = set(
+            (
+                await session.scalars(
+                    select(org.UserGroup.id).where(
+                        org.UserGroup.org_id == principal.org_id, org.UserGroup.id.in_(body.groups)
+                    )
+                )
+            ).all()
+        )
+        if len(known) != len(groups):
+            raise _invalid_field(
+                "role_mapping", "A group in role_mapping.groups is not of this org."
+            )
+    return {"users": users, "groups": groups}
+
+
+def _invalid_field(field: str, detail: str) -> Problem:
+    return Problem(
+        422,
+        "validation_failed",
+        detail,
+        errors=[FieldError(field=field, code="invalid", message=detail)],
+    )
 
 
 @router.post(

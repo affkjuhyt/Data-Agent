@@ -99,6 +99,11 @@ class Source(Base):
     query_timeout_s: Mapped[int] = mapped_column(
         Integer, server_default=sql_text("120"), comment="BR-99"
     )
+    role_mapping: Mapped[Any] = mapped_column(
+        JSONB,
+        server_default=sql_text("'{}'"),
+        comment="Danh tính thực thi (AE-17, F-29): {users: {user_id: role}, groups: {group_id: role}}; nguồn PostgreSQL chạy truy vấn của người được ánh xạ với SET LOCAL ROLE; rỗng là tài khoản dịch vụ như cũ. Thêm 23/11/2026",
+    )
     scan_schemas: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default=sql_text("'{}'"), comment="Schema được quét"
     )

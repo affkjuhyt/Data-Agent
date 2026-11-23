@@ -20993,6 +20993,21 @@ export interface components {
             /** Valid Until */
             valid_until?: string | null;
         };
+        /**
+         * RoleMapping
+         * @description AE-17: the role of a PostgreSQL source a user's or a group's queries run as (SET LOCAL
+         *     ROLE); an asker it does not name runs as the source's service account.
+         */
+        RoleMapping: {
+            /** Groups */
+            groups?: {
+                [key: string]: string;
+            };
+            /** Users */
+            users?: {
+                [key: string]: string;
+            };
+        };
         /** RoleRef */
         RoleRef: {
             /** Code */
@@ -22216,6 +22231,7 @@ export interface components {
             name?: string | null;
             /** Query Timeout S */
             query_timeout_s?: number | null;
+            role_mapping?: components["schemas"]["RoleMapping"] | null;
             /** Scan Schemas */
             scan_schemas?: string[] | null;
             /** Scan Window */
@@ -22291,6 +22307,8 @@ export interface components {
             profile_cron: string | null;
             /** Query Timeout S */
             query_timeout_s: number;
+            /** Role Mapping */
+            role_mapping?: unknown;
             /** Scan Cron */
             scan_cron: string | null;
             /** Scan Schemas */
@@ -24202,6 +24220,8 @@ export interface components {
             profile_cron: string | null;
             /** Query Timeout S */
             query_timeout_s: number;
+            /** Role Mapping */
+            role_mapping?: unknown;
             /** Scan Cron */
             scan_cron: string | null;
             /** Scan Schemas */

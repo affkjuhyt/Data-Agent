@@ -8,7 +8,10 @@ The source is reached with the credentials at its secret_ref, in a transaction t
 with the source's own statement timeout (query_timeout_s, AC-01-01-03), after the guard admitted
 the SQL. PostgreSQL and MySQL also mark that transaction READ ONLY; SQL Server has no read-only
 transaction, so there the guard and the rollback are the only barriers and the source login must
-be read-only (db_datareader). At most BR-03's 10 000 rows come back, flagged `truncated` when
+be read-only (db_datareader). AE-17: on a PostgreSQL source whose role_mapping names the asker
+(or their group), the transaction runs under SET LOCAL ROLE of that role (query/identity.py), so
+the source's own grants and row security apply to them; query_run.executed_as records the role
+every run used. At most BR-03's 10 000 rows come back, flagged `truncated` when
 there were more. The number of runs per source in this process is capped by
 source.max_concurrency.
 
@@ -45,7 +48,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import asyncpg
-from sqlalchemy import select, text, update
+from sqlalchemy import or_, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 from sqlglot import exp, parse_one
@@ -61,6 +64,7 @@ from libs.sql_guard import (
     dialect_of,
     tables_of,
 )
+from services.worker_agent.query import identity
 from services.worker_agent.query.scope import (
     OutOfScope,
     active_policies,
@@ -250,11 +254,15 @@ async def _cached(
     executed: str,
     policies: Sequence[governance.AccessPolicy],
     as_of: datetime.date | None,
+    role: str | None = None,
+    mapped: frozenset[str] = frozenset(),
 ) -> tuple[q.QueryRun, q.QueryResult] | None:
     """The newest succeeded run with the same key inside the TTL, with its whole stored result.
 
     The policies are compared by id and by when they last changed: a run from before a policy was
-    edited is not reused, whatever its id (a mask method or a column list changed in place)."""
+    edited is not reused, whatever its id (a mask method or a column list changed in place). The
+    role it ran as is part of the key (AE-17): a mapped role's rows are reused only for that role,
+    and a run as the service account never for a mapped asker, nor a mapped run for anyone else."""
     ttl = cache_ttl()
     if not ttl:
         return None
@@ -274,6 +282,11 @@ async def _cached(
                 q.QueryRun.sql_executed == executed,
                 q.QueryRun.as_of.is_(None) if as_of is None else q.QueryRun.as_of == as_of,
                 q.QueryResult.truncated.is_(False),
+                q.QueryRun.executed_as == role
+                if role is not None
+                else or_(
+                    q.QueryRun.executed_as.is_(None), q.QueryRun.executed_as.not_in(mapped or [""])
+                ),
             )
             .order_by(q.QueryRun.started_at.desc())
             .limit(5)
@@ -338,7 +351,12 @@ def _hash(columns: Sequence[dict[str, str]], rows: Sequence[Sequence[Any]]) -> s
 
 
 async def _run_postgres(
-    source: catalog.Source, user: str, password: str, sql: str, timeout_s: int
+    source: catalog.Source,
+    user: str,
+    password: str,
+    sql: str,
+    timeout_s: int,
+    role: str | None = None,
 ) -> tuple[list[dict[str, str]], list[list[Any]]]:
     options = source.conn_options or {}
     # Encrypted and verified unless the source says otherwise: the credentials and the rows cross
@@ -360,6 +378,10 @@ async def _run_postgres(
     try:
         async with conn.transaction(readonly=True):
             await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_s) * 1000}")
+            if role is not None:
+                # SET LOCAL ROLE as a bound value (identity.ROLE_NAME checked it too): it ends
+                # with this read-only transaction.
+                await conn.execute("SELECT set_config('role', $1, true)", role)
             # Exactly the one schema the table check resolved unqualified names to (scope.py),
             # quoted as one identifier: not the login's default path, not a list.
             await conn.execute(
@@ -548,6 +570,8 @@ async def run_query(
     # Every version's table stands: read them in place; else every one needs its snapshot.
     from_files = historic and any(v.physical is None for v in versions)
     output_policies: list[governance.AccessPolicy] = []
+    role: str | None = None
+    executed_as: str | None = None
     applied_policy_ids: list[uuid.UUID] = []
     applied_policies: list[governance.AccessPolicy] = []
     async with scoped_session(ROLE, org_id, principal_id) as session:
@@ -562,6 +586,8 @@ async def run_query(
                 limit=limit,
             )
             executed = bound.executed
+            if source.secret_ref != INTERNAL_WORKSPACE:
+                role = await identity.role_for(session, source, principal_id)
             applied_policies = bound.policies
             applied_policy_ids = [policy.id for policy in bound.policies]
             output_policies = [p for p in bound.policies if p.kind in {"column", "mask"}]
@@ -596,6 +622,8 @@ async def run_query(
                 executed=executed,
                 policies=applied_policies,
                 as_of=as_of,
+                role=role,
+                mapped=frozenset(identity.mapped_roles(source)),
             )
         recorded = {
             "source_id": source.id,
@@ -640,13 +668,16 @@ async def run_query(
         outcome.truncated = False
         outcome.result_hash = earlier.result_hash or _hash(outcome.columns, outcome.rows)
         outcome.status = "succeeded"
+        executed_as = earlier.executed_as
     else:
         try:
             async with _slot(source):
                 if from_files:
                     # The source's limit, as a live read has it (_read_snapshots).
                     columns, rows = await _read_snapshots(executed, versions, limit, timeout_s)
+                    executed_as = "snapshot"
                 elif source.secret_ref == INTERNAL_WORKSPACE:
+                    executed_as = ROLE
                     async with scoped_session(ROLE, org_id, principal_id) as local_session:
                         await local_session.execute(text("SET TRANSACTION READ ONLY"))
                         # Upload tables are materialized in the private workspace schema. The SQL
@@ -663,9 +694,15 @@ async def run_query(
                         rows = [[_plain(value) for value in row] for row in result.fetchall()]
                 else:
                     credentials = await secrets.read(org_id, source.secret_ref)
+                    executed_as = role or credentials.user
                     columns, rows = await asyncio.wait_for(
                         driver_for(source.kind)(
-                            source, credentials.user, credentials.password, executed, timeout_s
+                            source,
+                            credentials.user,
+                            credentials.password,
+                            executed,
+                            timeout_s,
+                            **({"role": role} if role is not None else {}),
                         ),
                         timeout=timeout_s + 5,
                     )
@@ -704,6 +741,7 @@ async def run_query(
                 row_count=len(outcome.rows) if outcome.ok else None,
                 result_hash=outcome.result_hash,
                 result_ref=cache_ref,
+                executed_as=executed_as,
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
         )

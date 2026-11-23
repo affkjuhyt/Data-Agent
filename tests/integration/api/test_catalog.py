@@ -1319,6 +1319,39 @@ async def test_one_source_is_read_and_names_its_writeback_tables(o: Org) -> None
         assert no_admin.status_code == 403
 
 
+@pytest.mark.req("AE-17")
+async def test_a_postgresql_source_maps_users_and_groups_to_roles(o: Org) -> None:
+    source = _source_row(o)
+    mysql = _source_row(o, kind="mysql", name="MySQL")
+    group = o.seed.row("org.user_group", org_id=o.org, external_id="g-dw", name="Kho")
+    mapping = {
+        "users": {str(o.users["analyst"]): "dw_branch_reader"},
+        "groups": {str(group): "dw_reader_all"},
+    }
+    async with client(o) as api:
+        h = o.headers("admin")
+        patched = await api.patch(
+            f"/v1/sources/{source}", json={"role_mapping": mapping}, headers=h
+        )
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["role_mapping"] == mapping
+        assert (await api.get(f"/v1/sources/{source}", headers=h)).json()["role_mapping"] == mapping
+        refused = [
+            # Only PostgreSQL sets a role per transaction.
+            (mysql, mapping),
+            # Someone of another organisation, or a group that is not there.
+            (source, {"users": {str(uuid.uuid4()): "dw_branch_reader"}}),
+            (source, {"groups": {str(uuid.uuid4()): "dw_branch_reader"}}),
+            # A role name that is not a plain identifier.
+            (source, {"users": {str(o.users["analyst"]): "x; drop role y"}}),
+        ]
+        for target, body in refused:
+            bad = await api.patch(f"/v1/sources/{target}", json={"role_mapping": body}, headers=h)
+            assert bad.status_code == 422, (body, bad.text)
+        cleared = await api.patch(f"/v1/sources/{source}", json={"role_mapping": {}}, headers=h)
+        assert cleared.json()["role_mapping"] == {}
+
+
 async def test_activation_assigns_tables_only_where_the_caller_administers_data(o: Org) -> None:
     source = _source_row(o)
     plain = _dataset(o, source, table_name="du_no")

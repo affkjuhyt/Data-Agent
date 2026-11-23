@@ -550,6 +550,7 @@ Kết nối tới một nguồn dữ liệu của tổ chức (CSDL, kho dữ li
 | freshness\_sla | interval | Hạn độ mới; quá hạn thì trạng thái needs\_fix (BR-56) |
 | max\_concurrency | smallint, bắt buộc, mặc định 4 | BR-99 |
 | query\_timeout\_s | integer, bắt buộc, mặc định 120 | BR-99 |
+| role\_mapping | jsonb, bắt buộc, mặc định '{}' | Danh tính thực thi (AE-17, F-29): {users: {user\_id: role}, groups: {group\_id: role}}; nguồn PostgreSQL chạy truy vấn của người được ánh xạ với SET LOCAL ROLE; rỗng là tài khoản dịch vụ như cũ. Thêm 23/11/2026 |
 | scan\_schemas | text\[\], bắt buộc, mặc định '{}' | Schema được quét |
 | scan\_cron | text |  |
 | profile\_cron | text |  |
@@ -1482,6 +1483,7 @@ Một lần chạy SQL: SQL đã viết lại theo chính sách, nguồn, thời
 | result\_hash | text |  |
 | result\_ref | text | MinIO da-results |
 | duration\_ms | integer |  |
+| executed\_as | text | Role CSDL đã chạy truy vấn: role ánh xạ của người hỏi (SET LOCAL ROLE), tài khoản dịch vụ của nguồn, hoặc role của phiên workspace; null với lượt trước AE-17. Thêm 23/11/2026 |
 | status | text, bắt buộc, mặc định 'running' | queued, running, succeeded, failed, cancelled, timeout |
 | error | text |  |
 | started\_at | timestamptz, bắt buộc, mặc định now() |  |

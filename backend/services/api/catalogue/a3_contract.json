@@ -1299,7 +1299,8 @@
     "scan_window": false,
     "status": false,
     "credentials": false,
-    "writeback_tables": false
+    "writeback_tables": false,
+    "role_mapping": false
    },
    "query": [],
    "returns": "Source",
@@ -1313,7 +1314,7 @@
      "validation_failed"
     ]
    ],
-   "request_text": "name, authority_level, freshness_sla, max_concurrency, query_timeout_s, scan_schemas, scan_window, status, credentials, writeback_tables"
+   "request_text": "name, authority_level, freshness_sla, max_concurrency, query_timeout_s, scan_schemas, scan_window, status, credentials, writeback_tables, role_mapping"
   },
   "POST /v1/sources/{id}:test": {
    "group": "Nguồn và danh mục",
