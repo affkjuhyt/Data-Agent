@@ -6,6 +6,10 @@ an ingest.quality_rule with origin agent_suggested and status draft: it runs on 
 steward turns it active (PATCH /v1/quality-rules/{id}), and one the steward disabled, or any
 rule of the same kind on the same column, is not proposed again.
 
+Besides the four of DATA_PIPELINE_SPEC §7 (not_null, unique, in_list, match_regex) a number
+never negative on the sample is proposed range {min: 0}: a table of quantities and costs only
+had nothing else to propose.
+
 What the sample shows is not what the source promises: a rule is a proposal for that reason, and
 the thresholds below keep coincidences out (a handful of rows is unique by chance).
 """
@@ -26,12 +30,17 @@ from libs.dataagent_db.models import ingest
 ROLE = "svc_ingest"
 # Below this share of nulls a column is proposed not_null.
 NOT_NULL_BELOW = 0.001
-# The fewest sampled rows a unique or in_list proposal rests on.
+# The fewest sampled rows a unique proposal rests on (a handful of rows is unique by chance), and
+# the fewest a set or a bound does: a value repeated in ten rows is no coincidence.
 MIN_ROWS = 20
+MIN_ROWS_SET = 10
 IN_SET_MAX = 20
 REGEX_SHARE = 0.99
 _UNIQUE_TYPES = frozenset({"string", "integer"})
 _IN_SET_TYPES = frozenset({"string", "integer"})
+_NUMERIC = frozenset({"integer", "decimal"})
+# A surrogate or foreign key's number bounds nothing a steward would check.
+_KEY_NAME = re.compile(r"(^|_)(key|id)$|(?<=[a-z])(Key|Id|ID)$")
 # Both Python's re (the api validates a rule with it) and PostgreSQL's ARE (the check runs with
 # ~) read these the same way; a letter class written [^\W\d_] is Python's only.
 _PORTABLE = re.compile(r"^(?:\\d|\[A-Z\]|\[a-z\]|\{\d+\}|\\[^\w\s]|\\ |[^\\\[\]{}])*$")
@@ -85,13 +94,26 @@ def propose(
         not personal
         and normalized_type in _IN_SET_TYPES
         and 1 < distinct <= IN_SET_MAX
-        and non_null >= MIN_ROWS
+        and non_null >= MIN_ROWS_SET
         and distinct < non_null
         and isinstance(category, list)
         and len(category) == distinct
         and all(isinstance(v, dict) and v.get("value") != "***" for v in category)
     ):
         add("in_list", {"values": sorted(str(v["value"]) for v in category)})
+    # A number never below zero on the sample (a quantity, a cost) is proposed non-negative; its
+    # observed maximum is not a bound, the next load may pass it.
+    low = _float(profile.get("min_value"))
+    if (
+        not personal
+        and not is_key
+        and normalized_type in _NUMERIC
+        and not _KEY_NAME.search(column_name)
+        and non_null >= MIN_ROWS_SET
+        and low is not None
+        and low >= 0
+    ):
+        add("range", {"min": 0})
     patterns = profile.get("value_patterns") or []
     if (
         normalized_type == "string"
@@ -103,6 +125,13 @@ def propose(
     ):
         add("match_regex", {"regex": f"^{patterns[0]['pattern']}$", "mostly": REGEX_SHARE})
     return out
+
+
+def _float(value: Any) -> float | None:
+    try:
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 async def write(

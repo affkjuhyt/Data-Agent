@@ -87,3 +87,19 @@ def test_a_pattern_needs_99_percent_and_both_regex_engines() -> None:
         ]
         == r"^\d{3}\-\d{2}$"
     )
+
+
+def test_a_number_never_negative_is_proposed_non_negative_but_a_key_is_not() -> None:
+    assert _kinds("units_in", "integer", distinct_est=169, min_value="0")["range"] == {"min": 0}
+    assert "range" not in _kinds("units_balance", "integer", distinct_est=339, min_value="-370")
+    assert "range" not in _kinds("product_key", "integer", min_value="1")
+    assert "range" not in _kinds("CustomerID", "integer", min_value="1")
+    assert "range" not in _kinds("price", "decimal", min_value="1", personal=True)
+
+
+def test_ten_rows_carry_a_set_but_not_a_unique() -> None:
+    category = [{"value": v, "count": 4} for v in ("Marketing", "Other", "Promotion")]
+    got = _kinds(
+        "reason_type", sample_rows=10, distinct_est=3, category_values=category, is_nullable=False
+    )
+    assert got == {"in_list": {"values": ["Marketing", "Other", "Promotion"]}}
