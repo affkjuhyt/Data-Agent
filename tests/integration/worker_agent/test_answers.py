@@ -1875,6 +1875,11 @@ async def test_an_acknowledged_block_or_warn_mode_answers_with_a_caveat(
     status, kind, text, figures, _, _ = answer_of(seed, q)
     assert kind != "refusal" and figures, text
     assert "đã được người phụ trách xác nhận" in text
+    # AE-21: the caveat also caps the answer: a governed figure over a warned table is exploratory.
+    code, ceiling = seed.one(
+        "SELECT trust_code, envelope->'ceiling' FROM qa.answer WHERE question_id = %s", q
+    )  # type: ignore[misc]
+    assert code == "EXPLORATORY" and ceiling["trust_code"] == "EXPLORATORY" and ceiling["why"]
 
     # QUALITY_GATE=warn, the rollback: an unacknowledged block is a caveat too.
     with bank.seed.conn.cursor() as cur:

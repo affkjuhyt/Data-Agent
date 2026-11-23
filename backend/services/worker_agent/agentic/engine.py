@@ -2204,6 +2204,8 @@ async def persist(s: State) -> None:
             blocks=[blk for blk in s.composition if isinstance(blk, dict)],
             cited=bool(ctx.ws.citations),
             stopped=s.budget.stopped if s.budget is not None else None,
+            ceiling=answer_trust.TrustCode.EXPLORATORY if s.signals.quality_warned else None,
+            why=s.signals.quality_warned,
         )
         session.add(
             qa.Answer(

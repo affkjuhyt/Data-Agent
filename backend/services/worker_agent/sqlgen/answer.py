@@ -14,7 +14,7 @@ from __future__ import annotations
 import datetime
 import decimal
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from sqlalchemy import func, select
@@ -455,6 +455,9 @@ async def _answer_verified(
             source=source,
             sql=found.sql,
             secrets=secrets,
+            # DF-08, AE-21: a verified query reads no held-back table, and one read with a quality
+            # warning caps the answer below VERIFIED.
+            quality_gate=True,
         )
         step.detail = {
             "row_count": len(outcome.rows or []),
@@ -520,6 +523,7 @@ async def _answer_verified(
         trust=verified.TRUST_VERIFIED,
         consensus=None,
         result=(len(outcome.rows or []), bool(outcome.truncated)),
+        warned=outcome.quality_warnings,
     )
     return True
 
@@ -573,12 +577,14 @@ async def _store_answer(
     told: Narration | None = None,
     result: tuple[int, bool] | None = None,
     models: list[dict[str, Any]] | None = None,
+    warned: Sequence[str] = (),
 ) -> None:
     """The answer, its plan and the question's status, then the events the stream waits for.
     `result` is the query's row count and whether the executor cut it: the figures keep at most
     MAX_FIGURES rows, so the table and chart say how much of the result they show.
 
-    A data answer's figures are sealed in a receipt with it (AE-05), from its query run."""
+    A data answer's figures are sealed in a receipt with it (AE-05), from its query run. `warned`
+    names the tables read with a quality warning: the answer is at most EXPLORATORY (AE-21)."""
     answer_id = uuid7()
     stored_figures = [f.as_json(str(query_run_id), "", trust) for f in figures]
     runs = (
@@ -598,6 +604,8 @@ async def _store_answer(
             "verified" if trust == verified.TRUST_VERIFIED else "explore",
             kind,
             figures=stored_figures,
+            ceiling=answer_trust.TrustCode.EXPLORATORY if warned else None,
+            why=warned,
         )
         session.add(
             qa.Answer(

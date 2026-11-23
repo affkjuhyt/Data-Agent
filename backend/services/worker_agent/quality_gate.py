@@ -4,13 +4,15 @@ A dataset is held back (`blocked`) while a high-severity rule fails its last che
 (catalog.dataset.quality_state, worker_agent/quality.refresh_state) or its contract is `broken`.
 A steward who acknowledged every failing high rule (POST /v1/quality-results/{id}:acknowledge)
 lets it out for ACK_HOURS with a caveat; a broken contract is not acknowledged away. `warning`
-(a lower rule fails) goes out with a caveat; the answer's trust label is not lowered for it.
+(a lower rule fails) goes out with a caveat. Either kind of warning caps the answer's trust at
+EXPLORATORY (AE-21: libs/contracts/v1/trust.trust's ceiling), on every path that answers.
 
 QUALITY_GATE=warn turns every block into a caveat, the rollback while the gate is new.
 
 Called where numbers leave: the governed answer before it runs (questions.py, no figure on a
-block), tiles and scheduled reports through the executor (run_query(quality_gate=True)), the
-agent's caveats (agentic/signals.py), a data product's review (reviews.py).
+block), tiles, scheduled reports and verified queries through the executor
+(run_query(quality_gate=True), whose outcome names the warned tables), the agent's caveats
+(agentic/signals.py), a data product's review (reviews.py).
 """
 
 from __future__ import annotations

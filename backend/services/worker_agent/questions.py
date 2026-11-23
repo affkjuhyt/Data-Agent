@@ -250,6 +250,8 @@ class Prepared:
     best_effort_note: str | None = None
     # DF-08: a dataset read with a failing quality rule (warning, or an acknowledged block).
     quality_note: str | None = None
+    # AE-21: the tables behind that note; the answer is at most EXPLORATORY for them.
+    quality_warned: list[str] = field(default_factory=list)
     # The next questions the answer offers, each read back and compiled (suggestions.py).
     follow_ups: list[str] = field(default_factory=list)
     # What the turn needs to look again when the asked period has no data (explore.py): the
@@ -1851,6 +1853,7 @@ async def _understand_and_plan(
         # DF-08: no number from a dataset its quality rules or contract hold back; a failing lower
         # rule, or an acknowledged block, goes out with the answer as a caveat.
         quality_note: str | None = None
+        quality_warned: list[str] = []
         if u.decision == "proceed" and problem is None and compiled is not None:
             held = await quality_gate.check(event.org_id, compiled.dataset_ids, user_id)
             if held.blocked:
@@ -1859,6 +1862,7 @@ async def _understand_and_plan(
                 )
             elif held.caveats:
                 quality_note = " ".join(held.caveats)
+                quality_warned = [h.name for h in held.warnings]
         if (
             u.decision == "proceed"
             and problem is None
@@ -1917,6 +1921,7 @@ async def _understand_and_plan(
                 ),
                 best_effort_note=" ".join(n for n in (assumed_note, best_effort_note) if n) or None,
                 quality_note=quality_note,
+                quality_warned=quality_warned,
                 request=compile_request,
                 # Bound now (partial, not a closure over names this loop may rebind).
                 recompile=functools.partial(
@@ -2568,7 +2573,13 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
         if p.lead_note:
             text = f"{p.lead_note} {text}"
         number_check = verify("data", check, figures=stored_figures, reconcile_badge=badge)
-        data_code, data_envelope = answer_trust.trust("governed", "data", figures=stored_figures)
+        data_code, data_envelope = answer_trust.trust(
+            "governed",
+            "data",
+            figures=stored_figures,
+            ceiling=answer_trust.TrustCode.EXPLORATORY if p.quality_warned else None,
+            why=p.quality_warned,
+        )
         checks = number_check.get("verification", {}).get("checks", [])
         await turn_trace.record_step(
             "validate",

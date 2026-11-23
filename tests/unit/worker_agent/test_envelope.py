@@ -95,3 +95,44 @@ def test_a_document_answer_needs_a_citation() -> None:
     bare, _ = trust("document", "document", cited=False)
     assert cited is TrustCode.DOCUMENT
     assert bare is TrustCode.INSUFFICIENT
+
+
+# AE-21: a table read with a quality warning caps the answer, whatever its figures say.
+
+
+@pytest.mark.req("AE-21")
+def test_a_quality_warning_caps_a_governed_answer_at_exploratory() -> None:
+    figures = [{"key": "F1", "value": "10", "trust": STANDARD}]
+    code, envelope = trust(
+        "governed",
+        "data",
+        figures=figures,
+        ceiling=TrustCode.EXPLORATORY,
+        why=["Dư nợ"],
+    )
+    assert code is TrustCode.EXPLORATORY
+    assert envelope["ceiling"] == {"trust_code": "EXPLORATORY", "why": ["Dư nợ"]}
+    # The figure's own code stays what its source says; the answer is capped.
+    assert envelope["figures"] == {"F1": "GOVERNED"}
+    assert trust("governed", "data", figures=figures)[0] is TrustCode.GOVERNED
+
+
+@pytest.mark.req("AE-21")
+def test_a_ceiling_never_raises_an_answer() -> None:
+    document = [{"key": "F1", "value": "10", "trust": TRUST_LABEL["document"]}]
+    code, _ = trust("agentic", "data", figures=document, ceiling=TrustCode.EXPLORATORY)
+    assert code is TrustCode.DOCUMENT
+    # Nothing to cap: a refusal stays insufficient.
+    assert trust("governed", "refusal", ceiling=TrustCode.EXPLORATORY)[0] is TrustCode.INSUFFICIENT
+
+
+@pytest.mark.req("AE-21")
+def test_a_verified_answer_over_a_warned_table_is_exploratory() -> None:
+    from services.worker_agent.sqlgen.verified import TRUST_VERIFIED
+
+    figures = [{"key": "F1", "value": "10", "trust": TRUST_VERIFIED}]
+    assert trust("verified", "data", figures=figures)[0] is TrustCode.VERIFIED
+    capped, envelope = trust(
+        "verified", "data", figures=figures, ceiling=TrustCode.EXPLORATORY, why=["Khoản vay"]
+    )
+    assert capped is TrustCode.EXPLORATORY and envelope["ceiling"]["why"] == ["Khoản vay"]

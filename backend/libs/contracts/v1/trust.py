@@ -116,8 +116,14 @@ def trust(
     blocks: Sequence[Mapping[str, Any]] = (),
     cited: bool = False,
     stopped: str | None = None,
+    ceiling: TrustCode | None = None,
+    why: Sequence[str] = (),
 ) -> tuple[TrustCode, dict[str, Any]]:
-    """(the answer's code, the envelope qa.answer keeps)."""
+    """(the answer's code, the envelope qa.answer keeps).
+
+    `ceiling` (AE-21) is the most the data behind the answer allows, whatever its figures say:
+    a table read with a quality warning (a failing lower rule, or a block a steward acknowledged)
+    caps the answer at EXPLORATORY. `why` names the tables; the envelope keeps both."""
     by_figure = {str(f.get("key") or i): figure_code(f) for i, f in enumerate(figures)}
     by_block = [block_code(b) if isinstance(b, Mapping) else None for b in blocks]
     if kind in NO_ANSWER:
@@ -125,6 +131,8 @@ def trust(
     else:
         found = weakest(c for c in [*by_figure.values(), *by_block] if c is not None)
         code = found or (TrustCode.DOCUMENT if cited else TrustCode.INSUFFICIENT)
+        if ceiling is not None and found is not None:
+            code = weakest([code, ceiling]) or code
     envelope: dict[str, Any] = {
         "version": 1,
         "path": path,
@@ -134,4 +142,6 @@ def trust(
     }
     if stopped is not None:
         envelope["stopped"] = stopped
+    if ceiling is not None:
+        envelope["ceiling"] = {"trust_code": ceiling.value, "why": list(why)}
     return code, envelope

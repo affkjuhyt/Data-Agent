@@ -322,6 +322,8 @@ class QueryOutcome:
     result_hash: str | None = None
     sql: str = ""
     error: str | None = None
+    # AE-21: the tables a quality warning holds (quality_gate run): the answer is capped for them.
+    quality_warnings: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -597,6 +599,7 @@ async def run_query(
                 held = await gate.check(org_id, bound.datasets, principal_id)
                 if held.blocked:
                     raise SqlRejected(held.message)
+                outcome.quality_warnings = [h.name for h in held.warnings]
             if from_files and any(v.snapshot_key is None for v in versions):
                 raise SqlRejected(
                     "a version the answer read has neither its table nor a snapshot any more"

@@ -14,7 +14,8 @@ governed figure was read from,
   against a table that is no longer quite the one read.
 
 Each signal becomes a caveat in plain words; a table out of time hands the turn to the governed
-path, which masks its figures (BR-178).
+path, which masks its figures (BR-178). AE-21: a table read with a quality warning does not only
+add a caveat, it caps the answer's trust at EXPLORATORY (engine.persist).
 """
 
 from __future__ import annotations
@@ -37,6 +38,8 @@ class Signals:
     caveats: list[str] = field(default_factory=list)
     # Tables whose data is not in time: no figure of theirs may be stated (BR-178).
     out_of_time: list[str] = field(default_factory=list)
+    # AE-21: tables read with a quality warning; the answer is at most EXPLORATORY for them.
+    quality_warned: list[str] = field(default_factory=list)
 
 
 async def read(ctx: ToolContext) -> Signals:
@@ -63,6 +66,7 @@ async def read(ctx: ToolContext) -> Signals:
     for h in held.blocked:
         found.out_of_time.append(names.get(h.dataset_id, h.name))
     found.caveats.extend(held.caveats)
+    found.quality_warned.extend(names.get(h.dataset_id, h.name) for h in held.warnings)
     async with scoped_session(ROLE, ctx.org_id, ctx.user_id) as session:
         members = (
             await session.scalars(
@@ -94,4 +98,5 @@ async def read(ctx: ToolContext) -> Signals:
                 )
     found.caveats = list(dict.fromkeys(found.caveats))
     found.out_of_time = list(dict.fromkeys(found.out_of_time))
+    found.quality_warned = list(dict.fromkeys(found.quality_warned))
     return found
