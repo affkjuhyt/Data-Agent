@@ -453,7 +453,7 @@ exceptions: tools/licenses.json.
 | docling-ibm-models | 4.0.4 | MIT | worker-document | pypi |
 | docling-parse | 7.27.1 | MIT | worker-document | pypi |
 | docling-slim | 2.150.0 | MIT | worker-document | pypi |
-| duckdb | 2.0.0 | MIT License | worker-agent | pypi |
+| duckdb | 2.0.0 | MIT License | python-sandbox, worker-agent | pypi |
 | et_xmlfile | 2.0.0 | MIT License | api, worker-agent, worker-document | pypi |
 | Faker | 40.63.0 | MIT License | worker-document | pypi |
 | fastapi | 0.115.0 | MIT License | api, ml-forecast | pypi |
