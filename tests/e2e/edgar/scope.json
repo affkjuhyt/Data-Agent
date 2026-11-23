@@ -1,0 +1,30 @@
+{
+  "snapshot": "E20-FY21-24",
+  "source": "U.S. SEC EDGAR (data.sec.gov APIs, Archives, Financial Statement Data Sets)",
+  "terms": "https://www.sec.gov/os/accessing-edgar-data (free access under the fair access policy: at most 10 requests per second, a User-Agent naming the requester; no licence named, attribution 'U.S. SEC EDGAR')",
+  "fy_from": 2021,
+  "fy_to": 2024,
+  "forms": ["10-K", "10-Q", "10-K/A", "10-Q/A"],
+  "companies": [
+    {"ticker": "AAPL", "cik": 320193, "sector": "technology"},
+    {"ticker": "MSFT", "cik": 789019, "sector": "technology"},
+    {"ticker": "NVDA", "cik": 1045810, "sector": "technology"},
+    {"ticker": "JPM", "cik": 19617, "sector": "financials"},
+    {"ticker": "BAC", "cik": 70858, "sector": "financials"},
+    {"ticker": "GS", "cik": 886982, "sector": "financials"},
+    {"ticker": "CVX", "cik": 93410, "sector": "energy"},
+    {"ticker": "XOM", "cik": 34088, "sector": "energy", "note": "the ticker file maps XOM to CIK 2115436 (ExxonMobil Holdings Corp, filing since 2026); the FY2021-2024 reports are under the predecessor CIK 34088 (Exxon Mobil Corp)"},
+    {"ticker": "PFE", "cik": 78003, "sector": "health care"},
+    {"ticker": "JNJ", "cik": 200406, "sector": "health care"},
+    {"ticker": "UNH", "cik": 731766, "sector": "health care"},
+    {"ticker": "WMT", "cik": 104169, "sector": "consumer"},
+    {"ticker": "COST", "cik": 909832, "sector": "consumer"},
+    {"ticker": "HD", "cik": 354950, "sector": "consumer"},
+    {"ticker": "PG", "cik": 80424, "sector": "consumer"},
+    {"ticker": "BA", "cik": 12927, "sector": "industrials"},
+    {"ticker": "CAT", "cik": 18230, "sector": "industrials"},
+    {"ticker": "GE", "cik": 40545, "sector": "industrials"},
+    {"ticker": "ADM", "cik": 7084, "sector": "restatement"},
+    {"ticker": "PLUG", "cik": 1093691, "sector": "restatement"}
+  ]
+}

@@ -204,7 +204,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | EV-16 | P1 | 13 | Case tiêm lỗi (file hỏng, trùng khoá, drift, injection, tenant chéo) | EV-05 | QA | S | — | todo |
 | EV-17 | P1 | 14 | Giải mù hai người 150 case; `human_verified` | EV-05, EV-06 | QA + 2 người | M | ≥ 95 % case `human_verified` | todo |
 | EV-14 | P0 | 15 | Rebase ngưỡng từ lượt chạy thật; bỏ `provisional`; `source_run` | EV-13, EV-17 | AI | S | unit test provisional đổi | todo |
-| EV-02 | P1 | 9 | CLI thu SEC (submissions, iXBRL, companyfacts, FSDS 20 CIK) | — | DE | M | ≤ 10 req/s; User-Agent | todo |
+| EV-02 | P1 | 9 | CLI thu SEC (submissions, iXBRL, companyfacts, FSDS 20 CIK) | — | DE | M | ≤ 10 req/s; User-Agent | doing: `tests/e2e/edgar/collect.py`, `make edgar`/`edgar-verify`, phạm vi `scope.json` (DATASET_AND_EVALUATION §3.8); chạy thật 23/11: AAPL 16 hồ sơ (4 10-K + 12 10-Q), PLUG 18 (hai 10-K/A `supersedes` đúng bản gốc), XOM 16 dưới CIK 34088 (file ticker trỏ 2115436, ghi trong manifest). Còn: chạy đủ 20 CIK với `EDGAR_USER_AGENT` của người vận hành và commit `edgar-E20-FY21-24.manifest.json` |
 | EV-04 | P1 | 11 | Data Space DS-SEC + iXBRL vào worker_document với `supersedes_id` | EV-02, DI-09 | DE/AI | M | — | todo |
 | EV-06 | P1 | 12 | 82 case SEC (16/14/22/10/20) + fact id | EV-04 | QA/AI | M | — | todo |
 | EV-07 | P1 | 12 | 8 case tiếng Việt vbpl.vn (nếu giấy phép) | quyết định giấy phép | QA | S | — | todo |

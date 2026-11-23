@@ -291,6 +291,27 @@ Tham số: `--cik <list|file>`, `--fy-from 2021 --fy-to 2024`, `--forms 10-K,10-
 companyfacts_fact/submissions_filing` + manifest sha256 từng file và tổng; `--verify` chạy lại HEAD và so
 `last-modified`. Idempotent theo `(cik, accn)`; retry backoff; dừng khi 403 (bị chặn) và báo rõ.
 
+Đã làm (EV-02, `make edgar` / `make edgar-verify`, phạm vi trong `tests/e2e/edgar/scope.json`):
+
+- **Năm tài chính** = năm mà năm tài chính đó kết thúc, đọc từ `fiscalYearEnd` của `submissions`, chừa ± 14 ngày cho
+  năm 52/53 tuần (AAPL 0926 kết thúc 2023-09-30); quý tới 2021-04-30 của WMT (0131) là FY2022. Hồ sơ được chọn theo
+  `reportDate` rơi vào [fy-from, fy-to], không theo năm nộp.
+- **`submissions`**: khối `recent` cộng các trang cũ (`CIK…-submissions-NNN.json`) có `filingTo` ≥ 01/01 của năm
+  trước fy-from (JPM nộp hàng chục nghìn hồ sơ: `recent` chỉ phủ vài tuần).
+- **Sửa đổi**: một `10-K/A`/`10-Q/A` `supersedes` hồ sơ cùng kỳ (`reportDate`) và cùng form gốc, nộp sớm nhất ngay trước
+  nó — bản gốc, hoặc bản sửa đổi trước trong chuỗi (Plug Power).
+- **`companyfacts`**: giữ fact có kỳ (`end`) thuộc năm tài chính trong khoảng, **từ mọi hồ sơ đã báo nó**, kể cả hồ sơ
+  sau FY2024: chỉ lần nộp cuối mang `frame` (§3.3). `--filed-to` cắt cả hồ sơ lẫn fact để snapshot không trôi.
+- **FSDS**: chỉ các quý mà các hồ sơ được chọn nộp vào; `sub` của 20 CIK, `num`/`pre` của các `adsh` đó, `tag` toàn bộ
+  (một dòng mỗi `(tag, version)`); văn bản giữ nguyên "as filed" (Parquet toàn chuỗi, kiểu hoá khi nạp ở EV-04), mỗi
+  dòng mang `fsds_quarter`.
+- **Manifest** `model/eval/snapshots/edgar-<snapshot>.manifest.json`: mỗi công ty (CIK, `fiscalYearEnd`, số hồ sơ theo
+  form, `verification`: CIK của file ticker, khớp hay không, 10-K từng năm), mỗi hồ sơ (`accn`, form, fy, kỳ, ngày nộp,
+  `supersedes`, sha256 + `last-modified` của iXBRL và `MetaLinks.json`), mỗi quý FSDS, mỗi bảng Parquet (sha256 file và
+  sha256 hàng), `content_sha256` tổng. Cùng id mà nội dung khác: từ chối, như NYC 311.
+- **XOM**: file ticker trỏ XOM sang CIK 2115436 (ExxonMobil Holdings Corp, nộp từ 2026, không có 10-K FY2021–2024);
+  phạm vi dùng CIK tiền nhiệm 34088 (Exxon Mobil Corp, 10-K FY2021–2024 có đủ, kiểm 23/11/2026); manifest ghi cả hai.
+
 ## 4. Dataset C (tuỳ chọn) — nguồn Việt Nam
 
 | Nguồn | Dùng cho | Giấy phép / điều khoản (mức chắc chắn tìm được) |

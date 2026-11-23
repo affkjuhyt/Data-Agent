@@ -315,6 +315,25 @@ nyc311-snapshot: dev-tools  ## pull NYC 311 into a fixed snapshot (NYC311_SNAPSH
 nyc311-drift: dev-tools  ## count the NYC 311 rows the portal changed since a snapshot (NYC311_SNAPSHOT)
 	@$(NYC311_RUN) drift --cache /cache --snapshot "$(NYC311_SNAPSHOT)"
 
+# EV-02: SEC EDGAR reports of the twenty companies of tests/e2e/edgar/scope.json, FY2021-2024, as
+# filed (inline XBRL, companyfacts, FSDS cut to their CIKs) into EDGAR_CACHE as Parquet, the
+# manifest to model/eval/snapshots/ (docs/blueprint/DATASET_AND_EVALUATION.md §3). EDGAR's fair
+# access policy wants a User-Agent naming the requester: EDGAR_USER_AGENT="<Company> <email>",
+# from the environment. ~2 GB the first time (the FSDS quarters); a rerun reuses the cache.
+# EDGAR_ARGS: --cik 320193,19617, --fy-from/--fy-to, --filed-to, --rate (<= 10), --snapshot.
+EDGAR_CACHE ?= $(HOME)/.cache/dataagent/edgar
+EDGAR_RUN = docker run --rm --user "$$(id -u):$$(id -g)" -v "$(PWD):/src" -w /src \
+	-v "$(EDGAR_CACHE):/cache" -e EDGAR_USER_AGENT $(DEV_TOOLS_IMAGE) python -I tests/e2e/edgar/collect.py
+.PHONY: edgar edgar-verify
+
+edgar: dev-tools  ## pull the SEC EDGAR snapshot E20-FY21-24 (EDGAR_USER_AGENT, EDGAR_CACHE, EDGAR_ARGS)
+	@test -n "$$EDGAR_USER_AGENT" || { echo "EDGAR_USER_AGENT='<Company> <email>' is required"; exit 2; }
+	@mkdir -p "$(EDGAR_CACHE)" && $(EDGAR_RUN) --out /cache $(EDGAR_ARGS)
+
+edgar-verify: dev-tools  ## HEAD the SEC snapshot's sources again and list what EDGAR changed
+	@test -n "$$EDGAR_USER_AGENT" || { echo "EDGAR_USER_AGENT='<Company> <email>' is required"; exit 2; }
+	@$(EDGAR_RUN) --verify $(EDGAR_ARGS)
+
 # PL-04: the latest backups (RUNBOOK §9a) restored into throwaway pods of the current kubectl
 # context and compared with the live stores; nothing live is written. Standard library + kubectl,
 # so it runs on the host. RESTORE_DRILL_ARGS: --keep leaves the pods.
