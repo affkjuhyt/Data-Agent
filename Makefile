@@ -116,7 +116,7 @@ frontend-test:  ## vitest
 # forbidden one (tools/licenses.json). Scans the images last built (make deploy-local builds
 # them), so rerun after a requirements change and commit THIRD-PARTY-NOTICES.md with it.
 LICENSE_IMAGES = api worker-agent worker-ingest worker-document crawler ml-forecast python-sandbox
-.PHONY: licenses tlc-reconcile tlc-cases
+.PHONY: licenses tlc-reconcile tlc-cases tlc-documents
 
 licenses:  ## write THIRD-PARTY-NOTICES.md from the service images and the npm lock; fail on a forbidden licence
 	@out=$$(mktemp -d); trap 'rm -rf "$$out"' EXIT; \
@@ -408,6 +408,21 @@ tlc-cases:  ## run the golden TLC cases' SQL on tlc_trips, write their values an
 	@docker run --rm -v "$(PWD):/src" -w /src $(DEV_TOOLS_IMAGE) sh -c \
 		"python tests/e2e/tlc/cases.py apply .tlc-cases-results.json && python tests/e2e/tlc/cases.py yaml"
 	@rm -f .tlc-cases-results.json
+
+# EV-05: the TLC data dictionaries (pinned in tests/e2e/tlc/sources.json, cached by `make tlc`; their
+# terms keep them out of the repo) uploaded to DS-TLC's documents through the upload route's own code,
+# in the api pod (api/modules/document/import_files.py); worker-document then reads and indexes them.
+TLC_DOCUMENTS_AS ?= helios-admin
+TLC_DICTIONARIES = data_dictionary_trip_records_yellow.pdf data_dictionary_trip_records_green.pdf
+
+tlc-documents:  ## upload the cached TLC data dictionaries to DS-TLC's documents (RECONCILE_ORG, TLC_DOCUMENTS_AS)
+	@pod=$$(kubectl -n dataagent-service get pods -l app=api -o jsonpath='{.items[0].metadata.name}'); \
+	for f in $(TLC_DICTIONARIES); do kubectl -n dataagent-service cp "$(TLC_CACHE)/$$f" "$$pod:/tmp/$$f" -c api; done; \
+	kubectl -n dataagent-service exec $$pod -c api -- python -m services.api.modules.document.import_files \
+		$(addprefix /tmp/,$(TLC_DICTIONARIES)) --org "$(RECONCILE_ORG)" --space DS-TLC --as "$(TLC_DOCUMENTS_AS)" \
+		--collection tlc-dictionaries --name "Từ điển dữ liệu TLC" \
+		--purpose "Định nghĩa cột, mã và quy tắc của dữ liệu chuyến taxi vàng và xanh"
+# The copies stay in the api pod's /tmp, an emptyDir that goes with the pod.
 
 agent-eval:  ## the dynamic agent on a Data Space's eval set (AGENT_EVAL_ORG, AGENT_EVAL_AS; AGENT_EVAL_ARGS)
 	@kubectl -n dataagent-service exec -i deploy/worker-agent -c worker-agent -- \
