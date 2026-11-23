@@ -531,7 +531,7 @@ exceptions: tools/licenses.json.
 | Protego | 0.7.0 | BSD-3-Clause | crawler | pypi |
 | protobuf | 7.36.2 | 3-Clause BSD License | api, worker-agent, worker-document | pypi |
 | psutil | 7.2.2 | BSD-3-Clause | worker-document | pypi |
-| pyarrow | 26.0.1 | Apache-2.0 | ml-forecast, worker-agent, worker-ingest | pypi |
+| pyarrow | 26.0.1 | Apache-2.0 | ml-forecast, python-sandbox, worker-agent, worker-ingest | pypi |
 | pyclipper | 1.4.0 | MIT License | worker-document | pypi |
 | pycparser | 3.12 | BSD-3-Clause | api, worker-agent, worker-document, worker-ingest | pypi |
 | pydantic | 2.13.5 | MIT | api, ml-forecast, worker-agent, worker-document | pypi |
