@@ -63,6 +63,7 @@ from services.api.modules.document.schemas import (
     ChunkView,
     CollectionCreate,
     CollectionView,
+    DocTableView,
     DocumentBlockView,
     DocumentDetail,
     DocumentListItem,
@@ -72,6 +73,7 @@ from services.api.modules.document.schemas import (
     DocumentSourceView,
     DocumentUpdated,
     DocumentView,
+    ElementView,
     ExtractionSchemaCreate,
     ExtractionSchemaView,
     ExtractionTest,
@@ -80,6 +82,7 @@ from services.api.modules.document.schemas import (
     QualityIssueView,
     ResolveIssue,
     SearchRequest,
+    TableCellView,
     ValidityChange,
 )
 
@@ -840,6 +843,129 @@ async def list_document_chunks(
         items=[ChunkView.model_validate(chunk, from_attributes=True) for chunk in kept],
         next_page_token="" if len(rows) <= page.page_size else str(page.page_size),
     )
+
+
+# --- a document's structure (DI-16, DOCUMENT_INTELLIGENCE_SPEC §10.2) ---------------------------
+# The rows worker-document wrote (DI-06, DI-09): elements, tables and cells, their text masked
+# when they were written. Read under the collection's purpose, as its chunks are.
+
+
+@router.get(
+    "/v1/documents/{id}/elements",
+    response_model=Page[ElementView],
+    **endpoint("GET", "/v1/documents/{id}/elements", operation_id="listDocumentElements"),
+)
+async def list_document_elements(
+    document_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    page_no: Annotated[int | None, Query(alias="page", ge=1)] = None,
+    kind: Annotated[str | None, Query(max_length=32)] = None,
+    purpose: Purpose = None,
+) -> Page[ElementView]:
+    after = int((page.cursor or {}).get("order_idx", -1))
+    async with transaction(ROLE, principal) as session:
+        row, collection = await _document(session, document_id, principal, data_space)
+        _check_purpose(collection, _purpose(purpose))
+        query = select(doc.Element).where(
+            doc.Element.document_id == row.id, doc.Element.order_idx > after
+        )
+        if page_no is not None:
+            query = query.where(doc.Element.page_no == page_no)
+        if kind is not None:
+            query = query.where(doc.Element.kind == kind)
+        rows = list(
+            (
+                await session.scalars(
+                    query.order_by(doc.Element.order_idx).limit(page.page_size + 1)
+                )
+            ).all()
+        )
+    kept = rows[: page.page_size]
+    return Page(
+        items=[ElementView.model_validate(e, from_attributes=True) for e in kept],
+        next_page_token=encode_page_token({"order_idx": kept[-1].order_idx})
+        if len(rows) > page.page_size
+        else "",
+    )
+
+
+@router.get(
+    "/v1/documents/{id}/tables",
+    response_model=list[DocTableView],
+    **endpoint("GET", "/v1/documents/{id}/tables", operation_id="listDocumentTables"),
+)
+async def list_document_tables(
+    document_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    purpose: Purpose = None,
+) -> list[DocTableView]:
+    async with transaction(ROLE, principal) as session:
+        row, collection = await _document(session, document_id, principal, data_space)
+        _check_purpose(collection, _purpose(purpose))
+        tables = (
+            await session.scalars(
+                select(doc.DocTable)
+                .join(doc.Element, doc.Element.id == doc.DocTable.element_id)
+                .where(doc.DocTable.document_id == row.id)
+                .order_by(doc.Element.order_idx)
+            )
+        ).all()
+    return [DocTableView.model_validate(t, from_attributes=True) for t in tables]
+
+
+# A chain of tables continued page after page is read at most this long.
+MAX_TABLE_CHAIN = 50
+
+
+@router.get(
+    "/v1/tables/{id}/cells",
+    response_model=list[TableCellView],
+    **endpoint("GET", "/v1/tables/{id}/cells", operation_id="listTableCells"),
+)
+async def list_table_cells(
+    table_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    logical: bool = False,
+    purpose: Purpose = None,
+) -> list[TableCellView]:
+    """The table's cells by (row, column). With ?logical=true the tables that continue it on the
+    next pages follow, their repeated header rows left out and their rows numbered on (§4.3.1)."""
+    async with transaction(ROLE, principal) as session:
+        table = await session.get(doc.DocTable, table_id)
+        if table is None:
+            raise Problem(404, "not_found", "No such table.")
+        # The document decides the scope (organisation, Data Space) and the purpose.
+        _, collection = await _document(session, table.document_id, principal, data_space)
+        _check_purpose(collection, _purpose(purpose))
+        parts = [table]
+        while logical and len(parts) < MAX_TABLE_CHAIN:
+            nxt = await session.scalar(
+                select(doc.DocTable).where(doc.DocTable.continues_table_id == parts[-1].id)
+            )
+            if nxt is None or any(p.id == nxt.id for p in parts):
+                break
+            parts.append(nxt)
+        out: list[TableCellView] = []
+        offset = 0
+        for n, part in enumerate(parts):
+            skip = part.header_rows if n > 0 else 0
+            cells = (
+                await session.scalars(
+                    select(doc.TableCell)
+                    .where(doc.TableCell.table_id == part.id, doc.TableCell.row_idx >= skip)
+                    .order_by(doc.TableCell.row_idx, doc.TableCell.col_idx)
+                )
+            ).all()
+            for c in cells:
+                view = TableCellView.model_validate(c, from_attributes=True)
+                view.row_idx = c.row_idx - skip + offset
+                out.append(view)
+            offset += part.n_rows - skip
+    return out
 
 
 VALIDITY_FIELDS = ("effective_from", "effective_to", "supersedes_id")

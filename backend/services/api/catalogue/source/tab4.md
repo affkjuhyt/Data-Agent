@@ -237,7 +237,7 @@ Dịch vụ: Ingestion service (ingest). 20 endpoint.
 
 ### Tài liệu
 
-Dịch vụ: Document service (document). 16 endpoint.
+Dịch vụ: Document service (document). 19 endpoint.
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
@@ -263,6 +263,9 @@ Dịch vụ: Document service (document). 16 endpoint.
 | GET | /v1/document-sources | Nguồn đồng bộ tài liệu đã đăng ký (thêm 12/10/2026) | 05-01 | ask |
 | GET | /v1/documents/{id}/file | Tải bản gốc để xem hoặc tải xuống (thêm 17/10/2026) | 05-04 | ask |
 | GET | /v1/documents/{id}/chunks | Danh sách đoạn văn đã trích xuất (thêm 17/10/2026) | 05-04 | ask |
+| GET | /v1/documents/{id}/elements | Phần tử của tài liệu theo thứ tự đọc: loại, cấp tiêu đề, trang, khung (thêm 23/11/2026, DI-16) | 05-04 | ask |
+| GET | /v1/documents/{id}/tables | Bảng của tài liệu: chú thích, trang, bảng nối tiếp (thêm 23/11/2026, DI-16) | 05-04 | ask |
+| GET | /v1/tables/{id}/cells | Ô của bảng: ô gộp, số và đơn vị, trang, khung; ?logical=true ghép bảng nối trang (thêm 23/11/2026, DI-16) | 05-04 | ask |
 
 ### Biến đổi dữ liệu
 
@@ -869,7 +872,10 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/extraction-schemas/{id} | — | ExtractionSchema (nơi Location của :test trỏ tới) | 404 not\_found |
 | GET /v1/document-sources | ?collection\_id | Danh sách nguồn tài liệu, không có bí mật | — |
 | GET /v1/documents/{id}/file | — | — | — |
-| GET /v1/documents/{id}/chunks | — | Page<ChunkView> | — |
+| GET /v1/documents/{id}/chunks | — | Page<ChunkView>; kèm kind, element\_ids, parent\_chunk\_id, table\_id (DI-16) | — |
+| GET /v1/documents/{id}/elements | ?page, ?kind, ?cursor | Page<ElementView> theo order\_idx | 403 purpose\_mismatch |
+| GET /v1/documents/{id}/tables | — | Danh sách DocTableView | 403 purpose\_mismatch |
+| GET /v1/tables/{id}/cells | ?logical | Danh sách TableCellView theo (row, col) | 404 not\_found; 403 purpose\_mismatch |
 
 ### A3 · Biến đổi dữ liệu
 

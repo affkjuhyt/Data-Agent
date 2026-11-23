@@ -5924,6 +5924,15 @@
       ],
       "title": "Effective To"
      },
+     "element_ids": {
+      "default": [],
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "title": "Element Ids",
+      "type": "array"
+     },
      "human_corrected": {
       "title": "Human Corrected",
       "type": "boolean"
@@ -5937,6 +5946,15 @@
       "title": "Injection Suspected",
       "type": "boolean"
      },
+     "kind": {
+      "default": "section",
+      "enum": [
+       "section",
+       "table"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
      "page_from": {
       "title": "Page From",
       "type": "integer"
@@ -5944,6 +5962,18 @@
      "page_to": {
       "title": "Page To",
       "type": "integer"
+     },
+     "parent_chunk_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Parent Chunk Id"
      },
      "pii_masked": {
       "title": "Pii Masked",
@@ -5963,6 +5993,18 @@
        }
       ],
       "title": "Section Path"
+     },
+     "table_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Table Id"
      },
      "text": {
       "title": "Text",
@@ -6048,6 +6090,15 @@
       ],
       "title": "Effective To"
      },
+     "element_ids": {
+      "default": [],
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "title": "Element Ids",
+      "type": "array"
+     },
      "human_corrected": {
       "title": "Human Corrected",
       "type": "boolean"
@@ -6061,6 +6112,15 @@
       "title": "Injection Suspected",
       "type": "boolean"
      },
+     "kind": {
+      "default": "section",
+      "enum": [
+       "section",
+       "table"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
      "page_from": {
       "title": "Page From",
       "type": "integer"
@@ -6068,6 +6128,18 @@
      "page_to": {
       "title": "Page To",
       "type": "integer"
+     },
+     "parent_chunk_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Parent Chunk Id"
      },
      "pii_masked": {
       "title": "Pii Masked",
@@ -6083,6 +6155,18 @@
        }
       ],
       "title": "Section Path"
+     },
+     "table_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Table Id"
      },
      "text": {
       "title": "Text",
@@ -14121,6 +14205,113 @@
     "title": "DlqRecordView",
     "type": "object"
    },
+   "DocTableView": {
+    "description": "GET /v1/documents/{id}/tables (DI-16).",
+    "properties": {
+     "caption": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Caption"
+     },
+     "continues_table_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Continues Table Id"
+     },
+     "document_id": {
+      "format": "uuid",
+      "title": "Document Id",
+      "type": "string"
+     },
+     "element_id": {
+      "format": "uuid",
+      "title": "Element Id",
+      "type": "string"
+     },
+     "header_rows": {
+      "title": "Header Rows",
+      "type": "integer"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "n_cols": {
+      "title": "N Cols",
+      "type": "integer"
+     },
+     "n_rows": {
+      "title": "N Rows",
+      "type": "integer"
+     },
+     "numeric_share": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Numeric Share"
+     },
+     "page_from": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Page From"
+     },
+     "page_to": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Page To"
+     }
+    },
+    "required": [
+     "id",
+     "document_id",
+     "element_id",
+     "page_from",
+     "page_to",
+     "n_rows",
+     "n_cols",
+     "header_rows",
+     "caption",
+     "continues_table_id",
+     "numeric_share"
+    ],
+    "title": "DocTableView",
+    "type": "object"
+   },
    "DocumentBlockView": {
     "properties": {
      "box": {
@@ -15702,6 +15893,125 @@
      "updated_at"
     ],
     "title": "DsrSummary",
+    "type": "object"
+   },
+   "ElementView": {
+    "description": "GET /v1/documents/{id}/elements (DI-16): a part of the document in reading order.",
+    "properties": {
+     "bbox": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Bbox"
+     },
+     "confidence": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Confidence"
+     },
+     "document_id": {
+      "format": "uuid",
+      "title": "Document Id",
+      "type": "string"
+     },
+     "extractor": {
+      "title": "Extractor",
+      "type": "string"
+     },
+     "extractor_version": {
+      "title": "Extractor Version",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "level": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Level"
+     },
+     "order_idx": {
+      "title": "Order Idx",
+      "type": "integer"
+     },
+     "page_no": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Page No"
+     },
+     "parent_element_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Parent Element Id"
+     },
+     "text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text"
+     }
+    },
+    "required": [
+     "id",
+     "document_id",
+     "page_no",
+     "order_idx",
+     "kind",
+     "level",
+     "bbox",
+     "text",
+     "parent_element_id",
+     "extractor",
+     "extractor_version",
+     "confidence"
+    ],
+    "title": "ElementView",
     "type": "object"
    },
    "EmergencyAccessIn": {
@@ -31062,6 +31372,27 @@
     "title": "Page[DsrSummary]",
     "type": "object"
    },
+   "Page_ElementView_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ElementView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "next_page_token": {
+      "default": "",
+      "title": "Next Page Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "Page[ElementView]",
+    "type": "object"
+   },
    "Page_EntityLinkView_": {
     "properties": {
      "items": {
@@ -43392,6 +43723,104 @@
      "sections"
     ],
     "title": "SystemHealth",
+    "type": "object"
+   },
+   "TableCellView": {
+    "description": "GET /v1/tables/{id}/cells (DI-16): a cell, its span, text and number, page and box.\n`table_id` is the part of a chain it stands in; with ?logical=true `row_idx` counts across\nthe chain.",
+    "properties": {
+     "bbox": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Bbox"
+     },
+     "col_idx": {
+      "title": "Col Idx",
+      "type": "integer"
+     },
+     "col_span": {
+      "title": "Col Span",
+      "type": "integer"
+     },
+     "is_header": {
+      "title": "Is Header",
+      "type": "boolean"
+     },
+     "numeric_value": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Numeric Value"
+     },
+     "page_no": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Page No"
+     },
+     "row_idx": {
+      "title": "Row Idx",
+      "type": "integer"
+     },
+     "row_span": {
+      "title": "Row Span",
+      "type": "integer"
+     },
+     "table_id": {
+      "format": "uuid",
+      "title": "Table Id",
+      "type": "string"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     },
+     "unit": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unit"
+     }
+    },
+    "required": [
+     "table_id",
+     "row_idx",
+     "col_idx",
+     "row_span",
+     "col_span",
+     "text",
+     "numeric_value",
+     "unit",
+     "is_header",
+     "page_no",
+     "bbox"
+    ],
+    "title": "TableCellView",
     "type": "object"
    },
    "TableView": {
@@ -73934,6 +74363,242 @@
     ]
    }
   },
+  "/v1/documents/{id}/elements": {
+   "get": {
+    "operationId": "listDocumentElements",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "minimum": 1,
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Page"
+      }
+     },
+     {
+      "in": "query",
+      "name": "kind",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 32,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Kind"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_token",
+      "required": false,
+      "schema": {
+       "default": "",
+       "maxLength": 2048,
+       "title": "Page Token",
+       "type": "string"
+      }
+     },
+     {
+      "description": "A3's name for page_token",
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 2048,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "A3's name for page_token",
+       "title": "Cursor"
+      }
+     },
+     {
+      "in": "header",
+      "name": "X-Purpose",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 500,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Purpose"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_ElementView_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Phần tử của tài liệu theo thứ tự đọc: loại, cấp tiêu đề, trang, khung (thêm 23/11/2026, DI-16)",
+    "tags": [
+     "Tài liệu"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-05-04"
+    ]
+   }
+  },
   "/v1/documents/{id}/file": {
    "get": {
     "operationId": "downloadDocumentOriginal",
@@ -74234,6 +74899,170 @@
      }
     ],
     "summary": "Trang: ảnh, văn bản, đoạn",
+    "tags": [
+     "Tài liệu"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-05-04"
+    ]
+   }
+  },
+  "/v1/documents/{id}/tables": {
+   "get": {
+    "operationId": "listDocumentTables",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "X-Purpose",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 500,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Purpose"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/DocTableView"
+         },
+         "title": "Response Listdocumenttables",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Bảng của tài liệu: chú thích, trang, bảng nối tiếp (thêm 23/11/2026, DI-16)",
     "tags": [
      "Tài liệu"
     ],
@@ -120617,6 +121446,181 @@
     ],
     "x-use-cases": [
      "UC-07-02"
+    ]
+   }
+  },
+  "/v1/tables/{id}/cells": {
+   "get": {
+    "description": "The table's cells by (row, column). With ?logical=true the tables that continue it on the\nnext pages follow, their repeated header rows left out and their rows numbered on (§4.3.1).",
+    "operationId": "listTableCells",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "logical",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Logical",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "header",
+      "name": "X-Purpose",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 500,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Purpose"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/TableCellView"
+         },
+         "title": "Response Listtablecells",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Ô của bảng: ô gộp, số và đơn vị, trang, khung; ?logical=true ghép bảng nối trang (thêm 23/11/2026, DI-16)",
+    "tags": [
+     "Tài liệu"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-05-04"
     ]
    }
   },

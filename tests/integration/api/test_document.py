@@ -11,6 +11,8 @@ worker-ingest's: the tests assert the outbox event and seed what the worker woul
 from __future__ import annotations
 
 import hashlib
+import json
+import pathlib
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, BinaryIO
@@ -1466,3 +1468,168 @@ async def test_document_rows_of_another_organisation_are_invisible(ds: Space, se
         assert got.status_code == 404
         listed = await api.get("/v1/collections", headers=ds.headers("admin"))
         assert str(ds.laws) not in {c["id"] for c in listed.json()["items"]}
+
+
+# --- a document's structure (DI-16) --------------------------------------------------------------
+
+EXPORT_SCHEMA = (
+    pathlib.Path(__file__).parents[3]
+    / "backend"
+    / "libs"
+    / "contracts"
+    / "v1"
+    / "document_export.json"
+)
+
+
+def _export_validator() -> Any:
+    import jsonschema
+
+    return jsonschema.Draft202012Validator(json.loads(EXPORT_SCHEMA.read_text("utf-8")))
+
+
+def _structure(ds: Space) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+    """A document whose table runs over pages 1 and 2 (the second part repeats the header)."""
+    document = ds.document(page_count=2)
+    heading = ds.seed.row(
+        "document.element",
+        org_id=ds.org,
+        document_id=document,
+        page_no=1,
+        order_idx=0,
+        kind="heading",
+        level=4,
+        text="Điều 2. Dư nợ",
+        extractor="docling",
+        extractor_version="docling-2.150.0+adapter-1",
+        bbox=json.dumps({"l": 10, "t": 20, "r": 200, "b": 40, "coord_origin": "TOPLEFT"}),
+    )
+    elements, tables = [], []
+    for n, page in enumerate((1, 2), start=1):
+        element = ds.seed.row(
+            "document.element",
+            org_id=ds.org,
+            document_id=document,
+            page_no=page,
+            order_idx=n,
+            kind="table",
+            extractor="docling",
+            extractor_version="docling-2.150.0+adapter-1",
+        )
+        table = ds.seed.row(
+            "document.doc_table",
+            org_id=ds.org,
+            document_id=document,
+            element_id=element,
+            page_from=page,
+            page_to=page,
+            n_rows=2,
+            n_cols=2,
+            header_rows=1,
+            caption="Bảng 1" if n == 1 else None,
+            continues_table_id=tables[-1] if tables else None,
+        )
+        for row, col, text, value in (
+            (0, 0, "Chi nhánh", None),
+            (0, 1, "Dư nợ", None),
+            (1, 0, f"CN {n}", None),
+            (1, 1, str(n * 100), n * 100),
+        ):
+            ds.seed.row(
+                "document.table_cell",
+                org_id=ds.org,
+                table_id=table,
+                row_idx=row,
+                col_idx=col,
+                text=text,
+                numeric_value=value,
+                is_header=row == 0,
+                page_no=page,
+                bbox=json.dumps(
+                    {
+                        "l": col * 50,
+                        "t": row * 20,
+                        "r": col * 50 + 50,
+                        "b": row * 20 + 20,
+                        "coord_origin": "TOPLEFT",
+                    }
+                ),
+            )
+        elements.append(element)
+        tables.append(table)
+    ds.chunk(
+        document,
+        "Bảng 1\nChi nhánh | Dư nợ",
+        kind="table",
+        table_id=tables[0],
+        element_ids="{" + str(elements[0]) + "}",
+    )
+    assert heading
+    return document, tables[0], tables[1]  # fmt: skip
+
+
+async def test_di_16_a_documents_elements_tables_and_cells_are_read_as_the_export_says(
+    ds: Space,
+) -> None:
+    validator = _export_validator()
+    document, first, second = _structure(ds)
+    async with client(ds) as api:
+        elements = await api.get(
+            f"/v1/documents/{document}/elements", headers=ds.headers("analyst")
+        )
+        assert elements.status_code == 200, elements.text
+        items = elements.json()["items"]
+        assert [e["order_idx"] for e in items] == [0, 1, 2]
+        assert items[0]["kind"] == "heading" and items[0]["level"] == 4
+        tables_only = await api.get(
+            f"/v1/documents/{document}/elements",
+            params={"kind": "table", "page": 2},
+            headers=ds.headers("analyst"),
+        )
+        assert [e["page_no"] for e in tables_only.json()["items"]] == [2]
+        paged = await api.get(
+            f"/v1/documents/{document}/elements",
+            params={"page_size": 2},
+            headers=ds.headers("analyst"),
+        )
+        rest = await api.get(
+            f"/v1/documents/{document}/elements",
+            params={"page_size": 2, "page_token": paged.json()["next_page_token"]},
+            headers=ds.headers("analyst"),
+        )
+        assert [e["order_idx"] for e in rest.json()["items"]] == [2]
+
+        tables = await api.get(f"/v1/documents/{document}/tables", headers=ds.headers("analyst"))
+        assert [t["id"] for t in tables.json()] == [str(first), str(second)]
+        assert tables.json()[1]["continues_table_id"] == str(first)
+
+        cells = await api.get(f"/v1/tables/{first}/cells", headers=ds.headers("analyst"))
+        assert [(c["row_idx"], c["col_idx"]) for c in cells.json()] == [
+            (0, 0),
+            (0, 1),
+            (1, 0),
+            (1, 1),
+        ]
+        logical = await api.get(
+            f"/v1/tables/{first}/cells", params={"logical": "true"}, headers=ds.headers("analyst")
+        )
+        # The second part's repeated header is left out, its row numbered on.
+        body = [(c["row_idx"], c["text"]) for c in logical.json() if c["col_idx"] == 0]
+        assert body == [(0, "Chi nhánh"), (1, "CN 1"), (2, "CN 2")]
+
+        chunks = await api.get(f"/v1/documents/{document}/chunks", headers=ds.headers("analyst"))
+        (chunk,) = chunks.json()["items"]
+        assert (chunk["kind"], chunk["table_id"]) == ("table", str(first))
+
+        export = {
+            "contract_version": "doc-export-1",
+            "elements": items,
+            "tables": tables.json(),
+            "cells": logical.json(),
+            "chunks": chunks.json()["items"],
+        }
+        errors = sorted(validator.iter_errors(export), key=str)
+        assert not errors, [e.message for e in errors[:5]]
+
+        unknown = await api.get(f"/v1/tables/{uuid.uuid4()}/cells", headers=ds.headers("analyst"))
+        assert unknown.status_code == 404

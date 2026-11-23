@@ -166,6 +166,20 @@ async def test_a_docx_is_read_into_elements_tables_cells_and_chunks(seed: Seed) 
     assert payload["table_ids"] == [str(table_id)] and len(payload["chunk_ids"]) == len(chunks)
     assert payload["element_count"] == len(kinds) and payload["contract_version"] == "doc-export-1"
     assert payload["page_count"] == 1 and "quality" in payload
+    # DI-16: the payload is the export contract's `indexed` (libs/contracts/v1/document_export.json).
+    import json as _json
+    import pathlib as _pathlib
+
+    import jsonschema
+
+    schema = _json.loads(
+        (
+            _pathlib.Path(__file__).parents[3] / "backend/libs/contracts/v1/document_export.json"
+        ).read_text("utf-8")
+    )
+    jsonschema.Draft202012Validator(schema).validate(
+        {"contract_version": "doc-export-1", "indexed": payload}
+    )
 
 
 async def test_a_scanned_table_keeps_its_page_its_boxes_and_its_ocr(seed: Seed) -> None:

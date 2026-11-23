@@ -195,6 +195,62 @@ class ChunkView(BaseModel):
     injection_suspected: bool
     pii_masked: bool
     created_at: datetime.datetime
+    # DI-06/DI-16: what the chunk was cut from, its parent (a Khoản's Điều) and its table.
+    kind: Literal["section", "table"] = "section"
+    element_ids: list[uuid.UUID] = []
+    parent_chunk_id: uuid.UUID | None = None
+    table_id: uuid.UUID | None = None
+
+
+class ElementView(BaseModel):
+    """GET /v1/documents/{id}/elements (DI-16): a part of the document in reading order."""
+
+    id: uuid.UUID
+    document_id: uuid.UUID
+    page_no: int | None
+    order_idx: int
+    kind: str
+    level: int | None
+    bbox: dict[str, Any] | None
+    text: str | None
+    parent_element_id: uuid.UUID | None
+    extractor: str
+    extractor_version: str
+    confidence: decimal.Decimal | None
+
+
+class DocTableView(BaseModel):
+    """GET /v1/documents/{id}/tables (DI-16)."""
+
+    id: uuid.UUID
+    document_id: uuid.UUID
+    element_id: uuid.UUID
+    page_from: int | None
+    page_to: int | None
+    n_rows: int
+    n_cols: int
+    header_rows: int
+    caption: str | None
+    continues_table_id: uuid.UUID | None
+    numeric_share: decimal.Decimal | None
+
+
+class TableCellView(BaseModel):
+    """GET /v1/tables/{id}/cells (DI-16): a cell, its span, text and number, page and box.
+    `table_id` is the part of a chain it stands in; with ?logical=true `row_idx` counts across
+    the chain."""
+
+    table_id: uuid.UUID
+    row_idx: int
+    col_idx: int
+    row_span: int
+    col_span: int
+    text: str
+    numeric_value: decimal.Decimal | None
+    unit: str | None
+    is_header: bool
+    page_no: int | None
+    bbox: dict[str, Any] | None
 
 
 class DocumentBlockView(BaseModel):

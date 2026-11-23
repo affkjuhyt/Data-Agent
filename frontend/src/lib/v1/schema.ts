@@ -2206,6 +2206,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/{id}/elements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Phần tử của tài liệu theo thứ tự đọc: loại, cấp tiêu đề, trang, khung (thêm 23/11/2026, DI-16) */
+        get: operations["listDocumentElements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents/{id}/file": {
         parameters: {
             query?: never;
@@ -2232,6 +2249,23 @@ export interface paths {
         };
         /** Trang: ảnh, văn bản, đoạn */
         get: operations["getDocumentPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/tables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bảng của tài liệu: chú thích, trang, bảng nối tiếp (thêm 23/11/2026, DI-16) */
+        get: operations["listDocumentTables"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6477,6 +6511,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tables/{id}/cells": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ô của bảng: ô gộp, số và đơn vị, trang, khung; ?logical=true ghép bảng nối trang (thêm 23/11/2026, DI-16)
+         * @description The table's cells by (row, column). With ?logical=true the tables that continue it on the
+         *     next pages follow, their repeated header rows left out and their rows numbered on (§4.3.1).
+         */
+        get: operations["listTableCells"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tasks": {
         parameters: {
             query?: never;
@@ -9136,6 +9191,11 @@ export interface components {
             effective_from: string | null;
             /** Effective To */
             effective_to: string | null;
+            /**
+             * Element Ids
+             * @default []
+             */
+            element_ids: string[];
             /** Human Corrected */
             human_corrected: boolean;
             /**
@@ -9145,16 +9205,26 @@ export interface components {
             id: string;
             /** Injection Suspected */
             injection_suspected: boolean;
+            /**
+             * Kind
+             * @default section
+             * @enum {string}
+             */
+            kind: "section" | "table";
             /** Page From */
             page_from: number;
             /** Page To */
             page_to: number;
+            /** Parent Chunk Id */
+            parent_chunk_id?: string | null;
             /** Pii Masked */
             pii_masked: boolean;
             /** Score */
             score: number;
             /** Section Path */
             section_path: string | null;
+            /** Table Id */
+            table_id?: string | null;
             /** Text */
             text: string;
             /** Tokens */
@@ -9183,6 +9253,11 @@ export interface components {
             effective_from: string | null;
             /** Effective To */
             effective_to: string | null;
+            /**
+             * Element Ids
+             * @default []
+             */
+            element_ids: string[];
             /** Human Corrected */
             human_corrected: boolean;
             /**
@@ -9192,14 +9267,24 @@ export interface components {
             id: string;
             /** Injection Suspected */
             injection_suspected: boolean;
+            /**
+             * Kind
+             * @default section
+             * @enum {string}
+             */
+            kind: "section" | "table";
             /** Page From */
             page_from: number;
             /** Page To */
             page_to: number;
+            /** Parent Chunk Id */
+            parent_chunk_id?: string | null;
             /** Pii Masked */
             pii_masked: boolean;
             /** Section Path */
             section_path: string | null;
+            /** Table Id */
+            table_id?: string | null;
             /** Text */
             text: string;
             /** Tokens */
@@ -11755,6 +11840,43 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * DocTableView
+         * @description GET /v1/documents/{id}/tables (DI-16).
+         */
+        DocTableView: {
+            /** Caption */
+            caption: string | null;
+            /** Continues Table Id */
+            continues_table_id: string | null;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /**
+             * Element Id
+             * Format: uuid
+             */
+            element_id: string;
+            /** Header Rows */
+            header_rows: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** N Cols */
+            n_cols: number;
+            /** N Rows */
+            n_rows: number;
+            /** Numeric Share */
+            numeric_share: number | string | null;
+            /** Page From */
+            page_from: number | null;
+            /** Page To */
+            page_to: number | null;
+        };
         /** DocumentBlockView */
         DocumentBlockView: {
             /** Box */
@@ -12296,6 +12418,44 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * ElementView
+         * @description GET /v1/documents/{id}/elements (DI-16): a part of the document in reading order.
+         */
+        ElementView: {
+            /** Bbox */
+            bbox: {
+                [key: string]: unknown;
+            } | null;
+            /** Confidence */
+            confidence: number | string | null;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Extractor */
+            extractor: string;
+            /** Extractor Version */
+            extractor_version: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Level */
+            level: number | null;
+            /** Order Idx */
+            order_idx: number;
+            /** Page No */
+            page_no: number | null;
+            /** Parent Element Id */
+            parent_element_id: string | null;
+            /** Text */
+            text: string | null;
         };
         /** EmergencyAccessIn */
         EmergencyAccessIn: {
@@ -17746,6 +17906,16 @@ export interface components {
              */
             next_page_token: string;
         };
+        /** Page[ElementView] */
+        Page_ElementView_: {
+            /** Items */
+            items: components["schemas"]["ElementView"][];
+            /**
+             * Next Page Token
+             * @default
+             */
+            next_page_token: string;
+        };
         /** Page[EntityLinkView] */
         Page_EntityLinkView_: {
             /** Items */
@@ -22381,6 +22551,41 @@ export interface components {
              * @enum {string}
              */
             status: "ok" | "degraded" | "no_data";
+        };
+        /**
+         * TableCellView
+         * @description GET /v1/tables/{id}/cells (DI-16): a cell, its span, text and number, page and box.
+         *     `table_id` is the part of a chain it stands in; with ?logical=true `row_idx` counts across
+         *     the chain.
+         */
+        TableCellView: {
+            /** Bbox */
+            bbox: {
+                [key: string]: unknown;
+            } | null;
+            /** Col Idx */
+            col_idx: number;
+            /** Col Span */
+            col_span: number;
+            /** Is Header */
+            is_header: boolean;
+            /** Numeric Value */
+            numeric_value: number | string | null;
+            /** Page No */
+            page_no: number | null;
+            /** Row Idx */
+            row_idx: number;
+            /** Row Span */
+            row_span: number;
+            /**
+             * Table Id
+             * Format: uuid
+             */
+            table_id: string;
+            /** Text */
+            text: string;
+            /** Unit */
+            unit: string | null;
         };
         /**
          * TableView
@@ -41637,6 +41842,127 @@ export interface operations {
             };
         };
     };
+    listDocumentElements: {
+        parameters: {
+            query?: {
+                page?: number | null;
+                kind?: string | null;
+                page_size?: number;
+                page_token?: string;
+                /** @description A3's name for page_token */
+                cursor?: string | null;
+            };
+            header?: {
+                "X-Purpose"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ElementView_"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
     downloadDocumentOriginal: {
         parameters: {
             query?: never;
@@ -41770,6 +42096,120 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentPageView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    listDocumentTables: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Purpose"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocTableView"][];
                 };
             };
             /** @description Invalid request */
@@ -74020,6 +74460,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SynonymView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    listTableCells: {
+        parameters: {
+            query?: {
+                logical?: boolean;
+            };
+            header?: {
+                "X-Purpose"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TableCellView"][];
                 };
             };
             /** @description Invalid request */

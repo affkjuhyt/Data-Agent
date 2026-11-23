@@ -1590,6 +1590,42 @@
   },
   {
    "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/documents/{id}/elements",
+   "summary": "Phần tử của tài liệu theo thứ tự đọc: loại, cấp tiêu đề, trang, khung (thêm 23/11/2026, DI-16)",
+   "use_cases": [
+    "05-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/documents/{id}/tables",
+   "summary": "Bảng của tài liệu: chú thích, trang, bảng nối tiếp (thêm 23/11/2026, DI-16)",
+   "use_cases": [
+    "05-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/tables/{id}/cells",
+   "summary": "Ô của bảng: ô gộp, số và đơn vị, trang, khung; ?logical=true ghép bảng nối trang (thêm 23/11/2026, DI-16)",
+   "use_cases": [
+    "05-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
    "method": "DELETE",
    "path": "/v1/documents/{id}",
    "summary": "Xoá mềm tài liệu: status removed, tệp gốc giữ trong kho có khoá (thêm 23/11/2026, DI-10)",

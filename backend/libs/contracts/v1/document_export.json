@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dataagent.local/contracts/v1/document_export.json",
+  "title": "Document export",
+  "description": "DOCUMENT_INTELLIGENCE_SPEC §10 (DI-16): what a document's reading publishes, for a consumer outside the worker (a KB indexing team) that never reads MinIO. The document.indexed event (indexed) and the read APIs' shapes: GET /v1/documents/{id}/elements (element), /tables (table), GET /v1/tables/{id}/cells (cell), /chunks (chunk). A breaking change raises contract_version and keeps the old one two releases.",
+  "type": "object",
+  "required": ["contract_version"],
+  "properties": {
+    "contract_version": {"const": "doc-export-1"},
+    "indexed": {"$ref": "#/$defs/indexed"},
+    "elements": {"type": "array", "items": {"$ref": "#/$defs/element"}},
+    "tables": {"type": "array", "items": {"$ref": "#/$defs/table"}},
+    "cells": {"type": "array", "items": {"$ref": "#/$defs/cell"}},
+    "chunks": {"type": "array", "items": {"$ref": "#/$defs/chunk"}}
+  },
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "decimal": {"description": "A number as the API writes a Decimal: a JSON string of digits.", "type": ["string", "null"], "pattern": "^-?\\d+(\\.\\d+)?$"},
+    "bbox": {
+      "description": "A box on its page, top-left origin, in page points.",
+      "type": ["object", "null"],
+      "required": ["l", "t", "r", "b"],
+      "properties": {
+        "l": {"type": "number"},
+        "t": {"type": "number"},
+        "r": {"type": "number"},
+        "b": {"type": "number"},
+        "coord_origin": {"enum": ["TOPLEFT", "BOTTOMLEFT"]}
+      }
+    },
+    "indexed": {
+      "description": "The payload of document.indexed (§10.1).",
+      "type": "object",
+      "required": ["document_id", "collection_id", "data_space_id", "page_count", "element_count", "table_ids", "chunk_ids", "extractor_version", "embed_model", "quality", "contract_version"],
+      "properties": {
+        "document_id": {"$ref": "#/$defs/uuid"},
+        "collection_id": {"$ref": "#/$defs/uuid"},
+        "data_space_id": {"$ref": "#/$defs/uuid"},
+        "sha256": {"type": ["string", "null"]},
+        "page_count": {"type": "integer", "minimum": 0},
+        "element_count": {"type": "integer", "minimum": 0},
+        "table_ids": {"type": "array", "items": {"$ref": "#/$defs/uuid"}},
+        "chunk_ids": {"type": "array", "items": {"$ref": "#/$defs/uuid"}},
+        "extractor_version": {"type": "string", "minLength": 1},
+        "embed_model": {"type": ["string", "null"]},
+        "quality": {
+          "type": "object",
+          "required": ["usable_pages", "issues"],
+          "properties": {
+            "usable_pages": {"type": "integer", "minimum": 0},
+            "issues": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}
+          }
+        },
+        "contract_version": {"const": "doc-export-1"}
+      }
+    },
+    "element": {
+      "type": "object",
+      "required": ["id", "document_id", "order_idx", "kind", "extractor", "extractor_version"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "document_id": {"$ref": "#/$defs/uuid"},
+        "page_no": {"type": ["integer", "null"], "minimum": 1},
+        "order_idx": {"type": "integer", "minimum": 0},
+        "kind": {"enum": ["text", "heading", "list", "table", "picture", "caption", "footnote", "formula", "header", "footer", "code", "page_number"]},
+        "level": {"type": ["integer", "null"], "minimum": 1, "maximum": 6},
+        "bbox": {"$ref": "#/$defs/bbox"},
+        "text": {"type": ["string", "null"]},
+        "parent_element_id": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "extractor": {"enum": ["docling", "legacy", "openpyxl"]},
+        "extractor_version": {"type": "string", "minLength": 1},
+        "confidence": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "table": {
+      "type": "object",
+      "required": ["id", "document_id", "element_id", "n_rows", "n_cols", "header_rows"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "document_id": {"$ref": "#/$defs/uuid"},
+        "element_id": {"$ref": "#/$defs/uuid"},
+        "page_from": {"type": ["integer", "null"], "minimum": 1},
+        "page_to": {"type": ["integer", "null"], "minimum": 1},
+        "n_rows": {"type": "integer", "minimum": 0},
+        "n_cols": {"type": "integer", "minimum": 0},
+        "header_rows": {"type": "integer", "minimum": 0},
+        "caption": {"type": ["string", "null"]},
+        "continues_table_id": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "numeric_share": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "cell": {
+      "type": "object",
+      "required": ["table_id", "row_idx", "col_idx", "row_span", "col_span", "text", "is_header"],
+      "properties": {
+        "table_id": {"$ref": "#/$defs/uuid"},
+        "row_idx": {"type": "integer", "minimum": 0},
+        "col_idx": {"type": "integer", "minimum": 0},
+        "row_span": {"type": "integer", "minimum": 1},
+        "col_span": {"type": "integer", "minimum": 1},
+        "text": {"type": "string"},
+        "numeric_value": {"$ref": "#/$defs/decimal"},
+        "unit": {"type": ["string", "null"]},
+        "is_header": {"type": "boolean"},
+        "page_no": {"type": ["integer", "null"], "minimum": 1},
+        "bbox": {"$ref": "#/$defs/bbox"}
+      }
+    },
+    "chunk": {
+      "type": "object",
+      "required": ["id", "document_id", "page_from", "page_to", "text", "kind", "element_ids"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "document_id": {"$ref": "#/$defs/uuid"},
+        "page_from": {"type": "integer", "minimum": 1},
+        "page_to": {"type": "integer", "minimum": 1},
+        "section_path": {"type": ["string", "null"]},
+        "text": {"type": "string"},
+        "kind": {"enum": ["section", "table"]},
+        "element_ids": {"type": "array", "items": {"$ref": "#/$defs/uuid"}},
+        "parent_chunk_id": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "table_id": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]}
+      }
+    }
+  }
+}

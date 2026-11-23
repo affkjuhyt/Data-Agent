@@ -2398,9 +2398,67 @@
    ],
    "body": {},
    "query": [],
-   "returns": "Page<ChunkView>",
+   "returns": "Page<ChunkView>; kèm kind, element_ids, parent_chunk_id, table_id (DI-16)",
    "errors": [],
    "request_text": "—"
+  },
+  "GET /v1/documents/{id}/elements": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [
+    "page",
+    "kind",
+    "cursor"
+   ],
+   "returns": "Page<ElementView> theo order_idx",
+   "errors": [
+    [
+     403,
+     "purpose_mismatch"
+    ]
+   ],
+   "request_text": "?page, ?kind, ?cursor"
+  },
+  "GET /v1/documents/{id}/tables": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách DocTableView",
+   "errors": [
+    [
+     403,
+     "purpose_mismatch"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/tables/{id}/cells": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [
+    "logical"
+   ],
+   "returns": "Danh sách TableCellView theo (row, col)",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ],
+    [
+     403,
+     "purpose_mismatch"
+    ]
+   ],
+   "request_text": "?logical"
   },
   "GET /v1/pipelines": {
    "group": "Biến đổi dữ liệu",

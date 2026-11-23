@@ -26,8 +26,8 @@ def test_snapshot_holds_all_of_a2() -> None:
     # sample and its schema-drift resolution (12/11/2026), plus a dataset version's snapshot
     # file (DF-05, 19/11/2026), plus a dataset's contract read and written (DF-09, 20/11/2026),
     # plus editing a metric draft in place (19/11/2026), plus deleting a document softly (DI-10,
-    # 23/11/2026).
-    assert len(data["endpoints"]) == 468
+    # 23/11/2026), plus a document's elements, tables and table cells (DI-16, 23/11/2026).
+    assert len(data["endpoints"]) == 471
     assert len(data["groups"]) == 21
     assert {e["group"] for e in data["endpoints"]} == set(data["groups"])
 
