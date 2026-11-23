@@ -130,6 +130,11 @@ class Alert(Base):
     close_note: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Bắt buộc khi vượt ngưỡng hơn 2 lần (BR-124)"
     )
+    close_kind: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Cách đóng: resolved (đã xử lý) hoặc false_positive (báo nhầm, để agent học); null khi chưa đóng. Thêm 23/11/2026",
+    )
     closed_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

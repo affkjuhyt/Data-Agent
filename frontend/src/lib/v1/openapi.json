@@ -2031,6 +2031,15 @@
        }
       ],
       "title": "Close Note"
+     },
+     "kind": {
+      "default": "resolved",
+      "enum": [
+       "resolved",
+       "false_positive"
+      ],
+      "title": "Kind",
+      "type": "string"
      }
     },
     "title": "AlertClose",
@@ -2064,6 +2073,17 @@
        }
       ],
       "title": "Assigned To"
+     },
+     "close_kind": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Close Kind"
      },
      "close_note": {
       "anyOf": [
@@ -58019,7 +58039,9 @@
       "application/json": {
        "schema": {
         "$ref": "#/components/schemas/AlertClose",
-        "default": {}
+        "default": {
+         "kind": "resolved"
+        }
        }
       }
      }

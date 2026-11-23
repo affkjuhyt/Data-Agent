@@ -19655,6 +19655,17 @@
      "pii": false
     },
     {
+     "name": "close_kind",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Cách đóng: resolved (đã xử lý) hoặc false_positive (báo nhầm, để agent học); null khi chưa đóng. Thêm 23/11/2026",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "closed_at",
      "type": "timestamptz",
      "not_null": false,
@@ -19690,6 +19701,10 @@
     {
      "kind": "check",
      "sql": "CHECK (status <> 'closed' OR occurrences <= 2 OR close_note IS NOT NULL)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (close_kind IN ('resolved','false_positive'))"
     },
     {
      "kind": "fk",

@@ -51,7 +51,8 @@ export interface Alert {
 }
 
 /** GET /v1/alerts as the api sends it (AlertView); the mock adds the screen's detail. */
-export type AlertWire = components['schemas']['AlertView'] & Partial<Omit<Alert, 'status'>>;
+export type AlertWire = components['schemas']['AlertView'] &
+  Partial<Omit<Alert, 'status' | 'close_kind'>>;
 
 const number = (v: number | string | null) => (v === null ? '—' : String(v).replace('.', ','));
 
@@ -63,7 +64,7 @@ function readAlert(raw: AlertWire): Alert {
     title: raw.title ?? raw.summary.split('\n')[0],
     summary: raw.summary,
     status: raw.status as AlertStatus,
-    close_kind: raw.close_kind ?? null,
+    close_kind: (raw.close_kind as Alert['close_kind']) ?? null,
     fired_at: raw.fired_at,
     monitor_id: raw.monitor_id,
     monitor_name: raw.monitor_name ?? '',
@@ -112,15 +113,19 @@ export const assignAlert = async (id: string, assigneeId: string) =>
   );
 
 /*
- * AlertClose carries the note only (BR-124 needs one after two occurrences). It has no way to say
- * the alert was a false alarm, so the screen does not offer that until it does.
+ * AlertClose: the note (BR-124 needs one after two occurrences) and how it ends, resolved or a
+ * false alarm (monitor.alert.close_kind), which the alert page then says it was.
  */
-export const closeAlert = async (id: string, note: string) =>
+export const closeAlert = async (
+  id: string,
+  note: string,
+  kind: 'resolved' | 'false_positive' = 'resolved',
+) =>
   readAlert(
     await ok<AlertWire>(
       api.POST('/v1/alerts/{id}:close', {
         params: { path: { id } },
-        body: { close_note: note } satisfies components['schemas']['AlertClose'],
+        body: { close_note: note, kind } satisfies components['schemas']['AlertClose'],
       }),
     ),
   );

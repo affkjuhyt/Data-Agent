@@ -4206,6 +4206,7 @@ CREATE TABLE monitor.alert (
   status text NOT NULL DEFAULT 'open',
   assigned_to uuid,
   close_note text,
+  close_kind text,
   closed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
@@ -4215,7 +4216,8 @@ CREATE TABLE monitor.alert (
   CHECK (kind IN ('metric','data_stale')),
   CHECK (status IN ('open','ack','assigned','closed')),
   CHECK (status <> 'closed' OR closed_at IS NOT NULL),
-  CHECK (status <> 'closed' OR occurrences <= 2 OR close_note IS NOT NULL)
+  CHECK (status <> 'closed' OR occurrences <= 2 OR close_note IS NOT NULL),
+  CHECK (close_kind IN ('resolved','false_positive'))
 );
 COMMENT ON TABLE monitor.alert IS 'Cảnh báo phát sinh khi luật khớp; gộp tín hiệu lặp trong 24 giờ (BR-33). Use case: UC-08-01, UC-08-02, UC-08-04.';
 COMMENT ON COLUMN monitor.alert.monitor_id IS 'FK monitor';
@@ -4225,6 +4227,7 @@ COMMENT ON COLUMN monitor.alert.skill_run_id IS 'logic → skill.skill_run phân
 COMMENT ON COLUMN monitor.alert.kind IS 'metric, data_stale';
 COMMENT ON COLUMN monitor.alert.status IS 'open, ack, assigned, closed';
 COMMENT ON COLUMN monitor.alert.close_note IS 'Bắt buộc khi vượt ngưỡng hơn 2 lần (BR-124)';
+COMMENT ON COLUMN monitor.alert.close_kind IS 'Cách đóng: resolved (đã xử lý) hoặc false_positive (báo nhầm, để agent học); null khi chưa đóng. Thêm 23/11/2026';
 
 CREATE TABLE monitor.report_schedule (
   id uuid NOT NULL,

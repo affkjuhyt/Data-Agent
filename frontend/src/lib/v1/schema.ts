@@ -7753,6 +7753,12 @@ export interface components {
         AlertClose: {
             /** Close Note */
             close_note?: string | null;
+            /**
+             * Kind
+             * @default resolved
+             * @enum {string}
+             */
+            kind?: "resolved" | "false_positive";
         };
         /** AlertReopen */
         AlertReopen: {
@@ -7763,6 +7769,8 @@ export interface components {
         AlertView: {
             /** Assigned To */
             assigned_to: string | null;
+            /** Close Kind */
+            close_kind?: string | null;
             /** Close Note */
             close_note: string | null;
             /** Closed At */

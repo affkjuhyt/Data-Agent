@@ -2273,9 +2273,10 @@ Cảnh báo phát sinh khi luật khớp; gộp tín hiệu lặp trong 24 giờ
 | status | text, bắt buộc, mặc định 'open' | open, ack, assigned, closed |
 | assigned\_to | uuid |  |
 | close\_note | text | Bắt buộc khi vượt ngưỡng hơn 2 lần (BR-124) |
+| close\_kind | text | Cách đóng: resolved (đã xử lý) hoặc false\_positive (báo nhầm, để agent học); null khi chưa đóng. Thêm 23/11/2026 |
 | closed\_at | timestamptz |  |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('metric','data\_stale')); CHECK (status IN ('open','ack','assigned','closed')); CHECK (status <> 'closed' OR closed\_at IS NOT NULL); CHECK (status <> 'closed' OR occurrences <= 2 OR close\_note IS NOT NULL); FOREIGN KEY (monitor\_id) REFERENCES monitor.monitor(id). Chỉ mục: duy nhất (monitor\_id, dedup\_key) WHERE status <> 'closed'.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('metric','data\_stale')); CHECK (status IN ('open','ack','assigned','closed')); CHECK (status <> 'closed' OR closed\_at IS NOT NULL); CHECK (status <> 'closed' OR occurrences <= 2 OR close\_note IS NOT NULL); CHECK (close\_kind IN ('resolved','false\_positive')); FOREIGN KEY (monitor\_id) REFERENCES monitor.monitor(id). Chỉ mục: duy nhất (monitor\_id, dedup\_key) WHERE status <> 'closed'.
 
 #### monitor.report\_schedule
 

@@ -504,6 +504,7 @@ async def test_alert_is_acknowledged_assigned_and_closed_with_an_audit_each(mon:
         body = closed.json()
         assert body["status"] == "closed" and body["closed_at"] is not None
         assert body["close_note"] == "Đã kiểm tra, do khoản vay lớn"
+        assert body["close_kind"] == "resolved"
         for verb, payload in (
             ("ack", None),
             ("assign", {"assignee_id": str(mon.users["owner"])}),
@@ -523,6 +524,26 @@ async def test_alert_is_acknowledged_assigned_and_closed_with_an_audit_each(mon:
     assert events[0][1]["actor_id"] == str(mon.users["owner"])
     assert events[2][1]["actor_id"] == str(mon.users["colleague"])
     assert events[1][1]["assigned_to"] == str(mon.users["colleague"])
+
+
+async def test_an_alert_is_closed_as_a_false_alarm(mon: Org) -> None:
+    """ "Đóng do báo nhầm": the close says so (BR-124), and the event carries it for learning."""
+    monitor_id = seed_monitor(mon)
+    alert = seed_alert(mon, monitor_id)
+    url = f"/v1/alerts/{alert}"
+    async with client(mon) as api:
+        bogus = await api.post(f"{url}:close", json={"kind": "maybe"}, headers=mon.headers("owner"))
+        assert bogus.status_code == 422, bogus.text
+        closed = await api.post(
+            f"{url}:close",
+            json={"close_note": "Số liệu tháng trước chưa chốt", "kind": "false_positive"},
+            headers=mon.headers("owner"),
+        )
+        assert closed.status_code == 200, closed.text
+        assert closed.json()["close_kind"] == "false_positive"
+    assert mon.one("SELECT close_kind FROM monitor.alert WHERE id = %s", alert) == "false_positive"
+    closing = dict(mon.events("monitor", alert))["alert.closed"]
+    assert closing["close_kind"] == "false_positive"
 
 
 # AC-08-02-05

@@ -119,7 +119,7 @@ describe('AlertPage', () => {
     );
   });
 
-  it('closes with the note the api takes, then reopens', async () => {
+  it('closes as a false alarm with the reason the agent learns from, then reopens', async () => {
     routeId = 'alert-npl-north';
     let sent: Record<string, unknown> | undefined;
     server.use(
@@ -129,20 +129,21 @@ describe('AlertPage', () => {
       }),
     );
     wrap(<AlertPage />);
-    // AlertClose cannot say "false alarm": the button is off and says why.
-    expect(await screen.findByRole('button', { name: 'Đóng do báo nhầm' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Đánh dấu đã xử lý' }));
-    const dialog = screen.getByRole('alertdialog', { name: 'Đánh dấu #A-2291 đã xử lý?' });
-    fireEvent.change(within(dialog).getByLabelText('Ghi chú'), {
+    fireEvent.click(await screen.findByRole('button', { name: 'Đóng do báo nhầm' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Đóng #A-2291 do báo nhầm?' });
+    // A false alarm needs its reason (BR-124): the agent learns from it.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Đóng cảnh báo' }));
+    expect(
+      await within(dialog).findByText('Ghi vì sao đây là báo nhầm; agent học từ ghi chú này.'),
+    ).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Lý do (bắt buộc)'), {
       target: { value: '19 khoản tái cơ cấu đã được điều chỉnh, số thật dưới ngưỡng.' },
     });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Đóng cảnh báo' }));
-    expect(await screen.findByText('Đã đóng')).toBeInTheDocument();
+    expect(await screen.findByText(/Đã đóng/)).toBeInTheDocument();
     expect(sent).toEqual({
       close_note: '19 khoản tái cơ cấu đã được điều chỉnh, số thật dưới ngưỡng.',
+      kind: 'false_positive',
     });
     fireEvent.click(screen.getByRole('button', { name: 'Mở lại' }));
     const reopen = screen.getByRole('alertdialog', { name: 'Mở lại #A-2291?' });

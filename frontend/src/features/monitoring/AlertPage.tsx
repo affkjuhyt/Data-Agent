@@ -21,7 +21,6 @@ import { StatusDot } from '../../design-system/StatusDot';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
-import { Unavailable } from '../../design-system/Unavailable';
 import {
   assignAlert,
   closeAlert,
@@ -41,16 +40,11 @@ import { whenText } from './whenText';
  * days past the threshold shaded, the cause the Agent Phân tích attached and what each factor
  * contributed, and on the right its details, what happened since and how it ends. The person
  * pauses the monitor, hands the alert to someone else, or opens an investigation. An alert that
- * fired more than twice needs a note when it is closed (BR-124). Closing it as a false alarm the
- * agent learns from ("Đã đóng do báo nhầm", 2272:16850) waits for the api: AlertClose has no
- * field for it, so the button says why it is off. Opened from the rail without an id, the page
- * shows the newest open alert.
+ * fired more than twice needs a note when it is closed (BR-124). Closing it as a false alarm needs
+ * a note the agent learns from ("Đã đóng do báo nhầm", 2272:16850; AlertClose.kind). Opened from
+ * the rail without an id, the page shows the newest open alert.
  */
-type Dialog = 'assign' | 'resolve' | 'reopen' | null;
-
-/** Why "Đóng do báo nhầm" is off: the api closes an alert with a note only. */
-const FALSE_POSITIVE_PENDING =
-  'Hệ thống chưa ghi nhận cảnh báo báo nhầm. Dùng “Đánh dấu đã xử lý” và ghi lý do vào ghi chú.';
+type Dialog = 'assign' | 'resolve' | 'false_positive' | 'reopen' | null;
 
 const STATUS = {
   open: { label: 'Đang cảnh báo', tone: 'error' },
@@ -137,12 +131,20 @@ function AlertBody({ alert }: { alert: Alert }) {
     action.run({ key, call, message });
   };
 
-  const close = () => {
-    if (alert.occurrences > 2 && !note.trim()) {
-      setInvalid('Cảnh báo lặp hơn 2 lần cần ghi chú khi đóng (BR-124).');
+  const close = (kind: 'resolved' | 'false_positive') => {
+    if ((kind === 'false_positive' || alert.occurrences > 2) && !note.trim()) {
+      setInvalid(
+        kind === 'false_positive'
+          ? 'Ghi vì sao đây là báo nhầm; agent học từ ghi chú này.'
+          : 'Cảnh báo lặp hơn 2 lần cần ghi chú khi đóng (BR-124).',
+      );
       return;
     }
-    act('resolve', () => closeAlert(alert.id, note.trim()), `Đã đóng ${alert.code}`);
+    act(
+      kind === 'resolved' ? 'resolve' : kind,
+      () => closeAlert(alert.id, note.trim(), kind),
+      kind === 'false_positive' ? `Đã đóng ${alert.code} do báo nhầm` : `Đã đóng ${alert.code}`,
+    );
   };
 
   const investigate = () => {
@@ -326,11 +328,14 @@ function AlertBody({ alert }: { alert: Alert }) {
                 <Button size="sm" disabled={busy !== null} onClick={() => dialogOpen('resolve')}>
                   Đánh dấu đã xử lý
                 </Button>
-                <Unavailable reason={FALSE_POSITIVE_PENDING}>
-                  <Button size="sm" kind="ghost" disabled>
-                    Đóng do báo nhầm
-                  </Button>
-                </Unavailable>
+                <Button
+                  size="sm"
+                  kind="ghost"
+                  disabled={busy !== null}
+                  onClick={() => dialogOpen('false_positive')}
+                >
+                  Đóng do báo nhầm
+                </Button>
               </div>
             )}
           </Side>
@@ -369,8 +374,14 @@ function AlertBody({ alert }: { alert: Alert }) {
         />
       </ConfirmDialog>
       <ConfirmDialog
-        open={dialog === 'resolve' || dialog === 'reopen'}
-        title={dialog === 'reopen' ? `Mở lại ${alert.code}?` : `Đánh dấu ${alert.code} đã xử lý?`}
+        open={dialog === 'resolve' || dialog === 'false_positive' || dialog === 'reopen'}
+        title={
+          dialog === 'reopen'
+            ? `Mở lại ${alert.code}?`
+            : dialog === 'false_positive'
+              ? `Đóng ${alert.code} do báo nhầm?`
+              : `Đánh dấu ${alert.code} đã xử lý?`
+        }
         confirmLabel={dialog === 'reopen' ? 'Mở lại' : 'Đóng cảnh báo'}
         tone="primary"
         cancelLabel="Quay lại"
@@ -385,18 +396,21 @@ function AlertBody({ alert }: { alert: Alert }) {
               return;
             }
             act('reopen', () => reopenAlert(alert.id, note.trim()), `Đã mở lại ${alert.code}`);
-          } else if (dialog === 'resolve') close();
+          } else if (dialog === 'resolve') close('resolved');
+          else if (dialog === 'false_positive') close('false_positive');
         }}
       >
         <div className="flex flex-col gap-da-sm">
           <p>
             {dialog === 'reopen'
               ? 'Cảnh báo mở lại và vào lại hàng việc của người được giao.'
-              : 'Cảnh báo đóng lại; theo dõi vẫn chạy.'}
+              : dialog === 'false_positive'
+                ? 'Agent ghi nhớ điều bạn viết để lần sau giải thích đúng hơn; ngưỡng theo dõi giữ nguyên.'
+                : 'Cảnh báo đóng lại; theo dõi vẫn chạy.'}
           </p>
           <label className="flex flex-col gap-da-xs">
             <span className="text-foreground da-label">
-              {dialog === 'reopen'
+              {dialog === 'reopen' || dialog === 'false_positive'
                 ? 'Lý do (bắt buộc)'
                 : alert.occurrences <= 2
                   ? 'Ghi chú'

@@ -63,7 +63,12 @@ async def test_monitors_of_the_data_space_are_listed(mon: Org) -> None:
 async def test_a_closed_alert_is_reopened_and_the_reason_audited(mon: Org) -> None:
     monitor_id = seed_monitor(mon)
     alert = seed_alert(
-        mon, monitor_id, status="closed", closed_at="2026-10-01T00:00:00Z", close_note="Báo nhầm"
+        mon,
+        monitor_id,
+        status="closed",
+        closed_at="2026-10-01T00:00:00Z",
+        close_note="Báo nhầm",
+        close_kind="false_positive",
     )
     async with client(mon) as api:
         done = await api.post(
@@ -72,6 +77,7 @@ async def test_a_closed_alert_is_reopened_and_the_reason_audited(mon: Org) -> No
         assert done.status_code == 200, done.text
         body = done.json()
         assert body["status"] == "open" and body["closed_at"] is None and body["close_note"] is None
+        assert body["close_kind"] is None
         assert mon.one("SELECT status FROM monitor.alert WHERE id = %s", alert) == "open"
         events = dict(mon.events("monitor", alert))
         domain = events["alert.reopened"]
@@ -80,7 +86,11 @@ async def test_a_closed_alert_is_reopened_and_the_reason_audited(mon: Org) -> No
         assert REASON["reason"] not in str(domain)
         audit = events["audit.requested"]
         assert audit["action"] == "alert.reopen" and audit["after"]["reason"] == REASON["reason"]
-        assert audit["before"] == {"status": "closed", "close_note": "Báo nhầm"}
+        assert audit["before"] == {
+            "status": "closed",
+            "close_note": "Báo nhầm",
+            "close_kind": "false_positive",
+        }
 
         again = await api.post(
             f"/v1/alerts/{alert}:reopen", json=REASON, headers=mon.headers("colleague")

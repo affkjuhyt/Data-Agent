@@ -113,6 +113,7 @@ class AlertView(BaseModel):
     status: str
     assigned_to: uuid.UUID | None
     close_note: str | None
+    close_kind: str | None = None
     closed_at: datetime.datetime | None
     created_at: datetime.datetime
     updated_at: datetime.datetime
@@ -124,6 +125,8 @@ class AlertAssign(BaseModel):
 
 class AlertClose(BaseModel):
     close_note: str | None = Field(default=None, max_length=4_000)
+    # "Đóng do báo nhầm": a false alarm is kept apart from a resolved alert (BR-124).
+    kind: Literal["resolved", "false_positive"] = "resolved"
 
 
 class AlertReopen(BaseModel):

@@ -207,8 +207,8 @@ export function createAlertHandlers() {
                 return update(id, (a) => ({
                   ...a,
                   status: 'closed',
-                  // AlertClose has only close_note: a close is not told apart as a false alarm.
-                  close_kind: 'resolved',
+                  // AlertClose.kind: resolved, or a false alarm the agent learns from.
+                  close_kind: body.kind === 'false_positive' ? 'false_positive' : 'resolved',
                   closed: {
                     by: 'Đỗ Hải Yến',
                     at: now.toISOString(),

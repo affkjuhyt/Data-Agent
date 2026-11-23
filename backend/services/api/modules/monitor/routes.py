@@ -397,6 +397,7 @@ def _alert_event(
         previous_status=previous,
         status=row.status,
         assigned_to=row.assigned_to,
+        close_kind=row.close_kind,
         actor_id=principal.user_id,
     )
 
@@ -475,6 +476,7 @@ async def close_alert(
         at = now()
         # The table's CHECK refuses a close without a note after more than 2 occurrences (BR-124).
         row.status, row.close_note, row.closed_at = "closed", note, at
+        row.close_kind = body.kind
         row.updated_by, row.updated_at = principal.user_id, at
         _alert_event(session, principal, row, "alert.closed", previous, data_space)
         await session.flush()
@@ -511,10 +513,10 @@ async def reopen_alert(
             raise Problem(
                 409, "invalid_state", f"Alert {again} of the same rule and period is open."
             )
-        previous, note = row.status, row.close_note
+        previous, note, kind = row.status, row.close_note, row.close_kind
         at = now()
-        # The close note belonged to the closing; it is kept in the audit record below.
-        row.status, row.close_note, row.closed_at = "open", None, None
+        # The close note and kind belonged to the closing; they are kept in the audit record below.
+        row.status, row.close_note, row.closed_at, row.close_kind = "open", None, None, None
         row.updated_by, row.updated_at = principal.user_id, at
         _alert_event(session, principal, row, "alert.reopened", previous, data_space)
         # The reason is the audit record's (A1.8), not part of the domain event.
@@ -529,7 +531,7 @@ async def reopen_alert(
             object_id=row.id,
             actor_id=principal.user_id,
             client_id=principal.client_id,
-            before={"status": previous, "close_note": note},
+            before={"status": previous, "close_note": note, "close_kind": kind},
             after={"status": row.status, "reason": reason},
         )
         await session.flush()
