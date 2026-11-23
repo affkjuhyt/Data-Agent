@@ -164,8 +164,16 @@ def _table(
         cells[key] = Cell(
             row_idx=c.start_row_offset_idx,
             col_idx=c.start_col_offset_idx,
-            row_span=max(c.end_row_offset_idx - c.start_row_offset_idx, 1),
-            col_span=max(c.end_col_offset_idx - c.start_col_offset_idx, 1),
+            # Clamped to the table: a crafted file may claim any span (a DOCX gridSpan of 10^9),
+            # and the spans are walked below (the columns a header's scale covers).
+            row_span=min(
+                max(c.end_row_offset_idx - c.start_row_offset_idx, 1),
+                max(data.num_rows - c.start_row_offset_idx, 1),
+            ),
+            col_span=min(
+                max(c.end_col_offset_idx - c.start_col_offset_idx, 1),
+                max(data.num_cols - c.start_col_offset_idx, 1),
+            ),
             text=(c.text or "").strip(),
             # TableFormer marks row headers loosely (whole scanned tables, figures included):
             # a row header is a label of the first column; a column header is taken as given.
@@ -343,7 +351,7 @@ def _column_hints(table: Table) -> dict[int, Scale]:
     hints: dict[int, Scale] = {}
     for c in table.cells:
         if c.is_header and (hint := scale_of(c.text)):
-            for col in range(c.col_idx, c.col_idx + c.col_span):
+            for col in range(c.col_idx, min(c.col_idx + c.col_span, table.n_cols)):
                 hints[col] = hint
     return hints
 

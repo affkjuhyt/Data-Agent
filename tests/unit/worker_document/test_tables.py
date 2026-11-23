@@ -203,3 +203,18 @@ def test_a_scale_hint_is_read_in_vietnamese_and_english(
     assert (None if got is None else (got.factor, got.unit)) == (
         None if scale is None else (D(scale[0]), scale[1])
     )
+
+
+def test_a_span_past_the_table_is_held_to_its_width() -> None:
+    # A crafted file may claim any span; the header's scale is walked over the columns it covers.
+    doc = DoclingDocument(name="x")
+    cells = [
+        TableCell(text="Doanh thu (triệu đồng)", start_row_offset_idx=0, end_row_offset_idx=1,
+                  start_col_offset_idx=0, end_col_offset_idx=10**9, column_header=True),
+        TableCell(text="5", start_row_offset_idx=1, end_row_offset_idx=2,
+                  start_col_offset_idx=0, end_col_offset_idx=1),
+    ]  # fmt: skip
+    doc.add_table(data=TableData(table_cells=cells, num_rows=2, num_cols=2))
+    (table,) = _read(doc, decimal_mark=",")
+    assert _cell(table, 0, 0).col_span == 2
+    assert _cell(table, 1, 0).numeric_value == D(5) * 10**6
