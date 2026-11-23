@@ -320,3 +320,24 @@ async def test_a_deleted_upload_disables_the_table_it_made(
         Event(uuid.uuid4(), org, uploads.DELETED, "file_upload", made, {"uploader_id": str(user)})
     )
     assert seed.one("SELECT enabled FROM catalog.dataset WHERE id = %s", dataset) is False
+
+
+async def test_a_commit_retried_after_the_delete_registers_nothing(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Outbox retries reorder: a committed event handled after file_upload.deleted must not make
+    # (or turn back on) the deleted upload's table.
+    org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Muộn")
+    user = seed.row("org.app_user", org_id=org, external_id="kc-m", username="m", display_name="M")
+    space = seed.row("org.data_space", org_id=org, code="DS-M", name="M", steward_id=user)
+
+    async def _read(_key: str) -> bytes:
+        return b"branch,n\nHN,1\n"
+
+    monkeypatch.setattr(uploads, "_read_object", _read)
+    dataset = uuid.uuid4()
+    made = _upload(seed, org, space, user, object_key="v1", target_dataset_id=dataset)
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE ingest.file_upload SET deleted_at = now() WHERE id = %s", (str(made),))
+    await _commit(org, made, user)
+    assert seed.one("SELECT count(*) FROM catalog.dataset WHERE id = %s", dataset) == 0

@@ -277,7 +277,7 @@ async def _validate_upload(event: Event) -> None:
         row = await session.scalar(
             select(ingest.FileUpload).where(ingest.FileUpload.id == event.aggregate_id)
         )
-        if row is None:
+        if row is None or row.deleted_at is not None:
             return
         content = await _read_object(row.object_key)
         validation, ratio = _validate(
@@ -300,10 +300,15 @@ async def _validate_upload(event: Event) -> None:
 
 async def _register_dataset(event: Event) -> None:
     async with scoped_session(ROLE, event.org_id, event.payload.get("uploader_id")) as session:
+        # Locked, as DELETE /v1/uploads/{id} locks it: a delete either lands first and is seen
+        # here, or waits. A committed event retried after the upload was deleted registers
+        # nothing (security review of 1579e9c0: it would have enabled the table again).
         row = await session.scalar(
-            select(ingest.FileUpload).where(ingest.FileUpload.id == event.aggregate_id)
+            select(ingest.FileUpload)
+            .where(ingest.FileUpload.id == event.aggregate_id)
+            .with_for_update()
         )
-        if row is None or row.target_dataset_id is None:
+        if row is None or row.target_dataset_id is None or row.deleted_at is not None:
             return
         dataset_id = row.target_dataset_id
         target = await session.get(catalog.Dataset, dataset_id)
