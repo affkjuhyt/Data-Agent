@@ -110,6 +110,26 @@ describe('listMonitors', () => {
     expect(items[1]).toMatchObject({ state: 'muted', last_alert_id: null });
   });
 
+  it('names another person’s monitor by its owner, not "Người khác"', async () => {
+    server.use(
+      http.get('*/v1/monitors', () =>
+        HttpResponse.json({
+          items: [{ ...monitor('mon-3', 'active'), owner_id: 'u-linh' }],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/principals', () =>
+        HttpResponse.json({
+          items: [{ id: 'u-linh', kind: 'user', display_name: 'Nguyễn Linh' }],
+          next_page_token: '',
+        }),
+      ),
+    );
+    const [mine] = (await listMonitors()).items;
+    expect(mine).toMatchObject({ owner_name: 'Nguyễn Linh', owner_is_me: false });
+    server.resetHandlers();
+  });
+
   it('pauses and resumes through PATCH status', async () => {
     await muteMonitor('mon-1', true);
     expect(patched).toEqual({ status: 'paused' });

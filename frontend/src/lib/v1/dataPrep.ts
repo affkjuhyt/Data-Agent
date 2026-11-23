@@ -1,4 +1,5 @@
 import { V1Error, v1Send, type Page, api, ok, okAs } from './client';
+import { personNames } from './me';
 import type { components } from './schema';
 import type { SqlBrowseTable } from '../sqlText';
 import { awaitQueryRun, getQueryRows, getQuerySql } from './explore';
@@ -390,10 +391,13 @@ export const listPipelines = async (): Promise<Page<Pipeline>> => {
         }),
     ),
   );
+  // Owners are ids; GET /v1/principals names them for any reader.
+  const owners = await personNames(page.items.filter((p) => !p.display).map((p) => p.owner_id));
   return {
     ...page,
     items: page.items.map((p) => {
-      const row = readPipeline(p, tables);
+      const base = readPipeline(p, tables);
+      const row = { ...base, owner_name: base.owner_name || owners.get(p.owner_id) || '' };
       return lastRuns.get(p.id) ? { ...row, last_run: lastRuns.get(p.id)! } : row;
     }),
   };

@@ -1,4 +1,5 @@
 import { pathId, v1Send, V1Error, type Page, api, ok } from './client';
+import { personNames } from './me';
 import type { components } from './schema';
 import { readWorkspace, type Workspace, type WorkspaceWire } from './types';
 
@@ -577,11 +578,18 @@ export const checkSessionReport = async (id: string) =>
   );
 
 export const getSessionReport = async (id: string) => {
-  const report = readSessionReport(
-    await ok<components['schemas']['ReportView']>(
-      api.GET('/v1/session-reports/{id}', { params: { path: { id } } }),
-    ),
+  const raw = await ok<components['schemas']['ReportView']>(
+    api.GET('/v1/session-reports/{id}', { params: { path: { id } } }),
   );
+  const read = readSessionReport(raw);
+  // The approver is an id once the report is approved; before that no one is named.
+  const report =
+    read.reviewer_name || !raw.approved_by
+      ? read
+      : {
+          ...read,
+          reviewer_name: (await personNames([raw.approved_by])).get(raw.approved_by) ?? '',
+        };
   try {
     const document = await ok<SessionReportDocument>(
       api.GET('/v1/session-reports/{id}/document', { params: { path: { id } } }),

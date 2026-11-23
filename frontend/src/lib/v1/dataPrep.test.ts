@@ -248,7 +248,7 @@ describe('listPipelines', () => {
   afterEach(() => server.resetHandlers());
   afterAll(() => server.close());
 
-  it('reads each pipeline’s last run from its detail, the owner left unnamed', async () => {
+  it('reads each pipeline’s last run from its detail and names its owner', async () => {
     const view = {
       id: 'pipeline-1',
       data_space_id: 'space-1',
@@ -291,6 +291,14 @@ describe('listPipelines', () => {
         }),
       ),
       http.get('*/v1/datasets', () => HttpResponse.json({ items: [], next_page_token: '' })),
+      http.get('*/v1/principals', ({ request }) =>
+        HttpResponse.json({
+          items: new URL(request.url).searchParams.getAll('id').includes('user-1')
+            ? [{ id: 'user-1', kind: 'user', display_name: 'Trần Minh' }]
+            : [],
+          next_page_token: '',
+        }),
+      ),
     );
     const { listPipelines } = await import('./dataPrep');
     const { items } = await listPipelines();
@@ -298,7 +306,7 @@ describe('listPipelines', () => {
       { started_at: '2026-10-13T00:01:00Z', duration_s: 120 },
       null,
     ]);
-    expect(items[0].owner_name).toBe('');
+    expect(items.map((p) => p.owner_name)).toEqual(['Trần Minh', 'Trần Minh']);
   });
 });
 

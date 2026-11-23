@@ -1,6 +1,6 @@
 import { listAlerts } from './alerts';
 import { type Page, api, ok, okAs } from './client';
-import { getMe } from './me';
+import { getMe, personNames } from './me';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -91,6 +91,8 @@ function readMonitor(
     metrics: MetricNames;
     me: string | null;
     latest: Map<string, { id: string; fired_at: string; open: boolean }>;
+    /** Owners' names by id (personNames); an owner it cannot name reads "Người khác". */
+    owners?: ReadonlyMap<string, string>;
   },
 ): Monitor {
   const metric = ctx.metrics.get(raw.metric_id);
@@ -115,7 +117,9 @@ function readMonitor(
     last_fired_at: raw.last_fired_at ?? latest?.fired_at ?? null,
     last_alert_id: raw.last_alert_id ?? latest?.id ?? null,
     channels_text: raw.channels_text ?? channelsText(raw.recipients),
-    owner_name: raw.owner_name ?? (raw.owner_id === ctx.me ? 'Tôi' : 'Người khác'),
+    owner_name:
+      raw.owner_name ??
+      (raw.owner_id === ctx.me ? 'Tôi' : (ctx.owners?.get(raw.owner_id) ?? 'Người khác')),
     owner_is_me: raw.owner_is_me ?? raw.owner_id === ctx.me,
     last_checked_at: raw.last_checked_at ?? null,
     noise_warning: raw.noise_warning ?? null,
@@ -155,7 +159,11 @@ export const listMonitors = async (): Promise<Page<Monitor>> => {
       latest.set(a.monitor_id, { id: a.id, fired_at: a.fired_at, open });
     else if (open) seen.open = true;
   }
-  return { ...page, items: page.items.map((m) => readMonitor(m, { metrics, me, latest })) };
+  const owners = await personNames(page.items.filter((m) => m.owner_id !== me).map((m) => m.owner_id));
+  return {
+    ...page,
+    items: page.items.map((m) => readMonitor(m, { metrics, me, latest, owners })),
+  };
 };
 
 /** A2 pauses a monitor (PATCH status paused) and resumes it (active); there is no end date. */
