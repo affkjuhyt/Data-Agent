@@ -136,7 +136,9 @@ export const getMetric = async (id: string) => {
   const [dimensions, people] = await Promise.all([
     named ? new Map<string, string>() : dimensionNames().catch(() => new Map<string, string>()),
     // Certifiers and the owner are ids; their names are what the viewer may read (lib/v1/me).
-    raw.stewardship ? new Map<string, string>() : personNames([raw.data_space_id]),
+    raw.stewardship
+      ? new Map<string, string>()
+      : personNames([raw.owner_id, ...(raw.versions ?? []).map((v) => v.certified_by)]),
   ]);
   const metric = readMetric(raw, dimensions);
   if (raw.stewardship) return metric;

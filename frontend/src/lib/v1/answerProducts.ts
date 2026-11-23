@@ -232,7 +232,7 @@ export const listAnswerProducts = async (status?: ProductStatus) => {
       },
     }),
   );
-  const names = await personNames(page.items.map((p) => p.data_space_id));
+  const names = await personNames(page.items.flatMap((p) => [p.owner_id, p.steward_id]));
   return {
     ...page,
     items: page.items.map((p) => readSummary(p, names)),
@@ -244,7 +244,7 @@ export const getAnswerProduct = async (id: string) => {
     api.GET('/v1/data-products/{id}', { params: { path: { id } } }),
   );
   const [names, spaces] = await Promise.all([
-    personNames([raw.data_space_id]),
+    personNames([raw.owner_id, raw.steward_id]),
     listDataSpaces().catch(() => null),
   ]);
   return readProduct(raw, names, spaces?.items.find((d) => d.id === raw.data_space_id)?.name ?? '');

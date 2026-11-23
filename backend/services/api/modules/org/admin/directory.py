@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db.models import org
 from services.api.catalogue import endpoint
-from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal
+from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
     Order,
@@ -113,10 +113,15 @@ def _like(q: str) -> str:
 )
 async def search_principals(
     principal: CurrentPrincipal,
-    q: Annotated[str, Query(min_length=1, max_length=200)],
+    q: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     kind: PrincipalKind | None = None,
     page_size: Annotated[int, Query(ge=1, le=MAX_PRINCIPALS)] = 20,
+    ids: Annotated[list[uuid.UUID] | None, Query(alias="id", max_length=MAX_PRINCIPALS)] = None,
 ) -> Page[PrincipalRef]:
+    if ids:
+        return await _named(principal, set(ids))
+    if q is None:
+        raise Problem(422, "validation_failed", "Give q (a name to search) or id (ids to name).")
     like = _like(q.strip())
     found: list[PrincipalRef] = []
     async with transaction(ROLE, principal) as session:
@@ -154,6 +159,32 @@ async def search_principals(
             found += [PrincipalRef(id=i, kind="group", display_name=n) for i, n in rows.tuples()]
     found.sort(key=lambda p: (p.display_name.casefold(), p.kind, str(p.id)))
     return Page[PrincipalRef](items=found[:page_size])
+
+
+async def _named(principal: Principal, ids: set[uuid.UUID]) -> Page[PrincipalRef]:
+    """The names of ids the caller already holds (an owner, a certifier, an assignee), so the
+    screens need not the admin-only user list. It shows what a search by name shows, plus the
+    name of someone who has left, so the history they wrote keeps it; a service account and an
+    id outside the organisation answer nothing."""
+    async with transaction(ROLE, principal) as session:
+        users = await session.execute(
+            select(org.AppUser.id, org.AppUser.kind, org.AppUser.display_name).where(
+                org.AppUser.org_id == principal.org_id,
+                org.AppUser.id.in_(ids),
+                org.AppUser.kind.in_(("human", "agent")),
+            )
+        )
+        groups = await session.execute(
+            select(org.UserGroup.id, org.UserGroup.name).where(
+                org.UserGroup.org_id == principal.org_id, org.UserGroup.id.in_(ids)
+            )
+        )
+        found = [
+            PrincipalRef(id=i, kind="user" if k == "human" else "agent", display_name=n)
+            for i, k, n in users.tuples()
+        ] + [PrincipalRef(id=i, kind="group", display_name=n) for i, n in groups.tuples()]
+    found.sort(key=lambda p: (p.display_name.casefold(), p.kind, str(p.id)))
+    return Page[PrincipalRef](items=found)
 
 
 @router.get(

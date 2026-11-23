@@ -221,6 +221,37 @@ async def test_principals_are_ids_kinds_and_names_of_active_principals(world: Wo
         assert denied.status_code == 403, denied.text
 
 
+async def test_principals_are_named_by_id_for_any_reader(world: World) -> None:
+    """The screens hold ids (owner, steward, certifier...) and need names without `admin`: a
+    lookup by id answers what a search by name already shows, plus a departed person's name so
+    history keeps it. An id from nowhere, or a service account, answers nothing."""
+    wanted = [
+        world.users["linh"],
+        world.users["linh_left"],
+        world.users["linh_bot"],
+        world.users["linh_service"],
+        world.group,
+        uuid.uuid4(),
+    ]
+    query = "&".join(f"id={i}" for i in wanted)
+    async with client(world) as api:
+        found = await api.get(f"/v1/principals?{query}", headers=world.headers("analyst"))
+        assert found.status_code == 200, found.text
+        assert {(i["id"], i["kind"], i["display_name"]) for i in found.json()["items"]} == {
+            (str(world.users["linh"]), "user", "Nguyen Linh"),
+            (str(world.users["linh_left"]), "user", "Tran Linh"),
+            (str(world.users["linh_bot"]), "agent", "Linh Bot"),
+            (str(world.group), "group", "GRP-LINH-ANALYSTS"),
+        }
+        assert "bank.example" not in found.text
+
+        too_many = "&".join(f"id={uuid.uuid4()}" for _ in range(101))
+        refused = await api.get(f"/v1/principals?{too_many}", headers=world.headers("analyst"))
+        assert refused.status_code == 422, refused.text
+        denied = await api.get(f"/v1/principals?{query}", headers=world.headers("nobody"))
+        assert denied.status_code == 403, denied.text
+
+
 async def test_roles_list_their_capabilities_for_admins_only(world: World) -> None:
     async with client(world) as api:
         roles = await api.get("/v1/admin/roles", headers=world.headers("admin"))

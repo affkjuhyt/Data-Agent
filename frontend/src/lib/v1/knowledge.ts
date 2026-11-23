@@ -159,7 +159,7 @@ export const getKnowledgePage = async (id: string) => {
   ]);
   const people =
     raw.version?.certified_by && !raw.display
-      ? await personNames([raw.page.data_space_id])
+      ? await personNames([raw.version.certified_by])
       : new Map<string, string>();
   return readRendered(
     raw,

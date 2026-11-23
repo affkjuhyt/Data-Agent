@@ -105997,12 +105997,19 @@
      {
       "in": "query",
       "name": "q",
-      "required": true,
+      "required": false,
       "schema": {
-       "maxLength": 200,
-       "minLength": 1,
-       "title": "Q",
-       "type": "string"
+       "anyOf": [
+        {
+         "maxLength": 200,
+         "minLength": 1,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
       }
      },
      {
@@ -106036,6 +106043,27 @@
        "minimum": 1,
        "title": "Page Size",
        "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "items": {
+          "format": "uuid",
+          "type": "string"
+         },
+         "maxItems": 100,
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Id"
       }
      }
     ],

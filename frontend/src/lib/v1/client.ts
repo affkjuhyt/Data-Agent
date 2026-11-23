@@ -114,11 +114,17 @@ export const currentDataSpace = () => dataSpace;
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
-/** An empty value means "not filtered", so it is left out rather than sent as `key=`. */
+/**
+ * An empty value means "not filtered", so it is left out rather than sent as `key=`. A list is
+ * one `key=` per item (`id=a&id=b`), which is how the api reads a list parameter; joined into
+ * one string it would arrive as a single, malformed value.
+ */
 function serializeQuery(query: Record<string, unknown>): string {
   const params = new URLSearchParams();
+  const filled = (value: unknown) => value !== undefined && value !== null && value !== '';
   Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+    if (Array.isArray(value)) value.filter(filled).forEach((v) => params.append(key, String(v)));
+    else if (filled(value)) params.set(key, String(value));
   });
   return params.toString();
 }

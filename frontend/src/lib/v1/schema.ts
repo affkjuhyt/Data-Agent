@@ -64010,10 +64010,11 @@ export interface operations {
     };
     searchPrincipals: {
         parameters: {
-            query: {
-                q: string;
+            query?: {
+                q?: string | null;
                 kind?: ("user" | "group" | "agent") | null;
                 page_size?: number;
+                id?: string[] | null;
             };
             header?: never;
             path?: never;

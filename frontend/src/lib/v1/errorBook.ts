@@ -164,7 +164,7 @@ async function entryNames(rows: ErrorBookViewWire[]): Promise<EntryNames> {
         ).catch(() => null)
       : null,
     rows.some((r) => r.assignee_id)
-      ? personNames(rows.map((r) => r.data_space_id))
+      ? personNames(rows.map((r) => r.assignee_id))
       : new Map<string, string>(),
   ]);
   return {

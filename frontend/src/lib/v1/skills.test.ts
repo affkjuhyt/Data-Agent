@@ -34,9 +34,12 @@ const row = (extra: object = {}) => ({
 });
 let bodies: unknown[] = [];
 const server = setupServer(
-  http.get('*/v1/admin/users', () =>
+  // Owner names by id, readable without admin (lib/v1/me.ts personNames).
+  http.get('*/v1/principals', ({ request }) =>
     HttpResponse.json({
-      items: [{ id: 'u-1', display_name: 'Đỗ Hải Yến', kind: 'human', status: 'active' }],
+      items: new URL(request.url).searchParams.getAll('id').includes('u-1')
+        ? [{ id: 'u-1', kind: 'user', display_name: 'Đỗ Hải Yến' }]
+        : [],
       next_page_token: '',
     }),
   ),

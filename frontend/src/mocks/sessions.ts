@@ -674,7 +674,16 @@ export function createSessionHandlers() {
     }),
 
     http.get('*/v1/principals', ({ request }) => {
-      const q = (new URL(request.url).searchParams.get('q') ?? '').toLowerCase();
+      const params = new URL(request.url).searchParams;
+      // ?id=…: the names of known ids, as PrincipalRef (lib/v1/me.ts personNames).
+      const ids = params.getAll('id');
+      if (ids.length > 0)
+        return page(
+          principalsFixture()
+            .filter((p) => ids.includes(p.id))
+            .map((p) => ({ id: p.id, kind: p.kind, display_name: p.name })),
+        );
+      const q = (params.get('q') ?? '').toLowerCase();
       return page(principalsFixture().filter((p) => p.name.toLowerCase().includes(q)));
     }),
 
