@@ -7,7 +7,7 @@ import pytest
 
 from libs.contracts.v1 import TrustCode
 from libs.contracts.v1.trust import LABELS, code_of, trust
-from services.worker_agent.agentic.workspace import TRUST_LABEL
+from services.worker_agent.agentic.workspace import FORECAST_LABEL, TRUST_LABEL
 from services.worker_agent.questions import NOT_STANDARD, OUT_OF_SCOPE, STANDARD
 from services.worker_agent.sqlgen.answer import TRUST
 from services.worker_agent.sqlgen.verified import TRUST_VERIFIED
@@ -16,12 +16,21 @@ pytestmark = pytest.mark.unit
 
 
 def test_every_sentence_the_worker_writes_has_one_code() -> None:
-    sentences = [STANDARD, NOT_STANDARD, OUT_OF_SCOPE, TRUST_VERIFIED, TRUST, *TRUST_LABEL.values()]
+    sentences = [
+        STANDARD,
+        NOT_STANDARD,
+        OUT_OF_SCOPE,
+        TRUST_VERIFIED,
+        TRUST,
+        FORECAST_LABEL,
+        *TRUST_LABEL.values(),
+    ]
     assert set(sentences) == set(LABELS)
     assert code_of(STANDARD) is TrustCode.GOVERNED
     assert code_of(TRUST_VERIFIED) is TrustCode.VERIFIED
     assert code_of(TRUST) is TrustCode.EXPLORATORY
     assert code_of(TRUST_LABEL["document"]) is TrustCode.DOCUMENT
+    assert code_of(FORECAST_LABEL) is TrustCode.EXPLORATORY
     assert code_of("") is None
     assert code_of("một câu lạ") is None
 

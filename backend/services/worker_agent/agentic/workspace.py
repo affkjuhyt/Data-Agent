@@ -21,6 +21,8 @@ TRUST_LABEL = {
     "derived": "Tính thêm từ dữ liệu đã truy vấn",
     "document": "Theo tài liệu",
 }
+# AL-16: what a forecast's block says instead of the exploratory sentence; the same code.
+FORECAST_LABEL = "Dự báo thử nghiệm, chưa phải số liệu thực"
 
 # What the model is shown of a dataset: enough rows to reason about its shape, not to read it all.
 PREVIEW_ROWS = 12

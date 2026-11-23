@@ -27,6 +27,7 @@ import logging
 import re
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -1899,8 +1900,9 @@ def _figure(
     trust_label: str | None,
     runs: list[str],
     dimensions: dict[str, Any],
+    origin: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    figure: dict[str, Any] = {
         "key": key,
         "label": label,
         "value": None if value is None else format(value, "f"),
@@ -1912,6 +1914,18 @@ def _figure(
         "query_run_id": runs[0] if runs else None,
         "source": {"query_run_id": runs[0] if runs else None},
     }
+    forecast = (origin or {}).get("forecast")
+    if isinstance(forecast, Mapping):
+        # AL-16: a forecast figure is exploratory and flagged, traced to its model version, not to
+        # a query run.
+        figure["flags"] = list(b.FORECAST_FLAGS)
+        figure["model_version_id"] = forecast.get("model_version_id")
+        figure["source"] = {"kind": "forecast", **forecast}
+    return figure
+
+
+# AL-16: a forecast's figures are its mean and the bounds of its 95% interval, each its own figure.
+FORECAST_FIGURES = ("mean", "lo95", "hi95")
 
 
 def _figures(s: State) -> list[dict[str, Any]]:
@@ -1932,6 +1946,7 @@ def _figures(s: State) -> list[dict[str, Any]]:
                     it.get("trust_label"),
                     it.get("query_run_ids") or [],
                     {},
+                    it,
                 )
             )
     if out:
@@ -1972,18 +1987,26 @@ def _figures(s: State) -> list[dict[str, Any]]:
                     ]
         else:
             continue
+        # A forecast's last column is its upper bound, not what it forecasts.
+        shown = (
+            [c for c in FORECAST_FIGURES if rows and c in rows[0]]
+            if blk.get("forecast")
+            else [measure]
+        ) or [measure]
         for i, row in enumerate(rows[:MAX_SHOWN_FIGURES]):
-            out.append(
-                _figure(
-                    f"{blk['id']}-{i}",
-                    measure,
-                    number(row.get(measure)),
-                    blk.get("unit"),
-                    blk.get("trust_label"),
-                    blk.get("query_run_ids") or [],
-                    {k: v for k, v in row.items() if k != measure},
+            for j, column in enumerate(shown):
+                out.append(
+                    _figure(
+                        f"{blk['id']}-{i}" if j == 0 else f"{blk['id']}-{i}-{column}",
+                        column,
+                        number(row.get(column)),
+                        blk.get("unit"),
+                        blk.get("trust_label"),
+                        blk.get("query_run_ids") or [],
+                        {k: v for k, v in row.items() if k not in shown},
+                        blk,
+                    )
                 )
-            )
         return out
     return out
 

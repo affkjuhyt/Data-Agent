@@ -68,7 +68,8 @@ def weakest(codes: Iterable[TrustCode]) -> TrustCode | None:
 Path = Literal["verified", "governed", "agentic", "explore", "document"]
 
 # The sentences the worker writes (questions.STANDARD, NOT_STANDARD, OUT_OF_SCOPE;
-# sqlgen/verified.TRUST_VERIFIED; sqlgen/answer.TRUST; agentic/workspace.TRUST_LABEL), each with
+# sqlgen/verified.TRUST_VERIFIED; sqlgen/answer.TRUST; agentic/workspace.TRUST_LABEL and
+# FORECAST_LABEL), each with
 # its code. tests/unit/worker_agent/test_envelope.py holds every one of them to this table.
 LABELS: dict[str, TrustCode] = {
     "Đã kiểm (truy vấn đã duyệt)": TrustCode.VERIFIED,
@@ -77,6 +78,7 @@ LABELS: dict[str, TrustCode] = {
     "Ngoài phạm vi data product, không có biên nhận": TrustCode.EXPLORATORY,
     "Khám phá (truy vấn do mô hình viết)": TrustCode.EXPLORATORY,
     "SQL thăm dò, chưa qua chỉ số chuẩn": TrustCode.EXPLORATORY,
+    "Dự báo thử nghiệm, chưa phải số liệu thực": TrustCode.EXPLORATORY,
     "Tính thêm từ dữ liệu đã truy vấn": TrustCode.DERIVED,
     "Theo tài liệu": TrustCode.DOCUMENT,
 }

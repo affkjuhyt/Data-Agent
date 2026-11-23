@@ -33,7 +33,7 @@ class _Job:
         self.id = uuid.uuid4()
         self.status = "ready"
         self.frequency = "month"
-        self.cutoff_at = dt.datetime(2026, 10, 1, tzinfo=dt.timezone.utc)
+        self.cutoff_at = dt.datetime(2026, 10, 1, tzinfo=dt.UTC)
         self.model_version_id = uuid.uuid4()
         self.progress: dict[str, Any] = {}
 
@@ -105,26 +105,76 @@ def test_no_model_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
         "services.worker_agent.agentic.tools.forecast._resolve",
         fake_resolve,
     )
-    result = asyncio.run(
-        ForecastMetric().run(_ctx(), ForecastMetricArgs(metric="X", horizon=3))
-    )
+    result = asyncio.run(ForecastMetric().run(_ctx(), ForecastMetricArgs(metric="X", horizon=3)))
     assert not result.ok
     assert result.failure == "unavailable"
 
 
 def test_bad_frequency_is_arguments() -> None:
     result = asyncio.run(
-        ForecastMetric().run(
-            _ctx(), ForecastMetricArgs(metric="X", horizon=3, frequency="yearly")
-        )
+        ForecastMetric().run(_ctx(), ForecastMetricArgs(metric="X", horizon=3, frequency="yearly"))
     )
     assert not result.ok
     assert result.failure == "arguments"
 
 
 def test_tool_is_registered() -> None:
-    from services.worker_agent.agentic.tools import TOOLS
     from services.worker_agent.agentic.specialists import NUMBERS
+    from services.worker_agent.agentic.tools import TOOLS
 
     assert "forecast_metric" in TOOLS
     assert "forecast_metric" in NUMBERS.tool_names
+
+
+@pytest.mark.req("AL-16")
+@pytest.mark.parametrize("kind", ["table", "kpi"])
+def test_every_forecast_figure_is_exploratory_and_flagged_experimental(
+    monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    from libs.contracts.v1 import trust
+    from services.worker_agent.agentic import blocks, engine
+
+    job = _Job()
+    preds = [_Pred(dt.date(2026, 11, 1), 100), _Pred(dt.date(2026, 12, 1), 110)]
+
+    async def fake_resolve(ctx, **kwargs):  # type: ignore[no-untyped-def]
+        return job, preds, _Version()
+
+    monkeypatch.setattr("services.worker_agent.agentic.tools.forecast._resolve", fake_resolve)
+    ctx = _ctx()
+    result = asyncio.run(
+        ForecastMetric().run(ctx, ForecastMetricArgs(metric="DOANH_THU", horizon=2))
+    )
+    dataset = result.datasets[0]
+    draft = (
+        blocks.BlockDraft(type="table", dataset=dataset)
+        if kind == "table"
+        else blocks.BlockDraft(
+            type="kpi",
+            kpis=[
+                blocks.KpiDraft(
+                    label="Dự báo tháng 12",
+                    dataset=dataset,
+                    column="mean",
+                    match_column="period",
+                    match_value="2026-12-01",
+                )
+            ],
+        )
+    )
+    block = blocks.materialize(draft, ctx.ws, "b1")
+    state = engine.State.__new__(engine.State)
+    state.composition = [block]
+    figures = engine._figures(state)
+    # A table gives each period's mean and the two bounds of its 95% interval, the mean first.
+    labels = [f["label"] for f in figures]
+    assert labels == (["mean", "lo95", "hi95"] * 2 if kind == "table" else ["Dự báo tháng 12"])
+    assert float(figures[0]["value"]) == (100 if kind == "table" else 110)
+    for f in figures:
+        assert f["flags"] == ["experimental", "forecast"]
+        assert f["model_version_id"] == str(job.model_version_id)
+        assert f["source"]["kind"] == "forecast" and f["source"]["forecast_id"] == str(job.id)
+        assert trust.figure_code(f) == trust.TrustCode.EXPLORATORY
+    assert block.get("trust_label") or block["items"][0]["trust_label"]
+    shown = block.get("trust_label") or block["items"][0]["trust_label"]
+    assert shown.startswith("Dự báo thử nghiệm")

@@ -15,6 +15,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from services.worker_agent.agentic.workspace import (
+    FORECAST_LABEL,
     MAX_BLOCK_ROWS,
     TRUST_LABEL,
     Dataset,
@@ -364,14 +365,32 @@ def _explore(ds: Dataset) -> dict[str, Any] | None:
     }
 
 
+# AL-16: a forecast is never a governed figure: exploratory, and flagged so every screen says it is
+# an experimental model's.
+FORECAST_FLAGS = ["experimental", "forecast"]
+
+
+def _forecast(ds: Dataset) -> dict[str, Any] | None:
+    if ds.tool != "forecast_metric":
+        return None
+    reading = ds.reading or {}
+    return {
+        "forecast_id": reading.get("forecast_id"),
+        "model_version_id": reading.get("model_version_id"),
+        "algorithm": reading.get("algorithm"),
+    }
+
+
 def _source(ds: Dataset) -> dict[str, Any]:
     explore = _explore(ds)
+    forecast = _forecast(ds)
     return {
         "dataset": ds.id,
         "trust": ds.trust,
-        "trust_label": TRUST_LABEL[ds.trust],
+        "trust_label": FORECAST_LABEL if forecast else TRUST_LABEL[ds.trust],
         "query_run_ids": ds.query_run_ids,
         **({"explore": explore} if explore else {}),
+        **({"forecast": forecast, "flags": list(FORECAST_FLAGS)} if forecast else {}),
     }
 
 
