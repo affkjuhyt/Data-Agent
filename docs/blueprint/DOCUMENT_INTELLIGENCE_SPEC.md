@@ -284,6 +284,12 @@ def tables_of(doc, elements_by_ref) -> list[tuple[Table, list[TableCell]]]:
     return result
 ```
 
+**Đã làm (DI-07, 23/11/2026):** `tables.py` như trên, thuần (không ghi DB, handler ghi ở DI-09). Lệch có chủ ý: Docling 2.150
+(TableFormer) gắn `row_header` cho cả ô số của bảng scan, nên ô tiêu đề hàng chỉ tính ở cột đầu; bảng không có `column_header`
+lấy các hàng đầu không có số làm tiêu đề (như XLSX §4.5). Hàng tổng ("Tổng cộng", "Total") khác tổng các hàng phía trên quá
+nửa đơn vị chữ số cuối của mỗi số → `quality_issue(field_mismatch, warning)`, không sửa số. Mức "low" của §4.4 = `warning`
+(CHECK của `quality_issue`).
+
 #### 4.3.1 Bảng nhiều trang
 
 `continues(prev, cur)` đúng khi: `cur.page_from == prev.page_to + 1` **và** `cur.n_cols == prev.n_cols` **và** (cur không có
