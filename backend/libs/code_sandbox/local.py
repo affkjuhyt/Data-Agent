@@ -153,9 +153,12 @@ CPU_S = 15
 MEMORY_BYTES = 1024 * 1024 * 1024
 # AL-05: DuckDB reserves address space it does not use (duckdb 2.0.0: it aborts when opened under
 # 3 GiB, and segfaulted 7 runs in 20 under 4 GiB; none in 40 under 6 or 8). Code that calls sql()
-# runs with this much address space; the memory it uses is held by duck.MEMORY_LIMIT and the pod's
-# memory limit (3 GiB). Code that does not keeps the 1 GiB above and gets no DuckDB.
+# runs with this much address space, and with RLIMIT_DATA, which counts the writable memory a
+# process maps (the reservation is not), held to SQL_DATA_BYTES: whatever the code allocates, in
+# pandas or numpy, stays under the pod's 3 GiB, so naming sql() buys no memory (security review of
+# AL-05). Code that does not call sql() keeps the 1 GiB above and gets no DuckDB.
 SQL_ADDRESS_BYTES = 8 * 1024 * 1024 * 1024
+SQL_DATA_BYTES = 1536 * 1024 * 1024
 MAX_RESULT_ROWS = 2000
 MAX_STDOUT = 4000
 
@@ -370,13 +373,15 @@ def uses_sql(code: str) -> bool:
     return any(isinstance(n, ast.Name) and n.id == "sql" for n in ast.walk(tree))
 
 
-def _limits(memory: int = MEMORY_BYTES) -> None:  # pragma: no cover - runs in the child
+def _limits(memory: int = MEMORY_BYTES, data: int | None = None) -> None:  # pragma: no cover
     import resource
 
     resource.setrlimit(resource.RLIMIT_CPU, (CPU_S, CPU_S))
     # macOS refuses RLIMIT_AS; the pod's memory limit still applies there.
     with contextlib.suppress(ValueError, OSError):
         resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+        if data is not None:
+            resource.setrlimit(resource.RLIMIT_DATA, (data, data))
     os.setsid()
 
 
@@ -436,7 +441,9 @@ async def run(code: str, datasets: dict[str, dict[str, Any]]) -> Execution:
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
             env={"PATH": "/usr/bin:/bin", "HOME": cwd, "OPENBLAS_NUM_THREADS": "1"},
-            preexec_fn=functools.partial(_limits, SQL_ADDRESS_BYTES if with_sql else MEMORY_BYTES),
+            preexec_fn=functools.partial(_limits, SQL_ADDRESS_BYTES, SQL_DATA_BYTES)
+            if with_sql
+            else _limits,
         )
         try:
             out, err = await asyncio.wait_for(proc.communicate(payload.encode()), TIMEOUT_S)

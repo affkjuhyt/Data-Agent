@@ -101,3 +101,16 @@ def test_only_code_that_calls_sql_gets_duckdb_and_its_address_space() -> None:
     assert local.uses_sql("result = sql('SELECT 1 AS a')")
     assert not local.uses_sql("result = d1.groupby('vung').sum()")
     assert not local.uses_sql("result = d1['sql'].sum()")
+
+
+async def test_naming_sql_buys_no_memory() -> None:
+    """The address space DuckDB reserves is no room for the code: RLIMIT_DATA holds what it
+    allocates under the pod's memory (security review of AL-05)."""
+    done = await local.run(
+        "import numpy as np\nunused = sql\nbig = np.ones(3 * 1024 ** 3 // 8)\nresult = 1", SALES
+    )
+    assert not done.ok and done.error and "MemoryError" in done.error, done.error
+    fits = await local.run(
+        "import numpy as np\nunused = sql\nok = np.ones(200 * 1024 ** 2 // 8)\nresult = 1", SALES
+    )
+    assert fits.ok, fits.error

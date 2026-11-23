@@ -750,8 +750,8 @@ never unpacks a compressed stream the pod wrote (a decompression bomb from the c
 The code may write SQL over its datasets, `sql("SELECT … FROM d1 JOIN d2 …")` (AL-05): DuckDB 2.0.0 in
 the child, configured and locked before the code runs (`libs/code_sandbox/duck.py`: no external
 access, no local file system, no extension, 256 MB). Code that calls `sql()` runs with 8 GiB of
-address space, which DuckDB reserves and does not use (under 4 GiB it segfaults); its memory is
-held by DuckDB's limit and the pod's 3 GiB.
+address space, which DuckDB reserves and does not use (under 4 GiB it segfaults), and with
+`RLIMIT_DATA` at 1.5 GiB, which holds what the code allocates under the pod's 3 GiB.
 `AGENT_SANDBOX_TRANSPORT=json` on worker-agent sends the JSON body of before, which the pod still
 answers; it goes after one release.
 Check it: `kubectl -n dataagent-service exec deploy/worker-agent -- python -c "import asyncio,os;
