@@ -88,6 +88,9 @@ tests/e2e/out/
 
 # ansible: real inventories/secrets stay local
 deploy/ansible/inventories/*/.secrets/
+# A worktree links .secrets to the main checkout's: a symlink is a file to git, which the
+# pattern above (directories only) did not ignore, and one was committed on 23/11.
+deploy/ansible/inventories/*/.secrets
 deploy/ansible/inventories/prod/hosts.yml
 deploy/ansible/inventories/prod/group_vars/all.yml
 # NOT vault.yml: an ansible-vault file is ciphertext on disk and is meant to be
