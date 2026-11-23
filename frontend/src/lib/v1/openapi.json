@@ -901,6 +901,16 @@
       ],
       "title": "Email"
      },
+     "grant_summary": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/GrantSummary"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "id": {
       "format": "uuid",
       "title": "Id",
@@ -1041,6 +1051,16 @@
        }
       ],
       "title": "Email"
+     },
+     "grant_summary": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/GrantSummary"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "grants": {
       "items": {
@@ -21945,6 +21965,36 @@
      "source"
     ],
     "title": "GrantOrigin",
+    "type": "object"
+   },
+   "GrantSummary": {
+    "properties": {
+     "groups": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Groups",
+      "type": "array"
+     },
+     "row_scopes": {
+      "items": {},
+      "title": "Row Scopes",
+      "type": "array"
+     },
+     "valid_until": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Valid Until"
+     }
+    },
+    "title": "GrantSummary",
     "type": "object"
    },
    "GrantedScope": {

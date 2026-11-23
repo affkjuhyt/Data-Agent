@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import uuid
 from collections import defaultdict
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy import delete, or_, select
@@ -41,6 +41,7 @@ from services.api.modules.org.admin.schemas import (
     AdminUserDetail,
     EmergencyAccessIn,
     GrantOrigin,
+    GrantSummary,
     GroupMappingIn,
     GroupMappingSet,
     GroupMappingsPut,
@@ -68,6 +69,16 @@ def _summary(
         else:
             by_space[g.data_space_id][g.role.id] = g.role
     view = AdminUser.model_validate(user, from_attributes=True)
+    scopes: list[Any] = []
+    for g in granted:
+        if g.row_scope and g.row_scope not in scopes:
+            scopes.append(g.row_scope)
+    expiries = [g.valid_until for g in granted if g.valid_until is not None]
+    view.grant_summary = GrantSummary(
+        groups=sorted({g.group.name for g in granted if g.group is not None}),
+        row_scopes=scopes,
+        valid_until=min(expiries) if expiries else None,
+    )
     view.org_roles = sorted(org_roles.values(), key=lambda r: r.code)
     view.data_space_roles = sorted(
         (

@@ -415,6 +415,15 @@ async def test_group_mapping_is_previewed_then_applied(world: World) -> None:
         assert {g["group"]["name"] for g in from_group} == {"GG-RRTD-Analyst"}
         assert {g["data_space_id"] for g in from_group} == {str(world.space), None}
 
+        # The list says the same in short, so the users table need not read each detail.
+        listed = await api.get("/v1/admin/users?q=helper", headers=world.headers("admin"))
+        [row] = listed.json()["items"]
+        assert row["grant_summary"] == {
+            "groups": ["GG-RRTD-Analyst"],
+            "row_scopes": [{"region": "north"}],
+            "valid_until": None,
+        }
+
         # Leaving a mapping out of the set disables it and takes its grants away.
         cleared = await api.put(
             "/v1/admin/group-mappings", json={"mappings": []}, headers=world.headers("admin")

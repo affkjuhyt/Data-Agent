@@ -7364,6 +7364,7 @@ export interface components {
             display_name: string;
             /** Email */
             email: string | null;
+            grant_summary?: components["schemas"]["GrantSummary"] | null;
             /**
              * Id
              * Format: uuid
@@ -7410,6 +7411,7 @@ export interface components {
             display_name: string;
             /** Email */
             email: string | null;
+            grant_summary?: components["schemas"]["GrantSummary"] | null;
             /** Grants */
             grants: components["schemas"]["GrantOrigin"][];
             /** Groups */
@@ -14536,6 +14538,15 @@ export interface components {
             source: string;
             /** Source Ref */
             source_ref?: string | null;
+            /** Valid Until */
+            valid_until?: string | null;
+        };
+        /** GrantSummary */
+        GrantSummary: {
+            /** Groups */
+            groups?: string[];
+            /** Row Scopes */
+            row_scopes?: unknown[];
             /** Valid Until */
             valid_until?: string | null;
         };

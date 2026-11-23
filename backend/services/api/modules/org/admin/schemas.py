@@ -25,6 +25,12 @@ class _Row(BaseModel):
 # ── users ──
 
 
+class GrantSummary(BaseModel):
+    groups: list[str] = Field(default_factory=list)
+    row_scopes: list[Any] = Field(default_factory=list)
+    valid_until: datetime.datetime | None = None
+
+
 class SpaceRoles(BaseModel):
     data_space_id: uuid.UUID
     data_space_code: str
@@ -49,6 +55,10 @@ class AdminUser(_Row):
     updated_at: datetime.datetime
     org_roles: list[RoleRef] = Field(default_factory=list)
     data_space_roles: list[SpaceRoles] = Field(default_factory=list)
+    # The user's grants in short for the users table (UC-11-01): the directory groups they come
+    # through, the row scopes that narrow them, and the earliest expiry (BR-142). The detail lists
+    # the grants whole (grants, groups).
+    grant_summary: GrantSummary | None = None
 
 
 class GroupRef(BaseModel):

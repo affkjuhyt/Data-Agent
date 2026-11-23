@@ -111,23 +111,40 @@ export const readAppUser = (raw: Schemas['AdminUser']): AppUser => ({
   status: raw.status,
 });
 
+/** A stored row scope as rowScopeText reads it: a single value becomes a one-item list. */
+const asRowScope = (raw: unknown): RowScope | null =>
+  raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? Object.fromEntries(
+        Object.entries(raw as Record<string, unknown>).map(([column, values]) => [
+          column,
+          (Array.isArray(values) ? values : [values]).map(String),
+        ]),
+      )
+    : null;
+
 /** The effective roles in words: the organisation's, then each Data Space's by its code. */
 function readAdminUser(raw: AdminUserWire): AdminUser {
   const orgRoles = (raw.org_roles ?? []).map((r) => r.name);
   const spaceRoles = raw.data_space_roles ?? [];
+  // AdminUser.grant_summary: the directory groups, row scopes and earliest expiry of the grants.
+  const grants = raw.grant_summary;
+  const scopes = (grants?.row_scopes ?? [])
+    .map((scope) => rowScopeText(asRowScope(scope)))
+    .filter((text): text is string => !!text);
   return {
     ...readAppUser(raw),
     username: raw.username,
-    group_label: raw.group_label ?? (raw.kind === 'agent' ? 'agent' : ''),
+    group_label:
+      raw.group_label ?? (raw.kind === 'agent' ? 'agent' : (grants?.groups ?? []).join(', ')),
     role_name:
       raw.role_name ??
       [...orgRoles, ...spaceRoles.flatMap((s) => s.roles.map((r) => r.name))]
         .filter((n, i, all) => all.indexOf(n) === i)
         .join(', '),
     data_space_text: raw.data_space_text ?? spaceRoles.map((s) => s.data_space_code).join(', '),
-    row_scope_text: raw.row_scope_text ?? '',
-    row_scope_limited: raw.row_scope_limited ?? false,
-    valid_until: raw.valid_until ?? null,
+    row_scope_text: raw.row_scope_text ?? scopes.join('; '),
+    row_scope_limited: raw.row_scope_limited ?? scopes.length > 0,
+    valid_until: raw.valid_until ?? grants?.valid_until ?? null,
     last_synced_at: raw.last_synced_at,
     identity_source: raw.identity_source ?? '',
   };

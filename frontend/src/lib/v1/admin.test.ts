@@ -138,6 +138,40 @@ describe('Quản trị from the api', () => {
     expect(svc.kind).toBe('agent');
   });
 
+  it('says the groups, row scopes and expiry of a user’s grants from grant_summary', async () => {
+    server.use(
+      http.get('*/v1/admin/users', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 'u-9',
+              kind: 'human',
+              username: 'helper',
+              display_name: 'Helper',
+              status: 'active',
+              org_roles: [],
+              data_space_roles: [],
+              grant_summary: {
+                groups: ['GG-RRTD-Analyst'],
+                row_scopes: [{ region: 'north' }, { branch: ['HN01', 'HN02'] }],
+                valid_until: '2026-12-31T00:00:00Z',
+              },
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+    );
+    const [helper] = (await listAdminUsers()).items;
+    expect(helper).toMatchObject({
+      group_label: 'GG-RRTD-Analyst',
+      row_scope_text: 'region: north; branch: HN01, HN02',
+      row_scope_limited: true,
+      valid_until: '2026-12-31T00:00:00Z',
+    });
+    server.resetHandlers();
+  });
+
   it('reads the model list, an array, with its fallback and eval score', async () => {
     const [m] = (await listModelRoutes()).items;
     expect(m).toMatchObject({ fallback_name: 'qwen-14b', latency_p95_ms: 820, eval_score: 0.94 });
