@@ -3,16 +3,23 @@ Execution comes back. The service applies the same static check; it is run here 
 refused code costs no round trip.
 
 The answer is read as untrusted: code that got past the checks controls what the pod sends, so
-the body is capped while it is read and its shape is checked before anything in it is used."""
+the body is capped while it is read and its shape is checked before anything in it is used.
+
+AL-04: the datasets go as Arrow IPC streams in a frame (libs/code_sandbox/wire.py,
+libs/snapshot/ipc.py), the result comes back the same way; the JSON body of before stays for one
+release behind AGENT_SANDBOX_TRANSPORT=json."""
 
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import httpx
 
+from libs.code_sandbox import wire
 from libs.code_sandbox.local import MAX_RESULT_ROWS, MAX_STDOUT, TIMEOUT_S, Execution, check
+from libs.snapshot import ipc
 
 # The service's own timeout, plus the time to send the datasets and read the answer.
 REQUEST_TIMEOUT_S = TIMEOUT_S + 10
@@ -56,13 +63,49 @@ def _shaped(body: Any) -> Execution:
     )
 
 
+def transport() -> str:
+    """arrow (the default) or json, the body of before, kept one release (AL-04)."""
+    chosen = os.environ.get("AGENT_SANDBOX_TRANSPORT", "arrow").strip().lower()
+    return "json" if chosen == "json" else "arrow"
+
+
+def request_body(code: str, datasets: dict[str, dict[str, Any]]) -> tuple[bytes, str]:
+    """The body and its Content-Type for the transport in use."""
+    if transport() == "json":
+        body = json.dumps({"code": code, "datasets": datasets}, ensure_ascii=False, default=str)
+        return body.encode(), "application/json"
+    names = list(datasets)
+    parts = [ipc.encode(datasets[n]["columns"], datasets[n]["rows"]) for n in names]
+    return wire.pack({"code": code, "datasets": names}, parts), wire.CONTENT_TYPE
+
+
+def _framed(body: bytes) -> Execution:
+    """A framed reply: its header's fields and its one Arrow part, the result table."""
+    try:
+        header, parts = wire.unpack(body)
+        if len(parts) > 1:
+            return _failed("sandbox trả kết quả sai dạng")
+        columns, rows = (
+            ipc.decode(parts[0], max_rows=MAX_RESULT_ROWS, max_columns=MAX_COLUMNS)
+            if parts
+            else ([], [])
+        )
+    except (wire.FrameInvalid, ipc.IpcInvalid):
+        return _failed("sandbox trả kết quả sai dạng")
+    return _shaped({**header, "columns": columns, "rows": rows})
+
+
 async def run(url: str, code: str, datasets: dict[str, dict[str, Any]]) -> Execution:
     check(code)
+    content, content_type = request_body(code, datasets)
     try:
         async with (
             httpx.AsyncClient(timeout=REQUEST_TIMEOUT_S) as client,
             client.stream(
-                "POST", url.rstrip("/") + "/run", json={"code": code, "datasets": datasets}
+                "POST",
+                url.rstrip("/") + "/run",
+                content=content,
+                headers={"Content-Type": content_type},
             ) as response,
         ):
             if response.status_code != 200:
@@ -74,6 +117,8 @@ async def run(url: str, code: str, datasets: dict[str, dict[str, Any]]) -> Execu
                     return _failed("kết quả của sandbox quá lớn")
     except httpx.HTTPError as exc:
         return _failed(f"sandbox không trả lời ({type(exc).__name__})")
+    if response.headers.get("content-type", "").startswith(wire.CONTENT_TYPE):
+        return _framed(bytes(body))
     try:
         return _shaped(json.loads(body))
     except ValueError:

@@ -6,6 +6,8 @@ of libs/code_sandbox/local.py still run inside; this pod is the boundary they ar
 
 POST /run {"code": "...", "datasets": {"d1": {"columns": [...], "rows": [[...]]}}}
   → {"ok", "columns", "rows", "truncated", "stdout", "error"}
+POST /run (Content-Type application/x-dataagent-sandbox, AL-04): the same as a frame of Arrow
+  IPC streams (libs/code_sandbox/wire.py), answered in kind: the result table is Arrow too
 GET /healthz → 200
 """
 
@@ -21,7 +23,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import BoundedSemaphore
 from typing import Any
 
-from libs.code_sandbox import local
+from libs.code_sandbox import local, wire
+from libs.snapshot import ipc
 
 logger = logging.getLogger("python_sandbox")
 
@@ -43,6 +46,14 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_framed(self, header: dict[str, Any], parts: list[bytes]) -> None:
+        data = wire.pack(header, parts)
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", wire.CONTENT_TYPE)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self) -> None:
         if self.path == "/healthz":
             self._send(HTTPStatus.OK, {"ok": True})
@@ -57,9 +68,22 @@ class Handler(BaseHTTPRequestHandler):
         if not 0 < length <= MAX_BODY:
             self._send(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "body size"})
             return
+        framed = self.headers.get("Content-Type", "").startswith(wire.CONTENT_TYPE)
         try:
-            payload = json.loads(self.rfile.read(length))
-            code, datasets = str(payload["code"]), dict(payload.get("datasets") or {})
+            raw = self.rfile.read(length)
+            if framed:
+                header, parts = wire.unpack(raw)
+                names = header.get("datasets")
+                if not isinstance(names, list) or len(names) != len(parts):
+                    raise ValueError("datasets and parts differ")
+                code = str(header["code"])
+                datasets: dict[str, Any] = {}
+                for name, part in zip(names, parts, strict=True):
+                    columns, rows = ipc.decode(part)
+                    datasets[str(name)] = {"columns": columns, "rows": rows}
+            else:
+                payload = json.loads(raw)
+                code, datasets = str(payload["code"]), dict(payload.get("datasets") or {})
         except (ValueError, KeyError, TypeError):
             self._send(HTTPStatus.BAD_REQUEST, {"error": "bad request"})
             return
@@ -67,9 +91,25 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 done = asyncio.run(local.run(code, datasets))
             except local.CodeRejected as exc:
-                self._send(HTTPStatus.OK, {"ok": False, "error": f"code bị từ chối: {exc}"})
+                answer: dict[str, Any] = {"ok": False, "error": f"code bị từ chối: {exc}"}
+                if framed:
+                    self._send_framed({**answer, "stdout": "", "truncated": False}, [])
+                else:
+                    self._send(HTTPStatus.OK, answer)
                 return
-        self._send(HTTPStatus.OK, asdict(done))
+        if not framed:
+            self._send(HTTPStatus.OK, asdict(done))
+            return
+        result = [ipc.encode(done.columns, done.rows)] if done.columns else []
+        self._send_framed(
+            {
+                "ok": done.ok,
+                "error": done.error,
+                "stdout": done.stdout,
+                "truncated": done.truncated,
+            },
+            result,
+        )
 
     def log_message(self, format: str, *args: Any) -> None:
         # Requests are logged without their body: the code and the datasets stay out of logs.

@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
-# python-sandbox: runs the dynamic agent's analysis code (libs/code_sandbox). Only Python, pandas
-# and numpy; no database driver, no client of any other service. Build context is the repo root.
+# python-sandbox: runs the dynamic agent's analysis code (libs/code_sandbox). Only Python, pandas,
+# numpy and pyarrow (the datasets' transport, AL-04); no database driver, no client of any other
+# service. Build context is the repo root.
 FROM python:3.12-slim-bookworm
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app
 WORKDIR /app
@@ -9,6 +10,8 @@ COPY backend/services/python_sandbox/requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 COPY backend/libs/__init__.py ./libs/__init__.py
 COPY backend/libs/code_sandbox/ ./libs/code_sandbox/
+# AL-04: the Arrow IPC codec only; the rest of libs/snapshot (MinIO, DuckDB) stays out.
+COPY backend/libs/snapshot/__init__.py backend/libs/snapshot/ipc.py ./libs/snapshot/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/python_sandbox/ ./services/python_sandbox/
 USER app
