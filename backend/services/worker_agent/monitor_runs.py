@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 ROLE = backtests.ROLE
 EVENT_TYPE = "alert.fired"
 DEFAULT_COOLDOWN_HOURS = 24  # BR-33: repeated signals within 24 hours are one alert
-MAX_SUMMARY_MEMBERS = 3
 
 
 def _due(expr: str | None, local: datetime.datetime) -> bool:
@@ -50,6 +49,19 @@ def _due(expr: str | None, local: datetime.datetime) -> bool:
         return expr is not None and cron.matches(expr, local)
     except ValueError:
         return False
+
+
+def rule_value(rule: Any) -> Any:
+    return rule.get("value") if isinstance(rule, dict) else None
+
+
+def _number(raw: Any) -> decimal.Decimal | None:
+    if isinstance(raw, bool) or raw is None:
+        return None
+    try:
+        return decimal.Decimal(str(raw))
+    except decimal.InvalidOperation:
+        return None
 
 
 def cooldown_of(rule: Any) -> datetime.timedelta:
@@ -89,24 +101,25 @@ def figure_json(f: backtests.Figure, query_run_id: uuid.UUID) -> dict[str, Any]:
 
 
 def summary(row: monitor.Monitor, metric: str, period: str, figures: list[dict[str, Any]]) -> str:
-    """Three lines: what changed, against which rule, what to do (the column's own contract)."""
+    """Three lines: what changed, against which rule, what to do (the column's own contract).
+
+    The figures were read with the owner's row scope, and every reader of the Data Space's alerts
+    sees the summary: a split monitor's summary counts the members that fired and names neither
+    them nor their numbers (they stay in `figures`, which no endpoint serves yet)."""
     rule = row.rule if isinstance(row.rule, dict) else {}
-    shown = figures[:MAX_SUMMARY_MEMBERS]
+    split = any(f["member"] for f in figures)
     if row.rule_kind == "threshold":
         side = "trên" if rule.get("direction") == "above" else "dưới"
-        what = "; ".join(f"{f['member'] + ': ' if f['member'] else ''}{f['value']}" for f in shown)
-        why = f"Luật: {side} ngưỡng {shown[0]['compared_to']}."
+        why = f"Luật: {side} ngưỡng {rule.get('value')}."
+        what = "" if split else f" = {figures[0]['value']}"
     else:
-        what = "; ".join(
-            f"{f['member'] + ': ' if f['member'] else ''}{f['compared_to']} → {f['value']}"
-            f" ({f['change']}%)"
-            for f in shown
-        )
         side = "tăng" if rule.get("direction") == "up" else "giảm"
         why = f"Luật: {side} quá {rule.get('value')}% so với kỳ trước."
-    more = f" và {len(figures) - len(shown)} thành viên khác" if len(figures) > len(shown) else ""
+        first = figures[0]
+        what = "" if split else f": {first['compared_to']} → {first['value']} ({first['change']}%)"
+    count = f", {len(figures)} thành viên vượt luật" if split else ""
     return (
-        f"{metric} kỳ {period}: {what}{more}.\n{why}\n"
+        f"{metric} kỳ {period}{what}{count}.\n{why}\n"
         "Mở điều tra từ cảnh báo này để xem nguyên nhân trước khi xử lý."
     )
 
@@ -207,10 +220,9 @@ async def _write(
             # next day's firing, not a few seconds after it.
             fired_at=minute,
             period_label=period,
-            value=decimal.Decimal(first["value"]),
-            threshold_value=decimal.Decimal(first["compared_to"])
-            if row.rule_kind == "threshold"
-            else None,
+            # A split monitor's numbers are its members' (see summary): none on the row.
+            value=None if first["member"] else decimal.Decimal(first["value"]),
+            threshold_value=_number(rule_value(row.rule)) if row.rule_kind == "threshold" else None,
             summary=summary(row, metric, period, fresh),
             dedup_key=period,
             kind="metric",

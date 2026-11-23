@@ -104,9 +104,14 @@ async def test_a_split_monitor_puts_every_member_that_fired_in_one_alert(
     bank = build(seed, warehouse, monkeypatch)
     made = watch(bank, "threshold", {"direction": "above", "value": 5}, scope={"split": "vung"})
     await monitor_runs.evaluate(bank.org, made, AT)
-    [(_, _, figures, *_)] = alerts(seed, made)
+    [(_, _, figures, _, _, value, threshold, summary)] = alerts(seed, made)
     members = {f["member"] for f in figures}
     assert len(members) == len(figures) >= 2
+    # Every reader of the space's alerts sees the row: the members' names and numbers, read with
+    # the owner's row scope, stay in figures.
+    assert value is None and threshold == 5
+    assert f"{len(figures)} thành viên vượt luật" in summary
+    assert not any(m in summary for m in members)
     assert {f["query_run_id"] for f in figures} != {None}
 
 
