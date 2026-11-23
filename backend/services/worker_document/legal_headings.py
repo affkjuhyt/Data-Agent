@@ -80,6 +80,7 @@ def relevel(elements: Sequence[Element], language: Language) -> list[Element]:
 BAND = 0.08
 REPEATED_SHARE = 0.6
 TOC_PAGES = 5
+TOC_TAIL = 200
 _TOC_LINE = re.compile(r"\.{3,}\s*\d+\s*$")
 _DIGITS = re.compile(r"\d+")
 
@@ -132,5 +133,9 @@ def _toc_line(e: Element) -> bool:
         return False
     if e.kind not in ("text", "heading", "list"):
         return False
-    lines = [line for line in e.text.splitlines() if line.strip()]
-    return bool(lines) and all(_TOC_LINE.search(line) for line in lines)
+    lines = [line.rstrip() for line in e.text.splitlines() if line.strip()]
+    # Only the tail is read, and only when it ends in a page number: a long run of dots with no
+    # number after it would otherwise be searched from every dot (quadratic, security review).
+    return bool(lines) and all(
+        line[-1:].isdigit() and _TOC_LINE.search(line[-TOC_TAIL:]) for line in lines
+    )

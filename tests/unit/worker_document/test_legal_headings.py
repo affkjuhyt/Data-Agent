@@ -111,3 +111,13 @@ def test_a_document_without_pages_keeps_everything() -> None:
     elements = [_e("Đầu trang"), _e("Nội dung")]
     kept, dropped = lh.drop_furniture(elements, {})
     assert [e.text for e in kept] == ["Đầu trang", "Nội dung"] and not dropped
+
+
+def test_a_long_run_of_dots_is_read_in_linear_time() -> None:
+    import time
+
+    started = time.monotonic()
+    line = "." * 200_000 + "x"
+    assert not lh._toc_line(_e(line, page_no=1))
+    assert lh._toc_line(_e("Chương I " + "." * 200_000 + " 3", page_no=1))
+    assert time.monotonic() - started < 1.0
