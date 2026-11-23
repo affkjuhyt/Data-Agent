@@ -257,6 +257,8 @@ http://localhost:8400:
 | `dataagent:http_5xx:ratio_5m` | the api's share of 5xx |
 | `dataagent:events_error:ratio_5m` | the share of outbox events a handler failed, per worker and type |
 | `time() - dataagent_worker_last_poll_timestamp_seconds` | seconds since a worker last finished a pass: a growing value is a stuck loop |
+| `rate(dataagent_ingest_rows_total{outcome="dlq"}[1h])` vs `…{outcome="written"}` | DF-14: rows ingest runs set aside in the DLQ against those they wrote (`job_run.rows_written` is read minus DLQ) |
+| `histogram_quantile(0.95, sum by (le, mode) (rate(dataagent_ingest_run_seconds_bucket[1h])))` | how long ingest runs take, per mode; `status="failed"` counts the failed ones |
 
 Labels are route templates, event types and outcomes, never an id (`libs/metrics`).
 

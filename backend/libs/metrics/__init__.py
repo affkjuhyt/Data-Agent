@@ -65,6 +65,18 @@ ASK_ROUTES = Counter(
     "Questions the router sent to an engine (AE-01), by path (governed, agentic) and reason.",
     ["path", "reason"],
 )
+INGEST_ROWS = Counter(
+    "dataagent_ingest_rows_total",
+    "Rows an ingest run wrote to the workspace or set aside in the DLQ (DF-14), by outcome.",
+    ["outcome"],
+)
+INGEST_RUN_SECONDS = Histogram(
+    "dataagent_ingest_run_seconds",
+    "Time an ingest run took, by mode (full, incremental, cdc, backfill) and status.",
+    ["mode", "status"],
+    # A load of millions of rows takes minutes: the request buckets stop at five.
+    buckets=(1, 5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600),
+)
 LAST_POLL = Gauge(
     "dataagent_worker_last_poll_timestamp_seconds",
     "When the worker last finished a pass over its sources: a stale value is a stuck loop.",

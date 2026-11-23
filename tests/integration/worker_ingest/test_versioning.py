@@ -293,3 +293,39 @@ async def test_a_postgres_timestamp_and_json_keep_their_types(
         f'workspace."{name}"',
     ) == [("at", "timestamp with time zone"), ("meta", "jsonb")]
     assert seed.one(f"SELECT meta->>'k' FROM workspace.\"{name}\" LIMIT 1") == "1"
+
+
+@pytest.mark.req("DF-14")
+async def test_a_run_counts_what_it_wrote_apart_from_its_dlq(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch, ddl_server: dict[str, str]
+) -> None:
+    from prometheus_client import REGISTRY
+
+    from services.worker_ingest import dlq
+
+    job = _job(seed, ddl_server["dataagent"], monkeypatch)
+    with seed.conn.cursor() as cur:
+        cur.execute(f'ALTER TABLE public."{job.source_table}" ADD COLUMN amount numeric')
+        cur.execute(f'UPDATE public."{job.source_table}" SET amount = 1')
+        cur.execute(f"INSERT INTO public.\"{job.source_table}\" VALUES ('DN', 3, 'NaN')")
+
+    async def _stored(*_args: Any) -> str:
+        return "dlq/fake"
+
+    monkeypatch.setattr(dlq, "store_payload", _stored)
+
+    def sample(name: str, **labels: str) -> float:
+        return REGISTRY.get_sample_value(name, labels) or 0.0
+
+    written = sample("dataagent_ingest_rows_total", outcome="written")
+    held = sample("dataagent_ingest_rows_total", outcome="dlq")
+    runs = sample("dataagent_ingest_run_seconds_count", mode="full", status="succeeded")
+    await _run(job)
+    # The NaN amount is set aside: 3 read, 1 in the DLQ, 2 written (it said 3 before).
+    assert seed.all(
+        "SELECT rows_read, rows_dlq, rows_written FROM ingest.job_run WHERE job_id = %s",
+        job.id,
+    ) == [(3, 1, 2)]
+    assert sample("dataagent_ingest_rows_total", outcome="written") - written == 2
+    assert sample("dataagent_ingest_rows_total", outcome="dlq") - held == 1
+    assert sample("dataagent_ingest_run_seconds_count", mode="full", status="succeeded") - runs == 1

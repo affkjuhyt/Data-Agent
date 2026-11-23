@@ -12,6 +12,7 @@ import decimal
 import json
 import os
 import re
+import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -20,7 +21,7 @@ from typing import Any
 import asyncpg
 from sqlalchemy import func, select, text, update
 
-from libs import source_drivers, tabular
+from libs import metrics, source_drivers, tabular
 from libs.dataagent_db import scoped_session, versioning
 from libs.dataagent_db.models import catalog, ingest
 from libs.source_drivers import registry
@@ -598,6 +599,10 @@ async def handle(event: Event) -> None:
         else uuid.uuid4()
     )
     is_backfill = event.event_type == BACKFILL
+    # DF-14: what the run took and wrote, for /metrics (libs/metrics INGEST_*).
+    started = time.monotonic()
+    run_mode = "backfill" if is_backfill else "unknown"
+    dlq_total = 0
     rebuild_full = bool(event.payload.get("rebuild_full"))
     try:
         if event.event_type == CREATED:
@@ -624,6 +629,8 @@ async def handle(event: Event) -> None:
             # Poll-CDC (mode=cdc) shares the incremental cursor window; Temporal fires it densely.
             cursor_mode = job.mode in ("incremental", "cdc") and not rebuild_full
             mode_full = job.mode == "full" or rebuild_full
+            if not is_backfill:
+                run_mode = str(job.mode)
             dataset_id = job.target_dataset_id or uuid.uuid4()
             table_name = _table_name(job)
             window: Window | None = None
@@ -713,6 +720,7 @@ async def handle(event: Event) -> None:
                         batch,
                         getattr(job, "on_invalid_record", "quarantine_30d") or "quarantine_30d",
                     )
+                    dlq_total += dlq_n
                     if dlq_n:
                         await session.execute(
                             update(ingest.JobRun)
@@ -750,9 +758,15 @@ async def handle(event: Event) -> None:
                 .values(
                     status="succeeded",
                     rows_read=read,
-                    rows_written=read,
+                    # DF-14: what went to the workspace, not the rows set aside in the DLQ.
+                    rows_written=read - dlq_total,
                     finished_at=datetime.datetime.now(datetime.UTC),
                 )
+            )
+            metrics.INGEST_ROWS.labels("written").inc(read - dlq_total)
+            metrics.INGEST_ROWS.labels("dlq").inc(dlq_total)
+            metrics.INGEST_RUN_SECONDS.labels(run_mode, "succeeded").observe(
+                time.monotonic() - started
             )
             await session.execute(
                 update(ingest.IngestionJob)
@@ -941,6 +955,7 @@ async def handle(event: Event) -> None:
         OSError,
         TimeoutError,
     ) as exc:
+        metrics.INGEST_RUN_SECONDS.labels(run_mode, "failed").observe(time.monotonic() - started)
         await _fail(
             event,
             run_id,

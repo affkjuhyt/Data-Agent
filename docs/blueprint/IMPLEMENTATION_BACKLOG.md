@@ -111,7 +111,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | DF-11 | P1 | 12 | Luật DQ đề xuất từ profile; PII evidence | DF-10, DF-07 | DE | S | ≥ 1 đề xuất/bảng DS-AW | todo |
 | DF-15 | P1 | 12 | `libs/sql_guard/lineage.py` (sqlglot 30) | PL-01 | BE | M | lineage CTE/UNION/subquery | todo |
 | DF-16 | P1 | 13 | Ghi edge cột + edge source→dataset ở job nạp | DF-15 | BE | S | 100 % pipeline DS-AW có edge | todo |
-| DF-14 | P1 | 13 | `rows_written` trừ DLQ; metrics ingest | PL-05 | DE | S | 3 series | todo |
+| DF-14 | P1 | 13 | `rows_written` trừ DLQ; metrics ingest | PL-05 | DE | S | 3 series | done (`job_run.rows_written` = đọc − DLQ (trước đây bằng số đọc); `/metrics` của worker-ingest: `dataagent_ingest_rows_total{outcome=written|dlq}`, `dataagent_ingest_run_seconds{mode,status}`) |
 | DF-20 | P2 | — | Ẩn entity-link; xoá seed reference_entity ngân hàng | — | FE/DB | S | — | todo |
 
 ### 3.3 Ask Engine (AE) — [ASK_ENGINE_SPEC.md](ASK_ENGINE_SPEC.md) §15
