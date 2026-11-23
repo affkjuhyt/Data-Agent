@@ -36,6 +36,7 @@ from sqlalchemy import select, text
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, qa
 from libs.dataagent_db.models import query as q
+from services.worker_agent import compute_runs
 from services.worker_agent.answer.insights import ExprError, evaluate
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import (
@@ -52,6 +53,9 @@ logger = logging.getLogger(__name__)
 EVENT_TYPE = "receipt_replay.requested"
 LIVE_ONLY = "Nguồn chỉ được truy vấn trên dữ liệu hiện hành; số khác vì dữ liệu nguồn đã thay đổi từ lúc trả lời."
 AT_VERSION = "Đã đọc lại đúng phiên bản dữ liệu lúc trả lời mà số vẫn khác."
+CODE_CHANGED = (
+    "Mã tính số dẫn xuất đã đổi kể từ lúc trả lời (mã băm của lần tính khác mã hiện hành)."
+)
 
 
 async def versions_at(
@@ -192,6 +196,19 @@ async def replay_receipt(event: Event) -> None:
             if isinstance(x, dict)
         }
         exprs = {key: source.get("expr") for key, source in sources_of.items()}
+        # AL-01: the computations the derived figures came from, with the code that ran them.
+        computed = {
+            run.id: run
+            for run in (
+                await session.scalars(
+                    select(qa.ComputeRun).where(
+                        qa.ComputeRun.id.in_(
+                            {f.compute_run_id for f in figures if f.compute_run_id is not None}
+                        )
+                    )
+                )
+            ).all()
+        }
     run_ids = sorted({f.query_run_id for f in figures if f.query_run_id is not None}, key=str)
     async with scoped_session("svc_query", event.org_id, requested_by) as session:
         originals = {
@@ -320,6 +337,9 @@ async def replay_receipt(event: Event) -> None:
                 "result_sha256_match": inputs_match,
                 "cause": None
                 if same
+                else CODE_CHANGED
+                if value is not None
+                and _code_changed(computed.get(f.compute_run_id) if f.compute_run_id else None)
                 else LIVE_ONLY
                 if value is not None
                 else "the figures it is computed from could not be replayed",
@@ -349,6 +369,11 @@ async def replay_receipt(event: Event) -> None:
             )
             replay.replay_model = "template"  # the answer's own fast-path template; no model call
     logger.info("receipt replay %s: %s (%d differ)", replay_id, outcome, differs)
+
+
+def _code_changed(run: qa.ComputeRun | None) -> bool:
+    """The derived figure was computed by code that is not the code the worker runs now."""
+    return run is not None and run.code_sha256 != compute_runs.CODE_SHA256
 
 
 def _str(value: decimal.Decimal | None) -> str | None:

@@ -2701,6 +2701,41 @@ COMMENT ON COLUMN qa.receipt_replay.replay_model IS 'Mô hình đã sinh lại c
 COMMENT ON COLUMN qa.receipt_replay.query_run_ids IS 'logic → query.query_run (caller_kind receipt_replay)';
 COMMENT ON COLUMN qa.receipt_replay.error_book_entry_id IS 'logic → eval.error_book_entry khi khác biệt không giải thích được';
 
+CREATE TABLE qa.compute_run (
+  id uuid NOT NULL,
+  org_id uuid NOT NULL,
+  answer_id uuid NOT NULL,
+  step_id text,
+  runtime text NOT NULL,
+  code_sha256 text NOT NULL,
+  code_object_key text,
+  input_refs jsonb NOT NULL,
+  lib_versions jsonb NOT NULL DEFAULT '{}',
+  output_sha256 text NOT NULL,
+  output_rows integer NOT NULL,
+  duration_ms integer NOT NULL,
+  sandbox_runtime_class text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT compute_run_pkey PRIMARY KEY (id),
+  CHECK (runtime IN ('insights','decomposition','pandas','duckdb')),
+  CHECK (code_sha256 ~ '^[0-9a-f]{64}$'),
+  CHECK (output_sha256 ~ '^[0-9a-f]{64}$'),
+  CHECK (jsonb_typeof(input_refs) = 'array' AND jsonb_typeof(lib_versions) = 'object'),
+  CHECK (output_rows >= 0 AND duration_ms >= 0),
+  CHECK (sandbox_runtime_class IS NULL OR sandbox_runtime_class IN ('gvisor','runc'))
+);
+COMMENT ON TABLE qa.compute_run IS 'Một lần tính số dẫn xuất tất định của một câu trả lời (AL-01, F-09): mã đã chạy và phiên bản của nó, đầu vào (kết quả truy vấn, snapshot) kèm mã băm, đầu ra kèm mã băm, để replay tính lại và so (BR-177). Số dẫn xuất trong qa.answer.figures và qa.answer_receipt_figure (source_kind compute_run) trỏ tới dòng này. Chỉ ghi thêm. Thêm 23/11/2026. Use case: UC-01-07.';
+COMMENT ON COLUMN qa.compute_run.answer_id IS 'FK answer';
+COMMENT ON COLUMN qa.compute_run.step_id IS 'Nút PlanIR của bước đã tính; null với đường nhanh một chỉ số';
+COMMENT ON COLUMN qa.compute_run.runtime IS 'insights, decomposition, pandas, duckdb';
+COMMENT ON COLUMN qa.compute_run.code_sha256 IS 'SHA-256 của mã đã chạy (với insights: phiên bản `answer/insights.py`)';
+COMMENT ON COLUMN qa.compute_run.code_object_key IS 'Khoá MinIO của mã sandbox (`sandbox-audit/<org>/<answer>/<step>`); null với mã trong repo';
+COMMENT ON COLUMN qa.compute_run.input_refs IS 'Mảng {kind: query_run, snapshot, result_set; id; sha256}';
+COMMENT ON COLUMN qa.compute_run.lib_versions IS 'Phiên bản thư viện tính (pandas, numpy, duckdb)';
+COMMENT ON COLUMN qa.compute_run.output_sha256 IS 'SHA-256 của các số tính ra, JSON chuẩn hoá theo khoá';
+COMMENT ON COLUMN qa.compute_run.output_rows IS 'Số số (dòng) tính ra';
+COMMENT ON COLUMN qa.compute_run.sandbox_runtime_class IS 'gvisor, runc; null khi không chạy trong sandbox';
+
 CREATE TABLE qa.outbox (
   id uuid NOT NULL,
   org_id uuid NOT NULL,
@@ -2736,6 +2771,7 @@ CREATE INDEX answer_receipt_answered_at_idx ON qa.answer_receipt (answered_at) W
 CREATE INDEX answer_receipt_figure_metric_version_id_idx ON qa.answer_receipt_figure (metric_version_id);
 CREATE INDEX answer_receipt_figure_query_run_id_idx ON qa.answer_receipt_figure (query_run_id);
 CREATE INDEX receipt_replay_receipt_id_started_at_idx ON qa.receipt_replay (receipt_id, started_at DESC);
+CREATE INDEX compute_run_answer_id_idx ON qa.compute_run (answer_id);
 
 -- ═══ schema query ═══
 CREATE TABLE query.query_run (
@@ -7158,6 +7194,7 @@ ALTER TABLE qa.answer_receipt ADD CONSTRAINT answer_receipt_answer_id_fkey FOREI
 ALTER TABLE qa.answer_receipt ADD CONSTRAINT answer_receipt_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES qa.plan(id);
 ALTER TABLE qa.answer_receipt_figure ADD CONSTRAINT answer_receipt_figure_receipt_id_fkey FOREIGN KEY (receipt_id) REFERENCES qa.answer_receipt(id);
 ALTER TABLE qa.receipt_replay ADD CONSTRAINT receipt_replay_receipt_id_fkey FOREIGN KEY (receipt_id) REFERENCES qa.answer_receipt(id);
+ALTER TABLE qa.compute_run ADD CONSTRAINT compute_run_answer_id_fkey FOREIGN KEY (answer_id) REFERENCES qa.answer(id);
 ALTER TABLE agent.agent_config ADD CONSTRAINT agent_config_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES agent.agent_def(id);
 ALTER TABLE agent.agent_tool ADD CONSTRAINT agent_tool_agent_config_id_fkey FOREIGN KEY (agent_config_id) REFERENCES agent.agent_config(id) ON DELETE CASCADE;
 ALTER TABLE agent.agent_trigger ADD CONSTRAINT agent_trigger_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES agent.agent_def(id);
@@ -7414,6 +7451,8 @@ ALTER TABLE qa.answer_receipt_figure ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON qa.answer_receipt_figure USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE qa.receipt_replay ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON qa.receipt_replay USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+ALTER TABLE qa.compute_run ENABLE ROW LEVEL SECURITY;
+CREATE POLICY org_isolation ON qa.compute_run USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE query.query_run ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON query.query_run USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE query.query_result ENABLE ROW LEVEL SECURITY;
@@ -7803,6 +7842,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON qa.answer_receipt_figure TO svc_qa;
 GRANT SELECT ON qa.answer_receipt_figure TO qa_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON qa.receipt_replay TO svc_qa;
 GRANT SELECT ON qa.receipt_replay TO qa_read;
+GRANT SELECT, INSERT, UPDATE, DELETE ON qa.compute_run TO svc_qa;
+GRANT SELECT ON qa.compute_run TO qa_read;
 GRANT USAGE ON SCHEMA query TO svc_query, query_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON query.outbox TO svc_query;
 GRANT SELECT, INSERT, UPDATE, DELETE ON query.query_run TO svc_query;
@@ -9704,6 +9745,21 @@ END
 $$;
 CREATE TRIGGER receipt_replay_events AFTER INSERT OR UPDATE OF status ON qa.receipt_replay
   FOR EACH ROW EXECUTE FUNCTION qa.receipt_replay_events();
+
+
+-- covers: qa.compute_run#0
+-- AL-01 (BR-177): a computation is the evidence a replay recomputes; it is written once with its
+-- answer and never changed or removed.
+CREATE FUNCTION qa.compute_run_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'Lần tính chỉ ghi thêm, không sửa hay xoá (BR-177)' USING ERRCODE = 'check_violation';
+END
+$$;
+CREATE TRIGGER compute_run_guard BEFORE UPDATE OR DELETE ON qa.compute_run
+  FOR EACH ROW EXECUTE FUNCTION qa.compute_run_guard();
+
+-- D5.2: svc_qa only SELECT, INSERT on computations.
+REVOKE UPDATE, DELETE ON qa.compute_run FROM svc_qa;
 
 -- ─── routines/agent.sql ───
 -- routines/agent.sql: what D4.8 (tab 3b) writes in words for schema agent: the depth guard of

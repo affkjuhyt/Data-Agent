@@ -32,6 +32,7 @@ import json
 import logging
 import os
 import re
+import time
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
@@ -48,7 +49,7 @@ from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
-from services.worker_agent import explore, quality_gate, suggestions, turn_trace
+from services.worker_agent import compute_runs, explore, quality_gate, suggestions, turn_trace
 from services.worker_agent.analyst_plan import build_analysis_plan
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.comparison import (
@@ -2255,6 +2256,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             if note:
                 latest_note = f"{note} {latest_note}" if latest_note else note
         # What the table and chart show, by arithmetic: each number a figure with its expression.
+        compute_started = time.monotonic()
         ins = (
             comparison_insights(
                 figures,
@@ -2344,6 +2346,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                     f"chênh lệch hiện tại so với đã nộp là {{{{{delta_key}}}}}."
                 )
         compute_run_id = uuid7() if ins.figures else None
+        compute_ms = int((time.monotonic() - compute_started) * 1000)
         every = figures + ins.figures
         every.extend(filed_figures)
         text = text_of(
@@ -2511,6 +2514,25 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             )
         )
         await session.flush()
+        if compute_run_id is not None:
+            # AL-01: the computation behind the derived figures, in the answer's transaction.
+            session.add(
+                compute_runs.row(
+                    compute_run_id,
+                    p.org_id,
+                    answer_id,
+                    figures=[f for f in every if f.expr],
+                    inputs=[
+                        {
+                            "kind": "query_run",
+                            "id": str(outcome.query_run_id),
+                            "sha256": outcome.result_hash,
+                        }
+                    ],
+                    duration_ms=compute_ms,
+                )
+            )
+            await session.flush()
         if product is not None:
             await _seal_receipt(
                 session, p, product, answer_id, every, outcome, freshness, state, compute_run_id

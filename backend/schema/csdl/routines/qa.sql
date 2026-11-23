@@ -172,3 +172,19 @@ END
 $$;
 CREATE TRIGGER receipt_replay_events AFTER INSERT OR UPDATE OF status ON qa.receipt_replay
   FOR EACH ROW EXECUTE FUNCTION qa.receipt_replay_events();
+
+
+-- covers: qa.compute_run#0
+-- AL-01 (BR-177): a computation is the evidence a replay recomputes; it is written once with its
+-- answer and never changed or removed.
+CREATE FUNCTION qa.compute_run_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'Lần tính chỉ ghi thêm, không sửa hay xoá (BR-177)' USING ERRCODE = 'check_violation';
+END
+$$;
+CREATE TRIGGER compute_run_guard BEFORE UPDATE OR DELETE ON qa.compute_run
+  FOR EACH ROW EXECUTE FUNCTION qa.compute_run_guard();
+
+-- D5.2: svc_qa only SELECT, INSERT on computations.
+REVOKE UPDATE, DELETE ON qa.compute_run FROM svc_qa;
+

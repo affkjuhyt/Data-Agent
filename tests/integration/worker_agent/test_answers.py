@@ -1411,6 +1411,24 @@ async def test_derived_figures_are_sealed_as_computations_and_recomputed_on_repl
         ["F4", "compute_run", True, True],
         ["F5", "compute_run", True, True],
     ]
+    # AL-01: the one computation behind F3..F5, written with the answer: the code that ran, the
+    # query result it read, and what came out.
+    from services.worker_agent import compute_runs
+
+    run = seed.one(
+        "SELECT json_build_array(id, runtime, code_sha256, output_rows, input_refs) "
+        "FROM qa.compute_run WHERE answer_id = %s",
+        answer,
+    )
+    run_id, runtime, code, rows, inputs = run
+    assert (runtime, code, rows) == ("insights", compute_runs.CODE_SHA256, 3)
+    assert [i["kind"] for i in inputs] == ["query_run"] and inputs[0]["sha256"]
+    assert seed.one(
+        "SELECT array_agg(DISTINCT f.compute_run_id::text) FROM qa.answer_receipt r "
+        "JOIN qa.answer_receipt_figure f ON f.receipt_id = r.id "
+        "WHERE r.answer_id = %s AND f.source_kind = 'compute_run'",
+        answer,
+    ) == [run_id]
     receipt = seed.one("SELECT id FROM qa.answer_receipt WHERE answer_id = %s", answer)
 
     def ask_replay() -> uuid.UUID:

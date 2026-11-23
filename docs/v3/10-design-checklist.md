@@ -12,7 +12,7 @@
 | Use case (tab 8) | 115 | 13 UC đủ tiêu chí bắt buộc | todo 13, partial 88, done 8, blocked 1, na 5 |
 | Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 337 có test nhắc mã AC | todo 739, na 39 |
 | Endpoint A2 (tab 4) | 466 (A2 ghi 467 dòng; POST /v1/data-products ở hai nhóm) | 466 được `api` phục vụ | — |
-| Bảng (tab 3/3b) | 210 trong DDL | DDL sinh từ thiết kế | — |
+| Bảng (tab 3/3b) | 211 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 157 có mã nhắc tới | todo 188, na 7 |
 | Màn hình (SCR) | 75 | 15 có mã nhắc tới | todo 72, na 3 |
 | ADR (tab 6) | 48 | — | todo 45, partial 1, done 2 |
@@ -436,7 +436,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +16 |
 | BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +19 |
 | BR-176 | UC-01-01, UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0048_compute_run.py`, `backend/libs/dataagent_db/models/qa.py` +9 |
 | BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/contracts/v1/trust.py`, `backend/libs/dataagent_db/models/context.py` +26 |
 | BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +14 |

@@ -1,6 +1,6 @@
 # parse_d4 report
 
-187 tables in 23 schemas; 2140 own columns; 954 constraints; 178 indexes; 110 notes for routines/.
+188 tables in 23 schemas; 2151 own columns; 961 constraints; 179 indexes; 111 notes for routines/.
 
 ## Problems
 

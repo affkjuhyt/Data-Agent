@@ -1429,6 +1429,28 @@ Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (mode IN ('figures','
 
 Trigger: sau UPDATE sang completed với outcome differs hoặc not\_reproducible: phát qa.receipt\_replay.mismatch để Eval service tạo mục Error Book source\_kind replay\_mismatch (BR-179) và ghi lại error\_book\_entry\_id; mọi lần chạy lại ghi audit.audit\_log action receipt.replay.
 
+#### qa.compute\_run
+
+Một lần tính số dẫn xuất tất định của một câu trả lời (AL-01, F-09): mã đã chạy và phiên bản của nó, đầu vào (kết quả truy vấn, snapshot) kèm mã băm, đầu ra kèm mã băm, để replay tính lại và so (BR-177). Số dẫn xuất trong qa.answer.figures và qa.answer\_receipt\_figure (source\_kind compute\_run) trỏ tới dòng này. Chỉ ghi thêm. Thêm 23/11/2026. Use case: UC-01-07.
+
+| Cột | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| answer\_id | uuid, bắt buộc | FK answer |
+| step\_id | text | Nút PlanIR của bước đã tính; null với đường nhanh một chỉ số |
+| runtime | text, bắt buộc | insights, decomposition, pandas, duckdb |
+| code\_sha256 | text, bắt buộc | SHA-256 của mã đã chạy (với insights: phiên bản `answer/insights.py`) |
+| code\_object\_key | text | Khoá MinIO của mã sandbox (`sandbox-audit/<org>/<answer>/<step>`); null với mã trong repo |
+| input\_refs | jsonb, bắt buộc | Mảng {kind: query\_run, snapshot, result\_set; id; sha256} |
+| lib\_versions | jsonb, bắt buộc, mặc định '{}' | Phiên bản thư viện tính (pandas, numpy, duckdb) |
+| output\_sha256 | text, bắt buộc | SHA-256 của các số tính ra, JSON chuẩn hoá theo khoá |
+| output\_rows | integer, bắt buộc | Số số (dòng) tính ra |
+| duration\_ms | integer, bắt buộc |  |
+| sandbox\_runtime\_class | text | gvisor, runc; null khi không chạy trong sandbox |
+
+Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (runtime IN ('insights','decomposition','pandas','duckdb')); `CHECK (code_sha256 ~ '^[0-9a-f]{64}$')`; `CHECK (output_sha256 ~ '^[0-9a-f]{64}$')`; CHECK (jsonb\_typeof(input\_refs) = 'array' AND jsonb\_typeof(lib\_versions) = 'object'); CHECK (output\_rows >= 0 AND duration\_ms >= 0); CHECK (sandbox\_runtime\_class IS NULL OR sandbox\_runtime\_class IN ('gvisor','runc')); FOREIGN KEY (answer\_id) REFERENCES qa.answer(id). Chỉ mục: (answer\_id).
+
+Trigger: trước UPDATE, DELETE: chặn (chỉ ghi thêm).
+
 ### D4.7 Schema query
 
 #### query.query\_run

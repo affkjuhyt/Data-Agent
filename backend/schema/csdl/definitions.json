@@ -49,9 +49,9 @@
   {
    "name": "qa",
    "owner_service": "Agent runtime (hỏi đáp)",
-   "content": "Hội thoại, câu hỏi, kế hoạch, câu trả lời, phản hồi, xuất tệp, trí nhớ dài hạn",
+   "content": "Hội thoại, câu hỏi, kế hoạch, câu trả lời, phản hồi, xuất tệp, trí nhớ dài hạn, lần tính số dẫn xuất",
    "modules": "P01",
-   "table_count": 10,
+   "table_count": 11,
    "database": "dataagent",
    "intro": ""
   },
@@ -12586,6 +12586,187 @@
    "notes": [
     "RLS: org_isolation, theo biên nhận.",
     "Trigger: sau UPDATE sang completed với outcome differs hoặc not_reproducible: phát qa.receipt_replay.mismatch để Eval service tạo mục Error Book source_kind replay_mismatch (BR-179) và ghi lại error_book_entry_id; mọi lần chạy lại ghi audit.audit_log action receipt.replay."
+   ]
+  },
+  {
+   "schema": "qa",
+   "name": "compute_run",
+   "qualified": "qa.compute_run",
+   "description": "Một lần tính số dẫn xuất tất định của một câu trả lời (AL-01, F-09): mã đã chạy và phiên bản của nó, đầu vào (kết quả truy vấn, snapshot) kèm mã băm, đầu ra kèm mã băm, để replay tính lại và so (BR-177). Số dẫn xuất trong qa.answer.figures và qa.answer_receipt_figure (source_kind compute_run) trỏ tới dòng này. Chỉ ghi thêm. Thêm 23/11/2026. Use case: UC-01-07.",
+   "use_cases": [
+    "UC-01-07"
+   ],
+   "columns": [
+    {
+     "name": "answer_id",
+     "type": "uuid",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "FK answer",
+     "fk": "answer",
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "step_id",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Nút PlanIR của bước đã tính; null với đường nhanh một chỉ số",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "runtime",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "insights, decomposition, pandas, duckdb",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "code_sha256",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "SHA-256 của mã đã chạy (với insights: phiên bản `answer/insights.py`)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "code_object_key",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Khoá MinIO của mã sandbox (`sandbox-audit/<org>/<answer>/<step>`); null với mã trong repo",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "input_refs",
+     "type": "jsonb",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Mảng {kind: query_run, snapshot, result_set; id; sha256}",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "lib_versions",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'{}'",
+     "unique": false,
+     "comment": "Phiên bản thư viện tính (pandas, numpy, duckdb)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "output_sha256",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "SHA-256 của các số tính ra, JSON chuẩn hoá theo khoá",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "output_rows",
+     "type": "integer",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Số số (dòng) tính ra",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "duration_ms",
+     "type": "integer",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "sandbox_runtime_class",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "gvisor, runc; null khi không chạy trong sandbox",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    }
+   ],
+   "common_columns": [
+    "id",
+    "org_id",
+    "created_at"
+   ],
+   "constraints": [
+    {
+     "kind": "check",
+     "sql": "CHECK (runtime IN ('insights','decomposition','pandas','duckdb'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (code_sha256 ~ '^[0-9a-f]{64}$')"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (output_sha256 ~ '^[0-9a-f]{64}$')"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (jsonb_typeof(input_refs) = 'array' AND jsonb_typeof(lib_versions) = 'object')"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (output_rows >= 0 AND duration_ms >= 0)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (sandbox_runtime_class IS NULL OR sandbox_runtime_class IN ('gvisor','runc'))"
+    },
+    {
+     "kind": "fk",
+     "sql": "FOREIGN KEY (answer_id) REFERENCES qa.answer(id)"
+    }
+   ],
+   "indexes": [
+    {
+     "unique": false,
+     "method": "btree",
+     "expr": "answer_id",
+     "where": null,
+     "comment": null
+    }
+   ],
+   "partition": null,
+   "immutable": false,
+   "notes": [
+    "Trigger: trước UPDATE, DELETE: chặn (chỉ ghi thêm)."
    ]
   },
   {

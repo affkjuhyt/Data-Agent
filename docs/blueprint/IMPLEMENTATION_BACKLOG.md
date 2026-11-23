@@ -147,7 +147,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 
 | ID | Ưu tiên | Tuần | Việc | Phụ thuộc | Vai | CS | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| AL-01 | P0 | 7 | `qa.compute_run` + ORM + migration; `replay.py` runtime insights/decomposition | AE-04 | BE/DB | M | replay DERIVED tái tạo output sha | todo |
+| AL-01 | P0 | 7 | `qa.compute_run` + ORM + migration; `replay.py` runtime insights/decomposition | AE-04 | BE/DB | M | replay DERIVED tái tạo output sha | done 23/11: v3_0048 `qa.compute_run` (chỉ ghi thêm); đường governed ghi một lần tính `insights` với mỗi câu trả lời có số dẫn xuất; replay nói "mã tính đã đổi" khi code_sha256 khác; decomposition/sandbox ghi ở AL-02/AL-05 |
 | AL-04 | P0 | 10 | `libs/snapshot` Arrow reader; `tools/analyze.py` gửi Arrow | DF-04 | BE | M | payload giảm ≥ 5× | todo |
 | AL-05 | P0 | 10 | `duck.py` khoá cấu hình; duckdb 2.0 trong image sandbox | AL-04, PoC-2 | BE | M | escape 0/10; ≥ 2× nhanh | todo |
 | AL-02 | P0 | 11 | Insights tool cho agentic (bọc `insights.py` + `anomaly.py`) | AL-01 | AI | M | figure có `expr`; replay được | todo |

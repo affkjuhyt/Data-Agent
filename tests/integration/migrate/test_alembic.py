@@ -1027,3 +1027,29 @@ def test_a_migrated_cluster_keeps_deleted_uploads(admin):
         )
         == "timestamp with time zone"
     )
+
+
+def test_a_migrated_cluster_records_an_answers_computations(admin):
+    # v3_0048 (23/11/2026, AL-01): qa.compute_run, append-only.
+    _fresh(admin, "chain_al01", "chain_al01_audit")
+    db = _db(admin, "chain_al01")
+    _alembic(db, "upgrade", "v3_0047")
+    # The generated DDL is already at head: put back what a cluster at v3_0047 has.
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("DROP TABLE qa.compute_run")
+        cur.execute("DROP FUNCTION qa.compute_run_guard()")
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    _alembic(db, "upgrade", "head")
+    assert _one(db, "SELECT relrowsecurity FROM pg_class WHERE oid = 'qa.compute_run'::regclass")
+    assert (
+        _one(
+            db,
+            "SELECT count(*) FROM pg_trigger WHERE tgname = 'compute_run_guard' AND NOT tgisinternal",
+        )
+        == 1
+    )
+    assert not _one(db, "SELECT has_table_privilege('svc_qa', 'qa.compute_run', 'UPDATE')")
+    assert _one(db, "SELECT has_table_privilege('svc_qa', 'qa.compute_run', 'INSERT')")

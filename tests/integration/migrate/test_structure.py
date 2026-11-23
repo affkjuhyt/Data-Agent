@@ -16,8 +16,9 @@ def test_object_counts_match_the_design(db):
     )
     # 184 tables of 22 schemas (agent.tool_def since 12/10/2026, schema pack gone 01/11/2026,
     # qa.memory_fact since 03/11/2026, ingest.job_sample since 11/11/2026, catalog.dataset_snapshot
-    # and catalog.dataset_contract since 19/11/2026) plus one outbox per schema (D5.1).
-    assert tables == 184 + 22
+    # and catalog.dataset_contract since 19/11/2026, qa.compute_run since 23/11/2026) plus one outbox
+    # per schema (D5.1).
+    assert tables == 185 + 22
     fks = one(
         db,
         "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace "
@@ -25,8 +26,9 @@ def test_object_counts_match_the_design(db):
         "AND n.nspname NOT IN ('pg_catalog','information_schema','public')",
     )
     # agent_run.retry_of (12/10/2026); the 21 of schema pack went with it (01/11/2026); the
-    # dataset of catalog.dataset_snapshot and of catalog.dataset_contract (19/11/2026).
-    assert fks == 186
+    # dataset of catalog.dataset_snapshot and of catalog.dataset_contract (19/11/2026); the answer of
+    # qa.compute_run (23/11/2026).
+    assert fks == 187
 
 
 def test_rows_of_another_organisation_are_invisible(db):
