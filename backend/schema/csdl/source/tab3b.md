@@ -3096,6 +3096,7 @@ Tệp CSV, Excel tải lên: nhận dạng cấu trúc, ánh xạ cột, kiểm 
 | target\_dataset\_id | uuid |  |
 | replace\_mode | text | replace, keep khi ghép vào bảng có sẵn |
 | expires\_at | timestamptz, bắt buộc, mặc định now() + interval '90 days' | BR-105 |
+| deleted\_at | timestamptz | Xoá mềm: tệp gốc giữ trong da-ingest tới hết retention (DF-19, AUD-08) |
 | status | text, bắt buộc, mặc định 'uploaded' | uploaded, analyzed, mapped, committed, rejected, expired |
 
 Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (size\_bytes <= 209715200); CHECK (replace\_mode IS NULL OR replace\_mode IN ('replace','keep')); CHECK (status IN ('uploaded','analyzed','mapped','committed','rejected','expired')); CHECK (status <> 'committed' OR (error\_ratio IS NOT NULL AND error\_ratio <= 0.05 AND target\_dataset\_id IS NOT NULL)).

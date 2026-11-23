@@ -456,6 +456,27 @@ Restore:
 - **Qdrant**: upload a snapshot,
   `curl -X POST "$QDRANT/collections/<name>/snapshots/upload?priority=snapshot" -F snapshot=@<file>`.
 
+## 9b. Raw buckets made before their object lock (DF-19)
+
+`da-ingest` and `da-raw-docs` are created object-locked (GOVERNANCE 90 days on dev, COMPLIANCE in
+production) by `minio-init`; deleting an upload marks it (`ingest.file_upload.deleted_at`) and
+leaves its file. MinIO sets object lock only when a bucket is created, so a bucket that existed
+before DF-19 stays unlocked: `minio-init` prints `WARNING: <bucket> has no object lock`. To lock
+one, in a maintenance window (nothing writes uploads or documents meanwhile), from a pod with `mc`
+on the root alias:
+
+```sh
+mc mb --with-lock local/<bucket>-locked
+mc mirror --preserve local/<bucket> local/<bucket>-locked
+mc rb --force local/<bucket>
+mc mb --with-lock local/<bucket>
+mc retention set --default GOVERNANCE 90d local/<bucket>
+mc mirror --preserve local/<bucket>-locked local/<bucket>
+```
+
+then compare object counts (`mc ls --recursive … | wc -l`) before removing the copy. Take a
+`store-backup` first (§9a).
+
 ## 10. Database migrations (Alembic)
 
 In the cluster, migrations run as the `migrate` Job: rebuild the image and run

@@ -1006,3 +1006,24 @@ def test_a_migrated_cluster_takes_pipeline_steps_proposals(admin):
         db,
         "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'proposal_kind_check'",
     )
+
+
+def test_a_migrated_cluster_keeps_deleted_uploads(admin):
+    # v3_0047 (23/11/2026, DF-19): an upload is deleted softly.
+    _fresh(admin, "chain_df19", "chain_df19_audit")
+    db = _db(admin, "chain_df19")
+    _alembic(db, "upgrade", "v3_0046")
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("ALTER TABLE ingest.file_upload DROP COLUMN deleted_at")
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    assert (
+        _one(
+            db,
+            "SELECT data_type FROM information_schema.columns WHERE table_schema = 'ingest'"
+            " AND table_name = 'file_upload' AND column_name = 'deleted_at'",
+        )
+        == "timestamp with time zone"
+    )

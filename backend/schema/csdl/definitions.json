@@ -26307,6 +26307,17 @@
      "pii": false
     },
     {
+     "name": "deleted_at",
+     "type": "timestamptz",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Xoá mềm: tệp gốc giữ trong da-ingest tới hết retention (DF-19, AUD-08)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "status",
      "type": "text",
      "not_null": true,

@@ -266,6 +266,11 @@ class FileUpload(Base):
         server_default=sql_text("now() + interval '90 days'"),
         comment="BR-105",
     )
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Xoá mềm: tệp gốc giữ trong da-ingest tới hết retention (DF-19, AUD-08)",
+    )
     status: Mapped[str] = mapped_column(
         Text,
         server_default=sql_text("'uploaded'"),

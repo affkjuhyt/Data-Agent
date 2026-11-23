@@ -27,6 +27,7 @@ BUCKET = "da-ingest"
 UPLOADED = "file_upload.uploaded"
 MAPPED = "file_upload.mapped"
 COMMITTED = "file_upload.committed"
+DELETED = "file_upload.deleted"
 WORKSPACE_SCHEMA = "workspace"
 # How the catalog names a workspace column type (catalog.column_meta.normalized_type).
 _NORMALIZED = {"text": "string", "numeric": "decimal", "boolean": "boolean", "date": "date"}
@@ -428,4 +429,28 @@ async def handle(event: Event) -> None:
         await _validate_upload(event)
 
 
-HANDLERS: dict[str, Handler] = {UPLOADED: handle, MAPPED: handle, COMMITTED: handle}
+async def deleted(event: Event) -> None:
+    """DF-19: a deleted upload's dataset is disabled when the upload made it (its first table);
+    an upload that added a version to an existing table leaves that table as it is. The raw file
+    stays in da-ingest until the bucket's retention ends."""
+    async with scoped_session(ROLE, event.org_id, event.payload.get("uploader_id")) as session:
+        row = await session.scalar(
+            select(ingest.FileUpload).where(ingest.FileUpload.id == event.aggregate_id)
+        )
+        if row is None or row.target_dataset_id is None:
+            return
+        made = _table_name(row.file_name, row.id)
+        dataset_id = row.target_dataset_id
+    async with scoped_session(CATALOG_ROLE, event.org_id) as session:
+        dataset = await session.get(catalog.Dataset, dataset_id)
+        if dataset is not None and dataset.origin == "upload" and dataset.table_name == made:
+            dataset.enabled = False
+            dataset.updated_at = datetime.datetime.now(datetime.UTC)
+
+
+HANDLERS: dict[str, Handler] = {
+    UPLOADED: handle,
+    MAPPED: handle,
+    COMMITTED: handle,
+    DELETED: deleted,
+}

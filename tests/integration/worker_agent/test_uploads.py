@@ -288,3 +288,35 @@ async def test_an_upload_into_a_table_writes_its_next_version_and_keeps_the_one_
     assert seed.all(f'SELECT branch FROM workspace."{name}" ORDER BY n') == [("DN",), ("HP",)]
     assert seed.one(f'SELECT count(*) FROM workspace."{v1}"') == 2
     assert seed.one("SELECT current_version FROM catalog.dataset WHERE id = %s", dataset) == 2
+
+
+@pytest.mark.req("DF-19")
+async def test_a_deleted_upload_disables_the_table_it_made(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Xoá")
+    user = seed.row("org.app_user", org_id=org, external_id="kc-x", username="x", display_name="X")
+    space = seed.row("org.data_space", org_id=org, code="DS-X", name="X", steward_id=user)
+
+    async def _read(_key: str) -> bytes:
+        return b"branch,n\nHN,1\n"
+
+    monkeypatch.setattr(uploads, "_read_object", _read)
+    dataset = uuid.uuid4()
+    made = _upload(seed, org, space, user, object_key="v1", target_dataset_id=dataset)
+    await _commit(org, made, user)
+    later = _upload(
+        seed, org, space, user, object_key="v2", target_dataset_id=dataset, replace_mode="replace"
+    )
+    await _commit(org, later, user)
+    # The upload that only added a version leaves the table on.
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE ingest.file_upload SET deleted_at = now() WHERE id = %s", (str(later),))
+    await uploads.deleted(
+        Event(uuid.uuid4(), org, uploads.DELETED, "file_upload", later, {"uploader_id": str(user)})
+    )
+    assert seed.one("SELECT enabled FROM catalog.dataset WHERE id = %s", dataset) is True
+    await uploads.deleted(
+        Event(uuid.uuid4(), org, uploads.DELETED, "file_upload", made, {"uploader_id": str(user)})
+    )
+    assert seed.one("SELECT enabled FROM catalog.dataset WHERE id = %s", dataset) is False

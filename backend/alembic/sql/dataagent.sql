@@ -5610,6 +5610,7 @@ CREATE TABLE ingest.file_upload (
   target_dataset_id uuid,
   replace_mode text,
   expires_at timestamptz NOT NULL DEFAULT now() + interval '90 days',
+  deleted_at timestamptz,
   status text NOT NULL DEFAULT 'uploaded',
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
@@ -5629,6 +5630,7 @@ COMMENT ON COLUMN ingest.file_upload.validation IS 'Ví dụ mã khớp 99,6%, 1
 COMMENT ON COLUMN ingest.file_upload.error_ratio IS 'Trên 5% thì không cho ghi (UC-04-08 E2)';
 COMMENT ON COLUMN ingest.file_upload.replace_mode IS 'replace, keep khi ghép vào bảng có sẵn';
 COMMENT ON COLUMN ingest.file_upload.expires_at IS 'BR-105';
+COMMENT ON COLUMN ingest.file_upload.deleted_at IS 'Xoá mềm: tệp gốc giữ trong da-ingest tới hết retention (DF-19, AUD-08)';
 COMMENT ON COLUMN ingest.file_upload.status IS 'uploaded, analyzed, mapped, committed, rejected, expired';
 
 CREATE TABLE ingest.quality_rule (

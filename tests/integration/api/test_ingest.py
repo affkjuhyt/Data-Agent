@@ -1173,3 +1173,28 @@ async def test_upload_reads_stay_in_the_organisation(ds: Space, seed: Seed) -> N
             f"/v1/jobs/{job}:pause", json={"reason": "x"}, headers=ds.headers("engineer")
         )
         assert pause.status_code == 404
+
+
+@pytest.mark.req("DF-19")
+async def test_deleting_an_upload_keeps_its_file(ds: Space) -> None:
+    # AUD-08: the raw file stays in da-ingest, which the bucket's lock keeps for its retention.
+    async with client(ds) as api:
+        made = await api.post(
+            "/v1/uploads",
+            files={"file": ("a.csv", CSV, "text/csv")},
+            headers=ds.headers("uploader"),
+        )
+        upload = made.json()["id"]
+        files = dict(ds.store.objects)
+        gone = await api.delete(f"/v1/uploads/{upload}", headers=ds.headers("uploader"))
+        assert gone.status_code == 204, gone.text
+        assert ds.store.objects == files
+        assert (
+            await api.get(f"/v1/uploads/{upload}", headers=ds.headers("uploader"))
+        ).status_code == 404
+        listed = await api.get("/v1/uploads", headers=ds.headers("uploader"))
+        assert upload not in [u["id"] for u in listed.json()["items"]]
+        again = await api.delete(f"/v1/uploads/{upload}", headers=ds.headers("uploader"))
+        assert again.status_code == 404
+    assert ds.one("SELECT deleted_at IS NOT NULL FROM ingest.file_upload WHERE id = %s", upload)
+    assert [k for k, _ in ds.events(upload)][-1] == "file_upload.deleted"

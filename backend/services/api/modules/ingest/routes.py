@@ -1044,7 +1044,11 @@ async def list_uploads(
     upload = ingest.FileUpload
     query = (
         select(upload)
-        .where(upload.org_id == principal.org_id, upload.data_space_id == data_space)
+        .where(
+            upload.org_id == principal.org_id,
+            upload.data_space_id == data_space,
+            upload.deleted_at.is_(None),
+        )
         .order_by(upload.created_at.desc(), upload.id.desc())
         .limit(page.page_size)
     )
@@ -1219,7 +1223,12 @@ async def _upload(
     up = ingest.FileUpload
     row = await session.scalar(
         select(up)
-        .where(up.id == upload_id, up.org_id == principal.org_id, up.data_space_id == data_space)
+        .where(
+            up.id == upload_id,
+            up.org_id == principal.org_id,
+            up.data_space_id == data_space,
+            up.deleted_at.is_(None),
+        )
         .with_for_update()
     )
     if row is None:
@@ -1279,11 +1288,14 @@ async def delete_upload(
     upload_id: IdPath,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
-    store: Annotated[ObjectStore, Depends(object_store)],
 ) -> Response:
+    """DF-19 (AUD-08): the upload is marked deleted and its raw file stays in da-ingest, which
+    the bucket's object lock keeps until its retention ends; the dataset it made is disabled by
+    worker-agent on file_upload.deleted."""
     async with transaction(ROLE, principal) as session:
         row = await _upload(session, upload_id, principal, data_space)
-        await store.delete(BUCKET, row.object_key)
+        row.deleted_at = _now()
+        row.updated_by, row.updated_at = principal.user_id, _now()
         session.add(
             _event(
                 principal,
@@ -1293,9 +1305,9 @@ async def delete_upload(
                 file_upload_id=row.id,
                 data_space_id=data_space,
                 object_key=row.object_key,
+                target_dataset_id=row.target_dataset_id,
             )
         )
-        await session.delete(row)
     return Response(status_code=204)
 
 

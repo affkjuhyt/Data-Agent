@@ -18,7 +18,8 @@ metadata:
     app: minio-init
     app.kubernetes.io/part-of: dataagent
 data:
-  MINIO_BUCKETS: langfuse sandbox-audit da-results da-exports da-ingest da-raw-docs da-doc-derived da-forecast-models
+  # da-ingest and da-raw-docs are made object-locked below (DF-19), not here.
+  MINIO_BUCKETS: langfuse sandbox-audit da-results da-exports da-doc-derived da-forecast-models
   # Raw is immutable (S2-02, ADR-V2-21): object lock, settable only at bucket creation.
   # COMPLIANCE: no one, root included, deletes an object before its retention ends.
   RAW_RETENTION_MODE: COMPLIANCE
@@ -101,6 +102,14 @@ spec:
           # DF-04: a dataset version's snapshot cannot be deleted or rewritten before its retention
           # ends (libs/snapshot); worker-agent writes and reads them, worker-ingest writes them as
           # MinIO's root until it has a user of its own.
+          # DF-19 (AUD-08): uploads and raw documents are immutable for their retention: deleting an
+          # upload marks it, the file stays. Object lock is set only when a bucket is created, so a
+          # bucket made before this stays unlocked until moved (RUNBOOK §9b); say so, go on.
+          for b in da-ingest da-raw-docs; do
+            mc mb --ignore-existing --with-lock "local/$b"
+            mc retention set --default "$RAW_RETENTION_MODE" "${SNAPSHOT_RETENTION_DAYS}d" "local/$b" \
+              || echo "WARNING: $b has no object lock (made before DF-19); see RUNBOOK §9b"
+          done
           mc mb --ignore-existing --with-lock local/da-snapshots
           mc retention set --default "$RAW_RETENTION_MODE" "${SNAPSHOT_RETENTION_DAYS}d" local/da-snapshots
           printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject","s3:GetObject"],"Resource":["arn:aws:s3:::da-snapshots/*"]}]}' > /tmp/worker-agent-snapshots.json
