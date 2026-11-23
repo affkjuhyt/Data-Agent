@@ -12,6 +12,7 @@ read a cursor's upper bound; the workers map each name to their implementation.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -253,11 +254,24 @@ def workspace_type(kind: str, source_type: str) -> str:
 
 
 # DF-13: the columns an incremental job can read past, best first. A cursor must only grow as
-# rows are written or changed: a modification time catches updates, a creation time or a date
-# only new rows, an integer key only rows appended with a higher key. A nullable column loses the
-# rows where it is empty, so it ranks after the same kind without nulls.
-_MODIFIED = ("updated", "modified", "changed", "last_", "_ts", "timestamp", "sync")
-_KEY_LIKE = ("seq", "version", "rowversion", "serial")
+# rows are written or changed: a modification time catches updates, a creation or event time and
+# an integer key only new rows. A date that says when something will end or fall due, or a birth
+# date, does not grow with the rows at all. A nullable column loses the rows where it is empty,
+# so it ranks after the same kind without nulls.
+# Matched against the words of the name (snake_case and camelCase split), so `calendar_date` is
+# not an end date and `UpdatedAt` is a modification time.
+_MODIFIED = frozenset({"updated", "modified", "changed", "last", "ts", "timestamp", "sync"})
+_CREATED = frozenset(
+    {"created", "inserted", "order", "txn", "transaction", "event", "posted", "load", "loaded"}
+)
+_NOT_GROWING = frozenset({"due", "end", "expiry", "expires", "expiration", "until", "deadline"})
+_NEVER = frozenset({"birth", "dob", "birthday"})
+_KEY_LIKE = frozenset({"seq", "sequence", "version", "rowversion", "serial"})
+
+
+def _words(name: str) -> frozenset[str]:
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name)
+    return frozenset(w for w in re.split(r"[^A-Za-z0-9]+", spaced.lower()) if w)
 
 
 @dataclass(frozen=True)
@@ -270,24 +284,35 @@ class CursorCandidate:
 
 def cursor_candidates(columns: list[dict[str, object]]) -> list[CursorCandidate]:
     """The cursor candidates of a table's columns ({name, data_type, normalized_type,
-    is_nullable, is_key}), ranked: a modification time, another timestamp, a date, an increasing
-    integer key. Deterministic: the same columns give the same list."""
+    is_nullable, is_key}), ranked: a modification time, a creation or event time, another
+    timestamp or date, an increasing integer key, then a date that does not grow with the rows
+    (an end, a due date). Deterministic: the same columns give the same list."""
     ranked: list[tuple[int, int, str, CursorCandidate]] = []
     for column in columns:
         name = str(column.get("name") or "")
         kind = str(column.get("normalized_type") or "")
         lowered = name.lower()
-        if kind == "timestamp":
-            if any(part in lowered for part in _MODIFIED):
+        words = _words(name)
+        if kind in ("timestamp", "date"):
+            if words & _NEVER:
+                continue
+            day = kind == "date"
+            if words & _MODIFIED:
                 rank, hint = 0, "thời điểm sửa dòng: bắt được cả dòng mới lẫn dòng sửa"
+            elif words & _NOT_GROWING or {"valid", "to"} <= words:
+                rank, hint = 90, "ngày hạn hoặc ngày kết thúc: không tăng theo dòng mới, ít khi hợp"
+            elif words & _CREATED or lowered == "date":
+                rank, hint = (
+                    10,
+                    "thời điểm tạo hoặc phát sinh: chỉ bắt dòng mới, không bắt dòng sửa",
+                )
             else:
-                rank, hint = 1, "thời điểm: chỉ bắt dòng mới nếu không bao giờ sửa lùi"
-        elif kind == "date":
-            rank, hint = 2, "ngày: đọc lại cả ngày cuối, nên đặt lookback 1 ngày"
-        elif kind == "integer" and (
-            bool(column.get("is_key")) or any(part in lowered for part in _KEY_LIKE)
-        ):
-            rank, hint = 3, "khoá tăng dần: chỉ bắt dòng thêm mới, không bắt dòng sửa"
+                rank, hint = 20, "thời điểm: chỉ bắt dòng mới nếu không bao giờ sửa lùi"
+            if day and rank < 90:
+                rank += 1
+                hint += "; theo ngày nên đọc lại cả ngày cuối (lookback 1 ngày)"
+        elif kind == "integer" and (bool(column.get("is_key")) or bool(words & _KEY_LIKE)):
+            rank, hint = 50, "khoá tăng dần: chỉ bắt dòng thêm mới, không bắt dòng sửa"
         else:
             continue
         nullable = bool(column.get("is_nullable", True))

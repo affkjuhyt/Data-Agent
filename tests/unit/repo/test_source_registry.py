@@ -99,3 +99,38 @@ def test_cursor_candidates_rank_a_modification_time_first_and_skip_what_cannot_g
     # A quantity is an integer that does not grow with the rows; a note or an amount never does.
     assert "rỗng" in got[0].hint and "rỗng" not in got[1].hint
     assert cursor_candidates(columns) == got
+
+
+@pytest.mark.req("DF-13")
+def test_a_due_or_end_date_ranks_last_and_a_birth_date_is_no_cursor() -> None:
+    from libs.source_drivers.registry import cursor_candidates
+
+    def ts(name: str, kind: str = "timestamp") -> dict[str, object]:
+        return {"name": name, "data_type": kind, "normalized_type": kind, "is_nullable": False}
+
+    got = cursor_candidates(
+        [
+            ts("due_date"),
+            ts("ship_date"),
+            ts("order_date"),
+            ts("birth_date", "date"),
+            ts("end_date"),
+            ts("calendar_date", "date"),
+            {
+                "name": "customer_key",
+                "data_type": "int",
+                "normalized_type": "integer",
+                "is_key": True,
+                "is_nullable": False,
+            },
+        ]
+    )
+    # calendar_date is a date, not an end: "end" is a word of the name, not a part of a word.
+    assert [c.name for c in got] == [
+        "order_date",
+        "ship_date",
+        "calendar_date",
+        "customer_key",
+        "due_date",
+        "end_date",
+    ]
