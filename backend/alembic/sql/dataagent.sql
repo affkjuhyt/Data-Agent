@@ -4246,7 +4246,7 @@ CREATE TABLE monitor.report_schedule (
   work_calendar_id uuid,
   cutoff_time time,
   as_of_rule text NOT NULL,
-  formats text[] NOT NULL DEFAULT '{pdf}',
+  formats text[] NOT NULL DEFAULT '{html}',
   require_publish_check boolean NOT NULL DEFAULT true,
   status text NOT NULL DEFAULT 'active',
   deleted_at timestamptz,
@@ -4265,7 +4265,7 @@ COMMENT ON COLUMN monitor.report_schedule.workspace_id IS 'logic → workspace.w
 COMMENT ON COLUMN monitor.report_schedule.work_calendar_id IS 'logic → org.work_calendar';
 COMMENT ON COLUMN monitor.report_schedule.cutoff_time IS 'Giờ chốt dữ liệu';
 COMMENT ON COLUMN monitor.report_schedule.as_of_rule IS 'Ví dụ end_of_previous_month';
-COMMENT ON COLUMN monitor.report_schedule.formats IS 'pdf, xlsx, html';
+COMMENT ON COLUMN monitor.report_schedule.formats IS 'html, xlsx; pdf chưa render (AL-13, mặc định đổi từ pdf ngày 23/11/2026)';
 COMMENT ON COLUMN monitor.report_schedule.require_publish_check IS 'Chạy bốn kiểm tra trước khi gửi';
 COMMENT ON COLUMN monitor.report_schedule.status IS 'draft, active, paused';
 COMMENT ON COLUMN monitor.report_schedule.deleted_at IS 'Xoá mềm';

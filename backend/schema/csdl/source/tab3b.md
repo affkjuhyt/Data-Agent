@@ -2295,7 +2295,7 @@ Báo cáo định kỳ hoặc bản tin lãnh đạo, chạy theo lịch làm vi
 | work\_calendar\_id | uuid | logic → org.work\_calendar |
 | cutoff\_time | time | Giờ chốt dữ liệu |
 | as\_of\_rule | text, bắt buộc | Ví dụ end\_of\_previous\_month |
-| formats | text\[\], bắt buộc, mặc định '{pdf}' | pdf, xlsx, html |
+| formats | text\[\], bắt buộc, mặc định '{html}' | html, xlsx; pdf chưa render (AL-13, mặc định đổi từ pdf ngày 23/11/2026) |
 | require\_publish\_check | boolean, bắt buộc, mặc định true | Chạy bốn kiểm tra trước khi gửi |
 | status | text, bắt buộc, mặc định 'active' | draft, active, paused |
 | deleted\_at | timestamptz | Xoá mềm |

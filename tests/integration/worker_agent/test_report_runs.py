@@ -159,6 +159,19 @@ async def test_a_report_is_rendered_stored_and_told_to_its_recipients(
     assert {c["status"] for c in checks.values()} == {"pass"}
     assert sorted(o["format"] for o in outputs) == ["html", "xlsx"]
     assert all(o["delivery"] == "stored" and o["permission_group"] == "g1" for o in outputs)
+    # AL-13: each output names its sections, the query run that read each and the datasets it
+    # read at their versions.
+    version = seed.one("SELECT current_version FROM catalog.dataset WHERE id = %s", bank.loans)
+    for output in outputs:
+        [section] = output["sections"]
+        assert section["title"] == "Dư nợ theo chi nhánh" and section["ok"] is True
+        assert section["dataset_versions"] == [{"dataset_id": str(bank.loans), "version": version}]
+        assert (
+            seed.one(
+                "SELECT caller_kind FROM query.query_run WHERE id = %s", section["query_run_id"]
+            )
+            == "tile"
+        )
     page = store.files[f"report-runs/{run}/g1.html"].decode()
     assert "Dư nợ theo chi nhánh" in page and "<td>HN1</td>" in page and "21/10/2026" in page
     # Both told in the app, with no figures in the notification.

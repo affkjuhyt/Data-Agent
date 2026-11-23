@@ -179,7 +179,9 @@ class ReportSchedule(Base):
     )
     as_of_rule: Mapped[str] = mapped_column(Text, comment="Ví dụ end_of_previous_month")
     formats: Mapped[list[str]] = mapped_column(
-        ARRAY(Text), server_default=sql_text("'{pdf}'"), comment="pdf, xlsx, html"
+        ARRAY(Text),
+        server_default=sql_text("'{html}'"),
+        comment="html, xlsx; pdf chưa render (AL-13, mặc định đổi từ pdf ngày 23/11/2026)",
     )
     require_publish_check: Mapped[bool] = mapped_column(
         Boolean, server_default=sql_text("true"), comment="Chạy bốn kiểm tra trước khi gửi"

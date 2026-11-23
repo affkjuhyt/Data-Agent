@@ -19861,9 +19861,9 @@
      "name": "formats",
      "type": "text[]",
      "not_null": true,
-     "default": "'{pdf}'",
+     "default": "'{html}'",
      "unique": false,
-     "comment": "pdf, xlsx, html",
+     "comment": "html, xlsx; pdf chưa render (AL-13, mặc định đổi từ pdf ngày 23/11/2026)",
      "fk": null,
      "logic_ref": null,
      "pii": false

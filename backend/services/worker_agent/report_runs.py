@@ -3,7 +3,9 @@
 A run comes from POST /v1/reports/{id}:run-now or from its Temporal schedule
 (schedules/targets.py) when the schedule's cron fires. It renders the workspace's tiles once per permission group (BR-34: the
 North group's file holds no South rows), runs the pre-send checks when the schedule asks for
-them, stores each rendering in MinIO and tells every recipient in the app.
+them, stores each rendering in MinIO and tells every recipient in the app. Each stored output
+lists its sections (AL-13): every tile's title, the query run it was read by and the datasets it
+read at their versions, so a report can be traced and run again at those versions.
 
 Rights. A recipient row carries the hash of its permission set taken when the schedule was saved
 (rules.permission_group in the api). Each group is rendered with one member's rights, its
@@ -17,7 +19,8 @@ What is not done yet, and fails or is reported rather than pretended:
 - the queries run on the source as it is now: a tile reads live data, so `as_of` (from the
   schedule's as_of_rule) dates the report, it does not move the data back (tiles.HISTORY);
 - question tiles are listed, not answered; text tiles carry their text;
-- a pdf rendering is not made (the output says `not_supported`); the email and Teams copies are
+- a report is rendered as html (the default) and xlsx; a pdf is not made (the api refuses it since
+  AL-13, an older row's output says `not_supported`); the email and Teams copies are
   a card with the report's title, date and link, never a figure or a file, sent on the channels
   the recipient has bound and verified (channels/gateway.py); Zalo is not wired. A recipient not
   reached on what they asked for makes the run `partially_sent`.
@@ -46,7 +49,7 @@ from services.worker_agent.events import Event, Handler
 from services.worker_agent.exports import Sheet, write_xlsx
 from services.worker_agent.query.executor import ROLE as QUERY_ROLE
 from services.worker_agent.query.executor import QueryOutcome, bound_sql, run_query
-from services.worker_agent.query_runs import Unbuildable, dataset_sql, sql_source
+from services.worker_agent.query_runs import Unbuildable, dataset_sql, datasets_read, sql_source
 from services.worker_agent.questions import secrets
 from services.worker_agent.session_reports import personal_columns
 
@@ -91,19 +94,33 @@ class Rendered:
     sql: str | None = None
     source: catalog.Source | None = None
     ok: bool = True
+    query_run_id: uuid.UUID | None = None
+    dataset_versions: list[dict[str, Any]] = field(default_factory=list)
+
+    def section(self) -> dict[str, Any]:
+        """What the run's output records of this section (AL-13)."""
+        return {
+            "title": self.title,
+            "query_run_id": str(self.query_run_id) if self.query_run_id else None,
+            "dataset_versions": self.dataset_versions,
+            "ok": self.ok,
+        }
 
 
 async def _tile_sql(
     org: uuid.UUID, space: uuid.UUID, user: uuid.UUID, tile: w.Tile
-) -> tuple[catalog.Source, str]:
+) -> tuple[catalog.Source, str, list[dict[str, Any]]]:
+    """The tile's SQL, the source it runs on and the datasets it reads at their versions."""
     spec = tile.spec if isinstance(tile.spec, dict) else {}
     async with scoped_session(QUERY_ROLE, org, user) as session:
         if tile.kind == "table":
-            return await dataset_sql(session, space, spec)
-        sql = str(spec.get("sql") or "")
-        if not sql:
-            raise Unbuildable("Ô chưa có câu SQL.")
-        return await sql_source(session, space, sql), sql
+            source, sql = await dataset_sql(session, space, spec)
+        else:
+            sql = str(spec.get("sql") or "")
+            if not sql:
+                raise Unbuildable("Ô chưa có câu SQL.")
+            source = await sql_source(session, space, sql)
+        return source, sql, await datasets_read(session, space, source, sql)
 
 
 async def _render(
@@ -116,7 +133,7 @@ async def _render(
     if tile.kind not in QUERIED or (tile.kind == "chart" and not spec.get("sql")):
         return Rendered(title, note="Ô này chưa được đưa vào báo cáo định kỳ.")
     try:
-        source, sql = await _tile_sql(org, space, user, tile)
+        source, sql, versions = await _tile_sql(org, space, user, tile)
     except (Unbuildable, SqlRejected, KeyError, ValueError) as exc:
         return Rendered(title, note=str(exc), ok=False)
     outcome: QueryOutcome = await run_query(
@@ -133,13 +150,23 @@ async def _render(
         quality_gate=True,
     )
     if not outcome.ok:
-        return Rendered(title, note=outcome.error, sql=sql, source=source, ok=False)
+        return Rendered(
+            title,
+            note=outcome.error,
+            sql=sql,
+            source=source,
+            ok=False,
+            query_run_id=outcome.query_run_id,
+            dataset_versions=versions,
+        )
     return Rendered(
         title,
         [str(c["name"]) for c in outcome.columns],
         [list(r) for r in outcome.rows],
         sql=sql,
         source=source,
+        query_run_id=outcome.query_run_id,
+        dataset_versions=versions,
     )
 
 
@@ -496,7 +523,14 @@ async def run_requested(event: Event) -> None:
                 outputs.append({**item, "delivery": "store_unavailable"})
                 missed = True
                 continue
-            outputs.append({**item, "object_key": key, "delivery": "stored"})
+            outputs.append(
+                {
+                    **item,
+                    "object_key": key,
+                    "delivery": "stored",
+                    "sections": [t.section() for t in rendered],
+                }
+            )
         if any(o.get("delivery") == "stored" for o in outputs if o["permission_group"] == group):
             for user, channels in readers.get(group, []):
                 if await _deliver(org, user, channels, space, run_id, schedule.title, as_of):

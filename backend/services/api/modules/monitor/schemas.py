@@ -18,6 +18,7 @@ from services.api.modules.monitor import rules
 RuleKind = Literal["threshold", "change_vs_previous", "seasonal_anomaly"]
 NotifyMode = Literal["alert_only", "with_analysis"]
 DraftStatus = Literal["draft", "active", "paused"]
+# "pdf" stays readable on schedules saved before AL-13; a new one is refused (_rendered).
 ReportFormat = Literal["pdf", "xlsx", "html"]
 ReportChannel = Literal["email", "teams", "zalo", "in_app"]
 EventChannel = Literal["in_app", "email", "teams", "zalo", "mobile_push"]
@@ -142,8 +143,17 @@ def _email() -> list[ReportChannel]:
     return ["email"]
 
 
-def _pdf() -> list[ReportFormat]:
-    return ["pdf"]
+def _html() -> list[ReportFormat]:
+    return ["html"]
+
+
+def _rendered(value: list[ReportFormat] | None) -> list[ReportFormat] | None:
+    """AL-13: the worker renders html and xlsx; a PDF needs a headless browser and Vietnamese
+    fonts in its image, left for later (ANALYTICS_SPEC §7), so asking for one is refused rather
+    than run into a `not_supported` output."""
+    if value is not None and "pdf" in value:
+        raise ValueError("a report is rendered as html or xlsx; pdf is not rendered yet")
+    return value
 
 
 class RecipientIn(BaseModel):
@@ -177,12 +187,13 @@ class ReportCreate(BaseModel):
     work_calendar_id: uuid.UUID | None = None
     cutoff_time: datetime.time | None = None
     as_of_rule: str = Field(min_length=1, max_length=120)
-    formats: list[ReportFormat] = Field(default_factory=_pdf, min_length=1)
+    formats: list[ReportFormat] = Field(default_factory=_html, min_length=1)
     require_publish_check: bool = True
     recipients: list[RecipientIn] = Field(default_factory=list, max_length=500)
 
     _check_cron = field_validator("cron")(_cron)
     _check_recipients = field_validator("recipients")(_unique_recipients)
+    _check_formats = field_validator("formats")(_rendered)
 
 
 class ReportPatch(BaseModel):
@@ -197,6 +208,7 @@ class ReportPatch(BaseModel):
 
     _check_cron = field_validator("cron")(_cron)
     _check_recipients = field_validator("recipients")(_unique_recipients)
+    _check_formats = field_validator("formats")(_rendered)
 
 
 class RunNow(BaseModel):

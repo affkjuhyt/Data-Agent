@@ -58,7 +58,7 @@ def _body(rep: Org, **extra: Any) -> dict[str, Any]:
         "work_calendar_id": str(rep.users["calendar"]),
         "cutoff_time": "07:00:00",
         "as_of_rule": "end_of_previous_week",
-        "formats": ["pdf", "xlsx"],
+        "formats": ["html", "xlsx"],
         "recipients": [
             {"principal_id": str(rep.users["colleague"]), "channels": ["email", "teams"]},
             {"principal_type": "group", "principal_id": str(rep.users["group"])},
@@ -82,7 +82,7 @@ async def test_owner_schedules_a_report_for_three_recipients(rep: Org) -> None:
         made = await _create(api, rep)
     assert made["status"] == "active" and made["kind"] == "report"
     assert made["work_calendar_id"] == str(rep.users["calendar"])
-    assert made["formats"] == ["pdf", "xlsx"] and made["cutoff_time"] == "07:00:00"
+    assert made["formats"] == ["html", "xlsx"] and made["cutoff_time"] == "07:00:00"
     recipients = {r["principal_id"]: r for r in made["recipients"]}
     assert len(recipients) == 3
     assert recipients[str(rep.users["colleague"])]["channels"] == ["email", "teams"]
@@ -123,6 +123,8 @@ async def test_a_report_is_checked_before_it_is_scheduled(rep: Org) -> None:
             ),
             ({"cron": "weekly"}, None),
             ({"formats": ["docx"]}, None),
+            # AL-13: a pdf is not rendered, so it is not accepted either.
+            ({"formats": ["pdf", "xlsx"]}, None),
             ({"formats": []}, None),
         ]
         for extra, field in cases:
@@ -143,6 +145,22 @@ async def test_a_report_is_checked_before_it_is_scheduled(rep: Org) -> None:
         )
         assert digest.status_code == 201, digest.text
     assert rep.one("SELECT count(*) FROM monitor.report_schedule WHERE org_id = %s", rep.org) == 1
+
+
+async def test_a_report_is_rendered_as_html_unless_it_asks_for_xlsx(rep: Org) -> None:
+    # AL-13: html by default; a pdf is not rendered, so a PATCH cannot ask for one either.
+    body = _body(rep)
+    del body["formats"]
+    async with client(rep) as api:
+        made = await api.post("/v1/reports", json=body, headers=rep.headers("owner"))
+        assert made.status_code == 201, made.text
+        assert made.json()["formats"] == ["html"]
+        refused = await api.patch(
+            f"/v1/reports/{made.json()['id']}",
+            json={"formats": ["pdf"]},
+            headers=rep.headers("owner"),
+        )
+        assert refused.status_code == 422, refused.text
 
 
 async def test_only_the_owner_changes_pauses_or_runs_a_report(rep: Org) -> None:
