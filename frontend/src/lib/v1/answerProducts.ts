@@ -1,4 +1,6 @@
+import { listDataSpaces } from './api';
 import { type Page, api, ok, okAs } from './client';
+import { personNames } from './me';
 import type { components } from './schema';
 
 /*
@@ -61,8 +63,9 @@ export interface AnswerProduct extends AnswerProductSummary {
     in_scope_pct: number | null;
     masked_pct: number | null;
     masked_note: string;
-    /** Open Error Book entries: the count from the api, the entries themselves PROPOSAL. */
-    error_book_count: number;
+    /** Open Error Book entries: the count from the api (null when it sends none), the entries
+     *  themselves PROPOSAL. */
+    error_book_count: number | null;
     error_book_open: { id: string; code: string }[];
     eval: { passed: number; total: number; threshold_pct: number } | null;
   };
@@ -118,7 +121,12 @@ const samplesOf = (raw: unknown): { text: string }[] =>
     (q): q is { text: string } => typeof q === 'object' && q !== null && typeof q.text === 'string',
   );
 
-function readSummary(raw: ProductSummaryWire): AnswerProductSummary {
+const NO_NAMES = new Map<string, string>();
+
+function readSummary(
+  raw: ProductSummaryWire,
+  names: Map<string, string> = NO_NAMES,
+): AnswerProductSummary {
   const samples = samplesOf(raw.sample_questions).length;
   return {
     id: raw.id,
@@ -126,8 +134,9 @@ function readSummary(raw: ProductSummaryWire): AnswerProductSummary {
     name: raw.name,
     status: raw.status as ProductStatus,
     version: raw.version,
-    owner_name: raw.owner_name ?? '',
-    steward_name: raw.steward_name ?? '',
+    // '' when the viewer can read no list that names the person; the screen leaves it out.
+    owner_name: raw.owner_name || names.get(raw.owner_id) || '',
+    steward_name: raw.steward_name || names.get(raw.steward_id) || '',
     freshness_statement: raw.freshness_statement,
     freshness_state: (raw.freshness_state ?? 'missing') as FreshnessState,
     next_due_at: raw.next_due_at ?? null,
@@ -173,11 +182,15 @@ function evalOf(raw: unknown): AnswerProduct['stats']['eval'] {
     : null;
 }
 
-function readProduct(raw: ProductDetailWire): AnswerProduct {
+function readProduct(
+  raw: ProductDetailWire,
+  names: Map<string, string>,
+  spaceName: string,
+): AnswerProduct {
   const samples = samplesOf(raw.sample_questions);
   const derived: AnswerProduct = {
-    ...readSummary(raw),
-    data_space_name: '',
+    ...readSummary(raw, names),
+    data_space_name: spaceName,
     description: raw.description,
     scope_chips: chipsOf(raw.scope_entities),
     out_of_scope_note: raw.out_of_scope_note ?? '',
@@ -195,7 +208,7 @@ function readProduct(raw: ProductDetailWire): AnswerProduct {
       in_scope_pct: null,
       masked_pct: null,
       masked_note: '',
-      error_book_count: raw.open_error_book_entries ?? 0,
+      error_book_count: raw.open_error_book_entries ?? null,
       error_book_open: [],
       eval: evalOf(raw.latest_eval_run),
     },
@@ -219,16 +232,23 @@ export const listAnswerProducts = async (status?: ProductStatus) => {
       },
     }),
   );
+  const names = await personNames(page.items.map((p) => p.data_space_id));
   return {
     ...page,
-    items: page.items.map(readSummary),
+    items: page.items.map((p) => readSummary(p, names)),
   };
 };
 
-export const getAnswerProduct = async (id: string) =>
-  readProduct(
-    await ok<ProductDetailWire>(api.GET('/v1/data-products/{id}', { params: { path: { id } } })),
+export const getAnswerProduct = async (id: string) => {
+  const raw = await ok<ProductDetailWire>(
+    api.GET('/v1/data-products/{id}', { params: { path: { id } } }),
   );
+  const [names, spaces] = await Promise.all([
+    personNames([raw.data_space_id]),
+    listDataSpaces().catch(() => null),
+  ]);
+  return readProduct(raw, names, spaces?.items.find((d) => d.id === raw.data_space_id)?.name ?? '');
+};
 
 /** PROPOSAL: the commitment and grace in words; the mock sends them under `display`. */
 type FreshnessWire = Schemas['FreshnessReport'] & { display?: ProductFreshness };

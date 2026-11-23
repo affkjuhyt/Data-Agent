@@ -192,9 +192,19 @@ export default function UploadPage() {
         bordered
         breadcrumb={['Dữ liệu', 'Tải tệp']}
         title={analysis.file_name}
-        description={`Trang tính “${analysis.sheet}” · ${formatNumber(analysis.row_count)} dòng · Agent nhận ra dòng tiêu đề ở dòng ${analysis.header_row}${
-          analysis.header_row > 1 ? ` (dòng 1–${analysis.header_row - 1} là tiêu đề báo cáo)` : ''
-        }`}
+        description={[
+          analysis.sheet ? `Trang tính “${analysis.sheet}”` : null,
+          analysis.row_count === null ? null : `${formatNumber(analysis.row_count)} dòng`,
+          analysis.header_row === null
+            ? null
+            : `Agent nhận ra dòng tiêu đề ở dòng ${analysis.header_row}${
+                analysis.header_row > 1
+                  ? ` (dòng 1–${analysis.header_row - 1} là tiêu đề báo cáo)`
+                  : ''
+              }`,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         actions={
           <>
             <FilePicker
@@ -314,8 +324,12 @@ export default function UploadPage() {
             {analysis.target.table}
             {analysis.target.is_new ? ' (mới)' : ''}
           </Fact>
-          <Fact label="Data Space">{analysis.target.data_space_name}</Fact>
-          <Fact label="Khi tải lại tệp cùng tên">{analysis.target.on_reupload}</Fact>
+          {analysis.target.data_space_name && (
+            <Fact label="Data Space">{analysis.target.data_space_name}</Fact>
+          )}
+          {analysis.target.on_reupload && (
+            <Fact label="Khi tải lại tệp cùng tên">{analysis.target.on_reupload}</Fact>
+          )}
           <Fact label="Hết hạn">{analysis.target.expires ?? 'Không'}</Fact>
           <h2 className="text-foreground da-heading-3">Lưu ý</h2>
           <p className="text-foreground da-body-small">

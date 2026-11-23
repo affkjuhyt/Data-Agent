@@ -70,6 +70,8 @@ function SchemaBody({ sourceName, schema }: { sourceName: string; schema: CrawlS
     ],
     pageSize: 50,
   });
+  // The schema's fields carry no confidence (PROPOSAL): the column shows only when one does.
+  const showConfidence = schema.fields.some((f) => f.confidence !== null);
   const draft = schema.status === 'draft' || schema.status === 'testing';
   // Only a field the agent offers choices for waits on a person; the api offers none yet.
   const unsure = schema.fields.filter((f) => !f.canonical && f.canonical_options.length > 0);
@@ -191,9 +193,11 @@ function SchemaBody({ sourceName, schema }: { sourceName: string; schema: CrawlS
                     Vị trí trích
                   </SortableTh>
                   <th className="w-[170px] px-da-lg py-da-md font-normal">Thuộc tính chuẩn</th>
-                  <SortableTh view={fields} column="confidence" className="w-[56px] px-da-lg py-da-md font-normal">
-                    Độ tin
-                  </SortableTh>
+                  {showConfidence && (
+                    <SortableTh view={fields} column="confidence" className="w-[56px] px-da-lg py-da-md font-normal">
+                      Độ tin
+                    </SortableTh>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -226,16 +230,18 @@ function SchemaBody({ sourceName, schema }: { sourceName: string; schema: CrawlS
                           />
                         ))}
                     </td>
-                    <td
-                      className={cn(
-                        'px-da-lg py-[10px]',
-                        f.confidence !== null && f.confidence < 0.8
-                          ? 'text-warning'
-                          : 'text-foreground',
-                      )}
-                    >
-                      {fmt(f.confidence)}
-                    </td>
+                    {showConfidence && (
+                      <td
+                        className={cn(
+                          'px-da-lg py-[10px]',
+                          f.confidence !== null && f.confidence < 0.8
+                            ? 'text-warning'
+                            : 'text-foreground',
+                        )}
+                      >
+                        {fmt(f.confidence)}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

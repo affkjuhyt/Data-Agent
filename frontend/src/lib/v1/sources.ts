@@ -1,7 +1,9 @@
+import { formatDate, formatNumber } from '../formatVN';
 import { listDataSpaces } from './api';
 import { pathId, V1Error, v1Get, v1Send, v1Upload, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import { awaitQueryRun, getQueryRows } from './explore';
+import { cronText } from './reports';
 import { readDataset, readSource, type DatasetWire, type Source, type SourceWire } from './types';
 
 /*
@@ -99,25 +101,97 @@ const endpointOf = (raw: SourceWire) =>
     ? `${raw.host}${raw.port ? `:${raw.port}` : ''}${raw.database_name ? `/${raw.database_name}` : ''}`
     : (raw.database_name ?? '');
 
+/**
+ * What the api says about a source outside SourceView: its open structure change (GET
+ * /v1/schema-drifts) and its ingestion jobs (GET /v1/jobs). Either list failing leaves it out.
+ */
+interface SourceLive {
+  drift_id: string | null;
+  refresh_text: string | null;
+  last_refreshed_at: Timestamp | null;
+  lag_seconds: number | null;
+  held_records: number | null;
+}
+
+type JobOfSource = Pick<
+  components['schemas']['IngestionJobSummary'],
+  'source_id' | 'mode' | 'lag_seconds' | 'dlq_pending' | 'last_run' | 'target_dataset_id'
+>;
+
+/** When a job last loaded successfully: its last run, if that one succeeded. */
+const loadedAt = (job: JobOfSource) =>
+  job.last_run?.status === 'succeeded'
+    ? (job.last_run.finished_at ?? job.last_run.started_at)
+    : null;
+
+const REFRESH_TEXT: Record<string, string> = {
+  cdc: 'CDC',
+  incremental: 'tăng dần',
+  full: 'theo lịch',
+};
+
+/** One source's jobs read as its refresh: how, the last successful load, its lag and held rows. */
+function liveOf(
+  sourceId: string,
+  drifts: { id: string; source_id: string }[],
+  jobs: JobOfSource[],
+): SourceLive {
+  const own = jobs.filter((job) => job.source_id === sourceId);
+  const loaded = own
+    .map(loadedAt)
+    .filter((at): at is string => !!at)
+    .sort()
+    .at(-1);
+  const lags = own.map((job) => job.lag_seconds).filter((lag): lag is number => lag != null);
+  const held = own.reduce((total, job) => total + (job.dlq_pending ?? 0), 0);
+  const modes = [...new Set(own.map((job) => REFRESH_TEXT[job.mode]).filter(Boolean))];
+  return {
+    drift_id: drifts.find((drift) => drift.source_id === sourceId)?.id ?? null,
+    refresh_text: modes.length > 0 ? modes.join(', ') : null,
+    last_refreshed_at: loaded ?? null,
+    lag_seconds: lags.length > 0 ? Math.max(...lags) : null,
+    held_records: held > 0 ? held : null,
+  };
+}
+
+/** The open drifts and the jobs, of one source or of all; a list that fails reads as empty. */
+async function liveLists(sourceId?: string) {
+  const query = { ...ALL, ...(sourceId ? { source_id: sourceId } : {}) };
+  const [drifts, jobs] = await Promise.all([
+    ok<Page<components['schemas']['SchemaDriftItem']>>(
+      api.GET('/v1/schema-drifts', { params: { query: { ...query, resolution: 'open' } } }),
+    ).catch(() => null),
+    ok<Page<JobOfSource>>(api.GET('/v1/jobs', { params: { query } })).catch(() => null),
+  ]);
+  return {
+    // Unresolved only, whatever the filter did: a resolved drift has nothing left to review.
+    drifts: (drifts?.items ?? []).filter((drift) => !drift.resolution),
+    jobs: jobs?.items ?? [],
+  };
+}
+
 function readSourceRow(
   raw: SourceWire & Partial<SourceRowExtras>,
   spaces: DataSpaceRef[],
+  live?: SourceLive,
 ): SourceRow {
   const source = readSource(raw);
   const space = spaces.find((d) => d.id === raw.data_space_id);
+  const driftId = raw.drift_id ?? live?.drift_id ?? null;
   return {
     ...source,
+    last_refreshed_at: source.last_refreshed_at ?? live?.last_refreshed_at ?? null,
     connector: raw.connector ?? raw.kind,
     connector_label: raw.connector_label ?? CONNECTOR_LABEL[raw.kind] ?? raw.kind,
     endpoint: raw.endpoint ?? endpointOf(raw),
-    refresh_text: raw.refresh_text ?? null,
+    refresh_text: raw.refresh_text ?? live?.refresh_text ?? null,
     status_label:
       raw.status_label ??
       [STATUS_LABEL[source.status], source.status_reason].filter(Boolean).join(' · '),
-    schema_drift: raw.schema_drift ?? false,
-    drift_id: raw.drift_id ?? null,
-    lag_seconds: raw.lag_seconds ?? null,
-    held_records: raw.held_records ?? null,
+    schema_drift: raw.schema_drift ?? driftId !== null,
+    drift_id: driftId,
+    lag_seconds: raw.lag_seconds ?? live?.lag_seconds ?? null,
+    held_records: raw.held_records ?? live?.held_records ?? null,
     data_spaces: raw.data_spaces ?? (space ? [space] : []),
   };
 }
@@ -127,31 +201,46 @@ const spaceRefs = async (): Promise<DataSpaceRef[]> =>
   (await listDataSpaces().catch(() => null))?.items.map((d) => ({ id: d.id, name: d.name })) ?? [];
 
 export const listSourceRows = async (): Promise<Page<SourceRow>> => {
-  const [page, spaces] = await Promise.all([
+  const [page, spaces, live] = await Promise.all([
     ok<Page<SourceWire & Partial<SourceRowExtras>>>(
       api.GET('/v1/sources', { params: { query: ALL } }),
     ),
     spaceRefs(),
+    liveLists(),
   ]);
-  return { ...page, items: page.items.map((raw) => readSourceRow(raw, spaces)) };
+  return {
+    ...page,
+    items: page.items.map((raw) =>
+      readSourceRow(raw, spaces, liveOf(raw.id, live.drifts, live.jobs)),
+    ),
+  };
 };
 
-/** A table as GET /v1/datasets?source_id= gives it; counts the api lacks stay null (PROPOSAL). */
-const readTable = (raw: DatasetWire & Partial<SourceTable>): SourceTable => {
+/**
+ * A table as GET /v1/datasets?source_id= gives it. DatasetView has no column count (PROPOSAL,
+ * null); the last refresh is the last successful load of the job that writes the table.
+ */
+const readTable = (raw: DatasetWire & Partial<SourceTable>, jobs: JobOfSource[]): SourceTable => {
   const dataset = readDataset(raw);
+  const loaded = jobs
+    .filter((job) => job.target_dataset_id === dataset.id)
+    .map(loadedAt)
+    .filter((at): at is string => !!at)
+    .sort()
+    .at(-1);
   return {
     id: dataset.id,
     name: raw.name ?? `${dataset.schema_name}.${dataset.table_name}`,
     description: dataset.description,
     row_count: raw.row_count ?? dataset.row_estimate,
     column_count: raw.column_count ?? null,
-    refreshed_at: raw.refreshed_at ?? null,
+    refreshed_at: raw.refreshed_at ?? loaded ?? null,
   };
 };
 
 /** GET /v1/sources/{id} (A2 since 12/10/2026), with its tables: the datasets read from it. */
 export const getSource = async (id: string): Promise<SourceDetail> => {
-  const [raw, tables, spaces] = await Promise.all([
+  const [raw, tables, spaces, live] = await Promise.all([
     ok<SourceWire & Partial<SourceRowExtras>>(
       api.GET('/v1/sources/{id}', { params: { path: { id } } }),
     ),
@@ -159,8 +248,12 @@ export const getSource = async (id: string): Promise<SourceDetail> => {
       api.GET('/v1/datasets', { params: { query: { ...ALL, source_id: pathId(id) } } }),
     ),
     spaceRefs(),
+    liveLists(pathId(id)),
   ]);
-  return { ...readSourceRow(raw, spaces), tables: tables.items.map(readTable) };
+  return {
+    ...readSourceRow(raw, spaces, liveOf(raw.id, live.drifts, live.jobs)),
+    tables: tables.items.map((table) => readTable(table, live.jobs)),
+  };
 };
 
 /* ─── Hồ sơ bảng: the profile of one table ────────────────────────────── */
@@ -192,11 +285,13 @@ export interface TableProfile {
   /** schema.table, as a profile scan names the table. */
   table_ref: string;
   source: { id: Uuid; name: string };
-  row_count: number;
+  /** The catalogue's row estimate; null when no scan counted the rows. */
+  row_count: number | null;
   column_count: number;
+  /** When the newest column profile was made. */
   refreshed_at: Timestamp | null;
-  /** "03:00 Chủ nhật trên mẫu 1%" */
-  profiled_text: string;
+  /** The source's profiling schedule in words ("Hằng ngày, 03:00"); null without one. */
+  profiled_text: string | null;
   columns: ColumnProfile[];
   /** The Data Prep agent's remarks, each one sentence; null when it has none. */
   review: { agent_name: string; remarks: string[]; footnote: string } | null;
@@ -241,10 +336,11 @@ export const getTableProfile = async (id: string): Promise<TableProfile> => {
     name: dataset.display_name ?? dataset.table_name,
     table_ref: `${dataset.schema_name}.${dataset.table_name}`,
     source: { id: dataset.source_id ?? '', name: source?.name ?? 'Nguồn dữ liệu' },
-    row_count: dataset.row_estimate ?? 0,
+    row_count: dataset.row_estimate ?? null,
     column_count: dataset.column_count ?? columns.length,
     refreshed_at: refreshedAt,
-    profiled_text: source?.profile_cron ?? 'Chưa lập hồ sơ',
+    // profile_cron is the schedule, not when the profile was made; it read as raw cron.
+    profiled_text: source?.profile_cron ? cronText(source.profile_cron) : null,
     columns: columns.map((column) => {
       const profile = column.profile;
       return {
@@ -476,8 +572,9 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /**
  * The api answers :test with 202 and writes the result back on the source (status,
  * status_reason, last_checked_at). The checks one by one, the fix and the tables found are
- * PROPOSAL: without them the result is the source's status as one check, and its tables appear
- * after the first scan.
+ * PROPOSAL: without them the result is the source's status as one check, titled as what the
+ * api reports (the connection as a whole, not network, login and grants one by one), and its
+ * tables appear after the first scan. Without a fix the "Vì sao" block stays hidden.
  */
 function testFromSource(row: SourceRow): ConnectionTest {
   const ok = row.status !== 'needs_fix';
@@ -486,7 +583,7 @@ function testFromSource(row: SourceRow): ConnectionTest {
     checks: [
       {
         key: 'login',
-        title: 'Kết nối và đăng nhập',
+        title: 'Kết nối tới nguồn',
         ok,
         detail: row.status_reason ?? (ok ? 'Kết nối được.' : 'Không kết nối được.'),
       },
@@ -559,8 +656,11 @@ export interface IngestionJob {
   table_name: string;
   source_name: string;
   method: 'cdc' | 'schedule' | 'incremental' | 'continuous' | 'new_files';
-  /** Last 24 hours, oldest first: ok = a successful run, error = a failed one, none = no run. */
-  hours: ('ok' | 'error' | 'none')[];
+  /**
+   * Last 24 hours, oldest first: ok = a successful run, error = a failed one, none = no run.
+   * null when the runs could not be read (GET /v1/job-runs): an hour is then not known.
+   */
+  hours: ('ok' | 'error' | 'none')[] | null;
   lag_seconds: number | null;
   /** Lag beyond the freshness SLA. */
   late: boolean;
@@ -575,6 +675,7 @@ export interface IngestionJob {
 interface IngestionJobWire {
   id: Uuid;
   name: string;
+  source_id?: Uuid | null;
   mode: string;
   source_object: string;
   status: string;
@@ -623,29 +724,58 @@ export function durationSeconds(value: string | number | null | undefined): numb
 const isToday = (iso: string | null | undefined) =>
   !!iso && new Date(iso).toDateString() === new Date().toDateString();
 
-function readJob(row: IngestionJobWire): IngestionJob {
+type JobRunWire = Pick<
+  components['schemas']['JobRunView'],
+  'job_id' | 'status' | 'started_at' | 'rows_written'
+>;
+
+const HOUR = 3_600_000;
+
+/**
+ * The 24 cells of the strip from the job's runs (GET /v1/job-runs since 24 hours ago), oldest
+ * first: an hour with a failed run is an error, one with a successful run ok, else none.
+ */
+function hoursOf(runs: JobRunWire[], now: number): NonNullable<IngestionJob['hours']> {
+  const start = now - 24 * HOUR;
+  const cells: NonNullable<IngestionJob['hours']> = Array(24).fill('none');
+  for (const run of runs) {
+    const index = Math.floor((new Date(run.started_at).getTime() - start) / HOUR);
+    if (index < 0 || index > 23) continue;
+    if (FAILED_RUN.has(run.status)) cells[index] = 'error';
+    else if (run.status === 'succeeded' && cells[index] === 'none') cells[index] = 'ok';
+  }
+  return cells;
+}
+
+function readJob(
+  row: IngestionJobWire,
+  sourceNames: Map<string, string>,
+  runs: JobRunWire[] | null,
+  now: number,
+): IngestionJob {
   const lag = row.lag_seconds ?? null;
   const status = jobStatus(row);
   const run = row.last_run;
-  const last = run?.status
-    ? FAILED_RUN.has(run.status)
-      ? 'error'
-      : run.status === 'succeeded'
-        ? 'ok'
-        : 'none'
-    : 'none';
   const sla = durationSeconds(row.freshness_sla);
+  const own = runs?.filter((r) => r.job_id === row.id) ?? null;
   return {
     id: row.id,
     table_name: row.source_object,
-    source_name: row.name,
+    // The source the job reads; the job's own name only when the source cannot be read.
+    source_name: (row.source_id && sourceNames.get(row.source_id)) || row.name,
     method: jobMethod(row.mode),
-    hours: [...Array(23).fill('none'), last] as IngestionJob['hours'],
+    hours: own ? hoursOf(own, now) : null,
     lag_seconds: lag,
     // Late: behind its freshness SLA; the api has no "late" status.
     late: status === 'error' || (sla !== null && lag !== null && lag > sla),
-    // The last run's rows, and only when that run started today.
-    rows_today: isToday(run?.started_at) ? (run?.rows_written ?? 0) : 0,
+    // Every run of today when the runs are known; else the last run, if it started today.
+    rows_today: own
+      ? own
+          .filter((r) => isToday(r.started_at))
+          .reduce((total, r) => total + (r.rows_written ?? 0), 0)
+      : isToday(run?.started_at)
+        ? (run?.rows_written ?? 0)
+        : 0,
     status,
     job_status: row.status,
     status_reason:
@@ -654,8 +784,19 @@ function readJob(row: IngestionJobWire): IngestionJob {
 }
 
 export const listJobs = async () => {
-  const page = await ok<Page<IngestionJobWire>>(api.GET('/v1/jobs', { params: { query: ALL } }));
-  return { ...page, items: page.items.map(readJob) };
+  const now = Date.now();
+  const [page, sources, runs] = await Promise.all([
+    ok<Page<IngestionJobWire>>(api.GET('/v1/jobs', { params: { query: ALL } })),
+    ok<Page<SourceWire>>(api.GET('/v1/sources', { params: { query: ALL } })).catch(() => null),
+    // The last 24 hours hold both the strip and every run of today.
+    ok<Page<JobRunWire>>(
+      api.GET('/v1/job-runs', {
+        params: { query: { ...ALL, from: new Date(now - 24 * HOUR).toISOString() } },
+      }),
+    ).catch(() => null),
+  ]);
+  const names = new Map((sources?.items ?? []).map((s) => [s.id, s.name]));
+  return { ...page, items: page.items.map((row) => readJob(row, names, runs?.items ?? null, now)) };
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -705,17 +846,20 @@ export type UploadColumn = {
 export interface UploadAnalysis {
   id: Uuid;
   file_name: string;
-  sheet: string;
-  row_count: number;
-  header_row: number;
+  /** What the upload has not read yet (no sheet, no counted rows, no header) is null. */
+  sheet: string | null;
+  row_count: number | null;
+  header_row: number | null;
   columns: UploadColumn[];
   /** The sentence under the table about the rows with issues. */
   issue_note: string | null;
   target: {
     table: string;
     is_new: boolean;
-    data_space_name: string;
-    on_reupload: string;
+    /** null when the Data Space is not one the viewer can list. */
+    data_space_name: string | null;
+    /** null when the upload states no replace mode. */
+    on_reupload: string | null;
     expires: string | null;
   };
 }
@@ -760,11 +904,19 @@ interface FileUploadWire {
   decimal_sep: string | null;
   error_ratio: number | string | null;
   target_dataset_id: Uuid | null;
+  data_space_id?: Uuid;
+  replace_mode?: string | null;
   expires_at: Timestamp;
   status: string;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
+
+const REPLACE_MODE: Record<string, string> = {
+  replace: 'Thay toàn bộ',
+  append: 'Nối thêm',
+  merge: 'Gộp theo khoá',
+};
 
 function uploadColumns(value: unknown): UploadColumn[] {
   if (!Array.isArray(value)) return [];
@@ -791,26 +943,43 @@ function uploadColumns(value: unknown): UploadColumn[] {
   });
 }
 
-function readUpload(row: FileUploadWire): UploadAnalysis {
+/**
+ * The upload as the screen reads it. The target table is named from its dataset and the Data
+ * Space from the viewer's spaces; one that cannot be read keeps the table "Bảng mới"/its id out
+ * and the Data Space null, rather than printing a UUID or a blank fact.
+ */
+async function readUpload(row: FileUploadWire): Promise<UploadAnalysis> {
   const ratio = row.error_ratio === null ? 0 : Number(row.error_ratio);
   const validation =
     row.validation && typeof row.validation === 'object'
       ? (row.validation as Record<string, unknown>)
       : {};
+  const [dataset, spaces] = await Promise.all([
+    row.target_dataset_id
+      ? ok<DatasetWire>(
+          api.GET('/v1/datasets/{id}', { params: { path: { id: row.target_dataset_id } } }),
+        ).catch(() => null)
+      : null,
+    row.data_space_id ? spaceRefs() : [],
+  ]);
   return {
     id: row.id,
     file_name: row.file_name,
-    sheet: row.sheet ?? '',
-    row_count: typeof validation.row_count === 'number' ? validation.row_count : 0,
-    header_row: row.header_row ?? 0,
+    sheet: row.sheet || null,
+    row_count: typeof validation.row_count === 'number' ? validation.row_count : null,
+    header_row: row.header_row ?? null,
     columns: uploadColumns(row.column_map),
     issue_note: ratio > 0 ? `Tỷ lệ dòng cần kiểm tra: ${ratio * 100}%` : null,
     target: {
-      table: row.target_dataset_id ?? 'Bảng mới',
+      table: row.target_dataset_id
+        ? dataset
+          ? (dataset.display_name ?? `${dataset.schema_name}.${dataset.table_name}`)
+          : 'Bảng đã có'
+        : 'Bảng mới',
       is_new: row.target_dataset_id === null,
-      data_space_name: '',
-      on_reupload: 'replace',
-      expires: row.expires_at,
+      data_space_name: spaces.find((space) => space.id === row.data_space_id)?.name ?? null,
+      on_reupload: row.replace_mode ? (REPLACE_MODE[row.replace_mode] ?? row.replace_mode) : null,
+      expires: formatDate(row.expires_at),
     },
   };
 }
@@ -1019,12 +1188,24 @@ export const getCollectionsSummary = async (): Promise<CollectionsSummary> => {
   };
 };
 
+/**
+ * "đồng bộ từ SharePoint “Pháp chế/Tín dụng” · Hằng ngày, 03:00", from the collection's
+ * document sources (GET /v1/document-sources); null when it has none.
+ */
+function syncText(feeds: components['schemas']['DocumentSourceView'][] | undefined) {
+  const feed = feeds?.find((f) => f.status !== 'archived') ?? feeds?.[0];
+  if (!feed) return null;
+  const kind = CONNECTOR_LABEL[feed.kind] ?? feed.kind;
+  const more = feeds!.length > 1 ? ` và ${feeds!.length - 1} nguồn khác` : '';
+  return `đồng bộ từ ${kind} “${feed.location}” · ${cronText(feed.sync_cron)}${more}`;
+}
+
 /*
  * A2 has no GET /v1/collections/{id}: the collection is its row of the list, with its documents
  * counted, its Data Space named and the pages of its documents that wait on a quality issue.
  */
 export const getCollection = async (id: string): Promise<CollectionDetail> => {
-  const [page, docs, issues, spaces] = await Promise.all([
+  const [page, docs, issues, spaces, feeds] = await Promise.all([
     ok<Page<CollectionWire>>(api.GET('/v1/collections', { params: { query: ALL } })),
     ok<Page<DocumentRowWire>>(
       api.GET('/v1/documents', { params: { query: { ...ALL, collection_id: id } } }),
@@ -1033,6 +1214,9 @@ export const getCollection = async (id: string): Promise<CollectionDetail> => {
       api.GET('/v1/quality-issues', { params: { query: { ...ALL, status: 'open' } } }),
     ).catch(() => null),
     spaceRefs(),
+    ok<Page<components['schemas']['DocumentSourceView']>>(
+      api.GET('/v1/document-sources', { params: { query: { ...ALL, collection_id: id } } }),
+    ).catch(() => null),
   ]);
   const raw = page.items.find((c) => c.id === id);
   if (!raw) throw new V1Error(404, 'not_found', 'Không tìm thấy bộ sưu tập.');
@@ -1049,7 +1233,7 @@ export const getCollection = async (id: string): Promise<CollectionDetail> => {
   return {
     ...shown,
     document_count: proposed?.document_count ?? docs.items.length,
-    sync_text: proposed?.sync_text ?? null,
+    sync_text: proposed?.sync_text ?? syncText(feeds?.items.filter((f) => f.collection_id === id)),
     data_space_name:
       proposed?.data_space_name ?? spaces.find((d) => d.id === raw.data_space_id)?.name ?? null,
     pages_pending_review: proposed?.pages_pending_review ?? pages.size,
@@ -1105,21 +1289,71 @@ const STATUS: Record<string, { tone: Tone; text: string }> = {
 function stepsOf(raw: DocumentApi): StepState[] {
   const all = (s: StepState) => Array<StepState>(8).fill(s);
   if (raw.status === 'ready') return all('done');
-  if (raw.status === 'failed') return ['error', ...Array<StepState>(7).fill('todo')];
   if (raw.status === 'received') return all('todo');
+  // Only what the progress shows: the steps run in order, so pages read means identification
+  // and extraction ran, and chunks made means every step up to "chia đoạn" ran. Metadata and
+  // the check are not reported apart, so they stay todo until the document is ready.
   const p = raw.progress;
-  const done = p.chunks_indexed > 0 ? 6 : p.chunks > 0 ? 4 : p.pages_read > 0 ? 2 : 1;
-  return Array.from(
-    { length: 8 },
-    (_, i): StepState =>
-      i < done ? 'done' : raw.status === 'waiting_review' && i === done ? 'warn' : 'todo',
-  );
+  const done = p.chunks > 0 ? 6 : p.pages_read > 0 ? 2 : 1;
+  return Array.from({ length: 8 }, (_, i): StepState => {
+    if (i < done) return 'done';
+    if (raw.status === 'failed' && i === done) return 'error';
+    // A person must look: the check step waits on them.
+    if (raw.status === 'waiting_review' && i === 7) return 'warn';
+    return 'todo';
+  });
+}
+
+/** What the Document agent did, from the progress the api reports (no step timings). */
+function processingOf(
+  raw: DocumentApi & { error?: string | null; open_quality_issues?: number },
+): DocumentDetail['processing'] {
+  const p = raw.progress;
+  const ready = raw.status === 'ready';
+  const failed = raw.status === 'failed';
+  // An unfinished step failed with the document, waits with it on a person, or still runs.
+  const running = (finished: boolean): DocumentDetail['processing'][number]['state'] =>
+    finished
+      ? 'done'
+      : failed
+        ? 'error'
+        : raw.status === 'waiting_review'
+          ? 'waiting'
+          : 'running';
+  if (raw.status === 'received') return [];
+  const steps: DocumentDetail['processing'] = [
+    {
+      state: running(ready || (p.pages_total !== null && p.pages_read >= p.pages_total)),
+      title: 'Đọc trang',
+      detail: `${formatNumber(p.pages_read)}${p.pages_total !== null ? `/${formatNumber(p.pages_total)}` : ''} trang, ${formatNumber(p.pages_usable)} trang dùng được`,
+      duration: null,
+    },
+  ];
+  if (p.chunks > 0 || ready)
+    steps.push({
+      state: running(ready || (p.chunks > 0 && p.chunks_indexed >= p.chunks)),
+      title: 'Chia đoạn và lập chỉ mục',
+      detail: `${formatNumber(p.chunks_indexed)}/${formatNumber(p.chunks)} đoạn đã lập chỉ mục`,
+      duration: null,
+    });
+  if ((raw.open_quality_issues ?? 0) > 0)
+    steps.push({
+      state: 'pendingApproval',
+      title: 'Chờ người xem',
+      detail: `${formatNumber(raw.open_quality_issues!)} vấn đề chất lượng đang mở`,
+      duration: null,
+    });
+  if (failed && raw.error)
+    steps.push({ state: 'error', title: 'Lỗi', detail: raw.error, duration: null });
+  return steps;
 }
 
 const day = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
 
 /** GET /v1/documents/{id} as the collection page reads it (shared with the P05 viewer). */
-export function readCollectionDocument(raw: DocumentApi): DocumentDetail {
+export function readCollectionDocument(
+  raw: DocumentApi & { error?: string | null; open_quality_issues?: number },
+): DocumentDetail {
   const ended =
     raw.effective_to !== null && raw.effective_to < new Date().toISOString().slice(0, 10);
   return {
@@ -1136,7 +1370,7 @@ export function readCollectionDocument(raw: DocumentApi): DocumentDetail {
         : null,
     status: STATUS[raw.status] ?? { tone: 'idle', text: raw.status },
     origin_text: `Nạp ${day(raw.created_at)}`,
-    processing: [],
+    processing: processingOf(raw),
     excerpt: null,
     effective_text: raw.effective_from ? `Hiệu lực từ ${day(raw.effective_from)}` : null,
     impact_text: null,

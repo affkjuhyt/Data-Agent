@@ -57,10 +57,10 @@ function ProfileView({ profile }: { profile: TableProfile }) {
   });
 
   const facts = [
-    `${formatNumber(profile.row_count)} dòng`,
+    profile.row_count === null ? null : `${formatNumber(profile.row_count)} dòng`,
     `${profile.column_count} cột`,
-    profile.refreshed_at ? `cập nhật ${formatTime(profile.refreshed_at)}` : null,
-    `hồ sơ lập lúc ${profile.profiled_text}`,
+    profile.refreshed_at ? `hồ sơ lập lúc ${formatTime(profile.refreshed_at)}` : 'chưa lập hồ sơ',
+    profile.profiled_text ? `lịch lập hồ sơ: ${profile.profiled_text}` : null,
   ].filter(Boolean);
 
   return (

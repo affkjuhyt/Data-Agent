@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { http, HttpResponse } from 'msw';
+import { setupServer } from 'msw/node';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  listGlossary,
   readContextEval,
   readEntityDetail,
   readEntityModel,
@@ -142,6 +145,51 @@ describe('entity adapters', () => {
       sources: [{ label: 'crm.customers', role: 'Chính' }],
       synonyms: [],
       metrics: [],
+    });
+  });
+});
+
+describe('listGlossary', () => {
+  const server = setupServer(
+    http.get('*/v1/terms', () =>
+      HttpResponse.json({
+        items: [
+          {
+            id: 't-1',
+            term: 'Nợ xấu',
+            definition: 'NPL_RATIO',
+            data_space_id: 'ds-1',
+            status: 'active',
+            meanings: [],
+            default_meaning: null,
+          },
+        ],
+        next_page_token: '',
+      }),
+    ),
+    http.get('*/v1/data-spaces', () =>
+      HttpResponse.json({ items: [{ id: 'ds-1', name: 'Rủi ro tín dụng' }], next_page_token: '' }),
+    ),
+    http.get('*/v1/synonyms', () =>
+      HttpResponse.json({
+        items: [
+          { glossary_term_id: 't-1', phrase: 'NPL', status: 'active' },
+          { glossary_term_id: 't-1', phrase: 'nợ nhóm 3-5', status: 'active' },
+          { glossary_term_id: 't-1', phrase: 'nợ khó đòi', status: 'pending_review' },
+        ],
+        next_page_token: '',
+      }),
+    ),
+  );
+  beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+  afterAll(() => server.close());
+
+  it('names the Data Space and lists the approved synonyms of a term', async () => {
+    const [term] = (await listGlossary()).items;
+    expect(term).toMatchObject({
+      data_space_text: 'Rủi ro tín dụng',
+      synonyms: 'NPL, nợ nhóm 3-5',
+      owner_name: '',
     });
   });
 });

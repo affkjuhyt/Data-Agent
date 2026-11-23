@@ -1,3 +1,4 @@
+import { listDataSpaces } from './api';
 import { type Page, api, ok } from './client';
 import type { components } from './schema';
 
@@ -149,10 +150,25 @@ export const getEntityModel = async () =>
     await ok<EntityPageWire>(api.GET('/v1/entities', { params: { query: { page_size: 500 } } })),
   );
 
-export const getEntity = async (key: string) =>
-  readEntityDetail(
-    await ok<EntityDetailWire>(api.GET('/v1/entities/{key}', { params: { path: { key } } })),
+type SynonymWire = components['schemas']['SynonymView'];
+
+/** Approved synonyms (GET /v1/synonyms); a pending or rejected one does not steer the agent. */
+const activeSynonyms = async (query: { target_kind?: string; target_id?: string } = {}) =>
+  (
+    await ok<Page<SynonymWire>>(
+      api.GET('/v1/synonyms', { params: { query: { ...query, page_size: 500 } } }),
+    ).catch(() => null)
+  )?.items.filter((s) => s.status === 'active') ?? [];
+
+export const getEntity = async (key: string) => {
+  const raw = await ok<EntityDetailWire>(
+    api.GET('/v1/entities/{key}', { params: { path: { key } } }),
   );
+  const entity = readEntityDetail(raw);
+  if (raw.display?.synonyms) return entity;
+  const synonyms = await activeSynonyms({ target_kind: 'entity', target_id: raw.id });
+  return { ...entity, synonyms: synonyms.map((s) => s.phrase) };
+};
 
 /** Asks for an active join to go: a proposal someone else decides in Cần bạn; it stays active
  * until then. */
@@ -205,14 +221,25 @@ const readMeanings = (raw: GlossaryWire): GlossaryEntry['meanings'] =>
   });
 
 /** An active term with more than one meaning is ambiguous; one not yet approved is a draft. */
-function readGlossary(raw: GlossaryWire): GlossaryEntry {
+function readGlossary(
+  raw: GlossaryWire,
+  spaces: Map<string, string>,
+  synonyms: SynonymWire[] = [],
+): GlossaryEntry {
   const meanings = readMeanings(raw);
   return {
     id: raw.id,
     term: raw.term,
     maps_to: raw.maps_to ?? raw.definition,
-    synonyms: raw.synonyms ?? '',
-    data_space_text: raw.data_space_text ?? '',
+    // The approved synonyms filed under this term (SynonymView.glossary_term_id).
+    synonyms:
+      raw.synonyms ||
+      synonyms
+        .filter((s) => s.glossary_term_id === raw.id)
+        .map((s) => s.phrase)
+        .join(', '),
+    // TermView names its Data Space by id: its name is the viewer's space of that id.
+    data_space_text: raw.data_space_text || (spaces.get(raw.data_space_id) ?? ''),
     status: raw.status !== 'active' ? 'draft' : meanings.length > 1 ? 'ambiguous' : 'certified',
     meanings,
     ambiguity_rule: raw.ambiguity_rule ?? null,
@@ -223,11 +250,21 @@ function readGlossary(raw: GlossaryWire): GlossaryEntry {
 
 /** `view=glossary` (PROPOSAL) asks for the reading fields; the api sends TermView. */
 export const listGlossary = async () => {
-  const page = await ok<Page<GlossaryWire>>(
-    api.GET('/v1/terms', { params: { query: { view: 'glossary', page_size: 500 } } }),
-  );
+  const [page, spaces, synonyms] = await Promise.all([
+    ok<Page<GlossaryWire>>(
+      api.GET('/v1/terms', { params: { query: { view: 'glossary', page_size: 500 } } }),
+    ),
+    listDataSpaces().catch(() => null),
+    activeSynonyms(),
+  ]);
+  const names = new Map((spaces?.items ?? []).map((d) => [d.id, d.name]));
   // A retired term is out of the glossary; it read as "draft" and was counted with the others.
-  return { ...page, items: page.items.filter((t) => t.status !== 'retired').map(readGlossary) };
+  return {
+    ...page,
+    items: page.items
+      .filter((t) => t.status !== 'retired')
+      .map((t) => readGlossary(t, names, synonyms)),
+  };
 };
 
 /** GET /v1/unmapped-phrases: what the agent did not understand, the most asked first (UC-07-09). */
@@ -270,7 +307,7 @@ export const listUnknownPhrases = async () => {
 
 /** A2: POST /v1/terms — a new term waits for review (pending_review). */
 export const createTerm = async (body: { term: string; definition: string }) =>
-  readGlossary(await ok<GlossaryWire>(api.POST('/v1/terms', { body })));
+  readGlossary(await ok<GlossaryWire>(api.POST('/v1/terms', { body })), new Map());
 
 /* ─── Đánh giá lớp ngữ cảnh ─────────────────────────────────────────── */
 

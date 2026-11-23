@@ -151,7 +151,7 @@ function MetricBody({ metric }: { metric: MetricDetail }) {
         }
         description={[
           inUse
-            ? `v${inUse.version} đang dùng · chứng nhận bởi ${inUse.certified_by_name ?? '—'} ${inUse.certified_at ? formatDate(inUse.certified_at).slice(0, 5) : ''}`
+            ? `v${inUse.version} đang dùng · chứng nhận${inUse.certified_by_name ? ` bởi ${inUse.certified_by_name}` : ''}${inUse.certified_at ? ` ${formatDate(inUse.certified_at).slice(0, 5)}` : ''}`
             : 'Chưa có phiên bản được chứng nhận',
           metric.usage_text,
         ].join(' · ')}

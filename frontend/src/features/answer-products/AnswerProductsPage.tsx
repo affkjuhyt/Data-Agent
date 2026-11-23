@@ -154,9 +154,16 @@ function ProductCard({
             {product.status === 'active' ? ` · v${product.version}` : ''}
           </Badge>
         </span>
-        <span className="text-muted-foreground da-caption">
-          Owner {product.owner_name} · steward {product.steward_name}
-        </span>
+        {(product.owner_name || product.steward_name) && (
+          <span className="text-muted-foreground da-caption">
+            {[
+              product.owner_name && `Owner ${product.owner_name}`,
+              product.steward_name && `steward ${product.steward_name}`,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+        )}
         <span className="text-foreground da-caption">{product.freshness_statement}</span>
         {product.readiness_text ? (
           <StatusDot tone="warning">{product.readiness_text}</StatusDot>
@@ -239,11 +246,13 @@ function ProductBody({ product }: { product: AnswerProduct }) {
           product.status === 'active'
             ? `v${product.version} đang dùng`
             : `v${product.version} nháp`,
-          `Data Space ${product.data_space_name}`,
-          `owner ${product.owner_name}`,
-          `steward ${product.steward_name}`,
+          product.data_space_name && `Data Space ${product.data_space_name}`,
+          product.owner_name && `owner ${product.owner_name}`,
+          product.steward_name && `steward ${product.steward_name}`,
           product.freshness_statement.toLowerCase(),
-        ].join(' · ')}
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         actions={
           <>
             {product.status === 'active' && (
@@ -296,33 +305,40 @@ function ProductBody({ product }: { product: AnswerProduct }) {
             note={product.next_due_at ? `hạn kế ${dueText(product.next_due_at)}` : '—'}
             tone={fresh.tone === 'success' ? 'success' : 'muted'}
           />
-          <Kpi
-            label="Trong phạm vi"
-            value={pct(product.stats.in_scope_pct)}
-            note="câu hỏi 30 ngày"
-          />
-          <Kpi
-            label="Bị che do quá hạn"
-            value={pct(product.stats.masked_pct)}
-            note={product.stats.masked_note}
-            tone={(product.stats.masked_pct ?? 0) > 0 ? 'warning' : 'muted'}
-          />
-          <Kpi
-            label="Error Book mở"
-            value={String(product.stats.error_book_count)}
-            note={
-              product.stats.error_book_open.map((e) => e.code).join(', ') ||
-              (product.stats.error_book_count
-                ? `${product.stats.error_book_count} mục mở`
-                : 'không có')
-            }
-            tone={product.stats.error_book_count ? 'error' : 'muted'}
-            onClick={
-              product.stats.error_book_open.length
-                ? () => navigate('data', 'ERROR_BOOK', product.stats.error_book_open[0].id)
-                : undefined
-            }
-          />
+          {/* The api counts no questions per product yet: these two show only when it does. */}
+          {product.stats.in_scope_pct !== null && (
+            <Kpi
+              label="Trong phạm vi"
+              value={pct(product.stats.in_scope_pct)}
+              note="câu hỏi 30 ngày"
+            />
+          )}
+          {product.stats.masked_pct !== null && (
+            <Kpi
+              label="Bị che do quá hạn"
+              value={pct(product.stats.masked_pct)}
+              note={product.stats.masked_note}
+              tone={product.stats.masked_pct > 0 ? 'warning' : 'muted'}
+            />
+          )}
+          {product.stats.error_book_count !== null && (
+            <Kpi
+              label="Error Book mở"
+              value={String(product.stats.error_book_count)}
+              note={
+                product.stats.error_book_open.map((e) => e.code).join(', ') ||
+                (product.stats.error_book_count
+                  ? `${product.stats.error_book_count} mục mở`
+                  : 'không có')
+              }
+              tone={product.stats.error_book_count ? 'error' : 'muted'}
+              onClick={
+                product.stats.error_book_open.length
+                  ? () => navigate('data', 'ERROR_BOOK', product.stats.error_book_open[0].id)
+                  : undefined
+              }
+            />
+          )}
           <Kpi
             label="Đánh giá"
             value={evalPct === null ? '—' : pct(Math.round(evalPct))}
@@ -349,7 +365,9 @@ function ProductBody({ product }: { product: AnswerProduct }) {
           />
         )}
         {tab === 'freshness' && <FreshnessTab id={product.id} />}
-        {tab === 'monitoring' && <MonitoringTab monitoring={product.monitoring} />}
+        {tab === 'monitoring' && (
+          <MonitoringTab monitoring={product.monitoring} product={product} />
+        )}
       </div>
       <Dialog
         open={submitting}
@@ -698,7 +716,13 @@ function FreshnessTab({ id }: { id: string }) {
   );
 }
 
-function MonitoringTab({ monitoring: m }: { monitoring: ProductMonitoring | null }) {
+function MonitoringTab({
+  monitoring: m,
+  product,
+}: {
+  monitoring: ProductMonitoring | null;
+  product: AnswerProduct;
+}) {
   const weeks = useTableView(m?.weeks ?? [], {
     search: (w) => `${w.label} ${pct(w.in_scope_pct)} ${pct(w.masked_pct)}`,
     filters: [
@@ -716,12 +740,42 @@ function MonitoringTab({ monitoring: m }: { monitoring: ProductMonitoring | null
     ],
     pageSize: 50,
   });
-  if (!m)
+  // Without the weekly series (PROPOSAL) the tab shows what DataProductDetail does carry: the
+  // freshness, the latest eval run and the open Error Book entries.
+  if (!m) {
+    const evaluation = product.stats.eval;
     return (
-      <p className="text-muted-foreground da-body-small">
-        Chưa có số liệu theo dõi theo tuần cho data product này.
-      </p>
+      <section className="flex flex-col gap-da-sm rounded-md border border-border bg-card p-da-lg">
+        <dl className="flex flex-col gap-da-sm da-body-small">
+          <div className="flex gap-da-md">
+            <dt className="w-[160px] shrink-0 text-muted-foreground">Độ tươi</dt>
+            <dd className="text-foreground">{product.freshness_statement}</dd>
+          </div>
+          <div className="flex gap-da-md">
+            <dt className="w-[160px] shrink-0 text-muted-foreground">Lượt đánh giá gần nhất</dt>
+            <dd className="text-foreground">
+              {evaluation
+                ? `${evaluation.passed}/${evaluation.total} câu đạt · ngưỡng ${evaluation.threshold_pct}%`
+                : 'Chưa có lượt đánh giá hoàn tất'}
+            </dd>
+          </div>
+          {product.stats.error_book_count !== null && (
+            <div className="flex gap-da-md">
+              <dt className="w-[160px] shrink-0 text-muted-foreground">Error Book mở</dt>
+              <dd className="text-foreground">
+                {product.stats.error_book_count
+                  ? `${product.stats.error_book_count} mục`
+                  : 'Không có'}
+              </dd>
+            </div>
+          )}
+        </dl>
+        <p className="text-muted-foreground da-caption">
+          Số câu hỏi theo tuần, trong phạm vi và bị che chưa được đo cho data product này.
+        </p>
+      </section>
     );
+  }
   return (
     <section className="flex flex-col gap-da-sm rounded-md border border-border bg-card p-da-lg">
       <h2 className="text-foreground da-heading-3">{m.questions_30d} câu hỏi trong 30 ngày</h2>

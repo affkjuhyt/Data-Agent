@@ -36,7 +36,8 @@ const readCatalogMetric = (raw: CatalogMetricWire): CatalogMetric => ({
   name: raw.name ?? raw.display_name ?? raw.code,
   status: raw.certified ? 'certified' : 'draft',
   domain: raw.domain ?? '',
-  usage_text: raw.usage_text ?? '',
+  // Where it is used is PROPOSAL; the one use MetricView states is a filed report.
+  usage_text: raw.usage_text || (raw.in_filed_report ? 'Dùng trong báo cáo đã nộp' : ''),
 });
 
 /** `view=catalog` (PROPOSAL) asks for the catalog fields; the api ignores it and sends MetricView. */

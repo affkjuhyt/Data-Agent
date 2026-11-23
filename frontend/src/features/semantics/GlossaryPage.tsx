@@ -269,7 +269,7 @@ function TermPanel({ term }: { term: GlossaryEntry }) {
       )}
       <dl className="flex flex-col gap-da-sm da-body-small">
         {term.ambiguity_rule && <Pair label="Khi mơ hồ">{term.ambiguity_rule}</Pair>}
-        <Pair label="Chủ sở hữu">{term.owner_name}</Pair>
+        {term.owner_name && <Pair label="Chủ sở hữu">{term.owner_name}</Pair>}
         {term.usage_text && <Pair label="Dùng 30 ngày">{term.usage_text}</Pair>}
       </dl>
     </aside>

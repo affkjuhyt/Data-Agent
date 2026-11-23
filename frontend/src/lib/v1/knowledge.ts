@@ -1,4 +1,5 @@
 import { currentDataSpace, V1Error, type Page, api, ok } from './client';
+import { personNames } from './me';
 import type { components } from './schema';
 
 /*
@@ -104,7 +105,11 @@ const day = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
  * A claim cites one of the page's sources (source_link_id) and holds from valid_from to
  * valid_to; past valid_to it is expired. Link titles come from the pages the viewer can list.
  */
-function readRendered(raw: RenderedWire, titles: Map<string, string>): KnowledgePage {
+function readRendered(
+  raw: RenderedWire,
+  titles: Map<string, string>,
+  people: Map<string, string> = new Map(),
+): KnowledgePage {
   const page = raw.page;
   const today = new Date().toISOString().slice(0, 10);
   const derived: NonNullable<RenderedWire['display']> = {
@@ -132,7 +137,10 @@ function readRendered(raw: RenderedWire, titles: Map<string, string>): Knowledge
       title: titles.get(l.to_page_id) ?? 'Trang liên kết',
       page_id: l.to_page_id,
     })),
-    certified_by_name: null,
+    // The version names its certifier by id; the name is known when the viewer can read it.
+    certified_by_name: raw.version?.certified_by
+      ? (people.get(raw.version.certified_by) ?? null)
+      : null,
   };
   return {
     ...readSummary(page),
@@ -149,7 +157,15 @@ export const getKnowledgePage = async (id: string) => {
     ok<RenderedWire>(api.GET('/v1/knowledge-pages/{id}', { params: { path: { id } } })),
     listKnowledgePages().catch(() => null),
   ]);
-  return readRendered(raw, new Map<string, string>(pages?.items.map((p) => [p.id, p.title]) ?? []));
+  const people =
+    raw.version?.certified_by && !raw.display
+      ? await personNames([raw.page.data_space_id])
+      : new Map<string, string>();
+  return readRendered(
+    raw,
+    new Map<string, string>(pages?.items.map((p) => [p.id, p.title]) ?? []),
+    people,
+  );
 };
 
 export const listKnowledgePageVersions = async (id: string) => {

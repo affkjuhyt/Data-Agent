@@ -163,7 +163,7 @@ function Header({ page }: { page: KnowledgePage }) {
       description={[
         `Trang ${KIND[page.kind].toLowerCase()}`,
         page.certified_at
-          ? `v${page.version} chứng nhận ${formatDate(page.certified_at)} bởi ${page.certified_by_name ?? '—'}`
+          ? `v${page.version} chứng nhận ${formatDate(page.certified_at)}${page.certified_by_name ? ` bởi ${page.certified_by_name}` : ''}`
           : `v${page.version}`,
         `${valid} khẳng định còn hiệu lực`,
         expired > 0 ? `${expired} hết hiệu lực` : null,

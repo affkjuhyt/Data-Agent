@@ -1,3 +1,4 @@
+import { getHitl } from './api';
 import { V1Error, type Page, api, ok } from './client';
 import type { components } from './schema';
 
@@ -154,8 +155,42 @@ export const listPeriods = async () => {
   return { ...page, items: page.items.map(readSummary) };
 };
 
-export const getPeriod = async (id: string) =>
-  readClose(await ok<PeriodDetailWire>(api.GET('/v1/periods/{id}', { params: { path: { id } } })));
+/*
+ * The mismatch that waits on a person: the first reconciliation row (GET
+ * /v1/periods/{id}/reconciliation) that is mismatched with a HITL request, and that request's
+ * own options (GET /v1/hitl-requests/{id}). Nothing is offered when the request is closed, has
+ * no options or cannot be read.
+ */
+async function issueOf(id: string): Promise<CloseStep['issue']> {
+  const rows = await ok<Page<Schemas['ReconciliationView']>>(
+    api.GET('/v1/periods/{id}/reconciliation', {
+      params: { path: { id }, query: { page_size: 500 } },
+    }),
+  ).catch(() => null);
+  const row = rows?.items.find((r) => r.status === 'mismatched' && r.hitl_request_id);
+  if (!row?.hitl_request_id) return undefined;
+  const hitl = await getHitl(row.hitl_request_id).catch(() => null);
+  if (!hitl || hitl.resolved_at || hitl.options.length === 0) return undefined;
+  return {
+    text: `${hitl.title} · ${row.item_code}: sổ cái ${row.ledger_value}, ảnh chụp ${row.snapshot_value}, lệch ${row.delta} (dung sai ${row.tolerance})`,
+    hitl_id: hitl.id,
+    // The request says no option needs a note; the person may still add one on the inbox card.
+    options: hitl.options.map((o) => ({ id: o.id, label: o.label, needs_note: false })),
+  };
+}
+
+export const getPeriod = async (id: string) => {
+  const raw = await ok<PeriodDetailWire>(api.GET('/v1/periods/{id}', { params: { path: { id } } }));
+  const close = readClose(raw);
+  if (raw.display) return close;
+  const issue = await issueOf(id);
+  return issue
+    ? {
+        ...close,
+        steps: close.steps.map((s) => (s.title === 'Đối chiếu sổ cái' ? { ...s, issue } : s)),
+      }
+    : close;
+};
 
 /**
  * A2: :close (202) — the worker snapshots, hashes and reconciles, then locks the period and
@@ -233,11 +268,15 @@ function readRetro(raw: RetroWire, period: PeriodSummary | undefined): RetroChan
         locked: minus(raw.current_value, raw.delta),
         recalculated: number(raw.current_value),
         delta: number(raw.delta),
-        published_to: null,
+        // A retro change is raised against a published result: it is published, named by id.
+        published_to: raw.published_result_id
+          ? `kết quả #${raw.published_result_id.slice(0, 8)}`
+          : null,
       },
     ],
     next_version_label: `${label} · bản mới`,
-    version_note: '',
+    // What a new version does, as the decision dialog states it (UC-10-04).
+    version_note: `${label || 'Kỳ này'} giữ bản đã công bố; ${label ? `${label} · bản mới` : 'bản mới'} chứa số tính lại.`,
     escalation: raw.compliance_notified
       ? { title: 'Đã báo tuân thủ', text: 'Số đã công bố thay đổi; bộ phận tuân thủ đã được báo.' }
       : null,

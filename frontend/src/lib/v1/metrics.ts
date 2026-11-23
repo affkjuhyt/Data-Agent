@@ -1,5 +1,5 @@
 import { api, ok } from './client';
-import { getMe } from './me';
+import { getMe, personNames } from './me';
 import type { components } from './schema';
 
 /*
@@ -133,7 +133,24 @@ export const getMetric = async (id: string) => {
     (v) => v.dimension_labels || !v.allowed_dimensions?.length,
   );
   // The names only cost reads when a version allows dimensions the api sent without names.
-  return readMetric(raw, named ? new Map() : await dimensionNames().catch(() => new Map()));
+  const [dimensions, people] = await Promise.all([
+    named ? new Map<string, string>() : dimensionNames().catch(() => new Map<string, string>()),
+    // Certifiers and the owner are ids; their names are what the viewer may read (lib/v1/me).
+    raw.stewardship ? new Map<string, string>() : personNames([raw.data_space_id]),
+  ]);
+  const metric = readMetric(raw, dimensions);
+  if (raw.stewardship) return metric;
+  const owner = people.get(raw.owner_id);
+  return {
+    ...metric,
+    versions: metric.versions.map((version, i) => {
+      const by = raw.versions?.[i]?.certified_by;
+      return version.certified_by_name || !by
+        ? version
+        : { ...version, certified_by_name: people.get(by) ?? null };
+    }),
+    stewardship: owner ? [{ role: 'Chủ sở hữu', who: owner, note: '' }] : [],
+  };
 };
 
 /** A new draft starts as a copy of the version in use; the change note says why. */

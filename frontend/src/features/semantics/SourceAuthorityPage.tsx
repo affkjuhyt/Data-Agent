@@ -7,6 +7,7 @@ import { Notice } from '../../design-system/Notice';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
+import { cn } from '../../lib/utils';
 import {
   listSourceAuthorities,
   saveSourceAuthority,
@@ -32,6 +33,9 @@ export default function SourceAuthorityPage() {
   const [error, setError] = useState<string>();
 
   const items = authorities.data?.items ?? [];
+  // SourceAuthorityView names no decider (PROPOSAL; approved_by is who approved the ranking,
+  // not who settles a conflict): the column shows only when a row has one.
+  const showDecider = items.some((a) => a.decider_name);
   const view = useTableView(items, {
     search: (a) =>
       `${a.data_kind_label} ${a.decider_name} ${a.ranking.map((s) => s.name).join(' ')} ${a.materiality ?? ''}`,
@@ -117,9 +121,11 @@ export default function SourceAuthorityPage() {
                   <SortableTh view={view} column="threshold" className="w-[200px] px-da-lg py-da-md font-normal">
                     Ngưỡng trọng yếu
                   </SortableTh>
-                  <SortableTh view={view} column="decider" className="w-[180px] px-da-lg py-da-md font-normal">
-                    Người quyết khi lệch
-                  </SortableTh>
+                  {showDecider && (
+                    <SortableTh view={view} column="decider" className="w-[180px] px-da-lg py-da-md font-normal">
+                      Người quyết khi lệch
+                    </SortableTh>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -137,7 +143,11 @@ export default function SourceAuthorityPage() {
                             type="button"
                             aria-expanded={isOpen}
                             onClick={() => setOpen(isOpen ? undefined : a.data_kind)}
-                            className="flex items-center gap-da-xs text-left text-foreground da-body-strong"
+                            className={cn(
+                              'flex items-center gap-da-xs text-left text-foreground',
+                              // Without a label the api's code is shown as a code, not as a name.
+                              a.data_kind_label === a.data_kind ? 'da-mono' : 'da-body-strong',
+                            )}
                           >
                             {a.data_kind_label}
                             <Icon
@@ -156,13 +166,15 @@ export default function SourceAuthorityPage() {
                         <td className="px-da-lg py-da-md text-foreground da-mono">
                           {edit.materiality || '—'}
                         </td>
-                        <td className="px-da-lg py-da-md text-muted-foreground da-body-small">
-                          {a.decider_name}
-                        </td>
+                        {showDecider && (
+                          <td className="px-da-lg py-da-md text-muted-foreground da-body-small">
+                            {a.decider_name}
+                          </td>
+                        )}
                       </tr>
                       {isOpen && (
                         <tr className="border-b border-border bg-background">
-                          <td colSpan={4} className="px-da-lg py-da-md">
+                          <td colSpan={showDecider ? 4 : 3} className="px-da-lg py-da-md">
                             <RankingEditor
                               authority={a}
                               edit={edit}

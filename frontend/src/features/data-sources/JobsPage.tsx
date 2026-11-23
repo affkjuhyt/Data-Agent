@@ -39,7 +39,7 @@ import { LinkButton } from '../../components/shell/AppLink';
  * Job nạp · Thiết lập; "Chạy bù" asks for a date range without moving the job cursor;
  * a row's "…" runs today's data again, pauses (BR-106) or resumes it.
  */
-const CELL: Record<IngestionJob['hours'][number], string> = {
+const CELL: Record<NonNullable<IngestionJob['hours']>[number], string> = {
   ok: 'bg-success opacity-55',
   error: 'bg-error',
   none: 'bg-subtle',
@@ -259,18 +259,25 @@ export default function JobsPage() {
                         {methodLabel(job)}
                       </td>
                       <td className="px-da-md py-[9px] max-[1279px]:hidden">
-                        <span
-                          className="flex h-[14px] items-center gap-[2px]"
-                          role="img"
-                          aria-label={hoursLabel(job)}
-                        >
-                          {job.hours.map((h, i) => (
-                            <span
-                              key={i}
-                              className={cn('h-[14px] w-[10px] rounded-[2px]', CELL[h])}
-                            />
-                          ))}
-                        </span>
+                        {job.hours ? (
+                          <span
+                            className="flex h-[14px] items-center gap-[2px]"
+                            role="img"
+                            aria-label={hoursLabel(job.hours)}
+                          >
+                            {job.hours.map((h, i) => (
+                              <span
+                                key={i}
+                                className={cn('h-[14px] w-[10px] rounded-[2px]', CELL[h])}
+                              />
+                            ))}
+                          </span>
+                        ) : (
+                          // The runs could not be read: no strip rather than 24 hours of "no run".
+                          <span className="text-muted-foreground da-caption">
+                            Không đọc được lịch sử chạy
+                          </span>
+                        )}
                       </td>
                       <td
                         className={cn(
@@ -420,8 +427,8 @@ export default function JobsPage() {
   );
 }
 
-function hoursLabel(job: IngestionJob): string {
-  const ok = job.hours.filter((h) => h === 'ok').length;
-  const errors = job.hours.filter((h) => h === 'error').length;
+function hoursLabel(hours: NonNullable<IngestionJob['hours']>): string {
+  const ok = hours.filter((h) => h === 'ok').length;
+  const errors = hours.filter((h) => h === 'error').length;
   return `24 giờ qua: ${ok} giờ chạy thành công, ${errors} giờ lỗi`;
 }

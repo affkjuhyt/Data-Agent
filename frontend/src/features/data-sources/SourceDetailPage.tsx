@@ -58,6 +58,11 @@ function SourceView({ source }: { source: SourceDetail }) {
     onError: (e) => toast({ tone: 'error', message: `Không kiểm tra được kết nối. ${e.message}` }),
   });
   const tone = sourceTone(source);
+  // DatasetView carries no column count, and a table no job loads has no refresh time: a column
+  // none of the tables can fill is left out rather than drawn as a row of dashes.
+  const showColumns = source.tables.some((table) => table.column_count !== null);
+  const showRefreshed = source.tables.some((table) => table.refreshed_at !== null);
+  const freshness = freshnessText(source);
   const view = useTableView(source.tables, {
     search: (table) =>
       `${table.name} ${table.description ?? ''} ${
@@ -81,7 +86,15 @@ function SourceView({ source }: { source: SourceDetail }) {
         bordered
         breadcrumb={['Dữ liệu', 'Nguồn', source.name]}
         title={source.name}
-        description={`${source.connector} · ${source.endpoint} · ${modeLabel(source)} · dữ liệu mới nhất ${freshnessText(source)} · ${dataSpacesText(source)}`}
+        description={[
+          source.connector,
+          source.endpoint,
+          modeLabel(source),
+          freshness === '—' ? null : `dữ liệu mới nhất ${freshness}`,
+          source.data_spaces.length > 0 ? dataSpacesText(source) : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         actions={
           <>
             {isRestConnector(source.connector) && (
@@ -127,20 +140,24 @@ function SourceView({ source }: { source: SourceDetail }) {
                   >
                     Dòng
                   </SortableTh>
-                  <SortableTh
-                    view={view}
-                    column="columns"
-                    className="w-[100px] px-da-md py-da-md font-normal"
-                  >
-                    Cột
-                  </SortableTh>
-                  <SortableTh
-                    view={view}
-                    column="refreshed"
-                    className="w-[120px] px-da-md py-da-md font-normal"
-                  >
-                    Cập nhật
-                  </SortableTh>
+                  {showColumns && (
+                    <SortableTh
+                      view={view}
+                      column="columns"
+                      className="w-[100px] px-da-md py-da-md font-normal"
+                    >
+                      Cột
+                    </SortableTh>
+                  )}
+                  {showRefreshed && (
+                    <SortableTh
+                      view={view}
+                      column="refreshed"
+                      className="w-[120px] px-da-md py-da-md font-normal"
+                    >
+                      Cập nhật
+                    </SortableTh>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -165,12 +182,16 @@ function SourceView({ source }: { source: SourceDetail }) {
                     <td className="px-da-md py-[10px] text-foreground da-mono">
                       {table.row_count === null ? '—' : formatNumber(table.row_count)}
                     </td>
-                    <td className="px-da-md py-[10px] text-foreground da-mono">
-                      {table.column_count ?? '—'}
-                    </td>
-                    <td className="px-da-md py-[10px] text-muted-foreground da-body-small">
-                      {table.refreshed_at ? formatTime(table.refreshed_at) : '—'}
-                    </td>
+                    {showColumns && (
+                      <td className="px-da-md py-[10px] text-foreground da-mono">
+                        {table.column_count ?? '—'}
+                      </td>
+                    )}
+                    {showRefreshed && (
+                      <td className="px-da-md py-[10px] text-muted-foreground da-body-small">
+                        {table.refreshed_at ? formatTime(table.refreshed_at) : '—'}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

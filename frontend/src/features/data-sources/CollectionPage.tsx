@@ -297,18 +297,20 @@ function DocumentBody({ doc, onClose }: { doc: DocumentDetail; onClose: () => vo
       <LinkButton area="data" page="DOCUMENT" id={doc.id}>
         Mở tài liệu
       </LinkButton>
-      <section className="flex flex-col gap-da-xs">
-        <h3 className="text-muted-foreground da-overline">Agent Tài liệu đã xử lý</h3>
-        {doc.processing.map((step) => (
-          <RunStep
-            key={step.title}
-            state={step.state}
-            title={step.title}
-            detail={step.detail}
-            duration={step.duration ?? undefined}
-          />
-        ))}
-      </section>
+      {doc.processing.length > 0 && (
+        <section className="flex flex-col gap-da-xs">
+          <h3 className="text-muted-foreground da-overline">Agent Tài liệu đã xử lý</h3>
+          {doc.processing.map((step) => (
+            <RunStep
+              key={step.title}
+              state={step.state}
+              title={step.title}
+              detail={step.detail}
+              duration={step.duration ?? undefined}
+            />
+          ))}
+        </section>
+      )}
       {doc.excerpt && (
         <blockquote className="flex flex-col gap-da-xs rounded-md border-l-2 border-border-strong px-da-lg py-da-md">
           <span className="text-muted-foreground da-label">{doc.excerpt.label}</span>

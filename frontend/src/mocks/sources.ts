@@ -378,7 +378,7 @@ function profileOf(table: SourceTable, source: SourceRow): TableProfile {
     row_count: table.row_count ?? 0,
     column_count: table.column_count ?? 0,
     refreshed_at: table.refreshed_at,
-    profiled_text: '03:00 Chủ nhật trên mẫu 1%',
+    profiled_text: 'Chủ nhật hằng tuần, 03:00',
     // Only LD_LOANS has a profile in the design; the other tables read as not profiled yet.
     columns: isLoans ? LD_LOANS_COLUMNS : [],
     review: isLoans
@@ -1752,15 +1752,41 @@ export function createSourcesHandlers() {
             status:
               job.status === 'running'
                 ? 'running'
-                : job.hours.at(-1) === 'error'
+                : job.hours?.at(-1) === 'error'
                   ? 'failed'
-                  : job.hours.at(-1) === 'none'
+                  : job.hours?.at(-1) === 'none'
                     ? null
                     : 'succeeded',
             rows_written: job.rows_today,
             started_at: new Date().toISOString(),
           },
         })),
+      );
+    }),
+    // The runs of the last 24 hours, one per fixture cell; today's rows ride on the last one.
+    http.get('*/v1/job-runs', () => {
+      const start = Date.now() - 24 * 3_600_000;
+      return page(
+        jobs.flatMap((job) => {
+          const cells = job.hours ?? [];
+          const last = cells.reduce((at, cell, index) => (cell === 'none' ? at : index), -1);
+          return cells.flatMap((cell, index) =>
+            cell === 'none'
+              ? []
+              : [
+                  {
+                    id: `${job.id}-run-${index}`,
+                    job_id: job.id,
+                    status: cell === 'ok' ? 'succeeded' : 'failed',
+                    // The last hour's run a second ago, so its rows count as today's.
+                    started_at: new Date(
+                      index === 23 ? start + 24 * 3_600_000 - 1_000 : start + index * 3_600_000 + 1_800_000,
+                    ).toISOString(),
+                    rows_written: index === last ? job.rows_today : 0,
+                  },
+                ],
+          );
+        }),
       );
     }),
     http.get('*/v1/jobs/:id/dlq', ({ params }) => {

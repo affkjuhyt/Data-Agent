@@ -50,7 +50,8 @@ export default function MetricCatalogPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const items = metrics.data?.items ?? [];
   const id = picked ?? items[0]?.id;
-  const domains = [...new Set(items.map((m) => m.domain))];
+  // MetricView has no domain (PROPOSAL): a metric without one adds no empty "Domain: " option.
+  const domains = [...new Set(items.map((m) => m.domain).filter(Boolean))];
   const q = query.trim().toLowerCase();
   const shown = items.filter(
     (m) =>
@@ -147,7 +148,9 @@ function MetricCard({
           </span>
         </span>
         <span className="text-foreground da-body-small">{metric.name}</span>
-        <span className="text-muted-foreground da-caption">{metric.usage_text}</span>
+        {metric.usage_text && (
+          <span className="text-muted-foreground da-caption">{metric.usage_text}</span>
+        )}
       </button>
     </li>
   );

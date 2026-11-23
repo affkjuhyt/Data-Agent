@@ -120,7 +120,13 @@ describe('documents from the api', () => {
       validity: { text: 'Từ 01/01/2026', warn: false },
       status: { tone: 'warning', text: 'Chờ người xem' },
     });
-    expect(d.steps).toEqual(['done', 'done', 'done', 'done', 'warn', 'todo', 'todo', 'todo']);
+    // Chunks made: every step up to "chia đoạn" ran; the check waits on a person.
+    expect(d.steps).toEqual(['done', 'done', 'done', 'done', 'done', 'done', 'todo', 'warn']);
+    expect(d.processing.map((s) => [s.title, s.state, s.detail])).toEqual([
+      ['Đọc trang', 'done', '12/12 trang, 11 trang dùng được'],
+      ['Chia đoạn và lập chỉ mục', 'waiting', '0/40 đoạn đã lập chỉ mục'],
+      ['Chờ người xem', 'pendingApproval', '2 vấn đề chất lượng đang mở'],
+    ]);
   });
 
   it('reads the viewer’s document with its collection and signals', async () => {

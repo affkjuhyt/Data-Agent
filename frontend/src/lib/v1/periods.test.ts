@@ -146,6 +146,35 @@ describe('periods from the api', () => {
           reconciliation: { matched: 40, mismatched: 2, exception_pending: 1 },
         }),
       ),
+      http.get('*/v1/periods/:id/reconciliation', () =>
+        HttpResponse.json({
+          items: [
+            { status: 'matched', item_code: 'A', hitl_request_id: null },
+            {
+              status: 'mismatched',
+              item_code: 'TK2141',
+              ledger_value: '10',
+              snapshot_value: '14.2',
+              delta: '4.2',
+              tolerance: '0',
+              hitl_request_id: 'h-1',
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/hitl-requests/:id', () =>
+        HttpResponse.json({
+          id: 'h-1',
+          title: 'Lệch đối chiếu',
+          kind: 'decision',
+          risk: 'medium',
+          status: 'pending',
+          resolved_at: null,
+          context: {},
+          options: [{ id: 'accept', label: 'Chấp nhận' }, 'wait'],
+        }),
+      ),
     );
     const period = await getPeriod('pc-10');
     expect(period.steps.map((s) => [s.title, s.state, s.detail])).toEqual([
@@ -155,6 +184,15 @@ describe('periods from the api', () => {
       ['Nộp báo cáo', 'pending', 'chưa nộp'],
     ]);
     expect(period.can_start_close).toBe(true);
+    // The mismatch is decided with the request's own options.
+    expect(period.steps[1].issue).toMatchObject({
+      hitl_id: 'h-1',
+      options: [
+        { id: 'accept', label: 'Chấp nhận', needs_note: false },
+        { id: 'wait', label: 'wait', needs_note: false },
+      ],
+    });
+    expect(period.steps[1].issue?.text).toContain('TK2141');
   });
 
   it('finds a retro change among the periods and decides it as A3 names it', async () => {

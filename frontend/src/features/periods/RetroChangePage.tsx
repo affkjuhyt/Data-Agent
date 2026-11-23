@@ -155,6 +155,9 @@ function RetroBody({ change }: { change: RetroChange }) {
           {change.decision_note && (
             <Notice tone="info">Lý do quyết định: {change.decision_note}</Notice>
           )}
+          {/* RetroChangeView names no source rows (PROPOSAL): the block shows only with them. */}
+          {change.source_changes.length > 0 && (
+          <>
           <h2 className="text-foreground da-heading-3">Thay đổi trong nguồn</h2>
           <TableToolbar view={sources} placeholder="Tìm bảng…" searchLabel="Tìm thay đổi nguồn" />
           <table className="w-full table-fixed border-collapse">
@@ -188,6 +191,8 @@ function RetroBody({ change }: { change: RetroChange }) {
             </tbody>
           </table>
           <TablePager view={sources} />
+          </>
+          )}
 
           <h2 className="text-foreground da-heading-3">Ảnh hưởng tới số đã khoá</h2>
           <TableToolbar view={impact} placeholder="Tìm chỉ số…" searchLabel="Tìm ảnh hưởng" />

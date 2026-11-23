@@ -1,5 +1,6 @@
 import { formatDate, formatNumber } from '../formatVN';
 import { currentDataSpace, V1Error, type Page, api, ok } from './client';
+import { personNames } from './me';
 import type { components } from './schema';
 
 /*
@@ -140,7 +141,42 @@ function timelineOf(raw: ErrorBookDetailWire): ErrorBookEntry['timeline'] {
   return steps;
 }
 
-const readErrorBookSummary = (raw: ErrorBookViewWire): ErrorBookSummary => ({
+/** Product and person names by id; an id neither map holds stays unnamed (null). */
+interface EntryNames {
+  products: Map<string, string>;
+  people: Map<string, string>;
+}
+
+const NO_NAMES: EntryNames = { products: new Map(), people: new Map() };
+
+/*
+ * The entries carry ids only: the products are named from GET /v1/data-products (context layer,
+ * the answer products an entry is filed against) and the people from what the viewer may read
+ * (lib/v1/me personNames). A list that is refused leaves its names out.
+ */
+async function entryNames(rows: ErrorBookViewWire[]): Promise<EntryNames> {
+  const [products, people] = await Promise.all([
+    rows.some((r) => r.data_product_id)
+      ? ok<Page<{ id: string; name: string }>>(
+          api.GET('/v1/data-products', {
+            params: { query: { layer: 'context', page_size: 100 } },
+          }),
+        ).catch(() => null)
+      : null,
+    rows.some((r) => r.assignee_id)
+      ? personNames(rows.map((r) => r.data_space_id))
+      : new Map<string, string>(),
+  ]);
+  return {
+    products: new Map((products?.items ?? []).map((p) => [p.id, p.name])),
+    people,
+  };
+}
+
+const readErrorBookSummary = (
+  raw: ErrorBookViewWire,
+  names: EntryNames = NO_NAMES,
+): ErrorBookSummary => ({
   id: raw.id,
   code: raw.entry_no,
   title: raw.title,
@@ -148,9 +184,9 @@ const readErrorBookSummary = (raw: ErrorBookViewWire): ErrorBookSummary => ({
   error_kind: (raw.error_kind as ErrorKind | null) ?? null,
   source_kind: raw.source_kind as SourceKind,
   data_product_id: raw.data_product_id,
-  data_product_name: null,
+  data_product_name: (raw.data_product_id && names.products.get(raw.data_product_id)) || null,
   assignee_id: raw.assignee_id,
-  assignee_name: null,
+  assignee_name: (raw.assignee_id && names.people.get(raw.assignee_id)) || null,
   created_at: raw.created_at,
 });
 
@@ -158,11 +194,14 @@ const readErrorBookSummary = (raw: ErrorBookViewWire): ErrorBookSummary => ({
  * The api's entry in the screen's shape. Only the detail read carries the eval item and its last
  * result; a write answers the bare entry, read the same way with what it lacks left empty.
  */
-export function readErrorBookEntry(raw: ErrorBookDetailWire): ErrorBookEntry {
+export function readErrorBookEntry(
+  raw: ErrorBookDetailWire,
+  names: EntryNames = NO_NAMES,
+): ErrorBookEntry {
   const result = raw.latest_result ?? null;
   const note = record(raw.detail).fix_note;
   return {
-    ...readErrorBookSummary(raw),
+    ...readErrorBookSummary(raw, names),
     ...numbersOf(raw),
     receipt: raw.answer_id
       ? {
@@ -215,7 +254,7 @@ const PAGE_SIZE = 500;
 export const listErrorBookEntries = async (
   filters: EntryFilters = {},
 ): Promise<Page<ErrorBookSummary>> => {
-  const items: ErrorBookSummary[] = [];
+  const rows: ErrorBookViewWire[] = [];
   let token = '';
   do {
     const page = await ok(
@@ -223,16 +262,17 @@ export const listErrorBookEntries = async (
         params: { query: { ...filters, page_size: PAGE_SIZE, page_token: token } },
       }),
     );
-    items.push(...page.items.map(readErrorBookSummary));
+    rows.push(...page.items);
     token = page.next_page_token ?? '';
   } while (token);
-  return { items, next_page_token: '' };
+  const names = await entryNames(rows);
+  return { items: rows.map((row) => readErrorBookSummary(row, names)), next_page_token: '' };
 };
 
-export const getErrorBookEntry = async (id: string) =>
-  readErrorBookEntry(
-    await ok(api.GET('/v1/error-book-entries/{id}', { params: { path: { id } } })),
-  );
+export const getErrorBookEntry = async (id: string) => {
+  const raw = await ok(api.GET('/v1/error-book-entries/{id}', { params: { path: { id } } }));
+  return readErrorBookEntry(raw, await entryNames([raw]));
+};
 
 export const updateErrorBookEntry = async (
   id: string,

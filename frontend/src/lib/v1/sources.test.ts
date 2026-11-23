@@ -60,6 +60,9 @@ const server = setupServer(
           { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
         );
   }),
+  http.get('*/v1/schema-drifts', () => HttpResponse.json({ items: [], next_page_token: '' })),
+  http.get('*/v1/jobs', () => HttpResponse.json({ items: [], next_page_token: '' })),
+  http.get('*/v1/job-runs', () => HttpResponse.json({ items: [], next_page_token: '' })),
   http.get('*/v1/data-spaces', () =>
     HttpResponse.json({ items: [{ id: 'ds-1', name: 'Rủi ro tín dụng' }], next_page_token: '' }),
   ),
@@ -200,7 +203,7 @@ describe('sources from the api', () => {
     );
     const test = await testSource('s-1');
     expect(test.checks).toEqual([
-      { key: 'login', title: 'Kết nối và đăng nhập', ok: false, detail: 'Sai mật khẩu' },
+      { key: 'login', title: 'Kết nối tới nguồn', ok: false, detail: 'Sai mật khẩu' },
     ]);
     expect(test.tables).toEqual([]);
   });
@@ -326,18 +329,102 @@ describe('sources from the api', () => {
         }),
       ),
     );
+    // Without its runs a job draws no strip and counts its last run's rows, if of today.
+    server.use(http.get('*/v1/job-runs', () => HttpResponse.error()));
     const byId = Object.fromEntries((await listJobs()).items.map((j) => [j.id, j]));
-    expect(byId.ok).toMatchObject({ status: 'on_time', late: false, rows_today: 12 });
-    expect(byId.ok.hours.at(-1)).toBe('ok');
+    expect(byId.ok).toMatchObject({ status: 'on_time', late: false, rows_today: 12, hours: null });
     expect(byId.failing).toMatchObject({ status: 'error', late: true });
-    expect(byId.failing.hours.at(-1)).toBe('error');
     expect(byId.drift).toMatchObject({ status: 'error', status_reason: 'cấu trúc nguồn thay đổi' });
-    expect(byId.drift.hours.at(-1)).toBe('error');
     expect(byId.late).toMatchObject({ status: 'on_time', late: true });
     expect(byId.running.status).toBe('running');
-    expect(byId.running.hours.at(-1)).toBe('none');
     expect(byId.draft.status).toBe('draft');
     expect(byId.old.rows_today).toBe(0);
+  });
+
+  it('draws the 24-hour strip and today rows from the job runs, and names the source', async () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+    server.use(
+      http.get('*/v1/jobs', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 'j-1',
+              name: 'Nạp khoản vay',
+              source_id: 's-1',
+              mode: 'cdc',
+              source_object: 'dbo.T',
+              status: 'active',
+              paused_reason: null,
+              lag_seconds: 5,
+              last_run: { status: 'succeeded', rows_written: 7, started_at: hoursAgo(0.1) },
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/job-runs', () =>
+        HttpResponse.json({
+          items: [
+            { job_id: 'j-1', status: 'succeeded', started_at: hoursAgo(0.1), rows_written: 7 },
+            { job_id: 'j-1', status: 'failed', started_at: hoursAgo(2.5), rows_written: 0 },
+            { job_id: 'j-1', status: 'succeeded', started_at: hoursAgo(2.6), rows_written: 0 },
+            { job_id: 'other', status: 'failed', started_at: hoursAgo(1.5), rows_written: 99 },
+          ],
+          next_page_token: '',
+        }),
+      ),
+    );
+    const [job] = (await listJobs()).items;
+    expect(job.source_name).toBe('Core banking');
+    expect(job.hours).toHaveLength(24);
+    expect(job.hours!.at(-1)).toBe('ok');
+    expect(job.hours!.at(-2)).toBe('none');
+    expect(job.hours!.at(-3)).toBe('error');
+    expect(job.hours!.filter((h) => h !== 'none')).toHaveLength(2);
+  });
+
+  it('reads an open drift and the jobs of a source into its row', async () => {
+    rows = [source({ mode: 'ingest' })];
+    server.use(
+      http.get('*/v1/schema-drifts', () =>
+        HttpResponse.json({
+          items: [{ id: 'dr-1', source_id: 's-1', resolution: null }],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/jobs', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 'j-1',
+              source_id: 's-1',
+              target_dataset_id: 'd-1',
+              mode: 'cdc',
+              lag_seconds: 30,
+              dlq_pending: 4,
+              last_run: {
+                status: 'succeeded',
+                started_at: at,
+                finished_at: '2026-10-12T08:05:00Z',
+              },
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+    );
+    const [row] = (await listSourceRows()).items;
+    expect(row).toMatchObject({
+      schema_drift: true,
+      drift_id: 'dr-1',
+      refresh_text: 'CDC',
+      last_refreshed_at: '2026-10-12T08:05:00Z',
+      lag_seconds: 30,
+      held_records: 4,
+    });
+    const detail = await getSource('s-1');
+    expect(detail.drift_id).toBe('dr-1');
+    expect(detail.tables[0].refreshed_at).toBe('2026-10-12T08:05:00Z');
   });
 
   it('reads an ISO 8601 duration as seconds', () => {

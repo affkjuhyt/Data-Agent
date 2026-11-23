@@ -7,6 +7,7 @@ import { LinkCard } from '../../design-system/LinkCard';
 import { Notice } from '../../design-system/Notice';
 import { formatElapsed } from '../../lib/formatVN';
 import { listDatasets, listMetrics, listSources, listTerms } from '../../lib/v1/api';
+import { listPipelines } from '../../lib/v1/dataPrep';
 import type { Source } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 
@@ -22,6 +23,7 @@ export default function DataPage() {
   const datasets = useV1(['listDatasets'], listDatasets);
   const metrics = useV1(['listMetrics'], listMetrics);
   const terms = useV1(['listTerms'], listTerms);
+  const pipelines = useV1(['listPipelines'], listPipelines);
   const openSources = () => navigate('data', 'SOURCES');
   const openPipelines = () => navigate('data', 'PIPELINES');
   const openDefinitions = () => navigate('data', 'METRIC_CATALOG');
@@ -39,7 +41,7 @@ export default function DataPage() {
     {
       icon: 'sliders' as const,
       title: 'Chuẩn bị',
-      stat: null,
+      stat: pipelines.data ? `${pipelines.data.items.length} pipeline` : null,
       text: 'Làm sạch, loại trùng, ghép bảng theo lịch',
       link: 'Xem pipeline →',
       onOpen: openPipelines,
@@ -80,7 +82,7 @@ export default function DataPage() {
         description="Mọi thứ agent và bạn dùng để trả lời câu hỏi: nguồn đã kết nối, dữ liệu đã chuẩn bị, và định nghĩa nghiệp vụ."
         actions={
           <>
-            <Button onClick={openSources}>Tải tệp</Button>
+            <Button onClick={() => navigate('data', 'UPLOAD')}>Tải tệp</Button>
             <Button kind="primary" onClick={openSources}>
               Kết nối nguồn
             </Button>
@@ -128,10 +130,19 @@ function SourceHealth({ sources, onFix }: { sources: Source[]; onFix: () => void
   const late = live.filter((s) => s.status === 'needs_fix' || (s.late_by_minutes ?? 0) > 0);
   if (live.length === 0) return null;
   // "Đúng lịch" needs each source's lateness, which the api does not send (late_by_minutes is a
-  // PROPOSAL): without it the line says only what is known, that no source reports an error.
+  // PROPOSAL). Without it the line says only what is known, that no source reports an error, and
+  // that freshness is not measured: "không báo lỗi" alone read as "up to date".
   const timed = live.some((s) => s.late_by_minutes !== undefined && s.late_by_minutes !== null);
-  const onTime = `${live.length - late.length}/${live.length} nguồn ${timed ? 'đúng lịch' : 'không báo lỗi'}.`;
-  if (late.length === 0) return <Notice tone="success">{onTime}</Notice>;
+  const onTime = timed
+    ? `${live.length - late.length}/${live.length} nguồn đúng lịch.`
+    : `${live.length - late.length}/${live.length} nguồn không báo lỗi kết nối.`;
+  if (late.length === 0)
+    return (
+      <Notice tone={timed ? 'success' : 'info'}>
+        {onTime}
+        {timed ? '' : ' Độ trễ cập nhật của từng nguồn chưa được đo.'}
+      </Notice>
+    );
   const first = late[0];
   const since = first.last_refreshed_at
     ? new Date(first.last_refreshed_at).toLocaleTimeString('vi-VN', {

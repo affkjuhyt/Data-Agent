@@ -62,6 +62,10 @@ function DriftBody({ drift }: { drift: SchemaDrift }) {
     ],
     pageSize: 50,
   });
+  // A2's signals are name → value only: what was measured and the weight are columns left out
+  // until a signal carries them, rather than a column of blanks and dashes.
+  const showMeasure = drift.signals.some((s) => s.measure);
+  const showWeight = drift.signals.some((s) => s.weight !== null);
   const changes = useTableView(drift.changes, {
     search: (c) => `${CHANGE[c.change].label} ${c.field} ${c.before} ${c.after} ${c.test_text}`,
     filters: [{ id: 'change', label: 'Thay đổi', value: (c) => CHANGE[c.change].label }],
@@ -169,17 +173,19 @@ function DriftBody({ drift }: { drift: SchemaDrift }) {
                   <SortableTh
                     view={signals}
                     column="name"
-                    className="w-[130px] px-da-lg py-da-md font-normal"
+                    className={cn(showMeasure && 'w-[130px]', 'px-da-lg py-da-md font-normal')}
                   >
                     Tín hiệu
                   </SortableTh>
-                  <SortableTh
-                    view={signals}
-                    column="measure"
-                    className="px-da-lg py-da-md font-normal"
-                  >
-                    Đo
-                  </SortableTh>
+                  {showMeasure && (
+                    <SortableTh
+                      view={signals}
+                      column="measure"
+                      className="px-da-lg py-da-md font-normal"
+                    >
+                      Đo
+                    </SortableTh>
+                  )}
                   <SortableTh
                     view={signals}
                     column="value"
@@ -187,26 +193,30 @@ function DriftBody({ drift }: { drift: SchemaDrift }) {
                   >
                     Giá trị
                   </SortableTh>
-                  <SortableTh
-                    view={signals}
-                    column="weight"
-                    className="w-[80px] px-da-lg py-da-md font-normal"
-                  >
-                    Trọng số
-                  </SortableTh>
+                  {showWeight && (
+                    <SortableTh
+                      view={signals}
+                      column="weight"
+                      className="w-[80px] px-da-lg py-da-md font-normal"
+                    >
+                      Trọng số
+                    </SortableTh>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {signals.rows.map((s) => (
                   <tr key={s.name} className="border-b border-border text-foreground">
                     <td className="px-da-lg py-[10px]">{s.name}</td>
-                    <td className="px-da-lg py-[10px]">{s.measure}</td>
+                    {showMeasure && <td className="px-da-lg py-[10px]">{s.measure}</td>}
                     <td className="px-da-lg py-[10px]">
                       {typeof s.value === 'number' ? fmt(s.value) : s.value}
                     </td>
-                    <td className="px-da-lg py-[10px]">
-                      {s.weight === null ? '—' : fmt1(s.weight)}
-                    </td>
+                    {showWeight && (
+                      <td className="px-da-lg py-[10px]">
+                        {s.weight === null ? '—' : fmt1(s.weight)}
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {drift.drift_score !== null && drift.thresholds ? (
@@ -231,7 +241,7 @@ function DriftBody({ drift }: { drift: SchemaDrift }) {
                   <tr>
                     <td className="px-da-lg py-[10px] text-foreground da-heading-3">Mức</td>
                     <td
-                      colSpan={3}
+                      colSpan={1 + (showMeasure ? 1 : 0) + (showWeight ? 1 : 0)}
                       className={cn(
                         'px-da-lg py-[10px] da-heading-3',
                         drift.severity === 'major' ? 'text-error' : 'text-foreground',
