@@ -164,7 +164,7 @@ function AuditLog({ query, deps }: { query: AuditQuery; deps: unknown[] }) {
   const items = log.data?.items ?? [];
   const view = useTableView(items, {
     search: (e) =>
-      `${formatTime(e.at, true)} ${e.actor_label} ${e.action_text} ${e.data_text} ${e.service}`,
+      `${formatTime(e.at, true)} ${e.actor_label} ${e.action_text} ${e.action_code ?? ''} ${e.data_text} ${e.service}`,
     filters: [{ id: 'service', label: 'Dịch vụ', value: (e) => e.service }],
     sorts: [
       { id: 'at', value: (e) => e.at },
@@ -248,6 +248,7 @@ function AuditLog({ query, deps }: { query: AuditQuery; deps: unknown[] }) {
                       e.outcome === 'error' && 'text-error',
                       e.outcome === 'ok' && 'text-foreground',
                     )}
+                    title={e.action_code}
                   >
                     {e.action_text}
                   </td>

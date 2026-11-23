@@ -485,7 +485,6 @@ function accessPoliciesFixture(): AccessPolicy[] {
     activated_at: status === 'active' ? daysFromNow(-9) : null,
     owner_name: 'Phạm Đức Long',
     rule_text: '',
-    sample_question: '',
     applied_this_week: applied,
     last_backtest: null,
   });
@@ -516,7 +515,6 @@ function accessPoliciesFixture(): AccessPolicy[] {
       'Chỉ cho thấy dòng: branch_code IN user.ad.branches',
       'Cột che: id_number, phone, address (trừ GRP-RISK-HEAD)',
     ].join('\n'),
-    sample_question: 'dư nợ bán lẻ theo chi nhánh tháng 9',
     last_backtest: {
       window_days: 7,
       affected_queries: 2140,
@@ -1022,7 +1020,6 @@ export function createAdminAccessHandlers() {
           applies: true,
           reason: scoped ? 'phạm vi dòng của người dùng' : 'không giới hạn dòng',
           display: {
-            question: item.sample_question,
             rows: [
               { label: 'Số chi nhánh thấy được', without: '184', with: scoped ? '3' : '184' },
               {

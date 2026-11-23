@@ -70,8 +70,9 @@ describe('audit log', () => {
       at: '2026-10-12T03:00:00Z',
       actor_label: 'Agent Đối soát (của Đỗ Hải Yến)',
       actor_kind: 'agent',
-      action_text: 'query.executed',
-      data_text: 'query_run · 0192aaaa',
+      action_text: 'Chạy truy vấn',
+      action_code: 'query.executed',
+      data_text: 'Lượt truy vấn · 0192aaaa',
       service: 'worker-agent',
       outcome: 'blocked',
     });

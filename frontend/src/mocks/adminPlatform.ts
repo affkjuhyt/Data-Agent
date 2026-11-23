@@ -5,7 +5,6 @@ import type {
   AiProvider,
   ChannelRules,
   ClientWire,
-  GpuLoad,
   ModelRoute,
   NewModel,
   NewProvider,
@@ -291,7 +290,6 @@ function modelRoutesFixture(): ModelRoute[] {
       fallback_name: 'Qwen3-32B',
       latency_p95_ms: 4100,
       eval_score: 0.948,
-      latest_eval_delta: 0,
       previous: null,
       eval_suite_name: 'Agent Phân tích',
     }),
@@ -303,7 +301,6 @@ function modelRoutesFixture(): ModelRoute[] {
       fallback_name: 'Qwen3-32B',
       latency_p95_ms: 1900,
       eval_score: 0.962,
-      latest_eval_delta: 0,
       previous: null,
       eval_suite_name: 'Agent Phân tích',
     }),
@@ -315,7 +312,6 @@ function modelRoutesFixture(): ModelRoute[] {
       fallback_name: null,
       latency_p95_ms: 2700,
       eval_score: 0.921,
-      latest_eval_delta: 0,
       previous: null,
       eval_suite_name: 'Agent Tài liệu',
     }),
@@ -327,7 +323,6 @@ function modelRoutesFixture(): ModelRoute[] {
       fallback_name: null,
       latency_p95_ms: 3200,
       eval_score: 0.89,
-      latest_eval_delta: -4,
       previous: { model_name: 'LLM-L 32B', endpoint: 'https://llm.internal/v1', cost_ratio: 3.5 },
       eval_suite_name: 'Agent Báo cáo',
     }),
@@ -339,7 +334,6 @@ function modelRoutesFixture(): ModelRoute[] {
       fallback_name: null,
       latency_p95_ms: 40,
       eval_score: null,
-      latest_eval_delta: null,
       previous: null,
       eval_suite_name: null,
     }),
@@ -351,7 +345,6 @@ function modelRoutesFixture(): ModelRoute[] {
       fallback_name: 'luật',
       latency_p95_ms: 12,
       eval_score: 0.989,
-      latest_eval_delta: 0,
       previous: null,
       eval_suite_name: null,
     }),
@@ -440,8 +433,11 @@ function providersFixture(): AiProvider[] {
   ];
 }
 
-/* Week 41's audit, newest first: the three rows of the frame, then older ones of the week. */
-function routingLogFixture(): RoutingLogEntry[] {
+/* Week 41's audit, newest first: the three rows of the frame, then older ones of the week. The
+ * question is the fixture's own note; the api keeps only the task and the caller's kind. */
+type RoutingFixtureRow = Omit<RoutingLogEntry, 'task' | 'caller'> & { question: string };
+
+function routingLogFixture(): RoutingFixtureRow[] {
   const rows: [string, string, RoutingLogEntry['decision'], string, string][] = [
     [
       '2026-10-09T09:42:00+07:00',
@@ -507,27 +503,7 @@ function routingLogFixture(): RoutingLogEntry[] {
     decision,
     reason,
     provider_name,
-    asked_by_name: i % 2 ? 'Trần Minh Anh' : 'Lê Quốc Huy',
   }));
-}
-
-function gpuLoadFixture(): GpuLoad {
-  // Hourly load of the drawn curve: low overnight, a ramp from 09:00, peak 83% at 15:00.
-  const load = [
-    0.42, 0.4, 0.38, 0.37, 0.38, 0.4, 0.46, 0.55, 0.66, 0.74, 0.78, 0.8, 0.79, 0.77, 0.79, 0.83,
-    0.8, 0.72, 0.64, 0.6, 0.58, 0.56, 0.55, 0.54,
-  ];
-  return {
-    checked_at: '2026-10-10T08:15:00+07:00',
-    cards: [],
-    average: null,
-    points: load.map((utilization, hour) => ({
-      at: `2026-10-09T${String(hour).padStart(2, '0')}:00:00+07:00`,
-      utilization,
-    })),
-    peak: { at: '2026-10-09T15:00:00+07:00', utilization: 0.83 },
-    failover_text: 'Khi vượt 90% trong 10 phút, tác vụ sinh SQL chuyển sang mô hình dự phòng.',
-  };
 }
 
 const daysAhead = (days: number) => {
@@ -538,7 +514,7 @@ const daysAhead = (days: number) => {
 
 const DS_RISK_ID = 'ds-rui-ro-tin-dung';
 
-/* ApiClientListed as GET /v1/admin/clients sends it; the owner's name and 7-day figures under `display` (PROPOSAL). */
+/* ApiClientListed as GET /v1/admin/clients sends it; the owner's name under `display` (PROPOSAL). */
 function clientRow(
   row: Pick<ClientWire, 'id' | 'name' | 'kind' | 'tools' | 'expires_at' | 'status'> &
     Partial<ClientWire>,
@@ -571,7 +547,9 @@ function integrationsFixture(): ClientWire[] {
       tools: ['ask_question', 'get_metric_definition', 'run_skill'],
       expires_at: daysAhead(80),
       status: 'active',
-      display: { owner_name: 'Ngô Thanh Bình', calls_7d: 12480, error_rate_7d: 0.004 },
+      calls_24h: 1780,
+      errors_24h: 7,
+      display: { owner_name: 'Ngô Thanh Bình' },
     }),
     clientRow({
       id: 'cli-excel',
@@ -580,7 +558,9 @@ function integrationsFixture(): ClientWire[] {
       tools: ['get_metric_definition', 'search_metrics'],
       expires_at: daysAhead(170),
       status: 'active',
-      display: { owner_name: 'Lê Minh Châu', calls_7d: 3204, error_rate_7d: 0.011 },
+      calls_24h: 458,
+      errors_24h: 5,
+      display: { owner_name: 'Lê Minh Châu' },
     }),
     clientRow({
       id: 'cli-sbv',
@@ -589,7 +569,9 @@ function integrationsFixture(): ClientWire[] {
       tools: ['get_published_result'],
       expires_at: daysAhead(260),
       status: 'active',
-      display: { owner_name: 'Trần Quốc An', calls_7d: 62, error_rate_7d: 0 },
+      calls_24h: 9,
+      errors_24h: 0,
+      display: { owner_name: 'Trần Quốc An' },
     }),
     clientRow({
       id: 'cli-zalo',
@@ -598,7 +580,9 @@ function integrationsFixture(): ClientWire[] {
       tools: ['ask_question'],
       expires_at: daysAhead(20),
       status: 'active',
-      display: { owner_name: 'Pháp chế', calls_7d: 840, error_rate_7d: 0.026 },
+      calls_24h: 120,
+      errors_24h: 3,
+      display: { owner_name: 'Pháp chế' },
     }),
     clientRow({
       id: 'cli-hackathon',
@@ -607,7 +591,9 @@ function integrationsFixture(): ClientWire[] {
       tools: ['ask_question'],
       expires_at: daysAhead(-11),
       status: 'expired',
-      display: { owner_name: 'Phạm Đức Long', calls_7d: 0, error_rate_7d: null },
+      calls_24h: 0,
+      errors_24h: 0,
+      display: { owner_name: 'Phạm Đức Long' },
     }),
   ];
 }
@@ -936,14 +922,14 @@ export function createAdminPlatformHandlers() {
         checked_at: new Date().toISOString(),
         status: 'ok',
         sections: {
+          // DCGM_FI_DEV_GPU_UTIL now, one series per card, in percent.
           gpu: {
-            series: Array.from({ length: 24 }, (_, hour) => ({
-              labels: { at: `2026-10-09T${String(hour).padStart(2, '0')}:00:00+07:00` },
-              value: [
-                42, 40, 38, 37, 38, 40, 46, 55, 66, 74, 78, 80, 79, 77, 79, 83, 80, 72, 64, 60, 58,
-                56, 55, 54,
-              ][hour],
-            })),
+            series: [
+              { labels: { Hostname: 'gpu-a', gpu: '0' }, value: 83 },
+              { labels: { Hostname: 'gpu-a', gpu: '1' }, value: 81 },
+              { labels: { Hostname: 'gpu-b', gpu: '0' }, value: 54 },
+              { labels: { Hostname: 'gpu-b', gpu: '1' }, value: 63 },
+            ],
           },
         },
         display: systemHealthFixture(),
@@ -1014,7 +1000,6 @@ export function createAdminPlatformHandlers() {
         fallback_name: null,
         latency_p95_ms: 0,
         eval_score: null,
-        latest_eval_delta: null,
         previous: null,
         eval_suite_name: null,
       };
@@ -1041,7 +1026,6 @@ export function createAdminPlatformHandlers() {
           fallback_name: null,
           latency_p95_ms: null,
           eval_score: null,
-          latest_eval_delta: null,
           previous: null,
           eval_suite_name: null,
         }),
@@ -1071,7 +1055,6 @@ export function createAdminPlatformHandlers() {
           endpoint: route.previous.endpoint,
           cost_ratio: 1 / route.previous.cost_ratio,
         },
-        latest_eval_delta: 0,
       };
       models = models.map((m) => (m.id === id ? back : m));
       return HttpResponse.json(back);
@@ -1208,13 +1191,12 @@ export function createAdminPlatformHandlers() {
         items: routingLog.slice(start, end).map((e) => ({
           id: e.id,
           decided_at: e.at,
-          task: 'answer',
+          task: 'answer_writing',
           decision: API_DECISION[e.decision],
           reasons: [e.reason],
           chosen_provider_id: 'prov-1',
           model_name: e.provider_name,
-          caller_kind: 'user',
-          display: e,
+          caller_kind: 'question',
         })),
         next_page_token: end < routingLog.length ? String(end) : '',
         week,
@@ -1223,7 +1205,6 @@ export function createAdminPlatformHandlers() {
         local_calls: 9860,
       });
     }),
-    http.get('*/v1/admin/gpu-load', () => HttpResponse.json(gpuLoadFixture())),
 
     // PROPOSAL: GET /v1/admin/clients (A2 has the writes and the usage, not the list).
     http.get('*/v1/admin/clients', () => page(integrations)),

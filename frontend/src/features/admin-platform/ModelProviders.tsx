@@ -395,35 +395,35 @@ function ProviderTable({
   );
 }
 
-/** The card shows the time only; the full log spans the week, so it adds the day and asker. */
+/** The card shows the time only; the full log spans the week, so it adds the day and caller. */
 function RoutingTable({ entries, full = false }: { entries: RoutingLogEntry[]; full?: boolean }) {
   const view = useTableView(entries, {
     search: (entry) =>
       [
         full ? formatDate(entry.at).slice(0, 5) : '',
         formatHour(entry.at),
-        entry.question,
+        entry.task,
         DECISION[entry.decision].label,
         entry.reason,
         entry.provider_name,
-        full ? entry.asked_by_name : '',
+        full ? entry.caller : '',
       ].join(' '),
     filters: [
       { id: 'decision', label: 'Quyết định', value: (entry) => DECISION[entry.decision].label },
     ],
     sorts: [
       { id: 'at', value: (entry) => entry.at },
-      { id: 'question', value: (entry) => entry.question },
+      { id: 'task', value: (entry) => entry.task },
       { id: 'decision', value: (entry) => DECISION[entry.decision].label },
       { id: 'reason', value: (entry) => entry.reason },
       { id: 'provider', value: (entry) => entry.provider_name },
-      ...(full ? [{ id: 'asker', value: (entry: RoutingLogEntry) => entry.asked_by_name }] : []),
+      ...(full ? [{ id: 'caller', value: (entry: RoutingLogEntry) => entry.caller }] : []),
     ],
     pageSize: 50,
   });
   return (
     <div className="flex flex-col gap-da-lg">
-      <TableToolbar view={view} placeholder="Tìm câu hỏi…" searchLabel="Tìm câu hỏi" />
+      <TableToolbar view={view} placeholder="Tìm tác vụ, lý do…" searchLabel="Tìm trong nhật ký" />
       <div className="overflow-x-auto rounded-md border border-border">
         <table className="w-full border-collapse">
           <thead>
@@ -431,8 +431,8 @@ function RoutingTable({ entries, full = false }: { entries: RoutingLogEntry[]; f
               <SortableTh view={view} column="at" className={TH}>
                 Lúc
               </SortableTh>
-              <SortableTh view={view} column="question" className={TH}>
-                Câu hỏi
+              <SortableTh view={view} column="task" className={TH}>
+                Tác vụ
               </SortableTh>
               <SortableTh view={view} column="decision" className={TH}>
                 Quyết định
@@ -444,8 +444,8 @@ function RoutingTable({ entries, full = false }: { entries: RoutingLogEntry[]; f
                 Provider
               </SortableTh>
               {full && (
-                <SortableTh view={view} column="asker" className={TH}>
-                  Người hỏi
+                <SortableTh view={view} column="caller" className={TH}>
+                  Nguồn gọi
                 </SortableTh>
               )}
             </tr>
@@ -462,13 +462,13 @@ function RoutingTable({ entries, full = false }: { entries: RoutingLogEntry[]; f
                     {full && `${formatDate(entry.at).slice(0, 5)} `}
                     {formatHour(entry.at)}
                   </td>
-                  <td className={TD}>{entry.question}</td>
+                  <td className={TD}>{entry.task}</td>
                   <td className={TD}>
                     <StatusDot tone={decision.tone}>{decision.label}</StatusDot>
                   </td>
                   <td className={TD}>{entry.reason}</td>
                   <td className={TD}>{entry.provider_name}</td>
-                  {full && <td className={TD}>{entry.asked_by_name}</td>}
+                  {full && <td className={TD}>{entry.caller}</td>}
                 </tr>
               );
             })}

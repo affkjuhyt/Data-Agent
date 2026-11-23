@@ -1,7 +1,6 @@
 import { useAppState } from '../../AppStateContext';
 import { useAuth } from '../../lib/AuthProvider';
 import { PageHeader } from '../../components/shell/PageHeader';
-import { Badge } from '../../design-system/Badge';
 import { LinkCard } from '../../design-system/LinkCard';
 import { formatNumber } from '../../lib/formatVN';
 import { listModels, listUsers } from '../../lib/v1/api';
@@ -25,7 +24,6 @@ export default function AdminPage() {
   const active = users.data?.items.filter((u) => u.status === 'active');
   const people = active?.filter((u) => u.kind === 'person').length;
   const agents = active?.filter((u) => u.kind === 'agent').length;
-  const worse = models.data?.items.find((m) => (m.latest_eval_delta ?? 0) < 0);
 
   const open = (section: string) => () => navigate('admin', section);
 
@@ -70,13 +68,8 @@ export default function AdminPage() {
           {models.data && (
             <span className="text-muted-foreground da-body-small">
               {/* a task has a row per route (primary, a testing candidate): count the tasks */}
-              {new Set(models.data.items.map((m) => m.task)).size} loại tác vụ · chạy nội bộ
+              {new Set(models.data.items.map((m) => m.task)).size} loại tác vụ
             </span>
-          )}
-          {worse && (
-            <Badge tone="warning">
-              “{worse.task}” giảm chất lượng {Math.abs(worse.latest_eval_delta ?? 0)} điểm
-            </Badge>
           )}
         </LinkCard>
         <LinkCard

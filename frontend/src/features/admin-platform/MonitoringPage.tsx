@@ -12,7 +12,12 @@ import {
 } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { formatNumber } from '../../lib/formatVN';
-import { getSystemHealth, type ServiceHealth, type SystemHealth } from '../../lib/v1/adminPlatform';
+import {
+  getSystemHealth,
+  type ModelLoad,
+  type ServiceHealth,
+  type SystemHealth,
+} from '../../lib/v1/adminPlatform';
 import { useV1 } from '../../lib/v1/useV1';
 import { formatLatency, formatTokens, pct } from './format';
 import { MiniKpi, SectionTitle } from './parts';
@@ -22,6 +27,11 @@ import { LinkButton } from '../../components/shell/AppLink';
  * "v3.1 · Quản trị · Giám sát hệ thống" (2237:15149, UC-11-04): four small KPIs, the service
  * table, the model table, and on the right the open alerts and the backup line. "Xem nhật ký"
  * opens Kiểm toán, where the platform's own events are logged.
+ *
+ * The api's health call reads Prometheus for up/down, GPU, queues, backups and alerts only: the
+ * p95 latency, the 24 h error rate, a service's version, latency and errors, and the load by
+ * model are not measured there. A KPI, a column or the model table shows only when its figures
+ * arrive, rather than a row of "—" that cannot fill.
  */
 const SERVICE_STATUS: Record<
   ServiceHealth['status'],
@@ -122,6 +132,10 @@ function HealthBody({ data }: { data: SystemHealth }) {
   const errorUp = delta !== null && delta > 0;
   const latency = data.latency_p95_ms;
   const target = data.latency_target_ms;
+  const showVersion = data.services.some((service) => service.version);
+  const showLatency = data.services.some((service) => service.latency_p95_ms !== null);
+  const showErrors = data.services.some((service) => service.error_rate_24h !== null);
+  const serviceColumns = 3 + [showVersion, showLatency, showErrors].filter(Boolean).length;
   return (
     <>
       {data.no_data && (
@@ -137,29 +151,31 @@ function HealthBody({ data }: { data: SystemHealth }) {
           note={data.services_note ?? undefined}
           noteTone={data.services_note ? 'warning' : 'muted'}
         />
-        <MiniKpi
-          label="Độ trễ trả lời p95"
-          value={formatLatency(latency, true)}
-          note={target === null ? undefined : `mục tiêu ≤ ${formatLatency(target, true)}`}
-          noteTone={
-            latency === null || target === null ? 'muted' : latency <= target ? 'success' : 'error'
-          }
-        />
+        {latency !== null && (
+          <MiniKpi
+            label="Độ trễ trả lời p95"
+            value={formatLatency(latency, true)}
+            note={target === null ? undefined : `mục tiêu ≤ ${formatLatency(target, true)}`}
+            noteTone={target === null ? 'muted' : latency <= target ? 'success' : 'error'}
+          />
+        )}
         <MiniKpi
           label="GPU đang dùng"
           value={pct(data.gpu_utilization, 0)}
           note={`${data.gpu_hosts} máy · ${data.gpu_cards} card`}
         />
-        <MiniKpi
-          label="Lỗi 24 giờ"
-          value={pct(data.error_rate_24h)}
-          note={
-            delta === null
-              ? undefined
-              : `${errorUp ? '▲' : '▼'} ${formatNumber(Math.abs(delta), { maxFractionDigits: 1 })} điểm`
-          }
-          noteTone={delta === null ? 'muted' : errorUp ? 'warning' : 'success'}
-        />
+        {data.error_rate_24h !== null && (
+          <MiniKpi
+            label="Lỗi 24 giờ"
+            value={pct(data.error_rate_24h)}
+            note={
+              delta === null
+                ? undefined
+                : `${errorUp ? '▲' : '▼'} ${formatNumber(Math.abs(delta), { maxFractionDigits: 1 })} điểm`
+            }
+            noteTone={delta === null ? 'muted' : errorUp ? 'warning' : 'success'}
+          />
+        )}
       </div>
 
       <SectionTitle>Dịch vụ</SectionTitle>
@@ -183,27 +199,33 @@ function HealthBody({ data }: { data: SystemHealth }) {
                 >
                   Trạng thái
                 </SortableTh>
-                <SortableTh
-                  view={services}
-                  column="version"
-                  className="w-[90px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
-                >
-                  Phiên bản
-                </SortableTh>
-                <SortableTh
-                  view={services}
-                  column="latency"
-                  className="w-[80px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
-                >
-                  p95
-                </SortableTh>
-                <SortableTh
-                  view={services}
-                  column="errors"
-                  className="w-[90px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
-                >
-                  Lỗi 24 giờ
-                </SortableTh>
+                {showVersion && (
+                  <SortableTh
+                    view={services}
+                    column="version"
+                    className="w-[90px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                  >
+                    Phiên bản
+                  </SortableTh>
+                )}
+                {showLatency && (
+                  <SortableTh
+                    view={services}
+                    column="latency"
+                    className="w-[80px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                  >
+                    p95
+                  </SortableTh>
+                )}
+                {showErrors && (
+                  <SortableTh
+                    view={services}
+                    column="errors"
+                    className="w-[90px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                  >
+                    Lỗi 24 giờ
+                  </SortableTh>
+                )}
                 <SortableTh
                   view={services}
                   column="note"
@@ -222,20 +244,28 @@ function HealthBody({ data }: { data: SystemHealth }) {
                     <Cell>
                       <StatusDot tone={status.tone}>{status.label}</StatusDot>
                     </Cell>
-                    <Cell>{service.version}</Cell>
-                    <Cell>{formatLatency(service.latency_p95_ms)}</Cell>
-                    <Cell>{pct(service.error_rate_24h)}</Cell>
+                    {showVersion && <Cell>{service.version}</Cell>}
+                    {showLatency && <Cell>{formatLatency(service.latency_p95_ms)}</Cell>}
+                    {showErrors && <Cell>{pct(service.error_rate_24h)}</Cell>}
                     <Cell>{service.note}</Cell>
                   </tr>
                 );
               })}
-              {services.total === 0 && tableEmptyRow(6)}
+              {services.total === 0 && tableEmptyRow(serviceColumns)}
             </tbody>
           </table>
         </div>
         <TablePager view={services} />
       </div>
 
+      {data.models.length > 0 && <ModelLoadTable view={models} />}
+    </>
+  );
+}
+
+function ModelLoadTable({ view: models }: { view: ReturnType<typeof useTableView<ModelLoad>> }) {
+  return (
+    <>
       <SectionTitle>Mô hình AI</SectionTitle>
       <div className="flex flex-col gap-da-lg">
         <TableToolbar view={models} placeholder="Tìm mô hình…" searchLabel="Tìm mô hình" />
@@ -281,13 +311,6 @@ function HealthBody({ data }: { data: SystemHealth }) {
               </tr>
             </thead>
             <tbody>
-              {data.models.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-[14px] py-da-md text-muted-foreground da-caption">
-                    Chưa có số liệu tải theo mô hình.
-                  </td>
-                </tr>
-              )}
               {models.rows.map((model) => (
                 <tr key={model.name}>
                   <Cell>{model.name}</Cell>
@@ -303,7 +326,7 @@ function HealthBody({ data }: { data: SystemHealth }) {
                   </Cell>
                 </tr>
               ))}
-              {data.models.length > 0 && models.total === 0 && tableEmptyRow(5)}
+              {models.total === 0 && tableEmptyRow(5)}
             </tbody>
           </table>
         </div>

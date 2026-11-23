@@ -224,7 +224,7 @@ export interface DataSpaceMember {
   row_scope: RowScope | null;
   /** The row scope in words; null = toàn bộ. */
   row_scope_text: string | null;
-  /** PROPOSAL: only for agents, e.g. "running". */
+  /** PROPOSAL: only for agents, e.g. "running"; MemberDetail has none, the chip is left out. */
   agent_status?: 'running' | 'waiting' | 'idle' | 'paused' | 'error';
   /** PROPOSAL: "đọc" when the role is read-only. */
   access_note?: string;
@@ -577,52 +577,64 @@ const userNames = async () => {
 };
 
 /*
- * The names behind the ids. The user list needs `admin` and a steward may not hold it, so each
+ * The names behind the ids. The user list needs `admin` and a steward may not hold it: the
+ * members of the requests' Data Spaces (which a steward reads) name those who are members. A
  * lookup that is refused leaves its ids unnamed instead of failing the request.
  */
-const accessRequestNames = async (): Promise<AccessRequestNames> => {
+const memberNames = async (spaceIds: string[]) => {
+  const pages = await Promise.all(
+    [...new Set(spaceIds)].map((id) => listMembers(id).catch(() => null)),
+  );
+  return new Map(
+    pages.flatMap(
+      (page) =>
+        page?.items
+          .filter((m) => m.principal_type === 'user' && m.display_name)
+          .map((m) => [m.principal_id, m.display_name] as const) ?? [],
+    ),
+  );
+};
+
+const accessRequestNames = async (spaceIds: string[]): Promise<AccessRequestNames> => {
   const [users, spaces] = await Promise.all([
-    userNames().catch(() => new Map<string, string>()),
+    userNames().catch(() => null),
     listDataSpaceSummaries().catch(() => null),
   ]);
-  return { users, spaces: new Map(spaces?.items.map((s) => [s.id, s.name]) ?? []) };
+  return {
+    users: users ?? (await memberNames(spaceIds)),
+    spaces: new Map(spaces?.items.map((s) => [s.id, s.name]) ?? []),
+  };
 };
 
 /** GET /v1/access-requests: the caller's own requests, or every one for a steward. */
 export const listAccessRequests = async (
   query: { status?: AccessRequestStatus; data_space_id?: string } = {},
 ): Promise<Page<AccessRequest>> => {
-  const [page, names] = await Promise.all([
-    ok<Page<AccessRequestWire>>(
-      api.GET('/v1/access-requests', { params: { query: { ...ALL, ...query } } }),
-    ),
-    accessRequestNames(),
-  ]);
+  const page = await ok<Page<AccessRequestWire>>(
+    api.GET('/v1/access-requests', { params: { query: { ...ALL, ...query } } }),
+  );
+  const names = await accessRequestNames(page.items.map((r) => r.data_space_id));
   return { ...page, items: page.items.map((r) => readAccessRequest(r, names)) };
 };
 export const getAccessRequest = async (id: string) => {
-  const [raw, names] = await Promise.all([
-    ok<AccessRequestWire>(api.GET('/v1/access-requests/{id}', { params: { path: { id } } })),
-    accessRequestNames(),
-  ]);
-  return readAccessRequest(raw, names);
+  const raw = await ok<AccessRequestWire>(
+    api.GET('/v1/access-requests/{id}', { params: { path: { id } } }),
+  );
+  return readAccessRequest(raw, await accessRequestNames([raw.data_space_id]));
 };
 /*
  * :decide reads the request in the Data Space of X-Data-Space, which is the switcher's and may be
  * none ("Toàn tổ chức") or another space: the request's own goes with it.
  */
 export const decideAccessRequest = async (id: string, body: DecideAccess, dataSpaceId?: string) => {
-  const [raw, names] = await Promise.all([
-    okAs<AccessRequestWire>(
-      api.POST('/v1/access-requests/{id}:decide', {
-        params: { path: { id } },
-        body,
-        ...(dataSpaceId ? { headers: { 'X-Data-Space': dataSpaceId } } : {}),
-      }),
-    ),
-    accessRequestNames(),
-  ]);
-  return readAccessRequest(raw, names);
+  const raw = await okAs<AccessRequestWire>(
+    api.POST('/v1/access-requests/{id}:decide', {
+      params: { path: { id } },
+      body,
+      ...(dataSpaceId ? { headers: { 'X-Data-Space': dataSpaceId } } : {}),
+    }),
+  );
+  return readAccessRequest(raw, await accessRequestNames([raw.data_space_id]));
 };
 /** The requester only needs the code of what was sent, so no names are looked up. */
 export const requestAccess = async (body: {
@@ -649,16 +661,14 @@ export interface AccessPolicy {
   status: 'draft' | 'active' | 'disabled';
   simulated_at: Timestamp | null;
   activated_at: Timestamp | null;
-  /** PROPOSAL: POL-007 */
+  /** PROPOSAL: POL-007; '' while the api has no policy code (the screen says the version). */
   code: string;
   /** PROPOSAL */
   data_space_name: string;
-  /** PROPOSAL */
+  /** PROPOSAL; '' while the api does not name the owner, and the screen leaves it out. */
   owner_name: string;
   /** PROPOSAL: the rule in plain lines (Áp cho / Khi / Chỉ cho thấy dòng / Cột che). */
   rule_text: string;
-  /** PROPOSAL: question used for the simulation by default. */
-  sample_question: string;
   /** PROPOSAL: how many requests the policy handled this week (the policyOff confirmation); null
    *  while the api does not count it. */
   applied_this_week: number | null;
@@ -675,7 +685,9 @@ export interface Backtest {
 }
 
 interface PolicySimulation {
-  question: string;
+  /** Whether the policy narrows what this person sees; reason says why not. */
+  applies: boolean;
+  reason: string;
   rows: { label: string; without: string; with: string }[];
 }
 
@@ -725,11 +737,10 @@ function readAccessPolicy(raw: AccessPolicyWire, spaces: Map<string, string>): A
     status: raw.status as AccessPolicy['status'],
     simulated_at: raw.simulated_at,
     activated_at: raw.activated_at,
-    code: raw.code ?? `v${raw.version}`,
+    code: raw.code || '',
     data_space_name: raw.data_space_name ?? spaces.get(raw.data_space_id) ?? '',
-    owner_name: raw.owner_name ?? '',
+    owner_name: raw.owner_name || '',
     rule_text: raw.rule_text ?? ruleTextOf(raw),
-    sample_question: raw.sample_question ?? '',
     applied_this_week: raw.applied_this_week ?? null,
     last_backtest:
       raw.last_backtest ?? (raw.latest_backtest ? readBacktest(raw.latest_backtest) : null),
@@ -759,14 +770,20 @@ export const getAccessPolicy = async (id: string) => {
   return readAccessPolicy(raw as AccessPolicyWire, names);
 };
 /** PROPOSAL: the screen's comparison table, which the mock sends under `display`. */
-type SimulationWire = Schemas['SimulationView'] & { display?: PolicySimulation };
+type SimulationWire = Schemas['SimulationView'] & {
+  display?: Pick<PolicySimulation, 'rows'>;
+};
 
 /*
- * PolicySimulate runs the policy as one person (as_user_id); the question stays on the screen.
- * Without the PROPOSAL table the comparison is the api's: the row condition, the hidden and the
- * masked columns, without the policy and with it.
+ * PolicySimulate runs the policy as one person (as_user_id); it takes an optional sample SQL but
+ * no question, so no question is shown as if it had been asked. Without the PROPOSAL table the
+ * comparison is the api's: the row condition, the hidden and the masked columns, without the
+ * policy and with it.
  */
-export const simulatePolicy = async (id: string, body: { user_id: Uuid; question: string }) => {
+export const simulatePolicy = async (
+  id: string,
+  body: { user_id: Uuid },
+): Promise<PolicySimulation> => {
   const raw = await ok<SimulationWire>(
     api.POST('/v1/policies/{id}:simulate', {
       params: { path: { id } },
@@ -775,16 +792,17 @@ export const simulatePolicy = async (id: string, body: { user_id: Uuid; question
       } satisfies Schemas['PolicySimulate'],
     }),
   );
-  if (raw.display) return raw.display;
+  if (raw.display) return { applies: raw.applies, reason: raw.reason, rows: raw.display.rows };
   const masked = Object.keys((raw.masked_columns as Record<string, unknown> | undefined) ?? {});
   return {
-    question: raw.applies ? body.question : `${body.question} · ${raw.reason}`,
+    applies: raw.applies,
+    reason: raw.reason,
     rows: [
       { label: 'Dòng được thấy', without: 'tất cả', with: raw.row_condition ?? 'tất cả' },
       { label: 'Cột ẩn', without: '—', with: raw.hidden_columns?.join(', ') || '—' },
       { label: 'Cột che', without: '—', with: masked.join(', ') || '—' },
     ],
-  } satisfies PolicySimulation;
+  };
 };
 /**
  * :backtest answers 202 and the worker replays the window's queries afterwards; the counts come
@@ -817,6 +835,8 @@ export interface AuditEntry {
   actor_kind: 'person' | 'agent' | 'client' | 'system';
   /** PROPOSAL: what happened, in words; the action code otherwise. */
   action_text: string;
+  /** The action code, which the log's filter matches exactly. */
+  action_code?: string;
   /** PROPOSAL: the data touched, in words; the object's kind and id otherwise. */
   data_text: string;
   /** The service that wrote the row (api, worker-agent, …). */
@@ -850,11 +870,63 @@ const ACTOR_WORD: Record<AuditEntry['actor_kind'], string> = {
   system: 'Hệ thống',
 };
 
-/* The api's own audit actions; any other is shown by its code. */
+/*
+ * The actions the api and its workers write (audit.requested through the outbox), in words; an
+ * action not listed here is shown by its code rather than guessed at.
+ */
 const ACTION_TEXT: Record<string, string> = {
   'audit.searched': 'Tra cứu nhật ký kiểm toán',
   'audit.verified': 'Kiểm chuỗi băm của nhật ký',
   'audit.export_requested': 'Yêu cầu xuất nhật ký',
+  'query.executed': 'Chạy truy vấn',
+  view_sql: 'Xem SQL',
+  view_rows: 'Xem dòng dữ liệu',
+  view_lineage: 'Xem nguồn gốc số liệu',
+  'mcp.tools_call': 'Gọi công cụ MCP',
+  'data_space.created': 'Tạo Data Space',
+  'data_space.updated': 'Sửa Data Space',
+  'data_space.members_changed': 'Đổi thành viên Data Space',
+  'data_space.sources_assigned': 'Gán nguồn cho Data Space',
+  'group_mapping.changed': 'Đổi ánh xạ nhóm',
+  'emergency_access.granted': 'Cấp quyền khẩn cấp',
+  'organization.updated': 'Sửa cài đặt tổ chức',
+  'work_calendar.updated': 'Sửa lịch làm việc',
+  'policy.disable': 'Tắt chính sách',
+  'ai_setting.put': 'Đặt cài đặt AI',
+  'semantic_model.imported': 'Nhập mô hình ngữ nghĩa',
+  'knowledge_page.retire': 'Ngừng trang tri thức',
+  'knowledge_page_version.certify': 'Chứng nhận trang tri thức',
+  'skill_version.retire': 'Ngừng phiên bản kỹ năng',
+  'data_product.submit': 'Gửi duyệt data product',
+  'data_product.suspend': 'Tạm ngừng data product',
+  'data_product.retire': 'Ngừng data product',
+  'dataset.snapshot_downloaded': 'Tải ảnh chụp bảng dữ liệu',
+  'export.download_link_issued': 'Cấp liên kết tải tệp xuất',
+  'crawl_source.status_changed': 'Đổi trạng thái nguồn thu thập',
+  'alert.reopen': 'Mở lại cảnh báo',
+};
+
+/* audit_log.object_kind in words; the short id stays beside it to find the object. */
+const OBJECT_TEXT: Record<string, string> = {
+  dataset: 'Bảng dữ liệu',
+  data_space: 'Data Space',
+  query_run: 'Lượt truy vấn',
+  answer: 'Câu trả lời',
+  data_product: 'Data product',
+  access_request: 'Yêu cầu quyền',
+  user_role: 'Vai trò người dùng',
+  group_mapping: 'Ánh xạ nhóm',
+  organization: 'Tổ chức',
+  work_calendar: 'Lịch làm việc',
+  policy: 'Chính sách',
+  ai_setting: 'Cài đặt AI',
+  knowledge_page: 'Trang tri thức',
+  knowledge_page_version: 'Phiên bản trang tri thức',
+  skill_version: 'Phiên bản kỹ năng',
+  export_job: 'Lượt xuất',
+  crawl_source: 'Nguồn thu thập',
+  alert: 'Cảnh báo',
+  api_client: 'Client API',
 };
 
 const shortId = (id: string | null) => (id ? id.slice(0, 8) : '');
@@ -875,8 +947,11 @@ function readAuditEntry(raw: AuditWire, names: Map<string, string>): AuditEntry 
     actor_label: who + forWhom,
     actor_kind: kind,
     action_text: ACTION_TEXT[raw.action] ?? raw.action,
+    action_code: raw.action,
     data_text: raw.object_kind
-      ? [raw.object_kind, shortId(raw.object_id)].filter(Boolean).join(' · ')
+      ? [OBJECT_TEXT[raw.object_kind] ?? raw.object_kind, shortId(raw.object_id)]
+          .filter(Boolean)
+          .join(' · ')
       : '—',
     service: raw.service,
     outcome: raw.outcome === 'denied' ? 'blocked' : raw.outcome === 'error' ? 'error' : 'ok',

@@ -39,7 +39,12 @@ let usageQuery: URLSearchParams | undefined;
 let ifMatch: string | null = null;
 
 const server = setupServer(
-  http.get('*/v1/admin/clients', () => HttpResponse.json({ items: [client], next_page_token: '' })),
+  http.get('*/v1/admin/clients', () =>
+    HttpResponse.json({
+      items: [{ ...client, calls_24h: 400, errors_24h: 6 }],
+      next_page_token: '',
+    }),
+  ),
   http.get('*/v1/admin/users', () =>
     HttpResponse.json({
       items: [{ id: 'u-1', username: 'yen', display_name: 'Đỗ Hải Yến', kind: 'human', status: 'active', last_synced_at: null }],
@@ -78,7 +83,7 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 describe('integration clients', () => {
-  it('reads ApiClientView: owner by name, rest as API, near expiry as expiring', async () => {
+  it('reads ApiClientListed: owner by name, rest as API, near expiry as expiring, 24 h figures', async () => {
     const page = await listIntegrations();
     expect(page.items[0]).toEqual({
       id: 'c-1',
@@ -86,8 +91,8 @@ describe('integration clients', () => {
       kind: 'api',
       owner_name: 'Đỗ Hải Yến',
       scopes: ['ask_question'],
-      calls_7d: null,
-      error_rate_7d: null,
+      calls_24h: 400,
+      error_rate_24h: 6 / 400,
       quota_per_day: 1000,
       expires_at: soon,
       status: 'expiring',

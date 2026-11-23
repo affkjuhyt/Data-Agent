@@ -3,17 +3,17 @@ import { KeyValueList } from './parts';
 
 /*
  * "Cài đặt · Phím tắt" (2324:20380): the keyboard shortcuts of the app. They are fixed by the
- * client, so the list lives here rather than behind an endpoint.
+ * client, so the list lives here rather than behind an endpoint. Only keys something handles are
+ * listed: ⌘K (AppShell), Enter on a focused row or in the composer, Esc in dialogs and drawers,
+ * "/" commands in the ask box. The frame's J/K, "G then H/C/A", ⌘↵ in Cần bạn, @ mentions and
+ * "hold ?" have no handler.
  */
 const SHORTCUTS: [string, string][] = [
   ['⌘K', 'Tìm nhanh, hỏi agent, đi tới màn'],
-  ['J / K', 'Xuống / lên trong danh sách'],
-  ['Enter', 'Mở mục đang chọn'],
-  ['Esc', 'Đóng hộp thoại, bỏ chọn'],
-  ['⌘↵', 'Xác nhận lựa chọn trong Cần bạn'],
+  ['Enter', 'Mở dòng đang chọn trong danh sách; gửi câu hỏi'],
+  ['Shift + Enter', 'Xuống dòng trong ô hỏi'],
+  ['Esc', 'Đóng hộp thoại, ngăn kéo'],
   ['/', 'Lệnh trong ô hỏi'],
-  ['@', 'Nhắc người hoặc agent'],
-  ['G rồi H / C / A', 'Đi tới Trang chủ / Cần bạn / Agents'],
 ];
 
 export default function ShortcutsPage() {
@@ -23,7 +23,7 @@ export default function ShortcutsPage() {
         bordered
         breadcrumb={['Cài đặt', 'Phím tắt']}
         title="Phím tắt"
-        description="Phím tắt dùng được ở mọi màn; giữ ? để xem nhanh."
+        description="Phím tắt có trong ứng dụng."
       />
       <KeyValueList
         mono

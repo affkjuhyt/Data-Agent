@@ -9,7 +9,8 @@ import { KeyValueList } from './parts';
 /*
  * "Cài đặt · Hồ sơ" (2324:20173, UC-11-01): who the user is, as the directory says (GET /v1/me),
  * and the Data Spaces they belong to (GET /v1/data-spaces). Read only: the frame hides its Save
- * buttons, and the display format has no editor drawn yet. Below, the API clients the user
+ * buttons, and the display format follows the organisation's locale with no editor. Below, the
+ * API clients the user
  * answers for, where they agree to one granted in their name (MyClients).
  */
 
@@ -28,7 +29,7 @@ export default function ProfilePage() {
         bordered
         breadcrumb={['Cài đặt', 'Hồ sơ']}
         title="Hồ sơ"
-        description="Thông tin lấy từ Active Directory; chỉ định dạng hiển thị là sửa được ở đây."
+        description="Thông tin lấy từ danh bạ của tổ chức; định dạng hiển thị theo cài đặt của tổ chức. Trang này chỉ để xem."
       />
       <AsyncRegion state={me} what="hồ sơ" skeletonRows={8}>
         {(data) => {

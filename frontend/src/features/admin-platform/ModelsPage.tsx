@@ -40,7 +40,8 @@ import { AddProviderDialog, ProvidersTab, RoutingLogTab } from './ModelProviders
 
 /*
  * "P11 · Mô hình & chính sách AI" (UC-11-05 and UC-11-04) as four tabs (2436:15566): which
- * model serves each task with the 24 h GPU load (2306:19746), the org-wide AI guardrails,
+ * model serves each task with the GPU load now (2306:19746 drew 24 h, which the health call
+ * does not keep), the org-wide AI guardrails,
  * the providers with the sensitivity routing rules, and the week's routing audit.
  *
  * Changes apply through their own dialogs: "Thêm mô hình" (2095:8757) registers and evaluates,
@@ -169,7 +170,7 @@ export default function ModelsPage() {
             className="flex w-[320px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:w-full max-[1279px]:border-l-0 max-[1279px]:border-t"
           >
             <h2 id="gpu-title" className="text-foreground da-heading-3">
-              Tải GPU 24 giờ
+              Tải GPU hiện tại
             </h2>
             <AsyncRegion state={gpu} what="tải GPU" skeletonRows={2}>
               {(data) => <GpuPanel data={data} />}
@@ -335,15 +336,7 @@ function ModelRoutesTable({
                   <td className="py-da-md text-foreground da-mono">
                     {route.latency_p95_ms ? formatLatency(route.latency_p95_ms, true) : '—'}
                   </td>
-                  <td className="py-da-md text-foreground da-mono">
-                    {pct(route.eval_score)}
-                    {(route.latest_eval_delta ?? 0) < 0 && (
-                      <span className="text-error">
-                        {' '}
-                        ↓<span className="sr-only">giảm</span>
-                      </span>
-                    )}
-                  </td>
+                  <td className="py-da-md text-foreground da-mono">{pct(route.eval_score)}</td>
                   <td className="py-da-xs text-right">
                     {/* Rolling back is the same PUT as adding, refused with 501 for now. */}
                     {route.previous && MODEL_CHANGE_PENDING === null && (
@@ -388,43 +381,34 @@ function RollbackConsequence({ route }: { route: ModelRoute }) {
   );
 }
 
-/* The 24 h load as a line (the frame draws it 272 × 90 in primary), then the peak and the rule. */
+/*
+ * The load of each card at the health check, with the average. The health call is one instant
+ * query, so there is no curve over the day and no peak to name.
+ */
 function GpuPanel({ data }: { data: GpuLoad }) {
-  const W = 272;
-  const H = 90;
-  const series =
-    data.points ?? data.cards.map((card, i) => ({ at: String(i), utilization: card.utilization }));
-  const peak = data.peak ??
-    data.cards.reduce<{ at: string; utilization: number } | null>(
-      (best, card) =>
-        !best || card.utilization > best.utilization
-          ? { at: data.checked_at, utilization: card.utilization }
-          : best,
-      null,
-    ) ?? { at: data.checked_at, utilization: 0 };
-  const n = series.length;
-  const points = series
-    .map((p, i) => {
-      const x = n > 1 ? (i / (n - 1)) * W : 0;
-      const y = H - p.utilization * H;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
+  if (data.cards.length === 0)
+    return <p className="text-muted-foreground da-body-small">Chưa có số liệu GPU.</p>;
   return (
     <>
-      <svg
-        width={W}
-        height={H}
-        viewBox={`0 0 ${W} ${H}`}
-        role="img"
-        aria-label={`Tải GPU theo giờ, cao nhất ${pct(peak.utilization, 0)} lúc ${formatHour(peak.at)}`}
-        className="overflow-visible text-primary"
-      >
-        <polyline points={points} fill="none" stroke="currentColor" strokeWidth={1.5} />
-      </svg>
-      <p className="text-foreground da-body-small">
-        Cao điểm {pct(peak.utilization, 0)} lúc {formatHour(peak.at)}.{' '}
-        {data.failover_text ?? 'Theo dõi tải GPU để tự động điều phối khi cần.'}
+      <ul className="flex flex-col gap-da-sm">
+        {data.cards.map((card) => (
+          <li key={card.name} className="flex flex-col gap-da-xs">
+            <span className="flex justify-between text-foreground da-body-small">
+              <span className="truncate">{card.name}</span>
+              <span className="da-mono">{pct(card.utilization, 0)}</span>
+            </span>
+            <span className="h-1.5 overflow-hidden rounded-full bg-subtle" aria-hidden>
+              <span
+                className="block h-full bg-primary"
+                style={{ width: `${Math.min(100, Math.max(0, card.utilization * 100))}%` }}
+              />
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-muted-foreground da-body-small">
+        Trung bình {pct(data.average, 0)} trên {data.cards.length} card · đo lúc{' '}
+        {formatHour(data.checked_at)}.
       </p>
     </>
   );

@@ -388,7 +388,8 @@ describe('PoliciesPage', () => {
     ).toBeInTheDocument();
     expect(await screen.findByText('1.102.311')).toBeInTheDocument();
     expect(screen.getByText('18.420')).toBeInTheDocument();
-    expect(screen.getByText('hỏi “dư nợ bán lẻ theo chi nhánh tháng 9”')).toBeInTheDocument();
+    // :simulate takes a person, not a question: no question is shown as if it had been asked.
+    expect(screen.queryByText(/^hỏi “/)).toBeNull();
     expect(screen.getByText('2.140 / 18.302')).toBeInTheDocument();
     // The api has no way to save a new version of a policy, so the rule is shown, not edited.
     expect(rule).toHaveAttribute('readonly');

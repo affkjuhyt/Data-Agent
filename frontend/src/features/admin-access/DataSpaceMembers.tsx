@@ -278,11 +278,18 @@ function MemberRow({ member }: { member: DataSpaceMember }) {
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-da-md text-left"
       >
-        {member.principal_type === 'agent' ? (
-          <AgentChip name={member.display_name} status={member.agent_status ?? 'idle'} />
+        {/* MemberDetail has no run state: an agent without one is not drawn as waiting. */}
+        {member.principal_type === 'agent' && member.agent_status ? (
+          <AgentChip name={member.display_name} status={member.agent_status} />
         ) : (
           <>
-            <Avatar name={member.display_name} />
+            {member.principal_type === 'agent' ? (
+              <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground">
+                <Icon name="agent" />
+              </span>
+            ) : (
+              <Avatar name={member.display_name} />
+            )}
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-foreground da-body-strong">{member.display_name}</span>
               <span className="text-muted-foreground da-caption">{detail}</span>

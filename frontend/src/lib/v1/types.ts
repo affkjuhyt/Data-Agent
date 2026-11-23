@@ -369,8 +369,6 @@ export interface ModelConfig {
   task: string;
   model_name: string;
   status: string;
-  /** "Kèm độ trễ p95 và kết quả bộ đánh giá gần nhất". PROPOSAL: score delta vs previous run. */
-  latest_eval_delta: number | null;
 }
 
 /* ─── Chính sách: governance.behavior_policy ──────────────────────────── */

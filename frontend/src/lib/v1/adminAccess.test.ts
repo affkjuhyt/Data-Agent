@@ -109,6 +109,40 @@ describe('access requests from the api', () => {
     expect(one.title).toBe('Người dùng xin xem dữ liệu chi tiết · Rủi ro tín dụng');
   });
 
+  it('names the requester from the Data Space’s members when the user list is refused', async () => {
+    let memberSpace: string | null = null;
+    server.use(
+      http.get('*/v1/admin/users', forbidden),
+      http.get('*/v1/data-spaces/:id/members', ({ request }) => {
+        memberSpace = request.headers.get('X-Data-Space');
+        return HttpResponse.json({
+          items: [
+            {
+              id: 'm-1',
+              data_space_id: 'ds-1',
+              principal_type: 'user',
+              principal_id: 'u-chau',
+              principal_name: 'Lê Minh Châu',
+              role_id: 'r-1',
+              role_code: 'viewer',
+              role_name: 'Người xem',
+              row_scope: null,
+              source: 'manual',
+              source_ref: null,
+              valid_until: null,
+              created_at: at,
+              updated_at: at,
+            },
+          ],
+          next_page_token: '',
+        });
+      }),
+    );
+    const [listed] = (await listAccessRequests()).items;
+    expect(memberSpace).toBe('ds-1');
+    expect(listed.title).toBe('Lê Minh Châu xin xem dữ liệu chi tiết · Rủi ro tín dụng');
+  });
+
   it('decides in the request’s own Data Space and reads the answer the same way', async () => {
     const decided = await decideAccessRequest(
       wire.id,

@@ -30,7 +30,7 @@ const POLICY_FLAGS: { key: keyof DefaultPolicy; label: string }[] = [
 const NEXT_STEPS = [
   { title: '1. Kết nối hoặc chọn nguồn', text: 'Chỉ đọc qua tài khoản kỹ thuật' },
   { title: '2. Chạy bộ đánh giá', text: 'Đạt ngưỡng mới mở cho người dùng' },
-  { title: '3. Mời thành viên', text: 'Theo nhóm AD hoặc từng người' },
+  { title: '3. Thêm thành viên', text: 'Ở trang của Data Space, từng người hoặc nhóm' },
 ];
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

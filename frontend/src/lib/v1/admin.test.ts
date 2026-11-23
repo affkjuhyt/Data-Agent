@@ -7,6 +7,7 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { listAdminUsers } from './adminAccess';
 import {
+  getChannelRules,
   getNotificationPreferences,
   getRoutingLog,
   listModelRoutes,
@@ -168,8 +169,31 @@ describe('Quản trị from the api', () => {
     expect(log.items[0]).toMatchObject({
       decision: 'blocked',
       provider_name: 'Nhà cung cấp A',
-      question: 'answer',
+      // The audit keeps the task, not the question; an unknown task code stays as sent.
+      task: 'answer',
     });
+  });
+
+  it('says the channel rules per kind in words, not by the kind code', async () => {
+    server.use(
+      http.get('*/v1/channel-rules', () =>
+        HttpResponse.json({
+          channels: [{ key: 'in_app', label: 'Trong ứng dụng' }],
+          rows: [
+            {
+              kind: 'hitl',
+              label: 'hitl',
+              cells: { in_app: { text: 'Luôn gửi', tone: 'success' } },
+              note: '',
+            },
+            { kind: 'custom', label: 'Tuỳ chỉnh', cells: {}, note: '' },
+          ],
+          principles: [],
+        }),
+      ),
+    );
+    const rules = await getChannelRules();
+    expect(rules.rows.map((r) => r.label)).toEqual(['Cần bạn quyết', 'Tuỳ chỉnh']);
   });
 
   it('reads the preferences per kind, with the daily batch as "Bản tin"', async () => {

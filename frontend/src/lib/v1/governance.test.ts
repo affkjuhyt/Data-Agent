@@ -186,6 +186,9 @@ describe('governance from the api', () => {
     const p = await getAccessPolicy('pol-1');
     expect(policyQuery).toHaveLength(0);
     expect(p).toMatchObject({
+      // No policy code nor owner in AccessPolicyView: empty, not "v1" or a blank name.
+      code: '',
+      owner_name: '',
       data_space_name: 'Rủi ro tín dụng',
       rule_text: 'Chỉ cho thấy dòng: branch_code = :user.branch\nCột ẩn: id_number (hash)',
       last_backtest: {
@@ -203,8 +206,9 @@ describe('governance from the api', () => {
   });
 
   it('simulates as one person and compares rows and columns', async () => {
-    const sim = await simulatePolicy('pol-1', { user_id: 'u-1', question: 'dư nợ theo chi nhánh' });
+    const sim = await simulatePolicy('pol-1', { user_id: 'u-1' });
     expect(simulateBody).toEqual({ as_user_id: 'u-1' });
+    expect(sim).toMatchObject({ applies: true });
     expect(sim.rows).toEqual([
       { label: 'Dòng được thấy', without: 'tất cả', with: "branch_code = 'HN01'" },
       { label: 'Cột ẩn', without: '—', with: '—' },
@@ -231,8 +235,8 @@ describe('governance from the api', () => {
     expect(all.items[0]).toMatchObject({
       actor_label: 'Agent Đối soát (của Đỗ Hải Yến)',
       actor_kind: 'agent',
-      action_text: 'query.executed',
-      data_text: 'dataset · 0192f0aa',
+      action_text: 'Chạy truy vấn',
+      data_text: 'Bảng dữ liệu · 0192f0aa',
       outcome: 'ok',
     });
     expect(all.items[1]).toMatchObject({

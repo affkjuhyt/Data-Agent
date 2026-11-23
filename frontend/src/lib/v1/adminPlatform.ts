@@ -457,16 +457,16 @@ export interface AiPolicy {
   routing_rules: string[];
 }
 
-/** GPU use by card now, from the gpu section of GET /v1/admin/system/health (DCGM, percent). */
+/**
+ * GPU use by card now, from the gpu section of GET /v1/admin/system/health (DCGM, percent). The health
+ * call is one instant query: it has no history, so the screen shows the cards at checked_at and
+ * draws no curve over time.
+ */
 export interface GpuLoad {
   checked_at: Timestamp;
   cards: { name: string; utilization: number }[];
   /** Ratio 0…1 over the cards; null without GPU metrics. */
   average: number | null;
-  /** Legacy mock/display projection kept while older admin fixtures are migrated. */
-  points?: { at: string; utilization: number }[];
-  peak?: { at: string; utilization: number };
-  failover_text?: string;
 }
 
 /** governance.model_config.task, in the words of the screen. */
@@ -491,7 +491,7 @@ export interface NewModel {
 type ModelWire = Schemas['ModelConfigView'] &
   Partial<
     Pick<ModelRoute, 'placement' | 'fallback_name' | 'eval_score' | 'previous' | 'eval_suite_name'>
-  > & { latest_eval_delta?: number | null };
+  >;
 
 /** latest_eval is the eval run's row: its pass rate is the score. */
 const scoreOf = (raw: unknown): number | null => {
@@ -506,7 +506,6 @@ const readModelRoute = (raw: ModelWire): ModelRoute => ({
   task: raw.task,
   model_name: raw.model_name,
   status: raw.status,
-  latest_eval_delta: raw.latest_eval_delta ?? null,
   placement: raw.placement ?? null,
   fallback_name: raw.fallback_name ?? raw.fallback_model,
   latency_p95_ms: raw.latency_p95_ms ?? null,
@@ -584,24 +583,10 @@ export const getGpuLoad = async (): Promise<GpuLoad> => {
         .join(' · '),
       utilization: valueOf(s) / 100,
     }));
-  const points = seriesOf(raw, 'gpu')
-    .filter((s) => !isNaN(valueOf(s)))
-    .map((s, i) => ({
-      at: s.labels?.at ?? raw.checked_at,
-      utilization: valueOf(s) / 100,
-      i,
-    }));
-  const peak = points.reduce<{ at: string; utilization: number } | undefined>(
-    (best, point) => (!best || point.utilization > best.utilization ? point : best),
-    undefined,
-  );
   return {
     checked_at: raw.checked_at,
     cards,
     average: cards.length ? cards.reduce((sum, c) => sum + c.utilization, 0) / cards.length : null,
-    points: points.map(({ at, utilization }) => ({ at, utilization })),
-    peak,
-    failover_text: 'Khi vượt 90% trong 10 phút, tác vụ sinh SQL chuyển sang mô hình dự phòng.',
   };
 };
 
@@ -728,15 +713,19 @@ interface ProviderTest {
 
 export type RoutingDecision = 'frontier' | 'blocked' | 'local';
 
-/** PROPOSAL: one row of the routing audit (BR-181): decision, reason, provider, asker. */
+/**
+ * One row of the routing audit (BR-181): decision, reason, provider and what called. The audit
+ * keeps the prompt's hash, not the question, and caller_id names the question or run, not a
+ * person: the row says the task and the kind of caller in words.
+ */
 export interface RoutingLogEntry {
   id: string;
   at: Timestamp;
-  question: string;
+  task: string;
   decision: RoutingDecision;
   reason: string;
   provider_name: string;
-  asked_by_name: string;
+  caller: string;
 }
 
 /** PROPOSAL: GET /v1/admin/routing-log?week=, a cursor page plus the week's counts. */
@@ -837,9 +826,18 @@ export const testProvider = async (id: string, modelName: string): Promise<Provi
   };
 };
 
-/** PROPOSAL: a row's question and asker in words, and the week's totals; the mock sends them. */
-type RoutingWire = Page<Schemas['ModelRouteDecisionView'] & { display?: RoutingLogEntry }> &
+/** PROPOSAL: the week's totals; without them the page read is counted. */
+type RoutingWire = Page<Schemas['ModelRouteDecisionView']> &
   Partial<Pick<RoutingLog, 'week' | 'frontier_calls' | 'blocked_internal' | 'local_calls'>>;
+
+/** model_route_decision.caller_kind in words. */
+const CALLER_LABEL: Record<string, string> = {
+  question: 'Câu hỏi',
+  agent_run: 'Lượt chạy agent',
+  skill_run: 'Lượt chạy kỹ năng',
+  document: 'Đọc tài liệu',
+  eval: 'Bộ đánh giá',
+};
 
 const DECISION: Record<string, RoutingDecision> = {
   frontier_allowed: 'frontier',
@@ -867,8 +865,7 @@ function isoWeek(at: Date): string {
 }
 
 /**
- * GET /v1/admin/model-route-decisions for the week (from/to). The audit keeps the prompt's hash,
- * not the question (BR-181): the row shows the task instead. The week's counts are counted over
+ * GET /v1/admin/model-route-decisions for the week (from/to). The week's counts are counted over
  * the page read, which holds the week up to page_size decisions.
  */
 export const getRoutingLog = async (opts: {
@@ -896,16 +893,15 @@ export const getRoutingLog = async (opts: {
   ]);
   const names = new Map<string, string>(providers?.items.map((p) => [p.id, p.name]) ?? []);
   const items = page.items.map(
-    (d): RoutingLogEntry =>
-      d.display ?? {
-        id: d.id,
-        at: d.decided_at,
-        question: d.task,
-        decision: DECISION[d.decision] ?? 'local',
-        reason: d.reasons.join('; '),
-        provider_name: names.get(d.chosen_provider_id) ?? d.model_name,
-        asked_by_name: d.caller_kind,
-      },
+    (d): RoutingLogEntry => ({
+      id: d.id,
+      at: d.decided_at,
+      task: TASK_LABEL.get(d.task) ?? d.task,
+      decision: DECISION[d.decision] ?? 'local',
+      reason: d.reasons.join('; '),
+      provider_name: names.get(d.chosen_provider_id) ?? d.model_name,
+      caller: CALLER_LABEL[d.caller_kind] ?? d.caller_kind,
+    }),
   );
   const count = (k: RoutingDecision) => items.filter((i) => i.decision === k).length;
   return {
@@ -934,9 +930,10 @@ export interface Integration {
   owner_name: string;
   /** The MCP tools it was granted. */
   scopes: string[];
-  /** PROPOSAL: calls and error rate over 7 days; null when the row has no figures. */
-  calls_7d: number | null;
-  error_rate_7d: number | null;
+  /** Calls over the last 24 hours, as the list sends them (ApiClientListed.calls_24h). */
+  calls_24h: number;
+  /** errors_24h over calls_24h; null when the client made no call. */
+  error_rate_24h: number | null;
   quota_per_day: number;
   expires_at: Timestamp;
   status: 'pending_owner' | 'active' | 'expiring' | 'paused' | 'expired' | 'revoked';
@@ -950,9 +947,9 @@ export interface IntegrationUsage {
   blocked_by_permission: number;
 }
 
-/** A3's listed client; PROPOSAL: the owner's name and 7-day figures under `display` (mock only). */
+/** A3's listed client; the mock may send the owner's name under `display`. */
 export type ClientWire = Schemas['ApiClientListed'] & {
-  display?: Pick<Integration, 'owner_name' | 'calls_7d' | 'error_rate_7d'>;
+  display?: Pick<Integration, 'owner_name'>;
 };
 
 /** The MCP tools a client may be granted (integration/rules.py MCP_TOOLS). */
@@ -980,10 +977,10 @@ function readClient(raw: ClientWire, names: Map<string, string>, now = Date.now(
     id: raw.id,
     name: raw.name,
     kind: raw.kind === 'mcp' ? 'mcp' : 'api',
-    owner_name: raw.display?.owner_name ?? names.get(raw.owner_user_id) ?? '',
+    owner_name: raw.display?.owner_name || names.get(raw.owner_user_id) || '',
     scopes: Array.isArray(raw.tools) ? raw.tools : [],
-    calls_7d: raw.display?.calls_7d ?? null,
-    error_rate_7d: raw.display?.error_rate_7d ?? null,
+    calls_24h: raw.calls_24h ?? 0,
+    error_rate_24h: raw.calls_24h > 0 ? (raw.errors_24h ?? 0) / raw.calls_24h : null,
     quota_per_day: raw.quota_per_day,
     expires_at: raw.expires_at,
     status,
@@ -995,7 +992,7 @@ const userNames = async () => {
   return new Map<string, string>(users?.items.map((u) => [u.id, u.display_name]) ?? []);
 };
 
-/** GET /v1/admin/clients. The 7-day figures come from the usage panel, not the list. */
+/** GET /v1/admin/clients: the list carries the last 24 hours; 7 days are the usage panel's. */
 export const listIntegrations = async (): Promise<Page<Integration>> => {
   const [page, names] = await Promise.all([
     ok<Page<ClientWire>>(api.GET('/v1/admin/clients', { params: { query: { page_size: 500 } } })),
@@ -1261,4 +1258,18 @@ export interface ChannelRules {
   principles: { title: string; body: string }[];
 }
 
-export const getChannelRules = () => okAs<ChannelRules>(api.GET('/v1/channel-rules'));
+/**
+ * The api sends each row's notification kind as its label ("hitl"); it is said in the words of
+ * "Cài đặt thông báo".
+ */
+export const getChannelRules = async (): Promise<ChannelRules> => {
+  const rules = await okAs<ChannelRules>(api.GET('/v1/channel-rules'));
+  return {
+    ...rules,
+    rows: rules.rows.map((row) => ({
+      ...row,
+      label:
+        row.label && row.label !== row.kind ? row.label : (KIND_LABEL[row.kind]?.label ?? row.kind),
+    })),
+  };
+};

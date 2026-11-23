@@ -86,15 +86,15 @@ export default function IntegrationsPage() {
   const current = items.find((c) => c.id === selected) ?? items[0];
   const view = useTableView(items, {
     search: (client) =>
-      `${client.name} ${KIND_LABEL[client.kind]} ${client.owner_name} ${client.scopes.join(' ')} ${client.calls_7d === null ? '' : formatNumber(client.calls_7d)} ${pct(client.error_rate_7d)} ${formatExpiry(client.expires_at)} ${STATUS[client.status].label}`,
+      `${client.name} ${KIND_LABEL[client.kind]} ${client.owner_name} ${client.scopes.join(' ')} ${formatNumber(client.calls_24h)} ${pct(client.error_rate_24h)} ${formatExpiry(client.expires_at)} ${STATUS[client.status].label}`,
     filters: [
       { id: 'status', label: 'Trạng thái', value: (client) => STATUS[client.status].label },
     ],
     sorts: [
       { id: 'name', value: (client) => client.name },
       { id: 'tools', value: (client) => client.scopes.join(', ') },
-      { id: 'calls', value: (client) => client.calls_7d },
-      { id: 'errors', value: (client) => client.error_rate_7d },
+      { id: 'calls', value: (client) => client.calls_24h },
+      { id: 'errors', value: (client) => client.error_rate_24h },
       { id: 'expiry', value: (client) => client.expires_at },
       { id: 'status', value: (client) => STATUS[client.status].label },
     ],
@@ -156,14 +156,14 @@ export default function IntegrationsPage() {
                         column="calls"
                         className="w-[132px] py-da-md font-normal"
                       >
-                        Lượt gọi 7 ngày
+                        Lượt gọi 24 giờ
                       </SortableTh>
                       <SortableTh
                         view={view}
                         column="errors"
                         className="w-[82px] py-da-md font-normal"
                       >
-                        Lỗi
+                        Lỗi 24 giờ
                       </SortableTh>
                       <SortableTh
                         view={view}
@@ -211,17 +211,17 @@ export default function IntegrationsPage() {
                             {client.scopes.join(', ') || '—'}
                           </td>
                           <td className="py-da-md text-foreground da-mono">
-                            {client.calls_7d === null ? '—' : formatNumber(client.calls_7d)}
+                            {formatNumber(client.calls_24h)}
                           </td>
                           <td
                             className={cn(
                               'py-da-md da-mono',
-                              (client.error_rate_7d ?? 0) >= 0.02
+                              (client.error_rate_24h ?? 0) >= 0.02
                                 ? 'text-warning'
                                 : 'text-foreground',
                             )}
                           >
-                            {pct(client.error_rate_7d)}
+                            {pct(client.error_rate_24h)}
                           </td>
                           <td className="py-da-md text-muted-foreground da-mono">
                             {formatExpiry(client.expires_at)}

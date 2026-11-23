@@ -83,7 +83,10 @@ describe('ModelsPage', () => {
     renderPage(<ModelsPage />);
     expect(await screen.findByText('Qwen3-72B · GPU cụm A')).toBeInTheDocument();
     expect(screen.getByText('4,1 giây')).toBeInTheDocument();
-    expect(await screen.findByText(/Cao điểm 83% lúc 15:00/)).toBeInTheDocument();
+    // One health check is one reading per card: the panel draws no curve over the day.
+    expect(await screen.findByText(/Trung bình 70% trên 4 card/)).toBeInTheDocument();
+    expect(screen.getByText('gpu-a · GPU 0')).toBeInTheDocument();
+    expect(screen.queryByText(/Cao điểm/)).toBeNull();
     // PUT /v1/admin/models/{task} is refused until serving reads model_config (admin_models.py).
     expect(screen.queryByRole('button', { name: 'Thao tác với Soạn báo cáo' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Thêm mô hình' })).toHaveAttribute(
@@ -109,7 +112,7 @@ describe('ModelsPage tabs', () => {
     expect(
       await screen.findByText('Chặn yêu cầu lấy dữ liệu cá nhân hàng loạt'),
     ).toBeInTheDocument();
-    expect(screen.queryByText('Tải GPU 24 giờ')).toBeNull();
+    expect(screen.queryByText('Tải GPU hiện tại')).toBeNull();
   });
 
   it('lists providers with AC06 status and cost, and calls one to test it', async () => {
@@ -128,7 +131,7 @@ describe('ModelsPage tabs', () => {
     expect(within(b).getByText('chưa phát sinh')).toBeInTheDocument();
     expect(await screen.findByText('Nhật ký định tuyến · tuần 41')).toBeInTheDocument();
     expect(screen.getByText('9.860')).toBeInTheDocument();
-    expect(screen.getByText('So sánh dư nợ CN Hà Nội với kế hoạch')).toBeInTheDocument();
+    expect(screen.getByText('Có dữ liệu nhãn Nội bộ')).toBeInTheDocument();
 
     fireEvent.click(within(a).getByRole('button', { name: 'Gọi thử Nhà cung cấp A (API)' }));
     expect(await screen.findByText('Nhà cung cấp A (API) trả lời sau 1,3 s.')).toBeInTheDocument();
@@ -206,8 +209,12 @@ describe('ModelsPage tabs', () => {
   it('shows the whole week on the routing log tab', async () => {
     renderPage(<ModelsPage />);
     fireEvent.click(screen.getByRole('tab', { name: /Nhật ký định tuyến/ }));
-    expect(await screen.findByText('Top 10 khách hàng theo dư nợ')).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Người hỏi' })).toBeInTheDocument();
+    // The audit keeps the task and the caller's kind, not the question nor who asked.
+    expect((await screen.findAllByText('Viết câu trả lời, soạn báo cáo')).length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.getAllByText('Câu hỏi').length).toBeGreaterThan(0);
+    expect(screen.getByRole('columnheader', { name: 'Nguồn gọi' })).toBeInTheDocument();
     expect(screen.getByText('09/10 09:42')).toBeInTheDocument();
     expect(screen.getAllByRole('row')).toHaveLength(9);
   });
@@ -218,7 +225,9 @@ describe('IntegrationsPage', () => {
     renderPage(<IntegrationsPage />);
     expect(await screen.findByText('Copilot nội bộ')).toBeInTheDocument();
     expect(screen.getByText('MCP · Ngô Thanh Bình')).toBeInTheDocument();
-    expect(screen.getByText('12.480')).toBeInTheDocument();
+    // The list's own calls_24h, not a 7-day figure only a mock sent.
+    expect(screen.getByRole('columnheader', { name: 'Lượt gọi 24 giờ' })).toBeInTheDocument();
+    expect(screen.getByText('1.780')).toBeInTheDocument();
     expect(screen.getByText('Sắp hết hạn')).toBeInTheDocument();
     expect(
       await screen.findByText('ask_question 71% · get_metric_definition 24%'),
@@ -345,7 +354,9 @@ describe('settings and channel rules', () => {
   it('lists the shortcuts', () => {
     renderPage(<ShortcutsPage />);
     expect(screen.getByText('⌘K')).toBeInTheDocument();
-    expect(screen.getByText('Đi tới Trang chủ / Cần bạn / Agents')).toBeInTheDocument();
+    // Only keys something handles: no J/K, "G then …" or "hold ?".
+    expect(screen.queryByText('Đi tới Trang chủ / Cần bạn / Agents')).toBeNull();
+    expect(screen.queryByText('J / K')).toBeNull();
   });
 
   it('shows what each channel may do per kind of request', async () => {

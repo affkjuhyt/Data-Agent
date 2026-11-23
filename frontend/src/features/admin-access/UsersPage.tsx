@@ -34,6 +34,10 @@ import { Unavailable } from '../../design-system/Unavailable';
  * what each role may do. "Thêm vào Data Space" opens "Hộp thoại · invite". Above the list, the
  * organisation's self-approval switch. The sync and the invitation stay disabled, with the
  * api's reason, while it answers them with 501.
+ *
+ * GET /v1/admin/users names neither the group a role comes from, nor a row scope, nor an
+ * expiry: the second line of a person falls back to the username, and the row-scope and expiry
+ * columns show only when some row has them.
  */
 export default function UsersPage() {
   const toast = useToast();
@@ -52,7 +56,7 @@ export default function UsersPage() {
   );
   const summary = users.data
     ? // identity_source is '' when the api does not name it, so `||`, not `??`.
-      `${count(people.length)} người từ ${people[0]?.identity_source || 'nguồn danh tính'} · đồng bộ ${clock(lastSync)} · vai trò gán theo nhóm AD, Data Space gán theo thành viên`
+      `${count(people.length)} người từ ${people[0]?.identity_source || 'nguồn danh tính'} · đồng bộ ${clock(lastSync)} · Data Space gán theo thành viên`
     : undefined;
 
   const sync = useV1Mutation(syncDirectory, {
@@ -141,9 +145,11 @@ export default function UsersPage() {
 }
 
 function UsersTable({ users }: { users: AdminUser[] }) {
+  const showScope = users.some((u) => u.row_scope_text);
+  const showUntil = users.some((u) => u.valid_until);
   const view = useTableView(users, {
     search: (u) =>
-      `${u.display_name} ${u.group_label} ${u.role_name} ${u.data_space_text} ${u.row_scope_text} ${dayMonth(u.valid_until)}`,
+      `${u.display_name} ${u.group_label || u.username} ${u.role_name} ${u.data_space_text} ${u.row_scope_text} ${dayMonth(u.valid_until)}`,
     filters: [
       { id: 'role', label: 'Vai trò', value: (u) => u.role_name },
       {
@@ -184,20 +190,24 @@ function UsersTable({ users }: { users: AdminUser[] }) {
             >
               Data Space
             </SortableTh>
-            <SortableTh
-              view={view}
-              column="scope"
-              className="w-[170px] px-da-lg py-da-md font-normal"
-            >
-              Phạm vi dòng
-            </SortableTh>
-            <SortableTh
-              view={view}
-              column="until"
-              className="w-[90px] px-da-lg py-da-md font-normal"
-            >
-              Hạn
-            </SortableTh>
+            {showScope && (
+              <SortableTh
+                view={view}
+                column="scope"
+                className="w-[170px] px-da-lg py-da-md font-normal"
+              >
+                Phạm vi dòng
+              </SortableTh>
+            )}
+            {showUntil && (
+              <SortableTh
+                view={view}
+                column="until"
+                className="w-[90px] px-da-lg py-da-md font-normal"
+              >
+                Hạn
+              </SortableTh>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -214,27 +224,33 @@ function UsersTable({ users }: { users: AdminUser[] }) {
                       </span>
                     )}
                   </span>
-                  <span className="truncate text-muted-foreground da-mono">{u.group_label}</span>
+                  <span className="truncate text-muted-foreground da-mono">
+                    {u.group_label || u.username}
+                  </span>
                 </div>
               </td>
               <td className="px-da-lg py-da-md text-foreground da-body-small">{u.role_name}</td>
               <td className="px-da-lg py-da-md text-foreground da-body-small">
                 {u.data_space_text}
               </td>
-              <td
-                className={cn(
-                  'px-da-lg py-da-md da-body-small',
-                  u.row_scope_limited ? 'text-warning' : 'text-foreground',
-                )}
-              >
-                {u.row_scope_text}
-              </td>
-              <td className="px-da-lg py-da-md text-muted-foreground da-mono">
-                {dayMonth(u.valid_until)}
-              </td>
+              {showScope && (
+                <td
+                  className={cn(
+                    'px-da-lg py-da-md da-body-small',
+                    u.row_scope_limited ? 'text-warning' : 'text-foreground',
+                  )}
+                >
+                  {u.row_scope_text}
+                </td>
+              )}
+              {showUntil && (
+                <td className="px-da-lg py-da-md text-muted-foreground da-mono">
+                  {dayMonth(u.valid_until)}
+                </td>
+              )}
             </tr>
           ))}
-          {view.total === 0 && tableEmptyRow(5)}
+          {view.total === 0 && tableEmptyRow(3 + Number(showScope) + Number(showUntil))}
         </tbody>
       </table>
       <TablePager view={view} />

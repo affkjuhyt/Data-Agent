@@ -881,7 +881,6 @@ export function modelsFixture(): ModelConfig[] {
     task,
     model_name: 'qwen3-32b',
     status: 'active',
-    latest_eval_delta: task === 'Soạn báo cáo' ? -4 : 0,
   }));
 }
 

@@ -23,7 +23,7 @@ import { POLICY_KIND, POLICY_STATUS } from './policyLabels';
 
 /*
  * "P11 · Chính sách dữ liệu" (2305:19617, UC-11-02): the rule in mono lines, what one person
- * would see with and without it for a sample question (POST :simulate), and on the right the
+ * would see with and without it (POST :simulate, which takes a person, not a question), and on the right the
  * backtest on the last 7 days of queries (POST :backtest). "Lịch sử" waits for a version-history
  * endpoint, so it is shown disabled with the reason.
  *
@@ -57,14 +57,22 @@ export default function PolicyDetail({ id }: { id: string }) {
           <>
             <PageHeader
               bordered
-              breadcrumb={['Quản trị', 'Chính sách dữ liệu', p.code]}
+              breadcrumb={['Quản trị', 'Chính sách dữ liệu', p.code || p.name]}
               title={
                 <span className="flex items-center gap-[10px]">
                   {p.name}
                   <StatusDot tone={POLICY_STATUS[p.status].tone}>{POLICY_STATUS[p.status].label}</StatusDot>
                 </span>
               }
-              description={`${POLICY_KIND[p.kind]} · Data Space ${p.data_space_name} · ${POLICY_STATUS[p.status].label.toLowerCase()} · chủ sở hữu ${p.owner_name}`}
+              description={[
+                POLICY_KIND[p.kind],
+                p.data_space_name && `Data Space ${p.data_space_name}`,
+                POLICY_STATUS[p.status].label.toLowerCase(),
+                `phiên bản ${p.version}`,
+                p.owner_name && `chủ sở hữu ${p.owner_name}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
               actions={
                 <>
                   <Tooltip content={HISTORY_PENDING}>
@@ -147,9 +155,10 @@ function Simulation({ policy }: { policy: AccessPolicy }) {
   // Start with someone the policy narrows, since that is the case worth checking.
   const [userId, setUserId] = useState<string | null>(null);
   const chosen = userId ?? people.find((u) => u.row_scope_limited)?.id ?? people[0]?.id ?? null;
-  // A policy carries the question it is checked with; without one, a question every metric answers.
-  const question = policy.sample_question || 'số liệu tháng này';
-  const result = useV1(['simulatePolicy', policy.id, chosen, question], chosen ? () => simulatePolicy(policy.id, { user_id: chosen, question }) : null);
+  const result = useV1(
+    ['simulatePolicy', policy.id, chosen],
+    chosen ? () => simulatePolicy(policy.id, { user_id: chosen }) : null,
+  );
 
   return (
     <>
@@ -157,14 +166,25 @@ function Simulation({ policy }: { policy: AccessPolicy }) {
         <Select
           label="Người được mô phỏng"
           className="w-[300px]"
-          options={people.slice(0, 50).map((u) => ({ value: u.id, label: `${u.display_name} · ${u.group_label}` }))}
+          options={people.slice(0, 50).map((u) => ({
+            value: u.id,
+            label: [u.display_name, u.group_label || u.username].filter(Boolean).join(' · '),
+          }))}
           value={chosen}
           onChange={setUserId}
         />
-        <span className="text-muted-foreground da-body-small">hỏi “{question}”</span>
       </div>
       <AsyncRegion state={result} what="kết quả mô phỏng" skeletonRows={4}>
-        {(r) => <SimulationRows rows={r.rows} />}
+        {(r) => (
+          <>
+            {!r.applies && (
+              <p className="text-muted-foreground da-body-small">
+                Chính sách không áp cho người này{r.reason ? `: ${r.reason}` : ''}.
+              </p>
+            )}
+            <SimulationRows rows={r.rows} />
+          </>
+        )}
       </AsyncRegion>
     </>
   );

@@ -56,7 +56,7 @@ function PolicyList() {
   const turnOff = useV1Mutation((p: AccessPolicy) => disablePolicy(p.id, reason.trim()), {
     invalidates: [['listAccessPolicies']],
     onSuccess: (_, p) => {
-      toast({ tone: 'success', message: `Đã tắt ${p.code}` });
+      toast({ tone: 'success', message: `Đã tắt ${p.code || p.name}` });
       setTurningOff(null);
       setReason('');
     },
@@ -137,7 +137,9 @@ function PolicyList() {
                           onClick={() => navigate('admin', 'POLICIES', p.id)}
                         >
                           <span className="truncate text-foreground da-body-strong">{p.name}</span>
-                          <span className="text-muted-foreground da-mono">{p.code}</span>
+                          <span className="text-muted-foreground da-mono">
+                            {p.code || `phiên bản ${p.version}`}
+                          </span>
                         </button>
                       </td>
                       <td className="px-da-lg py-da-md text-foreground da-body-small">
@@ -153,7 +155,7 @@ function PolicyList() {
                       </td>
                       <td className="px-da-xs py-da-md text-right">
                         <Menu
-                          label={`Thao tác với ${p.code}`}
+                          label={`Thao tác với ${p.code || p.name}`}
                           items={[
                             {
                               label: 'Mở',
@@ -208,7 +210,7 @@ function PolicyList() {
           {typeof turningOff?.applied_this_week === 'number'
             ? `${turningOff.applied_this_week} yêu cầu tuần này được tự xử lý nhờ quy tắc. `
             : ''}
-          Sau khi tắt, agent sẽ hỏi lại bạn mỗi lần.
+          Sau khi tắt, quy tắc này không còn giới hạn dữ liệu của Data Space.
           <Textarea
             aria-label="Lý do tắt"
             placeholder="Lý do tắt (bắt buộc)"

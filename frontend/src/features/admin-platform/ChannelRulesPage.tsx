@@ -15,6 +15,8 @@ import { useV1 } from '../../lib/v1/useV1';
  * kind of request. The risk of a request decides the channel; outside channels only receive and
  * answer quickly, Data Agent stays the source of truth. Green = allowed, orange = limited,
  * red = link only. Read only: the rules are the organisation's, opened from "Thông báo".
+ * Today the api sends one rule set for every kind: the page says so rather than imply each kind
+ * has its own.
  */
 export default function ChannelRulesPage() {
   const rules = useV1(['getChannelRules'], getChannelRules);
@@ -30,6 +32,11 @@ export default function ChannelRulesPage() {
       <AsyncRegion state={rules} what="quy tắc kênh" skeletonRows={6}>
         {(data) => (
           <>
+            {sameForEveryKind(data) && (
+              <p className="text-muted-foreground da-body-small">
+                Hiện mọi loại yêu cầu dùng chung một quy tắc kênh.
+              </p>
+            )}
             <RulesTable data={data} />
             <div className="grid grid-cols-4 gap-da-lg max-[1279px]:grid-cols-2">
               {data.principles.map((p) => (
@@ -48,6 +55,12 @@ export default function ChannelRulesPage() {
     </div>
   );
 }
+
+const sameForEveryKind = (data: ChannelRules) => {
+  const cells = (row: ChannelRules['rows'][number]) =>
+    JSON.stringify(data.channels.map((c) => row.cells[c.key] ?? null)) + row.note;
+  return data.rows.length > 1 && data.rows.every((row) => cells(row) === cells(data.rows[0]));
+};
 
 function RulesTable({ data }: { data: ChannelRules }) {
   const first = data.channels[0];
