@@ -344,6 +344,8 @@ class TermView(View):
     default_meaning: int | None
     legal_basis: str | None
     status: str
+    # Who wrote the term down; the glossary names them as its owner (glossary_term has no owner).
+    created_by: uuid.UUID | None = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
 

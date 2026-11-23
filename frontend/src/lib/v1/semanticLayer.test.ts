@@ -162,8 +162,15 @@ describe('listGlossary', () => {
             status: 'active',
             meanings: [],
             default_meaning: null,
+            created_by: 'u-yen',
           },
         ],
+        next_page_token: '',
+      }),
+    ),
+    http.get('*/v1/principals', () =>
+      HttpResponse.json({
+        items: [{ id: 'u-yen', kind: 'user', display_name: 'Đỗ Hải Yến' }],
         next_page_token: '',
       }),
     ),
@@ -184,12 +191,12 @@ describe('listGlossary', () => {
   beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
   afterAll(() => server.close());
 
-  it('names the Data Space and lists the approved synonyms of a term', async () => {
+  it('names the Data Space, its owner (who wrote it) and the approved synonyms of a term', async () => {
     const [term] = (await listGlossary()).items;
     expect(term).toMatchObject({
       data_space_text: 'Rủi ro tín dụng',
       synonyms: 'NPL, nợ nhóm 3-5',
-      owner_name: '',
+      owner_name: 'Đỗ Hải Yến',
     });
   });
 });

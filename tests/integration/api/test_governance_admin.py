@@ -224,6 +224,8 @@ async def test_an_access_policy_is_simulated_before_it_is_switched_on(gov: Org) 
 
         listed = await api.get("/v1/policies?type=access", headers=gov.headers("admin"))
         assert [p["id"] for p in listed.json()] == [policy["id"]]
+        # Who wrote the policy: the policies page names it as its owner.
+        assert listed.json()[0]["created_by"] == str(gov.users["admin"])
         # Who sees what is not for every asker.
         hidden = await api.get(
             "/v1/policies?type=access", headers=gov.headers("teller", space=True)

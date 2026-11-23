@@ -7059,6 +7059,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Created By */
+            created_by?: string | null;
             /**
              * Data Space Id
              * Format: uuid
@@ -7116,6 +7118,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Created By */
+            created_by?: string | null;
             /**
              * Data Space Id
              * Format: uuid
@@ -22488,6 +22492,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Created By */
+            created_by?: string | null;
             /**
              * Data Space Id
              * Format: uuid

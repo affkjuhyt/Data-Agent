@@ -513,6 +513,8 @@ async def test_a_second_meaning_becomes_a_pending_ambiguous_glossary_term(ctx: C
         assert terms.status_code == 200
         term = terms.json()["items"][0]
         assert term["status"] == "pending_review" and len(term["meanings"]) == 2
+        # Who wrote the term down: the glossary names it as its owner.
+        assert term["created_by"] == str(ctx.users["steward"])
 
 
 @pytest.mark.req("AC-07-09-02")

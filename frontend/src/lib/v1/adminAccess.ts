@@ -1,4 +1,5 @@
 import { V1Error, type Page, api, ok, okAs, pathId } from './client';
+import { personNames } from './me';
 import type { components } from './schema';
 import type { AppUser, DataSpace } from './types';
 
@@ -742,7 +743,12 @@ const ruleTextOf = (raw: Schemas['AccessPolicyView']) =>
     .filter(Boolean)
     .join('\n');
 
-function readAccessPolicy(raw: AccessPolicyWire, spaces: Map<string, string>): AccessPolicy {
+function readAccessPolicy(
+  raw: AccessPolicyWire,
+  spaces: Map<string, string>,
+  /** Creators' names by id: whoever wrote the policy is named as its owner. */
+  owners: ReadonlyMap<string, string> = new Map(),
+): AccessPolicy {
   return {
     id: raw.id,
     data_space_id: raw.data_space_id,
@@ -756,7 +762,7 @@ function readAccessPolicy(raw: AccessPolicyWire, spaces: Map<string, string>): A
     activated_at: raw.activated_at,
     code: raw.code || '',
     data_space_name: raw.data_space_name ?? spaces.get(raw.data_space_id) ?? '',
-    owner_name: raw.owner_name || '',
+    owner_name: raw.owner_name || (raw.created_by ? owners.get(raw.created_by) : '') || '',
     rule_text: raw.rule_text ?? ruleTextOf(raw),
     applied_this_week: raw.applied_this_week ?? null,
     last_backtest:
@@ -771,7 +777,8 @@ export const listAccessPolicies = async (): Promise<Page<AccessPolicy>> => {
     listDataSpaceSummaries().catch(() => null),
   ]);
   const names = new Map<string, string>(spaces?.items.map((s) => [s.id, s.name]) ?? []);
-  return { items: rows.map((r) => readAccessPolicy(r, names)), next_page_token: '' };
+  const owners = await personNames(rows.map((r) => r.created_by));
+  return { items: rows.map((r) => readAccessPolicy(r, names, owners)), next_page_token: '' };
 };
 
 /** GET /v1/policies/{id} answers either type; a behaviour policy is not shown here. */
@@ -784,7 +791,8 @@ export const getAccessPolicy = async (id: string) => {
   ]);
   if (raw.type !== 'access') throw new V1Error(404, 'not_found', 'Không tìm thấy chính sách.');
   const names = new Map<string, string>(spaces?.items.map((s) => [s.id, s.name]) ?? []);
-  return readAccessPolicy(raw as AccessPolicyWire, names);
+  const policy = raw as AccessPolicyWire;
+  return readAccessPolicy(policy, names, await personNames([policy.created_by]));
 };
 /** PROPOSAL: the screen's comparison table, which the mock sends under `display`. */
 type SimulationWire = Schemas['SimulationView'] & {

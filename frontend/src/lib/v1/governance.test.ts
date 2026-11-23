@@ -14,6 +14,12 @@ let policyQuery: URLSearchParams[] = [];
 let simulateBody: unknown;
 
 const server = setupServer(
+  http.get('*/v1/principals', () =>
+    HttpResponse.json({
+      items: [{ id: 'u-duc', kind: 'user', display_name: 'Phạm Đức Long' }],
+      next_page_token: '',
+    }),
+  ),
   http.get('*/v1/policies', ({ request }) => {
     const q = new URL(request.url).searchParams;
     policyQuery.push(q);
@@ -32,6 +38,7 @@ const server = setupServer(
           status: 'active',
           simulated_at: at,
           activated_at: at,
+          created_by: 'u-duc',
         },
       ]);
     return HttpResponse.json([
@@ -89,6 +96,7 @@ const server = setupServer(
       status: 'active',
       simulated_at: at,
       activated_at: at,
+      created_by: 'u-duc',
       latest_backtest: {
         id: 'bt-1',
         window_from: '2026-10-05T00:00:00Z',
@@ -186,9 +194,9 @@ describe('governance from the api', () => {
     const p = await getAccessPolicy('pol-1');
     expect(policyQuery).toHaveLength(0);
     expect(p).toMatchObject({
-      // No policy code nor owner in AccessPolicyView: empty, not "v1" or a blank name.
+      // No policy code in AccessPolicyView: empty, not "v1". The owner is who wrote it.
       code: '',
-      owner_name: '',
+      owner_name: 'Phạm Đức Long',
       data_space_name: 'Rủi ro tín dụng',
       rule_text: 'Chỉ cho thấy dòng: branch_code = :user.branch\nCột ẩn: id_number (hash)',
       last_backtest: {

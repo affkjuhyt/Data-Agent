@@ -1,5 +1,6 @@
 import { listDataSpaces } from './api';
 import { type Page, api, ok } from './client';
+import { personNames } from './me';
 import type { components } from './schema';
 
 /*
@@ -225,6 +226,8 @@ function readGlossary(
   raw: GlossaryWire,
   spaces: Map<string, string>,
   synonyms: SynonymWire[] = [],
+  /** Creators' names by id: whoever wrote the term down is named as its owner. */
+  owners: ReadonlyMap<string, string> = new Map(),
 ): GlossaryEntry {
   const meanings = readMeanings(raw);
   return {
@@ -243,7 +246,7 @@ function readGlossary(
     status: raw.status !== 'active' ? 'draft' : meanings.length > 1 ? 'ambiguous' : 'certified',
     meanings,
     ambiguity_rule: raw.ambiguity_rule ?? null,
-    owner_name: raw.owner_name ?? '',
+    owner_name: raw.owner_name ?? (raw.created_by ? owners.get(raw.created_by) : undefined) ?? '',
     usage_text: raw.usage_text ?? '',
   };
 }
@@ -259,12 +262,9 @@ export const listGlossary = async () => {
   ]);
   const names = new Map((spaces?.items ?? []).map((d) => [d.id, d.name]));
   // A retired term is out of the glossary; it read as "draft" and was counted with the others.
-  return {
-    ...page,
-    items: page.items
-      .filter((t) => t.status !== 'retired')
-      .map((t) => readGlossary(t, names, synonyms)),
-  };
+  const kept = page.items.filter((t) => t.status !== 'retired');
+  const owners = await personNames(kept.map((t) => t.created_by));
+  return { ...page, items: kept.map((t) => readGlossary(t, names, synonyms, owners)) };
 };
 
 /** GET /v1/unmapped-phrases: what the agent did not understand, the most asked first (UC-07-09). */

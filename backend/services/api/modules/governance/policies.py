@@ -123,6 +123,8 @@ class AccessPolicyView(_View):
     simulated_at: datetime.datetime | None
     activated_at: datetime.datetime | None
     activated_by: uuid.UUID | None
+    # Who wrote the policy; the policies page names them as its owner (the table has no owner).
+    created_by: uuid.UUID | None = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
 

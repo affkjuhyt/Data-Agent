@@ -100,6 +100,18 @@
       "title": "Created At",
       "type": "string"
      },
+     "created_by": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created By"
+     },
      "data_space_id": {
       "format": "uuid",
       "title": "Data Space Id",
@@ -255,6 +267,18 @@
       "format": "date-time",
       "title": "Created At",
       "type": "string"
+     },
+     "created_by": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created By"
      },
      "data_space_id": {
       "format": "uuid",
@@ -43666,6 +43690,18 @@
       "format": "date-time",
       "title": "Created At",
       "type": "string"
+     },
+     "created_by": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created By"
      },
      "data_space_id": {
       "format": "uuid",
