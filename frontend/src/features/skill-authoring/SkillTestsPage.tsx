@@ -61,6 +61,14 @@ function Tests({ initial }: { initial: SkillTestRun }) {
   const unexplained = failing.filter((c) => !notes[c.id]?.trim());
   const failure = run.failures.find((f) => f.case_id === selected) ?? run.failures[0];
   const failedCase = failure && run.cases.find((c) => c.id === failure.case_id);
+  // A2's eval results carry neither a period nor, for a passing case, what it expected: a column
+  // that no case fills is left out.
+  const periods = run.cases.some((c) => c.period_text);
+  const expectations = run.cases.some((c) => c.expected);
+  const addBlocker =
+    run.eval_set_id === null
+      ? 'Kỹ năng chưa có bộ ca kiểm thử: chạy kiểm định một lần để tạo bộ, rồi thêm ca.'
+      : null;
   const cases = useTableView(run.cases, {
     search: (c) => `${c.name} ${c.period_text} ${c.expected} ${c.actual}`,
     filters: [{ id: 'result', label: 'Kết quả', value: (c) => (c.passed ? 'Đạt' : 'Chưa đạt') }],
@@ -142,13 +150,23 @@ function Tests({ initial }: { initial: SkillTestRun }) {
         description={
           run.ran_at
             ? `Chạy ${run.cases.length} ca kiểm thử trên dữ liệu đã chốt · ${passed} đạt · lần chạy ${time(run.ran_at)}`
-            : 'Phiên bản này chưa chạy kiểm định trên dữ liệu đã chốt.'
+            : typeof run.case_count === 'number'
+              ? `Bộ có ${run.case_count} ca kiểm thử; phiên bản này chưa chạy kiểm định trên dữ liệu đã chốt.`
+              : 'Phiên bản này chưa chạy kiểm định trên dữ liệu đã chốt.'
         }
         actions={
           <>
-            <Button kind="ghost" onClick={() => setAdding(true)}>
-              Thêm ca kiểm thử
-            </Button>
+            {addBlocker ? (
+              <Tooltip content={addBlocker}>
+                <Button kind="ghost" disabled>
+                  Thêm ca kiểm thử
+                </Button>
+              </Tooltip>
+            ) : (
+              <Button kind="ghost" onClick={() => setAdding(true)}>
+                Thêm ca kiểm thử
+              </Button>
+            )}
             {rerunBlocker ? (
               <Tooltip content={rerunBlocker}>
                 <Button disabled>Chạy lại</Button>
@@ -191,20 +209,24 @@ function Tests({ initial }: { initial: SkillTestRun }) {
                 <SortableTh view={cases} column="name" className="px-da-lg py-da-md font-normal">
                   Ca
                 </SortableTh>
-                <SortableTh
-                  view={cases}
-                  column="period"
-                  className="w-[110px] px-da-lg py-da-md font-normal"
-                >
-                  Kỳ
-                </SortableTh>
-                <SortableTh
-                  view={cases}
-                  column="expected"
-                  className="w-[170px] px-da-lg py-da-md font-normal"
-                >
-                  Kỳ vọng
-                </SortableTh>
+                {periods && (
+                  <SortableTh
+                    view={cases}
+                    column="period"
+                    className="w-[110px] px-da-lg py-da-md font-normal"
+                  >
+                    Kỳ
+                  </SortableTh>
+                )}
+                {expectations && (
+                  <SortableTh
+                    view={cases}
+                    column="expected"
+                    className="w-[170px] px-da-lg py-da-md font-normal"
+                  >
+                    Kỳ vọng
+                  </SortableTh>
+                )}
                 <SortableTh
                   view={cases}
                   column="actual"
@@ -244,10 +266,16 @@ function Tests({ initial }: { initial: SkillTestRun }) {
                       </button>
                     )}
                   </td>
-                  <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
-                    {c.period_text}
-                  </td>
-                  <td className="px-da-lg py-[9px] text-foreground da-body-small">{c.expected}</td>
+                  {periods && (
+                    <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
+                      {c.period_text}
+                    </td>
+                  )}
+                  {expectations && (
+                    <td className="px-da-lg py-[9px] text-foreground da-body-small">
+                      {c.expected}
+                    </td>
+                  )}
                   <td
                     className={cn(
                       'px-da-lg py-[9px] da-body-small',
@@ -273,21 +301,29 @@ function Tests({ initial }: { initial: SkillTestRun }) {
             <>
               <h2 className="text-foreground da-heading-3">Ca “{failedCase.name}” lỗi</h2>
               <p className="text-foreground da-body-small">{failure.explanation}</p>
-              <h2 className="text-foreground da-heading-3">Agent đề xuất sửa</h2>
-              <pre className="w-full whitespace-pre-wrap rounded-sm border border-border bg-card px-da-lg py-[10px] text-foreground da-mono">
-                {failure.fix_diff.join('\n')}
-              </pre>
+              {/* The proposed fix is PROPOSAL; A2's eval result gives only the cause. */}
+              {failure.fix_diff.length > 0 && (
+                <>
+                  <h2 className="text-foreground da-heading-3">Agent đề xuất sửa</h2>
+                  <pre className="w-full whitespace-pre-wrap rounded-sm border border-border bg-card px-da-lg py-[10px] text-foreground da-mono">
+                    {failure.fix_diff.join('\n')}
+                  </pre>
+                </>
+              )}
               <div className="flex flex-wrap items-center gap-da-sm">
-                <Tooltip content="Chưa áp dụng tự động được đề xuất này.">
-                  <Button disabled>Áp dụng và chạy lại</Button>
-                </Tooltip>
+                {failure.fix_diff.length > 0 && (
+                  <Tooltip content="Chưa áp dụng tự động được đề xuất này.">
+                    <Button disabled>Áp dụng và chạy lại</Button>
+                  </Tooltip>
+                )}
                 <Button kind="ghost" onClick={() => navigate('agents', 'SKILL_EDITOR', id)}>
                   Sửa trong trình soạn
                 </Button>
               </div>
               <p className="text-muted-foreground da-caption">
-                Hệ thống chưa áp dụng tự động đề xuất sửa: sửa bước trong trình soạn kỹ năng rồi bấm
-                “Chạy lại”.
+                {failure.fix_diff.length > 0
+                  ? 'Hệ thống chưa áp dụng tự động đề xuất sửa: sửa bước trong trình soạn kỹ năng rồi bấm “Chạy lại”.'
+                  : 'Sửa bước trong trình soạn kỹ năng rồi bấm “Chạy lại”.'}
               </p>
               <div className="w-full">
                 <Field
@@ -304,6 +340,20 @@ function Tests({ initial }: { initial: SkillTestRun }) {
                   />
                 </Field>
               </div>
+            </>
+          ) : failing.length > 0 ? (
+            <>
+              <h2 className="text-foreground da-heading-3">{failing.length} ca chưa đạt</h2>
+              <p className="text-foreground da-body-small">
+                Kết quả kiểm định không kèm lý do cho các ca này. Sửa trong trình soạn rồi chạy lại.
+              </p>
+            </>
+          ) : run.cases.length === 0 ? (
+            <>
+              <h2 className="text-foreground da-heading-3">Chưa có kết quả</h2>
+              <p className="text-foreground da-body-small">
+                Kết quả từng ca hiện ở đây sau khi phiên bản chạy kiểm định.
+              </p>
             </>
           ) : (
             <>
@@ -322,11 +372,19 @@ function Tests({ initial }: { initial: SkillTestRun }) {
       <AddCaseDialog
         open={adding}
         onClose={() => setAdding(false)}
+        paramNames={run.param_names ?? []}
         onAdd={async (body) => {
           const next = await addSkillTestCase(run, body);
           setRun(next);
           setAdding(false);
-          toast({ tone: 'success', message: `Đã thêm ca “${body.name}”` });
+          // A2 scores a new case at the next run of the suite, so it is not in the table yet.
+          const listed = next.cases.some((c) => c.name === body.name);
+          toast({
+            tone: 'success',
+            message: listed
+              ? `Đã thêm ca “${body.name}”`
+              : `Đã thêm ca “${body.name}”; ca được chấm ở lần kiểm định sau.`,
+          });
         }}
       />
     </div>
@@ -335,22 +393,30 @@ function Tests({ initial }: { initial: SkillTestRun }) {
 
 function AddCaseDialog({
   open,
+  paramNames,
   onClose,
   onAdd,
 }: {
   open: boolean;
+  /** The skill's parameters, which the case runs with. */
+  paramNames: string[];
   onClose: () => void;
-  onAdd: (body: { name: string; period_text: string; expected: string }) => Promise<void>;
+  onAdd: (body: {
+    name: string;
+    period_text: string;
+    expected: string;
+    params: Record<string, string>;
+  }) => Promise<void>;
 }) {
   const [name, setName] = useState('');
-  const [period, setPeriod] = useState('');
+  const [params, setParams] = useState<Record<string, string>>({});
   const [expected, setExpected] = useState('');
   // A case without a name or an expectation is caught here, before anything is sent.
   const [invalid, setInvalid] = useState<string>();
   const add = useV1Mutation(onAdd, {
     onSuccess: () => {
       setName('');
-      setPeriod('');
+      setParams({});
       setExpected('');
     },
   });
@@ -358,7 +424,12 @@ function AddCaseDialog({
   const submit = () => {
     if (!name.trim() || !expected.trim()) return setInvalid('Cần tên ca và kết quả kỳ vọng.');
     setInvalid(undefined);
-    add.run({ name: name.trim(), period_text: period.trim(), expected: expected.trim() });
+    const given = Object.fromEntries(
+      Object.entries(params)
+        .map(([k, v]) => [k, v.trim()])
+        .filter(([, v]) => v),
+    );
+    add.run({ name: name.trim(), period_text: '', expected: expected.trim(), params: given });
   };
   return (
     <Dialog
@@ -380,10 +451,15 @@ function AddCaseDialog({
       <Field label="Tên ca">
         <Input value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
-      <Field label="Kỳ" hint="Kỳ đã chốt, ví dụ T8→T9/2026">
-        <Input value={period} onChange={(e) => setPeriod(e.target.value)} />
-      </Field>
-      <Field label="Kỳ vọng">
+      {paramNames.map((key) => (
+        <Field key={key} label={key} hint="Tham số kỹ năng chạy với ca này">
+          <Input
+            value={params[key] ?? ''}
+            onChange={(e) => setParams((prev) => ({ ...prev, [key]: e.target.value }))}
+          />
+        </Field>
+      ))}
+      <Field label="Kỳ vọng" hint="Kết luận của lượt chạy phải chứa đoạn này">
         <Input value={expected} onChange={(e) => setExpected(e.target.value)} />
       </Field>
     </Dialog>

@@ -248,9 +248,7 @@ export default function ProposalPage() {
                       p.requires_compliance && (
                         <>
                           <h2 className="text-foreground da-heading-3">Duyệt nhiều bước</h2>
-                          <p className="text-foreground da-body-small">
-                            Sau bạn, một người kiểm soát khác duyệt bước hai.
-                          </p>
+                          <p className="text-foreground da-body-small">{complianceText(p)}</p>
                         </>
                       )
                     )}
@@ -397,4 +395,18 @@ function ImpactSection({
       </p>
     </section>
   );
+}
+
+/*
+ * BR-119 as inbox/routes.py applies it: the first acceptance moves the request to the holders of
+ * the compliance capability, and the second step must be someone else. The api names no person
+ * for that step, so the text names the role, and says whether step one is already done.
+ */
+function complianceText(p: Proposal): string {
+  const firstDone = (p.reviews ?? []).some(
+    (r) => r.decision === 'accept' || r.decision === 'accept_with_edit',
+  );
+  return firstDone
+    ? 'Bước 1 đã được duyệt. Bước 2 cần một người có quyền kiểm soát (compliance), khác người duyệt bước 1; thay đổi chỉ áp dụng sau bước này.'
+    : 'Bước 1: bạn duyệt. Bước 2: một người có quyền kiểm soát (compliance), khác bạn, duyệt rồi thay đổi mới được áp dụng.';
 }

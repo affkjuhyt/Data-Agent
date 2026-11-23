@@ -68,18 +68,21 @@ export function FailedRun({
         </div>
 
         <div className="flex items-start gap-da-lg max-[1023px]:flex-col">
-          <section className="flex min-w-0 flex-1 flex-col gap-da-xs">
-            <h2 className="text-muted-foreground da-label">Agent đã làm</h2>
-            {(run.plan ?? []).map((step) => (
-              <RunStep
-                key={step.title}
-                state={STEP_STATE[step.state]}
-                title={step.title}
-                detail={step.detail}
-                duration={step.duration_text ?? ''}
-              />
-            ))}
-          </section>
+          {/* The plan comes from the technical view's steps; a run read without them has none. */}
+          {(run.plan ?? []).length > 0 && (
+            <section className="flex min-w-0 flex-1 flex-col gap-da-xs">
+              <h2 className="text-muted-foreground da-label">Agent đã làm</h2>
+              {(run.plan ?? []).map((step) => (
+                <RunStep
+                  key={step.title}
+                  state={STEP_STATE[step.state]}
+                  title={step.title}
+                  detail={step.detail}
+                  duration={step.duration_text ?? ''}
+                />
+              ))}
+            </section>
+          )}
           {failure && failure.safety.length > 0 && (
             <section className="flex min-w-0 flex-1 flex-col gap-da-xs">
               <h2 className="text-muted-foreground da-label">Để an toàn, agent đã</h2>

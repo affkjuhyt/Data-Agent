@@ -18,7 +18,6 @@ import type { AgentRun } from '../../lib/v1/types';
 import {
   activateAgent,
   getAgent,
-  putTriggers,
   saveConfig,
   type AgentConfig,
   type AgentDetail,
@@ -42,7 +41,12 @@ import { LinkButton } from '../../components/shell/AppLink';
  * "Đánh giá" have no frame yet.
  *
  * Saving never edits a version in place (BR-69): config changes become version n+1, which must
- * pass its test suite before it runs for real; triggers are replaced as a whole (PUT).
+ * pass its test suite before it runs for real.
+ *
+ * Triggers are shown, not edited: A2 has no read of the trigger rows (only AgentView.trigger_text
+ * in words) and PUT /triggers replaces the whole set with TriggerIn rows, which carry no wording
+ * for the server to parse. An edit here would either wipe rows the page never read or save a
+ * schedule without its cron.
  */
 type Tab = 'overview' | 'config' | 'runs' | 'memory' | 'eval';
 
@@ -69,6 +73,8 @@ const TRIGGER_KIND: Record<TriggerKind, string> = {
 };
 
 const HISTORY_PENDING = 'Màn lịch sử phiên bản đang được làm.';
+const TRIGGERS_READ_ONLY =
+  'Trigger chưa sửa được ở đây: hệ thống chưa cho đọc lại từng trigger, mà lưu thì thay cả bộ.';
 
 export default function AgentConfigPage() {
   const { routeId } = useAppState();
@@ -98,47 +104,37 @@ function AgentBody({ agent }: { agent: AgentDetail & { config: AgentConfig } }) 
   const [tab, setTab] = useState<Tab>('config');
   const [autonomy, setAutonomy] = useState<Autonomy>(agent.config.autonomy);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>(agent.config.checkpoints);
-  const [triggers, setTriggers] = useState<AgentTrigger[]>(agent.triggers);
   const [addingMemory, setAddingMemory] = useState(false);
   const test = useTestRun();
 
   const configDirty =
     autonomy !== agent.config.autonomy ||
     checkpoints.some((c, i) => c.enabled !== agent.config.checkpoints[i]?.enabled);
-  const triggersDirty = triggers.some((t, i) => t.description !== agent.triggers[i]?.description);
   const nextVersion = agent.config.version + 1;
 
   // Leaving "Cấu hình" with unsaved edits asks first ("Xác nhận · cancelEdit" 2094:8561);
   // confirming drops the edits so coming back shows the saved version.
   const [leavingTo, setLeavingTo] = useState<Tab | null>(null);
   const changeTab = (next: Tab) => {
-    if (tab === 'config' && next !== 'config' && (configDirty || triggersDirty)) setLeavingTo(next);
+    if (tab === 'config' && next !== 'config' && configDirty) setLeavingTo(next);
     else setTab(next);
   };
   const discard = () => {
     setAutonomy(agent.config.autonomy);
     setCheckpoints(agent.config.checkpoints);
-    setTriggers(agent.triggers);
     if (leavingTo) setTab(leavingTo);
     setLeavingTo(null);
   };
   const status = agent.status === 'draft' ? { label: 'Nháp', tone: 'idle' as const } : agentStatus(agent);
 
   const saveEdits = useV1Mutation(
-    async () => {
-      if (triggersDirty) await putTriggers(agent.id, triggers);
-      if (configDirty) {
-        const { goal, denied_actions, tools } = agent.config;
-        await saveConfig(agent.id, { goal, autonomy, checkpoints, denied_actions, tools });
-      }
+    () => {
+      const { goal, denied_actions, tools } = agent.config;
+      return saveConfig(agent.id, { goal, autonomy, checkpoints, denied_actions, tools });
     },
     {
       invalidates: [['getAgent']],
-      onSuccess: () =>
-        toast({
-          tone: 'success',
-          message: configDirty ? `Đã lưu phiên bản v${nextVersion}` : 'Đã lưu trigger',
-        }),
+      onSuccess: () => toast({ tone: 'success', message: `Đã lưu phiên bản v${nextVersion}` }),
     },
   );
   const activation = useV1Mutation(
@@ -176,9 +172,9 @@ function AgentBody({ agent }: { agent: AgentDetail & { config: AgentConfig } }) 
         >
           Chạy thử
         </Button>
-        <Tooltip content={configDirty || triggersDirty ? 'Phiên bản mới phải qua bộ đánh giá trước khi chạy thật.' : 'Chưa có thay đổi.'}>
-          <Button kind="primary" disabled={!configDirty && !triggersDirty} loading={saveEdits.pending} onClick={save}>
-            {configDirty || !triggersDirty ? `Lưu thành phiên bản v${nextVersion}` : 'Lưu trigger'}
+        <Tooltip content={configDirty ? 'Phiên bản mới phải qua bộ đánh giá trước khi chạy thật.' : 'Chưa có thay đổi.'}>
+          <Button kind="primary" disabled={!configDirty} loading={saveEdits.pending} onClick={save}>
+            {`Lưu thành phiên bản v${nextVersion}`}
           </Button>
         </Tooltip>
       </>
@@ -216,7 +212,14 @@ function AgentBody({ agent }: { agent: AgentDetail & { config: AgentConfig } }) 
         <div className="flex min-h-0 flex-1 max-[1023px]:flex-col">
           <div className="flex min-w-0 flex-1 flex-col pl-da-3xl pr-da-2xl">
             <Section title="Khi nào chạy">
-              <TriggerTable triggers={triggers} onChange={setTriggers} />
+              {agent.triggers ? (
+                <TriggerTable triggers={agent.triggers} />
+              ) : (
+                <p className="text-foreground da-body-small">
+                  {agent.trigger_text ?? 'Agent chưa có trigger nào; agent chỉ chạy khi được giao việc.'}
+                </p>
+              )}
+              <p className="text-muted-foreground da-caption">{TRIGGERS_READ_ONLY}</p>
             </Section>
             <Section title="Mức tự chủ">
               <Segmented<Autonomy>
@@ -248,7 +251,10 @@ function AgentBody({ agent }: { agent: AgentDetail & { config: AgentConfig } }) 
           </div>
           <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pb-da-2xl pt-[20px] max-[1023px]:w-full max-[1023px]:border-l-0">
             <h2 className="text-foreground da-heading-3">Quyền và công cụ</h2>
-            <Fact label="Chạy theo quyền của" value={`${agent.owner.name} (chủ sở hữu)`} />
+            <Fact
+              label="Chạy theo quyền của"
+              value={agent.owner.name ? `${agent.owner.name} (chủ sở hữu)` : 'Chủ sở hữu agent'}
+            />
             <Fact label="Dữ liệu" value={agent.config.data_scope_text} />
             <Fact label="Công cụ" value={agent.config.tools.map((t) => t.tool).join(', ')} />
             {agent.config.denied_actions.length > 0 && (
@@ -393,22 +399,7 @@ function RunsTable({ runs, onOpen }: { runs: AgentRun[]; onOpen: (id: string) =>
   );
 }
 
-function TriggerTable({ triggers, onChange }: { triggers: AgentTrigger[]; onChange: (next: AgentTrigger[]) => void }) {
-  const [editing, setEditing] = useState<string | null>(null);
-  const [value, setValue] = useState('');
-
-  const commit = (trigger: AgentTrigger) => {
-    setEditing(null);
-    const text = value.trim();
-    if (!text || text === trigger.description) return;
-    // A new description without cron/condition: the server parses the words (PROPOSAL).
-    onChange(
-      triggers.map((t) =>
-        t.id === trigger.id ? { ...t, description: text, cron: null, condition: {} } : t,
-      ),
-    );
-  };
-
+function TriggerTable({ triggers }: { triggers: AgentTrigger[] }) {
   const view = useTableView(triggers, {
     search: (trigger) => `${TRIGGER_KIND[trigger.kind]} ${trigger.description}`,
     filters: [{ id: 'kind', label: 'Loại', value: (trigger) => TRIGGER_KIND[trigger.kind] }],
@@ -431,48 +422,13 @@ function TriggerTable({ triggers, onChange }: { triggers: AgentTrigger[]; onChan
           <SortableTh view={view} column="condition" className="w-[300px] px-da-lg py-da-md font-normal">
             Điều kiện
           </SortableTh>
-          <SortableTh view={view} className="w-[60px] px-da-lg py-da-md">
-            <span className="sr-only">Thao tác</span>
-          </SortableTh>
         </tr>
       </thead>
       <tbody>
         {view.rows.map((trigger) => (
           <tr key={trigger.id} className="border-b border-border align-middle da-body-small">
             <td className="px-da-lg py-[9px] text-foreground da-body-strong">{TRIGGER_KIND[trigger.kind]}</td>
-            <td className="px-da-lg py-[9px] text-foreground">
-              {editing === trigger.id ? (
-                <input
-                  autoFocus
-                  aria-label={`Điều kiện ${TRIGGER_KIND[trigger.kind]}`}
-                  value={value}
-                  onChange={(event) => setValue(event.target.value)}
-                  onBlur={() => commit(trigger)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') commit(trigger);
-                    if (event.key === 'Escape') setEditing(null);
-                  }}
-                  className="w-full rounded-sm border border-ring bg-card px-da-sm py-[2px] text-foreground outline-none da-body-small"
-                />
-              ) : (
-                trigger.description
-              )}
-            </td>
-            <td className="px-da-lg py-[9px]">
-              {editing !== trigger.id && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setValue(trigger.description);
-                    setEditing(trigger.id);
-                  }}
-                  aria-label={`Sửa trigger ${trigger.description}`}
-                  className="rounded-sm text-primary da-body-strong hover:underline"
-                >
-                  Sửa
-                </button>
-              )}
-            </td>
+            <td className="px-da-lg py-[9px] text-foreground">{trigger.description}</td>
           </tr>
         ))}
       </tbody>

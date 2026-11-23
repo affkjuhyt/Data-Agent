@@ -265,24 +265,26 @@ function RolloutView({
             </p>
           )}
 
-          <h2 className="text-foreground da-heading-3">Chạy thật song song</h2>
-          {r.live ? (
-            <LiveTable
-              rows={LIVE_ROWS}
-              live={r.live}
-              windowDays={r.live.window_days}
-              baselineLabel={`${baseline} · ${baseShare}%`}
-              candidateLabel={`v${r.candidate_version} · ${r.candidate_share_pct}%`}
-            />
-          ) : (
-            <p className="text-muted-foreground da-body-small">
-              Chưa có số đo lượt chạy thật trong cửa sổ quan sát.
-            </p>
+          {/* deployment.observed has no writer yet: without numbers the comparison is left out
+              rather than promised. */}
+          {r.live && (
+            <>
+              <h2 className="text-foreground da-heading-3">Chạy thật song song</h2>
+              <LiveTable
+                rows={LIVE_ROWS}
+                live={r.live}
+                windowDays={r.live.window_days}
+                baselineLabel={`${baseline} · ${baseShare}%`}
+                candidateLabel={`v${r.candidate_version} · ${r.candidate_share_pct}%`}
+              />
+            </>
           )}
         </div>
 
         <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:hidden">
-          <h2 className="text-foreground da-heading-3">Tự quay lui khi</h2>
+          {r.auto_rollback_rules.length > 0 && (
+            <h2 className="text-foreground da-heading-3">Tự quay lui khi</h2>
+          )}
           {r.auto_rollback_rules.map((rule) => (
             <p key={rule} className="text-foreground da-body-small">
               · {rule}

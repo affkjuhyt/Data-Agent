@@ -115,15 +115,13 @@ describe('AgentConfigPage', () => {
     expect(screen.getByRole('checkbox', { name: 'Câu hỏi có hơn một cách hiểu hợp lệ' })).not.toBeChecked();
   });
 
-  it('edits a trigger in place and saves it without a new version', async () => {
+  it('shows the triggers without offering an edit that would replace the whole set', async () => {
     routeId = 'agent-reconcile';
     wrap(<AgentConfigPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Sửa trigger Thứ Hai 07:00' }));
-    const input = screen.getByRole('textbox', { name: 'Điều kiện Theo lịch' });
-    fireEvent.change(input, { target: { value: 'Thứ Hai 06:30' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-    fireEvent.click(screen.getByRole('button', { name: 'Lưu trigger' }));
-    expect(await screen.findByText('Đã lưu trigger')).toBeInTheDocument();
+    expect(await screen.findByText('Thứ Hai 07:00')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Sửa trigger/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Lưu trigger' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Trigger chưa sửa được ở đây/)).toBeInTheDocument();
   });
 
   it('lists, forgets and adds memories', async () => {
@@ -132,7 +130,7 @@ describe('AgentConfigPage', () => {
     fireEvent.click(await screen.findByRole('tab', { name: 'Bộ nhớ' }));
     expect(await screen.findByText('“Miền Bắc” gồm DH Bắc Bộ, ĐB sông Hồng, Trung du')).toBeInTheDocument();
     expect(screen.getByText('Data Space · chờ duyệt')).toBeInTheDocument();
-    expect(screen.getByText('hôm qua')).toBeInTheDocument();
+    expect(screen.getByText(/· hôm qua$/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /^Quên: Báo cáo cho Ban điều hành/ }));
     const dialog = screen.getByRole('alertdialog');

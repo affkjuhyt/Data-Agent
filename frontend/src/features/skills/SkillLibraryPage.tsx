@@ -37,6 +37,9 @@ export default function SkillLibraryPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [sharing, setSharing] = useState<Skill | null>(null);
   const items = skills.data?.items ?? [];
+  // Owners are named from the admin directory, or the viewer's own name: with neither, the
+  // column could never fill and is left out.
+  const owners = items.some((s) => s.owner.name);
   const count = (f: Filter) => items.filter((s) => f === 'all' || s.scope === f).length;
   const view = useTableView(items, {
     search: (s) =>
@@ -138,13 +141,15 @@ export default function SkillLibraryPage() {
                   >
                     30 ngày
                   </SortableTh>
-                  <SortableTh
-                    view={view}
-                    column="owner"
-                    className="w-[152px] py-da-md pl-da-lg font-normal max-[1279px]:hidden"
-                  >
-                    Chủ sở hữu
-                  </SortableTh>
+                  {owners && (
+                    <SortableTh
+                      view={view}
+                      column="owner"
+                      className="w-[152px] py-da-md pl-da-lg font-normal max-[1279px]:hidden"
+                    >
+                      Chủ sở hữu
+                    </SortableTh>
+                  )}
                   <SortableTh view={view} className="w-[40px] py-da-md pl-da-lg pr-da-lg">
                     <span className="sr-only">Thao tác</span>
                   </SortableTh>
@@ -155,6 +160,7 @@ export default function SkillLibraryPage() {
                   <SkillRow
                     key={skill.id}
                     skill={skill}
+                    owners={owners}
                     onRun={() => navigate('agents', 'SKILL_RUN', skill.id)}
                     onEdit={() => navigate('agents', 'SKILL_EDITOR', skill.id)}
                     onVersions={() => navigate('agents', 'SKILL_VERSIONS', skill.id)}
@@ -174,12 +180,14 @@ export default function SkillLibraryPage() {
 
 function SkillRow({
   skill,
+  owners,
   onRun,
   onEdit,
   onVersions,
   onShare,
 }: {
   skill: Skill;
+  owners: boolean;
   onRun: () => void;
   onEdit: () => void;
   onVersions: () => void;
@@ -207,9 +215,11 @@ function SkillRow({
       <td className="py-[9px] pl-da-lg text-muted-foreground da-mono">
         {runsText(skill.runs_30d)}
       </td>
-      <td className="py-[9px] pl-da-lg text-muted-foreground da-body-small max-[1279px]:hidden">
-        {skill.owner.name}
-      </td>
+      {owners && (
+        <td className="py-[9px] pl-da-lg text-muted-foreground da-body-small max-[1279px]:hidden">
+          {skill.owner.name || 'Người khác'}
+        </td>
+      )}
       <td className="py-[9px] pl-da-lg pr-da-lg text-right">
         <Menu
           label={`Thao tác với ${skill.name}`}

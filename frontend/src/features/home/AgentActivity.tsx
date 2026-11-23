@@ -78,7 +78,10 @@ export function AgentActivity({
                       waiting ? 'text-warning' : 'text-muted-foreground',
                     )}
                   >
-                    {waiting ? 'chờ bạn' : (run.eta_text ?? '')}
+                    {/* The api sends the step under way, not an ETA or a step count. */}
+                    {waiting
+                      ? 'chờ bạn'
+                      : (run.eta_text ?? (run.current_step ? `bước ${run.current_step}` : ''))}
                   </span>
                 </li>
               );

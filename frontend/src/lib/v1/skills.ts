@@ -1,4 +1,5 @@
 import { listUsers } from './api';
+import { getMe } from './me';
 import { type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 
@@ -106,11 +107,19 @@ function readSkill(raw: SkillWire, names: Map<string, string>): Skill {
   };
 }
 
-/** The owners' names come from the people the viewer may see; a failure leaves them empty. */
-const userNames = async () =>
-  new Map<string, string>(
-    (await listUsers().catch(() => null))?.items.map((u) => [u.id, u.display_name]) ?? [],
-  );
+/**
+ * The owners' names come from the people the viewer may see. The directory answers admins only:
+ * anyone else still has their own name (/v1/me); other owners stay unnamed ('').
+ */
+const userNames = async () => {
+  const [users, viewer] = await Promise.all([
+    listUsers().catch(() => null),
+    getMe().catch(() => null),
+  ]);
+  const names = new Map<string, string>(users?.items.map((u) => [u.id, u.display_name]) ?? []);
+  if (viewer && !names.has(viewer.id)) names.set(viewer.id, viewer.display_name);
+  return names;
+};
 
 /** A2 filters by scope and category; `status` is the screen's, applied to the page read. */
 export const listSkills = async (query: { scope?: SkillScope; status?: SkillStatus } = {}) => {

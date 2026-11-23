@@ -49,7 +49,7 @@ export function MobileHome({
           </ul>
         </section>
       )}
-      {home && (
+      {home && home.metrics.length > 0 && (
         <dl className="grid grid-cols-2 gap-da-sm">
           {home.metrics.slice(0, 4).map((m) => (
             <div
@@ -82,8 +82,9 @@ export function MobileHome({
       </LinkCard>
       <LinkCard title="Agent đang chạy" onClick={onRuns}>
         {runs ? `${agents} agent` : '—'}
-        {lead?.current_step && lead.total_steps
-          ? ` · ${lead.agent_name} ở bước ${lead.current_step}/${lead.total_steps}`
+        {/* RunSummary has the step under way but no step count: the count only when sent. */}
+        {lead?.current_step
+          ? ` · ${lead.agent_name} ở bước ${lead.current_step}${lead.total_steps ? `/${lead.total_steps}` : ''}`
           : ''}
       </LinkCard>
       {home?.data_note && <p className="text-muted-foreground da-caption">{home.data_note}</p>}

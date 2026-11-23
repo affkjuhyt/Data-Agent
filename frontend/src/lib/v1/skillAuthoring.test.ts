@@ -125,8 +125,37 @@ const evalRun = {
   ],
 };
 
+let evalSets: Array<Record<string, unknown>> = [];
+const evalSet = {
+  id: 'set-1',
+  name: 'Ca kiểm thử · Phân rã biến động',
+  subject_type: 'skill',
+  subject_id: 'sk-1',
+  status: 'active',
+  item_count: 2,
+  failures_run_id: 'eval-1',
+  failures: [
+    {
+      item: {
+        id: 'it-2',
+        input: { name: 'Miền Bắc giảm', params: {} },
+        expected: { text_contains: ['Miền Bắc'] },
+      },
+      result: { eval_item_id: 'it-2', passed: false, actual: '7', cause: 'Lệch 5 so với kỳ vọng' },
+    },
+  ],
+  runs: [],
+};
+
 const server = setupServer(
   http.get('*/v1/eval-runs/:id', () => HttpResponse.json(evalRun)),
+  http.get('*/v1/eval-sets', () => HttpResponse.json({ items: evalSets, next_page_token: '' })),
+  http.get('*/v1/eval-sets/:id', () => HttpResponse.json(evalSet)),
+  http.post('*/v1/eval-sets/:id/items', async ({ request }) => {
+    record(request);
+    bodies.push(await request.json());
+    return HttpResponse.json({ id: 'it-3' }, { status: 201 });
+  }),
   // How the api answers the PROPOSAL paths: a verb on an id is 405, the sub-path 404.
   http.post('*/v1/skills/:action', ({ request, params }) =>
     String(params.action).includes(':') ? (record(request), methodNotAllowed()) : undefined,
@@ -227,6 +256,7 @@ afterEach(() => {
   bodies = [];
   versionStatus = 'draft';
   versions = [];
+  evalSets = [];
 });
 afterAll(() => server.close());
 
@@ -325,14 +355,47 @@ describe('skill authoring through A2', () => {
     expect(fresh).toMatchObject({ ran_at: null, cases: [] });
   });
 
-  it('says a new test case is not saved instead of rerunning the suite without it', async () => {
+  it('says a case cannot be added before the skill has its eval set', async () => {
     await expect(
       addSkillTestCase(
-        { ...testRun, status: 'draft' },
+        { ...testRun, status: 'draft', eval_set_id: null },
         { name: 'x', period_text: '', expected: 'y' },
       ),
-    ).rejects.toThrow(/chưa lưu/);
+    ).rejects.toThrow(/chưa có bộ ca kiểm thử/);
     expect(calls).toEqual(['POST /v1/skills/sk-1/test-cases']);
+  });
+
+  it("adds a case as an item of the skill's eval set, its parameters in input", async () => {
+    versions = [
+      { id: 'skv-4', version: 4, status: 'testing', eval_run_id: 'eval-1', created_at: at },
+    ];
+    evalSets = [evalSet];
+    await addSkillTestCase(
+      { ...testRun, eval_set_id: 'set-1' },
+      { name: 'Miền Nam', period_text: '', expected: 'Miền Nam', params: { metric: 'REVENUE' } },
+    );
+    expect(calls).toContain('POST /v1/eval-sets/set-1/items');
+    expect(bodies).toContainEqual({
+      input: { name: 'Miền Nam', params: { metric: 'REVENUE' } },
+      expected: { text_contains: ['Miền Nam'] },
+    });
+  });
+
+  it("names a failing case and says what it expected from the set's failures", async () => {
+    versions = [
+      { id: 'skv-4', version: 4, status: 'testing', eval_run_id: 'eval-1', created_at: at },
+    ];
+    evalSets = [evalSet];
+    const run = await getLatestTestRun('sk-1');
+    expect(run.cases[1]).toMatchObject({
+      name: 'Miền Bắc giảm',
+      expected: 'Miền Bắc',
+      passed: false,
+    });
+    expect(run.failures).toEqual([
+      { case_id: 'it-2', explanation: 'Lệch 5 so với kỳ vọng', fix_diff: [] },
+    ]);
+    expect(run).toMatchObject({ eval_set_id: 'set-1', case_count: 2 });
   });
 
   it('keeps the kind of each step and the parameters of the version it edits when saving', async () => {

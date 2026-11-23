@@ -278,6 +278,9 @@ function Outcome({ outcome }: { outcome: NonNullable<SkillRun['outcome']> }) {
   return (
     <>
       {outcome.summary && <p className="text-foreground da-reading">{outcome.summary}</p>}
+      {!outcome.summary && outcome.figures.length === 0 && (
+        <p className="text-muted-foreground da-body-small">Lượt chạy xong nhưng không trả kết quả nào.</p>
+      )}
       {outcome.figures.length > 0 && (
         <table className="w-full table-fixed border-collapse">
           <tbody>

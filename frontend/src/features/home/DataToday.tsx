@@ -7,7 +7,8 @@ import type { V1State } from '../../lib/v1/useV1';
 /*
  * "Dữ liệu hôm nay" of "v3.1 · Trang chủ": up to four sources, those needing attention first,
  * each a bordered tile (10×12, radius 10) with an 8px status dot, the name, when it last updated
- * and what that means for the reader ("Trễ 8 giờ" in error, "đang đọc" in warning).
+ * and what that means for the reader ("Trễ 8 giờ" in error, "đang đọc" in warning). An archived
+ * source is not today's data and is left out.
  */
 const MAX_TILES = 4;
 
@@ -32,13 +33,25 @@ function describe(source: Source): { dot: string; line: string; lineTone: string
       note: 'Đang nạp lần đầu',
     };
   }
+  if (source.status === 'paused' || source.status === 'draft') {
+    return {
+      dot: 'bg-border-strong',
+      line: source.status === 'paused' ? 'Tạm dừng' : 'Chưa kích hoạt',
+      lineTone: 'text-muted-foreground',
+      note: source.status_reason ?? 'Không đọc dữ liệu mới',
+    };
+  }
+  // SourceView has no refresh time or lateness (PROPOSAL fields): "on schedule" is said only when
+  // the lateness is known to be zero, and the connection check stands in for an unknown refresh.
   return {
     dot: 'bg-success',
     line: source.last_refreshed_at
       ? `Đã cập nhật ${fmtTime(source.last_refreshed_at)}`
-      : 'Đã kết nối',
+      : source.last_checked_at
+        ? `Kiểm tra kết nối ${fmtTime(source.last_checked_at)}`
+        : 'Đã kết nối',
     lineTone: 'text-muted-foreground',
-    note: 'Đúng lịch',
+    note: source.late_by_minutes === 0 ? 'Đúng lịch' : '',
   };
 }
 
@@ -49,7 +62,7 @@ export function DataToday({
   sources: V1State<Page<Source>>;
   onManage: () => void;
 }) {
-  const items = sources.data?.items ?? [];
+  const items = (sources.data?.items ?? []).filter((s) => s.status !== 'archived');
   if (!sources.data || items.length === 0) return null;
   // The same test as the red tile: a late source is put first too, or a fifth source's lateness
   // fell off the four tiles while healthy ones were shown.
@@ -77,7 +90,7 @@ export function DataToday({
                 <span className="truncate text-foreground da-body-strong">{source.name}</span>
               </span>
               <span className={cn('da-caption', d.lineTone)}>{d.line}</span>
-              <span className="text-muted-foreground da-caption">{d.note}</span>
+              {d.note && <span className="text-muted-foreground da-caption">{d.note}</span>}
             </div>
           );
         })}

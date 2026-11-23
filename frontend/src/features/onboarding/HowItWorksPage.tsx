@@ -13,8 +13,8 @@ import { LinkButton } from '../../components/shell/AppLink';
  * "v3.1 · Data Agent hoạt động thế nào [toàn cục]" (2132:15151): the two-minute guide shown
  * after onboarding and reachable from Trang chủ. The five-step journey (each card opens the
  * area that does it, with the viewer's own count from the v1 lists, hidden until loaded), the
- * three ways to the same certified figure, and the two ways to start. The "1,84% · NPL_RATIO
- * v4" lines are the guide's worked example, not live data.
+ * three ways to the same certified figure, and the two ways to start. The three ways are an
+ * example and are labelled so: they carry no figure, since a made-up result would read as data.
  */
 const SAMPLE_QUESTION = 'Doanh thu theo khu vực quý 3 là bao nhiêu?';
 
@@ -120,23 +120,28 @@ export default function HowItWorksPage() {
         ))}
       </ol>
 
-      <div className="flex w-full gap-da-xl max-[1279px]:flex-col">
-        <Way icon="chat" title="Hỏi bằng lời">
-          <p className="rounded-lg bg-subtle px-da-md py-da-sm text-foreground da-body">
-            {SAMPLE_QUESTION}
-          </p>
-        </Way>
-        <Way icon="chart" title="Kéo thả">
-          <span className="flex flex-wrap gap-da-sm">
-            <StatusDot tone="primary">Chỉ số: Doanh thu</StatusDot>
-            <StatusDot tone="primary">Chiều: Quý</StatusDot>
-            <StatusDot tone="primary">Lọc: Bán lẻ</StatusDot>
-          </span>
-        </Way>
-        <Way icon="agent" title="Agent báo cáo">
-          <p className="text-foreground da-body">Bản tin tuần 41: “Doanh thu tăng 4,2%…”</p>
-        </Way>
-      </div>
+      <section aria-label="Ví dụ" className="flex w-full flex-col gap-da-md">
+        <p className="text-muted-foreground da-overline">Ví dụ · ba cách hỏi cùng một câu</p>
+        <div className="flex w-full gap-da-xl max-[1279px]:flex-col">
+          <Way icon="chat" title="Hỏi bằng lời">
+            <p className="rounded-lg bg-subtle px-da-md py-da-sm text-foreground da-body">
+              {SAMPLE_QUESTION}
+            </p>
+          </Way>
+          <Way icon="chart" title="Kéo thả">
+            <span className="flex flex-wrap gap-da-sm">
+              <StatusDot tone="primary">Chỉ số: Doanh thu</StatusDot>
+              <StatusDot tone="primary">Chiều: Khu vực</StatusDot>
+              <StatusDot tone="primary">Lọc: Quý 3</StatusDot>
+            </span>
+          </Way>
+          <Way icon="agent" title="Agent báo cáo">
+            <p className="text-foreground da-body">
+              Bản tin hằng tuần trả lời cùng câu hỏi, gửi theo lịch.
+            </p>
+          </Way>
+        </div>
+      </section>
 
       <p className="flex items-center gap-da-md text-foreground da-body-strong">
         <Icon name="check" className="text-primary" />
@@ -161,7 +166,7 @@ function Way({ icon, title, children }: { icon: IconName; title: string; childre
         {title}
       </h2>
       {children}
-      <p className="text-primary da-body-strong">→ 1,84% · NPL_RATIO v4</p>
+      <p className="text-primary da-body-strong">→ Doanh thu theo khu vực, cùng định nghĩa</p>
     </section>
   );
 }

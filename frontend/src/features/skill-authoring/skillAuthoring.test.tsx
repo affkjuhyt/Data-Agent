@@ -40,7 +40,7 @@ describe('SkillEditorPage', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Chạy thử' })[1]);
     expect(await screen.findByText('Đã chạy thử v4 · 11 giây')).toBeInTheDocument();
-    expect(screen.getByText('v3: 96% · v4: đã chạy thử')).toBeInTheDocument();
+    expect(screen.getByText('v4: đã chạy thử')).toBeInTheDocument();
   });
 
   it('saves only after a change, and opens the tests tab as its own screen', async () => {

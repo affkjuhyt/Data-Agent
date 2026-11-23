@@ -7,7 +7,7 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { nowOf, sevenDaysText } from '../../features/agents/agentStatus';
 import { addMemory, draftAgent, getAgent } from './agentBuilder';
-import { getRun, listAgents, listRuns } from './api';
+import { getRun, listAgents, listInbox, listRuns } from './api';
 
 const at = '2026-10-12T08:00:00Z';
 const agent = {
@@ -53,6 +53,10 @@ const run = {
 };
 
 const server = setupServer(
+  // Someone else than the owner: the owner's name stays unknown.
+  http.get('*/v1/me', () =>
+    HttpResponse.json({ id: 'u-x', display_name: 'Người xem', capabilities: [], roles: [] }),
+  ),
   http.get('*/v1/agents', () => HttpResponse.json({ items: [agent], next_page_token: '' })),
   http.get('*/v1/agents/:id', () => HttpResponse.json({ ...agent, current_config: null })),
   http.get('*/v1/runs', () => HttpResponse.json({ items: [run], next_page_token: '' })),
@@ -149,8 +153,62 @@ describe('agents and runs from the api', () => {
   it('reads an agent without a config version', async () => {
     const detail = await getAgent('a-1');
     expect(detail.config).toBeNull();
-    expect(detail.triggers).toEqual([]);
+    // The api has no read of the trigger rows: unknown, not an empty set a save could replace.
+    expect(detail.triggers).toBeNull();
     expect(detail.owner).toEqual({ id: 'u-o', name: '' });
+  });
+
+  it('names the owner from /v1/me when the viewer owns the agent', async () => {
+    server.use(
+      http.get('*/v1/me', () =>
+        HttpResponse.json({ id: 'u-o', display_name: 'Đỗ Hải Yến', capabilities: [], roles: [] }),
+      ),
+    );
+    const detail = await getAgent('a-1');
+    expect(detail.owner).toEqual({ id: 'u-o', name: 'Đỗ Hải Yến' });
+  });
+
+  it('says who or what started a run from its trigger kind', async () => {
+    const [r] = (await listRuns()).items;
+    expect(r.initiated_label).toBe('Người dùng giao');
+  });
+
+  it("names the agent that asked from the request's context", async () => {
+    server.use(
+      http.get('*/v1/inbox', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 'h-1',
+              kind: 'approve_action',
+              risk: 'medium',
+              status: 'open',
+              title: 'Gửi báo cáo?',
+              context: { run_id: run.id, agent_id: 'a-1' },
+              options: [],
+              source_service: 'agent',
+              source_ref: run.id,
+              assignee_id: null,
+              assignee_group: null,
+              assignee_capability: null,
+              channel_card_ids: [],
+              data_space_id: 'ds',
+              due_at: null,
+              parent_run_label: null,
+              remember_as_rule: false,
+              resolved_at: null,
+              resolved_by: null,
+              response: null,
+              created_at: at,
+              updated_at: at,
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+    );
+    const [request] = (await listInbox()).items;
+    expect(request.agent).toEqual({ id: 'a-1', name: 'Agent Đối soát' });
   });
 
   it('builds the draft lines and the warning from a ConfigDraft', async () => {
@@ -220,5 +278,7 @@ describe('agents and runs from the api', () => {
     expect(body).not.toHaveProperty('expiry');
     expect(memory.expiry).toBe('never');
     expect(memory.scope_text).toBe('Riêng agent này');
+    // Where it came from, from source_kind: the PROPOSAL sentence is not sent.
+    expect(memory.source_text).toBe('Thêm tay');
   });
 });

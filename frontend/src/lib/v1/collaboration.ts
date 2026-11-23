@@ -1,4 +1,5 @@
-import { listUsers } from './api';
+import { listAgents, listUsers } from './api';
+import { getMe } from './me';
 import { type Page, api, ok } from './client';
 import type { components } from './schema';
 import type { AppUser } from './types';
@@ -136,18 +137,27 @@ function stepsOf(
 }
 
 export const getCollaboration = async (proposalId: string): Promise<Collaboration> => {
-  const [proposal, request, users, audit] = await Promise.all([
+  const [proposal, request, users, audit, viewer, agents] = await Promise.all([
     ok<Proposal>(api.GET('/v1/proposals/{id}', { params: { path: { id: proposalId } } })),
     myRequest(proposalId),
     listUsers().catch(() => null),
     auditOf(proposalId),
+    getMe().catch(() => null),
+    listAgents().catch(() => null),
   ]);
   const people = new Map<string, AppUser>(
     ((users?.items ?? []) as AppUser[]).map((u) => [u.id, u]),
   );
+  // The admin directory answers admins only: anyone else is named from what they may read, the
+  // viewer themself (/v1/me) and the agents' accounts (/v1/agents), and otherwise by role.
+  const agentAccounts = new Map((agents?.items ?? []).map((a) => [a.account_user_id, a.name]));
   const name = (id: string | null) => {
     const user = id ? people.get(id) : undefined;
-    return { name: user?.display_name ?? '—', person: user?.kind !== 'agent' };
+    if (user) return { name: user.display_name, person: user.kind !== 'agent' };
+    if (id && id === viewer?.id) return { name: 'Bạn', person: true };
+    const agent = id ? agentAccounts.get(id) : undefined;
+    if (agent) return { name: agent, person: false };
+    return { name: 'Người duyệt', person: true };
   };
   const steps = stepsOf(proposal, request, name);
   const log = audit.length

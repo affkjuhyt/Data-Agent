@@ -67,7 +67,6 @@ export default function NeedsYouPage() {
   const choose = useCallback(
     (request: HitlRequest, optionId: string) => {
       setHiddenFlag(request.id, true);
-      const agentName = request.agent?.name ?? 'Agent';
       const timer = window.setTimeout(() => {
         timers.current.delete(request.id);
         resolveHitl(request.id, { decision: 'answer', option: optionId })
@@ -80,7 +79,8 @@ export default function NeedsYouPage() {
       timers.current.set(request.id, timer);
       toast({
         tone: 'success',
-        message: `Đã chọn · ${agentName} chạy tiếp`,
+        // Only a run's checkpoint names its agent; other requests are not an agent waiting.
+        message: request.agent ? `Đã chọn · ${request.agent.name} chạy tiếp` : 'Đã gửi lựa chọn',
         duration: UNDO_MS,
         action: {
           label: 'Hoàn tác',
@@ -96,7 +96,9 @@ export default function NeedsYouPage() {
   );
 
   const askMore = (request: HitlRequest) => {
-    const q = `Về câu hỏi của ${request.agent?.name ?? 'agent'}: ${request.title}`;
+    const q = request.agent
+      ? `Về câu hỏi của ${request.agent.name}: ${request.title}`
+      : `Về yêu cầu: ${request.title}`;
     window.history.replaceState(null, '', `/analysis/ask?q=${encodeURIComponent(q)}`);
     navigate('analysis', 'ASK');
   };

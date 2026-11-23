@@ -3,6 +3,7 @@ import { type Page, V1Error, api, ok, okAs } from './client';
 import type { components } from './schema';
 import type { AgentDef, AgentRun, AgentWire } from './types';
 import { getOnboarding } from './explore';
+import { getMe, type Me } from './me';
 import { formatDate, formatDuration } from '../formatVN';
 
 /*
@@ -83,9 +84,13 @@ export interface AgentTrigger {
 export interface AgentDetail extends AgentDef {
   /** "Kèm phiên bản cấu hình đang chạy": the latest version, the one the page edits. */
   config: AgentConfig | null;
-  /** PROPOSAL: the spec has PUT /triggers but no read; the detail carries them. */
-  triggers: AgentTrigger[];
-  /** PROPOSAL: whose permissions the agent runs under (BR-147: the owner). */
+  /**
+   * PROPOSAL: the spec has PUT /triggers but no read; the detail carries them. null when the api
+   * did not send them: the rows are unknown (AgentView.trigger_text says them in words), so
+   * nothing may PUT a set that would replace rows it never read.
+   */
+  triggers: AgentTrigger[] | null;
+  /** PROPOSAL: whose permissions the agent runs under (BR-147: the owner); '' when not known. */
   owner: { id: Uuid; name: string };
 }
 
@@ -303,11 +308,15 @@ type AgentDetailWire = Schemas['AgentView'] &
     owner?: { id: Uuid; name: string };
   };
 
-const readAgentDetail = (raw: AgentDetailWire): AgentDetail => ({
+const readAgentDetail = (raw: AgentDetailWire, viewer?: Me | null): AgentDetail => ({
   ...readAgent(raw),
   config: raw.current_config ? readConfig(raw.current_config) : null,
-  triggers: (raw.triggers ?? []).map(readTrigger),
-  owner: raw.owner ?? { id: raw.owner_user_id, name: '' },
+  triggers: raw.triggers ? raw.triggers.map(readTrigger) : null,
+  // Only the viewer's own name is readable without the admin directory.
+  owner: raw.owner ?? {
+    id: raw.owner_user_id,
+    name: viewer?.id === raw.owner_user_id ? viewer.display_name : '',
+  },
 });
 
 const LINE_LABEL: Record<DraftField, string> = {
@@ -462,6 +471,13 @@ const SCOPE_TEXT: Record<MemoryScope, string> = {
   data_space: 'Cả Data Space',
 };
 
+/** memory.source_kind in words, when the PROPOSAL sentence (who taught it, when) is not sent. */
+const SOURCE_TEXT: Record<AgentMemory['source_kind'], string> = {
+  hitl: 'Từ một quyết định trong Cần bạn',
+  run: 'Agent tự rút ra khi chạy',
+  manual: 'Thêm tay',
+};
+
 type MemoryWire = Schemas['MemoryView'] &
   Partial<Pick<AgentMemory, 'source_text' | 'scope_text' | 'last_used_at' | 'expiry'>>;
 
@@ -480,7 +496,7 @@ function readMemory(raw: MemoryWire): AgentMemory {
     status: raw.status as AgentMemory['status'],
     use_count: raw.use_count,
     created_at: raw.created_at,
-    source_text: raw.source_text ?? '',
+    source_text: raw.source_text || SOURCE_TEXT[raw.source_kind as AgentMemory['source_kind']] || '',
     scope_text: raw.scope_text ?? SCOPE_TEXT[raw.scope as MemoryScope] ?? raw.scope,
     last_used_at: raw.last_used_at ?? null,
     expiry: raw.expiry ?? (days === null ? 'never' : days <= 45 ? 'days_30' : 'days_90'),
@@ -544,10 +560,13 @@ export const createAgent = async (draft: AgentDraft, templateRef?: string) => {
   return readAgentDetail(created);
 };
 
-export const getAgent = async (id: string) =>
-  readAgentDetail(
-    await okAs<AgentDetailWire>(api.GET('/v1/agents/{id}', { params: { path: { id } } })),
-  );
+export const getAgent = async (id: string) => {
+  const [raw, viewer] = await Promise.all([
+    okAs<AgentDetailWire>(api.GET('/v1/agents/{id}', { params: { path: { id } } })),
+    getMe().catch(() => null),
+  ]);
+  return readAgentDetail(raw, viewer);
+};
 
 const listConfigs = async (id: string) => {
   const page = await ok<Page<Schemas['ConfigView']>>(

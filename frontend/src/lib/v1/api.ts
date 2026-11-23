@@ -65,7 +65,17 @@ function readOption(raw: unknown): HitlOption | null {
   };
 }
 
-export function readHitl(raw: HitlWire): HitlRequest {
+/** The agent a run's checkpoint names in its context (worker_agent/runs.py); null for others. */
+const askingAgentId = (raw: HitlWire): string | null =>
+  isRecord(raw.context) && isText(raw.context.agent_id) ? raw.context.agent_id : null;
+
+/**
+ * `agents` names the agent a request's context points at: HitlView has no agent, but a run's
+ * checkpoint carries its agent_id. Without a match the request has no agent, not "Agent".
+ */
+export function readHitl(raw: HitlWire, agents: AgentDef[] = []): HitlRequest {
+  const agentId = askingAgentId(raw);
+  const joined = agentId ? agents.find((a) => a.id === agentId) : undefined;
   return {
     ...raw,
     kind: raw.kind as HitlRequest['kind'],
@@ -75,9 +85,15 @@ export function readHitl(raw: HitlWire): HitlRequest {
     options: Array.isArray(raw.options)
       ? raw.options.map(readOption).filter((o): o is HitlOption => o !== null)
       : [],
-    agent: raw.agent ?? null,
+    agent: raw.agent ?? (joined ? { id: joined.id, name: joined.name } : null),
   };
 }
+
+/** The agents to name requests with, read only when a request points at one. */
+const agentsFor = async (raws: HitlWire[]): Promise<AgentDef[]> =>
+  raws.some((r) => !r.agent && askingAgentId(r))
+    ? ((await listAgents().catch(() => null))?.items ?? [])
+    : [];
 
 function readImpact(raw: unknown): ProposalImpact | null {
   if (!isRecord(raw) || !Array.isArray(raw.rows) || !Array.isArray(raw.columns)) return null;
@@ -125,11 +141,14 @@ export const listInbox = async (query: { kind?: string; status?: string } = {}) 
   const page = await ok<Page<HitlWire>>(
     api.GET('/v1/inbox', { params: { query: { ...ALL, ...query } } }),
   );
-  return { ...page, items: page.items.map(readHitl) };
+  const agents = await agentsFor(page.items);
+  return { ...page, items: page.items.map((raw) => readHitl(raw, agents)) };
 };
 
-export const getHitl = async (id: string) =>
-  readHitl(await ok<HitlWire>(api.GET('/v1/hitl-requests/{id}', { params: { path: { id } } })));
+export const getHitl = async (id: string) => {
+  const raw = await ok<HitlWire>(api.GET('/v1/hitl-requests/{id}', { params: { path: { id } } }));
+  return readHitl(raw, await agentsFor([raw]));
+};
 
 export const resolveHitl = async (id: string, body: ResolveHitl) =>
   readHitl(
@@ -223,6 +242,16 @@ function planFromSteps(steps: AgentStep[]): RunPlanStep[] {
   }));
 }
 
+/** What started a run, from agent_run.trigger_kind, when the PROPOSAL label is not sent. */
+const INITIATED: Record<string, string> = {
+  schedule: 'Theo lịch',
+  event: 'Sự kiện',
+  threshold: 'Vượt ngưỡng',
+  agent_call: 'Agent khác gọi',
+  manual: 'Người dùng giao',
+  test: 'Chạy thử',
+};
+
 function readRun(raw: RunWire): AgentRun {
   const steps = raw.steps ? raw.steps.map(readStep) : undefined;
   return {
@@ -236,7 +265,7 @@ function readRun(raw: RunWire): AgentRun {
     eta_text: raw.eta_text ?? null,
     code: raw.code ?? `#${raw.id.slice(0, 8)}`,
     title: raw.title ?? '',
-    initiated_label: raw.initiated_label ?? null,
+    initiated_label: raw.initiated_label || INITIATED[raw.trigger_kind] || null,
     trigger_text: raw.trigger_text ?? null,
     hitl_count: raw.hitl_count ?? null,
     plan: raw.plan ?? (steps && steps.length > 0 ? planFromSteps(steps) : undefined),

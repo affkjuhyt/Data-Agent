@@ -93,20 +93,25 @@ function SuggestionRow({ suggestion }: { suggestion: SkillSuggestion }) {
           <h2 className="text-foreground da-heading-3">{suggestion.title}</h2>
           <p className="text-muted-foreground da-caption">{suggestion.repeat_text}</p>
           <p className="text-foreground da-body-small">{suggestion.steps.join(' → ')}</p>
-          <p className="text-muted-foreground da-caption">
-            Dùng bởi: {suggestion.used_by.join(', ')}
-          </p>
+          {/* Who repeated the chain is PROPOSAL: the api counts people (user_count), names none. */}
+          {suggestion.used_by.length > 0 && (
+            <p className="text-muted-foreground da-caption">
+              Dùng bởi: {suggestion.used_by.join(', ')}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-da-md">
           <Button kind="ghost" loading={dismiss.pending || dismissed} onClick={() => dismiss.run()}>
             Bỏ qua
           </Button>
-          <Button
-            aria-expanded={showOccurrences}
-            onClick={() => setShowOccurrences((value) => !value)}
-          >
-            Xem các lần lặp
-          </Button>
+          {suggestion.occurrences.length > 0 && (
+            <Button
+              aria-expanded={showOccurrences}
+              onClick={() => setShowOccurrences((value) => !value)}
+            >
+              Xem các lần lặp
+            </Button>
+          )}
           <Button
             kind="primary"
             disabled={!seed}

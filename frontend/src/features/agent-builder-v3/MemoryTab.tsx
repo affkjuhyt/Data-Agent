@@ -24,7 +24,7 @@ import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P13 · Agent · Bộ nhớ" (2310:20345, UC-13-07): what the agent learnt from people, with where it
- * came from, how far it applies and when it was last used; "Sửa" opens the edit dialog, "Quên" deletes one. A self-learnt or
+ * came from, how far it applies and how often it was used; "Sửa" opens the edit dialog, "Quên" deletes one. A self-learnt or
  * Data Space-wide memory only applies once the Data Space owner approves it, so it shows
  * "chờ duyệt" in warning.
  */
@@ -73,7 +73,7 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
       { id: 'content', value: (m) => m.content },
       { id: 'source', value: (m) => m.source_text },
       { id: 'scope', value: (m) => m.scope_text },
-      { id: 'used', value: (m) => m.last_used_at },
+      { id: 'used', value: (m) => m.use_count },
     ],
     pageSize: 50,
   });
@@ -132,7 +132,7 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
                   Phạm vi
                 </SortableTh>
                 <SortableTh view={view} column="used" className="w-[120px] px-da-lg py-da-md font-normal">
-                  Dùng gần nhất
+                  Đã dùng
                 </SortableTh>
                 <SortableTh view={view} className="w-[110px] px-da-lg py-da-md">
                   <span className="sr-only">Thao tác</span>
@@ -149,7 +149,12 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
                     <td className={cn('px-da-lg py-[9px]', pending ? 'text-warning' : 'text-foreground')}>
                       {pending ? `${memory.scope_text} · chờ duyệt` : memory.scope_text}
                     </td>
-                    <td className="px-da-lg py-[9px] text-muted-foreground">{lastUsedText(memory.last_used_at)}</td>
+                    <td className="px-da-lg py-[9px] text-muted-foreground">
+                      {/* use_count is the api's; when it was last used is PROPOSAL and often absent. */}
+                      {memory.last_used_at
+                        ? `${memory.use_count} lần · ${lastUsedText(memory.last_used_at)}`
+                        : `${memory.use_count} lần`}
+                    </td>
                     <td className="px-da-lg py-[9px]">
                       <span className="flex gap-da-md">
                       <button

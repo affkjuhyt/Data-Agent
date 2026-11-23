@@ -7,7 +7,6 @@ import { Notice } from '../../design-system/Notice';
 import { Radio } from '../../design-system/Radio';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
-import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import { getHitl, listInbox, resolveHitl } from '../../lib/v1/api';
 import type { ConflictContext, HitlRequest } from '../../lib/v1/types';
@@ -21,11 +20,12 @@ import { detailRouteOf, dueOf } from './decision';
  * numbers with how each was read, the gap against the materiality threshold, what the agent
  * already checked, and the choices (the agent's suggestion preselected) with "remember as a
  * rule"; on the right what the choice changes and how similar conflicts were decided.
- * `context` is jsonb its producer fills: each block is drawn only when the request carries it.
+ * `context` is jsonb its producer fills: each block is drawn only when the request carries it,
+ * and a request that carries none of the comparison says so instead of showing empty frames.
+ * Handing the request to someone else and opening the evidence query have no screen yet, so
+ * they are not offered.
  */
 const MARK = { ok: '✓', warn: '!', unknown: '?' } as const;
-const PENDING_REASSIGN = 'Chọn người nhận việc đang được làm.';
-const PENDING_EVIDENCE = 'Màn truy vấn bằng chứng đang được làm.';
 
 export default function ConflictPage() {
   const { routeId, navigate } = useAppState();
@@ -75,6 +75,8 @@ function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () =>
     },
   );
   const error = send.error?.message;
+  const compared = Boolean(ctx.sources?.length || ctx.gap || ctx.checks?.length);
+  const aside = Boolean(ctx.impact?.length || ctx.authority_note || ctx.similar_note);
 
   return (
     <>
@@ -93,6 +95,11 @@ function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () =>
         </header>
 
         {!open && <Notice tone="info">Việc này đã được xử lý.</Notice>}
+        {!compared && (
+          <Notice tone="info">
+            Yêu cầu này không kèm số liệu của từng nguồn; chọn theo các phương án agent đưa ra.
+          </Notice>
+        )}
 
         <div className="flex gap-da-lg max-[1023px]:flex-col">
           {ctx.sources?.map((source) => (
@@ -151,6 +158,11 @@ function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () =>
             <p className="text-foreground da-body-strong" aria-hidden>
               Chọn số dùng cho câu trả lời và báo cáo
             </p>
+            {request.options.length === 0 && (
+              <p className="text-muted-foreground da-body-small">
+                Yêu cầu không kèm phương án nào để chọn.
+              </p>
+            )}
             {request.options.map((o) => (
               <Radio
                 key={o.id}
@@ -182,42 +194,38 @@ function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () =>
             >
               Chọn phương án
             </Button>
-            <Tooltip content={PENDING_REASSIGN}>
-              <Button disabled>Giao người khác</Button>
-            </Tooltip>
-            <Tooltip content={PENDING_EVIDENCE}>
-              <Button kind="ghost" disabled>
-                Mở truy vấn bằng chứng
-              </Button>
-            </Tooltip>
           </div>
         )}
       </div>
 
-      <aside className="flex w-[340px] shrink-0 flex-col gap-da-lg border-l border-border bg-card p-da-xl max-[1279px]:hidden">
-        <h2 className="text-muted-foreground da-overline">{ctx.impact_title ?? 'Ảnh hưởng'}</h2>
-        {ctx.impact?.map((item) => (
-          <div
-            key={item.title}
-            className="flex flex-col gap-[2px] rounded-sm border border-border p-[10px]"
-          >
-            <span className="text-foreground da-body-strong">{item.title}</span>
-            <span className="text-muted-foreground da-caption">{item.detail}</span>
-          </div>
-        ))}
-        {ctx.authority_note && (
-          <>
-            <h2 className="text-muted-foreground da-overline">Thẩm quyền nguồn hiện có</h2>
-            <p className="text-foreground da-caption">{ctx.authority_note}</p>
-          </>
-        )}
-        {ctx.similar_note && (
-          <>
-            <h2 className="text-muted-foreground da-overline">Xung đột tương tự</h2>
-            <p className="text-foreground da-caption">{ctx.similar_note}</p>
-          </>
-        )}
-      </aside>
+      {aside && (
+        <aside className="flex w-[340px] shrink-0 flex-col gap-da-lg border-l border-border bg-card p-da-xl max-[1279px]:hidden">
+          {ctx.impact && ctx.impact.length > 0 && (
+            <h2 className="text-muted-foreground da-overline">{ctx.impact_title ?? 'Ảnh hưởng'}</h2>
+          )}
+          {ctx.impact?.map((item) => (
+            <div
+              key={item.title}
+              className="flex flex-col gap-[2px] rounded-sm border border-border p-[10px]"
+            >
+              <span className="text-foreground da-body-strong">{item.title}</span>
+              <span className="text-muted-foreground da-caption">{item.detail}</span>
+            </div>
+          ))}
+          {ctx.authority_note && (
+            <>
+              <h2 className="text-muted-foreground da-overline">Thẩm quyền nguồn hiện có</h2>
+              <p className="text-foreground da-caption">{ctx.authority_note}</p>
+            </>
+          )}
+          {ctx.similar_note && (
+            <>
+              <h2 className="text-muted-foreground da-overline">Xung đột tương tự</h2>
+              <p className="text-foreground da-caption">{ctx.similar_note}</p>
+            </>
+          )}
+        </aside>
+      )}
     </>
   );
 }

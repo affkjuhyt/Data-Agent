@@ -55,7 +55,8 @@ export interface SkillDefinition {
   used_by_text: string;
   /** "v3: 96% · v4: chưa chạy thử". */
   quality_text: string;
-  test_count: number;
+  /** The cases in the skill's eval set; null when it has none or it cannot be read. */
+  test_count: number | null;
   version_count: number;
   /** The parameters "Thử nhanh" runs with, one line each as shown. */
   quick_test: { params: Record<string, string>; lines: string[] };
@@ -119,7 +120,8 @@ export const getSkillDefinition = async (id: string): Promise<SkillDefinition> =
       name,
       description: spec.title ?? name,
     })),
-    output_text: version && 'template_md' in version ? String(version.template_md ?? '') : '',
+    // template_md is the instructions the editor edits; A2 states no output, so none is shown.
+    output_text: '',
     steps: steps.map((step, index) => ({
       seq: Number(step.seq ?? index + 1),
       text: String(step.text ?? step.name ?? ''),
@@ -132,7 +134,7 @@ export const getSkillDefinition = async (id: string): Promise<SkillDefinition> =
     domain_text: raw.category,
     used_by_text: `${raw.run_count_30d} lượt/30 ngày`,
     quality_text: version?.status === 'published' ? 'Đã xuất bản' : 'Chưa kiểm định',
-    test_count: 0,
+    test_count: await skillCaseCount(raw.id),
     version_count: (raw.versions ?? []).length,
     quick_test: { params: {}, lines: [] },
     source:
@@ -481,6 +483,15 @@ export interface SkillTestRun {
   ran_at: string | null;
   cases: SkillTestCase[];
   failures: SkillTestFailure[];
+  /**
+   * The skill's own eval set (subject_type skill), which a new case is added to; null before
+   * the first :test made it (worker_agent/skill_evals.py). Absent on a PROPOSAL read.
+   */
+  eval_set_id?: string | null;
+  /** How many cases the set holds, run or not. */
+  case_count?: number | null;
+  /** The parameters a case runs with (the published version's params_schema). */
+  param_names?: string[];
 }
 
 export const getLatestTestRun = async (id: string): Promise<SkillTestRun> => {
@@ -500,7 +511,29 @@ export const getLatestTestRun = async (id: string): Promise<SkillTestRun> => {
   if (!version) throw new V1Error(404, 'not_found', 'Kỹ năng chưa có phiên bản.');
   // The suite's result is the version's eval run (skill_version.eval_run_id): its results, read
   // against the set's items. Without it the page showed "0/0 đạt" in green after a failing run.
-  const scored = version.eval_run_id ? await evalCases(version.eval_run_id) : null;
+  const [scored, set] = await Promise.all([
+    version.eval_run_id ? evalCases(version.eval_run_id) : null,
+    skillEvalSet(raw.id),
+  ]);
+  // The set's failures of that run carry the failing items themselves: their name and what they
+  // expect (a steward reads `expected`; anyone else gets null), and why they failed.
+  const failed =
+    set && version.eval_run_id && set.failures_run_id === version.eval_run_id
+      ? (set.failures ?? [])
+      : [];
+  const cases = (scored?.cases ?? []).map((c) => {
+    const f = failed.find((x) => x.item.id === c.id);
+    if (!f) return c;
+    const input = isObject(f.item.input) ? f.item.input : {};
+    return {
+      ...c,
+      name: typeof input.name === 'string' && input.name ? input.name : c.name,
+      expected: expectedText(f.item.expected),
+    };
+  });
+  const params = (raw.published_version?.params_schema ?? {}) as {
+    properties?: Record<string, unknown>;
+  };
   return {
     skill_id: raw.id,
     version_id: version.id,
@@ -508,10 +541,59 @@ export const getLatestTestRun = async (id: string): Promise<SkillTestRun> => {
     version: version.version,
     status: version.status as SkillAuthoringStatus,
     ran_at: scored?.ran_at ?? null,
-    cases: scored?.cases ?? [],
-    failures: [],
+    cases,
+    failures: failed
+      .filter((f) => f.result.cause)
+      .map((f) => ({ case_id: f.item.id, explanation: f.result.cause ?? '', fix_diff: [] })),
+    eval_set_id: set?.id ?? null,
+    case_count: set?.item_count ?? null,
+    param_names: Object.keys(params.properties ?? {}),
   };
 };
+
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** What a skill item expects, in words (skill_evals.py reads these keys). */
+function expectedText(expected: unknown): string {
+  if (!isObject(expected)) return '';
+  if (Array.isArray(expected.text_contains)) return expected.text_contains.join(' · ');
+  if (expected.behavior === 'refuse') return 'Từ chối chạy';
+  if (typeof expected.dimension === 'string') return `Cắt theo ${expected.dimension}`;
+  if (isObject(expected.figures))
+    return Object.entries(expected.figures)
+      .map(([k, v]) => `${k}: ${String(v)}`)
+      .join(' · ');
+  return '';
+}
+
+/** The skill's active eval set and its latest failures; null when it has none yet. */
+async function skillEvalSet(skillId: string): Promise<Schemas['EvalSetDetail'] | null> {
+  const sets = await ok<Page<Schemas['EvalSetView']>>(
+    api.GET('/v1/eval-sets', {
+      params: {
+        query: { subject_type: 'skill', subject_id: skillId, status: 'active', page_size: 1 },
+      },
+    }),
+  ).catch(() => null);
+  const set = sets?.items[0];
+  if (!set) return null;
+  return ok<Schemas['EvalSetDetail']>(
+    api.GET('/v1/eval-sets/{id}', { params: { path: { id: set.id } } }),
+  ).catch(() => ({ ...set, failures: [], failures_run_id: null, runs: [] }));
+}
+
+/** How many cases the skill's set holds; null when it has no set or it cannot be read. */
+const skillCaseCount = async (skillId: string): Promise<number | null> =>
+  (
+    await ok<Page<Schemas['EvalSetView']>>(
+      api.GET('/v1/eval-sets', {
+        params: {
+          query: { subject_type: 'skill', subject_id: skillId, status: 'active', page_size: 1 },
+        },
+      }),
+    ).catch(() => null)
+  )?.items[0]?.item_count ?? null;
 
 /** A result's actual value in a line: a string or number as is, an object by its main field. */
 const shown = (value: unknown): string => {
@@ -574,22 +656,37 @@ export const runSkillTests = async (run: SkillTestRun): Promise<SkillTestRun> =>
   return getLatestTestRun(run.skill_id);
 };
 
-/** PROPOSAL: POST /v1/skills/{id}/test-cases (A2 SkillTestCase). */
+/**
+ * PROPOSAL: POST /v1/skills/{id}/test-cases. A2 keeps a skill's cases as items of its own eval
+ * set: POST /v1/eval-sets/{id}/items with the parameters in `input` and the expectation as
+ * `text_contains` (skill_evals.py matches it in the run's summary). The case is scored at the
+ * next :test, so the suite read back does not list it yet.
+ */
 export const addSkillTestCase = async (
   run: SkillTestRun,
-  body: { name: string; period_text: string; expected: string },
+  body: { name: string; period_text: string; expected: string; params?: Record<string, string> },
 ) => {
   try {
     return await v1Send<SkillTestRun>('POST', `/skills/${pathId(run.skill_id)}/test-cases`, body);
   } catch (error) {
     if (!notProposal(error)) throw error;
   }
-  // A2 has no test-case route: rerunning the suite would drop the case while saying it was added.
-  throw new V1Error(
-    409,
-    'not_supported',
-    'Ca kiểm thử chưa lưu được ở đây: ca nằm trong bộ đánh giá của kỹ năng.',
+  if (!run.eval_set_id)
+    throw new V1Error(
+      409,
+      'invalid_state',
+      'Kỹ năng chưa có bộ ca kiểm thử: chạy kiểm định một lần để tạo bộ, rồi thêm ca.',
+    );
+  await ok<Schemas['EvalItemView']>(
+    api.POST('/v1/eval-sets/{id}/items', {
+      params: { path: { id: run.eval_set_id } },
+      body: {
+        input: { name: body.name, params: body.params ?? {} },
+        expected: { text_contains: [body.expected] },
+      } as Schemas['EvalItemCreate'],
+    }),
   );
+  return getLatestTestRun(run.skill_id);
 };
 
 /*

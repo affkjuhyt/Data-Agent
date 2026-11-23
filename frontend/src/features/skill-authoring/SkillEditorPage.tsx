@@ -6,12 +6,14 @@ import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { Card } from '../../design-system/Card';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
+import { Field } from '../../design-system/Field';
 import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { RunStep } from '../../design-system/RunStep';
 import { Tabs } from '../../design-system/Tabs';
 import { Textarea } from '../../design-system/Textarea';
+import { Tooltip } from '../../design-system/Tooltip';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import {
@@ -72,6 +74,11 @@ function Editor({
   const [steps, setSteps] = useState(initial.steps);
   const [instructions, setInstructions] = useState(initial.instructions);
   const [quality, setQuality] = useState(initial.quality_text);
+  // "Thử nhanh" runs with the designed parameters when sent; else the author types the version's
+  // own parameters, as a trial with none fails a skill that needs them.
+  const [params, setParams] = useState<Record<string, string>>(initial.quick_test.params);
+  const typed = initial.quick_test.lines.length === 0 && initial.inputs.length > 0;
+  const missing = typed ? initial.inputs.filter((i) => !params[i.name]?.trim()) : [];
   const dirty =
     instructions !== initial.instructions ||
     steps.length !== initial.steps.length ||
@@ -89,10 +96,10 @@ function Editor({
     else go(tab);
   };
 
-  const trying = useV1Mutation(() => trySkill(initial, initial.quick_test.params), {
+  const trying = useV1Mutation(() => trySkill(initial, params), {
     onSuccess: (result) => {
       setTrial(result);
-      setQuality(`v3: 96% · v${result.version}: đã chạy thử`);
+      setQuality(`v${result.version}: đã chạy thử`);
       toast({
         tone: 'success',
         message: `Đã chạy thử v${result.version} · ${result.duration_text}`,
@@ -138,7 +145,7 @@ function Editor({
               <Button
                 icon="play"
                 loading={busy === 'try'}
-                disabled={busy !== null}
+                disabled={busy !== null || missing.length > 0}
                 onClick={runTrial}
               >
                 Chạy thử
@@ -160,7 +167,7 @@ function Editor({
           onChange={onTab}
           items={[
             { value: 'definition', label: 'Định nghĩa' },
-            { value: 'tests', label: 'Kiểm thử', count: initial.test_count },
+            { value: 'tests', label: 'Kiểm thử', count: initial.test_count ?? undefined },
             { value: 'versions', label: 'Phiên bản', count: initial.version_count },
           ]}
         />
@@ -173,9 +180,11 @@ function Editor({
                   {input.description}
                 </KeyValue>
               ))}
-              <KeyValue label="→ Đầu ra" width={120}>
-                {initial.output_text}
-              </KeyValue>
+              {initial.output_text && (
+                <KeyValue label="→ Đầu ra" width={120}>
+                  {initial.output_text}
+                </KeyValue>
+              )}
             </Card>
             <Card size="sm" title="Các bước" className="gap-da-sm px-da-lg py-da-md">
               <StepList steps={steps} onChange={setSteps} disabled={!draft} />
@@ -199,22 +208,26 @@ function Editor({
                 className="w-full"
               />
             </Card>
-            <Card size="sm" title="Giới hạn an toàn" className="gap-da-sm px-da-lg py-da-md">
-              <ul className="flex flex-col gap-da-sm">
-                {initial.guardrails.map((g) => (
-                  <li
-                    key={g.text}
-                    className="flex items-center gap-da-sm text-foreground da-body-small"
-                  >
-                    <Icon
-                      name={g.kind === 'check' ? 'check' : 'lock'}
-                      label={g.kind === 'check' ? 'Kiểm tra khi chạy' : 'Điều kiện chặn'}
-                    />
-                    {g.text}
-                  </li>
-                ))}
-              </ul>
-            </Card>
+            {/* The safety limits are PROPOSAL: A2's version stores sandbox_limits, which the skill
+                worker does not enforce, so nothing is claimed without them. */}
+            {initial.guardrails.length > 0 && (
+              <Card size="sm" title="Giới hạn an toàn" className="gap-da-sm px-da-lg py-da-md">
+                <ul className="flex flex-col gap-da-sm">
+                  {initial.guardrails.map((g) => (
+                    <li
+                      key={g.text}
+                      className="flex items-center gap-da-sm text-foreground da-body-small"
+                    >
+                      <Icon
+                        name={g.kind === 'check' ? 'check' : 'lock'}
+                        label={g.kind === 'check' ? 'Kiểm tra khi chạy' : 'Điều kiện chặn'}
+                      />
+                      {g.text}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
           </div>
         </div>
         <AsyncRegion
@@ -256,18 +269,35 @@ function Editor({
             <pre className="w-full whitespace-pre-wrap text-foreground da-mono">
               {initial.quick_test.lines.join('\n')}
             </pre>
+          ) : typed ? (
+            initial.inputs.map((input) => (
+              <Field key={input.name} label={input.description}>
+                <Input
+                  value={params[input.name] ?? ''}
+                  onChange={(e) => setParams((prev) => ({ ...prev, [input.name]: e.target.value }))}
+                />
+              </Field>
+            ))
           ) : (
-            <p className="text-muted-foreground da-caption">Chưa có tham số thử.</p>
+            <p className="text-muted-foreground da-caption">Kỹ năng không cần tham số.</p>
           )}
-          <Button
-            kind="primary"
-            icon="play"
-            loading={busy === 'try'}
-            disabled={busy !== null}
-            onClick={runTrial}
-          >
-            Chạy thử
-          </Button>
+          {missing.length > 0 ? (
+            <Tooltip content={`Điền ${missing.map((i) => i.description).join(', ')} để chạy thử.`}>
+              <Button kind="primary" icon="play" disabled>
+                Chạy thử
+              </Button>
+            </Tooltip>
+          ) : (
+            <Button
+              kind="primary"
+              icon="play"
+              loading={busy === 'try'}
+              disabled={busy !== null}
+              onClick={runTrial}
+            >
+              Chạy thử
+            </Button>
+          )}
         </div>
       </aside>
       <ConfirmDialog

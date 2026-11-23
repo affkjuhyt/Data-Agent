@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
@@ -8,13 +8,14 @@ import { Button } from '../../design-system/Button';
 import { Dialog } from '../../design-system/Dialog';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
-import { Select } from '../../design-system/Select';
+import { Input } from '../../design-system/Input';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import { formatDateTime, formatTime } from '../../lib/formatVN';
-import { decideProposal, listUsers, resolveHitl } from '../../lib/v1/api';
+import { decideProposal, resolveHitl } from '../../lib/v1/api';
+import { searchPrincipals, type Principal } from '../../lib/v1/sessions';
 import { getCollaboration, type Collaboration } from '../../lib/v1/collaboration';
 import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
@@ -55,8 +56,25 @@ function ChainBody({ collaboration, open }: { collaboration: Collaboration; open
   const toast = useToast();
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [note, setNote] = useState('');
-  const [assignee, setAssignee] = useState<string | null>(null);
-  const users = useV1(['listUsers', dialog === 'reassign'], dialog === 'reassign' ? listUsers : null);
+  const [assignee, setAssignee] = useState<Principal | null>(null);
+  // People are found through GET /v1/principals, which anyone who asks may search: the admin
+  // directory left a non-admin's picker empty.
+  const [query, setQuery] = useState('');
+  const [matches, setMatches] = useState<Principal[]>([]);
+  useEffect(() => {
+    const q = query.trim();
+    if (dialog !== 'reassign' || !q) {
+      setMatches([]);
+      return;
+    }
+    let alive = true;
+    searchPrincipals(q)
+      .then((page) => alive && setMatches(page.items.filter((p) => p.kind === 'user')))
+      .catch(() => alive && setMatches([]));
+    return () => {
+      alive = false;
+    };
+  }, [query, dialog]);
 
   const action = useV1Mutation(
     ({ call }: { key: string; call: () => Promise<unknown>; message: string }) => call(),
@@ -214,26 +232,40 @@ function ChainBody({ collaboration, open }: { collaboration: Collaboration; open
         error={dialog === 'reassign' ? error : undefined}
         onClose={() => setDialog(null)}
         onSubmit={() => {
-          const user = users.data?.items.find((u) => u.id === assignee);
+          const user = assignee;
           const hitlId = collaboration.hitl_id;
           if (!user || !hitlId) return;
           act(
             'reassign',
             () =>
               resolveHitl(hitlId, { decision: 'reassign', reassign_to: user.id }),
-            `Đã chuyển cho ${user.display_name}`,
+            `Đã chuyển cho ${user.name}`,
           );
         }}
       >
-        <Select
-          label="Người duyệt thay"
-          value={assignee}
-          placeholder="Chọn người"
-          onChange={setAssignee}
-          options={(users.data?.items ?? [])
-            .filter((u) => u.kind === 'person')
-            .map((u) => ({ value: u.id, label: u.display_name }))}
+        <Input
+          aria-label="Tìm người duyệt thay"
+          placeholder="Tìm theo tên"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
         />
+        <ul aria-label="Người tìm thấy" className="flex flex-col">
+          {matches.map((p) => (
+            <li key={p.id}>
+              <button
+                type="button"
+                aria-pressed={assignee?.id === p.id}
+                onClick={() => setAssignee(p)}
+                className={cn(
+                  'w-full rounded-sm px-da-sm py-da-xs text-left text-foreground da-body-small hover:bg-subtle',
+                  assignee?.id === p.id && 'bg-subtle da-body-strong',
+                )}
+              >
+                {p.name}
+              </button>
+            </li>
+          ))}
+        </ul>
       </Dialog>
     </div>
   );

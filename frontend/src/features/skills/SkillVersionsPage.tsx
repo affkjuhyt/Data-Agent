@@ -131,6 +131,8 @@ function Versions({ data }: { data: Loaded }) {
   };
 
   const active = versions.find((v) => v.status === 'active');
+  // The change note is PROPOSAL: the api's versions carry none, so the column shows only when sent.
+  const changes = versions.some((v) => v.change_text);
   const view = useTableView(versions, {
     search: (v) => `${v.version} ${v.change_text} ${v.status_text}`,
     filters: [{ id: 'status', label: 'Trạng thái', value: (v) => v.status_text }],
@@ -200,9 +202,17 @@ function Versions({ data }: { data: Loaded }) {
                   >
                     Bản
                   </SortableTh>
-                  <SortableTh view={view} column="change" className="py-da-md pl-da-lg font-normal">
-                    Thay đổi
-                  </SortableTh>
+                  {changes ? (
+                    <SortableTh
+                      view={view}
+                      column="change"
+                      className="py-da-md pl-da-lg font-normal"
+                    >
+                      Thay đổi
+                    </SortableTh>
+                  ) : (
+                    <th aria-hidden className="p-0" />
+                  )}
                   <SortableTh
                     view={view}
                     column="eval"
@@ -223,9 +233,13 @@ function Versions({ data }: { data: Loaded }) {
                 {view.rows.map((v) => (
                   <tr key={v.id} className="border-b border-border">
                     <td className="py-[9px] pl-da-lg text-foreground da-mono">v{v.version}</td>
-                    <td className="py-[9px] pl-da-lg text-foreground da-body-small">
-                      {v.change_text}
-                    </td>
+                    {changes ? (
+                      <td className="py-[9px] pl-da-lg text-foreground da-body-small">
+                        {v.change_text}
+                      </td>
+                    ) : (
+                      <td aria-hidden className="p-0" />
+                    )}
                     <td className="py-[9px] pl-da-lg text-muted-foreground da-body-small">
                       {v.eval_total > 0 ? `${v.eval_passed}/${v.eval_total} đạt` : '–'}
                     </td>
