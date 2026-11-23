@@ -9391,6 +9391,10 @@ export interface components {
             ordinal: number;
             /** Pii Confirmed */
             pii_confirmed: boolean;
+            /** Pii Evidence */
+            pii_evidence?: {
+                [key: string]: unknown;
+            } | null;
             /** Pii Label */
             pii_label: string | null;
             profile?: components["schemas"]["ColumnProfileView"] | null;

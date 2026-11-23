@@ -479,6 +479,11 @@ class ColumnMeta(Base):
         server_default=sql_text("false"),
         comment="Người phụ trách đã xác nhận cách che (UC-04-04 bước 3)",
     )
+    pii_evidence: Mapped[Any | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="DF-11: bằng chứng của nhãn ở lần quét gần nhất {pii_type, share, distinct_hits, samples_checked, scan_run_id}",
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )

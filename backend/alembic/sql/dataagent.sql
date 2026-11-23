@@ -1427,6 +1427,7 @@ CREATE TABLE catalog.column_meta (
   unit text,
   pii_label text,
   pii_confirmed boolean NOT NULL DEFAULT false,
+  pii_evidence jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -1447,6 +1448,7 @@ COMMENT ON COLUMN catalog.column_meta.description_status IS 'none, suggested, ap
 COMMENT ON COLUMN catalog.column_meta.unit IS 'Ví dụ VND, triệu VND, %';
 COMMENT ON COLUMN catalog.column_meta.pii_label IS 'Nhãn dữ liệu cá nhân: national_id, phone, email, account_no, name, address, other';
 COMMENT ON COLUMN catalog.column_meta.pii_confirmed IS 'Người phụ trách đã xác nhận cách che (UC-04-04 bước 3)';
+COMMENT ON COLUMN catalog.column_meta.pii_evidence IS 'DF-11: bằng chứng của nhãn ở lần quét gần nhất {pii_type, share, distinct_hits, samples_checked, scan_run_id}';
 
 CREATE TABLE catalog.column_profile (
   id uuid NOT NULL,

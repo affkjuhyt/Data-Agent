@@ -305,6 +305,16 @@ class ColumnDecision:
     pii_type: str | None
     share: float
     distinct_hits: int
+    # DF-11: how many non-empty values the decision read, so "3 of 3" and "300 of 300" differ.
+    samples_checked: int = 0
+
+    def evidence(self) -> dict[str, object]:
+        return {
+            "pii_type": self.pii_type,
+            "share": self.share,
+            "distinct_hits": self.distinct_hits,
+            "samples_checked": self.samples_checked,
+        }
 
 
 def column_decision(
@@ -312,7 +322,7 @@ def column_decision(
 ) -> ColumnDecision:
     texts = [str(v) for v in values if v is not None and str(v).strip()]
     if len(set(texts)) < 2:
-        return ColumnDecision(None, None, 0.0, 0)
+        return ColumnDecision(None, None, 0.0, 0, len(texts))
     hits: dict[str, set[str]] = {}
     for t in texts:
         for ptype in scan(t, packs=packs)["counts"]:
@@ -325,11 +335,11 @@ def column_decision(
         enough = min(_MIN_DISTINCT[strength], len(set(texts)))
         if share >= _SHARE[strength] and len(carried) >= enough:
             found = ColumnDecision(
-                _LABELS.get(ptype, "other"), ptype, round(share, 4), len(carried)
+                _LABELS.get(ptype, "other"), ptype, round(share, 4), len(carried), len(texts)
             )
             if best is None or (found.share, -_PRIORITY[ptype]) > (
                 best.share,
                 -_PRIORITY[best.pii_type or ptype],
             ):
                 best = found
-    return best or ColumnDecision(None, None, 0.0, 0)
+    return best or ColumnDecision(None, None, 0.0, 0, len(texts))

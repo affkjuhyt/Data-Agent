@@ -585,3 +585,61 @@ async def test_a_profile_keeps_quantiles_a_histogram_lengths_patterns_and_the_so
     )
     assert activity is not None
     assert {"n_tup_ins", "n_live_tup", "last_autoanalyze", "observed_at"} <= set(activity)
+
+
+@pytest.mark.req("DF-11")
+async def test_a_profile_proposes_draft_rules_once_and_keeps_the_pii_evidence(
+    seed: Seed, ddl_server: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The DF-10 test's table and source, profiled twice: the second scan proposes nothing new.
+    await test_a_profile_keeps_quantiles_a_histogram_lengths_patterns_and_the_source_activity(
+        seed, ddl_server, monkeypatch
+    )
+    sales = seed.one(
+        "SELECT id FROM catalog.dataset WHERE schema_name = 'scan_df10' AND table_name = 'sales'"
+        " ORDER BY created_at DESC LIMIT 1"
+    )
+    rules = seed.all(
+        "SELECT column_name, kind, params, origin, status FROM ingest.quality_rule"
+        " WHERE dataset_id = %s ORDER BY column_name, kind",
+        sales,
+    )
+    by = {(r[0], r[1]): r for r in rules}
+    assert all(r[3] == "agent_suggested" and r[4] == "draft" for r in rules)
+    assert ("order_no", "unique") in by and ("order_no", "not_null") in by
+    assert by[("order_no", "match_regex")][2] == {"regex": r"^[A-Z]{2}\d{5}$", "mostly": 0.99}
+    # The key is the source's to promise; a free note is unique by none of its values.
+    assert not any(r[0] == "id" for r in rules)
+    assert ("note", "unique") not in by
+    # A personal column's values are in no rule.
+    assert ("ma_kh", "in_list") not in by
+    assert not any("07920300" in str(r[2]) for r in rules)
+
+    evidence = seed.one(
+        "SELECT c.pii_evidence FROM catalog.column_meta c WHERE c.dataset_id = %s"
+        " AND c.name = 'ma_kh'",
+        sales,
+    )
+    assert evidence["share"] >= 0.5 and evidence["samples_checked"] > 0  # type: ignore[index]
+    assert "scan_run_id" in evidence  # type: ignore[operator]
+
+    source = seed.one("SELECT source_id FROM catalog.dataset WHERE id = %s", sales)
+    space = seed.one("SELECT data_space_id FROM catalog.dataset WHERE id = %s", sales)
+    org = seed.one("SELECT org_id FROM catalog.dataset WHERE id = %s", sales)
+    run = seed.row(
+        "catalog.scan_run", org_id=org, source_id=source, kind="profile", trigger="manual"
+    )
+    assert space is not None
+    await schema_scans.scan_schema(
+        Event(
+            event_id=uuid.uuid4(),
+            org_id=org,
+            event_type="scan_run.created",
+            aggregate_type="scan_run",
+            aggregate_id=run,
+            payload={"scan_run_id": str(run), "source_id": str(source)},
+        )
+    )
+    assert seed.one("SELECT count(*) FROM ingest.quality_rule WHERE dataset_id = %s", sales) == len(
+        rules
+    )

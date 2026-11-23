@@ -6183,6 +6183,17 @@
      "fk": null,
      "logic_ref": null,
      "pii": false
+    },
+    {
+     "name": "pii_evidence",
+     "type": "jsonb",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "DF-11: bằng chứng của nhãn ở lần quét gần nhất {pii_type, share, distinct_hits, samples_checked, scan_run_id}",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
     }
    ],
    "common_columns": [

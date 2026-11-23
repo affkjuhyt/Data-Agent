@@ -27,6 +27,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context
 from libs.source_drivers import registry
 from libs.tabular import profile as ingest_profile
+from services.worker_agent import rule_proposals as proposed_rules
 from services.worker_agent import schema_changes, source_meta
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.questions import secrets
@@ -186,6 +187,8 @@ def _redact_personal(
         values = [v.get("value") if isinstance(v, dict) else v for v in listed]
         decision = pii.column_decision(values, packs)
         if decision.label is not None:
+            # DF-11: what the label rests on, kept with it for the steward who confirms it.
+            column["pii_evidence"] = decision.evidence()
             # The label is a suggestion: pii_confirmed stays false until a steward says how it
             # is masked (UC-04-04). How sure a type is decides the share it needs (RES-24).
             column["pii_label"] = decision.label
@@ -903,6 +906,7 @@ async def scan_schema(event: Event) -> None:
         additive_notices: list[dict[str, Any]] = []
         skipped: list[dict[str, str]] = []
         value_samples: list[tuple[uuid.UUID, str, object]] = []
+        rule_proposals: list[proposed_rules.Proposal] = []
         now = datetime.datetime.now(datetime.UTC)
         async with scoped_session(ROLE, event.org_id, event.payload.get("requested_by")) as session:
             run = await session.scalar(
@@ -1101,9 +1105,28 @@ async def scan_schema(event: Event) -> None:
                                 value_patterns=_or_null(profile.get("value_patterns")),
                             )
                         )
+                        rule_proposals.extend(
+                            proposed_rules.propose(
+                                profiled.id,
+                                column.name,
+                                column.normalized_type,
+                                is_nullable=column.is_nullable,
+                                is_key=column.is_key,
+                                # A masked value ("***") never reaches a rule either way.
+                                personal=profile.get("pii_label") is not None
+                                or column.pii_label is not None
+                                or _is_sensitive_column(column.name),
+                                profile=profile,
+                            )
+                        )
                         if profile.get("pii_label"):
                             if column.pii_label is None:
                                 column.pii_label = str(profile["pii_label"])
+                            if profile.get("pii_evidence"):
+                                column.pii_evidence = {
+                                    **profile["pii_evidence"],
+                                    "scan_run_id": str(run_id),
+                                }
                             # A personal column's values are no category of the value index.
                             continue
                         # Free text is not a category list. A dimension over it stays
@@ -1157,6 +1180,15 @@ async def scan_schema(event: Event) -> None:
             proposer = event.payload.get("requested_by") or source.created_by
             if proposer is not None:
                 await schema_changes.propose(event, breaking, uuid.UUID(str(proposer)))
+        if rule_proposals:
+            # DF-11: drafts a steward turns active; a rule already there, in any status, stays.
+            written = await proposed_rules.write(
+                event.org_id,
+                source.data_space_id,
+                rule_proposals,
+                event.payload.get("requested_by"),
+            )
+            logger.info("scan %s proposed %d quality rules", run_id, written)
         if relationship_proposals:
             async with scoped_session(
                 RELATIONSHIP_ROLE, event.org_id, event.payload.get("requested_by")

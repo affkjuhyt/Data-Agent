@@ -109,3 +109,28 @@ def test_masking_does_not_wait_for_a_label(values: list[str]) -> None:
     column = profiles[("s", "t", "c")]
     assert all(v["value"] == "***" for v in column["top_values"])  # type: ignore[index, union-attr]
     assert column["category_values"] == [] and column["min_value"] is None
+
+
+@pytest.mark.req("DF-11")
+def test_a_label_keeps_the_evidence_it_rests_on() -> None:
+    ids = [f"0792030012{i:02d}" for i in range(20)]
+    profiles: dict[tuple[str, str, str], dict[str, object]] = {
+        ("s", "t", "ma_kh"): {
+            "top_values": [{"value": v, "count": 1} for v in ids[:10]],
+            "category_values": [{"value": v, "count": 1} for v in ids],
+            "min_value": ids[0],
+            "max_value": ids[-1],
+        }
+    }
+    _redact_personal(profiles, ("GLOBAL", "VN"))
+    column = profiles[("s", "t", "ma_kh")]
+    assert column["pii_label"] == "national_id"
+    evidence = column["pii_evidence"]
+    assert evidence == {
+        "pii_type": evidence["pii_type"],  # type: ignore[index]
+        "share": 1.0,
+        "distinct_hits": 20,
+        "samples_checked": 30,
+    }
+    # Counts only: no value of the column is in its evidence.
+    assert not any(v in str(evidence) for v in ids)

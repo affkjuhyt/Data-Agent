@@ -706,6 +706,7 @@ Cột của một bảng theo phiên bản cấu trúc. Use case: UC-04-02, UC-0
 | unit | text | Ví dụ VND, triệu VND, % |
 | pii\_label | text | Nhãn dữ liệu cá nhân: national\_id, phone, email, account\_no, name, address, other |
 | pii\_confirmed | boolean, bắt buộc, mặc định false | Người phụ trách đã xác nhận cách che (UC-04-04 bước 3) |
+| pii\_evidence | jsonb | DF-11: bằng chứng của nhãn ở lần quét gần nhất {pii\_type, share, distinct\_hits, samples\_checked, scan\_run\_id} |
 
 Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (dataset\_id, name, dataset\_version); CHECK (normalized\_type IN ('string','integer','decimal','boolean','date','timestamp','json','binary')); CHECK (description\_status IN ('none','suggested','approved')); CHECK (pii\_label IS NULL OR pii\_label IN ('national\_id','phone','email','account\_no','name','address','other')); FOREIGN KEY (dataset\_id) REFERENCES catalog.dataset(id). Chỉ mục: (dataset\_id) WHERE removed\_in\_version IS NULL; (dataset\_id) WHERE pii\_label IS NOT NULL.
 

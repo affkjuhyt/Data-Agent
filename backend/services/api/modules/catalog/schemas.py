@@ -321,6 +321,9 @@ class ColumnView(BaseModel):
     unit: str | None
     pii_label: str | None
     pii_confirmed: bool
+    # DF-11: what the label rests on, from the last scan that labelled it: {pii_type, share,
+    # distinct_hits, samples_checked, scan_run_id}. Counts only, no value.
+    pii_evidence: dict[str, Any] | None = None
     profile: ColumnProfileView | None = None
 
 

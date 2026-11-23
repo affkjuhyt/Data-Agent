@@ -6730,6 +6730,18 @@
       "title": "Pii Confirmed",
       "type": "boolean"
      },
+     "pii_evidence": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Pii Evidence"
+     },
      "pii_label": {
       "anyOf": [
        {
