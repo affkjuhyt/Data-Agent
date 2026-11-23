@@ -19677,6 +19677,17 @@
      "pii": false
     },
     {
+     "name": "figures",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'[]'",
+     "unique": false,
+     "comment": "Số đã quyết định alert, mỗi phần tử một thành viên: member, value, compared_to (ngưỡng hoặc số kỳ trước), change, query_run_id; ghi bởi runtime theo dõi (AL-10). Thêm 23/11/2026",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "closed_at",
      "type": "timestamptz",
      "not_null": false,

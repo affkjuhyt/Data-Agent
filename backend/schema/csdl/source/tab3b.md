@@ -2275,6 +2275,7 @@ Cảnh báo phát sinh khi luật khớp; gộp tín hiệu lặp trong 24 giờ
 | assigned\_to | uuid |  |
 | close\_note | text | Bắt buộc khi vượt ngưỡng hơn 2 lần (BR-124) |
 | close\_kind | text | Cách đóng: resolved (đã xử lý) hoặc false\_positive (báo nhầm, để agent học); null khi chưa đóng. Thêm 23/11/2026 |
+| figures | jsonb, bắt buộc, mặc định '[]' | Số đã quyết định alert, mỗi phần tử một thành viên: member, value, compared\_to (ngưỡng hoặc số kỳ trước), change, query\_run\_id; ghi bởi runtime theo dõi (AL-10). Thêm 23/11/2026 |
 | closed\_at | timestamptz |  |
 
 Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('metric','data\_stale')); CHECK (status IN ('open','ack','assigned','closed')); CHECK (status <> 'closed' OR closed\_at IS NOT NULL); CHECK (status <> 'closed' OR occurrences <= 2 OR close\_note IS NOT NULL); CHECK (close\_kind IN ('resolved','false\_positive')); FOREIGN KEY (monitor\_id) REFERENCES monitor.monitor(id). Chỉ mục: duy nhất (monitor\_id, dedup\_key) WHERE status <> 'closed'.

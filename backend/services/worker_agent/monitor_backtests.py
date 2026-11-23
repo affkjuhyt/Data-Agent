@@ -14,6 +14,10 @@ filtered by its filters, and judges the rule on the last n complete periods that
 - seasonal_anomaly needs a seasonal model the worker does not have: the result says so
   ("unsupported") instead of a count it did not compute.
 
+The judge (figures_at: which members are past the rule in one period) is the one the monitor
+runtime fires alerts with (monitor_runs.py, AL-10), so a backtest counts what the schedule would
+have raised.
+
 The result replaces the pending request only while it is still the one that was read (a PATCH
 during the run asks again), so a redelivered event, or the created/updated event of a backtest
 already done, changes nothing. {"periods", "fired"} is what the api's rules.noise_warning reads
@@ -29,6 +33,7 @@ import itertools
 import logging
 import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select, update
@@ -36,6 +41,7 @@ from sqlalchemy import select, update
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, monitor
 from libs.sql_guard import SqlRejected
+from services.worker_agent import quality_gate
 from services.worker_agent.answer import thresholds
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
@@ -108,36 +114,74 @@ def _number(raw: Any) -> decimal.Decimal | None:
     return value if value.is_finite() else None
 
 
-def _fired_by_threshold(rule: Any, series: Series, labels: list[str]) -> dict[str, bool]:
+@dataclass(frozen=True)
+class Figure:
+    """One member past the rule in one period: its value, what it was compared to (the threshold,
+    or the period before) and the change (to the threshold, or in percent)."""
+
+    member: str
+    value: decimal.Decimal
+    compared_to: decimal.Decimal
+    change: decimal.Decimal
+
+
+def _threshold(rule: Any) -> thresholds.Threshold:
     t = thresholds.threshold_of(rule)
     if t is None:
         raise Unjudgeable("Luật ngưỡng thiếu hướng (lớn hơn/nhỏ hơn) hoặc giá trị.")
-    out: dict[str, bool] = {}
-    for label in labels:
-        values = [v for v in series[label].values() if v is not None]
-        if values:
-            out[label] = any(thresholds.state(v, t) == "breach" for v in values)
-    return out
+    return t
 
 
-def _fired_by_change(rule: Any, series: Series, labels: list[str]) -> dict[str, bool]:
+def _change_rule(rule: Any) -> tuple[str, decimal.Decimal]:
     rule = rule if isinstance(rule, dict) else {}
     direction, percent = rule.get("direction"), _number(rule.get("value"))
     if direction not in ("up", "down") or percent is None or percent < 0:
         raise Unjudgeable("Luật thay đổi thiếu hướng (tăng/giảm) hoặc phần trăm.")
-    out: dict[str, bool] = {}
-    for before, label in itertools.pairwise(labels):
-        fired, compared = False, False
+    return str(direction), percent
+
+
+def check_rule(rule_kind: str, rule: Any) -> None:
+    """Refuses a rule that cannot be judged, or a kind this worker does not judge, before any
+    query."""
+    if rule_kind == "threshold":
+        _threshold(rule)
+    elif rule_kind == "change_vs_previous":
+        _change_rule(rule)
+    else:
+        raise Unsupported(
+            "Chưa chạy thử được luật bất thường theo mùa vụ: cần mô hình mùa vụ của chỉ số."
+        )
+
+
+def figures_at(
+    rule_kind: str, rule: Any, series: Series, label: str, previous: str | None
+) -> list[Figure] | None:
+    """The members past the rule in period `label` (`previous` is the period before it in the
+    series), or None when the period cannot be judged: no figure, or nothing to compare with."""
+    check_rule(rule_kind, rule)
+    out: list[Figure] = []
+    judged = False
+    if rule_kind == "threshold":
+        t = _threshold(rule)
         for member, value in series[label].items():
-            previous = series[before].get(member)
-            if value is None or previous is None or previous == 0:
+            if value is None:
                 continue
-            compared = True
-            change = (value - previous) / abs(previous) * 100
-            fired |= change > percent if direction == "up" else -change > percent
-        if compared:
-            out[label] = fired
-    return out
+            judged = True
+            if thresholds.state(value, t) == "breach":
+                out.append(Figure(member, value, t.value, value - t.value))
+        return out if judged else None
+    direction, percent = _change_rule(rule)
+    if previous is None:
+        return None
+    for member, value in series[label].items():
+        before = series[previous].get(member)
+        if value is None or before is None or before == 0:
+            continue
+        judged = True
+        change = (value - before) / abs(before) * 100
+        if change > percent if direction == "up" else -change > percent:
+            out.append(Figure(member, value, before, change))
+    return out if judged else None
 
 
 def judge(
@@ -145,15 +189,14 @@ def judge(
 ) -> dict[str, Any]:
     """{"periods", "fired", "fired_at"} of the rule over the last `periods` complete periods
     (labels below `before`) that could be judged."""
+    check_rule(rule_kind, rule)
     labels = sorted(label for label in series if label < before)
-    if rule_kind == "threshold":
-        judged = _fired_by_threshold(rule, series, labels)
-    elif rule_kind == "change_vs_previous":
-        judged = _fired_by_change(rule, series, labels)
-    else:
-        raise Unsupported(
-            "Chưa chạy thử được luật bất thường theo mùa vụ: cần mô hình mùa vụ của chỉ số."
-        )
+    judged: dict[str, bool] = {}
+    for previous, label in itertools.pairwise([None, *labels]):
+        assert label is not None
+        found = figures_at(rule_kind, rule, series, label, previous)
+        if found is not None:
+            judged[label] = bool(found)
     last = sorted(judged)[-periods:] if periods > 0 else []
     fired_at = [label for label in last if judged[label]]
     return {"periods": len(last), "fired": len(fired_at), "fired_at": fired_at}
@@ -180,9 +223,22 @@ def _today() -> datetime.date:
     return datetime.date.today()
 
 
-async def _series(row: monitor.Monitor) -> tuple[Series, str]:
+class Blocked(Unjudgeable):
+    """The metric's data is held back by its quality rules or contract (quality_gate)."""
+
+
+@dataclass(frozen=True)
+class Read:
+    series: Series
+    grain: str
+    metric: str  # the metric's display name
+    query_run_id: uuid.UUID
+
+
+async def read_series(row: monitor.Monitor, *, gate: bool = False) -> Read:
     """The metric in force cut by period (and the monitor's split), read in place as the owner,
-    with the grain of its periods."""
+    with the grain of its periods. With `gate` (the runtime, not a backtest of the past) a dataset
+    its quality rules hold back is not read: Blocked."""
     owner, space = row.owner_id, row.data_space_id
     split, filters = _scope(row.scope_filter)
     async with scoped_session(LAYER_ROLE, row.org_id, owner) as session:
@@ -224,6 +280,10 @@ async def _series(row: monitor.Monitor) -> tuple[Series, str]:
             # see; it goes to the log, the result says only what failed.
             logger.warning("backtest %s: %s did not compile: %s", row.id, version.display_name, exc)
             raise Unjudgeable(f"Không biên dịch được {version.display_name}.") from exc
+    if gate:
+        held = await quality_gate.check(row.org_id, compiled.dataset_ids, owner)
+        if held.blocked and quality_gate.blocking():
+            raise Blocked(held.message)
     outcome = await run_query(
         org_id=row.org_id,
         data_space_id=space,
@@ -248,7 +308,7 @@ async def _series(row: monitor.Monitor) -> tuple[Series, str]:
             continue
         member = WHOLE if by is None else str(r[by])
         series.setdefault(str(r[at]), {})[member] = _number(r[value])
-    return series, grain
+    return Read(series, grain, version.display_name, outcome.query_run_id)
 
 
 async def backtest(event: Event) -> None:
@@ -272,15 +332,15 @@ async def backtest(event: Event) -> None:
     result: dict[str, Any] = {"requested_at": requested_at, "requested_periods": periods}
     try:
         # A rule that cannot be judged (or a kind not backtested here) is refused before any query.
-        judge(row.rule_kind, row.rule, {}, periods=periods, before="")
-        series, grain = await _series(row)
-        result |= {"status": "done", "grain": grain}
+        check_rule(row.rule_kind, row.rule)
+        read = await read_series(row)
+        result |= {"status": "done", "grain": read.grain}
         result |= judge(
             row.rule_kind,
             row.rule,
-            series,
+            read.series,
             periods=periods,
-            before=complete_before(_today(), grain),
+            before=complete_before(_today(), read.grain),
         )
         if not result["periods"]:
             result |= {"status": "failed", "reason": "Không có kỳ nào có số để chạy thử."}

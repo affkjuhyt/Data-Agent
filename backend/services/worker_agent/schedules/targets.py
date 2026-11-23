@@ -9,6 +9,8 @@ Temporal Schedule per item. `fire` is what a Schedule runs when it comes due:
   not work, the days the schedule preview leaves out;
 - an active report schedule: a report_run dated by its as_of_rule and the report_run.requested
   event (report_runs.py);
+- an active monitor: its rule judged on the metric's last complete period, and an alert when it
+  fires (monitor_runs.py, AL-10), its cron read where the organisation is;
 - an organisation's quality pass, hourly: every active rule not checked in the last 24 hours;
 - an active crawl source: a crawl_run (trigger schedule) and the acquire.run.queued event the
   crawler claims, as the source screen's "Thu ngay" makes, read in Hà Nội time;
@@ -39,7 +41,7 @@ from libs import clock, cron
 from libs.dataagent_db import scoped_session, unscoped_session, uuid7
 from libs.dataagent_db.models import acquire, agent, ingest, monitor, org
 from libs.dataagent_db.models import pipeline as pl
-from services.worker_agent import nightly_evals, quality, report_runs
+from services.worker_agent import monitor_runs, nightly_evals, quality, report_runs
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +74,9 @@ class Target:
         return hashlib.sha256(f"{self.cron}|{self.zone}".encode()).hexdigest()[:16]
 
 
-KINDS = frozenset({"job", "pipeline", "report", "quality", "crawl", "agent", "nightly-evals"})
+KINDS = frozenset(
+    {"job", "pipeline", "report", "monitor", "quality", "crawl", "agent", "nightly-evals"}
+)
 
 
 def _now() -> datetime.datetime:
@@ -144,6 +148,13 @@ async def wanted(org_id: uuid.UUID) -> list[Target]:
         ):
             if (checked := _valid(expr)) is not None:
                 out.append(Target("report", checked, org_zone, org_id, schedule_id))
+        for monitor_id, expr in await session.execute(
+            select(monitor.Monitor.id, monitor.Monitor.schedule_cron).where(
+                monitor.Monitor.status == "active", monitor.Monitor.deleted_at.is_(None)
+            )
+        ):
+            if (checked := _valid(expr)) is not None:
+                out.append(Target("monitor", checked, org_zone, org_id, monitor_id))
     async with scoped_session(CRAWL_ROLE, org_id) as session:
         for source_id, expr in await session.execute(
             select(acquire.CrawlSource.id, acquire.CrawlSource.schedule_cron).where(
@@ -225,6 +236,8 @@ async def fire(
         return await _pipeline(org_id, entity_id, minute)
     if kind == "report":
         return await _report(org_id, entity_id, minute)
+    if kind == "monitor":
+        return await monitor_runs.evaluate(org_id, entity_id, minute)
     if kind == "crawl":
         return await _crawl(org_id, entity_id, minute)
     if kind == "agent":

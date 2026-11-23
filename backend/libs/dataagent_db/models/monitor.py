@@ -135,6 +135,11 @@ class Alert(Base):
         nullable=True,
         comment="Cách đóng: resolved (đã xử lý) hoặc false_positive (báo nhầm, để agent học); null khi chưa đóng. Thêm 23/11/2026",
     )
+    figures: Mapped[Any] = mapped_column(
+        JSONB,
+        server_default=sql_text("'[]'"),
+        comment="Số đã quyết định alert, mỗi phần tử một thành viên: member, value, compared_to (ngưỡng hoặc số kỳ trước), change, query_run_id; ghi bởi runtime theo dõi (AL-10). Thêm 23/11/2026",
+    )
     closed_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

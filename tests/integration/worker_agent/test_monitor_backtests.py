@@ -167,17 +167,17 @@ async def test_a_new_request_during_the_run_is_not_overwritten(
     bank = build(seed, warehouse, monkeypatch)
     made = watch(bank, "threshold", {"direction": "above", "value": 2})
     newer = {**PENDING, "requested_at": "2026-11-11T09:00:00+00:00"}
-    series = monitor_backtests._series
+    series = monitor_backtests.read_series
 
-    async def patched_in_between(row: Any) -> Any:
+    async def patched_in_between(row: Any, **kwargs: Any) -> Any:
         # The owner changes the rule while the series is read: the api asks again.
         seed.one(
             "UPDATE monitor.monitor SET backtest = %s WHERE id = %s RETURNING id",
             json.dumps(newer),
             made,
         )
-        return await series(row)
+        return await series(row, **kwargs)
 
-    monkeypatch.setattr(monitor_backtests, "_series", patched_in_between)
+    monkeypatch.setattr(monitor_backtests, "read_series", patched_in_between)
     await drain()
     assert result(seed, made) == newer
