@@ -413,3 +413,19 @@ async def test_di_13_an_issue_excerpt_never_holds_personal_data(seed: Seed, page
         u.document,
     )
     assert starts and not any("nguyen.van.a@example.com" in (s or "") for (s,) in starts)
+
+
+async def test_di_13_a_value_across_the_excerpt_cut_is_masked_too(seed: Seed, pages: list) -> None:
+    # The e-mail straddles character 120, where the garbled excerpt is cut (security review).
+    u = upload(seed)
+    head = "\ufffd" * 100 + " " * 5
+    pages.append(page(head + "nguyen.van.a@example.com " + "\ufffd" * 60))
+    await handler.process_document(event(u))
+    (start,) = (
+        seed.one(
+            "SELECT detail->>'start' FROM document.quality_issue"
+            " WHERE document_id = %s AND kind = 'garbled_text'",
+            u.document,
+        ),
+    )
+    assert "nguyen" not in start and "example" not in start

@@ -216,7 +216,7 @@ def plan_chunks(
             continue  # the person's text for this passage stands (BR-108)
         if (shape is None or shape.kind != "table") and quality.empty(draft.text):
             plan.ids.append(None)
-            plan.empty.append((draft.page_from, draft.text.strip()[:60]))
+            plan.empty.append((draft.page_from, draft.text))
             continue
         text, pii_masked = mask_for(meta.pii_policy, draft.text, meta.pii_packs)
         # A table's summary points at this run's table row, rewritten every run: never kept.
@@ -903,8 +903,12 @@ async def _quality_issues(
 
     def excerpt(text: str, size: int) -> str:
         # The quality queue is read with admin_data, not AC06: an excerpt is always masked,
-        # whatever the collection keeps (security review).
-        return pii.mask(text, packs=meta.pii_packs)[0].strip()[:size]
+        # whatever the collection keeps, and masked whole before it is cut (a value cut in
+        # two would not match its pattern), then cut at a space so no mark is split.
+        masked = pii.mask(text, packs=meta.pii_packs)[0].strip()
+        if len(masked) <= size:
+            return masked
+        return masked[:size].rsplit(" ", 1)[0]
 
     if extraction is not None:
         for page, start in extraction.garbled:

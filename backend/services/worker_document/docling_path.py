@@ -41,7 +41,7 @@ class Extraction:
     # document.element.extractor: docling, or openpyxl for a workbook (xlsx_path).
     extractor: str = "docling"
     # Elements whose text is garbled (quality.garbled, DI-13): stored, kept out of the chunks,
-    # each a garbled_text issue: (page, the start of its text).
+    # each a garbled_text issue: (page, its text).
     garbled: list[tuple[int | None, str]] = field(default_factory=list)
 
 
@@ -102,7 +102,8 @@ def extract(
         tables=found,
         chunks=chunks,
         dropped={**read.skipped, **dropped},
-        garbled=[(e.page_no, e.text[:120]) for e in elements if e.ref in bad],
+        # Whole: the handler masks before it cuts an excerpt (security review).
+        garbled=[(e.page_no, e.text) for e in elements if e.ref in bad],
     )
 
 
