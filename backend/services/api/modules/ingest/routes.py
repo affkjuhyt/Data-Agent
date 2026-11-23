@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs import quality_vocab, tabular
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, ingest
+from libs.source_drivers import registry
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
@@ -68,8 +69,8 @@ from services.api.modules.ingest.schemas import (
     UploadPreview,
 )
 
-# Table ingest: only these kinds have a worker_ingest path (Slice 6).
-INGESTABLE_KINDS = frozenset({"postgresql", "mysql", "sqlserver", "clickhouse"})
+# Table ingest: the kinds a driver loads (DF-12, libs/source_drivers/registry.py).
+INGESTABLE_KINDS = registry.ingest_kinds()
 from services.api.modules.ingest.storage import BUCKET, ObjectStore, object_store
 
 router = APIRouter()

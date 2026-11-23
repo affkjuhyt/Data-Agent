@@ -6701,7 +6701,12 @@ export interface paths {
         get: operations["getUpload"];
         put?: never;
         post?: never;
-        /** Xóa tệp đã tải */
+        /**
+         * Xóa tệp đã tải
+         * @description DF-19 (AUD-08): the upload is marked deleted and its raw file stays in da-ingest, which
+         *     the bucket's object lock keeps until its retention ends; the dataset it made is disabled by
+         *     worker-agent on file_upload.deleted.
+         */
         delete: operations["deleteUpload"];
         options?: never;
         head?: never;

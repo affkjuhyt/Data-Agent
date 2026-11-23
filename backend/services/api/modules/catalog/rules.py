@@ -9,20 +9,14 @@ import re
 import uuid
 from typing import Any
 
-# Kinds a federated query can reach in place; the others are ingest only (UC-04-01 step 3, the
-# CHECK on catalog.source). Used to pick the default mode, the CHECK still decides.
-QUERYABLE_KINDS = frozenset(
-    {
-        "postgresql",
-        "oracle",
-        "sqlserver",
-        "mysql",
-        "snowflake",
-        "bigquery",
-        "databricks",
-        "clickhouse",
-    }
-)
+from libs.source_drivers import registry
+
+# DF-12: the kinds a federated query can reach in place are those a driver reads in place
+# (libs/source_drivers/registry.py); the others are ingest only (UC-04-01 step 3). A source is
+# registered for a kind with a driver, or for a REST API (its own connector, catalog/rest_try).
+QUERYABLE_KINDS = registry.federated_kinds()
+NON_DRIVER_KINDS = frozenset({"rest_api"})
+REGISTRABLE_KINDS = frozenset(registry.REGISTRY) | NON_DRIVER_KINDS
 
 
 def default_mode(kind: str) -> str:

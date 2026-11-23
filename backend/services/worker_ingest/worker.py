@@ -23,6 +23,7 @@ from sqlalchemy import func, select, text, update
 from libs import source_drivers, tabular
 from libs.dataagent_db import scoped_session, versioning
 from libs.dataagent_db.models import catalog, ingest
+from libs.source_drivers import registry
 from services.worker_ingest.events import Event, Handler
 from services.worker_ingest.secrets import Reader, SecretUnavailable
 
@@ -73,12 +74,25 @@ def _plain(value: Any) -> Any:
     return value
 
 
-# The table's name in each engine's quoting; both parts are plain identifiers (_IDENTIFIER).
-_QUOTED = {
-    "mysql": "`{schema}`.`{table}`",
-    "clickhouse": "`{schema}`.`{table}`",
-    "sqlserver": "[{schema}].[{table}]",
-}
+def _capabilities(kind: str) -> registry.Capabilities:
+    """What the driver registry says a kind can do (DF-12); a kind with no driver is a
+    configuration error, the run's own."""
+    try:
+        return registry.driver(kind).capabilities
+    except registry.UnsupportedKind as exc:
+        raise ValueError(f"source connector {kind} is not wired for ingestion") from exc
+
+
+def _ingestible(kind: str) -> bool:
+    return kind in registry.ingest_kinds()
+
+
+def _quoted(kind: str) -> str:
+    """The table's name in the engine's quoting (DF-12: from the driver registry); both parts are
+    plain identifiers (_IDENTIFIER). A kind with no driver is a configuration error."""
+    return _capabilities(kind).quoted
+
+
 # The schema a bare table name is in, by engine.
 _DEFAULT_SCHEMA = {"postgresql": "public", "sqlserver": "dbo"}
 
@@ -177,7 +191,7 @@ def _literal(value: str) -> str:
 def _driver_where(kind: str, window: Window | None) -> str:
     if window is None:
         return ""
-    column = _QUOTED[kind].split(".")[0].format(schema=_identifier(window.column))
+    column = _quoted(kind).split(".")[0].format(schema=_identifier(window.column))
     upto = f"{column} <= {_literal(window.upto)}"
     if window.after is None:
         return f" WHERE {upto}"
@@ -192,7 +206,7 @@ async def _driver_batches(
     org_id: uuid.UUID,
     window: Window | None = None,
 ) -> AsyncIterator[tuple[Columns, list[list[Any]]]]:
-    if source.kind not in _QUOTED:
+    if not _ingestible(source.kind):
         raise ValueError(f"source connector {source.kind} is not wired for ingestion")
     credentials = await Reader().read(org_id, source.secret_ref)
     columns: Columns | None = None
@@ -201,7 +215,7 @@ async def _driver_batches(
         credentials.user,
         credentials.password,
         "SELECT * FROM "
-        + _QUOTED[source.kind].format(schema=schema, table=table)
+        + _quoted(source.kind).format(schema=schema, table=table)
         + _driver_where(source.kind, window),
         min(int(source.query_timeout_s or 120), 300),
         BATCH_ROWS,
@@ -267,7 +281,7 @@ async def _max_cursor(
     before reading so rows written meanwhile wait for the next run instead of being half read."""
     schema, table = _table_of(source, object_name)
     column = _identifier(column)
-    if source.kind == "postgresql":
+    if _capabilities(source.kind).cursor == "pg_catalog":
         conn = await _pg_connect(source, org_id)
         try:
             # RES-18: the cursor must be a column of the table and of a type that orders the way
@@ -293,15 +307,15 @@ async def _max_cursor(
         finally:
             await conn.close()
         return (row["upto"], row["kind"]) if row else (None, "text")
-    if source.kind not in _QUOTED:
+    if not _ingestible(source.kind):
         raise ValueError(f"source connector {source.kind} is not wired for ingestion")
     credentials = await Reader().read(org_id, source.secret_ref)
-    quoted = _QUOTED[source.kind].split(".")[0].format(schema=column)
+    quoted = _quoted(source.kind).split(".")[0].format(schema=column)
     _, rows = await source_drivers.read(
         source,
         credentials.user,
         credentials.password,
-        f"SELECT MAX({quoted}) FROM " + _QUOTED[source.kind].format(schema=schema, table=table),
+        f"SELECT MAX({quoted}) FROM " + _quoted(source.kind).format(schema=schema, table=table),
         min(int(source.query_timeout_s or 120), 300),
     )
     value = rows[0][0] if rows and rows[0] else None
@@ -324,7 +338,7 @@ async def _source_batches(
     """The source table a batch at a time, with its columns (the same in every batch); an empty
     table is one empty batch. With a window, only the rows of that slice of the cursor."""
     schema, table = _table_of(source, object_name)
-    if source.kind != "postgresql":
+    if _capabilities(source.kind).stream != "asyncpg":
         async for item in _driver_batches(source, schema, table, org_id, window):
             yield item
         return

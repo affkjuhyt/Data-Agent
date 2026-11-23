@@ -122563,6 +122563,7 @@
   },
   "/v1/uploads/{id}": {
    "delete": {
+    "description": "DF-19 (AUD-08): the upload is marked deleted and its raw file stays in da-ingest, which\nthe bucket's object lock keeps until its retention ends; the dataset it made is disabled by\nworker-agent on file_upload.deleted.",
     "operationId": "deleteUpload",
     "parameters": [
      {

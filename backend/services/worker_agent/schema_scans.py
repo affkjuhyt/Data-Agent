@@ -24,6 +24,7 @@ from sqlalchemy import select
 from libs import pii
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context
+from libs.source_drivers import registry
 from libs.tabular import profile as ingest_profile
 from services.worker_agent import schema_changes, source_meta
 from services.worker_agent.events import Event, Handler
@@ -409,10 +410,13 @@ async def _scan_clickhouse(
 
 
 async def _scan_source(source: catalog.Source, tables: list[str] | None) -> list[dict[str, Any]]:
-    if source.kind == "clickhouse":
+    # DF-12: how a kind's catalogue is read comes from the driver registry; a kind with no driver
+    # raises UnsupportedKind, and the scan fails saying so.
+    scan = registry.driver(source.kind).capabilities.scan
+    if scan == "clickhouse_system":
         return await _scan_clickhouse(source, tables)
     credentials = await secrets().read(source.org_id, source.secret_ref)
-    if source.kind != "postgresql":
+    if scan == "information_schema":
         # MySQL, SQL Server: INFORMATION_SCHEMA through the executor's driver (GEN-12).
         run = source_meta.driver_run(source, credentials.user, credentials.password)
         return await source_meta.scan(source, tables, run, _normalized_type)
@@ -636,7 +640,7 @@ async def _profile_source(
 ) -> dict[tuple[str, str, str], dict[str, Any]]:
     """Profile current source tables with bounded aggregates, never returning raw rows."""
     credentials = await secrets().read(source.org_id, source.secret_ref)
-    if source.kind == "clickhouse":
+    if registry.driver(source.kind).capabilities.profile == "clickhouse_http":
         async with httpx.AsyncClient(
             timeout=min(int(source.query_timeout_s or 120), 300)
         ) as client:
@@ -649,7 +653,7 @@ async def _profile_source(
             return await source_meta.profile(
                 source, tables, run, _is_sensitive_column, _profile_value
             )
-    if source.kind != "postgresql":
+    if registry.driver(source.kind).capabilities.stream != "asyncpg":
         run = source_meta.driver_run(source, credentials.user, credentials.password)
         return await source_meta.profile(source, tables, run, _is_sensitive_column, _profile_value)
     conn = await asyncpg.connect(

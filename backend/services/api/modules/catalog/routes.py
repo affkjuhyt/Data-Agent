@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs import cron, quality_vocab
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, org
+from libs.source_drivers import registry
 from services.api.catalogue import endpoint
 from services.api.kernel.approval import two_people
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
@@ -102,39 +103,22 @@ NEXT_RUNS = 5
 # A source is scanned while it can be read (UC-04-02 precondition: the source is active).
 SCANNABLE = ("active", "needs_fix")
 
+# DF-12: one card per kind a driver reads (libs/source_drivers/registry.py), then the connectors
+# with a path of their own (REST, files). The picker offered Snowflake, which nothing could read.
 CONNECTORS: tuple[ConnectorView, ...] = (
-    ConnectorView(
-        code="postgresql",
-        name="PostgreSQL",
-        category="database",
-        subtitle="Cơ sở dữ liệu quan hệ",
-        connected_count=0,
-        badge=None,
-        form=ConnectorForm(database_label="Database", default_port=5432),
-        prep_notes=["Tài khoản đọc chỉ cần quyền CONNECT và SELECT."],
-        sample_sql="GRANT CONNECT ON DATABASE <db> TO <user>;",
-    ),
-    ConnectorView(
-        code="clickhouse",
-        name="ClickHouse",
-        category="warehouse",
-        subtitle="Kho phân tích cột",
-        connected_count=0,
-        badge=None,
-        form=ConnectorForm(database_label="Database", default_port=8123),
-        prep_notes=["Tài khoản chỉ đọc trên database cần dùng."],
-        sample_sql="GRANT SELECT ON <database>.* TO <user>;",
-    ),
-    ConnectorView(
-        code="snowflake",
-        name="Snowflake",
-        category="warehouse",
-        subtitle="Kho dữ liệu đám mây",
-        connected_count=0,
-        badge=None,
-        form=ConnectorForm(database_label="Warehouse / database", default_port=443),
-        prep_notes=["Dùng role chỉ đọc và warehouse có resource monitor."],
-        sample_sql=None,
+    *(
+        ConnectorView(
+            code=d.kind,
+            name=d.name,
+            category=d.category,
+            subtitle=d.subtitle,
+            connected_count=0,
+            badge=None,
+            form=ConnectorForm(database_label=d.database_label, default_port=d.default_port),
+            prep_notes=list(d.prep_notes),
+            sample_sql=d.sample_sql,
+        )
+        for d in registry.REGISTRY.values()
     ),
     ConnectorView(
         code="rest_api",
@@ -521,6 +505,16 @@ async def put_source_api_config(
 async def create_source(
     body: SourceCreate, principal: CurrentPrincipal, space: CurrentDataSpace
 ) -> SourceView:
+    if body.kind not in rules.REGISTRABLE_KINDS:
+        # DF-12: nothing reads it, so it is not registered (the picker does not offer it).
+        raise Problem(
+            422,
+            "validation_failed",
+            f"No connector reads a {body.kind} source yet.",
+            errors=[
+                FieldError(field="kind", code="unsupported", message="no driver for this kind")
+            ],
+        )
     if body.mode == "federated" and body.kind not in rules.QUERYABLE_KINDS:
         # UC-04-01 step 3: an API, file, document or CDC source is ingest only.
         raise Problem(

@@ -216,7 +216,15 @@ async def test_connection_picker_lists_catalogue_and_org_secret_refs_only(o: Org
     # The open Data Space's connected sources: not the other space's, not the draft.
     by_code = {item["code"]: item for item in connector_items}
     assert by_code["postgresql"]["connected_count"] == 1
-    assert {item["code"] for item in connector_items} >= {"postgresql", "clickhouse", "snowflake"}
+    # DF-12: a card per kind a driver reads, then REST and files; nothing a driver cannot read.
+    assert [item["code"] for item in connector_items] == [
+        "postgresql",
+        "mysql",
+        "sqlserver",
+        "clickhouse",
+        "rest_api",
+        "file",
+    ]
     assert all("password" not in str(item).lower() for item in connector_items)
 
     assert refs.status_code == 200, refs.text
@@ -452,6 +460,17 @@ async def test_a_source_without_credentials_and_the_default_mode(o: Org) -> None
 
 # AC-04-01-02
 @pytest.mark.req("AC-04-01-02")
+@pytest.mark.req("DF-12")
+async def test_a_kind_no_driver_reads_is_not_registered(o: Org) -> None:
+    async with client(o) as api:
+        refused = await api.post(
+            "/v1/sources", json=_source_body(o, kind="snowflake"), headers=o.headers("admin")
+        )
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["errors"][0]["field"] == "kind"
+    assert o.one("SELECT count(*) FROM catalog.source WHERE org_id = %s", o.org) == 0
+
+
 async def test_federated_mode_on_an_ingest_only_kind_is_a_business_rule(o: Org) -> None:
     async with client(o) as api:
         refused = await api.post(
