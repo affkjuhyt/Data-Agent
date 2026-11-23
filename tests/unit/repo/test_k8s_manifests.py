@@ -1157,6 +1157,7 @@ class TestDockerfilesCarryNoDeploymentConfig:
         "PYTHONDONTWRITEBYTECODE",
         "PIP_NO_CACHE_DIR",
         "PLAYWRIGHT_BROWSERS_PATH",
+        "DOCLING_ARTIFACTS_PATH",
     }
 
     def test_the_set_is_not_empty(self):

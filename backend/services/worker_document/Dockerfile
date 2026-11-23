@@ -15,7 +15,20 @@ ARG OCR_LANGS="eng vie"
 RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr \
         $(for l in $OCR_LANGS; do printf 'tesseract-ocr-%s ' "$l" | tr _ -; done) \
     && rm -rf /var/lib/apt/lists/*
+# DI-03: Docling (requirements.txt) runs its layout and table models on torch. The CPU wheels come
+# from PyTorch's own index first, so pip never pulls the CUDA build (gigabytes the pod cannot use).
+RUN --mount=type=cache,target=/root/.cache/pip pip install \
+        --index-url https://download.pytorch.org/whl/cpu torch==2.15.0+cpu torchvision==0.29.2+cpu
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
+# The models Docling reads, fetched at build time: the cluster has no egress, so nothing is
+# downloaded at run time (HF_HUB_OFFLINE). Layout and TableFormer for every PDF, RapidOCR for the
+# bake-off's B2 system (DOCUMENT_INTELLIGENCE_SPEC §3.2, §11); Tesseract is the apt package above.
+# In the image rather than on a PVC: the layer is cached across builds and a pod needs no copy job.
+RUN docling-tools models download -o /models/docling layout tableformer rapidocr \
+    && chmod -R a+rX /models/docling
+# Where the models are: a fact of this image's layout. That the hub is never reached at run time
+# (HF_HUB_OFFLINE, TRANSFORMERS_OFFLINE, HF_HOME on /tmp) is the deployment's, in its ConfigMap.
+ENV DOCLING_ARTIFACTS_PATH=/models/docling
 COPY backend/libs/__init__.py ./libs/__init__.py
 COPY backend/libs/dataagent_db/ ./libs/dataagent_db/
 COPY backend/libs/metrics/ ./libs/metrics/

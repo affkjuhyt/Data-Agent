@@ -130,6 +130,11 @@ Quyết định:
   Việt công bố 0,14); đổi mặc định sang `rapidocr` chỉ khi PoC-1 (§11) cho CER không tệ hơn.
 - **Model weights**: `docling-tools models download` lúc build image vào `/models/docling` rồi copy lên PVC
   `worker-document-models`; `DOCLING_ARTIFACTS_PATH=/models/docling`; không tải lúc chạy (cụm không egress).
+  **Đã làm (DI-03, 23/11/2026):** model (layout heron, TableFormer, RapidOCR; ~730 MB) nằm **trong image**, không trên PVC:
+  layer được cache giữa các lần build và pod không cần job copy. `DOCLING_ARTIFACTS_PATH` trong image;
+  `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, `HF_HOME=/tmp/huggingface` trong ConfigMap `worker-document-env`; torch 2.15.0+cpu từ index CPU của PyTorch; image 2,73 GB, build ~3 phút khi cache pip
+  còn. Pod 4 CPU / 4Gi, `/tmp` emptyDir 2Gi (root filesystem chỉ đọc). Thử với `--network none`, user 10001,
+  `--read-only`: PDF scan một bảng 4×4 → Docling + Tesseract + TableFormer dựng đúng lưới trong 6,1 s.
 - **Tài nguyên pod**: `worker-document` limits `cpu 4 / memory 4Gi` (hiện 2/2Gi, `audit-platform.md` §5); `DOCLING_THREADS=4`;
   một tài liệu một lúc (semaphore 1) — ~1 trang/s CPU theo tech report.
 - **VLM pipeline (granite-docling) và picture description**: **không dùng** (không tiếng Việt, cạnh tranh GPU).

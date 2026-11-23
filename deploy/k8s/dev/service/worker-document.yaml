@@ -19,6 +19,11 @@ data:
   DOCUMENT_RAW_BUCKET: da-raw-docs
   # The local slice has no LiteLLM; chunks are embedded by the bge-m3 TEI directly.
   DOCUMENT_EMBED_URL: http://10.10.55.101:8003
+  # DI-03: Docling reads its models from the image (DOCLING_ARTIFACTS_PATH) and never the hub:
+  # the cluster has no egress. Its caches go to the /tmp emptyDir, the root being read-only.
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  HF_HOME: /tmp/huggingface
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -47,14 +52,22 @@ spec:
         - configMapRef: {name: dataagent-config}
         - configMapRef: {name: worker-document-env}
         - secretRef: {name: worker-document-secrets}
+        # DI-03: Docling runs its layout and table models in process, about 1 page/s on 4 CPU
+        # (DOCUMENT_INTELLIGENCE_SPEC §3.2): 4 CPU and 4Gi, one document at a time.
         resources:
           requests: {cpu: 50m, memory: 64Mi}
-          limits: {cpu: "2", memory: 2Gi}
+          limits: {cpu: "4", memory: 4Gi}
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false
           readOnlyRootFilesystem: true
           capabilities: {drop: [ALL]}
+        # The root filesystem is read-only; Docling, torch and Tesseract write their scratch here.
+        volumeMounts:
+        - {name: tmp, mountPath: /tmp}
+      volumes:
+      - name: tmp
+        emptyDir: {sizeLimit: 2Gi}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
