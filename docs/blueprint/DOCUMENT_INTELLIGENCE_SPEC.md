@@ -160,6 +160,11 @@ Docling ném lỗi hoặc quá `max_seconds_per_doc` → ghi `quality_issue(kind
 vẫn `ready` nhưng **không có** `document.table` → câu hỏi số trên bảng của tài liệu đó trả `INSUFFICIENT_EVIDENCE` với lý
 do. Không im lặng hạ cấp như `strategy="auto"` của Unstructured (điều không sao chép).
 
+**Đã làm (DI-09, 23/11/2026):** fallback như trên, issue `garbled_text` mức `warning` (CHECK của `quality_issue` chỉ có
+`blocking`/`warning`; tài liệu vẫn `ready`) với `detail.docling_failed`. Trang của đường Docling ghi như đường cũ (text,
+ảnh, layout, `ocr_conf` = `ocr_score` của báo cáo confidence, `text_layer` = trang không OCR); DOCX/HTML là một trang.
+Che PII trước khi ghi element/ô/chunk; ô bị che không còn là số. Collection `reject` không che, để kiểm từ chối đọc đúng text.
+
 ## 4. Stage 4–5: Layout và Element
 
 ### 4.1 Mô hình dữ liệu

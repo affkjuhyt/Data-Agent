@@ -90,14 +90,19 @@ def converter_for(options: Options) -> Any:
     return DocumentConverter(format_options={InputFormat.PDF: pdf, InputFormat.IMAGE: image})
 
 
-def convert(path: Path, options: Options) -> Any:
-    """The DoclingDocument of a file; raises when Docling fails or gives up (the handler falls
-    back to the legacy pipeline with a quality issue, §3.4)."""
+def convert_result(path: Path, options: Options) -> Any:
+    """Docling's ConversionResult of a file (the document and its per-page confidence); raises
+    when Docling fails or gives up (the handler falls back to the legacy pipeline, §3.4)."""
     result = converter_for(options).convert(path, raises_on_error=True)
     status = getattr(result.status, "value", str(result.status))
     if status not in ("success", "partial_success"):
         raise RuntimeError(f"docling: {status}")
-    return result.document
+    return result
+
+
+def convert(path: Path, options: Options) -> Any:
+    """The DoclingDocument of a file."""
+    return convert_result(path, options).document
 
 
 # --------------------------------------------------------------------- the element mapping

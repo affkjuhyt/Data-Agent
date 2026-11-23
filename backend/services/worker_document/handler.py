@@ -8,6 +8,12 @@ blocking low_ocr quality issue; the document is then waiting_review instead of r
 quality_issue.resolved: the person's correction is already in Postgres (the api wrote it); the
 later steps run again from the stored pages, and the document becomes ready once nothing blocks.
 
+Docling (DI-09, behind DOC_EXTRACTOR=docling until the bake-off, DI-05): a PDF, DOCX, HTML or
+image is read by docling_path into pages, elements, tables with their cells, and chunks cut on
+headings; the elements, tables and cells are written again on every run (DI-06), the chunks
+reconcile as below. When Docling fails the legacy pipeline reads the file and a garbled_text
+issue says why (§3.4); the document still reaches ready, without tables.
+
 Both paths reconcile instead of starting over (BR-108, AC-05-02-05, AC-05-03-04): a page whose
 source hash is unchanged keeps its row, its corrected text included; a chunk whose text and pages
 are unchanged keeps its id and its vector, so only new chunks are embedded; a corrected chunk
@@ -16,6 +22,7 @@ stays as the person left it while its pages are unchanged.
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import hashlib
 import logging
@@ -27,14 +34,14 @@ from typing import Any
 
 import httpx
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, null, select, update
 
 from libs import pii
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import audit, document
 from libs.pii.injection import injection_suspected
 from libs.tabular import profile as ingest_profile
-from services.worker_document import validity
+from services.worker_document import chunker, docling_adapter, docling_path, validity
 from services.worker_document.indexing import Point, VectorIndex
 from services.worker_document.processing import (
     DEFAULT_OCR_LANGUAGES,
@@ -92,6 +99,9 @@ class Meta:
     ocr_languages: tuple[str, ...] = DEFAULT_OCR_LANGUAGES
     # The country packs its personal data is found with (libs/pii, GEN-14).
     pii_packs: tuple[str, ...] = pii.DEFAULT_PACKS
+    # How its tables' figures and headings are read (DI-07, DI-08).
+    locale: str = "vi-VN"
+    decimal_mark: str | None = None
 
 
 @dataclass
@@ -102,6 +112,8 @@ class NewChunk:
     header: str
     pii_masked: bool
     injection: bool
+    # A parent of children (chunker, §5.3) is found by full text only: no vector.
+    embed: bool = True
 
 
 @dataclass
@@ -110,6 +122,9 @@ class ChunkPlan:
     kept: list[Any] = field(default_factory=list)
     reindex: list[Any] = field(default_factory=list)
     removed: list[uuid.UUID] = field(default_factory=list)
+    # The chunk each draft became, in the drafts' order (None: a corrected chunk stands).
+    ids: list[uuid.UUID | None] = field(default_factory=list)
+    unembedded: set[uuid.UUID] = field(default_factory=set)
 
 
 async def _meta(session: Any, org_id: uuid.UUID, row: document.Document) -> Meta | None:
@@ -138,6 +153,8 @@ async def _meta(session: Any, org_id: uuid.UUID, row: document.Document) -> Meta
         pii_policy=collection.pii_policy,
         ocr_languages=profile.ocr_languages,
         pii_packs=profile.pii_packs,
+        locale=profile.locale,
+        decimal_mark=profile.decimal_mark,
     )
 
 
@@ -158,8 +175,10 @@ def plan_chunks(
     page_texts: list[str],
     unchanged_pages: set[int],
     existing: list[Any],
+    cut: list[chunker.Chunk] | None = None,
 ) -> ChunkPlan:
-    """What to insert, keep, re-embed and delete so the chunks match the pages."""
+    """What to insert, keep, re-embed and delete so the chunks match the pages. `cut` is the
+    chunks Docling's elements were cut into (docling_path); without it the pages are cut here."""
     plan = ChunkPlan()
 
     def same_pages(chunk: Any) -> bool:
@@ -171,30 +190,52 @@ def plan_chunks(
         (c.page_from, c.page_to, _sha(c.text)): c for c in existing if not c.human_corrected
     }
     plan.kept.extend(corrected)
-    for draft in document_chunks(page_texts):
+    drafts = (
+        [ChunkDraft(c.text, c.page_from, c.page_to, c.section_path) for c in cut]
+        if cut is not None
+        else document_chunks(page_texts)
+    )
+    for i, draft in enumerate(drafts):
+        shape = cut[i] if cut is not None else None
+        embed = shape.embed if shape is not None else True
         if (draft.page_from, draft.page_to, draft.section_path) in corrected_spans:
+            plan.ids.append(None)
             continue  # the person's text for this passage stands (BR-108)
         text, pii_masked = mask_for(meta.pii_policy, draft.text, meta.pii_packs)
-        old = reusable.pop((draft.page_from, draft.page_to, _sha(text)), None)
+        # A table's summary points at this run's table row, rewritten every run: never kept.
+        old = (
+            None
+            if shape is not None and shape.kind == "table"
+            else reusable.pop((draft.page_from, draft.page_to, _sha(text)), None)
+        )
         if old is not None:
             plan.kept.append(old)
+            plan.ids.append(old.id)
+            if not embed:
+                plan.unembedded.add(old.id)
             continue
-        plan.new.append(
-            NewChunk(
-                id=uuid7(),
-                draft=draft,
-                text=text,
-                header=context_header(meta.title, meta.doc_no, draft.section_path),
-                pii_masked=pii_masked,
-                injection=injection_suspected(text),
-            )
+        new = NewChunk(
+            id=uuid7(),
+            draft=draft,
+            text=text,
+            header=context_header(meta.title, meta.doc_no, draft.section_path),
+            pii_masked=pii_masked,
+            injection=injection_suspected(text),
+            embed=embed,
         )
+        plan.new.append(new)
+        plan.ids.append(new.id)
+        if not embed:
+            plan.unembedded.add(new.id)
     kept_ids = {c.id for c in plan.kept}
     plan.removed = [c.id for c in existing if c.id not in kept_ids]
     # A kept chunk without a vector of the collection's current model (an earlier indexing
-    # failure, or a model change) is embedded again.
+    # failure, or a model change) is embedded again; a parent is not embedded at all.
     plan.reindex = [
-        c for c in plan.kept if c.qdrant_point_id is None or c.embed_model != meta.embed_model
+        c
+        for c in plan.kept
+        if (c.qdrant_point_id is None or c.embed_model != meta.embed_model)
+        and c.id not in plan.unembedded
     ]
     return plan
 
@@ -220,7 +261,7 @@ async def _index(meta: Meta, plan: ChunkPlan) -> bool:
             collection_id=meta.collection_id,
             document_id=meta.document_id,
             embed_model=meta.embed_model,
-            upserts=[Point(c.id, _body(c.header, c.text)) for c in plan.new]
+            upserts=[Point(c.id, _body(c.header, c.text)) for c in plan.new if c.embed]
             + [Point(c.id, _body(c.context_header, c.text)) for c in plan.reindex],
             deletes=plan.removed,
         )
@@ -262,8 +303,8 @@ async def _write_chunks(session: Any, meta: Meta, plan: ChunkPlan, indexed: bool
                 context_header=c.header or None,
                 text=c.text,
                 tokens=len(c.text.split()),
-                qdrant_point_id=c.id if indexed else None,
-                embed_model=meta.embed_model if indexed else None,
+                qdrant_point_id=c.id if indexed and c.embed else None,
+                embed_model=meta.embed_model if indexed and c.embed else None,
                 effective_from=meta.effective_from,
                 pii_masked=c.pii_masked,
                 injection_suspected=c.injection,
@@ -271,7 +312,12 @@ async def _write_chunks(session: Any, meta: Meta, plan: ChunkPlan, indexed: bool
         )
 
 
-async def _finish(session: Any, meta: Meta, page_count: int | None = None) -> str:
+async def _finish(
+    session: Any,
+    meta: Meta,
+    page_count: int | None = None,
+    indexed_detail: dict[str, Any] | None = None,
+) -> str:
     """ready, or waiting_review while a blocking quality issue is open (UC-05-03)."""
     blocking = await session.scalar(
         select(func.count())
@@ -301,6 +347,8 @@ async def _finish(session: Any, meta: Meta, page_count: int | None = None) -> st
                     "document_id": str(meta.document_id),
                     "collection_id": str(meta.collection_id),
                     "data_space_id": str(meta.data_space_id),
+                    # The extended payload (§10, ARCHITECTURE §9.2): what was read and how.
+                    **(indexed_detail or {}),
                 },
             )
         )
@@ -388,9 +436,21 @@ async def process_document(event: Any, *, again: bool = False) -> None:
     minio.set_url(os.environ["MINIO_URL"])
     await minio.open()
     try:
+        extraction: docling_path.Extraction | None = None
+        docling_error: str | None = None
         try:
             content = await minio.download(RAW_BUCKET, meta.object_key)
-            pages = extract_pages(content, meta.media, meta.file_name, meta.ocr_languages)
+            if docling_adapter.extractor() == "docling" and docling_path.handles(meta.media):
+                try:
+                    extraction = await asyncio.to_thread(_docling, meta, content)
+                except Exception as exc:  # §3.4: the legacy pipeline reads it, and says why
+                    docling_error = f"{type(exc).__name__}: {exc}"[:500]
+                    log.exception("docling failed id=%s; legacy pipeline", document_id)
+            pages = (
+                extraction.pages
+                if extraction is not None
+                else extract_pages(content, meta.media, meta.file_name, meta.ocr_languages)
+            )
             if not pages:
                 raise ValueError("The document has no readable pages")
         except Exception as exc:  # any extraction failure ends in `failed`, said
@@ -417,7 +477,13 @@ async def process_document(event: Any, *, again: bool = False) -> None:
             else mask_for(meta.pii_policy, p.text, meta.pii_packs)[0]
             for n, p in enumerate(pages, start=1)
         ]
-        plan = plan_chunks(meta, page_texts, unchanged, existing_chunks)
+        plan = plan_chunks(
+            meta,
+            page_texts,
+            unchanged,
+            existing_chunks,
+            extraction.chunks if extraction is not None else None,
+        )
         indexed = await _index_or_keyword_only(meta, plan)
         derived = {
             n: await _upload_derived(minio, meta, n, p)
@@ -445,8 +511,17 @@ async def process_document(event: Any, *, again: bool = False) -> None:
                 await _write_page(
                     session, meta, n, page, hashes[n - 1], page_texts[n - 1], derived[n]
                 )
+            structure = await _write_structure_before(session, meta, extraction)
             await _write_chunks(session, meta, plan, indexed)
-            status = await _finish(session, meta, page_count=len(pages))
+            await _write_structure_after(session, meta, extraction, plan, structure)
+            if docling_error is not None:
+                await _docling_failed(session, meta, docling_error)
+            status = await _finish(
+                session,
+                meta,
+                page_count=len(pages),
+                indexed_detail=await _indexed_detail(session, meta, extraction, pages, row),
+            )
             if not existing_pages:
                 # First reading only: a reprocess would propose the same link again.
                 await validity.propose(
@@ -473,6 +548,250 @@ async def process_document(event: Any, *, again: bool = False) -> None:
         await _report_injections(meta, plan)
     finally:
         await minio.close()
+
+
+def _docling(meta: Meta, content: bytes) -> docling_path.Extraction:
+    """Docling's reading, in a worker thread. A collection that rejects personal data is not
+    masked here: the reject check below reads the text as written."""
+
+    def mask(text: str) -> str:
+        if meta.pii_policy == "reject":
+            return text
+        return mask_for(meta.pii_policy, text, meta.pii_packs)[0]
+
+    return docling_path.extract(
+        content,
+        meta.media,
+        meta.file_name,
+        docling_adapter.Options(ocr_languages=tuple(meta.ocr_languages)),
+        mask=mask,
+        locale=meta.locale,
+        decimal_mark=meta.decimal_mark,
+        title=meta.title,
+        doc_no=meta.doc_no,
+    )
+
+
+@dataclass
+class Structure:
+    element_ids: dict[str, uuid.UUID] = field(default_factory=dict)
+    table_ids: list[uuid.UUID] = field(default_factory=list)
+
+
+# The issues tables.py raises, replaced on every run (the tables are read again).
+_TABLE_REASONS = ("scale_conflict", "total_mismatch")
+
+
+async def _write_structure_before(
+    session: Any, meta: Meta, extraction: docling_path.Extraction | None
+) -> Structure:
+    """The elements, tables and cells, written again (DI-06: a reprocess deletes and inserts in
+    one transaction). Before the chunks: a table summary chunk points at its table. The chunks'
+    links to parents are cleared first, so removing a changed parent does not cascade onto a
+    kept child; they are set again after (`_write_structure_after`)."""
+    await session.execute(
+        update(document.Chunk)
+        .where(document.Chunk.document_id == meta.document_id)
+        .values(parent_chunk_id=None)
+    )
+    await session.execute(
+        delete(document.Element).where(document.Element.document_id == meta.document_id)
+    )
+    await session.execute(
+        delete(document.QualityIssue).where(
+            document.QualityIssue.document_id == meta.document_id,
+            document.QualityIssue.kind == "field_mismatch",
+            document.QualityIssue.status == "open",
+            document.QualityIssue.detail["reason"].astext.in_(_TABLE_REASONS),
+        )
+    )
+    structure = Structure()
+    if extraction is None:
+        return structure
+    for e in extraction.elements:
+        structure.element_ids[e.ref] = uuid7()
+        session.add(
+            document.Element(
+                id=structure.element_ids[e.ref],
+                org_id=meta.org_id,
+                document_id=meta.document_id,
+                page_no=e.page_no,
+                order_idx=e.order_idx,
+                kind=e.kind,
+                level=e.level,
+                # SQL NULL, not a JSON null: the CHECK wants an object or nothing.
+                bbox=e.bbox if e.bbox is not None else null(),
+                text=e.text or None,
+                extractor="docling",
+                extractor_version=e.extractor_version,
+                confidence=e.confidence,
+            )
+        )
+    await session.flush()
+    for e in extraction.elements:
+        if e.parent_ref in structure.element_ids:
+            await session.execute(
+                update(document.Element)
+                .where(document.Element.id == structure.element_ids[e.ref])
+                .values(parent_element_id=structure.element_ids[e.parent_ref])
+            )
+    for table in extraction.tables:
+        table_id = uuid7()
+        structure.table_ids.append(table_id)
+        session.add(
+            document.DocTable(
+                id=table_id,
+                org_id=meta.org_id,
+                document_id=meta.document_id,
+                element_id=structure.element_ids[table.element_ref],
+                page_from=table.page_from,
+                page_to=table.page_to,
+                n_rows=table.n_rows,
+                n_cols=table.n_cols,
+                header_rows=table.header_rows,
+                caption=table.caption,
+                numeric_share=table.numeric_share,
+            )
+        )
+        for cell in table.cells:
+            session.add(
+                document.TableCell(
+                    id=uuid7(),
+                    org_id=meta.org_id,
+                    table_id=table_id,
+                    row_idx=cell.row_idx,
+                    col_idx=cell.col_idx,
+                    row_span=cell.row_span,
+                    col_span=cell.col_span,
+                    text=cell.text,
+                    numeric_value=cell.numeric_value,
+                    unit=cell.unit,
+                    is_header=cell.is_header,
+                    page_no=cell.page_no,
+                    bbox=cell.bbox if cell.bbox is not None else null(),
+                )
+            )
+        for issue in table.issues:
+            session.add(
+                document.QualityIssue(
+                    id=uuid7(),
+                    org_id=meta.org_id,
+                    document_id=meta.document_id,
+                    page_no=issue.page_no,
+                    kind=issue.kind,
+                    severity=issue.severity,
+                    detail=issue.detail,
+                    created_by=meta.created_by,
+                )
+            )
+    await session.flush()
+    for table, table_id in zip(extraction.tables, structure.table_ids, strict=True):
+        if table.continues is not None:
+            await session.execute(
+                update(document.DocTable)
+                .where(document.DocTable.id == table_id)
+                .values(continues_table_id=structure.table_ids[table.continues])
+            )
+    return structure
+
+
+async def _write_structure_after(
+    session: Any,
+    meta: Meta,
+    extraction: docling_path.Extraction | None,
+    plan: ChunkPlan,
+    structure: Structure,
+) -> None:
+    """Each chunk's kind, elements, parent and table, now that every row exists."""
+    if extraction is None:
+        return
+    await session.flush()
+    for i, chunk in enumerate(extraction.chunks):
+        chunk_id = plan.ids[i]
+        if chunk_id is None:
+            continue
+        parent = plan.ids[chunk.parent] if chunk.parent is not None else None
+        await session.execute(
+            update(document.Chunk)
+            .where(document.Chunk.id == chunk_id)
+            .values(
+                kind=chunk.kind,
+                element_ids=[
+                    structure.element_ids[ref]
+                    for ref in chunk.element_refs
+                    if ref in structure.element_ids
+                ],
+                parent_chunk_id=parent,
+                table_id=structure.table_ids[chunk.table] if chunk.table is not None else None,
+            )
+        )
+
+
+async def _docling_failed(session: Any, meta: Meta, error: str) -> None:
+    """§3.4: the legacy pipeline read the document; the issue says Docling could not, and the
+    document has no tables (a number asked of one is refused with that reason)."""
+    session.add(
+        document.QualityIssue(
+            id=uuid7(),
+            org_id=meta.org_id,
+            document_id=meta.document_id,
+            kind="garbled_text",
+            severity="warning",
+            detail={"docling_failed": error, "extractor_version": "legacy-pdfminer-1"},
+            created_by=meta.created_by,
+        )
+    )
+
+
+async def _indexed_detail(
+    session: Any,
+    meta: Meta,
+    extraction: docling_path.Extraction | None,
+    pages: list[ExtractedPage],
+    row: Any,
+) -> dict[str, Any]:
+    """The extended document.indexed payload (§10): what was read, how, and what is open."""
+    await session.flush()
+    chunk_ids = (
+        await session.scalars(
+            select(document.Chunk.id).where(document.Chunk.document_id == meta.document_id)
+        )
+    ).all()
+    table_ids = (
+        await session.scalars(
+            select(document.DocTable.id).where(document.DocTable.document_id == meta.document_id)
+        )
+    ).all()
+    issues = dict(
+        (
+            await session.execute(
+                select(document.QualityIssue.kind, func.count())
+                .where(
+                    document.QualityIssue.document_id == meta.document_id,
+                    document.QualityIssue.status == "open",
+                )
+                .group_by(document.QualityIssue.kind)
+            )
+        ).all()
+    )
+    return {
+        "sha256": getattr(row, "sha256", None),
+        "page_count": len(pages),
+        "element_count": len(extraction.elements) if extraction is not None else 0,
+        "table_ids": [str(t) for t in table_ids],
+        "chunk_ids": [str(c) for c in chunk_ids],
+        "extractor_version": (
+            extraction.extractor_version if extraction is not None else "legacy-pdfminer-1"
+        ),
+        "embed_model": meta.embed_model,
+        "quality": {
+            "usable_pages": sum(
+                1 for p in pages if p.text and (p.ocr_conf is None or p.ocr_conf >= OCR_THRESHOLD)
+            ),
+            "issues": issues,
+        },
+        "contract_version": "doc-export-1",
+    }
 
 
 async def _upload_derived(
