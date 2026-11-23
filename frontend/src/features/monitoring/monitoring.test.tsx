@@ -3,7 +3,7 @@
  * published metric, and one alert.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { http } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -119,19 +119,31 @@ describe('AlertPage', () => {
     );
   });
 
-  it('closes as a false alarm only with a note, then reopens', async () => {
+  it('closes with the note the api takes, then reopens', async () => {
     routeId = 'alert-npl-north';
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('*/v1/alerts/:action', async ({ request }) => {
+        sent = (await request.clone().json()) as Record<string, unknown>;
+        return undefined;
+      }),
+    );
     wrap(<AlertPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Đóng do báo nhầm' }));
-    const dialog = screen.getByRole('alertdialog', { name: 'Đóng #A-2291 do báo nhầm?' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Đóng cảnh báo' }));
-    expect(await within(dialog).findByText(/agent học từ ghi chú này/)).toBeInTheDocument();
-    fireEvent.change(within(dialog).getByLabelText('Ghi chú (bắt buộc)'), {
+    // AlertClose cannot say "false alarm": the button is off and says why.
+    expect(await screen.findByRole('button', { name: 'Đóng do báo nhầm' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Đánh dấu đã xử lý' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Đánh dấu #A-2291 đã xử lý?' });
+    fireEvent.change(within(dialog).getByLabelText('Ghi chú'), {
       target: { value: '19 khoản tái cơ cấu đã được điều chỉnh, số thật dưới ngưỡng.' },
     });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Đóng cảnh báo' }));
-    expect(await screen.findByText('Đã đóng · báo nhầm')).toBeInTheDocument();
-    expect(screen.getByText(/Agent ghi nhớ: khi giải thích nợ xấu/)).toBeInTheDocument();
+    expect(await screen.findByText('Đã đóng')).toBeInTheDocument();
+    expect(sent).toEqual({
+      close_note: '19 khoản tái cơ cấu đã được điều chỉnh, số thật dưới ngưỡng.',
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Mở lại' }));
     const reopen = screen.getByRole('alertdialog', { name: 'Mở lại #A-2291?' });
     fireEvent.click(within(reopen).getByRole('button', { name: 'Mở lại' }));
@@ -141,6 +153,42 @@ describe('AlertPage', () => {
     });
     fireEvent.click(within(reopen).getByRole('button', { name: 'Mở lại' }));
     expect(await screen.findByText('Đang cảnh báo')).toBeInTheDocument();
+  });
+
+  it('names the monitor from the monitor list and leaves out what AlertView does not carry', async () => {
+    routeId = 'alert-wire';
+    server.use(
+      http.get('*/v1/alerts', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 'alert-wire',
+              monitor_id: 'mon-npl-north',
+              kind: 'threshold',
+              status: 'open',
+              summary: 'Nợ xấu vượt ngưỡng\nDo khoản tái cơ cấu\nXem lại phân loại',
+              fired_at: new Date().toISOString(),
+              occurrences: 1,
+              value: '2.1',
+              threshold_value: '2.0',
+              period_label: null,
+              assigned_to: null,
+              close_note: null,
+              closed_at: null,
+              dedup_key: 'k',
+              skill_run_id: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+    );
+    wrap(<AlertPage />);
+    expect(await screen.findByText(/theo dõi “Nợ xấu bán lẻ · DH Bắc Bộ”/)).toBeInTheDocument();
+    expect(screen.queryByText(/đã gửi/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Hoạt động' })).not.toBeInTheDocument();
   });
 
   it('hands the alert to someone else', async () => {

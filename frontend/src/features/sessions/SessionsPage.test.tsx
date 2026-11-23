@@ -252,6 +252,39 @@ describe('ReportReviewPage', () => {
     expect(published).toEqual(['report-risk-sept:publish']);
   });
 
+  it('says only what the api row holds: no tile count, reviewer or recipients it does not send', async () => {
+    routeId = 'report-wire';
+    // ReportView as the api sends it: no drafter, tile count, reviewer or recipients.
+    server.use(
+      http.get('*/v1/session-reports/:id', () =>
+        HttpResponse.json({
+          id: 'report-wire',
+          workspace_id: 'ws-npl-sept',
+          status: 'ready',
+          title: 'Nợ xấu bán lẻ tháng 9/2026',
+          body_ref: 'reports/report-wire.md',
+          checks: { grounded: { ok: true, title: 'Số có căn cứ', detail: '' } },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          approved_by: null,
+          published_at: null,
+          hitl_request_id: null,
+          version: 1,
+        }),
+      ),
+      http.get('*/v1/session-reports/:id/document', () =>
+        HttpResponse.json({ code: 'not_found' }, { status: 404 }),
+      ),
+    );
+    renderWithToast(<ReportReviewPage />);
+    expect(await screen.findByText('Chờ duyệt')).toBeInTheDocument();
+    expect(screen.getByText(/^Agent Báo cáo soạn từ các ô của phiên lúc/)).toBeInTheDocument();
+    expect(screen.queryByText(/0 ô/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/· người duyệt/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Gửi tới' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sửa nội dung' })).not.toBeInTheDocument();
+  });
+
   it('asks for a note before requesting changes', async () => {
     routeId = 'report-risk-sept';
     renderWithToast(<ReportReviewPage />);

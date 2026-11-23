@@ -9,7 +9,7 @@ import { LinkCard } from '../../design-system/LinkCard';
 import { StatusDot } from '../../design-system/StatusDot';
 import { formatElapsed } from '../../lib/formatVN';
 import { listDatasets, listWorkspaces } from '../../lib/v1/api';
-import type { Workspace } from '../../lib/v1/types';
+import type { Dataset, Workspace } from '../../lib/v1/types';
 import { sampleQuestion, starterQuestions } from '../../lib/sampleQuestion';
 import { getExploreModel } from '../../lib/v1/explore';
 import { useV1 } from '../../lib/v1/useV1';
@@ -35,6 +35,7 @@ export default function AnalysisPage() {
   const workspaces = useV1(['listWorkspaces'], listWorkspaces);
   const datasets = useV1(['listDatasets'], listDatasets);
   const model = useV1(['getExploreModel'], getExploreModel);
+  const certified = (datasets.data?.items ?? []).filter((d) => d.certified === true);
 
   const ask = (question: string) => {
     window.history.replaceState(null, '', `/analysis/ask?q=${encodeURIComponent(question)}`);
@@ -171,29 +172,36 @@ export default function AnalysisPage() {
         </Card>
       )}
 
-      <section aria-labelledby="certified-title" className="flex flex-col gap-da-md">
-        <h2 id="certified-title" className="text-foreground da-heading-3">
-          Bộ dữ liệu đã chứng nhận
-        </h2>
-        <AsyncRegion state={datasets} what="bộ dữ liệu">
-          {(page) => (
-            <div className="flex flex-wrap gap-da-md">
-              {page.items
-                .filter((d) => d.certified)
-                .map((d) => (
-                  <span
-                    key={d.id}
-                    className="inline-flex items-center gap-da-sm rounded-lg border border-border bg-card px-da-md py-da-xs text-foreground da-body-small"
-                  >
-                    <Icon name="check" className="text-success" />
-                    {d.display_name}
-                  </span>
-                ))}
-            </div>
-          )}
-        </AsyncRegion>
-      </section>
+      <CertifiedDatasets datasets={certified} />
     </div>
+  );
+}
+
+/*
+ * GET /v1/datasets does not say which datasets are certified: certification is on a dataset
+ * version, and reading every dataset's versions here would be one request per dataset. The
+ * section shows only datasets the list itself says are certified, and is left out otherwise
+ * rather than drawn as an empty heading.
+ */
+function CertifiedDatasets({ datasets }: { datasets: Dataset[] }) {
+  if (datasets.length === 0) return null;
+  return (
+    <section aria-labelledby="certified-title" className="flex flex-col gap-da-md">
+      <h2 id="certified-title" className="text-foreground da-heading-3">
+        Bộ dữ liệu đã chứng nhận
+      </h2>
+      <div className="flex flex-wrap gap-da-md">
+        {datasets.map((d) => (
+          <span
+            key={d.id}
+            className="inline-flex items-center gap-da-sm rounded-lg border border-border bg-card px-da-md py-da-xs text-foreground da-body-small"
+          >
+            <Icon name="check" className="text-success" />
+            {d.display_name}
+          </span>
+        ))}
+      </div>
+    </section>
   );
 }
 

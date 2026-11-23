@@ -8,6 +8,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
+import { getModelForecast, scenarioDisclaimer } from '../../lib/v1/forecast';
 import { queryClient } from '../../lib/v1/queryClient';
 import ForecastJobPage from './ForecastJobPage';
 import ForecastModelPage from './ForecastModelPage';
@@ -48,7 +49,10 @@ const modelDetail = () => ({
     n_exog: 0,
     pooled_series: 1,
     features: [],
-    model_card: { 'Mục tiêu': 'Doanh thu tháng' },
+    model_card: {
+      'Mục tiêu': 'Doanh thu tháng',
+      limits: 'Không dự báo được cú sốc chưa có trong lịch sử.',
+    },
     params: {},
     ensemble_of: null,
     data_snapshot_refs: {},
@@ -101,6 +105,19 @@ const jobDetail = (status: string) => ({
   labels: [],
   predictions: [],
 });
+
+const accuracyRow = {
+  id: 'acc-1',
+  model_version_id: VERSION_ID,
+  period: '2026-09-01',
+  point: '418.9',
+  actual: '420.5',
+  abs_scaled_error: '0.4',
+  in80: true,
+  in95: false,
+  rolling_mase: '0.81',
+  recorded_at: '2026-10-02T00:00:00Z',
+};
 
 let releaseEvents = () => {};
 let eventsGate = Promise.resolve();
@@ -203,6 +220,45 @@ describe('forecast screens on the api', () => {
     expect(within(table).getByText('428,6')).toBeInTheDocument();
   });
 
+  it('draws the actuals of the accuracy log before the forecast, never after its cut-off', async () => {
+    server.use(
+      http.get('*/v1/forecast-models/:id/accuracy', () =>
+        HttpResponse.json({
+          items: [
+            // Newest first, a period scored twice (two versions) and one after the cut-off.
+            { ...accuracyRow, id: 'a-3', period: '2026-11-01', actual: '430.0' },
+            { ...accuracyRow, id: 'a-2', period: '2026-09-01', actual: '420.5' },
+            { ...accuracyRow, id: 'a-2b', period: '2026-09-01', actual: '420.5' },
+            { ...accuracyRow, id: 'a-1', period: '2026-08-01', actual: '416.8' },
+          ],
+          next_page_token: '',
+          rolling_mase: null,
+          backtest_mase: null,
+          degraded: false,
+        }),
+      ),
+    );
+    const forecast = await getModelForecast(MODEL_ID);
+    expect(forecast.history).toEqual([
+      { period: '2026-08-01', label: 'T8/2026', actual: 416.8 },
+      { period: '2026-09-01', label: 'T9/2026', actual: 420.5 },
+    ]);
+  });
+
+  it('says what a scenario is, filled from the scenario, even when the api sends no notice', async () => {
+    const forecast = await getModelForecast(MODEL_ID);
+    expect(
+      scenarioDisclaimer(forecast, {
+        feature: 'lãi suất',
+        change_kind: 'tăng',
+        value: 0.5,
+        from_period: '2026-11-01',
+      }),
+    ).toBe(
+      'Kịch bản là phép tính có điều kiện, không phải ước lượng tác động nhân quả. Nếu lãi suất tăng 0,5 từ T11/2026 và các giả định khác giữ nguyên, mô hình cho kết quả dưới đây. Mô hình học từ tương quan trong dữ liệu quá khứ, nên chênh lệch này không chứng minh lãi suất gây ra thay đổi của DOANH_THU. Khoảng của kịch bản không gồm độ bất định của giả định.',
+    );
+  });
+
   it('shows accuracy and the backtest horizon on the model page', async () => {
     routeId = MODEL_ID;
     show(<ForecastModelPage />);
@@ -214,6 +270,9 @@ describe('forecast screens on the api', () => {
     expect(within(accuracy).getByText('T9/2026')).toBeInTheDocument();
     expect(within(accuracy).getByText('420,5')).toBeInTheDocument();
     expect(within(accuracy).getByText('Không')).toBeInTheDocument();
+    // The worker writes the model's limits in its card; they are the candidate's limitation line.
+    expect(screen.getByText('Không dự báo được cú sốc chưa có trong lịch sử.')).toBeInTheDocument();
+    expect(screen.queryByText('limits')).not.toBeInTheDocument();
   });
 
   it('follows the job until the event stream says it is ready', async () => {
@@ -224,6 +283,20 @@ describe('forecast screens on the api', () => {
     expect(screen.getByText('Chỉ số: DOANH_THU')).toBeInTheDocument();
     releaseEvents();
     expect(await screen.findByRole('link', { name: 'Xem kết quả dự báo' })).toBeInTheDocument();
+  });
+
+  it('shows the question the job answers, read from the question it names', async () => {
+    routeId = JOB_ID;
+    server.use(
+      http.get('*/v1/forecasts/:id', () =>
+        HttpResponse.json({ ...jobDetail('training'), question_id: 'q-1' }),
+      ),
+      http.get('*/v1/questions/:id', () =>
+        HttpResponse.json({ id: 'q-1', text: 'Doanh thu 3 tháng tới thế nào?' }),
+      ),
+    );
+    show(<ForecastJobPage />);
+    expect(await screen.findByText('Doanh thu 3 tháng tới thế nào?')).toBeInTheDocument();
   });
 
   it.each([

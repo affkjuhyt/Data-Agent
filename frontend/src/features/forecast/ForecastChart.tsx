@@ -87,7 +87,7 @@ export function ForecastChart({ forecast }: { forecast: Forecast }) {
   return (
     <figure
       className="m-0 h-[230px] w-full"
-      aria-label={`Biểu đồ ${forecast.metric_name}: thực tế tới ${cutoffShort(forecast.data_cutoff)}, dự báo kèm khoảng 80% và 95%`}
+      aria-label={`Biểu đồ ${forecast.metric_name}: ${cutLabel ? `thực tế tới ${cutoffShort(forecast.data_cutoff)}, ` : ''}dự báo kèm khoảng 80% và 95%`}
     >
       <ResponsiveContainer
         width="100%"
@@ -178,9 +178,16 @@ export function ForecastChart({ forecast }: { forecast: Forecast }) {
 }
 
 /** The legend row of the chart card: Figma's 14×8 swatches, coloured like the series. */
-export function ForecastLegend({ scenarioLabel }: { scenarioLabel?: string }) {
+export function ForecastLegend({
+  scenarioLabel,
+  actuals = true,
+}: {
+  scenarioLabel?: string;
+  /** False when the chart has no actuals to draw: the legend does not name a missing line. */
+  actuals?: boolean;
+}) {
   const items: { label: string; swatch: string }[] = [
-    { label: 'Thực tế', swatch: 'bg-foreground' },
+    ...(actuals ? [{ label: 'Thực tế', swatch: 'bg-foreground' }] : []),
     { label: 'Dự báo', swatch: 'bg-info' },
     { label: 'Khoảng 80%', swatch: 'bg-info opacity-40' },
     { label: 'Khoảng 95%', swatch: 'bg-info opacity-20' },

@@ -28,8 +28,6 @@ import { LinkButton } from '../../components/shell/AppLink';
  * rights, no personal data) and who it goes to. Phát hành opens only when every check passes;
  * the server also refuses a reviewer who drafted it. Cần bạn (kind report_publish) links here.
  */
-const PENDING = 'Màn này đang được làm.';
-
 const STATUS: Record<
   SessionReport['status'],
   { tone: 'warning' | 'success' | 'neutral' | 'info'; label: string }
@@ -42,6 +40,16 @@ const STATUS: Record<
 
 const hhmm = (iso: string) =>
   new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+/*
+ * The api's report row names neither how many tiles the draft read nor its reviewer, so the
+ * header says only what is known rather than "0 ô" or a blank name.
+ */
+function drafted(report: SessionReport) {
+  const tiles = report.tile_count !== null ? `${report.tile_count} ô` : 'các ô';
+  const line = `${report.drafted_by} soạn từ ${tiles} của phiên lúc ${hhmm(report.drafted_at)}`;
+  return report.reviewer_name ? `${line} · người duyệt ${report.reviewer_name}` : line;
+}
 
 export default function ReportReviewPage() {
   const { routeId } = useAppState();
@@ -106,7 +114,7 @@ function Review({ report: loaded }: { report: SessionReport }) {
             <StatusDot tone={status.tone}>{status.label}</StatusDot>
           </span>
         }
-        description={`${report.drafted_by} soạn từ ${report.tile_count} ô của phiên lúc ${hhmm(report.drafted_at)} · người duyệt ${report.reviewer_name}`}
+        description={drafted(report)}
         actions={
           <>
             <LinkButton area="analysis" page="SESSIONS" id={report.workspace_id} kind="ghost">
@@ -114,11 +122,6 @@ function Review({ report: loaded }: { report: SessionReport }) {
             </LinkButton>
             {open && (
               <>
-                <Tooltip content={PENDING}>
-                  <Button kind="ghost" disabled>
-                    Sửa nội dung
-                  </Button>
-                </Tooltip>
                 {report.hitl_request_id ? (
                   <Button onClick={() => setDialog(true)}>Yêu cầu sửa</Button>
                 ) : (
@@ -210,8 +213,12 @@ function Review({ report: loaded }: { report: SessionReport }) {
               </li>
             ))}
           </ul>
-          <h2 className="text-foreground da-heading-3">Gửi tới</h2>
-          <p className="text-foreground da-body-small">{report.recipients_text}</p>
+          {report.recipients_text && (
+            <>
+              <h2 className="text-foreground da-heading-3">Gửi tới</h2>
+              <p className="text-foreground da-body-small">{report.recipients_text}</p>
+            </>
+          )}
           <p className="text-muted-foreground da-caption">
             Nút Phát hành mở khi mọi kiểm tra đạt; người duyệt khác người soạn.
           </p>

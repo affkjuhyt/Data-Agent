@@ -97,7 +97,11 @@ function Reading({
         <p className="text-muted-foreground da-body-small">{run.meta_text}</p>
       </header>
       {empty && (
-        <Notice tone="info">Bản này chưa có nội dung để đọc trong ứng dụng.</Notice>
+        <Notice tone="info">
+          {run.outputs.some((o) => o.stored)
+            ? 'Nội dung của bản này nằm trong tệp đã gửi qua kênh của bạn; ứng dụng chưa mở được tệp đó.'
+            : 'Bản này chưa có nội dung để đọc trong ứng dụng.'}
+        </Notice>
       )}
       {run.changed && (
         <>
@@ -152,6 +156,27 @@ function Reading({
         </>
       )}
       {run.footer_text && <p className="text-muted-foreground da-caption">{run.footer_text}</p>}
+      {/* The run's rendered files; the api has no download route for them yet, so no link. */}
+      {run.outputs.length > 0 && (
+        <section aria-labelledby="digest-files" className="flex flex-col gap-da-sm">
+          <h2 id="digest-files" className="pt-da-sm text-foreground da-heading-3">
+            Tệp của bản này
+          </h2>
+          <ul className="flex flex-col border-t border-border">
+            {run.outputs.map((o, i) => (
+              <li
+                key={`${o.format}-${i}`}
+                className="flex items-center gap-da-md border-b border-border py-da-sm da-body-small"
+              >
+                <span className="min-w-0 flex-1 text-foreground">{o.format}</span>
+                <span className={cn('shrink-0 da-caption', o.stored ? 'text-muted-foreground' : 'text-warning')}>
+                  {o.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </article>
   );
 }

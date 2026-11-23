@@ -268,9 +268,14 @@ export interface ReportRun {
   why: string | null;
   decisions: { text: string; who_text: string; hitl_id: string | null }[];
   footer_text: string | null;
+  /**
+   * The files the run rendered (ReportRunView.outputs), one per format the reader may see. The api
+   * stores them but has no route to download one, so the screen lists them without a link.
+   */
+  outputs: { format: string; stored: boolean; text: string }[];
 }
 
-type ReportRunWire = Schemas['ReportRunView'] & Partial<ReportRun>;
+type ReportRunWire = Schemas['ReportRunView'] & Partial<Omit<ReportRun, 'outputs'>>;
 
 const RUN_STATUS_TEXT: Record<string, string> = {
   running: 'đang soạn',
@@ -279,6 +284,28 @@ const RUN_STATUS_TEXT: Record<string, string> = {
   blocked_by_checks: 'giữ lại vì chưa qua kiểm tra',
   failed: 'lỗi khi soạn',
 };
+
+const DELIVERY_TEXT: Record<string, string> = {
+  stored: 'đã lưu',
+  not_supported: 'định dạng chưa hỗ trợ',
+  store_unavailable: 'không lưu được',
+};
+
+function readOutputs(raw: unknown): ReportRun['outputs'] {
+  return (Array.isArray(raw) ? raw : []).flatMap((item) => {
+    if (typeof item !== 'object' || item === null) return [];
+    const { format, delivery } = item as { format?: unknown; delivery?: unknown };
+    if (typeof format !== 'string') return [];
+    const state = typeof delivery === 'string' ? delivery : '';
+    return [
+      {
+        format: format.toUpperCase(),
+        stored: state === 'stored',
+        text: DELIVERY_TEXT[state] ?? (state || 'chưa rõ'),
+      },
+    ];
+  });
+}
 
 function readReportRun(raw: ReportRunWire): ReportRun {
   return {
@@ -296,6 +323,7 @@ function readReportRun(raw: ReportRunWire): ReportRun {
     why: raw.why ?? null,
     decisions: raw.decisions ?? [],
     footer_text: raw.footer_text ?? null,
+    outputs: readOutputs(raw.outputs),
   };
 }
 

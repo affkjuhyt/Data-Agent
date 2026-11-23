@@ -61,9 +61,10 @@ export function FollowScheduleButton({
 }) {
   const toast = useToast();
   const calendar = useV1(['getScheduleCalendar', seriesId], () => getScheduleCalendar(seriesId));
-  const [on, setOn] = useState(false);
+  // null: the api does not say whether the caller already follows; the button then offers to.
+  const [on, setOn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => setOn(calendar.data?.following ?? false), [calendar.data]);
+  useEffect(() => setOn(calendar.data?.following ?? null), [calendar.data]);
 
   if (!calendar.data) return null;
   const calendarId = calendar.data.id;
@@ -71,7 +72,7 @@ export function FollowScheduleButton({
   const toggle = async () => {
     setBusy(true);
     try {
-      const result = await followForecastSchedule(calendarId, !on);
+      const result = await followForecastSchedule(calendarId, on !== true);
       setOn(result.following);
       toast({
         tone: 'success',
@@ -90,7 +91,7 @@ export function FollowScheduleButton({
     <Button
       kind={primary && !on ? 'primary' : 'secondary'}
       loading={busy}
-      aria-pressed={on}
+      aria-pressed={on ?? undefined}
       onClick={toggle}
     >
       {on ? 'Đang theo dõi lịch' : 'Theo dõi lịch'}

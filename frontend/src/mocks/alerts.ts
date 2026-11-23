@@ -207,15 +207,13 @@ export function createAlertHandlers() {
                 return update(id, (a) => ({
                   ...a,
                   status: 'closed',
-                  close_kind: body.kind === 'false_positive' ? 'false_positive' : 'resolved',
+                  // AlertClose has only close_note: a close is not told apart as a false alarm.
+                  close_kind: 'resolved',
                   closed: {
                     by: 'Đỗ Hải Yến',
                     at: now.toISOString(),
                     note: body.close_note ?? '',
-                    agent_note:
-                      body.kind === 'false_positive'
-                        ? 'Agent ghi nhớ: khi giải thích nợ xấu, tách riêng khoản tái cơ cấu chưa điều chỉnh. Ngưỡng theo dõi giữ nguyên. Bạn có thể xem hoặc xoá ghi nhớ này trong Bộ nhớ của agent.'
-                        : null,
+                    agent_note: null,
                   },
                 }));
               })()

@@ -241,10 +241,20 @@ function ForecastBody({
               đang suy giảm.
             </Notice>
           )}
-          <Card size="sm" title="Lịch sử, dự báo và khoảng tin cậy">
+          <Card
+            size="sm"
+            title={
+              f.history.length > 0
+                ? 'Lịch sử, dự báo và khoảng tin cậy'
+                : 'Dự báo và khoảng tin cậy'
+            }
+          >
             <div className="flex flex-wrap items-center gap-da-xl">
               <LabelBadge forecast={f} />
-              <ForecastLegend scenarioLabel={f.scenario?.short_label} />
+              <ForecastLegend
+                scenarioLabel={f.scenario?.short_label}
+                actuals={f.history.length > 0}
+              />
             </div>
             <ForecastChart forecast={f} />
             {f.interval_note && (

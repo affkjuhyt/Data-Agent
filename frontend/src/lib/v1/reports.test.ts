@@ -138,6 +138,27 @@ describe('reports on the api', () => {
     expect(read.meta_text).toMatch(/giữ lại vì chưa qua kiểm tra · số liệu tới 12\/10\/2026$/);
   });
 
+  it('says which files the run made and which it could not', async () => {
+    server.use(
+      http.get('*/v1/report-runs/:id', () =>
+        HttpResponse.json({
+          ...run,
+          outputs: [
+            { permission_group: 'g', format: 'html', object_key: 'k.html', delivery: 'stored' },
+            { permission_group: 'g', format: 'pdf', delivery: 'not_supported' },
+            { permission_group: 'g', format: 'xlsx', delivery: 'store_unavailable' },
+          ],
+        }),
+      ),
+    );
+    const read = await getReportRun('run-1');
+    expect(read.outputs).toEqual([
+      { format: 'HTML', stored: true, text: 'đã lưu' },
+      { format: 'PDF', stored: false, text: 'định dạng chưa hỗ trợ' },
+      { format: 'XLSX', stored: false, text: 'không lưu được' },
+    ]);
+  });
+
   it('keeps a cron it cannot say as written', () => {
     expect(cronText('0 7 * * *')).toBe('Hằng ngày, 07:00');
     expect(cronText('0 8 1 * *')).toBe('Ngày 1 hằng tháng, 08:00');

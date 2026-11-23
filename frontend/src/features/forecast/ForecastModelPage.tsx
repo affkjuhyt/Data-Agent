@@ -177,9 +177,11 @@ function ModelBody({ model, onChanged }: { model: ForecastModel; onChanged: () =
                 { head: 'Phủ 95%', cell: (h) => h.cover95_text },
               ]}
             />
-            <StatusDot tone="warning">
-              <span className="text-foreground">{candidate.limitation}</span>
-            </StatusDot>
+            {candidate.limitation && (
+              <StatusDot tone="warning">
+                <span className="text-foreground">{candidate.limitation}</span>
+              </StatusDot>
+            )}
           </Card>
         )}
         {model.monitoring && (

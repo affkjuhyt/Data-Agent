@@ -206,8 +206,10 @@ export interface SessionReport {
   status: 'drafting' | 'pending_review' | 'changes_requested' | 'published';
   /** "Agent Báo cáo soạn từ 5 ô của phiên lúc 11:02". */
   drafted_by: string;
-  tile_count: number;
+  /** PROPOSAL: how many tiles the draft read; null while the api does not send it. */
+  tile_count: number | null;
   drafted_at: Timestamp;
+  /** PROPOSAL: '' while the api does not name the reviewer. */
   reviewer_name: string;
   document: {
     heading: string;
@@ -216,7 +218,8 @@ export interface SessionReport {
     recommendation: string;
   };
   checks: ReportCheck[];
-  /** "GRP-RISK-ANALYST, Ban điều hành · email (PDF) và trong ứng dụng". */
+  /** "GRP-RISK-ANALYST, Ban điều hành · email (PDF) và trong ứng dụng". PROPOSAL: '' while the
+   *  api does not send it (publish is sent with no recipients). */
   recipients_text: string;
   /** The review request in Cần bạn that a passing check opens (UC-02-07 step 4); null before. */
   hitl_request_id: Uuid | null;
@@ -475,10 +478,10 @@ function readSessionReport(raw: components['schemas']['ReportView']): SessionRep
     id: raw.id,
     workspace_id: raw.workspace_id,
     status: REPORT_STATUS[raw.status] ?? 'drafting',
-    drafted_by: fixture.drafted_by ?? 'Agent Báo cáo',
-    tile_count: fixture.tile_count ?? 0,
+    drafted_by: fixture.drafted_by || 'Agent Báo cáo',
+    tile_count: fixture.tile_count ?? null,
     drafted_at: raw.created_at,
-    reviewer_name: fixture.reviewer_name ?? '',
+    reviewer_name: fixture.reviewer_name || '',
     document: fixture.document ?? {
       heading: raw.title,
       summary: '',
@@ -486,7 +489,7 @@ function readSessionReport(raw: components['schemas']['ReportView']): SessionRep
       recommendation: '',
     },
     checks: readReportChecks(raw.checks),
-    recipients_text: fixture.recipients_text ?? '',
+    recipients_text: fixture.recipients_text || '',
     hitl_request_id: raw.hitl_request_id,
   };
 }

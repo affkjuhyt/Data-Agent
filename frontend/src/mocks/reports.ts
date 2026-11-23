@@ -143,7 +143,11 @@ function digestsFixture(): DigestItem[] {
   ];
 }
 
-function runFixture(id: string, title: string): ReportRun {
+/** The reading the screen wants beside ReportRunView's outputs, as the api writes them. */
+function runFixture(
+  id: string,
+  title: string,
+): Omit<ReportRun, 'outputs'> & { outputs: Record<string, string>[] } {
   return {
     id,
     title,
@@ -171,6 +175,14 @@ function runFixture(id: string, title: string): ReportRun {
     ],
     footer_text:
       'Mọi con số bấm được để xem cách tính và nguồn. Bạn nhận bản tin này vì thuộc nhóm GRP-RISK-ANALYST.',
+    outputs: [
+      {
+        permission_group: 'GRP-RISK-ANALYST',
+        format: 'html',
+        object_key: `report-runs/${id}/GRP-RISK-ANALYST.html`,
+        delivery: 'stored',
+      },
+    ],
   };
 }
 

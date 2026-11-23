@@ -213,8 +213,19 @@ function readJob(raw: DetailWire): ForecastJob {
   };
 }
 
+/** The words of the question a job answers (GET /v1/questions/{id}); '' when it cannot be read. */
+const questionText = (id: string) =>
+  ok<Schemas['QuestionView']>(api.GET('/v1/questions/{id}', { params: { path: { id } } }))
+    .then((q) => q.text)
+    .catch(() => '');
+
 /** A2: GET /v1/forecasts/{id} — the job, its progress and, once ready, its result. */
-export const getForecastJob = async (id: string) => readJob(await getDetail(id));
+export const getForecastJob = async (id: string) => {
+  const raw = await getDetail(id);
+  const job = readJob(raw);
+  if (job.question || !raw.question_id) return job;
+  return { ...job, question: await questionText(raw.question_id) };
+};
 
 /**
  * A2: GET /v1/forecasts/{id}/events. The server sends the job so far and closes; the page
@@ -513,7 +524,7 @@ export interface Forecast {
   added_to_session?: boolean;
   /** Why it is stale, when label is stale. */
   stale_note: string | null;
-  /** Actuals before the cut-off; the job does not carry them. */
+  /** Actuals up to the cut-off, read from the model's accuracy log; empty without one. */
   history: HistoryPoint[];
   points: ForecastPoint[];
   interval_note: string;
@@ -617,6 +628,50 @@ function readForecast(
   };
 }
 
+/*
+ * The actuals before the forecast. The api has no series endpoint for a metric; the accuracy log
+ * of the model (GET /v1/forecast-models/{id}/accuracy) records the actual of every period a
+ * forecast was scored on, so the chart draws those that fall on or before the data cut-off. A
+ * period scored by two versions has one actual. Without a log the chart shows the forecast alone.
+ */
+async function actualsOf(
+  modelId: string,
+  frequency: string,
+  cutoff: string,
+  firstForecast: string | undefined,
+): Promise<HistoryPoint[]> {
+  if (!modelId) return [];
+  const page = await ok<Schemas['AccuracyPage']>(
+    api.GET('/v1/forecast-models/{id}/accuracy', {
+      params: { path: { id: modelId }, query: { page_size: 100 } },
+    }),
+  ).catch(() => null);
+  const byPeriod = new Map<string, HistoryPoint>();
+  for (const row of page?.items ?? []) {
+    const period = row.period.slice(0, 10);
+    const actual = Number(row.actual);
+    if (period > cutoff.slice(0, 10) || !Number.isFinite(actual)) continue;
+    if (firstForecast && period >= firstForecast.slice(0, 10)) continue;
+    if (!byPeriod.has(period))
+      byPeriod.set(period, { period, label: periodLabel(period, frequency), actual });
+  }
+  return [...byPeriod.values()].sort((a, b) => a.period.localeCompare(b.period));
+}
+
+/** The forecast with the actuals of its model, unless a screen fixture already carries them. */
+async function withActuals(raw: DetailWire, forecast: Forecast): Promise<Forecast> {
+  if (raw.display?.result?.history) return forecast;
+  return {
+    ...forecast,
+    history: await actualsOf(
+      forecast.model.id,
+      raw.frequency,
+      raw.cutoff_at,
+      forecast.points[0]?.period,
+    ),
+  };
+}
+
 /** A model and its latest predictions, the forecast the rail opens when no job is addressed. */
 export async function getModelForecast(modelId: string): Promise<Forecast> {
   const [model, predictions] = await Promise.all([
@@ -658,7 +713,7 @@ export async function getModelForecast(modelId: string): Promise<Forecast> {
     labels: predictions.labels ?? [],
     predictions: predictions.items,
   };
-  return readForecast(raw, version, backtest);
+  return withActuals(raw, readForecast(raw, version, backtest));
 }
 
 /** A2: GET /v1/forecasts/{id}, its model version and that version's backtest. */
@@ -668,7 +723,7 @@ export async function getForecast(id: string): Promise<Forecast> {
   const [version, backtest] = versionId
     ? await Promise.all([getVersion(versionId), getBacktest(versionId).catch(() => null)])
     : [null, null];
-  return readForecast(raw, version, backtest);
+  return withActuals(raw, readForecast(raw, version, backtest));
 }
 
 interface ScenarioInput {
@@ -734,7 +789,7 @@ export async function runScenario(forecast: Forecast, input: ScenarioInput) {
   const scenario: ForecastScenario = {
     id: accepted.id,
     text: accepted.name,
-    disclaimer: accepted.notice,
+    disclaimer: accepted.notice || scenarioDisclaimer(forecast, input),
     summary: '',
     points: [],
     short_label: accepted.name,
@@ -744,6 +799,34 @@ export async function runScenario(forecast: Forecast, input: ScenarioInput) {
     scenario.points = (await scenarioPoints(forecast.model.id, accepted.id)).points;
   }
   return { ...scenario, summary: scenarioSummary(forecast, scenario.points) };
+}
+
+/**
+ * BR-173: a scenario is read as a conditional calculation, never as a causal effect. The api
+ * writes this sentence as the scenario's `notice`; the screen writes the same one from the
+ * scenario's own assumption when the notice is missing, so a scenario is never shown without it.
+ */
+export function scenarioDisclaimer(
+  forecast: Pick<Forecast, 'metric_name' | 'frequency'>,
+  input: Pick<ScenarioInput, 'feature' | 'change_kind' | 'value' | 'from_period'>,
+) {
+  const variable = input.feature.trim() || 'biến';
+  const change = [
+    input.change_kind.trim() || 'thay đổi',
+    input.value === null || Number.isNaN(input.value)
+      ? null
+      : input.value.toLocaleString('vi-VN', { maximumFractionDigits: 4 }),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const from = input.from_period ? periodLabel(input.from_period, forecast.frequency) : 'kỳ đầu';
+  const metric = forecast.metric_name.trim() || 'chỉ số';
+  return (
+    'Kịch bản là phép tính có điều kiện, không phải ước lượng tác động nhân quả. ' +
+    `Nếu ${variable} ${change} từ ${from} và các giả định khác giữ nguyên, mô hình cho kết quả dưới đây. ` +
+    `Mô hình học từ tương quan trong dữ liệu quá khứ, nên chênh lệch này không chứng minh ${variable} gây ra thay đổi của ${metric}. ` +
+    'Khoảng của kịch bản không gồm độ bất định của giả định.'
+  );
 }
 
 /** Reads a queued scenario's predictions again. */
@@ -816,13 +899,17 @@ type ModelWire = (Schemas['ForecastModelView'] | Schemas['ForecastModelDetail'])
 };
 
 /** model_card is jsonb: its scalar entries become the card's lines, as written. */
+/** model_card.limits: what the model cannot do, written by the trainer (worker forecasting). */
+const limitsOf = (version: VersionView) => {
+  const limits = record(version.model_card).limits;
+  return typeof limits === 'string' ? limits.trim() : '';
+};
+
 const cardOf = (version: VersionView): { label: string; value: string }[] => {
-  const entries =
-    typeof version.model_card === 'object' && version.model_card !== null
-      ? Object.entries(version.model_card as Record<string, unknown>).filter(
-          ([, v]) => typeof v === 'string' || typeof v === 'number',
-        )
-      : [];
+  // The limits are the card's limitation line, not a row of it.
+  const entries = Object.entries(record(version.model_card)).filter(
+    ([k, v]) => k !== 'limits' && (typeof v === 'string' || typeof v === 'number'),
+  );
   return [
     { label: 'Thuật toán', value: version.algorithm },
     { label: 'Dữ liệu huấn luyện', value: `${version.training_from} – ${version.training_to}` },
@@ -925,7 +1012,7 @@ function readModel(
             status: candidateStatus,
             card: cardOf(version),
             horizons: horizonRows(extras?.backtest ?? null),
-            limitation: '',
+            limitation: limitsOf(version),
             rejection_reason: null,
           }
         : null,
@@ -1821,8 +1908,8 @@ export const getForecastLedger = async (seriesId: string, periods?: number) =>
 interface ScheduleCalendar {
   id: string;
   name: string;
-  /** The api's calendar does not say whether the caller is subscribed: false until toggled. */
-  following: boolean;
+  /** The api's calendar does not say whether the caller is subscribed: null until toggled. */
+  following: boolean | null;
 }
 
 /** The external calendar whose events the series' model forecasts, if any. */
@@ -1844,7 +1931,7 @@ export async function getScheduleCalendar(seriesId: string): Promise<ScheduleCal
     : page.items.length === 1
       ? page.items[0]
       : undefined;
-  return calendar ? { id: calendar.id, name: calendar.name, following: false } : null;
+  return calendar ? { id: calendar.id, name: calendar.name, following: null } : null;
 }
 
 /** A2: PUT /v1/external-calendars/{id}/subscription — both bulletins in the app, or paused. */

@@ -111,13 +111,16 @@ export const assignAlert = async (id: string, assigneeId: string) =>
     ),
   );
 
-/** `kind` is a PROPOSAL beside A2's close_note: a false alarm teaches the agent, BR-124 needs a note. */
-export const closeAlert = async (id: string, note: string, kind: 'resolved' | 'false_positive') =>
+/*
+ * AlertClose carries the note only (BR-124 needs one after two occurrences). It has no way to say
+ * the alert was a false alarm, so the screen does not offer that until it does.
+ */
+export const closeAlert = async (id: string, note: string) =>
   readAlert(
     await ok<AlertWire>(
       api.POST('/v1/alerts/{id}:close', {
         params: { path: { id } },
-        body: { close_note: note, kind },
+        body: { close_note: note } satisfies components['schemas']['AlertClose'],
       }),
     ),
   );

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
-import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Menu } from '../../design-system/Menu';
@@ -10,7 +9,6 @@ import { Notice } from '../../design-system/Notice';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
-import { Tooltip } from '../../design-system/Tooltip';
 import { formatTime } from '../../lib/formatVN';
 import {
   listMonitors,
@@ -84,14 +82,10 @@ export default function WatchListPage() {
             : undefined
         }
         actions={
-          <>
-            <Tooltip content="Thư viện mẫu theo dõi đang được làm.">
-              <Button disabled>Nhập từ mẫu</Button>
-            </Tooltip>
-            <LinkButton area="analysis" page="WATCH_NEW" kind="primary">
-              Tạo theo dõi
-            </LinkButton>
-          </>
+          // No monitor template library exists in the api, so "Nhập từ mẫu" is not offered.
+          <LinkButton area="analysis" page="WATCH_NEW" kind="primary">
+            Tạo theo dõi
+          </LinkButton>
         }
       />
       <div className="px-da-3xl pb-da-2xl pt-da-xl">
