@@ -17218,7 +17218,7 @@
      "not_null": true,
      "default": "'blank'",
      "unique": false,
-     "comment": "blank, conversation, template, agent_run",
+     "comment": "blank, conversation, template, agent_run, alert (điều tra cảnh báo, created_from_ref là alert, thêm 23/11/2026)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -17290,7 +17290,7 @@
    "constraints": [
     {
      "kind": "check",
-     "sql": "CHECK (created_from IN ('blank','conversation','template','agent_run'))"
+     "sql": "CHECK (created_from IN ('blank','conversation','template','agent_run','alert'))"
     },
     {
      "kind": "check",

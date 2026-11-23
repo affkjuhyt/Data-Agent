@@ -3708,7 +3708,7 @@ CREATE TABLE workspace.workspace (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT workspace_pkey PRIMARY KEY (id),
-  CHECK (created_from IN ('blank','conversation','template','agent_run')),
+  CHECK (created_from IN ('blank','conversation','template','agent_run','alert')),
   CHECK (tile_count BETWEEN 0 AND 200),
   CHECK (status IN ('active','archived'))
 );
@@ -3717,7 +3717,7 @@ COMMENT ON COLUMN workspace.workspace.owner_id IS 'logic → org.app_user';
 COMMENT ON COLUMN workspace.workspace.title IS 'Ví dụ Nợ xấu bán lẻ T9';
 COMMENT ON COLUMN workspace.workspace.params IS 'Tham số phiên, ví dụ kỳ, vùng';
 COMMENT ON COLUMN workspace.workspace.template_of_skill_id IS 'logic → skill.skill nếu tạo từ kỹ năng';
-COMMENT ON COLUMN workspace.workspace.created_from IS 'blank, conversation, template, agent_run';
+COMMENT ON COLUMN workspace.workspace.created_from IS 'blank, conversation, template, agent_run, alert (điều tra cảnh báo, created_from_ref là alert, thêm 23/11/2026)';
 COMMENT ON COLUMN workspace.workspace.tile_count IS 'Tối đa 200 ô (UC-02-01)';
 COMMENT ON COLUMN workspace.workspace.status IS 'active, archived';
 COMMENT ON COLUMN workspace.workspace.deleted_at IS 'Xoá mềm';

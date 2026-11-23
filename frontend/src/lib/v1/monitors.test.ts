@@ -139,7 +139,7 @@ describe('listMonitors', () => {
 });
 
 describe('investigateAlert', () => {
-  it('creates a workspace that carries the alert', async () => {
+  it('creates a workspace from the alert', async () => {
     const result = await investigateAlert({
       id: 'a-new',
       code: '#A-1',
@@ -149,8 +149,8 @@ describe('investigateAlert', () => {
     expect(result).toEqual({ workspace_id: 'ws-9' });
     expect(created).toMatchObject({
       title: 'Điều tra #A-1 · Nợ xấu vượt ngưỡng',
-      created_from: 'blank',
-      params: { alert_id: 'a-new' },
+      created_from: 'alert',
+      created_from_ref: 'a-new',
     });
   });
 });

@@ -419,14 +419,46 @@ export function createSessionHandlers() {
     });
   };
   const notFound = () => problem(404, 'not_found', 'Không tìm thấy phiên làm việc.');
+  // What api workspace/rules.investigation seeds, for an alert on the demo NPL metric.
+  const investigationParams = (alertId: string) => ({
+    alert_id: alertId,
+    metric: 'NPL_RATIO',
+    period: '2026-09',
+    investigation: {
+      question: 'Vì sao Tỷ lệ nợ xấu kỳ 2026-09 thay đổi so với kỳ trước?',
+      plan: {
+        goal: 'Tìm nguyên nhân Tỷ lệ nợ xấu kỳ 2026-09 vượt luật theo dõi',
+        mode: 'analyze',
+        steps: [
+          {
+            id: 's1',
+            tool: 'query_metric',
+            instruction: 'Lấy Tỷ lệ nợ xấu kỳ 2026-09 so với kỳ trước',
+            depends_on: [],
+            args: { metric: 'NPL_RATIO', period: '2026-09', compare_to: 'previous_period' },
+          },
+          {
+            id: 's2',
+            tool: 'explain_change',
+            instruction: 'Phân rã chênh lệch của Tỷ lệ nợ xấu kỳ 2026-09 theo các chiều được phép',
+            depends_on: ['s1'],
+            args: { metric: 'NPL_RATIO', period: '2026-09', dimensions: [] },
+          },
+        ],
+      },
+    },
+  });
 
   return [
-    // A new workspace (WorkspaceView); an investigation names its alert in params.
+    // A new workspace (WorkspaceView); one opened from an alert gets the plan the api seeds (AL-11).
     http.post('*/v1/workspaces', async ({ request }) => {
       const body = (await request.json()) as components['schemas']['WorkspaceCreate'];
-      const params = (body.params ?? {}) as Record<string, string>;
+      const alertId = body.created_from === 'alert' ? body.created_from_ref : null;
+      const params: Record<string, unknown> = alertId
+        ? { ...body.params, ...investigationParams(alertId) }
+        : (body.params ?? {});
       const now = new Date().toISOString();
-      const id = params.alert_id ? `ws-alert-${params.alert_id}` : `ws-new-${workspaces.length}`;
+      const id = alertId ? `ws-alert-${alertId}` : `ws-new-${workspaces.length}`;
       const view = {
         id,
         data_space_id: 'ds-rui-ro-tin-dung',
@@ -728,7 +760,9 @@ export function createSessionHandlers() {
           figures,
           '## Recommendation',
           report.document.recommendation,
-        ].filter(Boolean).join('\n\n'),
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
       });
     }),
 

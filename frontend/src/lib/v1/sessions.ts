@@ -57,10 +57,23 @@ export interface WorkspaceTile {
   task_count: number;
 }
 
+/**
+ * The plan an investigation opened from an alert starts with (AL-11): the api seeds it in the
+ * workspace's params; nothing runs until the person asks the question.
+ */
+export interface Investigation {
+  alertId: string | null;
+  question: string;
+  goal: string;
+  steps: { id: string; tool: string; instruction: string; dependsOn: string[] }[];
+}
+
 /** The workspace as the notebook draws it. */
 export interface WorkspaceDetail extends Omit<Workspace, 'params'> {
   /** Session parameters applied to every tile (UC-02-01): "kỳ = T9/2026". */
   params: { name: string; value: string }[];
+  /** Set when the workspace was opened from an alert. */
+  investigation: Investigation | null;
   /** The viewer's right on it: view, comment, edit or owner. */
   permission: components['schemas']['WorkspaceDetail']['permission'];
   /** Who is working in it now, people first, for "… đang làm". Empty without the PROPOSAL field. */
@@ -109,11 +122,38 @@ function readTile(raw: TileWire): WorkspaceTile {
   };
 }
 
+// What an investigation keeps in params for the api and the plan, not session parameters to show.
+const INTERNAL_PARAMS = new Set(['alert_id', 'monitor_id', 'investigation']);
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
 /** `params` is the jsonb object of WorkspaceCreate, {"kỳ": "T9/2026"}. */
 const readParams = (raw: unknown) =>
-  typeof raw === 'object' && raw !== null && !Array.isArray(raw)
-    ? Object.entries(raw).map(([name, value]) => ({ name, value: String(value) }))
+  isRecord(raw)
+    ? Object.entries(raw)
+        .filter(([name, value]) => !INTERNAL_PARAMS.has(name) && !isRecord(value))
+        .map(([name, value]) => ({ name, value: String(value) }))
     : [];
+
+const text = (v: unknown) => (typeof v === 'string' ? v : '');
+
+export function readInvestigation(params: unknown): Investigation | null {
+  if (!isRecord(params) || !isRecord(params.investigation)) return null;
+  const { question, plan } = params.investigation;
+  if (!isRecord(plan) || !Array.isArray(plan.steps) || !text(question)) return null;
+  return {
+    alertId: text(params.alert_id) || null,
+    question: text(question),
+    goal: text(plan.goal),
+    steps: plan.steps.filter(isRecord).map((step) => ({
+      id: text(step.id),
+      tool: text(step.tool),
+      instruction: text(step.instruction),
+      dependsOn: Array.isArray(step.depends_on) ? step.depends_on.map(String) : [],
+    })),
+  };
+}
 
 function readWorkspaceDetail(raw: WorkspaceDetailWire): WorkspaceDetail {
   // The detail lists its participants; the session lists count them (people, agents).
@@ -125,6 +165,7 @@ function readWorkspaceDetail(raw: WorkspaceDetailWire): WorkspaceDetail {
       participant_counts: { people: count('user'), agents: count('agent') },
     }),
     params: readParams(raw.params),
+    investigation: readInvestigation(raw.params),
     permission: raw.permission,
     working: raw.working ?? [],
     refresh: raw.refresh ?? null,
@@ -526,7 +567,10 @@ export function readReportDocument(markdown: string): SessionReport['document'] 
     if (section === 'figures') {
       const match = line.match(/^[-*]\s+(.+?)\s*\|\s*(grounded|ungrounded|pass|true|false)$/i);
       if (match) {
-        figures.push({ value: match[1].trim(), grounded: /^(grounded|pass|true)$/i.test(match[2]) });
+        figures.push({
+          value: match[1].trim(),
+          grounded: /^(grounded|pass|true)$/i.test(match[2]),
+        });
         continue;
       }
     }
@@ -607,8 +651,8 @@ const _sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const _hasReportBody = (report: SessionReport) =>
   Boolean(
     report.document.summary.trim() ||
-      report.document.figures.length > 0 ||
-      report.document.recommendation.trim(),
+    report.document.figures.length > 0 ||
+    report.document.recommendation.trim(),
   );
 
 async function _waitReport(

@@ -26,7 +26,7 @@ class WorkspaceCreate(_Body):
     title: str = Field(min_length=1, max_length=500)
     description: str | None = Field(default=None, max_length=4_000)
     params: dict[str, Any] = Field(default_factory=dict)
-    created_from: Literal["blank", "conversation", "template", "agent_run"] = "blank"
+    created_from: Literal["blank", "conversation", "template", "agent_run", "alert"] = "blank"
     created_from_ref: uuid.UUID | None = None
     template_of_skill_id: uuid.UUID | None = None
 

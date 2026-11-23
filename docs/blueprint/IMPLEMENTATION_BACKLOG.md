@@ -159,7 +159,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | AL-13 | P1 | 14 | Report mặc định html (+xlsx); bỏ `_pdf()` default | — | BE | S | không còn `not_supported` im | todo |
 | AL-14 | P1 | 14 | Nối `anomaly` vào `skill_runs`; xoá/đánh dấu `funnel`, `report_outline` | AL-02 | BE | S | không mã chết | todo |
 | AL-10 | P1 | 15 | Monitor runtime trên Temporal kind `monitor`; dedup/cooldown; quality_gate | DF-08 | BE | M | alert sinh từ runtime, không seed | done 23/11 (v3_0056 `monitor.alert.figures`; `worker_agent/monitor_runs.py`: kind `monitor` theo giờ tổ chức, judge chung với backtest, cổng chất lượng trước truy vấn → `skipped QUALITY_BLOCKED`, 1 alert/monitor/kỳ, thành viên mới gộp vào alert mở, cooldown `cooldown_hours` mặc định 24 giờ, sự kiện `alert.fired`). Còn: `mad_outlier` (CHECK `rule_kind` chưa có), đoạn giải thích bằng LLM, 3 monitor seed trên DS-AW |
-| AL-11 | P1 | 16 | Alert → workspace `created_from=alert` + PlanIR seed | AL-10 | BE/FE | S | — | todo |
+| AL-11 | P1 | 16 | Alert → workspace `created_from=alert` + PlanIR seed | AL-10 | BE/FE | S | — | done 23/11 (v3_0059; `POST /v1/workspaces` `created_from=alert`, `created_from_ref`=alert của Data Space → params `alert_id`, `metric`, `period`, `investigation` = kế hoạch 2 bước `query_metric` (so kỳ trước, chia theo chiều của monitor) → `explain_change` (mọi chiều được phép); notebook hiện kế hoạch, "Chạy điều tra" mở Hỏi đáp với câu hỏi của kế hoạch). Còn: engine chưa nhận kế hoạch dựng sẵn, Hỏi đáp tự lập kế hoạch từ câu hỏi |
 | AL-15 | P1 | 13 | Metrics compute/chart/causal | PL-05 | BE | S | — | todo |
 | AL-16 | P2 | — | Forecast luôn EXPLORATORY + experimental | — | AI | S | — | todo |
 

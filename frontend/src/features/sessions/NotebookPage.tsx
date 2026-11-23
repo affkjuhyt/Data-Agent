@@ -18,6 +18,7 @@ import {
   openOrCreateSessionReport,
   refreshWorkspace,
   type Author,
+  type Investigation,
   type WorkspaceDetail,
   type WorkspaceTile,
 } from '../../lib/v1/sessions';
@@ -191,6 +192,21 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
         </div>
       )}
 
+      {ws.investigation && (
+        <InvestigationPlan
+          investigation={ws.investigation}
+          onRun={(question) => {
+            // As Home and Phân tích hand a question to Ask: Ask asks it on arrival.
+            window.history.replaceState(
+              null,
+              '',
+              `/analysis/ask?q=${encodeURIComponent(question)}`,
+            );
+            navigate('analysis', 'ASK');
+          }}
+        />
+      )}
+
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col gap-[14px] px-[40px] py-da-xl">
           {ws.tiles.length === 0 ? (
@@ -255,6 +271,58 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
         }}
       />
     </div>
+  );
+}
+
+// The agent's tool names as the steps' timeline says them.
+const TOOL_TITLE: Record<string, string> = {
+  query_metric: 'Truy vấn chỉ số',
+  explain_change: 'Tìm nguyên nhân biến động',
+};
+
+/*
+ * AL-11: a workspace opened from an alert starts with the investigation the server planned, the
+ * metric of the alert's period against the one before, then that change broken down by every
+ * dimension the asker may cut by. Nothing runs until the person asks (L4).
+ */
+function InvestigationPlan({
+  investigation,
+  onRun,
+}: {
+  investigation: Investigation;
+  onRun: (question: string) => void;
+}) {
+  return (
+    <section
+      aria-label="Kế hoạch điều tra"
+      className="mx-[40px] mt-da-xl flex flex-col gap-da-md rounded-lg border border-border bg-card p-da-lg"
+    >
+      <div className="flex items-start gap-da-md">
+        <div className="min-w-0 flex-1">
+          <p className="text-foreground da-body-strong">Kế hoạch điều tra</p>
+          {investigation.goal && (
+            <p className="text-muted-foreground da-body-small">{investigation.goal}</p>
+          )}
+        </div>
+        <Button kind="primary" onClick={() => onRun(investigation.question)}>
+          Chạy điều tra
+        </Button>
+      </div>
+      <ol className="flex flex-col gap-da-sm">
+        {investigation.steps.map((step, i) => (
+          <li key={step.id || i} className="flex gap-da-md da-body-small">
+            <span className="shrink-0 text-muted-foreground">{i + 1}.</span>
+            <span className="min-w-0 flex-1 text-foreground">
+              {step.instruction}
+              <span className="text-muted-foreground"> · {TOOL_TITLE[step.tool] ?? step.tool}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className="text-muted-foreground da-body-small">
+        Câu hỏi sẽ gửi: “{investigation.question}”
+      </p>
+    </section>
   );
 }
 
@@ -353,7 +421,10 @@ function TileAnswerContext({ answerId }: { answerId: string }) {
           {msg.reading && msg.reading.length > 0 && (
             <div className="flex flex-col gap-da-sm">
               <span className="text-muted-foreground da-caption">Hệ thống hiểu là</span>
-              <ul aria-label="Hệ thống hiểu là" className="m-0 flex list-none flex-wrap gap-da-sm p-0">
+              <ul
+                aria-label="Hệ thống hiểu là"
+                className="m-0 flex list-none flex-wrap gap-da-sm p-0"
+              >
                 {msg.reading.map((chip) => (
                   <li
                     key={chip.key}
@@ -388,7 +459,9 @@ function CommentPanel({
   /** Nested under Cách tính — no outer aside chrome. */
   embedded?: boolean;
 }) {
-  const thread = useV1(['getTileThread', workspaceId, tile.id], () => getTileThread(workspaceId, tile.id));
+  const thread = useV1(['getTileThread', workspaceId, tile.id], () =>
+    getTileThread(workspaceId, tile.id),
+  );
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();

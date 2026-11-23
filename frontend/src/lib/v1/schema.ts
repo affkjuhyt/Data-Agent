@@ -23589,7 +23589,7 @@ export interface components {
              * @default blank
              * @enum {string}
              */
-            created_from?: "blank" | "conversation" | "template" | "agent_run";
+            created_from?: "blank" | "conversation" | "template" | "agent_run" | "alert";
             /** Created From Ref */
             created_from_ref?: string | null;
             /** Description */

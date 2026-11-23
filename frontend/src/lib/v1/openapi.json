@@ -46483,7 +46483,8 @@
        "blank",
        "conversation",
        "template",
-       "agent_run"
+       "agent_run",
+       "alert"
       ],
       "title": "Created From",
       "type": "string"

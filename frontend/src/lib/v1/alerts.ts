@@ -139,18 +139,16 @@ export const reopenAlert = async (id: string, reason: string) =>
   );
 
 /*
- * Opening an investigation is creating a workspace with the alert as its context (UC-08-02).
- * WorkspaceCreate.created_from has no "alert" yet, so the workspace starts blank and carries the
- * alert in its params.
+ * Opening an investigation is creating a workspace from the alert (UC-08-02, AL-11): the api
+ * reads the alert, keeps its metric and period in the params and seeds the plan the notebook shows.
  */
 export const investigateAlert = async (alert: Pick<Alert, 'id' | 'code' | 'title' | 'summary'>) => {
   const ws = await ok<components['schemas']['WorkspaceView']>(
     api.POST('/v1/workspaces', {
       body: {
         title: `Điều tra ${alert.code} · ${alert.title}`.slice(0, 300),
-        description: alert.summary,
-        created_from: 'blank',
-        params: { alert_id: alert.id },
+        created_from: 'alert',
+        created_from_ref: alert.id,
       },
     }),
   );

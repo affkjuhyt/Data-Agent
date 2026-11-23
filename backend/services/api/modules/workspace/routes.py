@@ -36,6 +36,7 @@ from services.api.kernel.pagination import (
 )
 from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.audit import record_self_approval
+from services.api.modules.monitor.public import alert_subject
 from services.api.modules.org import capabilities_of
 from services.api.modules.workspace import rules
 from services.api.modules.workspace.report_storage import REPORT_BUCKET, ReportStore, report_store
@@ -321,6 +322,9 @@ async def list_workspaces(
 async def create_workspace(
     body: WorkspaceCreate, principal: CurrentPrincipal, space: CurrentDataSpace
 ) -> WorkspaceView:
+    values = body.model_dump()
+    if body.created_from == "alert":
+        values = await _from_alert(principal, space, values)
     async with transaction(ROLE, principal) as session:
         item = ws.Workspace(
             id=uuid7(),
@@ -329,7 +333,7 @@ async def create_workspace(
             owner_id=principal.user_id,
             created_by=principal.user_id,
             updated_by=principal.user_id,
-            **body.model_dump(),
+            **values,
         )
         session.add(item)
         await session.flush()
@@ -347,6 +351,34 @@ async def create_workspace(
         await session.flush()
         await session.refresh(item)
         return WorkspaceView.model_validate(item)
+
+
+async def _from_alert(
+    principal: Principal, space: uuid.UUID, values: dict[str, Any]
+) -> dict[str, Any]:
+    """An investigation of an alert (AL-11): the alert of this Data Space it names, kept in the
+    params with the plan it starts from; the alert's summary describes it unless the body does.
+    Reading alerts takes the capability creating a workspace does (`ask`, A2)."""
+    ref = values.get("created_from_ref")
+    subject = await alert_subject(principal, space, ref) if ref is not None else None
+    if subject is None:
+        raise _invalid("created_from_ref", "created_from alert names an alert of this Data Space.")
+    if not subject.period:
+        raise _invalid("created_from_ref", "The alert has no period to investigate.")
+    params = {
+        **values["params"],
+        "alert_id": str(subject.alert_id),
+        "monitor_id": str(subject.monitor_id),
+        "metric": subject.metric_code,
+        "period": subject.period,
+        "investigation": rules.investigation(
+            metric_code=subject.metric_code,
+            metric_name=subject.metric_name,
+            period=subject.period,
+            split=subject.split,
+        ),
+    }
+    return {**values, "params": params, "description": values["description"] or subject.summary}
 
 
 @router.get(

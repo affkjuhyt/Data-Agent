@@ -56,7 +56,9 @@ class Workspace(Base):
         UUID(as_uuid=True), nullable=True, comment="logic → skill.skill nếu tạo từ kỹ năng"
     )
     created_from: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'blank'"), comment="blank, conversation, template, agent_run"
+        Text,
+        server_default=sql_text("'blank'"),
+        comment="blank, conversation, template, agent_run, alert (điều tra cảnh báo, created_from_ref là alert, thêm 23/11/2026)",
     )
     created_from_ref: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     tile_count: Mapped[int] = mapped_column(

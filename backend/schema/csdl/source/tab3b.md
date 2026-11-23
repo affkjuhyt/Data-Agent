@@ -1965,14 +1965,14 @@ Phiên làm việc dạng notebook của người dùng; có tham số dùng chu
 | description | text |  |
 | params | jsonb, bắt buộc, mặc định '{}' | Tham số phiên, ví dụ kỳ, vùng |
 | template\_of\_skill\_id | uuid | logic → skill.skill nếu tạo từ kỹ năng |
-| created\_from | text, bắt buộc, mặc định 'blank' | blank, conversation, template, agent\_run |
+| created\_from | text, bắt buộc, mặc định 'blank' | blank, conversation, template, agent\_run, alert (điều tra cảnh báo, created\_from\_ref là alert, thêm 23/11/2026) |
 | created\_from\_ref | uuid |  |
 | tile\_count | integer, bắt buộc, mặc định 0 | Tối đa 200 ô (UC-02-01) |
 | last\_refreshed\_at | timestamptz |  |
 | status | text, bắt buộc, mặc định 'active' | active, archived |
 | deleted\_at | timestamptz | Xoá mềm |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (created\_from IN ('blank','conversation','template','agent\_run')); CHECK (tile\_count BETWEEN 0 AND 200); CHECK (status IN ('active','archived')). Chỉ mục: (owner\_id) WHERE deleted\_at IS NULL.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (created\_from IN ('blank','conversation','template','agent\_run','alert')); CHECK (tile\_count BETWEEN 0 AND 200); CHECK (status IN ('active','archived')). Chỉ mục: (owner\_id) WHERE deleted\_at IS NULL.
 
 #### workspace.tile
 
