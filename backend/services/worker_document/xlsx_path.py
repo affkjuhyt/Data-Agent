@@ -9,7 +9,12 @@ text, and no model reads it.
 
 Bounded like a DOCX (a zip): the file at 50 MB, what it inflates to at 300 MB, a sheet at
 200 000 cells; a sheet over that is left out with an issue (field_mismatch, reason
-sheet_too_large), the others are read.
+sheet_too_large), the others are read. The sizes a workbook states (<dimension>) are its own
+claim, so nothing trusts them (security review): the sheets are streamed (openpyxl read_only, its
+dimensions reset) with a counter of every row and cell walked that stops at the limit, and the
+merged ranges are read from the sheet's XML here, at most MAX_MERGES of them and each clamped to
+the cells the sheet holds; openpyxl never loads a workbook whole (it would make a cell of every
+cell of a merged range).
 """
 
 from __future__ import annotations
@@ -21,6 +26,8 @@ import zipfile
 from collections.abc import Callable
 from typing import Any
 
+from defusedxml import ElementTree
+
 from services.worker_document import chunker
 from services.worker_document.docling_adapter import Element
 from services.worker_document.docling_path import Extraction
@@ -31,8 +38,14 @@ EXTRACTOR_VERSION = "openpyxl-3.1.5+xlsx-1"
 MAX_XLSX_BYTES = 50 * 1024 * 1024
 MAX_XLSX_INFLATED = 300 * 1024 * 1024
 MAX_SHEET_CELLS = 200_000
-# The whole workbook is loaded to read merged ranges; past this many cells it is not.
+# Cells with a value in the whole workbook.
 MAX_BOOK_CELLS = 1_000_000
+MAX_MERGES = 10_000
+_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
+
+class _TooLarge(Exception):
+    pass
 
 
 def extract(
@@ -49,58 +62,62 @@ def extract(
     with zipfile.ZipFile(io.BytesIO(content)) as archive:
         if sum(info.file_size for info in archive.infolist()) > MAX_XLSX_INFLATED:
             raise ValueError("The workbook inflates past 300 MB")
-    # The sheets' sizes first, read cheaply (read_only reads each sheet's dimension), so a
-    # workbook too large to load is refused before it is loaded.
-    sizing = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
-    try:
-        sizes = [(s.max_row or 0) * (s.max_column or 0) for s in sizing.worksheets]
-    finally:
-        sizing.close()
-    if sum(n for n in sizes if n <= MAX_SHEET_CELLS) > MAX_BOOK_CELLS:
-        raise ValueError("The workbook holds more than 1 000 000 cells")
-    book = openpyxl.load_workbook(io.BytesIO(content), data_only=True, read_only=False)
+    book = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     elements: list[Element] = []
     tables: list[Table] = []
     pages: list[ExtractedPage] = []
     issues: list[Issue] = []
-    for index, sheet in enumerate(book.worksheets, start=1):
-        rows, cols = sheet.max_row or 0, sheet.max_column or 0
-        if rows * cols > MAX_SHEET_CELLS:
-            issues.append(
-                Issue(
-                    "field_mismatch",
-                    "warning",
-                    index,
-                    {"reason": "sheet_too_large", "sheet": sheet.title, "cells": rows * cols},
+    held = 0
+    try:
+        for index, sheet in enumerate(book.worksheets, start=1):
+            try:
+                values = _values(sheet)
+            except _TooLarge as walked:
+                issues.append(
+                    Issue(
+                        "field_mismatch",
+                        "warning",
+                        index,
+                        {
+                            "reason": "sheet_too_large",
+                            "sheet": sheet.title,
+                            "cells": int(str(walked)),
+                        },
+                    )
+                )
+                continue
+            held += len(values)
+            if held > MAX_BOOK_CELLS:
+                raise ValueError("The workbook holds more than 1 000 000 cells")
+            if not values:
+                continue
+            merges = _merges(content, getattr(sheet, "_worksheet_path", ""))
+            ref = f"#/sheets/{index - 1}"
+            elements.append(
+                Element(
+                    ref=ref,
+                    order_idx=len(elements),
+                    kind="table",
+                    text="",
+                    page_no=index,
+                    extractor_version=EXTRACTOR_VERSION,
                 )
             )
-            continue
-        ref = f"#/sheets/{index - 1}"
-        element = Element(
-            ref=ref,
-            order_idx=len(elements),
-            kind="table",
-            text="",
-            page_no=index,
-            extractor_version=EXTRACTOR_VERSION,
-        )
-        table = _table(sheet, ref, index, rows, cols, mask)
-        if not table.cells:
-            continue
-        elements.append(element)
-        tables.append(table)
-        pages.append(
-            ExtractedPage(
-                text=mask(sheet.title),
-                image=None,
-                text_layer=True,
-                ocr_conf=None,
-                blocks=[LayoutBlock("table", mask(sheet.title), (0.0, 0.0, 0.0, 0.0))],
-                images=[],
-                width=0.0,
-                height=0.0,
+            tables.append(_table(sheet.title, values, merges, ref, index, mask))
+            pages.append(
+                ExtractedPage(
+                    text=mask(sheet.title),
+                    image=None,
+                    text_layer=True,
+                    ocr_conf=None,
+                    blocks=[LayoutBlock("table", mask(sheet.title), (0.0, 0.0, 0.0, 0.0))],
+                    images=[],
+                    width=0.0,
+                    height=0.0,
+                )
             )
-        )
+    finally:
+        book.close()
     if tables:
         tables[0].issues.extend(issues)
     elif issues:
@@ -117,42 +134,97 @@ def extract(
     )
 
 
+def _values(sheet: Any) -> dict[tuple[int, int], Any]:
+    """The sheet's cells with a value, by (row, column) from 0. Every row and cell walked counts,
+    the empty ones openpyxl fills in included, and the walk stops past MAX_SHEET_CELLS."""
+    sheet.reset_dimensions()  # the stated size is a claim: rows are not padded to it
+    walked = 0
+    out: dict[tuple[int, int], Any] = {}
+    for r, row in enumerate(sheet.iter_rows(values_only=True)):
+        walked += max(len(row), 1)
+        if walked > MAX_SHEET_CELLS:
+            raise _TooLarge(walked)
+        for c, value in enumerate(row):
+            if value is not None:
+                out[(r, c)] = value
+    return out
+
+
+def _merges(content: bytes, path: str) -> list[tuple[int, int, int, int]]:
+    """The sheet's merged ranges as (top, left, bottom, right), 0-based and inclusive, read from
+    its XML: at most MAX_MERGES, and never by openpyxl (it would make a cell of each)."""
+    from openpyxl.utils.cell import range_boundaries
+
+    out: list[tuple[int, int, int, int]] = []
+    if not path:
+        return out
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        try:
+            source = archive.open(path.lstrip("/"))
+        except KeyError:
+            return out
+        with source:
+            for _event, node in ElementTree.iterparse(source, events=("end",)):
+                if node.tag == f"{_MAIN}mergeCell":
+                    try:
+                        left, top, right, bottom = range_boundaries(node.get("ref", ""))
+                    except (TypeError, ValueError):
+                        continue
+                    if None not in (left, top, right, bottom):
+                        out.append((top - 1, left - 1, bottom - 1, right - 1))
+                    if len(out) >= MAX_MERGES:
+                        break
+                node.clear()
+    return out
+
+
 def _table(
-    sheet: Any, ref: str, page: int, rows: int, cols: int, mask: Callable[[str], str]
+    title: str,
+    values: dict[tuple[int, int], Any],
+    merges: list[tuple[int, int, int, int]],
+    ref: str,
+    page: int,
+    mask: Callable[[str], str],
 ) -> Table:
-    covered: dict[tuple[int, int], tuple[int, int]] = {}
+    rows = max(r for r, _ in values) + 1
+    cols = max(c for _, c in values) + 1
+    covered: set[tuple[int, int]] = set()
     spans: dict[tuple[int, int], tuple[int, int]] = {}
-    for merged in sheet.merged_cells.ranges:
-        top, left = merged.min_row - 1, merged.min_col - 1
-        spans[(top, left)] = (
-            merged.max_row - merged.min_row + 1,
-            merged.max_col - merged.min_col + 1,
-        )
-        for r in range(merged.min_row - 1, merged.max_row):
-            for c in range(merged.min_col - 1, merged.max_col):
+    for top, left, bottom, right in merges:
+        # Clamped to the cells the sheet holds: a stated range may cover the whole sheet.
+        bottom, right = min(bottom, rows - 1), min(right, cols - 1)
+        if top >= rows or left >= cols or (bottom, right) == (top, left):
+            continue
+        area = (bottom - top + 1) * (right - left + 1)
+        # The held cells bound the rows and columns, not their product: what merges cover is
+        # bounded on its own, a range past it is read as unmerged.
+        if len(covered) + area > MAX_SHEET_CELLS:
+            continue
+        spans[(top, left)] = (bottom - top + 1, right - left + 1)
+        for r in range(top, bottom + 1):
+            for c in range(left, right + 1):
                 if (r, c) != (top, left):
-                    covered[(r, c)] = (top, left)
+                    covered.add((r, c))
     cells: list[Cell] = []
-    for r, row in enumerate(sheet.iter_rows(min_row=1, max_row=rows, max_col=cols)):
-        for c, cell in enumerate(row):
-            if (r, c) in covered or cell.value is None:
-                continue
-            text, number = _value(cell.value)
-            masked = mask(text)
-            row_span, col_span = spans.get((r, c), (1, 1))
-            cells.append(
-                Cell(
-                    row_idx=r,
-                    col_idx=c,
-                    row_span=row_span,
-                    col_span=col_span,
-                    text=masked,
-                    is_header=False,
-                    # A masked value is no figure (an ID number is not a quantity).
-                    numeric_value=number if masked == text else None,
-                    page_no=page,
-                )
+    for (r, c), value in sorted(values.items()):
+        if (r, c) in covered:
+            continue
+        text, number = _value(value)
+        masked = mask(text)
+        row_span, col_span = spans.get((r, c), (1, 1))
+        cells.append(
+            Cell(
+                row_idx=r,
+                col_idx=c,
+                row_span=row_span,
+                col_span=col_span,
+                text=masked,
+                is_header=False,
+                # A masked value is no figure (an ID number is not a quantity).
+                numeric_value=number if masked == text else None,
+                page_no=page,
             )
+        )
     header_rows = _header_rows(cells)
     for cell in cells:
         cell.is_header = cell.row_idx < header_rows
@@ -165,7 +237,7 @@ def _table(
         n_rows=rows,
         n_cols=cols,
         header_rows=header_rows,
-        caption=mask(sheet.title),
+        caption=mask(title),
         cells=cells,
         numeric_share=(
             (decimal.Decimal(len(numeric)) / len(body)).quantize(decimal.Decimal("0.0001"))

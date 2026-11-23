@@ -79,3 +79,20 @@ def test_a_file_object_is_read_without_moving_it() -> None:
     stream.seek(7)
     assert di.detect(stream, "x.xlsx") == di.Detected("xlsx")
     assert stream.tell() == 0  # left at its start, ready to be stored
+
+
+def test_a_zip_with_too_many_entries_is_not_walked() -> None:
+    # The api reads a zip's directory on its request path: bounded, not built into a set.
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for n in range(di.MAX_ZIP_ENTRIES + 1):
+            archive.writestr(f"f{n}", b"")
+        archive.writestr("word/document.xml", "<x/>")
+    found = di.detect(buffer.getvalue(), "big.docx")
+    assert isinstance(found, di.Unsupported)
+
+
+def test_a_broken_zip_is_not_a_docx() -> None:
+    assert isinstance(di.detect(b"PK\x03\x04 not a zip", "x.docx"), di.Unsupported)
+    truncated = DOCX[: len(DOCX) // 2]
+    assert isinstance(di.detect(truncated, "x.docx"), di.Unsupported)

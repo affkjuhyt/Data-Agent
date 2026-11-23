@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import io
 import os
-import zipfile
+import struct
 from dataclasses import dataclass
 from typing import BinaryIO
 
-# The bytes read to decide. A zip's central directory sits at its end: it is read by seeking in
-# the file (zipfile), never by loading the whole upload.
+# The bytes read to decide. A zip's central directory sits at its end: it is read by seeking to
+# its end record (_zip_kind), never by loading the whole upload.
 HEAD_BYTES = 8192
 
 _MAGIC: tuple[tuple[bytes, str], ...] = (
@@ -106,25 +106,53 @@ def _by_content(stream: BinaryIO) -> str | None:
     if head.startswith(_OLE):
         return "unsupported"
     if head.startswith(b"PK\x03\x04"):
-        names = _zip_names(stream)
-        if "word/document.xml" in names:
-            return "docx"
-        if "xl/workbook.xml" in names:
-            return "xlsx"
-        if any(n.startswith("ppt/") for n in names):
-            return "unsupported"
-        return None
+        return _zip_kind(stream)
     text = head.lstrip(b"\xef\xbb\xbf \t\r\n").lower()
     if text.startswith((b"<!doctype html", b"<html")):
         return "html"
     return None
 
 
-def _zip_names(stream: BinaryIO) -> set[str]:
-    """The member names of a zip: its central directory only, nothing is inflated."""
-    try:
-        stream.seek(0)
-        with zipfile.ZipFile(stream) as archive:
-            return set(archive.namelist())
-    except zipfile.BadZipFile:
-        return set()
+# A zip's central directory is read by hand, bounded: this runs on the api's request path
+# (security review), so a directory of millions of entries is not walked, nor built into a set.
+MAX_ZIP_ENTRIES = 10_000
+MAX_DIRECTORY_BYTES = 4 * 1024 * 1024
+_EOCD = b"PK\x05\x06"
+_ENTRY = b"PK\x01\x02"
+
+
+def _zip_kind(stream: BinaryIO) -> str | None:
+    """docx, xlsx, unsupported (a PowerPoint) or None, from the zip's central directory: the
+    end record found in the last 64 KiB, at most MAX_ZIP_ENTRIES entries and MAX_DIRECTORY_BYTES
+    read, stopping at the first name that decides. A ZIP64 archive (over 65 535 entries or 4 GiB,
+    far past an upload) or a malformed one is None."""
+    size = stream.seek(0, os.SEEK_END)
+    tail_size = min(size, 22 + 65_535)
+    stream.seek(size - tail_size)
+    tail = stream.read(tail_size)
+    at = tail.rfind(_EOCD)
+    if at < 0 or len(tail) - at < 22:
+        return None
+    _sig, _disk, _cd_disk, _here, entries, cd_size, cd_offset, _comment = struct.unpack(
+        "<4s4H2LH", tail[at : at + 22]
+    )
+    if entries == 0xFFFF or cd_size == 0xFFFFFFFF or cd_offset == 0xFFFFFFFF:
+        return None
+    if entries > MAX_ZIP_ENTRIES or cd_size > MAX_DIRECTORY_BYTES or cd_offset + cd_size > size:
+        return None
+    stream.seek(cd_offset)
+    directory = stream.read(cd_size)
+    pos = 0
+    for _ in range(entries):
+        if directory[pos : pos + 4] != _ENTRY or pos + 46 > len(directory):
+            return None
+        name_len, extra_len, comment_len = struct.unpack("<3H", directory[pos + 28 : pos + 34])
+        name = directory[pos + 46 : pos + 46 + name_len].decode("utf-8", "replace")
+        if name == "word/document.xml":
+            return "docx"
+        if name == "xl/workbook.xml":
+            return "xlsx"
+        if name.startswith("ppt/"):
+            return "unsupported"
+        pos += 46 + name_len + extra_len + comment_len
+    return None

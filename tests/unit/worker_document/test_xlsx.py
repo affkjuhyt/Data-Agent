@@ -87,3 +87,43 @@ def test_a_workbook_that_is_too_large_is_refused(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(xlsx_path, "MAX_XLSX_INFLATED", 10)
     with pytest.raises(ValueError, match="inflates"):
         _read(content)
+
+
+def _forged(content: bytes, *, dimension: str, merge: str) -> bytes:
+    """The workbook with its first sheet claiming another size and one huge merged range."""
+    import re
+    import zipfile
+
+    source, out = zipfile.ZipFile(io.BytesIO(content)), io.BytesIO()
+    with zipfile.ZipFile(out, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "xl/worksheets/sheet1.xml":
+                xml = data.decode()
+                xml = re.sub(r'<dimension ref="[^"]*"/>', f'<dimension ref="{dimension}"/>', xml)
+                xml = re.sub(r"<mergeCells.*?</mergeCells>", "", xml, flags=re.S)
+                xml = xml.replace(
+                    "</sheetData>",
+                    f'</sheetData><mergeCells count="1"><mergeCell ref="{merge}"/></mergeCells>',
+                )
+                data = xml.encode()
+            target.writestr(item, data)
+    return out.getvalue()
+
+
+def test_a_stated_size_and_a_huge_merge_are_not_trusted() -> None:
+    import time
+
+    content = _forged(
+        _book(("A", [["Tiêu đề", None], ["x", 1], ["y", 2]])),
+        dimension="A1:XFD1048576",
+        merge="A1:XFD1048576",
+    )
+    started = time.monotonic()
+    got = _read(content)
+    assert time.monotonic() - started < 5
+    table = got.tables[0]
+    # The sheet holds 3 rows and 2 columns, whatever it states; the merge is clamped to them.
+    assert (table.n_rows, table.n_cols) == (3, 2)
+    (only,) = table.cells
+    assert (only.text, only.row_span, only.col_span) == ("Tiêu đề", 3, 2)
