@@ -2437,7 +2437,7 @@ COMMENT ON COLUMN qa.answer.reconcile_badge IS 'matched_filed, differs_from_file
 COMMENT ON COLUMN qa.answer.agent_name IS 'Ví dụ Agent Phân tích';
 COMMENT ON COLUMN qa.answer.lineage_hash IS 'SHA-256 khi dùng kỳ đã chốt (UC-01-02)';
 COMMENT ON COLUMN qa.answer.data_product_id IS 'logic → context.data_product; có khi product_scope = in_scope (BR-175, thêm 10/10/2026)';
-COMMENT ON COLUMN qa.answer.product_scope IS 'in_scope, out_of_scope, not_applicable (làm rõ, từ chối); out_of_scope hiển thị nhãn “Ngoài phạm vi data product, không có biên nhận”';
+COMMENT ON COLUMN qa.answer.product_scope IS 'in_scope, out_of_scope, not_applicable (làm rõ, từ chối); out_of_scope hiển thị nhãn “Ngoài phạm vi data product”; từ AE-05 câu ngoài phạm vi vẫn có biên nhận, không mang data product';
 COMMENT ON COLUMN qa.answer.trust_code IS 'Nhãn tin cậy của cả câu trả lời: VERIFIED, GOVERNED, DERIVED, EXPLORATORY, DOCUMENT, INSUFFICIENT; nhãn yếu nhất trong các số và khối, do server đặt (AE-04, ARCHITECTURE §9.5, thêm 19/11/2026). Null: câu trả lời trước v3_0045';
 COMMENT ON COLUMN qa.answer.envelope IS 'Bản đồ tin cậy của câu trả lời (AE-04): đường trả lời, nhãn từng số và từng khối, lý do dừng sớm; phần còn lại của AnswerEnvelope đọc từ các cột khác (`worker_agent/answer/envelope.py`)';
 
@@ -2540,9 +2540,9 @@ CREATE TABLE qa.answer_receipt (
   org_id uuid NOT NULL,
   answer_id uuid NOT NULL,
   receipt_no text NOT NULL,
-  data_product_id uuid NOT NULL,
-  data_product_code text NOT NULL,
-  data_product_version integer NOT NULL,
+  data_product_id uuid,
+  data_product_code text,
+  data_product_version integer,
   plan_id uuid NOT NULL,
   answered_at timestamptz NOT NULL,
   knowledge_mode text NOT NULL,
@@ -2567,17 +2567,18 @@ CREATE TABLE qa.answer_receipt (
   CHECK (jsonb_typeof(models) = 'array' AND jsonb_typeof(freshness) = 'array'),
   CHECK (masked_count BETWEEN 0 AND figure_count),
   CHECK ((sealed_at IS NULL) = (receipt_sha256 IS NULL)),
-  CHECK (receipt_sha256 IS NULL OR receipt_sha256 ~ '^[0-9a-f]{64}$')
+  CHECK (receipt_sha256 IS NULL OR receipt_sha256 ~ '^[0-9a-f]{64}$'),
+  CHECK ((data_product_id IS NULL) = (data_product_code IS NULL) AND (data_product_id IS NULL) = (data_product_version IS NULL))
 );
-COMMENT ON TABLE qa.answer_receipt IS 'Biên nhận của một câu trả lời trong phạm vi data product: data product và phiên bản, phiên bản bộ biên dịch và Agent runtime, mô hình và provider của mọi lần gọi, độ tươi lúc trả lời, mã băm toàn biên nhận. Ghi cùng giao dịch với qa.answer, khoá ngay, chỉ ghi thêm (BR-176, ADR-43). Câu trả lời ngoài phạm vi không có biên nhận. Thêm 10/10/2026. Use case: UC-01-07, UC-01-01, UC-07-14.';
+COMMENT ON TABLE qa.answer_receipt IS 'Biên nhận của một câu trả lời có số: data product và phiên bản khi câu trả lời trong phạm vi, phiên bản bộ biên dịch và Agent runtime, mô hình và provider của mọi lần gọi, độ tươi lúc trả lời, mã băm toàn biên nhận. Ghi cùng giao dịch với qa.answer, khoá ngay, chỉ ghi thêm (BR-176, ADR-43). Từ 23/11/2026 (AE-05) mọi đường trả lời (governed, khám phá, verified query, agentic) ghi biên nhận cho câu trả lời có số; câu ngoài data product có biên nhận không mang data product. Thêm 10/10/2026. Use case: UC-01-07, UC-01-01, UC-07-14.';
 COMMENT ON COLUMN qa.answer_receipt.answer_id IS 'FK answer; một biên nhận mỗi câu trả lời';
 COMMENT ON COLUMN qa.answer_receipt.receipt_no IS 'Mã hiển thị theo ngày, ví dụ BN-20260702-000184; trigger cấp';
-COMMENT ON COLUMN qa.answer_receipt.data_product_id IS 'logic → context.data_product';
+COMMENT ON COLUMN qa.answer_receipt.data_product_id IS 'logic → context.data_product; null khi câu trả lời ngoài data product (AE-05)';
 COMMENT ON COLUMN qa.answer_receipt.data_product_code IS 'Chép lại để đọc được cả khi product đã retired';
 COMMENT ON COLUMN qa.answer_receipt.plan_id IS 'FK plan; plan dùng để dựng lại truy vấn khi chạy lại';
 COMMENT ON COLUMN qa.answer_receipt.answered_at IS 'Mốc point-in-time khi chạy lại';
 COMMENT ON COLUMN qa.answer_receipt.knowledge_mode IS 'latest, period_close, at; chép từ qa.question';
-COMMENT ON COLUMN qa.answer_receipt.compiler_version IS 'Phiên bản semantic compiler, ví dụ semcomp 1.8.2+4f2a91c';
+COMMENT ON COLUMN qa.answer_receipt.compiler_version IS 'Phiên bản semantic compiler, ví dụ semcomp 1.8.2+4f2a91c; none khi số không qua semantic compiler (khám phá, agentic)';
 COMMENT ON COLUMN qa.answer_receipt.runtime_version IS 'Phiên bản Agent runtime và Verifier';
 COMMENT ON COLUMN qa.answer_receipt.models IS 'Mỗi lần gọi mô hình của lượt: {task, provider_code, provider_kind, provider_display_name, model_name, model_config_version, route_decision_id}';
 COMMENT ON COLUMN qa.answer_receipt.frontier_used IS 'Có ít nhất một lời gọi tới provider frontier (BR-181)';
@@ -9595,7 +9596,9 @@ CREATE POLICY answer_receipt_answer_visible ON qa.answer_receipt AS RESTRICTIVE 
   USING (EXISTS (SELECT 1 FROM qa.answer a WHERE a.id = answer_id));
 
 -- covers: qa.answer_receipt#1
--- BR-175/BR-176: a receipt belongs to an in-scope answer of the same data product, is numbered per
+-- BR-175/BR-176: a receipt that names a data product belongs to an in-scope answer of that product;
+-- one that names none (AE-05: explore, verified query, agentic, governed outside every product)
+-- belongs to an answer that is not in scope, so an in-scope answer never loses its product. It is numbered per
 -- organisation and day of answered_at (UTC, D1.9), and starts unsealed: figures are added, then the
 -- receipt is sealed once. After that nothing changes; only the retention job removes it once
 -- retain_until has passed. Writing the receipt in the answer's transaction and hiding numbers of an
@@ -9622,7 +9625,12 @@ DECLARE
 BEGIN
   IF TG_OP = 'INSERT' THEN
     SELECT product_scope, data_product_id INTO a_scope, a_product FROM qa.answer WHERE id = NEW.answer_id;
-    IF a_scope IS DISTINCT FROM 'in_scope' OR a_product IS DISTINCT FROM NEW.data_product_id THEN
+    IF NEW.data_product_id IS NULL THEN
+      IF a_scope = 'in_scope' THEN
+        RAISE EXCEPTION 'Câu trả lời trong phạm vi data product phải có biên nhận mang data product đó (BR-175)'
+          USING ERRCODE = 'check_violation';
+      END IF;
+    ELSIF a_scope IS DISTINCT FROM 'in_scope' OR a_product IS DISTINCT FROM NEW.data_product_id THEN
       RAISE EXCEPTION 'Biên nhận chỉ cấp cho câu trả lời trong phạm vi cùng data product (BR-175)'
         USING ERRCODE = 'check_violation';
     END IF;

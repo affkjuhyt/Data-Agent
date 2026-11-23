@@ -60,7 +60,7 @@ def _caveats(answer: Any, figures: list[dict[str, Any]]) -> list[str]:
     if getattr(answer, "reconcile_badge", None) == "differs_from_filed":
         items.append("Số hiện tại khác số đã nộp của kỳ.")
     if getattr(answer, "product_scope", None) == "out_of_scope":
-        items.append("Câu trả lời nằm ngoài mọi sản phẩm dữ liệu, không có biên nhận.")
+        items.append("Câu trả lời nằm ngoài mọi sản phẩm dữ liệu.")
     return list(dict.fromkeys(items))
 
 

@@ -141,6 +141,8 @@ class Trace:
     opened: dict[str, tuple[Step, StepHandle]] = field(default_factory=dict)
     tokens: int = 0
     cost: decimal.Decimal = decimal.Decimal(0)
+    # Each model call as an answer's receipt lists it (receipts.py, D4 answer_receipt.models).
+    calls: list[dict[str, Any]] = field(default_factory=list)
     started: datetime.datetime = field(default_factory=_now)
     cancelled: bool = False
     # Why the agent stopped before it was done (AE-02, agentic/budget.py): the run's stop_reason.
@@ -358,6 +360,7 @@ def model_call(
         return
     cost = price(model, role, input_tokens, output_tokens)
     trace.tokens += input_tokens + output_tokens
+    trace.calls.append({"task": role, "model_name": model, "tokens": input_tokens + output_tokens})
     trace.cost += cost
     trace.seq += 1
     trace.steps.append(
@@ -395,6 +398,12 @@ def cancelled() -> None:
     trace = _current.get()
     if trace is not None:
         trace.cancelled = True
+
+
+def models_called() -> list[dict[str, Any]]:
+    """The turn's model calls so far, {task, model_name, tokens}; empty outside a turn."""
+    trace = _current.get()
+    return list(trace.calls) if trace is not None else []
 
 
 def tokens_used() -> int:

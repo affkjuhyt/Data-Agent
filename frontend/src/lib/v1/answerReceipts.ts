@@ -112,8 +112,9 @@ export interface AnswerReceipt {
   /** a receipt is sealed once the answer is delivered; nothing in it changes afterwards */
   status: 'locked' | 'open';
   created_at: Timestamp;
-  /** the product's code and version: the receipt does not carry its display name */
-  data_product: { id: string; name: string };
+  /** the product's code and version: the receipt does not carry its display name; null for an
+   * answer outside every data product, whose receipt names none (AE-05) */
+  data_product: { id: string; name: string } | null;
   /** sha256 over the canonical receipt body; null until sealed */
   receipt_sha256: string | null;
   figures: ReceiptFigure[];
@@ -191,12 +192,14 @@ export const readReceipt = (raw: ReceiptWire): AnswerReceipt => ({
   code: raw.receipt_no,
   status: raw.sealed_at ? 'locked' : 'open',
   created_at: raw.answered_at,
-  data_product: {
-    id: raw.data_product_id,
-    name: `${raw.data_product_code} v${raw.data_product_version}`,
-  },
+  data_product: raw.data_product_id
+    ? { id: raw.data_product_id, name: `${raw.data_product_code} v${raw.data_product_version}` }
+    : null,
   receipt_sha256: raw.receipt_sha256,
-  figures: (raw.figures ?? []).map((f) => readFigure(f, raw.compiler_version)),
+  // "none": no semantic compiler made the numbers (explore, agentic), so no compiler is named.
+  figures: (raw.figures ?? []).map((f) =>
+    readFigure(f, raw.compiler_version === 'none' ? '' : raw.compiler_version),
+  ),
   models: readModels(raw.models),
   frontier_used: raw.frontier_used,
 });

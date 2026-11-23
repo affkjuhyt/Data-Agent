@@ -25,7 +25,7 @@ from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, qa
 from libs.sql_guard import dialect_of
-from services.worker_agent import turn_trace
+from services.worker_agent import receipts, turn_trace
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.narrate import Figure, shown_value
 from services.worker_agent.answer.narrator import Narration
@@ -322,6 +322,7 @@ async def answer_by_sql(
         consensus=(e.agreeing, len(e.tried)),
         told=told,
         result=(len(e.rows), e.truncated) if kind == "data" else None,
+        models=models,
     )
     return True
 
@@ -571,11 +572,20 @@ async def _store_answer(
     consensus: tuple[int, int] | None,
     told: Narration | None = None,
     result: tuple[int, bool] | None = None,
+    models: list[dict[str, Any]] | None = None,
 ) -> None:
     """The answer, its plan and the question's status, then the events the stream waits for.
     `result` is the query's row count and whether the executor cut it: the figures keep at most
-    MAX_FIGURES rows, so the table and chart say how much of the result they show."""
+    MAX_FIGURES rows, so the table and chart say how much of the result they show.
+
+    A data answer's figures are sealed in a receipt with it (AE-05), from its query run."""
     answer_id = uuid7()
+    stored_figures = [f.as_json(str(query_run_id), "", trust) for f in figures]
+    runs = (
+        await receipts.runs_of(event.org_id, user_id, stored_figures)
+        if kind == "data" and query_run_id is not None
+        else {}
+    )
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         question = await session.get(qa.Question, question_id, with_for_update=True)
         if question is None or question.status != "received":
@@ -584,7 +594,6 @@ async def _store_answer(
         if stored is not None:
             stored.steps = steps
         shown = [f for f in figures if f.value is not None]
-        stored_figures = [f.as_json(str(query_run_id), "", trust) for f in figures]
         code, envelope = answer_trust.trust(
             "verified" if trust == verified.TRUST_VERIFIED else "explore",
             kind,
@@ -623,6 +632,25 @@ async def _store_answer(
                 product_scope="not_applicable",
             )
         )
+        if runs:
+            await session.flush()
+            await receipts.seal(
+                session,
+                receipts.Receipt(
+                    org_id=event.org_id,
+                    answer_id=answer_id,
+                    question_id=question_id,
+                    plan_id=plan_id,
+                    engine="verified" if trust == verified.TRUST_VERIFIED else "explore",
+                    trust_code=code.value,
+                    compiler_version=receipts.NO_COMPILER,
+                    runtime_version=receipts.RUNTIME_VERSION,
+                    knowledge_mode=question.knowledge_mode,
+                    knowledge_at=question.knowledge_at,
+                    models=list(models or []),
+                ),
+                receipts.query_figures(stored_figures, runs),
+            )
         question.status = status
         if status == "answered":
             question.answered_at = func.now()

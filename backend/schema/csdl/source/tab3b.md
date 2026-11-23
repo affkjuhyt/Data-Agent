@@ -1272,7 +1272,7 @@ Câu trả lời: văn bản, số, biểu đồ, trích dẫn và trạng thái
 | latency\_ms | integer |  |
 | lineage\_hash | text | SHA-256 khi dùng kỳ đã chốt (UC-01-02) |
 | data\_product\_id | uuid | logic → context.data\_product; có khi product\_scope = in\_scope (BR-175, thêm 10/10/2026) |
-| product\_scope | text, bắt buộc, mặc định 'not\_applicable' | in\_scope, out\_of\_scope, not\_applicable (làm rõ, từ chối); out\_of\_scope hiển thị nhãn “Ngoài phạm vi data product, không có biên nhận” |
+| product\_scope | text, bắt buộc, mặc định 'not\_applicable' | in\_scope, out\_of\_scope, not\_applicable (làm rõ, từ chối); out\_of\_scope hiển thị nhãn “Ngoài phạm vi data product”; từ AE-05 câu ngoài phạm vi vẫn có biên nhận, không mang data product |
 | trust\_code | text | Nhãn tin cậy của cả câu trả lời: VERIFIED, GOVERNED, DERIVED, EXPLORATORY, DOCUMENT, INSUFFICIENT; nhãn yếu nhất trong các số và khối, do server đặt (AE-04, ARCHITECTURE §9.5, thêm 19/11/2026). Null: câu trả lời trước v3\_0045 |
 | envelope | jsonb | Bản đồ tin cậy của câu trả lời (AE-04): đường trả lời, nhãn từng số và từng khối, lý do dừng sớm; phần còn lại của AnswerEnvelope đọc từ các cột khác (`worker_agent/answer/envelope.py`) |
 
@@ -1338,20 +1338,20 @@ Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (format IN ('xlsx','c
 
 #### qa.answer\_receipt
 
-Biên nhận của một câu trả lời trong phạm vi data product: data product và phiên bản, phiên bản bộ biên dịch và Agent runtime, mô hình và provider của mọi lần gọi, độ tươi lúc trả lời, mã băm toàn biên nhận. Ghi cùng giao dịch với qa.answer, khoá ngay, chỉ ghi thêm (BR-176, ADR-43). Câu trả lời ngoài phạm vi không có biên nhận. Thêm 10/10/2026. Use case: UC-01-07, UC-01-01, UC-07-14.
+Biên nhận của một câu trả lời có số: data product và phiên bản khi câu trả lời trong phạm vi, phiên bản bộ biên dịch và Agent runtime, mô hình và provider của mọi lần gọi, độ tươi lúc trả lời, mã băm toàn biên nhận. Ghi cùng giao dịch với qa.answer, khoá ngay, chỉ ghi thêm (BR-176, ADR-43). Từ 23/11/2026 (AE-05) mọi đường trả lời (governed, khám phá, verified query, agentic) ghi biên nhận cho câu trả lời có số; câu ngoài data product có biên nhận không mang data product. Thêm 10/10/2026. Use case: UC-01-07, UC-01-01, UC-07-14.
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
 | answer\_id | uuid, bắt buộc | FK answer; một biên nhận mỗi câu trả lời |
 | receipt\_no | text, bắt buộc | Mã hiển thị theo ngày, ví dụ BN-20260702-000184; trigger cấp |
-| data\_product\_id | uuid, bắt buộc | logic → context.data\_product |
-| data\_product\_code | text, bắt buộc | Chép lại để đọc được cả khi product đã retired |
-| data\_product\_version | integer, bắt buộc |  |
+| data\_product\_id | uuid | logic → context.data\_product; null khi câu trả lời ngoài data product (AE-05) |
+| data\_product\_code | text | Chép lại để đọc được cả khi product đã retired |
+| data\_product\_version | integer |  |
 | plan\_id | uuid, bắt buộc | FK plan; plan dùng để dựng lại truy vấn khi chạy lại |
 | answered\_at | timestamptz, bắt buộc | Mốc point-in-time khi chạy lại |
 | knowledge\_mode | text, bắt buộc | latest, period\_close, at; chép từ qa.question |
 | knowledge\_at | timestamptz |  |
-| compiler\_version | text, bắt buộc | Phiên bản semantic compiler, ví dụ semcomp 1.8.2+4f2a91c |
+| compiler\_version | text, bắt buộc | Phiên bản semantic compiler, ví dụ semcomp 1.8.2+4f2a91c; none khi số không qua semantic compiler (khám phá, agentic) |
 | runtime\_version | text, bắt buộc | Phiên bản Agent runtime và Verifier |
 | models | jsonb, bắt buộc, mặc định '\[\]' | Mỗi lần gọi mô hình của lượt: {task, provider\_code, provider\_kind, provider\_display\_name, model\_name, model\_config\_version, route\_decision\_id} |
 | frontier\_used | boolean, bắt buộc, mặc định false | Có ít nhất một lời gọi tới provider frontier (BR-181) |
@@ -1362,9 +1362,9 @@ Biên nhận của một câu trả lời trong phạm vi data product: data pro
 | sealed\_at | timestamptz | Thời điểm khoá; sau khi khoá không thêm figure |
 | retain\_until | date, bắt buộc, mặc định (now() + interval '7 years')::date | Hạn giữ theo NFR-20; dữ liệu dùng để chạy lại phải giữ tới cùng hạn |
 
-Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (answer\_id); UNIQUE (org\_id, receipt\_no); `CHECK (receipt_no ~ '^BN-[0-9]{8}-[0-9]{6}$')`; CHECK (knowledge\_mode IN ('latest','period\_close','at')); CHECK (knowledge\_mode <> 'at' OR knowledge\_at IS NOT NULL); CHECK (jsonb\_typeof(models) = 'array' AND jsonb\_typeof(freshness) = 'array'); CHECK (masked\_count BETWEEN 0 AND figure\_count); CHECK ((sealed\_at IS NULL) = (receipt\_sha256 IS NULL)); `CHECK (receipt_sha256 IS NULL OR receipt_sha256 ~ '^[0-9a-f]{64}$')`; FOREIGN KEY (answer\_id) REFERENCES qa.answer(id); FOREIGN KEY (plan\_id) REFERENCES qa.plan(id). Chỉ mục: (data\_product\_id, answered\_at DESC); (answered\_at) WHERE frontier\_used. RLS: org\_isolation; người xem biên nhận phải xem được câu trả lời; số trong biên nhận che theo quyền người xem như qa.answer.
+Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (answer\_id); UNIQUE (org\_id, receipt\_no); `CHECK (receipt_no ~ '^BN-[0-9]{8}-[0-9]{6}$')`; CHECK (knowledge\_mode IN ('latest','period\_close','at')); CHECK (knowledge\_mode <> 'at' OR knowledge\_at IS NOT NULL); CHECK (jsonb\_typeof(models) = 'array' AND jsonb\_typeof(freshness) = 'array'); CHECK (masked\_count BETWEEN 0 AND figure\_count); CHECK ((sealed\_at IS NULL) = (receipt\_sha256 IS NULL)); `CHECK (receipt_sha256 IS NULL OR receipt_sha256 ~ '^[0-9a-f]{64}$')`; CHECK ((data\_product\_id IS NULL) = (data\_product\_code IS NULL) AND (data\_product\_id IS NULL) = (data\_product\_version IS NULL)); FOREIGN KEY (answer\_id) REFERENCES qa.answer(id); FOREIGN KEY (plan\_id) REFERENCES qa.plan(id). Chỉ mục: (data\_product\_id, answered\_at DESC); (answered\_at) WHERE frontier\_used. RLS: org\_isolation; người xem biên nhận phải xem được câu trả lời; số trong biên nhận che theo quyền người xem như qa.answer.
 
-Trigger: trước INSERT: qa.answer tương ứng phải có product\_scope = 'in\_scope' và cùng data\_product\_id (BR-175); cấp receipt\_no theo ngày answered\_at. Trước UPDATE: chỉ cho đặt sealed\_at một lần khi đang null, lúc đó trigger tính figure\_count, masked\_count, receipt\_sha256 bằng sha256(convert\_to(json chuẩn hoá, 'UTF8')); mọi UPDATE khác bị chặn. Trước DELETE: chỉ job lưu giữ xóa được dòng quá retain\_until. Agent runtime ghi biên nhận, figure và khoá trong cùng giao dịch với qa.answer; câu trả lời in\_scope không có biên nhận đã khoá thì không hiển thị số (BR-176).
+Trigger: trước INSERT: biên nhận mang data product thì qa.answer tương ứng phải có product\_scope = 'in\_scope' và cùng data\_product\_id (BR-175), biên nhận không mang data product thì câu trả lời không in\_scope; cấp receipt\_no theo ngày answered\_at. Trước UPDATE: chỉ cho đặt sealed\_at một lần khi đang null, lúc đó trigger tính figure\_count, masked\_count, receipt\_sha256 bằng sha256(convert\_to(json chuẩn hoá, 'UTF8')); mọi UPDATE khác bị chặn. Trước DELETE: chỉ job lưu giữ xóa được dòng quá retain\_until. Agent runtime ghi biên nhận, figure và khoá trong cùng giao dịch với qa.answer; câu trả lời in\_scope không có biên nhận đã khoá thì không hiển thị số (BR-176).
 
 #### qa.answer\_receipt\_figure
 

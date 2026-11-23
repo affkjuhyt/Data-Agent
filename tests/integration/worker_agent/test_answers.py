@@ -1172,7 +1172,7 @@ async def test_ac_11_01_01_membership_row_scope_limits_source_rows(
     assert "branch_code" in executed and "HN1" in executed
 
 
-async def test_out_of_scope_is_answered_and_says_so_without_a_receipt(
+async def test_out_of_scope_is_answered_says_so_and_is_sealed_without_a_product(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
@@ -1181,7 +1181,19 @@ async def test_out_of_scope_is_answered_and_says_so_without_a_receipt(
     status, kind, text, figures, scope, answer = answer_of(seed, q)
     assert (status, kind, scope) == ("answered", "data", "out_of_scope"), text
     assert figures[0]["trust"].startswith("Ngoài phạm vi data product")
-    assert seed.one("SELECT count(*) FROM qa.answer_receipt WHERE answer_id = %s", answer) == 0
+    # AE-05: a receipt still seals its numbers; it names no data product.
+    receipt, product, sealed, count = seed.all(
+        "SELECT id, data_product_id, sealed_at IS NOT NULL, figure_count FROM qa.answer_receipt"
+        " WHERE answer_id = %s",
+        answer,
+    )[0]
+    assert product is None and sealed and count == len(figures)
+    event = seed.all(
+        "SELECT payload FROM qa.outbox WHERE event_type = 'answer.sealed' AND aggregate_id = %s",
+        answer,
+    )
+    assert [e["engine"] for (e,) in event] == ["governed"]
+    assert event[0][0]["receipt_id"] == str(receipt)
 
 
 async def test_ac_01_01_02_two_metrics_ask_which_and_run_nothing(

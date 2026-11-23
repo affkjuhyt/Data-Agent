@@ -330,7 +330,7 @@
    ],
    "body": {},
    "query": [],
-   "returns": "AnswerReceipt: receipt_no, data product và phiên bản, answered_at, compiler_version, runtime_version, models, frontier_used, freshness, receipt_sha256, figures (AnswerReceiptFigure, số che theo quyền người xem)",
+   "returns": "AnswerReceipt: receipt_no, data product và phiên bản (null khi câu trả lời ngoài data product, AE-05), answered_at, compiler_version, runtime_version, models, frontier_used, freshness, receipt_sha256, figures (AnswerReceiptFigure, số che theo quyền người xem)",
    "errors": [
     [
      404,

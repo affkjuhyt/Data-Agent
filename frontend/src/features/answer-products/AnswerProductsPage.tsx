@@ -114,8 +114,8 @@ export default function AnswerProductsPage() {
           )}
         </AsyncRegion>
         <p className="text-muted-foreground da-caption">
-          Data product là phạm vi trả lời có cam kết: câu hỏi trong phạm vi có cổng độ tươi và biên
-          nhận; ngoài phạm vi mang nhãn “không có biên nhận” (BR-175).
+          Data product là phạm vi trả lời có cam kết: câu hỏi trong phạm vi qua cổng độ tươi và biên
+          nhận ghi data product; ngoài phạm vi mang nhãn “Ngoài phạm vi data product” (BR-175).
         </p>
       </div>
       <div className="min-w-0 flex-1">{id && <ProductView key={id} id={id} />}</div>

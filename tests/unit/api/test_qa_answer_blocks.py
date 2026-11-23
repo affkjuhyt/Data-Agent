@@ -121,7 +121,7 @@ def test_caveats_list_failed_checks_and_non_standard_trust() -> None:
             "Số hiện tại khác số đã nộp",
             "Số liệu Khám phá.",
             "Số hiện tại khác số đã nộp của kỳ.",
-            "Câu trả lời nằm ngoài mọi sản phẩm dữ liệu, không có biên nhận.",
+            "Câu trả lời nằm ngoài mọi sản phẩm dữ liệu.",
         ],
     }
 

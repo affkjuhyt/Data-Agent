@@ -1053,3 +1053,37 @@ def test_a_migrated_cluster_records_an_answers_computations(admin):
     )
     assert not _one(db, "SELECT has_table_privilege('svc_qa', 'qa.compute_run', 'UPDATE')")
     assert _one(db, "SELECT has_table_privilege('svc_qa', 'qa.compute_run', 'INSERT')")
+
+
+def test_a_migrated_cluster_seals_receipts_outside_a_data_product(admin):
+    # v3_0049 (23/11/2026, AE-05): a receipt may name no data product.
+    _fresh(admin, "chain_ae05", "chain_ae05_audit")
+    db = _db(admin, "chain_ae05")
+    _alembic(db, "upgrade", "v3_0048")
+    # The generated DDL is already at head: put back what a cluster at v3_0048 has.
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("ALTER TABLE qa.answer_receipt DROP CONSTRAINT answer_receipt_check4")
+        for column in ("data_product_id", "data_product_code", "data_product_version"):
+            cur.execute(f"ALTER TABLE qa.answer_receipt ALTER COLUMN {column} SET NOT NULL")
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    _alembic(db, "upgrade", "head")
+    assert (
+        _one(
+            db,
+            "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'qa'"
+            " AND table_name = 'answer_receipt' AND is_nullable = 'YES'"
+            " AND column_name IN ('data_product_id', 'data_product_code', 'data_product_version')",
+        )
+        == 3
+    )
+    assert _one(
+        db,
+        "SELECT count(*) FROM pg_constraint WHERE conname = 'answer_receipt_check4'"
+        " AND conrelid = 'qa.answer_receipt'::regclass",
+    )
+    assert "a_scope = 'in_scope'" in _one(
+        db, "SELECT prosrc FROM pg_proc WHERE oid = 'qa.answer_receipt_guard'::regproc"
+    )

@@ -36722,17 +36722,38 @@
       "type": "string"
      },
      "data_product_code": {
-      "title": "Data Product Code",
-      "type": "string"
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Data Product Code"
      },
      "data_product_id": {
-      "format": "uuid",
-      "title": "Data Product Id",
-      "type": "string"
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Data Product Id"
      },
      "data_product_version": {
-      "title": "Data Product Version",
-      "type": "integer"
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Data Product Version"
      },
      "figure_count": {
       "title": "Figure Count",

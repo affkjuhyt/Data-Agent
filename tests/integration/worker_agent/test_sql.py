@@ -143,6 +143,28 @@ async def test_six_candidates_that_agree_answer_with_the_exploratory_label(
         == 6
     )
     assert seed.one("SELECT chart_spec->>'type' FROM qa.answer WHERE id = %s", answer) == "bar"
+    # AE-05: the explored numbers are sealed, each from the winning query run, with no product.
+    product, compiler, count, models = seed.all(
+        "SELECT data_product_id, compiler_version, figure_count, models FROM qa.answer_receipt"
+        " WHERE answer_id = %s AND sealed_at IS NOT NULL",
+        answer,
+    )[0]
+    assert (product, compiler, count) == (None, "none", len(figures))
+    assert {m["task"] for m in models} >= {"text_to_sql"}
+    runs = seed.all(
+        "SELECT DISTINCT f.source_kind, f.query_run_id::text FROM qa.answer_receipt_figure f"
+        " JOIN qa.answer_receipt r ON r.id = f.receipt_id WHERE r.answer_id = %s",
+        answer,
+    )
+    assert runs == [("query_run", figures[0]["query_run_id"])]
+    assert (
+        seed.one(
+            "SELECT payload->>'engine' FROM qa.outbox WHERE event_type = 'answer.sealed'"
+            " AND aggregate_id = %s",
+            answer,
+        )
+        == "explore"
+    )
 
 
 async def test_a_candidate_the_checker_rejects_is_repaired_once_and_still_counts(
@@ -168,6 +190,15 @@ async def test_candidates_that_disagree_give_no_number_and_ask_back(
     status, kind, text, figures, *_ = answer_of(seed, q)
     assert (status, kind, figures) == ("clarifying", "clarification", [])
     assert "2/6" in text and json.dumps(figures) == "[]"
+    # No number, nothing to seal.
+    assert (
+        seed.one(
+            "SELECT count(*) FROM qa.answer_receipt r JOIN qa.answer a ON a.id = r.answer_id"
+            " WHERE a.question_id = %s",
+            q,
+        )
+        == 0
+    )
 
 
 async def test_a_personal_data_column_is_never_shown_to_the_model_nor_read(

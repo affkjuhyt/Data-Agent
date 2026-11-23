@@ -144,13 +144,17 @@ function ReceiptBody({ receipt }: { receipt: AnswerReceipt }) {
       </div>
       <p className="text-muted-foreground da-caption">
         {formatDateTime(receipt.created_at)} ·{' '}
-        <button
-          type="button"
-          className="text-info hover:underline"
-          onClick={() => navigate('data', 'ANSWER_PRODUCTS', receipt.data_product.id)}
-        >
-          {receipt.data_product.name}
-        </button>
+        {receipt.data_product ? (
+          <button
+            type="button"
+            className="text-info hover:underline"
+            onClick={() => navigate('data', 'ANSWER_PRODUCTS', receipt.data_product!.id)}
+          >
+            {receipt.data_product.name}
+          </button>
+        ) : (
+          'Ngoài data product'
+        )}
       </p>
 
       {receipt.receipt_sha256 && (

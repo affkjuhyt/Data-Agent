@@ -1164,7 +1164,7 @@ async def get_answer_receipt(
     answer_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace
 ) -> ReceiptView:
     async with transaction(ROLE, principal) as session:
-        # BR-176: a receipt is shown once sealed; an out-of-scope answer has none (404, A3).
+        # BR-176: a receipt is shown once sealed; an answer without numbers has none (404, A3).
         receipt = await session.scalar(
             scope.receipts_in(principal, data_space).where(
                 qa.AnswerReceipt.answer_id == answer_id, qa.AnswerReceipt.sealed_at.is_not(None)

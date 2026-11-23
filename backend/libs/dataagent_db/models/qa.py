@@ -237,7 +237,7 @@ class Answer(Base):
     product_scope: Mapped[str] = mapped_column(
         Text,
         server_default=sql_text("'not_applicable'"),
-        comment="in_scope, out_of_scope, not_applicable (làm rõ, từ chối); out_of_scope hiển thị nhãn “Ngoài phạm vi data product, không có biên nhận”",
+        comment="in_scope, out_of_scope, not_applicable (làm rõ, từ chối); out_of_scope hiển thị nhãn “Ngoài phạm vi data product”; từ AE-05 câu ngoài phạm vi vẫn có biên nhận, không mang data product",
     )
     trust_code: Mapped[str | None] = mapped_column(
         Text,
@@ -384,7 +384,7 @@ class ExportJob(Base):
 
 
 class AnswerReceipt(Base):
-    """Biên nhận của một câu trả lời trong phạm vi data product: data product và phiên bản, phiên bản bộ biên dịch và Agent runtime, mô hình và provider của mọi lần gọi, độ tươi lúc trả lời, mã băm toàn biên nhận. Ghi cùng giao dịch với qa.answer, khoá ngay, chỉ ghi thêm (BR-176, ADR-43). Câu trả lời ngoài phạm vi không có biên nhận. Thêm 10/10/2026. Use case: UC-01-07, UC-01-01, UC-07-14."""
+    """Biên nhận của một câu trả lời có số: data product và phiên bản khi câu trả lời trong phạm vi, phiên bản bộ biên dịch và Agent runtime, mô hình và provider của mọi lần gọi, độ tươi lúc trả lời, mã băm toàn biên nhận. Ghi cùng giao dịch với qa.answer, khoá ngay, chỉ ghi thêm (BR-176, ADR-43). Từ 23/11/2026 (AE-05) mọi đường trả lời (governed, khám phá, verified query, agentic) ghi biên nhận cho câu trả lời có số; câu ngoài data product có biên nhận không mang data product. Thêm 10/10/2026. Use case: UC-01-07, UC-01-01, UC-07-14."""
 
     __tablename__ = "answer_receipt"
     __table_args__ = ({"schema": "qa"},)
@@ -399,13 +399,15 @@ class AnswerReceipt(Base):
     receipt_no: Mapped[str] = mapped_column(
         Text, comment="Mã hiển thị theo ngày, ví dụ BN-20260702-000184; trigger cấp"
     )
-    data_product_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), comment="logic → context.data_product"
+    data_product_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="logic → context.data_product; null khi câu trả lời ngoài data product (AE-05)",
     )
-    data_product_code: Mapped[str] = mapped_column(
-        Text, comment="Chép lại để đọc được cả khi product đã retired"
+    data_product_code: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Chép lại để đọc được cả khi product đã retired"
     )
-    data_product_version: Mapped[int] = mapped_column(Integer)
+    data_product_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     plan_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("qa.plan.id"),
@@ -421,7 +423,8 @@ class AnswerReceipt(Base):
         DateTime(timezone=True), nullable=True
     )
     compiler_version: Mapped[str] = mapped_column(
-        Text, comment="Phiên bản semantic compiler, ví dụ semcomp 1.8.2+4f2a91c"
+        Text,
+        comment="Phiên bản semantic compiler, ví dụ semcomp 1.8.2+4f2a91c; none khi số không qua semantic compiler (khám phá, agentic)",
     )
     runtime_version: Mapped[str] = mapped_column(
         Text, comment="Phiên bản Agent runtime và Verifier"

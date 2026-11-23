@@ -222,6 +222,39 @@ def test_receipt_only_for_an_in_scope_answer_and_is_numbered_per_day(db):
     )
 
 
+def test_ae_05_a_receipt_without_a_product_is_only_for_an_answer_out_of_scope(db):
+    # v3_0049: explore, verified-query, agentic and out-of-product governed answers are sealed too.
+    org = new_org(db)
+
+    def receipt(answer, plan, **product):
+        return _insert(
+            "qa.answer_receipt",
+            org,
+            {
+                "answer_id": answer,
+                "receipt_no": "BN-00000000-000000",
+                "plan_id": plan,
+                "answered_at": "2026-11-23T08:00:00Z",
+                "knowledge_mode": "latest",
+                "compiler_version": "none",
+                "runtime_version": "r",
+                **product,
+            },
+        )[:2]
+
+    for scope in ("out_of_scope", "not_applicable"):
+        answer, plan = _answer(db, org, product_scope=scope)
+        sql, values = receipt(answer, plan)
+        with db.cursor() as cur:
+            cur.execute(sql, values)
+    # An in-scope answer's receipt names its product.
+    in_answer, in_plan, _ = _in_scope_answer(db, org)
+    fails(db, *receipt(in_answer, in_plan), code=CHECK)
+    # The product's id, code and version come together.
+    answer, plan = _answer(db, org, product_scope="out_of_scope")
+    fails(db, *receipt(answer, plan, data_product_code="x"), code=CHECK)
+
+
 def test_receipt_cannot_be_sealed_at_creation(db):
     org = new_org(db)
     a, p, prod = _in_scope_answer(db, org)

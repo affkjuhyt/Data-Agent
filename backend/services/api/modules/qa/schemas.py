@@ -374,9 +374,10 @@ class ReceiptView(_Row):
     id: uuid.UUID
     answer_id: uuid.UUID
     receipt_no: str
-    data_product_id: uuid.UUID
-    data_product_code: str
-    data_product_version: int
+    # Null for an answer outside every data product (AE-05): its receipt names no product.
+    data_product_id: uuid.UUID | None
+    data_product_code: str | None
+    data_product_version: int | None
     plan_id: uuid.UUID
     answered_at: datetime.datetime
     knowledge_mode: str

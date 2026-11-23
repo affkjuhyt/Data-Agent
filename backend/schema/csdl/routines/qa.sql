@@ -22,7 +22,9 @@ CREATE POLICY answer_receipt_answer_visible ON qa.answer_receipt AS RESTRICTIVE 
   USING (EXISTS (SELECT 1 FROM qa.answer a WHERE a.id = answer_id));
 
 -- covers: qa.answer_receipt#1
--- BR-175/BR-176: a receipt belongs to an in-scope answer of the same data product, is numbered per
+-- BR-175/BR-176: a receipt that names a data product belongs to an in-scope answer of that product;
+-- one that names none (AE-05: explore, verified query, agentic, governed outside every product)
+-- belongs to an answer that is not in scope, so an in-scope answer never loses its product. It is numbered per
 -- organisation and day of answered_at (UTC, D1.9), and starts unsealed: figures are added, then the
 -- receipt is sealed once. After that nothing changes; only the retention job removes it once
 -- retain_until has passed. Writing the receipt in the answer's transaction and hiding numbers of an
@@ -49,7 +51,12 @@ DECLARE
 BEGIN
   IF TG_OP = 'INSERT' THEN
     SELECT product_scope, data_product_id INTO a_scope, a_product FROM qa.answer WHERE id = NEW.answer_id;
-    IF a_scope IS DISTINCT FROM 'in_scope' OR a_product IS DISTINCT FROM NEW.data_product_id THEN
+    IF NEW.data_product_id IS NULL THEN
+      IF a_scope = 'in_scope' THEN
+        RAISE EXCEPTION 'Câu trả lời trong phạm vi data product phải có biên nhận mang data product đó (BR-175)'
+          USING ERRCODE = 'check_violation';
+      END IF;
+    ELSIF a_scope IS DISTINCT FROM 'in_scope' OR a_product IS DISTINCT FROM NEW.data_product_id THEN
       RAISE EXCEPTION 'Biên nhận chỉ cấp cho câu trả lời trong phạm vi cùng data product (BR-175)'
         USING ERRCODE = 'check_violation';
     END IF;

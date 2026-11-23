@@ -19951,14 +19951,11 @@ export interface components {
              */
             created_at: string;
             /** Data Product Code */
-            data_product_code: string;
-            /**
-             * Data Product Id
-             * Format: uuid
-             */
-            data_product_id: string;
+            data_product_code: string | null;
+            /** Data Product Id */
+            data_product_id: string | null;
             /** Data Product Version */
-            data_product_version: number;
+            data_product_version: number | null;
             /** Figure Count */
             figure_count: number;
             /**

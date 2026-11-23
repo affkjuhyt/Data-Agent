@@ -11094,7 +11094,7 @@
      "not_null": true,
      "default": "'not_applicable'",
      "unique": false,
-     "comment": "in_scope, out_of_scope, not_applicable (làm rõ, từ chối); out_of_scope hiển thị nhãn “Ngoài phạm vi data product, không có biên nhận”",
+     "comment": "in_scope, out_of_scope, not_applicable (làm rõ, từ chối); out_of_scope hiển thị nhãn “Ngoài phạm vi data product”; từ AE-05 câu ngoài phạm vi vẫn có biên nhận, không mang data product",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -11679,7 +11679,7 @@
    "schema": "qa",
    "name": "answer_receipt",
    "qualified": "qa.answer_receipt",
-   "description": "Biên nhận của một câu trả lời trong phạm vi data product: data product và phiên bản, phiên bản bộ biên dịch và Agent runtime, mô hình và provider của mọi lần gọi, độ tươi lúc trả lời, mã băm toàn biên nhận. Ghi cùng giao dịch với qa.answer, khoá ngay, chỉ ghi thêm (BR-176, ADR-43). Câu trả lời ngoài phạm vi không có biên nhận. Thêm 10/10/2026. Use case: UC-01-07, UC-01-01, UC-07-14.",
+   "description": "Biên nhận của một câu trả lời có số: data product và phiên bản khi câu trả lời trong phạm vi, phiên bản bộ biên dịch và Agent runtime, mô hình và provider của mọi lần gọi, độ tươi lúc trả lời, mã băm toàn biên nhận. Ghi cùng giao dịch với qa.answer, khoá ngay, chỉ ghi thêm (BR-176, ADR-43). Từ 23/11/2026 (AE-05) mọi đường trả lời (governed, khám phá, verified query, agentic) ghi biên nhận cho câu trả lời có số; câu ngoài data product có biên nhận không mang data product. Thêm 10/10/2026. Use case: UC-01-07, UC-01-01, UC-07-14.",
    "use_cases": [
     "UC-01-01",
     "UC-01-07",
@@ -11711,10 +11711,10 @@
     {
      "name": "data_product_id",
      "type": "uuid",
-     "not_null": true,
+     "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "logic → context.data_product",
+     "comment": "logic → context.data_product; null khi câu trả lời ngoài data product (AE-05)",
      "fk": null,
      "logic_ref": "context.data_product",
      "pii": false
@@ -11722,7 +11722,7 @@
     {
      "name": "data_product_code",
      "type": "text",
-     "not_null": true,
+     "not_null": false,
      "default": null,
      "unique": false,
      "comment": "Chép lại để đọc được cả khi product đã retired",
@@ -11733,7 +11733,7 @@
     {
      "name": "data_product_version",
      "type": "integer",
-     "not_null": true,
+     "not_null": false,
      "default": null,
      "unique": false,
      "comment": "",
@@ -11791,7 +11791,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "Phiên bản semantic compiler, ví dụ semcomp 1.8.2+4f2a91c",
+     "comment": "Phiên bản semantic compiler, ví dụ semcomp 1.8.2+4f2a91c; none khi số không qua semantic compiler (khám phá, agentic)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -11939,6 +11939,10 @@
      "sql": "CHECK (receipt_sha256 IS NULL OR receipt_sha256 ~ '^[0-9a-f]{64}$')"
     },
     {
+     "kind": "check",
+     "sql": "CHECK ((data_product_id IS NULL) = (data_product_code IS NULL) AND (data_product_id IS NULL) = (data_product_version IS NULL))"
+    },
+    {
      "kind": "fk",
      "sql": "FOREIGN KEY (answer_id) REFERENCES qa.answer(id)"
     },
@@ -11967,7 +11971,7 @@
    "immutable": false,
    "notes": [
     "RLS: org_isolation; người xem biên nhận phải xem được câu trả lời; số trong biên nhận che theo quyền người xem như qa.answer.",
-    "Trigger: trước INSERT: qa.answer tương ứng phải có product_scope = 'in_scope' và cùng data_product_id (BR-175); cấp receipt_no theo ngày answered_at. Trước UPDATE: chỉ cho đặt sealed_at một lần khi đang null, lúc đó trigger tính figure_count, masked_count, receipt_sha256 bằng sha256(convert_to(json chuẩn hoá, 'UTF8')); mọi UPDATE khác bị chặn. Trước DELETE: chỉ job lưu giữ xóa được dòng quá retain_until. Agent runtime ghi biên nhận, figure và khoá trong cùng giao dịch với qa.answer; câu trả lời in_scope không có biên nhận đã khoá thì không hiển thị số (BR-176)."
+    "Trigger: trước INSERT: biên nhận mang data product thì qa.answer tương ứng phải có product_scope = 'in_scope' và cùng data_product_id (BR-175), biên nhận không mang data product thì câu trả lời không in_scope; cấp receipt_no theo ngày answered_at. Trước UPDATE: chỉ cho đặt sealed_at một lần khi đang null, lúc đó trigger tính figure_count, masked_count, receipt_sha256 bằng sha256(convert_to(json chuẩn hoá, 'UTF8')); mọi UPDATE khác bị chặn. Trước DELETE: chỉ job lưu giữ xóa được dòng quá retain_until. Agent runtime ghi biên nhận, figure và khoá trong cùng giao dịch với qa.answer; câu trả lời in_scope không có biên nhận đã khoá thì không hiển thị số (BR-176)."
    ]
   },
   {

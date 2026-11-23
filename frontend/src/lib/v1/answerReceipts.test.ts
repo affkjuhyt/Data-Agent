@@ -109,6 +109,19 @@ describe('answer receipts from the api', () => {
     });
   });
 
+  it('reads a receipt outside every data product, whose numbers no compiler made (AE-05)', () => {
+    const r = readReceipt({
+      ...receipt,
+      data_product_id: null,
+      data_product_code: null,
+      data_product_version: null,
+      compiler_version: 'none',
+    });
+    expect(r.data_product).toBeNull();
+    for (const f of r.figures)
+      if (f.source.kind === 'query_run') expect(f.source.query.compiler).toBe('');
+  });
+
   it('reads an unsealed receipt as open', () => {
     expect(readReceipt({ ...receipt, sealed_at: null, receipt_sha256: null }).status).toBe('open');
   });

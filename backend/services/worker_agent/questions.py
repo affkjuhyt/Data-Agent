@@ -49,7 +49,14 @@ from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
-from services.worker_agent import compute_runs, explore, quality_gate, suggestions, turn_trace
+from services.worker_agent import (
+    compute_runs,
+    explore,
+    quality_gate,
+    receipts,
+    suggestions,
+    turn_trace,
+)
 from services.worker_agent.analyst_plan import build_analysis_plan
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.comparison import (
@@ -101,7 +108,6 @@ logger = logging.getLogger(__name__)
 
 ROLE = "svc_qa"
 AGENT_NAME = "Agent Hỏi đáp"
-RUNTIME_VERSION = "worker-agent-r1"
 QUERYABLE = ("active", "testing")
 INTERNAL_WORKSPACE = "internal://workspace"
 # "Vì sao NPL tăng?": the question asks what moved, which the decomposition skill answers.
@@ -2533,10 +2539,27 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                 )
             )
             await session.flush()
-        if product is not None:
-            await _seal_receipt(
-                session, p, product, answer_id, every, outcome, freshness, state, compute_run_id
-            )
+        await receipts.seal(
+            session,
+            receipts.Receipt(
+                org_id=p.org_id,
+                answer_id=answer_id,
+                question_id=question_id,
+                plan_id=p.plan_id,
+                engine="governed",
+                trust_code=data_code.value,
+                compiler_version=p.compiled.compiler_version,
+                runtime_version=receipts.RUNTIME_VERSION,
+                knowledge_mode=p.knowledge_mode,
+                knowledge_at=p.knowledge_at,
+                models=p.models,
+                freshness=freshness,
+                product=receipts.Product(product.id, product.code, product.version)
+                if product is not None
+                else None,
+            ),
+            _receipt_figures(p, every, outcome, state, compute_run_id),
+        )
         question.status = "answered"
         question.answered_at = func.now()
     payload = {"question_id": str(question_id), "answer_id": str(answer_id), "kind": "data"}
@@ -2577,40 +2600,16 @@ async def _product_in_scope(session: AsyncSession, p: Prepared) -> context.DataP
     return None
 
 
-async def _seal_receipt(
-    session: Any,
+def _receipt_figures(
     p: Prepared,
-    product: context.DataProduct,
-    answer_id: uuid.UUID,
     figures: list[Any],
     outcome: Any,
-    freshness: list[dict[str, Any]],
     state: str,
     compute_run_id: uuid.UUID | None = None,
-) -> None:
-    """ADR-43: the receipt and its figures are written with the answer and sealed before commit;
-    a failure here rolls the whole answer back."""
-    receipt_id = uuid7()
-    session.add(
-        qa.AnswerReceipt(
-            id=receipt_id,
-            org_id=p.org_id,
-            answer_id=answer_id,
-            data_product_id=product.id,
-            data_product_code=product.code,
-            data_product_version=product.version,
-            plan_id=p.plan_id,
-            answered_at=datetime.datetime.now(datetime.UTC),
-            knowledge_mode=p.knowledge_mode,
-            knowledge_at=p.knowledge_at,
-            compiler_version=p.compiled.compiler_version,
-            runtime_version=RUNTIME_VERSION,
-            models=p.models,  # empty when the answer took no model call
-            frontier_used=False,
-            freshness=freshness,
-        )
-    )
-    await session.flush()
+) -> list[dict[str, Any]]:
+    """ADR-43: the receipt rows of a governed answer's figures, with the metric version it was
+    certified at, the published result or query run each was read from and the freshness."""
+    out: list[dict[str, Any]] = []
     v = p.version_row
     certified = (
         v.status == "certified" and v.certified_by is not None and v.certified_at is not None
@@ -2627,54 +2626,50 @@ async def _seal_receipt(
         elif p.period_result_ids and not f.expr and raw_index < len(p.period_result_ids):
             published_result_id = p.period_result_ids[raw_index]
             raw_index += 1
-        session.add(
-            qa.AnswerReceiptFigure(
-                id=uuid7(),
-                org_id=p.org_id,
-                receipt_id=receipt_id,
-                figure_key=f.key,
-                label=f.label,
-                value=f.value if f.display_state == "shown" else None,
-                unit=f.unit,
-                display_state=f.display_state,
-                stale_note=f.stale_note,
-                requested_period=p.understanding.period.label if p.understanding.period else None,
-                metric_id=p.metric_id,
-                metric_version_id=v.id if certified else None,
-                metric_version_no=v.version,
-                metric_certified_by=v.certified_by if certified else None,
-                metric_certified_at=v.certified_at if certified else None,
+        out.append(
+            {
+                "figure_key": f.key,
+                "label": f.label,
+                "value": f.value if f.display_state == "shown" else None,
+                "unit": f.unit,
+                "display_state": f.display_state,
+                "stale_note": f.stale_note,
+                "requested_period": p.understanding.period.label
+                if p.understanding.period
+                else None,
+                "metric_id": p.metric_id,
+                "metric_version_id": v.id if certified else None,
+                "metric_version_no": v.version,
+                "metric_certified_by": v.certified_by if certified else None,
+                "metric_certified_at": v.certified_at if certified else None,
                 # A derived figure is the in-process computation over the others (G5.10): its
                 # expression's hash, so a replay recomputes it rather than reading a row.
-                source_kind=(
+                "source_kind": (
                     "compute_run"
                     if f.expr
                     else "period_result"
                     if published_result_id is not None
                     else "query_run"
                 ),
-                query_run_id=None
+                "query_run_id": None
                 if f.expr or published_result_id is not None
                 else outcome.query_run_id,
-                compute_run_id=compute_run_id if f.expr else None,
-                published_result_id=published_result_id,
-                expr_sha256=hashlib.sha256(f.expr.encode()).hexdigest() if f.expr else None,
-                compiled_sql_sha256=None if f.expr else p.compiled.sql_sha256,
-                result_sha256=outcome.result_hash,
-                dataset_versions=[
+                "compute_run_id": compute_run_id if f.expr else None,
+                "published_result_id": published_result_id,
+                "expr_sha256": hashlib.sha256(f.expr.encode()).hexdigest() if f.expr else None,
+                "compiled_sql_sha256": None if f.expr else p.compiled.sql_sha256,
+                "result_sha256": outcome.result_hash,
+                "dataset_versions": [
                     {"dataset_id": str(d), "version": p.datasets[d].current_version}
                     for d in p.compiled.dataset_ids
                     if d in p.datasets
                 ],
-                as_of=p.as_of,
+                "as_of": p.as_of,
                 # A shown figure is fresh or not tracked; a masked one carries why (CHECKs of D4).
-                freshness_state=state,
-            )
+                "freshness_state": state,
+            }
         )
-    await session.flush()
-    receipt = await session.get(qa.AnswerReceipt, receipt_id)
-    assert receipt is not None
-    receipt.sealed_at = datetime.datetime.now(datetime.UTC)
+    return out
 
 
 HANDLERS: dict[str, Handler] = {

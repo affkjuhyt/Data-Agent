@@ -36,7 +36,7 @@ from libs import clock, language
 from libs.contracts.v1 import trust as answer_trust
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
-from services.worker_agent import turn_trace
+from services.worker_agent import receipts, turn_trace
 from services.worker_agent.agentic import blocks as b
 from services.worker_agent.agentic import budget as agent_budget
 from services.worker_agent.agentic import (
@@ -2002,6 +2002,12 @@ async def persist(s: State) -> None:
     )
     chart = next((blk["spec"] for blk in s.composition if blk["type"] == "chart"), None)
     answer_id = uuid7()
+    # AE-05: an answer with figures is sealed in a receipt, each figure from its query run.
+    runs = (
+        await receipts.runs_of(ctx.org_id, ctx.user_id, figures)
+        if kind in ("data", "mixed") and figures
+        else {}
+    )
     async with scoped_session(ROLE, ctx.org_id, ctx.user_id) as session:
         question = await session.get(qa.Question, s.question_id, with_for_update=True)
         if question is None or question.status != "received":
@@ -2073,6 +2079,26 @@ async def persist(s: State) -> None:
                 product_scope="not_applicable",
             )
         )
+        sealed = receipts.query_figures(figures, runs)
+        if sealed:
+            await session.flush()
+            await receipts.seal(
+                session,
+                receipts.Receipt(
+                    org_id=ctx.org_id,
+                    answer_id=answer_id,
+                    question_id=s.question_id,
+                    plan_id=plan_id,
+                    engine="agentic",
+                    trust_code=code.value,
+                    compiler_version=receipts.NO_COMPILER,
+                    runtime_version=receipts.RUNTIME_VERSION,
+                    knowledge_mode=question.knowledge_mode,
+                    knowledge_at=question.knowledge_at,
+                    models=turn_trace.models_called(),
+                ),
+                sealed,
+            )
         question.status = status
         if status == "answered":
             question.answered_at = func.now()

@@ -7,8 +7,8 @@ import type { components } from './schema';
  * Data product of the context layer (P07, UC-07-13, context.data_product): the scope of questions
  * the organisation commits to answer right — description and sample questions, certified metrics,
  * normalised datasets, a named owner and steward, a freshness commitment. Answers in scope pass the
- * freshness gate and carry a receipt; others are labelled "Ngoài phạm vi data product, không có
- * biên nhận" (BR-175, BR-178).
+ * freshness gate and carry a receipt that names the product; others are labelled "Ngoài phạm vi
+ * data product" and their receipt names none (BR-175, BR-178, AE-05).
  *
  * The spec gives /v1/data-products to this resource and, in the P06 group, to the shared data
  * product of UC-06-06 (lib/v1/dataProducts.ts). Until that is resolved the list carries

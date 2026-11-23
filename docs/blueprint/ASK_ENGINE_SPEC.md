@@ -485,6 +485,17 @@ Sự kiện `answer.sealed{answer_id, trust_code, receipt_id}` vào `qa.outbox` 
   `GET /v1/answers/{id}` (và MCP) trả `AnswerView` + `trust_code` + `trust` {path, trust_code, figures, blocks, stopped};
   câu trả lời trước v3_0045 được tính lúc đọc (`api/modules/qa/answer_trust.py`, `path` = null). FE: `trust.ts trustOfCode`
   dựng nhãn từ mã (thêm DERIVED), chi tiết từ `trust.figures`; bảng nhãn tiếng Việt trong `dataAnswer.ts` đã bỏ.
+- **AE-05 (23/11/2026):** `worker_agent/receipts.py` `seal(session, Receipt, figures)` dùng chung: ghi
+  `qa.answer_receipt` + `answer_receipt_figure`, khoá, và `answer.sealed{answer_id, question_id, trust_code, receipt_id,
+  engine}` vào `qa.outbox` trong cùng giao dịch với `qa.answer`. Governed ghi receipt cho mọi câu trả lời có số (trong
+  hoặc ngoài data product; hàng figure vẫn dựng ở `questions._receipt_figures`); khám phá, verified query
+  (`sqlgen/answer._store_answer`) và agentic (`engine.persist`) niêm phong figure từ query run của nó
+  (`receipts.runs_of` đọc `query.query_run` bằng `svc_query`, `query_figures`), `compiler_version = none`, `models` từ
+  lượt (`turn_trace.models_called` cho agentic). Migration **v3_0049**: `answer_receipt.data_product_*` nullable cùng
+  nhau, trigger cho receipt không data product chỉ với câu không `in_scope`. Câu hỏi lại, từ chối, tài liệu không có số
+  thì không có receipt. Chưa có: `dataset_versions` của figure khám phá/agentic (replay đọc dữ liệu hiện hành), figure
+  agentic chưa ghi ô `{row, col}` nên replay đọc theo F<n>; consumer của `answer.sealed` (eval nightly, correction gate)
+  chưa có, sự kiện nằm trong outbox chờ.
 
 ### C. OSS — không.
 
