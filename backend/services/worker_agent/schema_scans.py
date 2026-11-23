@@ -421,6 +421,7 @@ async def _scan_source(source: catalog.Source, tables: list[str] | None) -> list
                    CASE c.relkind WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized_view'
                                   ELSE 'table' END AS object_kind,
                    c.reltuples::bigint AS row_estimate,
+                   has_table_privilege(c.oid, 'SELECT') AS can_select,
                    a.attname, format_type(a.atttypid, a.atttypmod) AS data_type,
                    NOT a.attnotnull AS is_nullable, a.attnum AS ordinal
             FROM pg_class c
@@ -494,6 +495,8 @@ async def _scan_source(source: catalog.Source, tables: list[str] | None) -> list
                 "table_name": key[1],
                 "object_kind": str(row["object_kind"]),
                 "row_estimate": max(int(row["row_estimate"] or 0), 0),
+                # DF-13: whether the source's login reads the table (a job on it would fail).
+                "can_select": bool(row["can_select"]),
                 "columns": [],
                 "foreign_keys": [],
             },
@@ -941,6 +944,9 @@ async def scan_schema(event: Event) -> None:
                             row_estimate=int(item["row_estimate"]),
                             created_by=event.payload.get("requested_by"),
                         )
+                        if "can_select" in item:
+                            # DF-13: None where the engine does not say (ClickHouse, a MySQL role).
+                            dataset.can_select = item["can_select"]
                         if item.get("activity") is not None:
                             # DF-10: what the source says of the table's writes, on a profile run.
                             dataset.source_activity = item["activity"]

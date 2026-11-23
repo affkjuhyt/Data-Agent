@@ -53,3 +53,49 @@ def test_a_source_type_lands_in_its_workspace_type(
     assert registry.normalized_type(source_type) == normalized
     assert registry.workspace_type("mysql", source_type) == workspace
     assert normalized in registry.NORMALIZED_TYPES
+
+
+@pytest.mark.req("DF-13")
+def test_cursor_candidates_rank_a_modification_time_first_and_skip_what_cannot_grow() -> None:
+    from libs.source_drivers.registry import cursor_candidates
+
+    columns = [
+        {
+            "name": "id",
+            "data_type": "int",
+            "normalized_type": "integer",
+            "is_key": True,
+            "is_nullable": False,
+        },
+        {
+            "name": "quantity",
+            "data_type": "int",
+            "normalized_type": "integer",
+            "is_nullable": False,
+        },
+        {
+            "name": "order_date",
+            "data_type": "date",
+            "normalized_type": "date",
+            "is_nullable": False,
+        },
+        {
+            "name": "created_at",
+            "data_type": "timestamp",
+            "normalized_type": "timestamp",
+            "is_nullable": False,
+        },
+        {
+            "name": "UpdatedAt",
+            "data_type": "datetime2",
+            "normalized_type": "timestamp",
+            "is_nullable": True,
+        },
+        {"name": "note", "data_type": "text", "normalized_type": "string"},
+        {"name": "amount", "data_type": "numeric", "normalized_type": "decimal"},
+    ]
+    got = cursor_candidates(columns)
+    assert [c.name for c in got] == ["UpdatedAt", "created_at", "order_date", "id"]
+    # A quantity is an integer that does not grow with the rows; a note or an amount never does.
+    assert "rỗng" in got[0].hint and "rỗng" not in got[1].hint
+    assert cursor_candidates(columns) == got

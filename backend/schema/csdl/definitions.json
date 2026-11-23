@@ -5211,6 +5211,17 @@
      "pii": false
     },
     {
+     "name": "can_select",
+     "type": "boolean",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "DF-13: tài khoản của nguồn đọc được bảng (SELECT) ở lần quét gần nhất; null khi engine không cho biết (ClickHouse, quyền MySQL qua role)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "history_kind",
      "type": "text",
      "not_null": true,

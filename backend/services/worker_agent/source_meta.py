@@ -106,6 +106,69 @@ def _foreign_keys_sql(kind: str, schemas: Sequence[str]) -> str:
     """
 
 
+def _select_sql(kind: str, schemas: Sequence[str]) -> str | None:
+    """DF-13: whether the login reads each table. SQL Server answers per object; MySQL lists
+    the SELECT grants the login holds, globally, per schema (a LIKE pattern) or per table."""
+    dialect = dialect_of(kind)
+    if kind == "sqlserver":
+        return f"""
+            SELECT TABLE_SCHEMA, TABLE_NAME,
+                   HAS_PERMS_BY_NAME(QUOTENAME(TABLE_SCHEMA) + '.' + QUOTENAME(TABLE_NAME),
+                                     'OBJECT', 'SELECT')
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA IN ({_in_list(schemas, dialect)})
+        """
+    if kind == "mysql":
+        return """
+            SELECT 'global', NULL, NULL FROM INFORMATION_SCHEMA.USER_PRIVILEGES
+             WHERE PRIVILEGE_TYPE = 'SELECT'
+            UNION ALL
+            SELECT 'schema', TABLE_SCHEMA, NULL FROM INFORMATION_SCHEMA.SCHEMA_PRIVILEGES
+             WHERE PRIVILEGE_TYPE = 'SELECT'
+            UNION ALL
+            SELECT 'table', TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
+             WHERE PRIVILEGE_TYPE = 'SELECT'
+        """
+    return None
+
+
+def _like(pattern: str, value: str) -> bool:
+    """MySQL's LIKE of a schema grant (`shop\\_%`): % any run, _ one character, \\ escapes."""
+    regex, i = "", 0
+    while i < len(pattern):
+        ch = pattern[i]
+        if ch == "\\" and i + 1 < len(pattern):
+            regex += re.escape(pattern[i + 1])
+            i += 2
+            continue
+        regex += ".*" if ch == "%" else "." if ch == "_" else re.escape(ch)
+        i += 1
+    return re.fullmatch(regex, value) is not None
+
+
+async def can_select(
+    source: catalog.Source, schemas: Sequence[str], run: Run
+) -> Callable[[str, str], bool | None]:
+    """Whether the login can SELECT from (schema, table): True, False, or None when the engine
+    does not say (ClickHouse; a MySQL grant through a role, which these views do not list)."""
+    sql = _select_sql(source.kind, schemas)
+    if sql is None:
+        return lambda _s, _t: None
+    try:
+        _, rows = await run(sql)
+    except SourceDriverError as exc:
+        log.warning("SELECT rights of %s not read (%s)", source.kind, exc)
+        return lambda _s, _t: None
+    if source.kind == "sqlserver":
+        answers = {(str(s), str(t)): bool(v) for s, t, v in rows if v is not None}
+        return lambda s, t: answers.get((s, t))
+    if any(str(level) == "global" for level, _, _ in rows):
+        return lambda _s, _t: True
+    patterns = [str(s) for level, s, _ in rows if str(level) == "schema"]
+    tables = {(str(s), str(t)) for level, s, t in rows if str(level) == "table"}
+    return lambda s, t: (True if (s, t) in tables or any(_like(p, s) for p in patterns) else None)
+
+
 async def scan(
     source: catalog.Source,
     tables: list[str] | None,
@@ -119,6 +182,7 @@ async def scan(
     _, column_rows = await run(_columns_sql(source.kind, schemas))
     _, key_rows = await run(_keys_sql(source.kind, schemas))
     _, fk_rows = await run(_foreign_keys_sql(source.kind, schemas))
+    selectable = await can_select(source, schemas, run)
 
     constraints: dict[tuple[str, str, str], tuple[str, list[str]]] = {}
     for schema, table, name, kind, column in key_rows:
@@ -154,6 +218,7 @@ async def scan(
                 "table_name": key[1],
                 "object_kind": "view" if str(table_type).upper() == "VIEW" else "table",
                 "row_estimate": max(int(row_estimate or 0), 0),
+                "can_select": selectable(key[0], key[1]),
                 "columns": [],
                 "foreign_keys": [],
             },

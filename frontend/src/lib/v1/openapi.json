@@ -11420,6 +11420,34 @@
     "title": "CrawlSourceView",
     "type": "object"
    },
+   "CursorCandidateView": {
+    "properties": {
+     "data_type": {
+      "title": "Data Type",
+      "type": "string"
+     },
+     "hint": {
+      "title": "Hint",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "normalized_type": {
+      "title": "Normalized Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "data_type",
+     "normalized_type",
+     "hint"
+    ],
+    "title": "CursorCandidateView",
+    "type": "object"
+   },
    "DataMartView": {
     "properties": {
      "checks": {
@@ -12668,6 +12696,17 @@
       ],
       "title": "Business Date Col"
      },
+     "can_select": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Can Select"
+     },
      "certified": {
       "anyOf": [
        {
@@ -12705,6 +12744,13 @@
      "current_version": {
       "title": "Current Version",
       "type": "integer"
+     },
+     "cursor_candidates": {
+      "items": {
+       "$ref": "#/components/schemas/CursorCandidateView"
+      },
+      "title": "Cursor Candidates",
+      "type": "array"
      },
      "data_space_id": {
       "format": "uuid",

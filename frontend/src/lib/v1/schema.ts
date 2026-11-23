@@ -10841,6 +10841,17 @@ export interface components {
              */
             updated_at: string;
         };
+        /** CursorCandidateView */
+        CursorCandidateView: {
+            /** Data Type */
+            data_type: string;
+            /** Hint */
+            hint: string;
+            /** Name */
+            name: string;
+            /** Normalized Type */
+            normalized_type: string;
+        };
         /** DataMartView */
         DataMartView: {
             /** Checks */
@@ -11258,6 +11269,8 @@ export interface components {
         DatasetDetail: {
             /** Business Date Col */
             business_date_col: string | null;
+            /** Can Select */
+            can_select?: boolean | null;
             /** Certified */
             certified?: boolean | null;
             /** Column Count */
@@ -11271,6 +11284,8 @@ export interface components {
             created_at: string;
             /** Current Version */
             current_version: number;
+            /** Cursor Candidates */
+            cursor_candidates?: components["schemas"]["CursorCandidateView"][];
             /**
              * Data Space Id
              * Format: uuid

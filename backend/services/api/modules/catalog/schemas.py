@@ -339,9 +339,23 @@ class ColumnStatsView(BaseModel):
     buckets_text: str
 
 
+class CursorCandidateView(BaseModel):
+    name: str
+    data_type: str
+    normalized_type: str
+    # Why it can serve, and what it misses ("chỉ bắt dòng thêm mới").
+    hint: str
+
+
 class DatasetDetail(DatasetView):
     # The current columns (not removed) with their latest profile.
     columns: list[ColumnView] = Field(default_factory=list)
+    # DF-13: whether the source's login can SELECT the table, at its last scan; None where the
+    # engine does not say, and for a table that is not a source's.
+    can_select: bool | None = None
+    # DF-13: the columns an incremental job on a source table can use as its cursor, best first
+    # (libs/source_drivers.registry.cursor_candidates); empty for a workspace table.
+    cursor_candidates: list[CursorCandidateView] = Field(default_factory=list)
 
 
 class ColumnPatch(BaseModel):

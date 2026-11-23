@@ -34,6 +34,7 @@ def _fake(answers: dict[str, list[list[Any]]]) -> source_meta.Run:
 async def test_a_mysql_source_scans_tables_keys_and_one_to_one_links() -> None:
     run = _fake(
         {
+            "USER_PRIVILEGES": [],
             "REFERENCED_TABLE_NAME": [
                 ["shop", "orders", "fk_cust", "customer_id", "shop", "customers", "id"],
                 ["shop", "profiles", "fk_prof", "customer_id", "shop", "customers", "id"],
@@ -69,6 +70,7 @@ async def test_a_mysql_source_scans_tables_keys_and_one_to_one_links() -> None:
 async def test_a_requested_scan_keeps_only_the_named_tables() -> None:
     run = _fake(
         {
+            "USER_PRIVILEGES": [],
             "REFERENCED_TABLE_NAME": [],
             "TABLE_CONSTRAINTS": [],
             "INFORMATION_SCHEMA.COLUMNS": [
@@ -79,6 +81,65 @@ async def test_a_requested_scan_keeps_only_the_named_tables() -> None:
     )
     found = await source_meta.scan(_source(), ["shop.b"], run, _normalized_type)
     assert [t["table_name"] for t in found] == ["b"]
+
+
+@pytest.mark.req("DF-13")
+async def test_mysql_select_grants_mark_tables_readable_and_say_nothing_of_the_rest() -> None:
+    columns = [
+        ["shop", "orders", "BASE TABLE", 0, "id", "int", "NO", 1],
+        ["shop", "payroll", "BASE TABLE", 0, "id", "int", "NO", 1],
+        ["shop_2024", "archive", "BASE TABLE", 0, "id", "int", "NO", 1],
+    ]
+    run = _fake(
+        {
+            # A grant on a table, and one on every schema LIKE shop\_%.
+            "USER_PRIVILEGES": [["table", "shop", "orders"], ["schema", "shop\\_%", None]],
+            "REFERENCED_TABLE_NAME": [],
+            "TABLE_CONSTRAINTS": [],
+            "INFORMATION_SCHEMA.COLUMNS": columns,
+        }
+    )
+    source = catalog.Source(
+        kind="mysql", database_name="shop", scan_schemas=["shop", "shop_2024"], conn_options={}
+    )
+    found = {
+        t["table_name"]: t for t in await source_meta.scan(source, None, run, _normalized_type)
+    }
+    assert found["orders"]["can_select"] is True
+    assert found["archive"]["can_select"] is True
+    # No grant listed: a role may still give it, so the scan says nothing rather than no.
+    assert found["payroll"]["can_select"] is None
+
+
+@pytest.mark.req("DF-13")
+async def test_sql_server_answers_each_table_and_a_failed_read_says_nothing() -> None:
+    run = _fake(
+        {
+            "HAS_PERMS_BY_NAME": [["dbo", "loans", 1], ["dbo", "salaries", 0]],
+            # SQL Server's foreign keys are read from REFERENTIAL_CONSTRAINTS.
+            "REFERENTIAL_CONSTRAINTS": [],
+            "TABLE_CONSTRAINTS": [],
+            "INFORMATION_SCHEMA.COLUMNS": [
+                ["dbo", "loans", "BASE TABLE", 0, "id", "int", "NO", 1],
+                ["dbo", "salaries", "BASE TABLE", 0, "id", "int", "NO", 1],
+            ],
+        }
+    )
+    source = catalog.Source(kind="sqlserver", database_name="core", scan_schemas=["dbo"])
+    found = {
+        t["table_name"]: t for t in await source_meta.scan(source, None, run, _normalized_type)
+    }
+    assert (found["loans"]["can_select"], found["salaries"]["can_select"]) == (True, False)
+
+    async def refusing(sql: str) -> tuple[list[dict[str, str]], list[list[Any]]]:
+        if "HAS_PERMS_BY_NAME" in sql:
+            raise SourceDriverError("sqlserver query failed (ProgrammingError)")
+        return await run(sql)
+
+    found = {
+        t["table_name"]: t for t in await source_meta.scan(source, None, refusing, _normalized_type)
+    }
+    assert found["loans"]["can_select"] is None
 
 
 async def test_a_column_the_engine_cannot_aggregate_is_left_unprofiled() -> None:
@@ -138,7 +199,11 @@ async def test_a_clickhouse_column_that_is_not_a_plain_name_is_not_profiled() ->
         sent.append(sql)
         return [], [[1, 0, 1, "a", "a"]] if "sample_rows" in sql else [["a", 1]]
 
-    table = {"schema_name": "db", "table_name": "t", "columns": [{"name": 'x\\" y'}, {"name": "ok"}]}
+    table = {
+        "schema_name": "db",
+        "table_name": "t",
+        "columns": [{"name": 'x\\" y'}, {"name": "ok"}],
+    }
     profiles = await source_meta.profile(
         _source("clickhouse"), [table], run, lambda name: False, lambda name, v: str(v)
     )

@@ -250,3 +250,55 @@ def normalized_type(source_type: str) -> str:
 def workspace_type(kind: str, source_type: str) -> str:
     """The workspace column type a `kind` source's `source_type` column lands in."""
     return WORKSPACE_TYPE[type_map(kind, source_type)]
+
+
+# DF-13: the columns an incremental job can read past, best first. A cursor must only grow as
+# rows are written or changed: a modification time catches updates, a creation time or a date
+# only new rows, an integer key only rows appended with a higher key. A nullable column loses the
+# rows where it is empty, so it ranks after the same kind without nulls.
+_MODIFIED = ("updated", "modified", "changed", "last_", "_ts", "timestamp", "sync")
+_KEY_LIKE = ("seq", "version", "rowversion", "serial")
+
+
+@dataclass(frozen=True)
+class CursorCandidate:
+    name: str
+    data_type: str
+    normalized_type: str
+    hint: str
+
+
+def cursor_candidates(columns: list[dict[str, object]]) -> list[CursorCandidate]:
+    """The cursor candidates of a table's columns ({name, data_type, normalized_type,
+    is_nullable, is_key}), ranked: a modification time, another timestamp, a date, an increasing
+    integer key. Deterministic: the same columns give the same list."""
+    ranked: list[tuple[int, int, str, CursorCandidate]] = []
+    for column in columns:
+        name = str(column.get("name") or "")
+        kind = str(column.get("normalized_type") or "")
+        lowered = name.lower()
+        if kind == "timestamp":
+            if any(part in lowered for part in _MODIFIED):
+                rank, hint = 0, "thời điểm sửa dòng: bắt được cả dòng mới lẫn dòng sửa"
+            else:
+                rank, hint = 1, "thời điểm: chỉ bắt dòng mới nếu không bao giờ sửa lùi"
+        elif kind == "date":
+            rank, hint = 2, "ngày: đọc lại cả ngày cuối, nên đặt lookback 1 ngày"
+        elif kind == "integer" and (
+            bool(column.get("is_key")) or any(part in lowered for part in _KEY_LIKE)
+        ):
+            rank, hint = 3, "khoá tăng dần: chỉ bắt dòng thêm mới, không bắt dòng sửa"
+        else:
+            continue
+        nullable = bool(column.get("is_nullable", True))
+        if nullable:
+            hint += "; có thể rỗng, dòng rỗng sẽ không được nạp"
+        ranked.append(
+            (
+                rank,
+                int(nullable),
+                lowered,
+                CursorCandidate(name, str(column.get("data_type") or ""), kind, hint),
+            )
+        )
+    return [c for *_, c in sorted(ranked, key=lambda r: (r[0], r[1], r[2]))]

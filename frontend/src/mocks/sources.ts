@@ -1596,6 +1596,19 @@ export function createSourcesHandlers() {
         quality_state: 'unknown',
         created_at: at(8, 0),
         updated_at: at(8, 0),
+        // DF-13: the login reads the table, and the api ranks its cursors (modification time first).
+        can_select: true,
+        cursor_candidates: candidateColumns
+          .filter((column) => ['timestamp', 'date'].includes(column.normalized_type))
+          .map((column) => ({
+            name: column.name,
+            data_type: column.data_type,
+            normalized_type: column.normalized_type,
+            hint:
+              column.name === 'updated_at'
+                ? 'thời điểm sửa dòng: bắt được cả dòng mới lẫn dòng sửa'
+                : 'thời điểm: chỉ bắt dòng mới nếu không bao giờ sửa lùi',
+          })),
         columns: candidateColumns.map((column, ordinal) => ({
           id: `${found.table.id}-column-${ordinal}`,
           dataset_version: 1,

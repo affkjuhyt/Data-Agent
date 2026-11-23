@@ -217,6 +217,11 @@ class Dataset(Base):
         nullable=True,
         comment="DF-10: độ tươi ở nguồn {n_tup_ins, n_tup_upd, n_tup_del, n_live_tup, last_analyze, last_autoanalyze, observed_at} từ pg_stat_user_tables; null với nguồn khác PostgreSQL",
     )
+    can_select: Mapped[bool | None] = mapped_column(
+        Boolean,
+        nullable=True,
+        comment="DF-13: tài khoản của nguồn đọc được bảng (SELECT) ở lần quét gần nhất; null khi engine không cho biết (ClickHouse, quyền MySQL qua role)",
+    )
     history_kind: Mapped[str] = mapped_column(
         Text, server_default=sql_text("'none'"), comment="none, scd2, snapshot, temporal"
     )

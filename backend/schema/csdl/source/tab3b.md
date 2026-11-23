@@ -600,6 +600,7 @@ Bảng hoặc view ở nguồn, hoặc bảng dẫn xuất và bảng tải tay 
 | description\_status | text, bắt buộc, mặc định 'none' | none, suggested, approved (BR-100) |
 | row\_estimate | bigint |  |
 | source\_activity | jsonb | DF-10: độ tươi ở nguồn {n\_tup\_ins, n\_tup\_upd, n\_tup\_del, n\_live\_tup, last\_analyze, last\_autoanalyze, observed\_at} từ pg\_stat\_user\_tables; null với nguồn khác PostgreSQL |
+| can\_select | boolean | DF-13: tài khoản của nguồn đọc được bảng (SELECT) ở lần quét gần nhất; null khi engine không cho biết (ClickHouse, quyền MySQL qua role) |
 | history\_kind | text, bắt buộc, mặc định 'none' | none, scd2, snapshot, temporal |
 | business\_date\_col | text | Cột ngày nghiệp vụ, dùng cho hỏi theo thời điểm (UC-10-01) |
 | knowledge\_time\_col | text | Cột thời điểm ghi nhận, dùng cho chế độ at |

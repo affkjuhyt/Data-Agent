@@ -1593,13 +1593,11 @@ export interface JobCandidate {
   estimate: { rows_per_run: string; duration: string; source_load: string } | null;
 }
 
-/** Columns a run can read past, timestamps first: what an incremental job's cursor can be. */
-const CURSOR_TYPES = ['timestamp', 'datetime', 'date', 'integer', 'bigint', 'number'];
-
 /*
  * From A2: the tables of the sources in ingest mode that no job reads yet (a job names its table
- * in source_object), each with the columns that can serve as the cursor. The agent's suggestion,
- * the cursor's current value and the estimate are PROPOSAL and absent here.
+ * in source_object) and that the source's login can read (DatasetDetail.can_select, DF-13), each
+ * with the columns the catalogue ranks as cursors (cursor_candidates, with why). The cursor's
+ * current value and the estimate are PROPOSAL and absent here.
  */
 async function servedJobCandidates(): Promise<Page<JobCandidate>> {
   const [sources, jobs] = await Promise.all([
@@ -1626,19 +1624,24 @@ async function servedJobCandidates(): Promise<Page<JobCandidate>> {
     const qualified = d.schema_name ? `${d.schema_name}.${d.table_name}` : d.table_name;
     return !read.has(`${d.source_id}|${qualified}`) && !read.has(`${d.source_id}|${d.table_name}`);
   });
-  const items = await Promise.all(
-    free.map(async (d): Promise<JobCandidate> => {
-      const detail = await ok<components['schemas']['DatasetDetail']>(
+  const details = await Promise.all(
+    free.map((d) =>
+      ok<components['schemas']['DatasetDetail']>(
         api.GET('/v1/datasets/{id}', { params: { path: { id: d.id } } }),
-      );
-      const cursor_columns = (detail.columns ?? [])
-        .filter((c) => CURSOR_TYPES.includes((c.normalized_type ?? '').toLowerCase()))
-        .sort(
-          (a, b) =>
-            CURSOR_TYPES.indexOf((a.normalized_type ?? '').toLowerCase()) -
-            CURSOR_TYPES.indexOf((b.normalized_type ?? '').toLowerCase()),
-        )
-        .map((c) => ({ name: c.name, data_type: c.data_type, hint: null }));
+      ),
+    ),
+  );
+  // A table the login cannot read would fail its job's first run: it is not offered. Unknown
+  // (null: the engine does not say) is offered.
+  const readable = free.filter((_, i) => details[i]?.can_select !== false);
+  const items = await Promise.all(
+    readable.map(async (d): Promise<JobCandidate> => {
+      const detail = details[free.indexOf(d)];
+      const cursor_columns = (detail?.cursor_candidates ?? []).map((c) => ({
+        name: c.name,
+        data_type: c.data_type,
+        hint: c.hint,
+      }));
       const qualified = d.schema_name ? `${d.schema_name}.${d.table_name}` : d.table_name;
       return {
         dataset_id: d.id,

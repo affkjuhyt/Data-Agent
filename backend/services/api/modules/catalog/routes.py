@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import uuid
+from dataclasses import asdict
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
@@ -68,6 +69,7 @@ from services.api.modules.catalog.schemas import (
     ContractPut,
     ContractRule,
     ContractView,
+    CursorCandidateView,
     DatasetDeriveRequest,
     DatasetDetail,
     DatasetPatch,
@@ -1148,10 +1150,21 @@ async def _detail(session: AsyncSession, row: catalog.Dataset) -> DatasetDetail:
         views.append(view)
     facts = await _list_facts(session, [row])
     certified, count = facts.get(row.id, (False, 0))
+    candidates = (
+        [
+            CursorCandidateView(**asdict(c))
+            for c in registry.cursor_candidates([v.model_dump() for v in views])
+        ]
+        # A source's own table: an ingest job's workspace copy is not read with a cursor.
+        if row.source_id is not None and row.origin == "source" and row.schema_name != "workspace"
+        else []
+    )
     return DatasetDetail(
         **DatasetView.model_validate(row, from_attributes=True).model_dump()
         | {"certified": certified, "column_count": count},
         columns=views,
+        can_select=row.can_select if row.source_id is not None else None,
+        cursor_candidates=candidates,
     )
 
 

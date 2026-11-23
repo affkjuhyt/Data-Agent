@@ -484,6 +484,9 @@ async def test_a_profile_keeps_quantiles_a_histogram_lengths_patterns_and_the_so
             cur.execute("ALTER ROLE dw_reader PASSWORD 'warehouse-reader'")
             cur.execute("GRANT USAGE ON SCHEMA scan_df10 TO dw_reader")
             cur.execute("GRANT SELECT ON ALL TABLES IN SCHEMA scan_df10 TO dw_reader")
+            # DF-13: a table the reader sees in the catalogue but may not read.
+            cur.execute("DROP TABLE IF EXISTS scan_df10.payroll")
+            cur.execute("CREATE TABLE scan_df10.payroll (id integer PRIMARY KEY, salary numeric)")
 
     org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="DF-10")
     user = seed.row(
@@ -585,6 +588,14 @@ async def test_a_profile_keeps_quantiles_a_histogram_lengths_patterns_and_the_so
     )
     assert activity is not None
     assert {"n_tup_ins", "n_live_tup", "last_autoanalyze", "observed_at"} <= set(activity)
+
+    # DF-13: the scan says which tables the source's login can read.
+    readable = dict(
+        seed.all(
+            "SELECT table_name, can_select FROM catalog.dataset WHERE source_id = %s", source_id
+        )
+    )
+    assert readable == {"sales": True, "payroll": False}
 
 
 @pytest.mark.req("DF-11")
