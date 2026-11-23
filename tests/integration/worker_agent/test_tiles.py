@@ -149,3 +149,68 @@ async def test_a_past_knowledge_time_fails_instead_of_running_live(
     _emit(bank, tiles.REFRESH, ws, [sql], as_of=datetime.date(2026, 1, 31))
     await _drain()
     assert _latest(bank, sql)[:2] == ("failed", HISTORY)  # type: ignore[index]
+
+
+def _snapshot_id(bank: Bank, tile: uuid.UUID) -> str:
+    return str(bank.seed.one("SELECT latest_snapshot_id FROM workspace.tile WHERE id = %s", tile))
+
+
+@pytest.mark.req("AL-12")
+async def test_a_run_at_the_same_versions_replays_the_previous_snapshot(
+    seed: Any, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    ws = _workspace(bank)
+    sql = _tile(
+        bank, ws, 0, "sql", {"sql": "SELECT branch_code, sum(balance) AS b FROM loan GROUP BY 1"}
+    )
+    _emit(bank, tiles.TILE_RUN, ws, [sql])
+    await _drain()
+    _, _, _, first = _latest(bank, sql)  # type: ignore[misc]
+    version = seed.one("SELECT current_version FROM catalog.dataset WHERE id = %s", bank.loans)
+    # The datasets the SQL read, at their versions (DF-05); no value, no result hash.
+    assert first["dataset_versions"] == [{"dataset_id": str(bank.loans), "version": version}]
+    assert "reproduced" not in first and "rows" not in first
+    replayed = _snapshot_id(bank, sql)
+
+    _emit(bank, tiles.TILE_RUN, ws, [sql])
+    await _drain()
+    _, _, _, again = _latest(bank, sql)  # type: ignore[misc]
+    assert (again["reproduced"], again["replay_of"]) == (True, replayed)
+
+    # The source changed under the same version: the same SQL no longer gives the same result.
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE bank.loan SET balance = balance + 1")
+    _emit(bank, tiles.TILE_RUN, ws, [sql])
+    await _drain()
+    assert _latest(bank, sql)[3]["reproduced"] is False  # type: ignore[index]
+
+
+@pytest.mark.req("AL-12")
+async def test_a_chart_tile_goes_through_chart_check(
+    seed: Any, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    ws = _workspace(bank)
+    # One value for every branch: a measure that did not split by the axis (CONSTANT_MEASURE).
+    flat = _tile(
+        bank,
+        ws,
+        0,
+        "chart",
+        {"type": "bar", "sql": "SELECT branch_code, 1 AS one FROM loan GROUP BY 1"},
+    )
+    sql = _tile(
+        bank, ws, 1, "sql", {"sql": "SELECT branch_code, sum(balance) AS b FROM loan GROUP BY 1"}
+    )
+    drawn = _tile(bank, ws, 2, "chart", {"type": "bar"}, sql)
+    _emit(bank, tiles.REFRESH, ws, [flat, sql, drawn], as_of=None)
+    await _drain()
+    blocked = _latest(bank, flat)[3]["chart"]  # type: ignore[index]
+    assert blocked["drawable"] is False
+    assert [i["code"] for i in blocked["issues"]] == ["CONSTANT_MEASURE"]
+    assert blocked["note"].startswith("Không vẽ biểu đồ")
+    fine = _latest(bank, drawn)[3]  # type: ignore[index]
+    assert fine["chart"] == {"drawable": True, "issues": [], "note": None}
+    # The sql tile it draws from is not a chart: it is not checked.
+    assert "chart" not in _latest(bank, sql)[3]  # type: ignore[index]

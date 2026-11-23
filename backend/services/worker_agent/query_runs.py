@@ -277,6 +277,37 @@ async def sql_source(session: Any, data_space_id: uuid.UUID, sql: str) -> catalo
     return _queryable(fits[0])
 
 
+async def datasets_read(
+    session: Any, data_space_id: uuid.UUID, source: catalog.Source, sql: str
+) -> list[dict[str, Any]]:
+    """The Data Space's datasets the SQL reads on `source`, each at its current version (DF-05),
+    in the shape a receipt records them ({dataset_id, version}), so a run can be compared with a
+    later one at the same versions."""
+    dialect = dialect_of(source.kind)
+    tables = tables_of(check_read_only(sql, dialect), dialect)
+    schema = default_schema(source)
+    wanted = {(t_schema or schema, name) for t_schema, name in tables}
+    ds = catalog.Dataset
+    local = source.secret_ref == INTERNAL_WORKSPACE
+    datasets = (
+        await session.scalars(
+            select(ds).where(
+                ds.data_space_id == data_space_id,
+                ds.deleted_at.is_(None),
+                ds.source_id.is_(None) if local else ds.source_id == source.id,
+            )
+        )
+    ).all()
+    return sorted(
+        (
+            {"dataset_id": str(d.id), "version": d.current_version}
+            for d in datasets
+            if (d.schema_name, d.table_name) in wanted
+        ),
+        key=lambda v: str(v["dataset_id"]),
+    )
+
+
 async def run_requested(event: Event) -> None:
     run = await _claim(event)
     if run is None:

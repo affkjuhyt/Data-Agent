@@ -20,6 +20,15 @@ one person's rights, so it holds no data: the runs, and a summary of shape only 
 count, figure count). The values are read through GET /v1/query-runs/{id}/rows, which serves them
 to whoever ran the query and no one else.
 
+AL-12, what makes a tile reproducible without putting its values in the snapshot (the snapshot is
+every member's, the values the asker's): the snapshot records the datasets its query read at their
+versions (DF-05, as a receipt records them). A run by the same person, of the same SQL, at the same
+versions as the tile's previous snapshot is a replay of it: the two runs' result hashes, compared
+here on the server, give `reproduced` (true or false) in the summary; a run that is not comparable
+says nothing. A chart tile's data goes through chart_check (AL-03) before it is drawn: its
+findings and whether it can be drawn are in the summary (`chart`), a blocked chart is drawn as its
+table.
+
 A tile whose dependency failed is not run: its snapshot is `failed` and says why (UC-02-02 step
 2). A knowledge time before today needs the history route, so such a refresh fails each tile
 saying so instead of running live. A redelivered event writes one more snapshot, which becomes
@@ -29,7 +38,9 @@ the latest; nothing else changes.
 from __future__ import annotations
 
 import datetime
+import decimal
 import logging
+import math
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -37,13 +48,22 @@ from typing import Any
 from sqlalchemy import select
 
 from libs.dataagent_db import scoped_session
+from libs.dataagent_db.models import query as q
 from libs.dataagent_db.models import workspace as w
 from libs.sql_guard import SqlRejected
 from services.worker_agent import private
+from services.worker_agent.agentic.blocks import time_order
+from services.worker_agent.answer import chart_check
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import ROLE as QUERY_ROLE
 from services.worker_agent.query.executor import QueryOutcome, run_query
-from services.worker_agent.query_runs import HISTORY, Unbuildable, dataset_sql, sql_source
+from services.worker_agent.query_runs import (
+    HISTORY,
+    Unbuildable,
+    dataset_sql,
+    datasets_read,
+    sql_source,
+)
 from services.worker_agent.questions import secrets
 
 logger = logging.getLogger(__name__)
@@ -62,9 +82,11 @@ class Snapshot:
     query_run_ids: list[uuid.UUID] = field(default_factory=list)
     summary: dict[str, Any] | None = None
     error: str | None = None
+    # The rows the run returned, for a chart drawn from them in this pass; never recorded.
+    rows: list[list[Any]] = field(default_factory=list, repr=False)
 
 
-def _of_query(outcome: QueryOutcome) -> Snapshot:
+def _of_query(outcome: QueryOutcome, versions: list[dict[str, Any]]) -> Snapshot:
     if not outcome.ok:
         return Snapshot("failed", [outcome.query_run_id], error=outcome.error)
     return Snapshot(
@@ -74,7 +96,9 @@ def _of_query(outcome: QueryOutcome) -> Snapshot:
             "columns": [c["name"] for c in outcome.columns],
             "row_count": len(outcome.rows),
             "truncated": outcome.truncated,
+            "dataset_versions": versions,
         },
+        rows=outcome.rows,
     )
 
 
@@ -91,6 +115,7 @@ async def _query(
                 if not sql:
                     raise Unbuildable("Ô chưa có câu SQL.")
                 source = await sql_source(session, space, sql)
+            versions = await datasets_read(session, space, source, sql)
     except (Unbuildable, SqlRejected, KeyError, ValueError) as exc:
         return Snapshot("failed", error=str(exc))
     outcome = await run_query(
@@ -107,7 +132,7 @@ async def _query(
         # DF-08: a tile does not show a table its quality rules or contract hold back.
         quality_gate=True,
     )
-    return _of_query(outcome)
+    return _of_query(outcome, versions)
 
 
 async def _question(
@@ -176,9 +201,135 @@ async def run_tiles(
             snap = await _drawn_from(tile, done, org, asker)
         else:
             snap = await _query(tile, org, space, asker, as_of)
+        if tile.kind == "chart":
+            _check_chart(tile, snap)
+        await _compare_with_previous(tile, snap, org, asker)
         done[tile_id] = snap
         await _record(tile, snap, org, asker, as_of)
     return done
+
+
+def _number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(decimal.Decimal(str(value)))
+    except (decimal.InvalidOperation, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _check_chart(tile: w.Tile, snap: Snapshot) -> None:
+    """chart_check on the rows a chart tile draws (its own query's, or its dependency's run in this
+    pass): x is the spec's `x` or the first column, the measures the spec's `y` or every other
+    column whose values are all numbers. A dependency drawn from an earlier pass has no rows here
+    and is not checked."""
+    if snap.status != "ok" or not snap.rows or snap.summary is None or not chart_check.enabled():
+        return
+    spec = tile.spec if isinstance(tile.spec, dict) else {}
+    columns = [str(c) for c in snap.summary.get("columns") or []]
+    if not columns:
+        return
+    x = str(spec["x"]) if spec.get("x") in columns else columns[0]
+    at = columns.index(x)
+    wanted = spec.get("y") if isinstance(spec.get("y"), list) else None
+    measures = [
+        i
+        for i, c in enumerate(columns)
+        if i != at
+        and (c in wanted if wanted else True)
+        and all(r[i] is None or _number(r[i]) is not None for r in snap.rows)
+        and any(r[i] is not None for r in snap.rows)
+    ]
+    if not measures:
+        return
+    x_values = [r[at] for r in snap.rows]
+    issues = chart_check.check(
+        chart_check.Chart(
+            chart_type=str(spec.get("type") or "bar"),
+            x_key=x,
+            x_label=x,
+            x_kind="time" if chart_check.time_grain(x_values) else "category",
+            x_values=x_values,
+            series=[
+                chart_check.Series(
+                    key=columns[i], label=columns[i], values=[_number(r[i]) for r in snap.rows]
+                )
+                for i in measures
+            ],
+            stack=spec.get("stack") if spec.get("stack") in ("normal", "percent") else None,
+        ),
+        time_order=time_order,
+    )
+    found = [i.as_dict() for i in issues]
+    chart_check.record(found)
+    snap.summary = {
+        **snap.summary,
+        "chart": {
+            "drawable": not chart_check.blocking(issues),
+            "issues": found,
+            "note": chart_check.reason(issues) if issues else None,
+        },
+    }
+
+
+async def _compare_with_previous(
+    tile: w.Tile, snap: Snapshot, org: uuid.UUID, asker: uuid.UUID
+) -> None:
+    """`reproduced` when this run replays the tile's previous snapshot: same person, same SQL,
+    every dataset at a known version and the same ones. The result hashes stay on the query runs,
+    which only their runner reads; the snapshot says only whether they matched."""
+    versions = (snap.summary or {}).get("dataset_versions")
+    if (
+        snap.status != "ok"
+        or not snap.query_run_ids
+        or tile.latest_snapshot_id is None
+        or not versions
+        or any(v.get("version") is None for v in versions)
+    ):
+        return
+    async with scoped_session(ROLE, org, asker) as session:
+        previous = await session.get(w.TileSnapshot, tile.latest_snapshot_id)
+    if (
+        previous is None
+        or previous.status != "ok"
+        or (previous.summary or {}).get("dataset_versions") != versions
+        or len(previous.query_run_ids or []) != len(snap.query_run_ids)
+    ):
+        return
+    async with scoped_session(QUERY_ROLE, org, asker) as session:
+        runs = {
+            r.id: r
+            for r in (
+                await session.execute(
+                    select(
+                        q.QueryRun.id,
+                        q.QueryRun.principal_id,
+                        q.QueryRun.sql_generated,
+                        q.QueryRun.result_hash,
+                    ).where(q.QueryRun.id.in_([*previous.query_run_ids, *snap.query_run_ids]))
+                )
+            ).all()
+        }
+    pairs = [
+        (runs.get(a), runs.get(b))
+        for a, b in zip(previous.query_run_ids, snap.query_run_ids, strict=True)
+    ]
+    if not all(
+        a is not None
+        and b is not None
+        and a.principal_id == b.principal_id == asker
+        and a.sql_generated == b.sql_generated
+        and a.result_hash
+        and b.result_hash
+        for a, b in pairs
+    ):
+        return
+    snap.summary = {
+        **(snap.summary or {}),
+        "reproduced": all(a.result_hash == b.result_hash for a, b in pairs if a and b),
+        "replay_of": str(previous.id),
+    }
 
 
 async def _drawn_from(
@@ -189,7 +340,13 @@ async def _drawn_from(
     source_id = tile.depends_on[0]
     if source_id in done:
         upstream = done[source_id]
-        return Snapshot(upstream.status, upstream.query_run_ids, upstream.summary, upstream.error)
+        return Snapshot(
+            upstream.status,
+            upstream.query_run_ids,
+            _data_of(upstream.summary),
+            upstream.error,
+            rows=upstream.rows,
+        )
     async with scoped_session(ROLE, org, asker) as session:
         latest = await session.scalar(
             select(w.TileSnapshot)
@@ -198,7 +355,15 @@ async def _drawn_from(
         )
     if latest is None or latest.status == "failed":
         return Snapshot("failed", error=DEPENDENCY_FAILED)
-    return Snapshot("ok", list(latest.query_run_ids), latest.summary)
+    return Snapshot("ok", list(latest.query_run_ids), _data_of(latest.summary))
+
+
+def _data_of(summary: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What a chart takes of the tile it draws from: the data's shape and versions, not that
+    tile's own verdicts."""
+    if summary is None:
+        return None
+    return {k: v for k, v in summary.items() if k not in ("chart", "reproduced", "replay_of")}
 
 
 async def _record(
