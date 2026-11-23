@@ -216,6 +216,10 @@ erDiagram
   }
 ```
 
+**Đã làm (DI-06, 23/11/2026, v3_0054):** bảng là `document.doc_table` (không phải `document.table`: generator không quote
+tên); `element.kind` dùng `list` như sơ đồ trên (hợp đồng API ghi `list_item`); `page_no`, `page_from/to` null với DOCX/HTML;
+chunk `kind ∈ {section, table}`, `CHECK ((kind = 'table') = (table_id IS NOT NULL))`. `text_folded` là của DI-11.
+
 Postgres giữ **element, table, table_cell, chunk** (truy vấn được, trích dẫn được); MinIO `da-doc-derived` giữ ảnh trang,
 ảnh picture, và **bản JSON lossless của `DoclingDocument`** (`layout_ref`) để reprocess không cần chạy lại model.
 `extractor_version` ghi trên element và page; reprocess khi version đổi (hiện reprocess chỉ theo hash,

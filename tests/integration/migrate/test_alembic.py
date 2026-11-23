@@ -1108,3 +1108,51 @@ def test_a_migrated_cluster_writes_timestamp_and_json_columns(admin):
         at, k = cur.fetchone()
     conn.close()
     assert at.isoformat().startswith("2026-09-30T01:00:00") and k == "1"
+
+
+def test_a_migrated_cluster_holds_a_documents_elements_tables_and_cells(admin):
+    # v3_0054 (23/11/2026, DI-06): document.element, doc_table, table_cell and the chunk columns.
+    _fresh(admin, "chain_di06", "chain_di06_audit")
+    db = _db(admin, "chain_di06")
+    _alembic(db, "upgrade", "v3_0053")
+    # The generated DDL is already at head: put back what a cluster at v3_0053 has.
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        for column in ("table_id", "parent_chunk_id", "element_ids", "kind"):
+            cur.execute(f"ALTER TABLE document.chunk DROP COLUMN {column}")
+        cur.execute("DROP TABLE document.table_cell, document.doc_table, document.element")
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    _alembic(db, "upgrade", "head")
+    # Down and up again (DI-06's rollback): nothing of it is left, then all of it is back.
+    _alembic(db, "downgrade", "v3_0053")
+    assert _one(db, "SELECT to_regclass('document.element')") is None
+    assert not _one(
+        db,
+        "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'document'"
+        " AND table_name = 'chunk' AND column_name IN ('kind', 'element_ids')",
+    )
+    _alembic(db, "upgrade", "head")
+    for table in ("element", "doc_table", "table_cell"):
+        assert _one(
+            db, f"SELECT relrowsecurity FROM pg_class WHERE oid = 'document.{table}'::regclass"
+        )
+        assert _one(db, f"SELECT has_table_privilege('svc_document', 'document.{table}', 'INSERT')")
+    assert (
+        _one(
+            db,
+            "SELECT count(*) FROM pg_constraint WHERE conrelid = 'document.chunk'::regclass"
+            " AND conname IN ('chunk_kind_check', 'chunk_check2', 'chunk_check3',"
+            " 'chunk_parent_chunk_id_fkey', 'chunk_table_id_fkey')",
+        )
+        == 5
+    )
+    assert (
+        _one(
+            db,
+            "SELECT column_default FROM information_schema.columns WHERE table_schema = 'document'"
+            " AND table_name = 'chunk' AND column_name = 'kind'",
+        )
+        == "'section'::text"
+    )

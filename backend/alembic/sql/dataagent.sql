@@ -4749,6 +4749,102 @@ COMMENT ON COLUMN document.document_page.layout_ref IS 'MinIO da-doc-derived';
 COMMENT ON COLUMN document.document_page.text IS 'Văn bản đã chuẩn hoá Unicode NFC, đã che theo chính sách';
 COMMENT ON COLUMN document.document_page.human_corrected IS 'Đã sửa tay; không ghi đè khi xử lý lại (BR-108)';
 
+CREATE TABLE document.element (
+  id uuid NOT NULL,
+  org_id uuid NOT NULL,
+  document_id uuid NOT NULL,
+  page_no integer,
+  order_idx integer NOT NULL,
+  kind text NOT NULL,
+  level smallint,
+  bbox jsonb,
+  text text,
+  parent_element_id uuid,
+  extractor text NOT NULL,
+  extractor_version text NOT NULL,
+  confidence numeric(5,4),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT element_pkey PRIMARY KEY (id),
+  UNIQUE (document_id, order_idx),
+  CHECK (order_idx >= 0),
+  CHECK (kind IN ('text','heading','list','table','picture','caption','footnote','formula','header','footer','code','page_number')),
+  CHECK ((kind = 'heading') = (level IS NOT NULL)),
+  CHECK (level IS NULL OR level BETWEEN 1 AND 6),
+  CHECK (extractor IN ('docling','legacy')),
+  CHECK (bbox IS NULL OR jsonb_typeof(bbox) = 'object'),
+  CHECK (confidence IS NULL OR confidence BETWEEN 0 AND 1)
+);
+COMMENT ON TABLE document.element IS 'Một phần tử của tài liệu theo thứ tự đọc: đoạn, tiêu đề, mục danh sách, bảng, hình, chú thích, chú thích cuối trang, công thức, mã; kèm trang, khung toạ độ và bộ trích ra nó (Docling hoặc pipeline cũ). Chỉ ghi thêm; xử lý lại xoá theo tài liệu rồi ghi mới trong cùng giao dịch. Thêm 23/11/2026 (DI-06, DOCUMENT_INTELLIGENCE_SPEC §4.1). Use case: UC-05-01, UC-05-02.';
+COMMENT ON COLUMN document.element.document_id IS 'FK document';
+COMMENT ON COLUMN document.element.page_no IS 'Trang; null với định dạng không có trang (DOCX, HTML)';
+COMMENT ON COLUMN document.element.order_idx IS 'Thứ tự đọc trong cả tài liệu, từ 0';
+COMMENT ON COLUMN document.element.kind IS 'text, heading, list, table, picture, caption, footnote, formula, header, footer, code, page_number';
+COMMENT ON COLUMN document.element.level IS 'Cấp tiêu đề 1..6 khi kind = heading';
+COMMENT ON COLUMN document.element.bbox IS '{l, t, r, b, coord_origin} trên trang';
+COMMENT ON COLUMN document.element.parent_element_id IS 'FK element: bảng hoặc hình của một chú thích, phần tử chứa dấu của chú thích cuối trang';
+COMMENT ON COLUMN document.element.extractor IS 'docling, legacy';
+COMMENT ON COLUMN document.element.extractor_version IS 'Ví dụ docling-2.150.0+adapter-1; xử lý lại khi đổi';
+COMMENT ON COLUMN document.element.confidence IS 'Độ tin OCR của trang khi phần tử đến từ OCR';
+
+CREATE TABLE document.doc_table (
+  id uuid NOT NULL,
+  org_id uuid NOT NULL,
+  document_id uuid NOT NULL,
+  element_id uuid NOT NULL,
+  page_from integer,
+  page_to integer,
+  n_rows integer NOT NULL,
+  n_cols integer NOT NULL,
+  header_rows smallint NOT NULL DEFAULT 1,
+  caption text,
+  continues_table_id uuid,
+  numeric_share numeric(5,4),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT doc_table_pkey PRIMARY KEY (id),
+  UNIQUE (element_id),
+  CHECK (n_rows >= 0 AND n_cols >= 0),
+  CHECK (header_rows >= 0),
+  CHECK (page_to IS NULL OR page_from IS NULL OR page_to >= page_from),
+  CHECK (numeric_share IS NULL OR numeric_share BETWEEN 0 AND 1),
+  CHECK (continues_table_id IS NULL OR continues_table_id <> id)
+);
+COMMENT ON TABLE document.doc_table IS 'Một bảng của tài liệu, gắn với phần tử kind = table: số hàng, số cột, hàng tiêu đề, chú thích, bảng trang trước mà nó nối tiếp. Số trong bảng đọc qua table_cell bằng SQL, không qua chunk. Thêm 23/11/2026 (DI-06, DOCUMENT_INTELLIGENCE_SPEC §4.3). Use case: UC-05-02, UC-05-03.';
+COMMENT ON COLUMN document.doc_table.document_id IS 'FK document';
+COMMENT ON COLUMN document.doc_table.element_id IS 'FK element; một bảng mỗi phần tử';
+COMMENT ON COLUMN document.doc_table.page_from IS 'Null với định dạng không có trang';
+COMMENT ON COLUMN document.doc_table.continues_table_id IS 'FK doc_table: bảng trang trước mà bảng này nối tiếp (§4.3.1)';
+COMMENT ON COLUMN document.doc_table.numeric_share IS 'Tỷ lệ ô có số; từ 0,3 thì table_query được dùng bảng';
+
+CREATE TABLE document.table_cell (
+  id uuid NOT NULL,
+  org_id uuid NOT NULL,
+  table_id uuid NOT NULL,
+  row_idx integer NOT NULL,
+  col_idx integer NOT NULL,
+  row_span smallint NOT NULL DEFAULT 1,
+  col_span smallint NOT NULL DEFAULT 1,
+  text text NOT NULL,
+  numeric_value numeric(28,6),
+  unit text,
+  is_header boolean NOT NULL DEFAULT false,
+  page_no integer,
+  bbox jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT table_cell_pkey PRIMARY KEY (id),
+  UNIQUE (table_id, row_idx, col_idx),
+  CHECK (row_idx >= 0 AND col_idx >= 0),
+  CHECK (row_span >= 1 AND col_span >= 1),
+  CHECK (bbox IS NULL OR jsonb_typeof(bbox) = 'object')
+);
+COMMENT ON TABLE document.table_cell IS 'Một ô của bảng: vị trí, ô gộp, văn bản gốc, giá trị số đã nhân đơn vị và scale, ô tiêu đề, trang và khung toạ độ để trích dẫn đúng ô. Thêm 23/11/2026 (DI-06, DOCUMENT_INTELLIGENCE_SPEC §4.3, §4.4). Use case: UC-05-02, UC-05-03.';
+COMMENT ON COLUMN document.table_cell.table_id IS 'FK doc_table';
+COMMENT ON COLUMN document.table_cell.row_idx IS 'Từ 0';
+COMMENT ON COLUMN document.table_cell.col_idx IS 'Từ 0';
+COMMENT ON COLUMN document.table_cell.text IS 'Văn bản gốc của ô';
+COMMENT ON COLUMN document.table_cell.numeric_value IS 'Giá trị số tất định theo gói ngôn ngữ và đơn vị; null khi ô không phải số';
+COMMENT ON COLUMN document.table_cell.unit IS 'Ví dụ VND, USD, percent';
+COMMENT ON COLUMN document.table_cell.page_no IS 'Null với định dạng không có trang';
+
 CREATE TABLE document.chunk (
   id uuid NOT NULL,
   org_id uuid NOT NULL,
@@ -4767,10 +4863,17 @@ CREATE TABLE document.chunk (
   human_corrected boolean NOT NULL DEFAULT false,
   injection_suspected boolean NOT NULL DEFAULT false,
   pii_masked boolean NOT NULL DEFAULT true,
+  kind text NOT NULL DEFAULT 'section',
+  element_ids uuid[] NOT NULL DEFAULT '{}',
+  parent_chunk_id uuid,
+  table_id uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT chunk_pkey PRIMARY KEY (id),
   CHECK (page_to >= page_from),
-  CHECK (effective_to IS NULL OR effective_from IS NULL OR effective_to >= effective_from)
+  CHECK (effective_to IS NULL OR effective_from IS NULL OR effective_to >= effective_from),
+  CHECK (kind IN ('section','table')),
+  CHECK ((kind = 'table') = (table_id IS NOT NULL)),
+  CHECK (parent_chunk_id IS NULL OR parent_chunk_id <> id)
 );
 COMMENT ON TABLE document.chunk IS 'Đoạn đã chia theo cấu trúc (Điều, Khoản, bảng); vector nằm ở Qdrant, bảng giữ văn bản và mã điểm. Chỉ mục toàn văn trên cột text dùng cho tìm theo từ khoá (Postgres FTS). Use case: UC-05-02, UC-05-03, UC-05-04, UC-05-05.';
 COMMENT ON COLUMN document.chunk.document_id IS 'FK document';
@@ -4780,6 +4883,10 @@ COMMENT ON COLUMN document.chunk.context_header IS 'Tên văn bản, số hiệu
 COMMENT ON COLUMN document.chunk.qdrant_point_id IS 'Null khi chưa lập chỉ mục';
 COMMENT ON COLUMN document.chunk.effective_from IS 'Hiệu lực ở mức đoạn khi sửa đổi từng phần (BR-109)';
 COMMENT ON COLUMN document.chunk.injection_suspected IS 'Có câu ra lệnh cho mô hình (UC-05-02 E2)';
+COMMENT ON COLUMN document.chunk.kind IS 'section (đoạn theo tiêu đề; chunk con có parent_chunk_id), table (tóm tắt một bảng, §5.4); thêm 23/11/2026 (DI-06)';
+COMMENT ON COLUMN document.chunk.element_ids IS 'logic → document.element mà chunk được dựng từ';
+COMMENT ON COLUMN document.chunk.parent_chunk_id IS 'FK chunk: chunk cha mức Điều của một chunk con mức Khoản (§5.3)';
+COMMENT ON COLUMN document.chunk.table_id IS 'FK doc_table khi kind = table';
 
 CREATE TABLE document.quality_issue (
   id uuid NOT NULL,
@@ -4933,7 +5040,11 @@ CREATE POLICY outbox_relay_read ON document.outbox FOR SELECT TO svc_outbox_rela
 CREATE POLICY outbox_relay_publish ON document.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE POLICY outbox_relay_retry ON document.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL AND dead_at IS NULL) WITH CHECK (published_at IS NULL);
 CREATE INDEX document_collection_id_doc_no_idx ON document.document (collection_id, doc_no);
+CREATE INDEX element_document_id_page_no_idx ON document.element (document_id, page_no);
+CREATE INDEX doc_table_document_id_idx ON document.doc_table (document_id);
 CREATE INDEX chunk_document_id_page_from_idx ON document.chunk (document_id, page_from);
+CREATE INDEX chunk_parent_chunk_id_idx ON document.chunk (parent_chunk_id);
+CREATE INDEX chunk_table_id_idx ON document.chunk (table_id);
 CREATE INDEX quality_issue_kind_severity_idx ON document.quality_issue (kind, severity) WHERE status = 'open';
 CREATE UNIQUE INDEX extraction_schema_collection_id_key ON document.extraction_schema (collection_id) WHERE status = 'active';
 CREATE INDEX email_message_thread_key_sent_at_idx ON document.email_message (thread_key, sent_at);
@@ -7260,7 +7371,15 @@ ALTER TABLE document.document ADD CONSTRAINT document_document_source_id_fkey FO
 ALTER TABLE document.document ADD CONSTRAINT document_supersedes_id_fkey FOREIGN KEY (supersedes_id) REFERENCES document.document(id);
 ALTER TABLE document.document ADD CONSTRAINT document_parent_document_id_fkey FOREIGN KEY (parent_document_id) REFERENCES document.document(id);
 ALTER TABLE document.document_page ADD CONSTRAINT document_page_document_id_fkey FOREIGN KEY (document_id) REFERENCES document.document(id) ON DELETE CASCADE;
+ALTER TABLE document.element ADD CONSTRAINT element_document_id_fkey FOREIGN KEY (document_id) REFERENCES document.document(id) ON DELETE CASCADE;
+ALTER TABLE document.element ADD CONSTRAINT element_parent_element_id_fkey FOREIGN KEY (parent_element_id) REFERENCES document.element(id) ON DELETE CASCADE;
+ALTER TABLE document.doc_table ADD CONSTRAINT doc_table_document_id_fkey FOREIGN KEY (document_id) REFERENCES document.document(id) ON DELETE CASCADE;
+ALTER TABLE document.doc_table ADD CONSTRAINT doc_table_element_id_fkey FOREIGN KEY (element_id) REFERENCES document.element(id) ON DELETE CASCADE;
+ALTER TABLE document.doc_table ADD CONSTRAINT doc_table_continues_table_id_fkey FOREIGN KEY (continues_table_id) REFERENCES document.doc_table(id) ON DELETE SET NULL;
+ALTER TABLE document.table_cell ADD CONSTRAINT table_cell_table_id_fkey FOREIGN KEY (table_id) REFERENCES document.doc_table(id) ON DELETE CASCADE;
 ALTER TABLE document.chunk ADD CONSTRAINT chunk_document_id_fkey FOREIGN KEY (document_id) REFERENCES document.document(id) ON DELETE CASCADE;
+ALTER TABLE document.chunk ADD CONSTRAINT chunk_parent_chunk_id_fkey FOREIGN KEY (parent_chunk_id) REFERENCES document.chunk(id) ON DELETE CASCADE;
+ALTER TABLE document.chunk ADD CONSTRAINT chunk_table_id_fkey FOREIGN KEY (table_id) REFERENCES document.doc_table(id) ON DELETE CASCADE;
 ALTER TABLE document.quality_issue ADD CONSTRAINT quality_issue_document_id_fkey FOREIGN KEY (document_id) REFERENCES document.document(id) ON DELETE CASCADE;
 ALTER TABLE document.extraction_schema ADD CONSTRAINT extraction_schema_collection_id_fkey FOREIGN KEY (collection_id) REFERENCES document.collection(id);
 ALTER TABLE document.extracted_record ADD CONSTRAINT extracted_record_document_id_fkey FOREIGN KEY (document_id) REFERENCES document.document(id) ON DELETE CASCADE;
@@ -7575,6 +7694,12 @@ ALTER TABLE document.document ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON document.document USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE document.document_page ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON document.document_page USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+ALTER TABLE document.element ENABLE ROW LEVEL SECURITY;
+CREATE POLICY org_isolation ON document.element USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+ALTER TABLE document.doc_table ENABLE ROW LEVEL SECURITY;
+CREATE POLICY org_isolation ON document.doc_table USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+ALTER TABLE document.table_cell ENABLE ROW LEVEL SECURITY;
+CREATE POLICY org_isolation ON document.table_cell USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE document.chunk ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON document.chunk USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE document.quality_issue ENABLE ROW LEVEL SECURITY;
@@ -7986,6 +8111,12 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON document.document TO svc_document;
 GRANT SELECT ON document.document TO document_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON document.document_page TO svc_document;
 GRANT SELECT ON document.document_page TO document_read;
+GRANT SELECT, INSERT, UPDATE, DELETE ON document.element TO svc_document;
+GRANT SELECT ON document.element TO document_read;
+GRANT SELECT, INSERT, UPDATE, DELETE ON document.doc_table TO svc_document;
+GRANT SELECT ON document.doc_table TO document_read;
+GRANT SELECT, INSERT, UPDATE, DELETE ON document.table_cell TO svc_document;
+GRANT SELECT ON document.table_cell TO document_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON document.chunk TO svc_document;
 GRANT SELECT ON document.chunk TO document_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON document.quality_issue TO svc_document;

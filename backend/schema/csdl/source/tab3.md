@@ -43,7 +43,7 @@ Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case
 | skill | Skill service | Kỹ năng, phiên bản, lượt chạy, đề xuất, dữ liệu bên ngoài | P03 | 7 |
 | monitor | Monitor & report service | Theo dõi chỉ số, cảnh báo, báo cáo định kỳ, lịch sự kiện ngoài và bản tin theo kỳ | P08 | 9 |
 | notify | Notification & channel gateway | Thông báo, cài đặt nhận, liên kết kênh, bản sao trên kênh | P08 | 4 |
-| document | Document service | Bộ sưu tập, tài liệu, trang, đoạn, chất lượng, trích xuất, ghi âm, email | P05 | 10 |
+| document | Document service | Bộ sưu tập, tài liệu, trang, phần tử, bảng và ô, đoạn, chất lượng, trích xuất, ghi âm, email | P05 | 13 |
 | conflict | Conflict service | Khẳng định, xung đột, quy tắc giải quyết, thẩm quyền nguồn | P07 | 5 |
 | period | Period service | Lịch chốt, kỳ chốt, tệp kỳ, đối soát, số đã công bố, hồi tố | P10 | 6 |
 | pipeline | Pipeline service | Pipeline, lượt chạy, dòng dữ liệu, data mart, sản phẩm dữ liệu, ghi ngược | P06 | 6 |

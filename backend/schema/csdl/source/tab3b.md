@@ -2565,6 +2565,65 @@ Trang của tài liệu; mỗi bước xử lý lưu theo mã băm trang để c
 
 Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (document\_id, page\_no); CHECK (NOT usable OR ocr\_conf IS NULL OR ocr\_conf >= 0.85 OR human\_corrected); FOREIGN KEY (document\_id) REFERENCES document.document(id) ON DELETE CASCADE.
 
+#### document.element
+
+Một phần tử của tài liệu theo thứ tự đọc: đoạn, tiêu đề, mục danh sách, bảng, hình, chú thích, chú thích cuối trang, công thức, mã; kèm trang, khung toạ độ và bộ trích ra nó (Docling hoặc pipeline cũ). Chỉ ghi thêm; xử lý lại xoá theo tài liệu rồi ghi mới trong cùng giao dịch. Thêm 23/11/2026 (DI-06, DOCUMENT\_INTELLIGENCE\_SPEC §4.1). Use case: UC-05-01, UC-05-02.
+
+| Cột | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| document\_id | uuid, bắt buộc | FK document |
+| page\_no | integer | Trang; null với định dạng không có trang (DOCX, HTML) |
+| order\_idx | integer, bắt buộc | Thứ tự đọc trong cả tài liệu, từ 0 |
+| kind | text, bắt buộc | text, heading, list, table, picture, caption, footnote, formula, header, footer, code, page\_number |
+| level | smallint | Cấp tiêu đề 1..6 khi kind = heading |
+| bbox | jsonb | {l, t, r, b, coord\_origin} trên trang |
+| text | text |  |
+| parent\_element\_id | uuid | FK element: bảng hoặc hình của một chú thích, phần tử chứa dấu của chú thích cuối trang |
+| extractor | text, bắt buộc | docling, legacy |
+| extractor\_version | text, bắt buộc | Ví dụ docling-2.150.0+adapter-1; xử lý lại khi đổi |
+| confidence | numeric(5,4) | Độ tin OCR của trang khi phần tử đến từ OCR |
+
+Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (document\_id, order\_idx); CHECK (order\_idx >= 0); CHECK (kind IN ('text','heading','list','table','picture','caption','footnote','formula','header','footer','code','page\_number')); CHECK ((kind = 'heading') = (level IS NOT NULL)); CHECK (level IS NULL OR level BETWEEN 1 AND 6); CHECK (extractor IN ('docling','legacy')); CHECK (bbox IS NULL OR jsonb\_typeof(bbox) = 'object'); CHECK (confidence IS NULL OR confidence BETWEEN 0 AND 1); FOREIGN KEY (document\_id) REFERENCES document.document(id) ON DELETE CASCADE; FOREIGN KEY (parent\_element\_id) REFERENCES document.element(id) ON DELETE CASCADE. Chỉ mục: (document\_id, page\_no).
+
+#### document.doc\_table
+
+Một bảng của tài liệu, gắn với phần tử kind = table: số hàng, số cột, hàng tiêu đề, chú thích, bảng trang trước mà nó nối tiếp. Số trong bảng đọc qua table\_cell bằng SQL, không qua chunk. Thêm 23/11/2026 (DI-06, DOCUMENT\_INTELLIGENCE\_SPEC §4.3). Use case: UC-05-02, UC-05-03.
+
+| Cột | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| document\_id | uuid, bắt buộc | FK document |
+| element\_id | uuid, bắt buộc | FK element; một bảng mỗi phần tử |
+| page\_from | integer | Null với định dạng không có trang |
+| page\_to | integer |  |
+| n\_rows | integer, bắt buộc |  |
+| n\_cols | integer, bắt buộc |  |
+| header\_rows | smallint, bắt buộc, mặc định 1 |  |
+| caption | text |  |
+| continues\_table\_id | uuid | FK doc\_table: bảng trang trước mà bảng này nối tiếp (§4.3.1) |
+| numeric\_share | numeric(5,4) | Tỷ lệ ô có số; từ 0,3 thì table\_query được dùng bảng |
+
+Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (element\_id); CHECK (n\_rows >= 0 AND n\_cols >= 0); CHECK (header\_rows >= 0); CHECK (page\_to IS NULL OR page\_from IS NULL OR page\_to >= page\_from); CHECK (numeric\_share IS NULL OR numeric\_share BETWEEN 0 AND 1); CHECK (continues\_table\_id IS NULL OR continues\_table\_id <> id); FOREIGN KEY (document\_id) REFERENCES document.document(id) ON DELETE CASCADE; FOREIGN KEY (element\_id) REFERENCES document.element(id) ON DELETE CASCADE; FOREIGN KEY (continues\_table\_id) REFERENCES document.doc\_table(id) ON DELETE SET NULL. Chỉ mục: (document\_id).
+
+#### document.table\_cell
+
+Một ô của bảng: vị trí, ô gộp, văn bản gốc, giá trị số đã nhân đơn vị và scale, ô tiêu đề, trang và khung toạ độ để trích dẫn đúng ô. Thêm 23/11/2026 (DI-06, DOCUMENT\_INTELLIGENCE\_SPEC §4.3, §4.4). Use case: UC-05-02, UC-05-03.
+
+| Cột | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| table\_id | uuid, bắt buộc | FK doc\_table |
+| row\_idx | integer, bắt buộc | Từ 0 |
+| col\_idx | integer, bắt buộc | Từ 0 |
+| row\_span | smallint, bắt buộc, mặc định 1 |  |
+| col\_span | smallint, bắt buộc, mặc định 1 |  |
+| text | text, bắt buộc | Văn bản gốc của ô |
+| numeric\_value | numeric(28,6) | Giá trị số tất định theo gói ngôn ngữ và đơn vị; null khi ô không phải số |
+| unit | text | Ví dụ VND, USD, percent |
+| is\_header | boolean, bắt buộc, mặc định false |  |
+| page\_no | integer | Null với định dạng không có trang |
+| bbox | jsonb |  |
+
+Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (table\_id, row\_idx, col\_idx); CHECK (row\_idx >= 0 AND col\_idx >= 0); CHECK (row\_span >= 1 AND col\_span >= 1); CHECK (bbox IS NULL OR jsonb\_typeof(bbox) = 'object'); FOREIGN KEY (table\_id) REFERENCES document.doc\_table(id) ON DELETE CASCADE.
+
 #### document.chunk
 
 Đoạn đã chia theo cấu trúc (Điều, Khoản, bảng); vector nằm ở Qdrant, bảng giữ văn bản và mã điểm. Chỉ mục toàn văn trên cột text dùng cho tìm theo từ khoá (Postgres FTS). Use case: UC-05-02, UC-05-03, UC-05-04, UC-05-05.
@@ -2586,8 +2645,12 @@ Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. R�
 | human\_corrected | boolean, bắt buộc, mặc định false |  |
 | injection\_suspected | boolean, bắt buộc, mặc định false | Có câu ra lệnh cho mô hình (UC-05-02 E2) |
 | pii\_masked | boolean, bắt buộc, mặc định true |  |
+| kind | text, bắt buộc, mặc định 'section' | section (đoạn theo tiêu đề; chunk con có parent\_chunk\_id), table (tóm tắt một bảng, §5.4); thêm 23/11/2026 (DI-06) |
+| element\_ids | uuid\[\], bắt buộc, mặc định '{}' | logic → document.element mà chunk được dựng từ |
+| parent\_chunk\_id | uuid | FK chunk: chunk cha mức Điều của một chunk con mức Khoản (§5.3) |
+| table\_id | uuid | FK doc\_table khi kind = table |
 
-Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (page\_to >= page\_from); CHECK (effective\_to IS NULL OR effective\_from IS NULL OR effective\_to >= effective\_from); FOREIGN KEY (document\_id) REFERENCES document.document(id) ON DELETE CASCADE. Chỉ mục: (document\_id, page\_from); GIN trên to\_tsvector('simple', text).
+Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (page\_to >= page\_from); CHECK (effective\_to IS NULL OR effective\_from IS NULL OR effective\_to >= effective\_from); FOREIGN KEY (document\_id) REFERENCES document.document(id) ON DELETE CASCADE; CHECK (kind IN ('section','table')); CHECK ((kind = 'table') = (table\_id IS NOT NULL)); CHECK (parent\_chunk\_id IS NULL OR parent\_chunk\_id <> id); FOREIGN KEY (parent\_chunk\_id) REFERENCES document.chunk(id) ON DELETE CASCADE; FOREIGN KEY (table\_id) REFERENCES document.doc\_table(id) ON DELETE CASCADE. Chỉ mục: (document\_id, page\_from); (parent\_chunk\_id); (table\_id); GIN trên to\_tsvector('simple', text).
 
 #### document.quality\_issue
 
