@@ -590,8 +590,11 @@ export const saveConfig = async (id: string, body: ConfigInput) =>
     ),
   );
 
-/** PUT replaces the whole set (A1.3); the PROPOSAL description travels for the server to parse. */
-export const putTriggers = async (id: string, triggers: Omit<AgentTrigger, 'id'>[]) => {
+/*
+ * PUT replaces the whole set (A1.3). Only a new agent's first triggers go through it: A2 has no
+ * read of an agent's triggers, so editing an existing agent's set could drop ones never read.
+ */
+const putTriggers = async (id: string, triggers: Omit<AgentTrigger, 'id'>[]) => {
   const page = await ok<Page<Schemas['TriggerView']>>(
     api.PUT('/v1/agents/{id}/triggers', {
       params: { path: { id } },
