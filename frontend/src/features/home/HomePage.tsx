@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { Icon } from '../../design-system/Icon';
-import { listInbox, listRuns, listSources } from '../../lib/v1/api';
+import { listInbox, listRuns } from '../../lib/v1/api';
+import { listSourceRows } from '../../lib/v1/sources';
 import { getMyHome } from '../../lib/v1/home';
 import { useV1 } from '../../lib/v1/useV1';
 import { AgentActivity } from './AgentActivity';
@@ -38,7 +39,8 @@ export default function HomePage() {
   const { user, dataSpace, navigate } = useAppState();
   const inbox = useV1(['listInbox', 'pending'], () => listInbox());
   const runs = useV1(['listRuns'], () => listRuns());
-  const sources = useV1(['listSources'], listSources);
+  // The source rows Nguồn reads: their last load comes from their jobs (SourceView has none).
+  const sources = useV1(['listSourceRows'], listSourceRows);
   const home = useV1(['getMyHome'], getMyHome);
   const [suggestions, setSuggestions] = useState<string[]>([]);
 

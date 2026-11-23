@@ -167,4 +167,20 @@ describe('skills from the api', () => {
       session_ids: ['s1', 's2'],
     });
   });
+
+  it('lists the sessions it repeated in that the viewer may open, and only those', async () => {
+    server.use(
+      http.get('*/v1/workspaces/:id', ({ params }) =>
+        params.id === 's1'
+          ? HttpResponse.json({ id: 's1', title: 'Nợ xấu T9', updated_at: '2026-10-02T03:00:00Z' })
+          : HttpResponse.json(
+              { title: 'not_found', status: 404, code: 'not_found', detail: 'Không thấy phiên.' },
+              { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+            ),
+      ),
+    );
+    const [s] = (await listSkillSuggestions()).items;
+    expect(s.occurrences).toEqual([{ at: '2026-10-02T03:00:00Z', where: 'Nợ xấu T9' }]);
+    server.resetHandlers();
+  });
 });

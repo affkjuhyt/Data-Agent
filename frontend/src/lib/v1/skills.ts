@@ -428,11 +428,35 @@ function readSuggestion(raw: SuggestionWire): SkillSuggestion {
   };
 }
 
+/** How many of a suggestion's sessions are read to say where it repeated. */
+const OCCURRENCES_SHOWN = 5;
+
+/*
+ * Where a chain repeated: the sessions in session_ids the viewer may open (GET /v1/workspaces/{id}
+ * answers 404 for another person's private session, and that one is left out, unnamed).
+ */
+async function occurrencesOf(sessionIds: string[]): Promise<SkillSuggestion['occurrences']> {
+  const read = await Promise.all(
+    sessionIds.slice(0, OCCURRENCES_SHOWN).map((id) =>
+      ok(api.GET('/v1/workspaces/{id}', { params: { path: { id } } })).catch(() => null),
+    ),
+  );
+  return read.flatMap((ws) => (ws ? [{ at: ws.updated_at, where: ws.title }] : []));
+}
+
 export const listSkillSuggestions = async () => {
   const page = await ok<Page<SuggestionWire>>(
     api.GET('/v1/skill-suggestions', { params: { query: { page_size: 500 } } }),
   );
-  return { ...page, items: page.items.map(readSuggestion) };
+  const items = await Promise.all(
+    page.items.map(async (raw) => {
+      const suggestion = readSuggestion(raw);
+      return raw.display
+        ? suggestion
+        : { ...suggestion, occurrences: await occurrencesOf(raw.session_ids) };
+    }),
+  );
+  return { ...page, items };
 };
 
 /** :dismiss — the agent does not suggest the same chain again for 90 days. */
