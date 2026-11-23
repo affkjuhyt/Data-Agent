@@ -18,6 +18,8 @@ COPY backend/libs/cron/ ./libs/cron/
 COPY backend/libs/tabular/ ./libs/tabular/
 COPY backend/libs/pii/ ./libs/pii/
 COPY backend/libs/language/ ./libs/language/
+# The shared wire shapes: TrustCode and the answer's trust rule (AE-06) the answers are served with.
+COPY backend/libs/contracts/ ./libs/contracts/
 COPY backend/libs/openbao/ ./libs/openbao/
 COPY backend/libs/vectors/ ./libs/vectors/
 COPY backend/libs/forecast_release/ ./libs/forecast_release/
