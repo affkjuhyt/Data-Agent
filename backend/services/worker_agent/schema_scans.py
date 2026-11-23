@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import itertools
 import json
 import logging
 import os
@@ -542,29 +543,36 @@ HISTOGRAM_BINS = 20
 PATTERN_HINT_SHARE = 0.8
 _NUMERIC = frozenset({"integer", "decimal"})
 _TEMPORAL = frozenset({"date", "timestamp"})
-_PATTERN_RUN = re.compile(r"[0-9]+|[A-Z]+|[a-z]+|.", re.DOTALL)
 # A value longer than this is prose, not a code: it has no pattern worth naming.
 _PATTERN_MAX_LENGTH = 64
 
 
+def _char_class(char: str) -> str:
+    if char.isdigit():
+        return r"\d"
+    if char.isascii() and char.isupper():
+        return "[A-Z]"
+    if char.isascii() and char.islower():
+        return "[a-z]"
+    if char.isalpha():
+        # Any other letter (ễ, Ж, 漢) is a letter, never itself: a pattern names no value's
+        # characters, so a personal column's pattern does not spell its names.
+        return r"[^\W\d_]"
+    if char.isascii() and char.isprintable():
+        return re.escape(char)
+    return "."
+
+
 def value_pattern(value: str) -> str | None:
     """A value's shape as a regular expression: a run of digits becomes \\d{n}, of capitals
-    [A-Z]{n}, of small letters [a-z]{n}; anything else stands for itself. Deterministic, so two
-    scans of the same values name the same patterns."""
+    [A-Z]{n}, of small letters [a-z]{n}, of other letters a letter class; only ASCII punctuation
+    stands for itself. Deterministic, so two scans of the same values name the same patterns."""
     if not value or len(value) > _PATTERN_MAX_LENGTH:
         return None
     parts: list[str] = []
-    for run in _PATTERN_RUN.findall(value):
-        if run[0].isdigit() and run.isascii():
-            cls = r"\d"
-        elif run[0].isascii() and run[0].isupper():
-            cls = "[A-Z]"
-        elif run[0].isascii() and run[0].islower():
-            cls = "[a-z]"
-        else:
-            parts.append(re.escape(run))
-            continue
-        parts.append(cls if len(run) == 1 else f"{cls}{{{len(run)}}}")
+    for cls, run in itertools.groupby(value, key=_char_class):
+        n = len(list(run))
+        parts.append(cls if n == 1 else f"{cls}{{{n}}}")
     return "".join(parts)
 
 

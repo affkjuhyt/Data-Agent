@@ -46,6 +46,9 @@ def test_a_value_pattern_names_runs_of_digits_and_letters() -> None:
     assert value_pattern("SO43659") == r"[A-Z]{2}\d{5}"
     assert value_pattern("2024-03") == r"\d{4}\-\d{2}"
     assert value_pattern("a1") == r"[a-z]\d"
+    # A letter outside ASCII is a letter class: the pattern does not spell the name.
+    assert value_pattern("Nguyễn Văn") == r"[A-Z][a-z]{3}[^\W\d_][a-z]\ [A-Z][^\W\d_][a-z]"
+    assert "ễ" not in str(value_pattern("ễễ"))
     assert value_pattern("") is None and value_pattern("x" * 65) is None
 
 

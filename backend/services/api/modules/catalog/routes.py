@@ -1138,6 +1138,10 @@ async def _detail(session: AsyncSession, row: catalog.Dataset) -> DatasetDetail:
                         "max_value": None,
                         "quantiles": None,
                         "histogram": None,
+                        # A pattern names no value, but its lengths and separators are the
+                        # value's: the steward reads it in the scan, not every analyst here.
+                        "value_patterns": None,
+                        "pattern_hint": None,
                     }
                 )
             view.profile = pv

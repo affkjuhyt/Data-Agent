@@ -879,7 +879,8 @@ async def test_a_number_column_shows_its_histogram_and_median_and_a_personal_one
     # A personal column's distribution says where its values lie: it is not shown.
     assert columns["ngay_sinh"]["quantiles"] is None
     assert columns["ngay_sinh"]["histogram"] is None
-    assert columns["ngay_sinh"]["value_patterns"] == [{"pattern": r"\d{2}", "share": 0.9}]
+    assert columns["ngay_sinh"]["value_patterns"] is None
+    assert columns["so_tien"]["value_patterns"] == [{"pattern": r"\d{2}", "share": 0.9}]
 
 
 # AC-04-02-02

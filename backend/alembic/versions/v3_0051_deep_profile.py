@@ -32,6 +32,9 @@ COMMENT ON COLUMN catalog.column_profile.quantiles IS 'DF-10: {p05, p25, p50, p7
 COMMENT ON COLUMN catalog.column_profile.histogram IS 'DF-10: {lo, hi, bins} — 20 khoảng đều của cột số trên mẫu';
 COMMENT ON COLUMN catalog.column_profile.length_stats IS 'DF-10: {min, max, avg} độ dài của cột chuỗi';
 COMMENT ON COLUMN catalog.column_profile.value_patterns IS 'DF-10: [{pattern, share}], tối đa 3 mẫu giá trị dạng regex sinh từ chữ số và chữ cái của mẫu';
+
+-- alembic writes alembic_version after this, as the migrating user: da_owner has no right on it.
+RESET ROLE;
 """
 
 
@@ -49,6 +52,7 @@ def downgrade() -> None:
             ALTER TABLE catalog.column_profile DROP COLUMN IF EXISTS histogram;
             ALTER TABLE catalog.column_profile DROP COLUMN IF EXISTS quantiles;
             ALTER TABLE catalog.dataset DROP COLUMN IF EXISTS source_activity;
+            RESET ROLE;
             """
         )
     )
