@@ -37,6 +37,7 @@ from libs.dataagent_db import scoped_session, uuid7, versioning
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import pipeline as pl
 from libs.sql_guard import dialect_of
+from services.worker_agent import column_edges
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
 
@@ -472,6 +473,23 @@ async def materialize_requested(event: Event) -> None:
                 kind="pipeline_run",
                 run_id=run.id,
             )
+    # DF-16: each column of the table linked to the source columns it was computed from.
+    try:
+        await column_edges.record(
+            org_id=event.org_id,
+            data_space_id=ctx["space"],
+            actor=actor,
+            source=ctx["source"],
+            sql=chain(ctx["steps"], len(ctx["steps"]) - 1),
+            inputs=[d.id for d in ctx["datasets"]],
+            target_id=dataset_id,
+            result_names=[str(c["name"]) for c in out.columns],
+            columns=columns,
+            via="pipeline",
+            via_ref=ctx["pipeline"].id,
+        )
+    except Exception:
+        logger.exception("column lineage of pipeline %s not recorded", ctx["pipeline"].id)
     async with scoped_session(ROLE, event.org_id, actor) as session:
         for d in ctx["datasets"]:
             known = await session.scalar(

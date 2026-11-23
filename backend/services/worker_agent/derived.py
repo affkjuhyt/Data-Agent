@@ -34,6 +34,7 @@ from libs.dataagent_db import scoped_session, uuid7, versioning
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import pipeline as pl
 from libs.sql_guard import SqlRejected, check_read_only, dialect_of, tables_of
+from services.worker_agent import column_edges
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.pipelines import _TYPES, MATERIALIZE_ROWS, physical_name
 from services.worker_agent.query.executor import ROLE as QUERY_ROLE
@@ -168,6 +169,23 @@ async def _build(
         dataset.schema_name, dataset.table_name = "workspace", table
         dataset.row_estimate, dataset.enabled = len(rows), True
         dataset.updated_by, dataset.updated_at = actor, _now()
+    # DF-16: each column of the table linked to the source columns it was computed from.
+    try:
+        await column_edges.record(
+            org_id=event.org_id,
+            data_space_id=space,
+            actor=actor,
+            source=source,
+            sql=sql,
+            inputs=inputs,
+            target_id=dataset_id,
+            result_names=[str(c["name"]) for c in out.columns],
+            columns=columns,
+            via="derive",
+            via_ref=dataset_id,
+        )
+    except Exception:
+        logger.exception("column lineage of derived dataset %s not recorded", dataset_id)
     async with scoped_session("svc_pipeline", event.org_id, actor) as session:
         for from_id in inputs:
             known = await session.scalar(

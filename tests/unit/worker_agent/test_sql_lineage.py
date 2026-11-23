@@ -104,3 +104,8 @@ def test_a_query_sqlglot_cannot_follow_still_names_its_tables(
     monkeypatch.setattr(lineage, "_trace", broken)
     got = column_lineage("SELECT amount FROM sales.f", SCHEMA)
     assert not got.complete and got.tables == {("sales", "f")}
+
+
+def test_an_unqualified_table_resolves_to_the_default_schema() -> None:
+    got = column_lineage("SELECT region FROM c", SCHEMA, default_schema="sales")
+    assert got.edges == (Edge("sales", "c", "region", "region"),)

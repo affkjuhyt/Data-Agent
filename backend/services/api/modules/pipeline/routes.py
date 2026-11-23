@@ -1029,8 +1029,9 @@ async def get_lineage(
             if not in_space:
                 raise Problem(404, "not_found", "Object not found.")
         # Edges the catalog already holds (UC-06-05 step 1): a source table's dataset is read
-        # from its source (catalog.dataset.source_id). No writer copies them into lineage_edge,
-        # so they are read here, where they cannot go stale.
+        # from its source (catalog.dataset.source_id). An ingest run records its own (via
+        # ingest, DF-16), which wins below; a table queried in place has no writer, so its edge
+        # is read here, where it cannot go stale.
         derived: list[tuple[tuple[str, uuid.UUID], tuple[str, uuid.UUID]]] = []
         if direction in ("downstream", "both") and root[0] == "source":
             for ds_id in (
@@ -1065,6 +1066,26 @@ async def get_lineage(
                     nodes.setdefault(end, ds.data_space_id == data_space)
                     if ((end), ("dataset", ds.id)) not in derived:
                         derived.append((end, ("dataset", ds.id)))
+        column_ids = [i for (k, i), shown in nodes.items() if k == "column" and shown]
+        if column_ids:
+            # DF-16: a column is named with its table, as the steward reads it.
+            for column_id, column_name, ds_name, schema_name, table_name in (
+                await session.execute(
+                    select(
+                        catalog.ColumnMeta.id,
+                        catalog.ColumnMeta.name,
+                        catalog.Dataset.display_name,
+                        catalog.Dataset.schema_name,
+                        catalog.Dataset.table_name,
+                    )
+                    .join(catalog.Dataset, catalog.Dataset.id == catalog.ColumnMeta.dataset_id)
+                    .where(
+                        catalog.ColumnMeta.id.in_(column_ids),
+                        catalog.ColumnMeta.org_id == principal.org_id,
+                    )
+                )
+            ).all():
+                names[column_id] = f"{ds_name or f'{schema_name}.{table_name}'}.{column_name}"
         source_ids = [i for (k, i), shown in nodes.items() if k == "source" and shown]
         if source_ids:
             # A source is shown only when it is in the caller's Data Space itself: a dataset of

@@ -25,6 +25,7 @@ from libs.dataagent_db import scoped_session, uuid7, versioning
 from libs.dataagent_db.models import catalog
 from libs.snapshot import writer
 from libs.snapshot.store import MinioStore, SnapshotStore, StoreUnavailable
+from services.worker_agent import column_edges
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import ROLE as QUERY_ROLE
 
@@ -45,6 +46,12 @@ def store() -> SnapshotStore:
 
 async def version_created(event: Event) -> None:
     p = event.payload
+    # DF-16: an ingest run's table is linked to its source in lineage, before (and whatever
+    # happens to) its snapshot; one handler per event type, so it is called from here.
+    try:
+        await column_edges.source_edge(event)
+    except Exception:
+        logger.exception("ingest lineage of dataset %s not recorded", p.get("dataset_id"))
     dataset_id = uuid.UUID(str(p["dataset_id"]))
     version = int(p["version"])
     physical = str(p["physical_table"])

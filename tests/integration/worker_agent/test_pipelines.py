@@ -184,6 +184,79 @@ async def test_saving_writes_the_table_registers_it_and_links_its_inputs(
     )
 
 
+@pytest.mark.req("DF-16")
+async def test_materialize_writes_column_edges(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    loan = {
+        name: seed.row(
+            "catalog.column_meta",
+            org_id=bank.org,
+            dataset_id=bank.loans,
+            dataset_version=1,
+            name=name,
+            ordinal=i,
+            data_type="numeric" if name == "balance" else "text",
+            normalized_type="decimal" if name == "balance" else "string",
+        )
+        for i, name in enumerate(["branch_code", "group_code", "balance", "product_code"], 1)
+    }
+
+    def open_edges(pid: uuid.UUID) -> set[tuple[uuid.UUID, str]]:
+        return set(
+            seed.all(
+                "SELECT e.from_id, c.name FROM pipeline.lineage_edge e"
+                " JOIN catalog.column_meta c ON c.id = e.to_id"
+                " WHERE e.from_kind = 'column' AND e.to_kind = 'column'"
+                " AND e.via = 'pipeline' AND e.via_ref = %s AND e.valid_to IS NULL",
+                pid,
+            )
+        )
+
+    pid = pipeline(bank, [SELECT, DROP_INTERNAL])
+    request(bank, pid, pipelines.MATERIALIZE, table_name="khoan_vay_cot")
+    await drain()
+    target = seed.one("SELECT target_dataset_id FROM pipeline.pipeline WHERE id = %s", pid)
+    assert target is not None
+    # Each column of the table, recorded in the catalogue, points at the source column it came
+    # from through both steps' CTEs (the filter's SELECT * included).
+    assert open_edges(pid) == {(loan[n], n) for n in loan}
+    assert seed.one("SELECT count(*) FROM catalog.column_meta WHERE dataset_id = %s", target) == 4
+    # The table-level edge stays.
+    assert (
+        seed.one(
+            "SELECT via FROM pipeline.lineage_edge WHERE from_id = %s AND to_id = %s",
+            bank.loans,
+            target,
+        )
+        == "pipeline"
+    )
+
+    # Saved again keeping two columns: the edges of the other two are closed.
+    keep = {
+        "kind": "compute",
+        "description": "Hai cột",
+        "code": "SELECT branch_code, balance FROM t",
+    }
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE pipeline.pipeline SET steps = %s WHERE id = %s",
+            (json.dumps([SELECT, keep]), str(pid)),
+        )
+    request(
+        bank,
+        pid,
+        pipelines.MATERIALIZE,
+        table_name="khoan_vay_cot",
+        overwrite_dataset_id=str(target),
+    )
+    await drain()
+    assert open_edges(pid) == {(loan["branch_code"], "branch_code"), (loan["balance"], "balance")}
+
+
 async def test_saving_again_writes_the_next_version_and_keeps_the_one_before(
     seed: Seed,
     warehouse: dict[str, Any],  # noqa: F811

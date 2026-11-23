@@ -65,11 +65,15 @@ def column_lineage(
     schema: Schema | None = None,
     dialect: str = "postgres",
     timeout_s: float = TIMEOUT_S,
+    default_schema: str | None = None,
 ) -> Lineage:
-    """The lineage of a read-only query. Raises SqlRejected for anything the guard refuses."""
+    """The lineage of a read-only query. Raises SqlRejected for anything the guard refuses.
+
+    `default_schema` is the one an unqualified table resolves to on the source (its
+    search_path), so `FROM orders` finds `public.orders` in the schema."""
     tree = check_read_only(sql, dialect)
     tables = frozenset(tables_of(tree, dialect))
-    future = _POOL.submit(_trace, tree, schema, dialect)
+    future = _POOL.submit(_trace, tree, schema, dialect, default_schema)
     try:
         edges, unresolved = future.result(timeout=timeout_s)
     except concurrent.futures.TimeoutError:
@@ -81,10 +85,13 @@ def column_lineage(
     return Lineage(tuple(edges), tables, tuple(unresolved))
 
 
-def _trace(tree: exp.Expr, schema: Schema | None, dialect: str) -> tuple[list[Edge], list[str]]:
+def _trace(
+    tree: exp.Expr, schema: Schema | None, dialect: str, default_schema: str | None = None
+) -> tuple[list[Edge], list[str]]:
     qualified = qualify(
         tree.copy(),
         schema=dict(schema) if schema else None,
+        db=default_schema,
         dialect=dialect,
         validate_qualify_columns=False,
         identify=False,

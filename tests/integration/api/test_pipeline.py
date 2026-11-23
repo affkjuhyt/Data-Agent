@@ -897,6 +897,57 @@ async def test_lineage_reads_source_to_table_from_the_catalog(pp: Space) -> None
     assert nodes["source"]["name"] == "Đối tượng bạn không có quyền xem"
 
 
+@pytest.mark.req("DF-16")
+async def test_lineage_names_a_column_with_its_table_and_an_ingest_edge_wins(pp: Space) -> None:
+    def column(dataset: uuid.UUID, name: str) -> uuid.UUID:
+        return pp.seed.row(
+            "catalog.column_meta",
+            org_id=pp.org,
+            dataset_id=dataset,
+            dataset_version=1,
+            name=name,
+            ordinal=1,
+            data_type="numeric",
+            normalized_type="decimal",
+        )
+
+    pp.run("UPDATE catalog.dataset SET display_name = 'Khoản vay' WHERE id = %s", pp.raw)
+    source_col = column(pp.raw, "balance")
+    derived = pp.seed.row(
+        "catalog.dataset",
+        org_id=pp.org,
+        data_space_id=pp.space,
+        origin="derived",
+        schema_name="workspace",
+        table_name=f"p_{uuid.uuid4().hex[:6]}",
+        display_name="Dư nợ sạch",
+    )
+    target_col = column(derived, "du_no")
+    _edge(pp, ("column", source_col), ("column", target_col))
+    _edge(pp, ("source", pp.source), ("dataset", pp.raw), via="ingest")
+    async with client(pp) as api:
+        cols = await api.get(
+            "/v1/lineage",
+            params={"object_kind": "column", "object_id": str(target_col)},
+            headers=pp.headers("analyst"),
+        )
+        table = await api.get(
+            "/v1/lineage",
+            params={"object_kind": "dataset", "object_id": str(pp.raw)},
+            headers=pp.headers("analyst"),
+        )
+    assert cols.status_code == 200, cols.text
+    names = {n["key"]: n["name"] for n in cols.json()["nodes"]}
+    assert names == {
+        f"column:{target_col}": "Dư nợ sạch.du_no",
+        f"column:{source_col}": "Khoản vay.balance",
+    }
+    # The edge an ingest run recorded replaces the one read from the catalogue: one, via ingest.
+    assert [(e["source"], e["via"]) for e in table.json()["edges"]] == [
+        (f"source:{pp.source}", "ingest")
+    ]
+
+
 async def test_lineage_hides_a_source_another_data_space_owns(pp: Space) -> None:
     # Our table reads a source the other Data Space owns: the source is a hidden node.
     borrowed = _dataset(
