@@ -298,8 +298,6 @@ export interface TableProfile {
 }
 
 type DatasetDetailWire = components['schemas']['DatasetDetail'] & {
-  // Kept optional for richer fixtures; the canonical API derives this from `columns`.
-  column_count?: number;
   profile_review?: TableProfile['review'];
 };
 

@@ -1520,3 +1520,45 @@ async def test_contract_put_requires_if_match(o: Org) -> None:
                 (str(dataset),),
             )
             assert [r[0] for r in cur.fetchall()] == ["draft", "active"]
+
+
+async def test_the_dataset_list_says_certified_and_counts_columns(o: Org) -> None:
+    """The list screens (Phân tích's certified shelf, a source's tables) read these from the
+    list: certification of the version in use (BR-156) and the columns still present."""
+    dataset = _dataset(o, None, origin="consolidated", table_name="lai_suat_niem_yet")
+    version = o.seed.row(
+        "catalog.dataset_version",
+        org_id=o.org,
+        dataset_id=dataset,
+        version=1,
+        schema_hash="h1",
+        valid_from="2026-10-01T00:00:00Z",
+        created_by=o.users["editor"],
+    )
+    _column(o, dataset, "ky_han", 1)
+    _column(o, dataset, "lai_suat", 2, removed_in_version=1)
+    plain = _dataset(o, None)
+    async with client(o) as api:
+        h = o.headers("analyst")
+
+        async def listed() -> dict[str, Any]:
+            got = await api.get("/v1/datasets?page_size=500", headers=h)
+            assert got.status_code == 200, got.text
+            return {d["id"]: d for d in got.json()["items"]}
+
+        rows = await listed()
+        assert rows[str(dataset)]["certified"] is False
+        assert rows[str(dataset)]["column_count"] == 1
+        assert rows[str(plain)]["column_count"] == 0
+        certified = await api.post(
+            f"/v1/dataset-versions/{version}:certify", headers=o.headers("steward")
+        )
+        assert certified.status_code == 200, certified.text
+        assert (await listed())[str(dataset)]["certified"] is True
+        revoked = await api.post(
+            f"/v1/dataset-versions/{version}:revoke-certification",
+            json={"reason": "nguồn sửa số"},
+            headers=o.headers("steward"),
+        )
+        assert revoked.status_code == 200, revoked.text
+        assert (await listed())[str(dataset)]["certified"] is False

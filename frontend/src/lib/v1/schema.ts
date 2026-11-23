@@ -11224,6 +11224,10 @@ export interface components {
         DatasetDetail: {
             /** Business Date Col */
             business_date_col: string | null;
+            /** Certified */
+            certified?: boolean | null;
+            /** Column Count */
+            column_count?: number | null;
             /** Columns */
             columns?: components["schemas"]["ColumnView"][];
             /**
@@ -23802,6 +23806,10 @@ export interface components {
         services__api__modules__catalog__schemas__DatasetView: {
             /** Business Date Col */
             business_date_col: string | null;
+            /** Certified */
+            certified?: boolean | null;
+            /** Column Count */
+            column_count?: number | null;
             /**
              * Created At
              * Format: date-time

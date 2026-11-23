@@ -12541,6 +12541,28 @@
       ],
       "title": "Business Date Col"
      },
+     "certified": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Certified"
+     },
+     "column_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Column Count"
+     },
      "columns": {
       "items": {
        "$ref": "#/components/schemas/ColumnView"
@@ -46982,6 +47004,28 @@
        }
       ],
       "title": "Business Date Col"
+     },
+     "certified": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Certified"
+     },
+     "column_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Column Count"
      },
      "created_at": {
       "format": "date-time",

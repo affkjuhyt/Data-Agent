@@ -327,16 +327,14 @@ export const readSource = (raw: SourceWire): Source => ({
   late_by_minutes: raw.late_by_minutes ?? null,
 });
 
-/** GET /v1/datasets as the api sends it. PROPOSAL: `certified`, for "Bộ dữ liệu đã chứng nhận". */
+/** GET /v1/datasets as the api sends it, `certified` (the version in use) included. */
 export type DatasetWire =
-  components['schemas']['services__api__modules__catalog__schemas__DatasetView'] & {
-    certified?: boolean;
-  };
+  components['schemas']['services__api__modules__catalog__schemas__DatasetView'];
 
 export type Dataset = Omit<DatasetWire, 'display_name' | 'certified'> & {
   /** The display name, or the table's name without one. */
   display_name: string;
-  /** null when the api does not say (the certification is on the dataset version). */
+  /** Whether the version in use is certified (BR-156); null where the route does not read it. */
   certified: boolean | null;
 };
 

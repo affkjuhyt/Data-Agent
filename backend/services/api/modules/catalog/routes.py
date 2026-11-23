@@ -1051,10 +1051,49 @@ async def list_datasets(
     )
     async with transaction(ROLE, principal) as session:
         rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
-    return Page(
-        items=[DatasetView.model_validate(r, from_attributes=True) for r in rows],
-        next_page_token=token,
+        facts = await _list_facts(session, rows)
+    items = []
+    for r in rows:
+        view = DatasetView.model_validate(r, from_attributes=True)
+        view.certified, view.column_count = facts.get(r.id, (False, 0))
+        items.append(view)
+    return Page(items=items, next_page_token=token)
+
+
+async def _list_facts(
+    session: AsyncSession, rows: list[catalog.Dataset]
+) -> dict[uuid.UUID, tuple[bool, int]]:
+    """Per dataset of one page: is its version in use certified, and how many columns are left.
+    Two grouped reads for the page, not one per dataset."""
+    ids = [r.id for r in rows]
+    if not ids:
+        return {}
+    dv, cm = catalog.DatasetVersion, catalog.ColumnMeta
+    certified = set(
+        (
+            await session.scalars(
+                select(dv.dataset_id)
+                .join(catalog.Dataset, catalog.Dataset.id == dv.dataset_id)
+                .where(
+                    dv.dataset_id.in_(ids),
+                    dv.version == catalog.Dataset.current_version,
+                    dv.certified_at.is_not(None),
+                )
+            )
+        ).all()
     )
+    counts = dict(
+        (
+            await session.execute(
+                select(cm.dataset_id, func.count())
+                .where(cm.dataset_id.in_(ids), cm.removed_in_version.is_(None))
+                .group_by(cm.dataset_id)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    return {i: (i in certified, int(counts.get(i, 0))) for i in ids}
 
 
 async def _columns(session: AsyncSession, dataset_id: uuid.UUID) -> list[catalog.ColumnMeta]:
@@ -1101,8 +1140,12 @@ async def _detail(session: AsyncSession, row: catalog.Dataset) -> DatasetDetail:
                 )
             view.profile = pv
         views.append(view)
+    facts = await _list_facts(session, [row])
+    certified, count = facts.get(row.id, (False, 0))
     return DatasetDetail(
-        **DatasetView.model_validate(row, from_attributes=True).model_dump(), columns=views
+        **DatasetView.model_validate(row, from_attributes=True).model_dump()
+        | {"certified": certified, "column_count": count},
+        columns=views,
     )
 
 

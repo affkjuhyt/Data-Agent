@@ -281,6 +281,11 @@ class DatasetView(BaseModel):
     quality_state: str
     created_at: datetime.datetime
     updated_at: datetime.datetime
+    # Read by the list and the detail: whether the version in use is certified (BR-156,
+    # dataset_version.certified_at) and how many columns it still has. None where a route does
+    # not read them, so an unread value is never said to be "not certified".
+    certified: bool | None = None
+    column_count: int | None = None
 
 
 class ColumnProfileView(BaseModel):
