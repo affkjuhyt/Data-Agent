@@ -1,10 +1,15 @@
-"""Central clarify policy for Ask (OP-1 / docs/research/agent-ops-from-system-prompts.md).
+"""Central clarify policy for Ask (OP-1 / docs/research/agent-ops-from-system-prompts.md, AE-10).
 
 The planner may propose mode=ask; this module decides whether that ask is allowed, how many
 options it may carry, and when a second clarify round must become an assumption instead.
 C-level / executive: at most one round and three options (01 §2.1, F6). Analyst: up to three
 rounds and five options. Soft "shall we go deeper?" asks are refused: ask only when ≥2
 interpretations would change metric, period, or scope.
+
+Every way out to a clarification goes through here (AE-10, ASK_ENGINE_SPEC §9): the planner's
+mode=ask through `apply`, and a Clarify made anywhere else (the ask_user tool, the asks of an
+unnamed quantity, the governed path's choice of metric) through `gate`. Shared by the governed
+path and the agent since 23/11/2026 (it lived in agentic/).
 """
 
 from __future__ import annotations
@@ -13,8 +18,11 @@ import datetime
 import itertools
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
+from sqlalchemy import func, select
+
+from libs.dataagent_db.models import qa
 from services.worker_agent.agentic import plan as p
 from services.worker_agent.agentic.grounded import ANALYSIS_WORDS
 from services.worker_agent.agentic.tools.base import Clarify
@@ -95,6 +103,35 @@ def apply(
         )
 
     return plan.model_copy(update={"clarification": clarification, "options": options})
+
+
+def gate(
+    clarify: Clarify | None, *, audience: Audience | str | None, prior_rounds: int
+) -> Clarify | None:
+    """A clarification as the audience's budget allows it: at most its options, or None once its
+    rounds are spent, and the caller goes on with its best reading instead of asking again."""
+    if clarify is None:
+        return None
+    limits = limits_for(audience)
+    if prior_rounds >= limits.max_rounds:
+        return None
+    return Clarify(clarify.question, list(clarify.options)[: limits.max_options])
+
+
+async def prior_rounds(session: Any, question: qa.Question) -> int:
+    """How many clarification answers already sit earlier in this conversation (OP-1 budget)."""
+    earlier = select(qa.Question.id).where(
+        qa.Question.conversation_id == question.conversation_id,
+        qa.Question.seq < question.seq,
+    )
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(qa.Answer)
+            .where(qa.Answer.question_id.in_(earlier), qa.Answer.kind == "clarification")
+        )
+        or 0
+    )
 
 
 # A quantity no certified metric measures is asked back with this many metrics to choose from.

@@ -95,15 +95,18 @@ class Bank:
         knowledge_mode: str = "latest",
         as_of: str | None = None,
         knowledge_at: str | None = None,
+        conversation: uuid.UUID | None = None,
+        seq: int = 1,
+        audience: str | None = None,
     ) -> uuid.UUID:
-        conv = self.seed.row(
+        conv = conversation or self.seed.row(
             "qa.conversation", org_id=self.org, data_space_id=self.space, user_id=self.user
         )
         question = self.seed.row(
             "qa.question",
             org_id=self.org,
             conversation_id=conv,
-            seq=1,
+            seq=seq,
             text=text,
             knowledge_mode=knowledge_mode,
             as_of=as_of,
@@ -115,7 +118,10 @@ class Bank:
             aggregate_type="question",
             aggregate_id=question,
             event_type="question.received",
-            payload=json.dumps({"question_id": str(question), "user_id": str(self.user)}),
+            payload=json.dumps(
+                {"question_id": str(question), "user_id": str(self.user)}
+                | ({"audience": audience} if audience else {})
+            ),
         )
         return question
 
@@ -1212,6 +1218,36 @@ async def test_ac_01_01_02_two_metrics_ask_which_and_run_nothing(
     )
     assert [name for name, _, _ in steps] == ["understand", "ask_user"]
     assert len(steps[1][2]["detail"]["options"]) == 2
+
+
+@pytest.mark.parametrize(("audience", "asked_again"), [("executive", False), ("analyst", True)])
+async def test_ae_10_an_executive_is_asked_back_once_then_the_best_reading_is_answered(
+    seed: Seed,
+    warehouse: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    audience: str,
+    asked_again: bool,
+) -> None:
+    # ASK_ENGINE_SPEC §9: executive ≤ 1 round, analyst ≤ 3; then the best-ranked metric is
+    # taken and the answer says what it assumed.
+    bank = build(seed, warehouse, monkeypatch)
+    first = bank.ask("Dư nợ và tỷ lệ nợ xấu tháng 9/2026", audience=audience)
+    await drain()
+    assert answer_of(seed, first)[:2] == ("clarifying", "clarification")
+    conversation = seed.one("SELECT conversation_id FROM qa.question WHERE id = %s", first)
+    again = bank.ask(
+        "Dư nợ và tỷ lệ nợ xấu tháng 9/2026",
+        conversation=conversation,
+        seq=2,
+        audience=audience,
+    )
+    await drain()
+    status, kind, text, *_ = answer_of(seed, again)
+    if asked_again:
+        assert (status, kind) == ("clarifying", "clarification"), text
+    else:
+        assert (status, kind) == ("answered", "data"), text
+        assert "Đã hỏi làm rõ đủ số lần: hiểu câu hỏi là Dư nợ" in text
 
 
 async def test_an_unknown_metric_is_refused_with_a_way_forward(

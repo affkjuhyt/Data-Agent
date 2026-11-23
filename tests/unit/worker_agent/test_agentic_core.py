@@ -273,7 +273,7 @@ def test_a_merge_of_two_readings_is_named_by_what_each_read() -> None:
 def test_a_quantity_no_metric_measures_is_asked_back_with_the_closest_metrics() -> None:
     import uuid
 
-    from services.worker_agent.agentic import clarify_policy
+    from services.worker_agent import clarify_policy
     from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
 
     buyers, revenue, orders = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
@@ -322,7 +322,7 @@ def test_a_quantity_several_metrics_are_named_after_is_asked_back() -> None:
     import datetime
     import uuid
 
-    from services.worker_agent.agentic import clarify_policy
+    from services.worker_agent import clarify_policy
     from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
 
     named = {
@@ -2372,7 +2372,7 @@ def test_what_the_space_does_not_measure_or_cut_by_is_said_before_any_plan() -> 
     import datetime
     import uuid
 
-    from services.worker_agent.agentic import clarify_policy
+    from services.worker_agent import clarify_policy
     from services.worker_agent.understand.resolver import (
         DimensionEntry,
         MetricEntry,
@@ -2714,3 +2714,27 @@ def test_a_reading_that_holds_no_figure_is_not_shown_beside_one_that_does() -> N
         }
     ]
     assert engine._read_nothing(state)
+
+
+@pytest.mark.parametrize(
+    ("audience", "rounds", "options"),
+    [
+        ("executive", 0, ["A", "B", "C"]),
+        ("analyst", 0, ["A", "B", "C", "D", "E"]),
+        ("executive", 1, None),
+        ("analyst", 3, None),
+    ],
+)
+def test_ae_10_the_ask_user_tool_asks_within_the_clarify_budget(
+    monkeypatch: pytest.MonkeyPatch, audience: str, rounds: int, options: list[str] | None
+) -> None:
+    # A-3: the tool's Clarify went straight to the turn; now it is held to the audience's options
+    # and rounds like the planner's mode=ask (clarify_policy.gate).
+    from services.worker_agent.agentic.tools import ToolResult
+    from services.worker_agent.agentic.tools.base import Clarify
+
+    asked = ToolResult(True, "đã hỏi lại", clarify=Clarify("Chỉ số nào?", list("ABCDEF")))
+    w = _step_world(monkeypatch, [asked])
+    w.state.audience, w.state.prior_clarify_rounds = audience, rounds
+    asyncio.run(w.engine.act(w.state))
+    assert (w.state.clarify.options if w.state.clarify else None) == options

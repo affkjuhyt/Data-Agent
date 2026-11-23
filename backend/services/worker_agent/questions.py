@@ -50,6 +50,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
 from services.worker_agent import (
+    clarify_policy,
     compute_runs,
     explore,
     quality_gate,
@@ -438,7 +439,7 @@ async def _refuse(
 
 
 def _cut_clarification(
-    question: str, u: Understanding, layer: SpaceLayer
+    question: str, u: Understanding, layer: SpaceLayer, limit: int = 5
 ) -> tuple[str, list[dict[str, str]]]:
     """Asks which cut a "theo X" meant when X names no dimension (BR-80).
 
@@ -463,7 +464,7 @@ def _cut_clarification(
         {"value": d.code, "label": f"{u.metric.name} theo {d.name}{period}"}
         for d in layer.vocabulary.dimensions
         if d.dimension_id in allowed and not d.is_time
-    ]
+    ][:limit]
     if not choices:
         return (
             f"Chưa nhận ra “{asked}” là chiều nào. {u.metric.name} chưa được phép chia theo chiều "
@@ -618,6 +619,25 @@ def _grain_chip(grain: str) -> dict[str, object]:
 def _dimension_name(layer: SpaceLayer, code: str | None) -> str | None:
     dim = layer.layer.dimensions.get(code) if code else None
     return dim.name if dim else None
+
+
+def _assume_when_spent(u: Understanding, *, audience: str | None, prior_rounds: int) -> str | None:
+    """Once the audience's clarify rounds are spent (executive 1, analyst 3: clarify_policy), the
+    question is not asked back again: the best-ranked metric is taken, or a cut the metric has
+    not is left out as a cut the asker may not use is (the total is answered), and the answer
+    says what was assumed (ASK_ENGINE_SPEC §9)."""
+    if prior_rounds < clarify_policy.limits_for(audience).max_rounds:
+        return None
+    if u.unplaced_cut is not None and u.metric is not None:
+        cut, u.unplaced_cut = u.unplaced_cut, None
+        u.decision = "proceed"
+        return f"Đã hỏi làm rõ đủ số lần: không chia theo “{cut}”, trả về số tổng hợp."
+    if u.options:
+        u.metric, u.options = u.options[0], []
+    if u.metric is None:
+        return None
+    u.decision, u.to_confirm = "proceed", False
+    return f"Đã hỏi làm rõ đủ số lần: hiểu câu hỏi là {u.metric.name}."
 
 
 def _auto_select_single_metric(u: Understanding) -> bool:
@@ -1460,6 +1480,16 @@ async def _understand_and_plan(
                     )
 
         _auto_select_single_metric(u)
+        # AE-10: asked back as often as the asker's audience allows, then the best reading.
+        assumed_note = (
+            _assume_when_spent(
+                u,
+                audience=event.payload.get("audience"),
+                prior_rounds=await clarify_policy.prior_rounds(session, question),
+            )
+            if u.decision == "clarify"
+            else None
+        )
         # Checked once the metric is final: the model's reading and the lone candidate picked
         # above both place one after the rule pass, and either may be a metric the asker is
         # denied.
@@ -1876,7 +1906,7 @@ async def _understand_and_plan(
                 follow_ups=suggestions.follow_ups(
                     u, layer, today=today, grain=grain, compared=compare_to is not None
                 ),
-                best_effort_note=best_effort_note,
+                best_effort_note=" ".join(n for n in (assumed_note, best_effort_note) if n) or None,
                 quality_note=quality_note,
                 request=compile_request,
                 # Bound now (partial, not a closure over names this loop may rebind).
@@ -1916,15 +1946,24 @@ async def _understand_and_plan(
         return None
     if u.decision == "clarify":
         if u.unplaced_cut is not None and u.metric is not None:
-            text, choices = _cut_clarification(question.text, u, layer)
+            text, choices = _cut_clarification(
+                question.text,
+                u,
+                layer,
+                clarify_policy.limits_for(event.payload.get("audience")).max_options,
+            )
         else:
-            listed = "; ".join(f"{i + 1}. {m.name}" for i, m in enumerate(u.options))
+            # At most the audience's options (clarify_policy), best-ranked first.
+            offered = u.options[
+                : clarify_policy.limits_for(event.payload.get("audience")).max_options
+            ]
+            listed = "; ".join(f"{i + 1}. {m.name}" for i, m in enumerate(offered))
             text = (
                 f"Data Space không có chỉ số nào khớp đúng câu hỏi. Bạn muốn hỏi: {listed}?"
-                if len(u.options) == 1
+                if len(offered) == 1
                 else f"Câu hỏi khớp với nhiều chỉ số. Bạn muốn hỏi chỉ số nào: {listed}?"
             )
-            choices = [{"value": m.code, "label": m.name} for m in u.options]
+            choices = [{"value": m.code, "label": m.name} for m in offered]
         await turn_trace.record_step(
             "ask_user",
             target=text,

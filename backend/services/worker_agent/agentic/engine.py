@@ -36,11 +36,10 @@ from libs import clock, language
 from libs.contracts.v1 import trust as answer_trust
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
-from services.worker_agent import receipts, turn_trace
+from services.worker_agent import clarify_policy, receipts, turn_trace
 from services.worker_agent.agentic import blocks as b
 from services.worker_agent.agentic import budget as agent_budget
 from services.worker_agent.agentic import (
-    clarify_policy,
     corpus,
     deep_skill,
     memory,
@@ -277,22 +276,6 @@ def _standalone(text: str, readings: list[dict[str, Any]], vocab: Any, today: da
     return f"{whole}: {text}" if words else whole
 
 
-async def _prior_clarify_rounds(session: Any, question: qa.Question) -> int:
-    """How many clarification answers already sit earlier in this conversation (OP-1 budget)."""
-    earlier = select(qa.Question.id).where(
-        qa.Question.conversation_id == question.conversation_id,
-        qa.Question.seq < question.seq,
-    )
-    return int(
-        await session.scalar(
-            select(func.count())
-            .select_from(qa.Answer)
-            .where(qa.Answer.question_id.in_(earlier), qa.Answer.kind == "clarification")
-        )
-        or 0
-    )
-
-
 def _bind_clarify(s: State, plan: p.Plan) -> p.Plan:
     """Apply the clarify budget, then materialise Clarify on the state when still asking.
 
@@ -315,7 +298,8 @@ def _bind_clarify(s: State, plan: p.Plan) -> p.Plan:
             )
     if plan.mode == "ask":
         s.clarify = Clarify(
-            plan.clarification or "Bạn có thể nói rõ hơn câu hỏi?", plan.options[:5]
+            plan.clarification or "Bạn có thể nói rõ hơn câu hỏi?",
+            plan.options[: clarify_policy.limits_for(s.audience).max_options],
         )
     else:
         s.clarify = None
@@ -346,7 +330,7 @@ async def prepare(s: State) -> None:
         )
         if asked:
             s.followed = question.text
-        s.prior_clarify_rounds = await _prior_clarify_rounds(session, question)
+        s.prior_clarify_rounds = await clarify_policy.prior_rounds(session, question)
         raw_audience = (event.payload or {}).get("audience")
         s.audience = "executive" if raw_audience == "executive" else clarify_policy.DEFAULT_AUDIENCE
         s.deep = deep_skill.requested(event.payload, question.purpose)
@@ -735,7 +719,14 @@ async def act(s: State) -> None:
         step.datasets = result.datasets
         step.status = "done" if result.ok else "failed"
         if result.clarify is not None:
-            s.clarify = result.clarify
+            # The ask_user tool asks within the same budget as the planner (A-3): spent, the
+            # turn goes on with what it has.
+            s.clarify = (
+                clarify_policy.gate(
+                    result.clarify, audience=s.audience, prior_rounds=s.prior_clarify_rounds
+                )
+                or s.clarify
+            )
         # A step the asker may not read is not replanned: the planner must not look for another
         # way to the same data (invariant 13). Steps that depend on it are skipped.
         if not result.ok and s.failed is None and result.failure != "forbidden":
@@ -757,7 +748,11 @@ def _ask_for_unnamed(s: State, results: list[ToolResult]) -> None:
         unnamed = (result.detail or {}).get("unnamed")
         if result.ok or not unnamed:
             continue
-        ask = clarify_policy.unnamed_quantity(s.ctx.question, list(unnamed), s.ctx.layer)
+        ask = clarify_policy.gate(
+            clarify_policy.unnamed_quantity(s.ctx.question, list(unnamed), s.ctx.layer),
+            audience=s.audience,
+            prior_rounds=s.prior_clarify_rounds,
+        )
         if ask is not None:
             s.clarify, s.failed = ask, None
             return
@@ -1022,6 +1017,7 @@ def _ask_for_unnamed_question(s: State) -> bool:
         ask = clarify_policy.nothing_read(
             s.ctx.question, s.ctx.layer, found.label if found else None
         )
+    ask = clarify_policy.gate(ask, audience=s.audience, prior_rounds=s.prior_clarify_rounds)
     if ask is None:
         return False
     s.clarify = ask

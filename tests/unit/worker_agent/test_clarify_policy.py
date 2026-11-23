@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.worker_agent.agentic import clarify_policy as cp
+from services.worker_agent import clarify_policy as cp
 from services.worker_agent.agentic import plan as p
 
 pytestmark = pytest.mark.unit
@@ -73,3 +73,17 @@ def test_analyze_and_answer_pass_through() -> None:
     assert cp.apply(analyze, prior_rounds=9) is analyze
     answer = p.Plan(goal="g", mode="answer")
     assert cp.apply(answer, prior_rounds=9) is answer
+
+
+def test_ae_10_any_clarification_is_held_to_the_audience_budget() -> None:
+    from services.worker_agent.agentic.tools.base import Clarify
+
+    asked = Clarify("Chỉ số nào?", ["A", "B", "C", "D", "E", "F"])
+    # Executive: three options, one round; analyst: five, three rounds.
+    assert cp.gate(asked, audience="executive", prior_rounds=0) == Clarify(
+        "Chỉ số nào?", ["A", "B", "C"]
+    )
+    assert cp.gate(asked, audience="executive", prior_rounds=1) is None
+    assert cp.gate(asked, audience="analyst", prior_rounds=2).options == ["A", "B", "C", "D", "E"]
+    assert cp.gate(asked, audience="analyst", prior_rounds=3) is None
+    assert cp.gate(None, audience="analyst", prior_rounds=0) is None

@@ -584,6 +584,12 @@ slot kế thừa được; chỉ một ứng viên; câu hỏi có từ chỉ "m
 planner `mode=ask`, `ask_user`) đi qua `clarify_policy.apply(clarify, ctx, prior_rounds)`; `engine.act:495` sửa theo đó.
 `prior_rounds` đếm từ `qa.answer.kind='clarification'` trong hội thoại (có sẵn).
 
+**Đã làm (AE-10, 23/11/2026):** `worker_agent/clarify_policy.py` (chuyển từ `agentic/`): `apply(plan)` cho `mode=ask`,
+`gate(clarify, audience, prior_rounds)` cho mọi `Clarify` khác (tool `ask_user`, hỏi chỉ số không tên của agent) và
+`prior_rounds(session, question)` dùng chung. Governed: lựa chọn chỉ số và chiều cắt theo audience (`event.payload.audience`,
+AE-03); hết vòng thì `_assume_when_spent` lấy chỉ số xếp đầu (hoặc bỏ chiều không có, trả số tổng hợp) và câu trả lời ghi
+"Đã hỏi làm rõ đủ số lần: …". Lượt `agent` theo lịch (0 vòng) chưa tách: lịch chạy không qua Ask.
+
 ## 10. Hybrid merge và đối chiếu nguồn (F-26)
 
 `investigate_numbers ∥ investigate_documents` (giữ, `engine.act:479`). Mới `documents/reconcile.py`, chạy như node
