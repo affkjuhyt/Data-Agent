@@ -272,7 +272,7 @@ export type AgentRun = Omit<
 /* ─── Phân tích: workspace.workspace ──────────────────────────────────── */
 
 /**
- * People and agents seated in a workspace (WorkspaceView.participants, counted by the list), and
+ * People and agents seated in a workspace (WorkspaceView.participant_counts, from the list), and
  * PROPOSAL: whether an agent waits on the viewer.
  */
 interface WorkspaceActivity {
@@ -296,7 +296,7 @@ export const readWorkspace = (raw: WorkspaceWire): Workspace => ({
   ...raw,
   created_from: raw.created_from as Workspace['created_from'],
   status: raw.status as Workspace['status'],
-  participants: raw.participants ?? null,
+  participants: raw.participant_counts ?? null,
   agent_state: raw.agent_state ?? null,
 });
 

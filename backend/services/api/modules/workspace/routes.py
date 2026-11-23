@@ -46,8 +46,8 @@ from services.api.modules.workspace.schemas import (
     CommentView,
     HiddenReason,
     HiddenTile,
-    ParticipantCreate,
     ParticipantCounts,
+    ParticipantCreate,
     ParticipantView,
     PublishRequest,
     RecipientPreview,
@@ -305,7 +305,7 @@ async def list_workspaces(
     items = []
     for row in rows:
         view = WorkspaceView.model_validate(row)
-        view.participants = ParticipantCounts(
+        view.participant_counts = ParticipantCounts(
             people=counts.get((row.id, "user"), 0), agents=counts.get((row.id, "agent"), 0)
         )
         items.append(view)
@@ -1319,9 +1319,7 @@ async def get_tile_snapshot(
                 ),
             )
         )
-        return _snapshot_view(
-            snap, version=int(older or 0) + 1, latest_id=tile.latest_snapshot_id
-        )
+        return _snapshot_view(snap, version=int(older or 0) + 1, latest_id=tile.latest_snapshot_id)
 
 
 @router.get(

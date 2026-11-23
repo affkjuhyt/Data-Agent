@@ -46387,6 +46387,16 @@
      "params": {
       "title": "Params"
      },
+     "participant_counts": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ParticipantCounts"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "participants": {
       "items": {
        "$ref": "#/components/schemas/ParticipantView"
@@ -46456,8 +46466,8 @@
      "status",
      "created_at",
      "updated_at",
-     "participants",
      "tiles",
+     "participants",
      "permission"
     ],
     "title": "WorkspaceDetail",
@@ -46586,7 +46596,7 @@
      "params": {
       "title": "Params"
      },
-     "participants": {
+     "participant_counts": {
       "anyOf": [
        {
         "$ref": "#/components/schemas/ParticipantCounts"

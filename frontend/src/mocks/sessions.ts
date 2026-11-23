@@ -85,7 +85,7 @@ function sessionDetailsFixture(): WorkspaceDetailWire[] {
     ws: typeof npl,
     rest: Pick<WorkspaceDetailWire, 'params' | 'working' | 'refresh' | 'tiles'>,
   ): WorkspaceDetailWire => {
-    const { participants: _counts, agent_state: _state, ...row } = ws;
+    const { participant_counts: _counts, agent_state: _state, ...row } = ws;
     return {
       ...row,
       ...rest,

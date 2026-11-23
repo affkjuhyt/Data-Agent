@@ -23569,6 +23569,7 @@ export interface components {
             owner_id: string;
             /** Params */
             params: unknown;
+            participant_counts?: components["schemas"]["ParticipantCounts"] | null;
             /** Participants */
             participants: components["schemas"]["ParticipantView"][];
             /**
@@ -23637,7 +23638,7 @@ export interface components {
             owner_id: string;
             /** Params */
             params: unknown;
-            participants?: components["schemas"]["ParticipantCounts"] | null;
+            participant_counts?: components["schemas"]["ParticipantCounts"] | null;
             /** Status */
             status: string;
             /** Template Of Skill Id */

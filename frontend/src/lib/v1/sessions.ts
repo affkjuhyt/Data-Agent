@@ -119,7 +119,10 @@ function readWorkspaceDetail(raw: WorkspaceDetailWire): WorkspaceDetail {
   const { participants, ...row } = raw;
   const count = (type: string) => participants.filter((p) => p.principal_type === type).length;
   return {
-    ...readWorkspace({ ...row, participants: { people: count('user'), agents: count('agent') } }),
+    ...readWorkspace({
+      ...row,
+      participant_counts: { people: count('user'), agents: count('agent') },
+    }),
     params: readParams(raw.params),
     permission: raw.permission,
     working: raw.working ?? [],

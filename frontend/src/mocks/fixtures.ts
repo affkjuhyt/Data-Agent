@@ -618,7 +618,7 @@ export function workspacesFixture(): WorkspaceWire[] {
       status: 'active',
       updated_at: minutesFromNow(-10),
       ...workspaceColumns,
-      participants: { people: 3, agents: 2 },
+      participant_counts: { people: 3, agents: 2 },
       agent_state: 'waiting_you',
     },
     {
@@ -632,7 +632,7 @@ export function workspacesFixture(): WorkspaceWire[] {
       updated_at: minutesFromNow(-5),
       ...workspaceColumns,
       created_from_ref: 'conv-reconcile-sept',
-      participants: { people: 1, agents: 1 },
+      participant_counts: { people: 1, agents: 1 },
       agent_state: 'running',
     },
     {
@@ -645,7 +645,7 @@ export function workspacesFixture(): WorkspaceWire[] {
       status: 'active',
       updated_at: minutesFromNow(-3 * 24 * 60),
       ...workspaceColumns,
-      participants: { people: 1, agents: 0 },
+      participant_counts: { people: 1, agents: 0 },
       agent_state: null,
     },
   ];

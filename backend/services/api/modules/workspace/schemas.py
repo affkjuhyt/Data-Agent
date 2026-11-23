@@ -122,9 +122,9 @@ class WorkspaceView(_View):
     status: str
     created_at: datetime.datetime
     updated_at: datetime.datetime
-    # GET /v1/workspaces: who is seated in it (ws_participant), so the list needs no read per
-    # session. None where a route does not count them.
-    participants: ParticipantCounts | None = None
+    # GET /v1/workspaces: how many are seated in it (ws_participant), so the list needs no read
+    # per session. None where a route does not count them; the detail lists them (participants).
+    participant_counts: ParticipantCounts | None = None
 
 
 class ParticipantView(_View):
