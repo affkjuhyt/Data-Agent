@@ -137,7 +137,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | AE-17 | P1 | 15 | `SET LOCAL ROLE` theo `role_mapping`; `executed_as` | — | BE/DB | M | query_run ghi role | todo |
 | AE-18 | P1 | 13 | Trace theo bước (AGC-05) | — | BE | S | `/steps` sống | todo |
 | AE-19 | P1 | 14 | Plan reuse + `consistency_rate` | AE-01 | AI | S | consistency ≥ 0,9 | todo |
-| AE-20 | P1 | 13 | `plan.validate` bắt buộc trước `act` (AUD-11) | AE-02 | AI | S | plan lỗi không chạy | todo |
+| AE-20 | P1 | 13 | `plan.validate` bắt buộc trước `act` (AUD-11) | AE-02 | AI | S | plan lỗi không chạy | done 23/11 (`agentic/plan.validate`: capability ∈ registry, DAG, cổng có kiểu (giá trị planner đã ghi sai kiểu với `Args` của tool; thiếu thì executor viết), chi phí (bước chưa chạy ≤ bước ngân sách còn lại); `PlanInvalid.error()` = `PLANNER_ERROR{check, step, reason}`; cổng bắt buộc ở đầu `act` cho mọi kế hoạch (planner, replan, bước review thêm): lỗi → bước trace `plan_check` + replan với lý do, hết lượt replan → bỏ qua bước chưa chạy. Quyền dữ liệu của bước vẫn do tool kiểm khi chạy (`forbidden`): kế hoạch chưa nêu bảng) |
 | AE-21 | P1 | 13 | Signals hạ nhãn | AE-04, DF-08 | AI | S | warning → ≤ EXPLORATORY | todo |
 | AE-22 | P2 | — | Correction memory consolidation (RES-10) | — | AI/FE | M | — | todo |
 | AE-23 | P1 | 10 | Vote SQL theo cách viết, trọng số `logit(a_m)` từ ablation; `margin` ([CONFIDENCE_SPEC.md](CONFIDENCE_SPEC.md) §4) | EV-19 | AI | S | chấm lại offline cùng ablation DS-AW: AURC ≤ vote k/6 | todo |

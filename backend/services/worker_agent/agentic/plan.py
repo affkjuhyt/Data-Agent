@@ -1,15 +1,20 @@
 """The plan the model makes for one question: a DAG of steps, each a tool and what it is for.
 
-Validated before anything runs (invariant 17): every tool exists, every dependency names an
-earlier step, no cycle, within the step budget. A plan that fails validation goes back to the
-planner with the reason, as a compile error goes back to the analyst pass.
+Validated before anything runs (invariant 17, AE-20): every tool exists (capability in the
+registry), every dependency names an earlier step (no cycle), the arguments the planner already
+wrote are fields of its tool (typed ports), and the steps still to run fit what the turn's budget
+has left (cost). A plan that fails goes back to the planner with the reason, as a compile error
+goes back to the analyst pass; PlanInvalid.error() is the structured PLANNER_ERROR the trace keeps.
+Whether the asker may read a step's data is the tool's to say when it runs (`forbidden`): the
+plan does not name the tables its SQL will read.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Set
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 MAX_STEPS = 8
 
@@ -43,29 +48,86 @@ class Plan(BaseModel):
     steps: list[PlanStep] = Field(default_factory=list)
 
 
+Check = Literal["steps", "dag", "capability", "ports", "cost"]
+
+
 class PlanInvalid(ValueError):
-    pass
+    def __init__(self, reason: str, *, check: Check = "steps", step: str | None = None) -> None:
+        super().__init__(reason)
+        self.check: Check = check
+        self.step = step
+
+    def error(self) -> dict[str, Any]:
+        """The structured PLANNER_ERROR (libs/contracts/v1/errors.ErrorCode) of this failure."""
+        return {
+            "code": "PLANNER_ERROR",
+            "check": self.check,
+            "step": self.step,
+            "reason": str(self),
+        }
 
 
-def validate(plan: Plan, tools: set[str]) -> Plan:
+def validate(
+    plan: Plan,
+    tools: Set[str] | Mapping[str, type[BaseModel]],
+    *,
+    steps_left: int | None = None,
+) -> Plan:
+    """`tools` is the registry: the tool names, or each name with its arguments' model (then the
+    arguments a step already holds are checked against it: a value of the wrong type fails, one
+    still missing is the executor's to write). `steps_left` is what the turn's budget allows still
+    to run; the steps not yet run must fit it."""
     if plan.mode != "analyze":
         return plan
     if not plan.steps:
         raise PlanInvalid("kế hoạch không có bước nào")
     if len(plan.steps) > MAX_STEPS:
         raise PlanInvalid(f"tối đa {MAX_STEPS} bước, kế hoạch có {len(plan.steps)}")
+    models = tools if isinstance(tools, Mapping) else None
     seen: set[str] = set()
     for step in plan.steps:
         if step.id in seen:
-            raise PlanInvalid(f"bước {step.id} bị trùng mã")
+            raise PlanInvalid(f"bước {step.id} bị trùng mã", check="dag", step=step.id)
         if step.tool not in tools:
-            raise PlanInvalid(f"bước {step.id}: không có công cụ {step.tool}")
+            raise PlanInvalid(
+                f"bước {step.id}: không có công cụ {step.tool}", check="capability", step=step.id
+            )
         for dep in step.depends_on:
             # Only an earlier step: this makes the DAG acyclic by construction.
             if dep not in seen:
-                raise PlanInvalid(f"bước {step.id} phụ thuộc {dep}, không phải một bước trước nó")
+                raise PlanInvalid(
+                    f"bước {step.id} phụ thuộc {dep}, không phải một bước trước nó",
+                    check="dag",
+                    step=step.id,
+                )
+        if models is not None and step.args and (wrong := _wrong_args(models[step.tool], step)):
+            raise PlanInvalid(
+                f"bước {step.id}: tham số sai kiểu cho {step.tool}: {wrong}",
+                check="ports",
+                step=step.id,
+            )
         seen.add(step.id)
+    pending = sum(1 for st in plan.steps if st.status == "pending")
+    if steps_left is not None and pending > steps_left:
+        raise PlanInvalid(
+            f"còn {pending} bước phải chạy, ngân sách của lượt chỉ còn {max(steps_left, 0)}",
+            check="cost",
+        )
     return plan
+
+
+def _wrong_args(model: type[BaseModel], step: PlanStep) -> str:
+    try:
+        model.model_validate(step.args)
+    except ValidationError as exc:
+        return "; ".join(
+            f"{'.'.join(str(x) for x in e['loc']) or '?'}: {e['msg']}"
+            for e in exc.errors()
+            # A value the planner wrote, of the wrong type; not a field still to write, nor a rule
+            # across fields that the executor's complete arguments may yet meet.
+            if e["type"] != "missing" and e["loc"] and e["loc"][0] in step.args
+        )
+    return ""
 
 
 def next_ready(plan: Plan) -> PlanStep | None:

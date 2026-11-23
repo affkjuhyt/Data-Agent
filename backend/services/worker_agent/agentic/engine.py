@@ -283,6 +283,17 @@ def _standalone(text: str, readings: list[dict[str, Any]], vocab: Any, today: da
     return f"{whole}: {text}" if words else whole
 
 
+def _registry() -> dict[str, type[BaseModel]]:
+    """Each tool with its arguments' model: the capabilities and ports a plan is checked against."""
+    return {name: tool.Args for name, tool in TOOLS.items()}
+
+
+def _validated(s: State, plan: p.Plan) -> p.Plan:
+    """AE-20: the plan checked against the registry, its ports and what the budget has left."""
+    left = None if s.budget is None else s.budget.limits.steps - s.step_runs
+    return p.validate(plan, _registry(), steps_left=left)
+
+
 def _bind_clarify(s: State, plan: p.Plan) -> p.Plan:
     """Apply the clarify budget, then materialise Clarify on the state when still asking.
 
@@ -292,7 +303,7 @@ def _bind_clarify(s: State, plan: p.Plan) -> p.Plan:
     plan = clarify_policy.apply(plan, audience=s.audience, prior_rounds=s.prior_clarify_rounds)
     if plan.mode == "analyze":
         try:
-            plan = p.validate(plan, set(TOOLS))
+            plan = _validated(s, plan)
         except p.PlanInvalid:
             plan = plan.model_copy(
                 update={
@@ -491,6 +502,7 @@ def _progress(s: State) -> str:
 
 async def _ask_plan(s: State, system: str, user: str) -> p.Plan:
     error = ""
+    last = p.PlanInvalid("kế hoạch không hợp lệ")
     for _ in range(2):
         reply = await s.model.json_chat(
             "planner",
@@ -500,10 +512,11 @@ async def _ask_plan(s: State, system: str, user: str) -> p.Plan:
             max_tokens=1600,
         )
         try:
-            return p.validate(reply.content, set(TOOLS))
+            return _validated(s, reply.content)
         except p.PlanInvalid as exc:
+            last = exc
             error = str(exc)
-    raise p.PlanInvalid(error)
+    raise last
 
 
 def _missing_period(s: State) -> p.Plan | None:
@@ -711,6 +724,8 @@ async def act(s: State) -> None:
     assert s.ctx is not None and s.plan is not None
     # A failure the planner was not asked about (replans spent) is on the step's record already.
     s.failed = None
+    if not await _plan_holds(s):
+        return
     steps = p.ready(s.plan, MAX_PARALLEL)
     for step in [st for st in steps if not TOOLS[st.tool].asked(s.ctx.question)]:
         step.status, step.observation = "skipped", "câu hỏi không hỏi điều bước này trả lời"
@@ -739,6 +754,35 @@ async def act(s: State) -> None:
         if not result.ok and s.failed is None and result.failure != "forbidden":
             s.failed = step
     _ask_for_unnamed(s, results)
+
+
+async def _plan_holds(s: State) -> bool:
+    """AE-20 (AUD-11): no step runs from a plan that does not validate, wherever the plan came from
+    (the planner, a replan, the review's added steps). A failure is a structured PLANNER_ERROR on
+    the trace; it goes back to the planner while replans last, after that the steps not run are
+    skipped and the turn composes from what it has."""
+    assert s.plan is not None
+    try:
+        _validated(s, s.plan)
+        return True
+    except p.PlanInvalid as exc:
+        invalid = exc
+    error = invalid.error()
+    await turn_trace.record_step(
+        "plan_check",
+        title="Kiểm kế hoạch",
+        target=str(invalid)[:160],
+        detail=error,
+        status="failed",
+    )
+    logger.info("question %s: plan refused before act: %s", s.question_id, error)
+    if s.replans < MAX_REPLANS:
+        s.feedback = f"{error['code']} ({error['check']}): {invalid}"
+        return False
+    for st in s.plan.steps:
+        if st.status == "pending":
+            st.status, st.observation = "skipped", f"{error['code']}: {invalid}"
+    return False
 
 
 def _ask_for_unnamed(s: State, results: list[ToolResult]) -> None:
@@ -879,6 +923,9 @@ def after_act(s: State) -> str:
         return "persist"
     if over_budget(s):
         return "compose"
+    if s.feedback is not None:
+        # The plan did not validate before act (AE-20): the planner is told why.
+        return "replan"
     if s.failed is not None:
         return "replan" if s.replans < MAX_REPLANS else "act"
     if s.step_runs >= MAX_STEP_RUNS:
