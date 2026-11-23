@@ -568,6 +568,17 @@ async def test_a_profile_keeps_quantiles_a_histogram_lengths_patterns_and_the_so
     ids = profile("ma_kh")
     assert ids[0] is None and ids[1] is None and ids[4] == r"\d{12}"
 
+    # A measure a column has not is SQL NULL, so "quantiles IS NULL" finds it.
+    assert (
+        seed.one(
+            "SELECT count(*) FROM catalog.column_profile WHERE scan_run_id = %s"
+            " AND (quantiles = 'null'::jsonb OR histogram = 'null'::jsonb"
+            " OR length_stats = 'null'::jsonb OR value_patterns = 'null'::jsonb)",
+            profile_run,
+        )
+        == 0
+    )
+
     activity = seed.one(
         "SELECT source_activity FROM catalog.dataset WHERE source_id = %s AND table_name = 'sales'",
         source_id,

@@ -20,7 +20,7 @@ from typing import Any, cast
 
 import asyncpg
 import httpx
-from sqlalchemy import select
+from sqlalchemy import null, select
 
 from libs import pii
 from libs.dataagent_db import scoped_session, uuid7
@@ -601,6 +601,10 @@ def pattern_hint(patterns: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _or_null(value: Any) -> Any:
+    return null() if value is None else value
+
+
 def _number(value: Any) -> float | None:
     return None if value is None else float(value)
 
@@ -1089,10 +1093,12 @@ async def scan_schema(event: Event) -> None:
                                 max_value=profile["max_value"],
                                 top_values=profile["top_values"],
                                 pattern_hint=profile.get("pattern_hint"),
-                                quantiles=profile.get("quantiles"),
-                                histogram=profile.get("histogram"),
-                                length_stats=profile.get("length_stats"),
-                                value_patterns=profile.get("value_patterns"),
+                                # An absent measure is SQL NULL, not JSON null: the
+                                # ORM writes None to a JSONB column as 'null'.
+                                quantiles=_or_null(profile.get("quantiles")),
+                                histogram=_or_null(profile.get("histogram")),
+                                length_stats=_or_null(profile.get("length_stats")),
+                                value_patterns=_or_null(profile.get("value_patterns")),
                             )
                         )
                         if profile.get("pii_label"):
