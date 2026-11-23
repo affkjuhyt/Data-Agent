@@ -30,7 +30,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import exists, func, literal_column, or_, select
+from sqlalchemy import ColumnClause, exists, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db.models import context as ctx
@@ -65,7 +65,7 @@ _STOP_FOLDED = frozenset("la gi cua va cac nhung voi khong nao nhieu thi hoac ai
 MAX_EXPANSION = 5
 # The expression of chunk_text_folded_idx (routines/document.sql), written out so the planner
 # matches the index: the header first, then the text, folded.
-_FOLDED = literal_column(
+_FOLDED: ColumnClause[Any] = literal_column(
     "to_tsvector('simple', da_fold(coalesce(document.chunk.context_header, '') || ' ' "
     "|| document.chunk.text))"
 )
