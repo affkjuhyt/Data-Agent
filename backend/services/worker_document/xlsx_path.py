@@ -38,8 +38,9 @@ EXTRACTOR_VERSION = "openpyxl-3.1.5+xlsx-1"
 MAX_XLSX_BYTES = 50 * 1024 * 1024
 MAX_XLSX_INFLATED = 300 * 1024 * 1024
 MAX_SHEET_CELLS = 200_000
-# Cells with a value in the whole workbook.
+# Rows and cells walked in the whole workbook, the sheets over their own limit included.
 MAX_BOOK_CELLS = 1_000_000
+MAX_SHEETS = 200
 MAX_MERGES = 10_000
 _MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
@@ -67,27 +68,26 @@ def extract(
     tables: list[Table] = []
     pages: list[ExtractedPage] = []
     issues: list[Issue] = []
-    held = 0
+    walked = 0
     try:
+        if len(book.worksheets) > MAX_SHEETS:
+            raise ValueError(f"The workbook has more than {MAX_SHEETS} sheets")
         for index, sheet in enumerate(book.worksheets, start=1):
             try:
-                values = _values(sheet)
-            except _TooLarge as walked:
+                values, spent = _values(sheet)
+            except _TooLarge as too_large:
+                spent, values = int(str(too_large)), {}
                 issues.append(
                     Issue(
                         "field_mismatch",
                         "warning",
                         index,
-                        {
-                            "reason": "sheet_too_large",
-                            "sheet": sheet.title,
-                            "cells": int(str(walked)),
-                        },
+                        {"reason": "sheet_too_large", "sheet": sheet.title, "cells": spent},
                     )
                 )
-                continue
-            held += len(values)
-            if held > MAX_BOOK_CELLS:
+            # Every sheet's walk counts, one over its own limit included (security review).
+            walked += spent
+            if walked > MAX_BOOK_CELLS:
                 raise ValueError("The workbook holds more than 1 000 000 cells")
             if not values:
                 continue
@@ -134,7 +134,7 @@ def extract(
     )
 
 
-def _values(sheet: Any) -> dict[tuple[int, int], Any]:
+def _values(sheet: Any) -> tuple[dict[tuple[int, int], Any], int]:
     """The sheet's cells with a value, by (row, column) from 0. Every row and cell walked counts,
     the empty ones openpyxl fills in included, and the walk stops past MAX_SHEET_CELLS."""
     sheet.reset_dimensions()  # the stated size is a claim: rows are not padded to it
@@ -147,7 +147,7 @@ def _values(sheet: Any) -> dict[tuple[int, int], Any]:
         for c, value in enumerate(row):
             if value is not None:
                 out[(r, c)] = value
-    return out
+    return out, walked
 
 
 def _merges(content: bytes, path: str) -> list[tuple[int, int, int, int]]:
@@ -164,17 +164,27 @@ def _merges(content: bytes, path: str) -> list[tuple[int, int, int, int]]:
         except KeyError:
             return out
         with source:
-            for _event, node in ElementTree.iterparse(source, events=("end",)):
+            parents: list[Any] = []
+            for event, node in ElementTree.iterparse(source, events=("start", "end")):
+                if event == "start":
+                    parents.append(node)
+                    continue
+                parents.pop()
                 if node.tag == f"{_MAIN}mergeCell":
                     try:
                         left, top, right, bottom = range_boundaries(node.get("ref", ""))
                     except (TypeError, ValueError):
-                        continue
-                    if None not in (left, top, right, bottom):
+                        left = None
+                    if left is not None and None not in (top, right, bottom):
                         out.append((top - 1, left - 1, bottom - 1, right - 1))
                     if len(out) >= MAX_MERGES:
                         break
-                node.clear()
+                elif node.tag == f"{_MAIN}mergeCells":
+                    break  # one mergeCells per sheet: nothing after it is read
+                # Removed from its parent as soon as read, so a sheet of millions of cells is
+                # parsed in constant memory (clear() alone left the emptied nodes attached).
+                if parents:
+                    parents[-1].remove(node)
     return out
 
 
@@ -190,16 +200,19 @@ def _table(
     cols = max(c for _, c in values) + 1
     covered: set[tuple[int, int]] = set()
     spans: dict[tuple[int, int], tuple[int, int]] = {}
+    spent = 0
     for top, left, bottom, right in merges:
         # Clamped to the cells the sheet holds: a stated range may cover the whole sheet.
         bottom, right = min(bottom, rows - 1), min(right, cols - 1)
         if top >= rows or left >= cols or (bottom, right) == (top, left):
             continue
         area = (bottom - top + 1) * (right - left + 1)
-        # The held cells bound the rows and columns, not their product: what merges cover is
-        # bounded on its own, a range past it is read as unmerged.
-        if len(covered) + area > MAX_SHEET_CELLS:
+        # The held cells bound the rows and columns, not their product, and overlapping ranges
+        # would walk the same cells again: the cells walked for merges are bounded on their own,
+        # a range past it is read as unmerged (security review).
+        if spent + area > MAX_SHEET_CELLS:
             continue
+        spent += area
         spans[(top, left)] = (bottom - top + 1, right - left + 1)
         for r in range(top, bottom + 1):
             for c in range(left, right + 1):

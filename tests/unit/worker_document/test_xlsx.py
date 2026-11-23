@@ -127,3 +127,29 @@ def test_a_stated_size_and_a_huge_merge_are_not_trusted() -> None:
     assert (table.n_rows, table.n_cols) == (3, 2)
     (only,) = table.cells
     assert (only.text, only.row_span, only.col_span) == ("Tiêu đề", 3, 2)
+
+
+def test_the_walk_is_bounded_across_sheets_and_overlapping_merges(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Many sheets each over its own limit still count against the workbook's (security review).
+    monkeypatch.setattr(xlsx_path, "MAX_SHEET_CELLS", 3)
+    monkeypatch.setattr(xlsx_path, "MAX_BOOK_CELLS", 10)
+    big = [[1, 2], [3, 4]]
+    with pytest.raises(ValueError, match="1 000 000 cells"):
+        _read(_book(*[(f"S{n}", big) for n in range(4)]))
+    monkeypatch.setattr(xlsx_path, "MAX_SHEETS", 2)
+    monkeypatch.setattr(xlsx_path, "MAX_BOOK_CELLS", 10**6)
+    with pytest.raises(ValueError, match="more than 2 sheets"):
+        _read(_book(("A", [[1]]), ("B", [[1]]), ("C", [[1]])))
+
+
+def test_the_same_merge_stated_many_times_is_walked_once_within_the_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(xlsx_path, "MAX_SHEET_CELLS", 6)
+    values = {(r, c): "x" for r in range(2) for c in range(3)}
+    # Six cells each time: the first is taken, the next would pass the limit and is skipped.
+    table = xlsx_path._table("A", values, [(0, 0, 1, 2)] * 1000, "#/sheets/0", 1, lambda t: t)
+    (only,) = table.cells
+    assert (only.row_span, only.col_span) == (2, 3)
