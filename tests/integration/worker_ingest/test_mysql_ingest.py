@@ -20,9 +20,10 @@ pytestmark = pytest.mark.integration
 
 SETUP = """
 CREATE TABLE sales (`Chi nhánh` VARCHAR(20), amount DECIMAL(12, 2), sold_on DATE, qty INT,
-                    paid BOOLEAN, note VARCHAR(20));
-INSERT INTO sales VALUES ('HN', 10.50, '2026-09-30', 1, TRUE, NULL),
-                         ('SG', 20.00, '2026-09-29', 2, FALSE, 'x');
+                    paid BOOLEAN, note VARCHAR(20), sold_at DATETIME, meta JSON);
+INSERT INTO sales VALUES ('HN', 10.50, '2026-09-30', 1, TRUE, NULL, '2026-09-30 08:15:00',
+                          '{"kenh": "web"}'),
+                         ('SG', 20.00, '2026-09-29', 2, FALSE, 'x', NULL, NULL);
 """
 
 
@@ -118,7 +119,8 @@ async def test_a_mysql_table_is_loaded_and_catalogued(
         ("HN", "10.50"),
         ("SG", "20.00"),
     ]
-    # The types are read from the values the driver gives: MySQL's BOOLEAN is TINYINT(1), a number.
+    # DF-13: the types come from MySQL's catalogue, not the values the driver gives: BOOLEAN is
+    # TINYINT(1) there, DATETIME a timestamp and JSON stays JSON (both landed as text before).
     assert seed.all(
         "SELECT c.name, c.normalized_type FROM catalog.column_meta c JOIN catalog.dataset d"
         " ON d.id = c.dataset_id WHERE d.table_name = %s ORDER BY c.ordinal",
@@ -128,9 +130,21 @@ async def test_a_mysql_table_is_loaded_and_catalogued(
         ("amount", "decimal"),
         ("sold_on", "date"),
         ("qty", "decimal"),
-        ("paid", "decimal"),
+        ("paid", "boolean"),
         ("note", "string"),
+        ("sold_at", "timestamp"),
+        ("meta", "json"),
     ]
+    assert seed.all(
+        "SELECT a.attname, format_type(a.atttypid, a.atttypmod) FROM pg_attribute a"
+        " WHERE a.attrelid = %s::regclass AND a.attname IN ('sold_at', 'meta', 'paid')"
+        " ORDER BY a.attnum",
+        f'workspace."{dataset}"',
+    ) == [("paid", "boolean"), ("sold_at", "timestamp with time zone"), ("meta", "jsonb")]
+    assert (
+        seed.one(f"SELECT meta->>'kenh' FROM workspace.\"{dataset}\" WHERE chi_nhanh = 'HN'")
+        == "web"
+    )
 
 
 async def test_an_engine_without_a_driver_is_refused() -> None:

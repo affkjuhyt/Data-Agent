@@ -5,6 +5,8 @@
 ALTER TABLE workspace.tile ADD CONSTRAINT tile_workspace_id_position_key
   UNIQUE (workspace_id, position) DEFERRABLE INITIALLY DEFERRED;
 
+-- DF-13: timestamptz and jsonb as well, the types worker-ingest now reads from a source's catalogue
+-- (a value goes in as a quoted literal that the column's type parses).
 -- The upload worker writes rows through a SECURITY DEFINER boundary so it never needs DDL
 -- privileges on workspace. Explicit JSON element aliases avoid collisions with PL/pgSQL variables
 -- when an uploaded header is named `value`.
@@ -39,7 +41,7 @@ BEGIN
     IF (item->>'name') !~ '^[a-z][a-z0-9_]{0,62}$' THEN
       RAISE EXCEPTION 'invalid upload column name';
     END IF;
-    IF (item->>'type') NOT IN ('text', 'numeric', 'boolean', 'date') THEN
+    IF (item->>'type') NOT IN ('text', 'numeric', 'boolean', 'date', 'timestamptz', 'jsonb') THEN
       RAISE EXCEPTION 'invalid upload column type';
     END IF;
     IF NOT first_column THEN
@@ -134,7 +136,7 @@ BEGIN
     IF (item->>'name') !~ '^[a-z][a-z0-9_]{0,62}$' THEN
       RAISE EXCEPTION 'invalid upload column name';
     END IF;
-    IF (item->>'type') NOT IN ('text', 'numeric', 'boolean', 'date') THEN
+    IF (item->>'type') NOT IN ('text', 'numeric', 'boolean', 'date', 'timestamptz', 'jsonb') THEN
       RAISE EXCEPTION 'invalid upload column type';
     END IF;
     IF NOT first_column THEN

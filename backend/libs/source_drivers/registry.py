@@ -26,6 +26,9 @@ class Capabilities:
     cursor: str  # "pg_catalog" | "sql"
     stream: str  # "asyncpg" (read in a server-side cursor) | "driver" (libs.source_drivers.stream)
     quoted: str  # how a schema-qualified table is written, {schema} and {table}
+    # DF-13: a table's columns and their types as the engine's catalogue names them, {schema} and
+    # {table} plain identifiers; read before the rows, so a type does not come from the values.
+    columns_sql: str
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,9 @@ REGISTRY: dict[str, Driver] = {
                 cursor="pg_catalog",
                 stream="asyncpg",
                 quoted='"{schema}"."{table}"',
+                columns_sql=(
+                    "SELECT column_name, udt_name FROM information_schema.columns WHERE table_schema = '{schema}' AND table_name = '{table}' ORDER BY ordinal_position"
+                ),
             ),
             prep_notes=("Tài khoản đọc chỉ cần quyền CONNECT và SELECT.",),
             sample_sql="GRANT CONNECT ON DATABASE <db> TO <user>;",
@@ -84,6 +90,9 @@ REGISTRY: dict[str, Driver] = {
                 cursor="sql",
                 stream="driver",
                 quoted="`{schema}`.`{table}`",
+                columns_sql=(
+                    "SELECT COLUMN_NAME, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}' ORDER BY ORDINAL_POSITION"
+                ),
             ),
             prep_notes=("Tài khoản chỉ có quyền SELECT trên database cần dùng.",),
             sample_sql="GRANT SELECT ON <database>.* TO '<user>'@'%';",
@@ -104,6 +113,9 @@ REGISTRY: dict[str, Driver] = {
                 cursor="sql",
                 stream="driver",
                 quoted="[{schema}].[{table}]",
+                columns_sql=(
+                    "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}' ORDER BY ORDINAL_POSITION"
+                ),
             ),
             prep_notes=("Tài khoản thuộc role db_datareader của database cần dùng.",),
             sample_sql="ALTER ROLE db_datareader ADD MEMBER <user>;",
@@ -124,6 +136,9 @@ REGISTRY: dict[str, Driver] = {
                 cursor="sql",
                 stream="driver",
                 quoted="`{schema}`.`{table}`",
+                columns_sql=(
+                    "SELECT name, type FROM system.columns WHERE database = '{schema}' AND table = '{table}' ORDER BY position"
+                ),
             ),
             prep_notes=("Tài khoản chỉ đọc trên database cần dùng.",),
             sample_sql="GRANT SELECT ON <database>.* TO <user>;",
@@ -145,3 +160,93 @@ def federated_kinds() -> frozenset[str]:
 
 def ingest_kinds() -> frozenset[str]:
     return frozenset(k for k, d in REGISTRY.items() if d.capabilities.ingest)
+
+
+# DF-13: a source column's type, as its engine's catalogue names it, in the catalogue's vocabulary
+# (catalog.column_meta.normalized_type), then the column type the workspace keeps it in. Types
+# came from the first batch's values before: a timestamp or a JSON column landed as text.
+NORMALIZED_TYPES = (
+    "string",
+    "integer",
+    "decimal",
+    "boolean",
+    "date",
+    "timestamp",
+    "json",
+    "binary",
+)
+WORKSPACE_TYPE = {
+    "string": "text",
+    # Whole numbers stay numeric: the tables loaded before keep the type they have.
+    "integer": "numeric",
+    "decimal": "numeric",
+    "boolean": "boolean",
+    "date": "date",
+    "timestamp": "timestamptz",
+    "json": "jsonb",
+    "binary": "text",
+}
+
+
+def _unwrapped(source_type: str) -> str:
+    """ClickHouse's Nullable(…) and LowCardinality(…), SQL Server's and MySQL's sizes, spaces."""
+    value = source_type.strip().lower()
+    for wrapper in ("nullable(", "lowcardinality("):
+        while value.startswith(wrapper) and value.endswith(")"):
+            value = value[len(wrapper) : -1].strip()
+    return value
+
+
+def type_map(kind: str, source_type: str) -> str:
+    """The catalogue's type of a column `kind`'s engine calls `source_type`."""
+    driver(kind)
+    return normalized_type(source_type)
+
+
+def normalized_type(source_type: str) -> str:
+    """The catalogue's type of an engine's type name: PostgreSQL, MySQL, SQL Server and
+    ClickHouse spell the same types apart (Float64, UInt32, Nullable(String), datetime2)."""
+    value = _unwrapped(source_type)
+    base = value.split("(")[0].strip()
+    if value in ("bit", "tinyint(1)", "boolean", "bool") or base in ("bool", "boolean"):
+        return "boolean"
+    if base in ("json", "jsonb", "object") or base.startswith("json"):
+        return "json"
+    if base in (
+        "bytea",
+        "binary",
+        "varbinary",
+        "blob",
+        "tinyblob",
+        "mediumblob",
+        "longblob",
+        "image",
+    ):
+        return "binary"
+    if base.startswith(("int", "uint", "bigint", "smallint", "tinyint", "mediumint")) or base in (
+        "serial",
+        "bigserial",
+        "smallserial",
+        "int2",
+        "int4",
+        "int8",
+    ):
+        return "integer"
+    if base.startswith(
+        ("decimal", "numeric", "float", "double", "real", "money", "smallmoney")
+    ) or base in (
+        "number",
+        "float4",
+        "float8",
+    ):
+        return "decimal"
+    if base in ("date", "date32"):
+        return "date"
+    if base.startswith(("timestamp", "datetime", "smalldatetime")) or base in ("timestamptz",):
+        return "timestamp"
+    return "string"
+
+
+def workspace_type(kind: str, source_type: str) -> str:
+    """The workspace column type a `kind` source's `source_type` column lands in."""
+    return WORKSPACE_TYPE[type_map(kind, source_type)]

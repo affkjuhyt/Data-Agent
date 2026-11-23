@@ -271,3 +271,25 @@ async def test_only_the_organisation_of_a_dataset_swaps_its_view(
             "SELECT public.da_swap_version(%s, %s)", (name, versioning.physical_name(name, 9))
         )
     assert seed.one(f'SELECT count(*) FROM workspace."{name}"') == 2
+
+
+@pytest.mark.req("DF-13")
+async def test_a_postgres_timestamp_and_json_keep_their_types(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch, ddl_server: dict[str, str]
+) -> None:
+    job = _job(seed, ddl_server["dataagent"], monkeypatch)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            f'ALTER TABLE public."{job.source_table}" ADD COLUMN at timestamptz, ADD COLUMN meta jsonb'
+        )
+        cur.execute(
+            f"UPDATE public.\"{job.source_table}\" SET at = '2026-09-30 08:00+07', meta = '{{\"k\": 1}}'"
+        )
+    await _run(job)
+    name, _ = _dataset(seed, job)
+    assert seed.all(
+        "SELECT a.attname, format_type(a.atttypid, a.atttypmod) FROM pg_attribute a"
+        " WHERE a.attrelid = %s::regclass AND a.attname IN ('at', 'meta') ORDER BY a.attnum",
+        f'workspace."{name}"',
+    ) == [("at", "timestamp with time zone"), ("meta", "jsonb")]
+    assert seed.one(f"SELECT meta->>'k' FROM workspace.\"{name}\" LIMIT 1") == "1"

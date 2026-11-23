@@ -1087,3 +1087,24 @@ def test_a_migrated_cluster_seals_receipts_outside_a_data_product(admin):
     assert "a_scope = 'in_scope'" in _one(
         db, "SELECT prosrc FROM pg_proc WHERE oid = 'qa.answer_receipt_guard'::regproc"
     )
+
+
+def test_a_migrated_cluster_writes_timestamp_and_json_columns(admin):
+    # v3_0050 (23/11/2026, DF-13): the workspace functions take timestamptz and jsonb.
+    _fresh(admin, "chain_df13", "chain_df13_audit")
+    db = _db(admin, "chain_df13")
+    _alembic(db, "upgrade", "head")
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT public.da_materialize_upload('df13_t', %s::jsonb, %s::jsonb, true)",
+            (
+                '[{"name": "at", "type": "timestamptz"}, {"name": "meta", "type": "jsonb"}]',
+                '[["2026-09-30T08:00:00+07:00", "{\\"k\\": 1}"]]',
+            ),
+        )
+        cur.execute("SELECT at, meta->>'k' FROM workspace.df13_t")
+        at, k = cur.fetchone()
+    conn.close()
+    assert at.isoformat().startswith("2026-09-30T01:00:00") and k == "1"

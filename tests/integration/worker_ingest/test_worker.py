@@ -113,7 +113,8 @@ async def test_created_job_materializes_rows_and_registers_a_local_dataset(
         ("as_of", "date"),
         ("n", "numeric"),
         ("open", "boolean"),
-        ("at", "text"),
+        # DF-13: a timestamp keeps its type (it landed as text before).
+        ("at", "timestamp with time zone"),
     ]
     assert seed.all(
         "SELECT c.name, c.normalized_type FROM catalog.column_meta c "
@@ -126,7 +127,7 @@ async def test_created_job_materializes_rows_and_registers_a_local_dataset(
         ("as_of", "date"),
         ("n", "decimal"),
         ("open", "boolean"),
-        ("at", "string"),
+        ("at", "timestamp"),
     ]
 
 

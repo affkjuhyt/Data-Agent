@@ -294,35 +294,9 @@ def _cardinality_for_foreign_key(child_unique: bool) -> str:
 
 
 def _normalized_type(data_type: str) -> str:
-    """The catalog's type for an engine's type name: PostgreSQL, MySQL, SQL Server and ClickHouse
-    (Float64, UInt32, Nullable(String)) spell them differently."""
-    value = data_type.lower()
-    if value in ("bit", "tinyint(1)") or "bool" in value:
-        return "boolean"
-    if any(
-        token in value
-        for token in (
-            "int",
-            "serial",
-            "numeric",
-            "decimal",
-            "real",
-            "double",
-            "float",
-            "number",
-            "money",
-        )
-    ):
-        return "integer" if "int" in value or "serial" in value else "decimal"
-    if "date" in value and "time" not in value:
-        return "date"
-    if "time" in value:
-        return "timestamp"
-    if "json" in value:
-        return "json"
-    if "bytea" in value or "binary" in value:
-        return "binary"
-    return "string"
+    """The catalog's type for an engine's type name (DF-13: the driver registry's, the one the
+    ingest worker types its workspace columns by)."""
+    return registry.normalized_type(data_type)
 
 
 def _clickhouse_schemas(source: catalog.Source) -> list[str]:

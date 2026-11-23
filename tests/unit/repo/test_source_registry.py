@@ -28,3 +28,28 @@ def test_a_kind_without_a_driver_is_refused() -> None:
     with pytest.raises(registry.UnsupportedKind):
         registry.driver("snowflake")
     assert registry.ingest_kinds() == {"postgresql", "mysql", "sqlserver", "clickhouse"}
+
+
+@pytest.mark.parametrize(
+    ("source_type", "normalized", "workspace"),
+    [
+        ("datetime", "timestamp", "timestamptz"),
+        ("timestamp with time zone", "timestamp", "timestamptz"),
+        ("Nullable(DateTime64(3))", "timestamp", "timestamptz"),
+        ("json", "json", "jsonb"),
+        ("jsonb", "json", "jsonb"),
+        ("tinyint(1)", "boolean", "boolean"),
+        ("bigint", "integer", "numeric"),
+        ("Decimal(18, 2)", "decimal", "numeric"),
+        ("date", "date", "date"),
+        ("uniqueidentifier", "string", "text"),
+        ("bytea", "binary", "text"),
+    ],
+)
+def test_a_source_type_lands_in_its_workspace_type(
+    source_type: str, normalized: str, workspace: str
+) -> None:
+    # DF-13: from the engine's catalogue, so a timestamp or a JSON column keeps its type.
+    assert registry.normalized_type(source_type) == normalized
+    assert registry.workspace_type("mysql", source_type) == workspace
+    assert normalized in registry.NORMALIZED_TYPES

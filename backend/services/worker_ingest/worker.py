@@ -25,7 +25,7 @@ from libs.dataagent_db import scoped_session, versioning
 from libs.dataagent_db.models import catalog, ingest
 from libs.source_drivers import registry
 from services.worker_ingest.events import Event, Handler
-from services.worker_ingest.secrets import Reader, SecretUnavailable
+from services.worker_ingest.secrets import Credentials, Reader, SecretUnavailable
 
 CREATED = "ingestion_job.created"
 BACKFILL = "job_run.backfill_requested"
@@ -35,15 +35,19 @@ ROLE = "svc_ingest"
 CATALOG_ROLE = "svc_catalog"
 SAMPLE_ROWS = 1_000
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-# Source types the workspace keeps (da_materialize_upload takes text, numeric, boolean, date);
-# anything else lands as text. Timestamps too: the function has no timestamp column yet.
-_WORKSPACE_TYPES = {
-    **dict.fromkeys(("int2", "int4", "int8", "numeric", "float4", "float8", "money"), "numeric"),
-    "bool": "boolean",
+# How the catalog names a workspace column type (catalog.column_meta.normalized_type). DF-13: a
+# column is typed from the source's catalogue through the driver registry (registry.workspace_type),
+# so a timestamp or a JSON column keeps its type instead of landing as text.
+_NORMALIZED = {
+    "text": "string",
+    "numeric": "decimal",
+    "boolean": "boolean",
     "date": "date",
+    "timestamptz": "timestamp",
+    "jsonb": "json",
 }
-# How the catalog names a workspace column type (catalog.column_meta.normalized_type).
-_NORMALIZED = {"text": "string", "numeric": "decimal", "boolean": "boolean", "date": "date"}
+# format_type()'s names of the workspace types, as the columns above name them.
+_SHORT = {"timestamp with time zone": "timestamptz"}
 
 
 # The PostgreSQL types a cursor may have (RES-18): numbers, dates and timestamps.
@@ -63,6 +67,8 @@ def _identifier(value: str) -> str:
 
 
 def _plain(value: Any) -> Any:
+    if isinstance(value, dict | list):  # a JSON column a driver decoded: written back as JSON
+        return json.dumps(value, ensure_ascii=False, default=str)
     if isinstance(value, datetime.datetime | datetime.date | datetime.time):
         return value.isoformat()
     if isinstance(value, uuid.UUID):
@@ -124,10 +130,13 @@ Columns = list[dict[str, str]]
 
 def _fits(kind: str, value: Any) -> bool:
     """Whether a value read later can go in a column typed from the first batch."""
-    if value is None or kind == "text":
+    if value is None or kind in ("text", "jsonb"):
         return True
+    if kind == "timestamptz":
+        return isinstance(value, datetime.date | str)
     if kind == "boolean":
-        return isinstance(value, bool)
+        # MySQL's BOOLEAN is TINYINT(1): its driver gives 1 and 0, which the column parses.
+        return isinstance(value, bool) or value in (0, 1)
     if kind == "numeric":
         return isinstance(value, int | float | decimal.Decimal) and not isinstance(value, bool)
     return isinstance(value, datetime.date) and not isinstance(value, datetime.datetime)
@@ -188,6 +197,23 @@ def _literal(value: str) -> str:
     )
 
 
+async def _declared_types(
+    source: catalog.Source, schema: str, table: str, credentials: Credentials
+) -> dict[str, str]:
+    """The table's columns and their types as the source's catalogue names them (DF-13)."""
+    sql = _capabilities(source.kind).columns_sql.format(
+        schema=_identifier(schema), table=_identifier(table)
+    )
+    _, rows = await source_drivers.read(
+        source,
+        credentials.user,
+        credentials.password,
+        sql,
+        min(int(source.query_timeout_s or 120), 300),
+    )
+    return {str(r[0]): str(r[1]) for r in rows if r and r[0] is not None}
+
+
 def _driver_where(kind: str, window: Window | None) -> str:
     if window is None:
         return ""
@@ -209,6 +235,7 @@ async def _driver_batches(
     if not _ingestible(source.kind):
         raise ValueError(f"source connector {source.kind} is not wired for ingestion")
     credentials = await Reader().read(org_id, source.secret_ref)
+    declared = await _declared_types(source, schema, table, credentials)
     columns: Columns | None = None
     async for names, rows in source_drivers.stream(
         source,
@@ -221,11 +248,20 @@ async def _driver_batches(
         BATCH_ROWS,
     ):
         if columns is None:
-            # The drivers name types by their own codes; the first batch's values say the same
-            # in Python's terms, and every later batch must agree.
+            # DF-13: each column's type from the source's own catalogue; a column the catalogue
+            # does not name (a view's expression) is typed from the first batch's values, and
+            # every later batch must agree.
             labels = [c["name"] for c in names]
             columns = [
-                {"name": name, "label": label, "type": _workspace_type([row[i] for row in rows])}
+                {
+                    "name": name,
+                    "label": label,
+                    "type": (
+                        registry.workspace_type(source.kind, declared[label])
+                        if label in declared
+                        else _workspace_type([row[i] for row in rows])
+                    ),
+                }
                 for i, (name, label) in enumerate(
                     zip(tabular.physical_names(labels), labels, strict=True)
                 )
@@ -370,7 +406,7 @@ async def _source_batches(
                 {
                     "name": name,
                     "label": attr.name,
-                    "type": _WORKSPACE_TYPES.get(attr.type.name, "text"),
+                    "type": registry.workspace_type(source.kind, attr.type.name),
                 }
                 for name, attr in zip(
                     tabular.physical_names([a.name for a in attributes]), attributes, strict=True
@@ -415,7 +451,16 @@ async def _workspace_columns(session: Any, table_name: str) -> dict[str, str]:
         ),
         {"t": table_name},
     )
-    return {str(name): str(kind) for name, kind in rows}
+    return {str(name): _SHORT.get(str(kind), str(kind)) for name, kind in rows}
+
+
+def keep_legacy_text(existing: dict[str, str], columns: Columns) -> None:
+    """A column a table loaded before DF-13 holds as text (a timestamp, a JSON) stays text when
+    rows are appended to it: its values still fit, and calling it drift would stop every
+    incremental job over such a table. A full run builds the next version with its real type."""
+    for column in columns:
+        if existing.get(column["name"]) == "text" and column["type"] in ("timestamptz", "jsonb"):
+            column["type"] = "text"
 
 
 def check_drift(existing: dict[str, str], columns: Columns) -> None:
@@ -638,6 +683,7 @@ async def handle(event: Event) -> None:
             async for columns, batch in batches:
                 if existing is None and cursor_mode:
                     existing = await _workspace_columns(session, table_name)
+                    keep_legacy_text(existing, columns)
                     # Retype always stops as schema_drift; additive columns follow on_schema_change.
                     check_drift(existing, columns)
                     if on_schema == "pause_and_ask" and existing:
