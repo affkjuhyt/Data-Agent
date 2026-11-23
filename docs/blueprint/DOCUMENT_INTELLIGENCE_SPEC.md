@@ -249,6 +249,13 @@ Quy tắc bổ sung (Docling chưa làm hết):
 - **Formula**: kind `formula`, text = LaTeX nếu bật `do_formula_enrichment` (tắt mặc định — CPU; bật theo profile).
 - **Confidence** của element = `ocr_conf` trang nếu element đến từ OCR, else `null`.
 
+**Đã làm (DI-04, 23/11/2026):** `docling_adapter.py` theo §3.2 với API Docling 2.150 (OCR `mode=FULL_PAGE` thay
+`force_full_page_ocr`; `document_timeout` thay `time_limit`; ảnh qua `ImageFormatOption`). `elements_of(doc, ocr_pages=)`:
+kind theo `DocItemLabel` (title → heading level 1, `section_header.level` kẹp 1..6), `page_no`/`bbox` = null với DOCX/HTML,
+`ref` = `self_ref` của Docling (để `tables.py` nối bảng), caption: `captions` Docling nối + text "Bảng/Hình/Table N."
+ngay trước/sau bảng/hình cùng trang (Docling không nối caption DOCX). Bỏ `page_header`, `page_footer`, `document_index`
+(đếm trong `skipped`); khối lặp và mục lục dạng dòng chấm dẫn là của DI-08. Chưa nối vào handler (DI-09).
+
 ### 4.3 Bảng: `worker_document/tables.py`
 
 ```python
