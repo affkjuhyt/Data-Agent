@@ -1305,20 +1305,16 @@ export function createDocumentHandlers(approvals: ApprovalSource[] = []) {
       if (verb !== 'resolve') return problem(404, 'not_found', 'Không có thao tác này.');
       const issue = issues.find((i) => i.id === id);
       if (!issue) return problem(404, 'not_found', 'Vấn đề đã được xử lý.');
-      // A2's resolution, or the screen's PROPOSAL keep_and_conflict.
-      const raw = (await request.json()) as
-        | { resolution: string; corrected_text?: string }
-        | { action: 'keep_and_conflict' };
+      // A2's resolution (ResolveIssue).
+      const raw = (await request.json()) as { resolution: string; corrected_text?: string };
       const body: ResolveIssue =
-        'action' in raw
-          ? raw
-          : raw.resolution === 'corrected'
-            ? { action: 'edit', text: raw.corrected_text ?? '' }
-            : raw.resolution === 'value_fixed'
-              ? { action: 'correct', value: raw.corrected_text ?? '' }
-              : raw.resolution === 'page_dropped'
-                ? { action: 'drop', reason: '' }
-                : { action: 'confirm' };
+        raw.resolution === 'corrected'
+          ? { action: 'edit', text: raw.corrected_text ?? '' }
+          : raw.resolution === 'value_fixed'
+            ? { action: 'correct', value: raw.corrected_text ?? '' }
+            : raw.resolution === 'page_dropped'
+              ? { action: 'drop', reason: '' }
+              : { action: 'confirm' };
       if (body.action === 'edit' && !body.text?.trim())
         return problem(422, 'validation_failed', 'Văn bản sửa không được trống.');
       issues = issues.filter((i) => i.id !== id);

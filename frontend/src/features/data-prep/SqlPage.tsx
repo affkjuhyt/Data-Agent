@@ -60,6 +60,21 @@ interface SqlHistoryEntry {
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1).replace('.', ',')}`;
 
+/*
+ * What the policy did to the run, as far as the api says: QueryRunView carries only the ids of
+ * the policies applied, so the scope and masked columns show only when a reader has them.
+ */
+const policyText = (result: SqlResult) =>
+  [
+    result.permission_scope && `Quyền: ${result.permission_scope}`,
+    result.masked_columns.length > 0 && `cột ${result.masked_columns.join(', ')} đã che`,
+    result.masked_columns.length === 0 &&
+      result.policies_applied > 0 &&
+      `đã áp ${result.policies_applied} chính sách dữ liệu`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
 const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
 
 const starterFor = (table: { name: string; columns: { name: string }[] }) => {
@@ -246,7 +261,7 @@ export default function SqlPage() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-da-md px-da-xl py-da-lg">
         <div className="flex flex-wrap items-center gap-da-sm">
           <p className="text-foreground da-body-strong">
-            Truy vấn chưa lưu{result ? ` · ${result.permission_scope}` : ''}
+            Truy vấn chưa lưu{result?.permission_scope ? ` · ${result.permission_scope}` : ''}
           </p>
           <span className="flex-1" />
           <Button kind="ghost" onClick={format}>
@@ -303,11 +318,9 @@ export default function SqlPage() {
                   : `${result.row_count} dòng`}{' '}
                 · {seconds(result.duration_ms)} s
               </StatusDot>
-              <p className="text-muted-foreground da-caption">
-                Quyền: {result.permission_scope}
-                {result.masked_columns.length > 0 &&
-                  ` · cột ${result.masked_columns.join(', ')} đã che`}
-              </p>
+              {policyText(result) && (
+                <p className="text-muted-foreground da-caption">{policyText(result)}</p>
+              )}
               <span className="flex-1" />
               <Segmented<ResultTab>
                 variant="outline"

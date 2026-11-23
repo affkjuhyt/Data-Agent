@@ -77,7 +77,9 @@ export default function WritebackPage() {
         message:
           next.status === 'approved'
             ? `Đã duyệt đủ · ${current.code} sẽ ghi vào ${current.target_table}`
-            : `Đã duyệt bước ${step}/${current.approvers.length} · chờ ${next.approvers[step]?.name ?? 'người duyệt tiếp'}`,
+            : current.approvers.length
+              ? `Đã duyệt bước ${step}/${current.approvers.length} · chờ ${next.approvers[step]?.name ?? 'người duyệt tiếp'}`
+              : 'Đã ghi duyệt của bạn · chờ người duyệt tiếp',
       });
     },
   });
@@ -123,7 +125,7 @@ export default function WritebackPage() {
               </Button>
               <Button onClick={() => setAsking('changes')}>Yêu cầu sửa</Button>
               <Button kind="primary" loading={busy} onClick={approve}>
-                Duyệt bước {step}/{wb.approvers.length}
+                {wb.approvers.length ? `Duyệt bước ${step}/${wb.approvers.length}` : 'Duyệt'}
               </Button>
             </>
           ) : undefined
@@ -170,6 +172,13 @@ export default function WritebackPage() {
               </div>
               <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1023px]:w-full">
                 <h2 className="text-foreground da-heading-3">Người duyệt</h2>
+                {wb.approvers.length === 0 && (
+                  <p className="text-foreground da-body-small">
+                    {wb.status === 'pending_approval'
+                      ? 'Người có quyền duyệt ghi ngược quyết định trong Cần bạn.'
+                      : 'Không có thông tin người duyệt.'}
+                  </p>
+                )}
                 <ol className="flex flex-col gap-[10px]">
                   {wb.approvers.map((a) => (
                     <li key={a.name} className="flex flex-col gap-[2px] pb-da-md">

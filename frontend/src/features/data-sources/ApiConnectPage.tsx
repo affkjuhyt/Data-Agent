@@ -30,8 +30,10 @@ import { useV1, useV1Mutation } from '../../lib/v1/useV1';
  * "v3.1 · Dữ liệu · Kết nối API" (2083:6509, UC-04-01 for the REST connector): four steps —
  * endpoint, authentication (a secret reference, never the secret), paging & schedule, and the
  * mapping of the response to columns, proposed by "Gọi thử". /data/connect_api opens a new
- * connection from the connector picker; /data/connect_api/<source id> edits an existing one and
- * shows its health on the right, with a backfill of the gap the source reported.
+ * connection from the connector picker; /data/connect_api/<source id> edits an existing one.
+ * Its health panel, with a backfill of the gap the source reported, shows only when api-config
+ * sends `health`: the api reads it from the saved config, which nothing writes yet, so on the
+ * api the panel (and "Chạy bù") stays hidden rather than showing empty values.
  */
 type Step = 'endpoint' | 'auth' | 'paging' | 'mapping';
 type BackfillGap = NonNullable<NonNullable<ApiSourceConfig['health']>['gap']>;

@@ -244,6 +244,7 @@ function scheduleFixture(): PipelineSchedule & { trigger_on_job_id: string } {
     trigger_on_job_id: 'job-core-banking',
     cron: null,
     skip_holidays: true,
+    work_calendar_id: 'cal-vn',
     no_overlap: true,
     retry_and_notify: true,
     after_source_label: 'sau job nạp Core banking',
@@ -430,6 +431,7 @@ const SQL_RESULT: SqlResult = {
   duration_ms: 800,
   permission_scope: 'Rủi ro tín dụng',
   masked_columns: ['customer_id'],
+  policies_applied: 1,
   sql_executed:
     'SELECT region, product, npl FROM mart.loans_dedup_0930 WHERE branch_code = :policy_branch LIMIT 100',
 };
@@ -677,6 +679,10 @@ export function createDataPrepHandlers() {
     }),
     http.get('*/v1/pipelines/:id/output-draft', ({ params }) =>
       detailOf(String(params.id)) ? HttpResponse.json(outputDraftFixture()) : notFound(),
+    ),
+    // The organisation's work calendar, what "skip days off" runs a pipeline on.
+    http.get('*/v1/calendars', () =>
+      page([{ id: 'cal-vn', code: 'VN', name: 'Lịch làm việc Việt Nam', is_default: true }]),
     ),
     http.get('*/v1/pipelines/:id/schedule', ({ params }) => {
       const id = String(params.id);

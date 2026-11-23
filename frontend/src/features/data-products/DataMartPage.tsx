@@ -139,9 +139,13 @@ function MartView({ id }: { id: string }) {
             <Fact label="Tên" value={m.product_draft.name} />
             <Fact label="Phiên bản" value={m.product_draft.version_text} />
             <Fact label="Cam kết cột" value={m.product_draft.contract_text} />
-            <Fact label="Độ mới" value={m.product_draft.freshness_text} />
+            {m.product_draft.freshness_text && (
+              <Fact label="Độ mới" value={m.product_draft.freshness_text} />
+            )}
             <Fact label="Chất lượng" value={m.product_draft.quality_text} />
-            <Fact label="Bên dùng" value={m.product_draft.consumers_text} />
+            {m.product_draft.consumers_text && (
+              <Fact label="Bên dùng" value={m.product_draft.consumers_text} />
+            )}
             {m.product_draft.breaking_note && (
               <p className="text-warning da-body-small">{m.product_draft.breaking_note}</p>
             )}

@@ -3,6 +3,7 @@
  * group is dropped with a reason; one batch is skipped after a confirm.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -83,5 +84,38 @@ describe('ErrorRecordsPage', () => {
     const emptyGroup = await screen.findByRole('checkbox', { name: 'Ngày ngoài khoảng hợp lệ' });
     expect(emptyGroup).toBeDisabled();
     expect(screen.getByText('0')).toBeInTheDocument();
+  });
+
+  it('shows neither a suggestion column nor a sample the api does not send', async () => {
+    // DlqRecordView as the api sends it: a reference to the payload, no payload, no suggestion.
+    server.use(
+      http.get('*/v1/jobs/:id/dlq', ({ params }) =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 'r-1',
+              job_id: params.id,
+              job_run_id: 'run-1',
+              error_kind: 'missing_key',
+              error: 'Thiếu customer_id',
+              payload_ref: 'dlq/r-1.json',
+              replay_count: 0,
+              discard_reason: null,
+              expires_at: '2026-12-01T00:00:00Z',
+              created_at: '2026-11-01T00:00:00Z',
+              status: 'pending',
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+    );
+    renderPage();
+    expect(await screen.findAllByRole('checkbox', { name: 'Thiếu customer_id' })).not.toHaveLength(
+      0,
+    );
+    expect(screen.queryByText('Cách xử lý gợi ý')).toBeNull();
+    expect(screen.queryByRole('heading', { name: /Mẫu bản ghi/ })).toBeNull();
+    expect(screen.queryByText('dlq/r-1.json')).toBeNull();
   });
 });

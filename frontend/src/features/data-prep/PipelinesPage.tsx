@@ -159,7 +159,7 @@ export default function PipelinesPage() {
                         {p.name}
                       </button>
                       <p className="text-muted-foreground da-caption">
-                        {p.owner_name} · {p.step_count} bước
+                        {[p.owner_name, `${p.step_count} bước`].filter(Boolean).join(' · ')}
                       </p>
                     </td>
                     <td className="px-da-lg py-[9px] text-foreground da-mono">

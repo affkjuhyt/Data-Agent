@@ -1589,7 +1589,10 @@ export interface ErrorRecordGroup {
   suggestion: string | null;
   /** PROPOSAL: set when the records can only load after this structure change is accepted. */
   blocked_by_drift_id: Uuid | null;
-  /** Where the first record's payload is kept (personal data already masked). */
+  /**
+   * PROPOSAL: the first record's payload, personal data masked. The api keeps only a reference
+   * to it (payload_ref) and serves no read of the payload, so it is null on the api.
+   */
   sample: string | null;
   /** How long the records stay in the dead-letter queue (DLQ). */
   retention_days: number;
@@ -1604,7 +1607,10 @@ export interface ErrorRecordGroup {
 
 type DlqRecordWire = components['schemas']['DlqRecordView'] &
   Partial<
-    Pick<ErrorRecordGroup, 'suggestion' | 'blocked_by_drift_id' | 'target_table' | 'impact_text'>
+    Pick<
+      ErrorRecordGroup,
+      'suggestion' | 'blocked_by_drift_id' | 'target_table' | 'impact_text' | 'sample'
+    >
   > & { display_count?: number };
 
 /*
@@ -1642,7 +1648,8 @@ export const listErrorGroups = async (): Promise<Page<ErrorRecordGroup>> => {
             count: oldest.display_count ?? records.length,
             suggestion: oldest.suggestion ?? null,
             blocked_by_drift_id: oldest.blocked_by_drift_id ?? null,
-            sample: oldest.payload_ref,
+            // payload_ref names where the payload is stored, not the payload: never shown.
+            sample: oldest.sample ?? null,
             retention_days: job.dlq_retention_days ?? 30,
             batch_at: oldest.created_at,
             target_table: oldest.target_table ?? job.source_object,

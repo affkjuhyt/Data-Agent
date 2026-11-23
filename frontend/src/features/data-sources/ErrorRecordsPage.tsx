@@ -70,6 +70,8 @@ function ErrorGroups({ groups }: { groups: ErrorRecordGroup[] }) {
   const blockedCount = blocked.reduce((n, g) => n + g.count, 0);
   const sampleGroup =
     chosen.find((g) => g.sample) ?? groups.find((g) => g.sample && g.count > 0) ?? null;
+  // The api sends no suggested fix; the column shows only when a reader fills one.
+  const hasSuggestion = groups.some((g) => g.suggestion);
   const view = useTableView(groups, {
     search: (group) =>
       `${group.cause} ${group.table_name} ${formatNumber(group.count)} ${group.suggestion ?? ''}`,
@@ -171,13 +173,15 @@ function ErrorGroups({ groups }: { groups: ErrorRecordGroup[] }) {
                 <SortableTh view={view} column="count" className="w-[116px] px-da-md py-da-md font-normal">
                   Số bản ghi
                 </SortableTh>
-                <SortableTh
-                  view={view}
-                  column="suggestion"
-                  className="w-[276px] px-da-md py-da-md font-normal max-[1279px]:hidden"
-                >
-                  Cách xử lý gợi ý
-                </SortableTh>
+                {hasSuggestion && (
+                  <SortableTh
+                    view={view}
+                    column="suggestion"
+                    className="w-[276px] px-da-md py-da-md font-normal max-[1279px]:hidden"
+                  >
+                    Cách xử lý gợi ý
+                  </SortableTh>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -201,9 +205,11 @@ function ErrorGroups({ groups }: { groups: ErrorRecordGroup[] }) {
                   <td className="px-da-md py-[9px] text-foreground da-mono">
                     {formatNumber(group.count)}
                   </td>
-                  <td className="px-da-md py-[9px] text-foreground da-body-small max-[1279px]:hidden">
-                    {group.suggestion ?? '—'}
-                  </td>
+                  {hasSuggestion && (
+                    <td className="px-da-md py-[9px] text-foreground da-body-small max-[1279px]:hidden">
+                      {group.suggestion ?? '—'}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

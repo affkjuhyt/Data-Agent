@@ -8,6 +8,7 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   createCollection,
+  decideValidityProposal,
   getDocumentPage,
   getDocumentCounts,
   getDocumentView,
@@ -140,6 +141,13 @@ describe('documents from the api', () => {
       page: 3,
       reason_text: 'Nhận dạng chữ độ tin thấp · độ tin 0,61',
     });
+    expect(issue.image_url).toBeNull();
+    server.use(
+      http.get('*/v1/documents/:id/pages/:n', ({ params }) =>
+        HttpResponse.json({ page_no: Number(params.n), text: 'Điều 1', image_url: '/p/3.png' }),
+      ),
+    );
+    expect((await listQualityIssues()).items[0].image_url).toBe('/p/3.png');
     await resolveQualityIssue('q-1', { action: 'edit', text: 'Điều 2' });
     await resolveQualityIssue('q-1', { action: 'correct', value: '1.200.000' });
     expect(bodies).toEqual([
@@ -180,6 +188,23 @@ describe('documents from the api', () => {
       files: [new File(['x'], 'a.pdf'), new File(['y'], 'b.pdf')],
     });
     expect(result).toEqual({ accepted: 1, skipped: 1 });
+  });
+
+  it('says whether the document’s collection has an extraction schema', async () => {
+    expect((await getDocumentView('d-1')).collection).toEqual({
+      id: 'c-1',
+      name: 'Hợp đồng tín dụng',
+      has_extraction_schema: false,
+    });
+    server.use(
+      http.get('*/v1/collections', () =>
+        HttpResponse.json({
+          items: [{ id: 'c-1', name: 'Hợp đồng tín dụng', extraction_schema_id: 's-1' }],
+          next_page_token: '',
+        }),
+      ),
+    );
+    expect((await getDocumentView('d-1')).collection?.has_extraction_schema).toBe(true);
   });
 
   it('reads the library from DocumentListItem, filtering the PROPOSAL category here', async () => {
@@ -227,6 +252,51 @@ describe('documents from the api', () => {
       processing: 2,
     });
     expect((await listLibrary({ category: 'regulation' })).items).toEqual([]);
+  });
+
+  it('says a row’s links from the supersession and the parent the api sends', async () => {
+    server.use(
+      http.get('*/v1/documents', () =>
+        HttpResponse.json({
+          items: [
+            { ...doc, id: 'd-1', title: 'TT 31', step: 'done', status: 'ready' },
+            {
+              ...doc,
+              id: 'd-2',
+              title: 'TT 32',
+              step: 'done',
+              status: 'ready',
+              supersedes_id: 'd-1',
+            },
+            {
+              ...doc,
+              id: 'd-3',
+              title: 'PL 1',
+              step: 'done',
+              status: 'ready',
+              parent_document_id: 'd-2',
+            },
+            {
+              ...doc,
+              id: 'd-4',
+              title: 'PL 2',
+              step: 'done',
+              status: 'ready',
+              supersedes_id: 'd-9',
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+    );
+    const { items } = await listLibrary();
+    expect(items.map((r) => r.links_text)).toEqual([
+      null,
+      'Thay thế TT 31',
+      'Phụ lục của TT 32',
+      'Thay thế một văn bản khác',
+    ]);
+    expect(items.every((r) => r.clause_count === null)).toBe(true);
   });
 
   it('lists for validity review the documents an open document_validity proposal is about', async () => {
@@ -314,6 +384,7 @@ describe('documents from the api', () => {
       http.get('*/v1/audit', () =>
         HttpResponse.json({ title: 'forbidden', status: 403, code: 'forbidden' }, { status: 403 }),
       ),
+      http.get('*/v1/inbox', () => HttpResponse.json({ items: [], next_page_token: '' })),
     );
     const { items } = await listActivity('d-1');
     expect(items.map((i) => i.text)).toEqual(['Nạp QĐ 1120 · 1120/QĐ · hiệu lực từ 01/04/2023']);
@@ -324,6 +395,49 @@ describe('documents from the api', () => {
       'QĐ 1120 · 1120/QĐ · có hiệu lực',
       'QĐ 1120 hết hiệu lực',
     ]);
+  });
+
+  it('confirms a validity relation by deciding its open document_validity proposal', async () => {
+    let decided: [string, unknown] | undefined;
+    server.use(
+      http.get('*/v1/documents/:id/versions', () =>
+        HttpResponse.json({ items: [{ ...doc, title: 'TT 32' }], next_page_token: '' }),
+      ),
+      http.get('*/v1/inbox', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 'h-1',
+              kind: 'approve_proposal',
+              source_ref: 'p-1',
+              context: { proposal_kind: 'document_validity' },
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/proposals/p-1', () =>
+        HttpResponse.json({
+          id: 'p-1',
+          kind: 'document_validity',
+          target_ref: 'd-1',
+          title: 'TT 32 thay thế TT 31',
+          diff: { supersedes_id: 'd-0', excerpt: 'Thông tư này thay thế TT 31', detected: true },
+        }),
+      ),
+      http.post('*/v1/proposals/:action', async ({ params, request }) => {
+        decided = [String(params.action), await request.json()];
+        return HttpResponse.json({ id: 'p-1', status: 'accepted' });
+      }),
+    );
+    const v = await getValidity('d-1');
+    expect(v).toMatchObject({
+      proposal: { id: 'p-1', text: 'TT 32 thay thế TT 31' },
+      can_confirm: true,
+      finding: { text: 'Thông tư này thay thế TT 31' },
+    });
+    await decideValidityProposal('p-1');
+    expect(decided).toEqual(['p-1:decide', { decision: 'accept' }]);
   });
 
   it('records a supersession on both documents', async () => {

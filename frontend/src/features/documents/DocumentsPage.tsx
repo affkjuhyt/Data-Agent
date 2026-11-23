@@ -414,6 +414,10 @@ function LibraryTable({
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
+  // The api counts no clauses and links only supersessions and annexes: a column no row fills
+  // is left out rather than drawn as a column of "—".
+  const hasClauses = rows.some((row) => row.clause_count !== null);
+  const hasLinks = rows.some((row) => row.links_text);
   const view = useTableView(rows, {
     search: (row) => `${row.title} ${row.category_label} ${row.validity?.text ?? ''} ${row.links_text ?? ''}`,
     filters: [{ id: 'kind', label: 'Loại', value: (row) => row.category_label }],
@@ -441,12 +445,16 @@ function LibraryTable({
             <SortableTh view={view} column="validity" className={cn(LIB_CELL, 'w-[128px] py-da-sm font-medium')}>
               Hiệu lực
             </SortableTh>
-            <SortableTh view={view} column="clauses" className={cn(LIB_CELL, 'w-[88px] py-da-sm font-medium max-[1279px]:hidden')}>
-              Điều khoản
-            </SortableTh>
-            <th className={cn(LIB_CELL, 'w-[166px] py-da-sm font-medium max-[1279px]:hidden')}>
-              Liên kết
-            </th>
+            {hasClauses && (
+              <SortableTh view={view} column="clauses" className={cn(LIB_CELL, 'w-[88px] py-da-sm font-medium max-[1279px]:hidden')}>
+                Điều khoản
+              </SortableTh>
+            )}
+            {hasLinks && (
+              <th className={cn(LIB_CELL, 'w-[166px] py-da-sm font-medium max-[1279px]:hidden')}>
+                Liên kết
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -474,17 +482,21 @@ function LibraryTable({
                   </StatusDot>
                 )}
               </td>
-              <td className={cn(LIB_CELL, 'py-da-md text-foreground da-mono max-[1279px]:hidden')}>
-                {row.clause_count ?? '—'}
-              </td>
-              <td
-                className={cn(
-                  LIB_CELL,
-                  'truncate py-da-md text-foreground da-body-small max-[1279px]:hidden',
-                )}
-              >
-                {row.links_text ?? '—'}
-              </td>
+              {hasClauses && (
+                <td className={cn(LIB_CELL, 'py-da-md text-foreground da-mono max-[1279px]:hidden')}>
+                  {row.clause_count ?? '—'}
+                </td>
+              )}
+              {hasLinks && (
+                <td
+                  className={cn(
+                    LIB_CELL,
+                    'truncate py-da-md text-foreground da-body-small max-[1279px]:hidden',
+                  )}
+                >
+                  {row.links_text ?? '—'}
+                </td>
+              )}
             </SelectableRow>
           ))}
         </tbody>

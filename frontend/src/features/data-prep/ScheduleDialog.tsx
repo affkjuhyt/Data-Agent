@@ -5,8 +5,10 @@ import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { RadioGroup, RadioOption } from '../../design-system/Radio';
 import { SkeletonRows } from '../../design-system/SkeletonRow';
+import { Unavailable } from '../../design-system/Unavailable';
 import {
   getPipelineSchedule,
+  getWorkCalendar,
   previewSchedule,
   savePipelineSchedule,
   type PipelineSchedule,
@@ -37,6 +39,7 @@ export function ScheduleDialog({
     ['getPipelineSchedule', pipelineId],
     pipelineId ? () => getPipelineSchedule(pipelineId) : null,
   );
+  const calendar = useV1(['getWorkCalendar'], pipelineId ? getWorkCalendar : null);
   const [draft, setDraft] = useState<PipelineSchedule>();
   const [preview, setPreview] = useState<string>();
   const saveSchedule = useV1Mutation(
@@ -67,8 +70,21 @@ export function ScheduleDialog({
   const set = (patch: Partial<PipelineSchedule>) => draft && setDraft({ ...draft, ...patch });
 
   const save = () => {
-    if (pipelineId && draft) saveSchedule.run({ id: pipelineId, schedule: draft });
+    if (!pipelineId || !draft) return;
+    // Skipping days off is running on the organisation's work calendar.
+    const work_calendar_id = draft.skip_holidays
+      ? (draft.work_calendar_id ?? calendar.data?.id ?? null)
+      : null;
+    saveSchedule.run({
+      id: pipelineId,
+      schedule: { ...draft, skip_holidays: !!work_calendar_id, work_calendar_id },
+    });
   };
+  // Without a work calendar there are no days off to skip.
+  const noCalendar =
+    calendar.data === null && !draft?.work_calendar_id
+      ? 'Tổ chức chưa có lịch làm việc để biết ngày nghỉ.'
+      : null;
 
   const kinds: { value: ScheduleKind; label: string }[] = [
     { value: 'daily', label: 'Hằng ngày lúc 06:30' },
@@ -126,9 +142,22 @@ export function ScheduleDialog({
               />
             )}
           </div>
-          <Checkbox checked={draft.skip_holidays} onChange={(v) => set({ skip_holidays: v })}>
-            Bỏ qua ngày nghỉ theo lịch làm việc của tổ chức
-          </Checkbox>
+          <Unavailable reason={noCalendar}>
+            <Checkbox
+              checked={draft.skip_holidays && !noCalendar}
+              disabled={!!noCalendar}
+              onChange={(v) =>
+                set({
+                  skip_holidays: v,
+                  work_calendar_id: v
+                    ? (draft.work_calendar_id ?? calendar.data?.id ?? null)
+                    : null,
+                })
+              }
+            >
+              Bỏ qua ngày nghỉ theo lịch làm việc của tổ chức
+            </Checkbox>
+          </Unavailable>
           <Checkbox checked={draft.no_overlap} onChange={(v) => set({ no_overlap: v })}>
             Không chạy chồng lượt (lượt trước chưa xong thì bỏ lượt này)
           </Checkbox>

@@ -37,7 +37,10 @@ export interface DocumentRow {
   validity: { tone: Tone; text: string; ended: boolean } | null;
   /** PROPOSAL: clauses the agent extracted. */
   clause_count: number | null;
-  /** PROPOSAL: "NPL_RATIO · đề xuất v5" — what the document is linked to. */
+  /**
+   * What the document is linked to: from the api, the document it supersedes or the one it is
+   * an annex of ("Thay thế TT 31"); a mock's display may also name metrics ("NPL_RATIO v4").
+   */
   links_text: string | null;
   /** Set while the pre-processing runs ("Đang xử lý" tab). */
   processing: { step_text: string; progress: number; started_at: Timestamp } | null;
@@ -103,7 +106,17 @@ function progressOf(p: Schemas['Progress']): number {
   return Math.min(1, pages / 2 + chunks / 2);
 }
 
-function readLibraryRow(raw: LibraryWire): DocumentRow {
+/** The other document a row names, by its title when it is on the same page. */
+function linksOf(raw: LibraryWire, titles: Map<string, string>): string | null {
+  const name = (id: string) => titles.get(id) ?? 'một văn bản khác';
+  const links = [
+    raw.supersedes_id ? `Thay thế ${name(raw.supersedes_id)}` : null,
+    raw.parent_document_id ? `Phụ lục của ${name(raw.parent_document_id)}` : null,
+  ].filter(Boolean);
+  return links.length ? links.join(' · ') : null;
+}
+
+function readLibraryRow(raw: LibraryWire, titles: Map<string, string>): DocumentRow {
   if (raw.display) return raw.display;
   const today = new Date().toISOString().slice(0, 10);
   const ended = raw.effective_to !== null && raw.effective_to < today;
@@ -126,7 +139,7 @@ function readLibraryRow(raw: LibraryWire): DocumentRow {
         ? { tone: 'success', text: `Từ ${ddmmyyyy(raw.effective_from)}`, ended: false }
         : null,
     clause_count: null,
-    links_text: null,
+    links_text: linksOf(raw, titles),
     processing: running
       ? {
           step_text: STEP_LABEL[raw.step] ?? raw.step,
@@ -144,7 +157,7 @@ function readLibraryRow(raw: LibraryWire): DocumentRow {
  * approve_proposal request (source_ref = the proposal, worker_agent/proposals.py); the proposal's
  * target_ref is the document. The inbox lists only what the caller may decide.
  */
-async function pendingValidityDocuments(): Promise<Set<string>> {
+async function openValidityProposals(): Promise<Schemas['ProposalDetail'][]> {
   const requests = await ok(
     api.GET('/v1/inbox', { params: { query: { ...ALL, kind: 'approve_proposal' } } }),
   );
@@ -153,9 +166,13 @@ async function pendingValidityDocuments(): Promise<Set<string>> {
       (r) => (r.context as { proposal_kind?: string } | null)?.proposal_kind === 'document_validity',
     )
     .flatMap((r) => (r.source_ref ? [r.source_ref] : []));
-  const proposals = await Promise.all(
+  return Promise.all(
     proposalIds.map((id) => ok(api.GET('/v1/proposals/{id}', { params: { path: { id } } }))),
   );
+}
+
+async function pendingValidityDocuments(): Promise<Set<string>> {
+  const proposals = await openValidityProposals();
   return new Set(proposals.flatMap((p) => (p.target_ref ? [p.target_ref] : [])));
 }
 
@@ -175,7 +192,8 @@ export const listLibrary = async (query: LibraryQuery = {}): Promise<Page<Docume
       },
     }),
   );
-  let items = page.items.map(readLibraryRow);
+  const titles = new Map(page.items.map((raw) => [raw.id, raw.title ?? raw.file_name]));
+  let items = page.items.map((raw) => readLibraryRow(raw, titles));
   if (query.category) items = items.filter((r) => r.category === query.category);
   if (query.validity_review) {
     const pending = await pendingValidityDocuments();
@@ -292,8 +310,12 @@ export interface DocumentView extends DocumentDetail {
   /** pdf, image, docx, email, audio, html: only a PDF is shown as the original file. */
   media: string;
   file_name: string;
-  /** null for a document outside any collection (an upload not yet assigned). */
-  collection: { id: Uuid; name: string } | null;
+  /**
+   * null for a document outside any collection (an upload not yet assigned).
+   * has_extraction_schema: the collection has one (CollectionView.extraction_schema_id); null
+   * when the collection could not be read.
+   */
+  collection: { id: Uuid; name: string; has_extraction_schema?: boolean | null } | null;
   page_count: number;
   /** the page the viewer opens on (the one with an open issue, else 1). */
   focus_page: number;
@@ -333,7 +355,10 @@ function signalsOf(raw: Schemas['DocumentDetail']): DocumentView['signals'] {
  * The viewer's PROPOSAL parts (the agent's summary, fields, thread, call) are absent without
  * `display`: the page shows the document's state, its pages and its index coverage.
  */
-function readDocumentView(raw: DocumentWire, collections: Map<string, string>): DocumentView {
+function readDocumentView(
+  raw: DocumentWire,
+  collections: Map<string, { name: string; schema: boolean }>,
+): DocumentView {
   if (raw.display) return { ...raw.display, media: raw.display.media ?? raw.media };
   const p = raw.progress;
   return {
@@ -341,7 +366,11 @@ function readDocumentView(raw: DocumentWire, collections: Map<string, string>): 
     kind: KIND[raw.media] ?? 'file',
     media: raw.media,
     file_name: raw.file_name,
-    collection: { id: raw.collection_id, name: collections.get(raw.collection_id) ?? '' },
+    collection: {
+      id: raw.collection_id,
+      name: collections.get(raw.collection_id)?.name ?? '',
+      has_extraction_schema: collections.get(raw.collection_id)?.schema ?? null,
+    },
     page_count: raw.page_count ?? 0,
     focus_page: 1,
     summary_text: null,
@@ -359,11 +388,17 @@ function readDocumentView(raw: DocumentWire, collections: Map<string, string>): 
 export const getDocumentView = async (id: string) => {
   const [raw, collections] = await Promise.all([
     ok<DocumentWire>(api.GET('/v1/documents/{id}', { params: { path: { id } } })),
-    listCollections().catch(() => null),
+    // The raw CollectionView: the viewer needs extraction_schema_id, which the card drops.
+    ok<Page<Schemas['CollectionView']>>(
+      api.GET('/v1/collections', { params: { query: ALL } }),
+    ).catch(() => null),
   ]);
   return readDocumentView(
     raw,
-    new Map<string, string>(collections?.items.map((c) => [c.id, c.name]) ?? []),
+    new Map(
+      collections?.items.map((c) => [c.id, { name: c.name, schema: !!c.extraction_schema_id }]) ??
+        [],
+    ),
   );
 };
 
@@ -560,9 +595,11 @@ export type ResolveIssue =
   | { action: 'confirm' }
   | { action: 'edit'; text: string }
   | { action: 'drop'; reason: string }
-  /** viewer: write the system-of-record value, or keep the read one and open a conflict. */
-  | { action: 'correct'; value: string }
-  | { action: 'keep_and_conflict' };
+  /**
+   * viewer: write the system-of-record value. Keeping the read one and opening a conflict has no
+   * resolution in ResolveIssue, so the screen does not offer it.
+   */
+  | { action: 'correct'; value: string };
 
 type IssueWire = Schemas['QualityIssueView'] & { display?: QualityIssue };
 
@@ -587,7 +624,11 @@ const detailText = (detail: unknown): string => {
   return '';
 };
 
-function readIssue(raw: IssueWire, titles: Map<string, string>): QualityIssue {
+function readIssue(
+  raw: IssueWire,
+  titles: Map<string, string>,
+  images: Map<string, string | null>,
+): QualityIssue {
   if (raw.display) return raw.display;
   const detail = detailText(raw.detail);
   return {
@@ -595,7 +636,7 @@ function readIssue(raw: IssueWire, titles: Map<string, string>): QualityIssue {
     document: { id: raw.document_id, title: titles.get(raw.document_id) ?? '' },
     page: raw.page_no ?? 1,
     reason_text: [ISSUE_KIND[raw.kind] ?? raw.kind, detail].filter(Boolean).join(' · '),
-    image_url: null,
+    image_url: images.get(raw.id) ?? null,
     original_lines: raw.old_value ? raw.old_value.split('\n') : [],
     read: { heading: null, paragraphs: detail ? [detail] : [] },
     unreadable: [],
@@ -619,7 +660,22 @@ export const listQualityIssues = async (): Promise<Page<QualityIssue>> => {
   const titles = new Map<string, string>(
     docs.flatMap((d) => (d ? [[d.id, d.title ?? d.file_name] as [string, string]] : [])),
   );
-  return { ...page, items: page.items.map((i) => readIssue(i, titles)) };
+  // The page image comes from GET /v1/documents/{id}/pages/{n} (DocumentPageView.image_url).
+  const images = new Map(
+    await Promise.all(
+      page.items
+        .filter((i) => !i.display && i.page_no != null)
+        .map(async (i) => {
+          const view = await ok<Schemas['DocumentPageView']>(
+            api.GET('/v1/documents/{id}/pages/{n}', {
+              params: { path: { id: i.document_id, n: i.page_no! } },
+            }),
+          ).catch(() => null);
+          return [i.id, view?.image_url ?? null] as const;
+        }),
+    ),
+  );
+  return { ...page, items: page.items.map((i) => readIssue(i, titles, images)) };
 };
 
 /*
@@ -627,7 +683,7 @@ export const listQualityIssues = async (): Promise<Page<QualityIssue>> => {
  * edit and correct (write the text or value), drop the page. Keeping the read value and opening
  * a conflict has no resolution in A2 (PROPOSAL).
  */
-function resolutionOf(body: ResolveIssue): Schemas['ResolveIssue'] | null {
+function resolutionOf(body: ResolveIssue): Schemas['ResolveIssue'] {
   switch (body.action) {
     case 'confirm':
       return { resolution: 'confirmed_mask' };
@@ -637,20 +693,17 @@ function resolutionOf(body: ResolveIssue): Schemas['ResolveIssue'] | null {
       return { resolution: 'page_dropped' };
     case 'correct':
       return { resolution: 'value_fixed', corrected_text: body.value };
-    default:
-      return null;
   }
 }
 
 /** POST /v1/quality-issues/{id}:resolve. */
 export const resolveQualityIssue = async (id: string, body: ResolveIssue) => {
-  const resolution = resolutionOf(body);
-  if (resolution)
-    await ok(
-      api.POST('/v1/quality-issues/{id}:resolve', { params: { path: { id } }, body: resolution }),
-    );
-  // PROPOSAL: keep_and_conflict travels as the screen wrote it; the mock knows it, the api refuses it.
-  else await v1Send('POST', `/quality-issues/${pathId(id)}:resolve`, body);
+  await ok(
+    api.POST('/v1/quality-issues/{id}:resolve', {
+      params: { path: { id } },
+      body: resolutionOf(body),
+    }),
+  );
   return { status: 'resolved' as const };
 };
 
@@ -672,6 +725,11 @@ export interface DocumentValidity {
   finding: { text: string; footnote: string } | null;
   /** the relation the agent proposed; null once confirmed. */
   pending: { superseded_by: Uuid; superseded_by_title: string; valid_to: string } | null;
+  /**
+   * The open document_validity proposal about this document, as the caller's Cần bạn lists it:
+   * confirming is accepting it (POST /v1/proposals/{id}:decide). null when none waits.
+   */
+  proposal?: { id: Uuid; text: string } | null;
   /** whether the caller is the person in charge, who alone can confirm (UC-05-05). */
   can_confirm: boolean;
 }
@@ -717,8 +775,34 @@ export const getValidity = async (id: string): Promise<DocumentValidity> => {
   const raw = await ok<VersionsWire>(
     api.GET('/v1/documents/{id}/versions', { params: { path: { id } } }),
   );
-  return raw.display ?? readValidity(id, raw.items);
+  if (raw.display) return raw.display;
+  const validity = readValidity(id, raw.items);
+  // The inbox lists only what the caller may decide: a proposal found there is theirs to confirm.
+  const proposals = await openValidityProposals().catch(
+    (): Schemas['ProposalDetail'][] => [],
+  );
+  const proposal = proposals.find((p) => p.target_ref === id);
+  if (!proposal) return validity;
+  const diff = (proposal.diff ?? {}) as { excerpt?: unknown; detected?: unknown };
+  return {
+    ...validity,
+    proposal: { id: proposal.id, text: proposal.title },
+    can_confirm: true,
+    finding:
+      diff.detected === true && typeof diff.excerpt === 'string' && diff.excerpt
+        ? { text: diff.excerpt, footnote: 'Trích đoạn agent dựa vào · chờ duyệt' }
+        : null,
+  };
 };
+
+/** Accepting the open document_validity proposal: worker-agent then applies the change. */
+export const decideValidityProposal = (proposalId: string) =>
+  ok(
+    api.POST('/v1/proposals/{id}:decide', {
+      params: { path: { id: proposalId } },
+      body: { decision: 'accept' } satisfies Schemas['ProposalDecision'],
+    }),
+  );
 
 /*
  * "Sửa quan hệ" as A2's PATCH /v1/documents/{id}: the replacing document records what it

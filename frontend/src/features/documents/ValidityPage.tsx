@@ -13,6 +13,7 @@ import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import {
+  decideValidityProposal,
   getValidity,
   listLibrary,
   setSupersession,
@@ -79,7 +80,17 @@ function ValidityView({ v }: { v: DocumentValidity }) {
       onError: (e) => toast({ tone: 'error', message: `Không xác nhận được. ${e.message}` }),
     },
   );
-  const busy = confirm.pending;
+  // On the api the relation waits as a document_validity proposal: confirming accepts it.
+  const accept = useV1Mutation(
+    (proposalId: string) => decideValidityProposal(proposalId),
+    {
+      invalidates: [['getValidity'], ['listLibrary']],
+      onSuccess: () => toast({ tone: 'success', message: 'Đã duyệt đề xuất hiệu lực.' }),
+      onError: (e) => toast({ tone: 'error', message: `Không duyệt được. ${e.message}` }),
+    },
+  );
+  const busy = confirm.pending || accept.pending;
+  const proposal = v.proposal ?? null;
 
   const notOwner = 'Chỉ người phụ trách văn bản xác nhận được quan hệ hiệu lực.';
 
@@ -101,7 +112,7 @@ function ValidityView({ v }: { v: DocumentValidity }) {
               <StatusDot tone={v.status.tone}>{v.status.text}</StatusDot>
             </span>
           }
-          description={v.owner_text ?? undefined}
+          description={v.owner_text ?? (proposal ? `Chờ duyệt: ${proposal.text}` : undefined)}
           actions={
             v.can_confirm ? (
               <>
@@ -115,6 +126,11 @@ function ValidityView({ v }: { v: DocumentValidity }) {
                     onClick={() => v.pending && confirm.run(v.pending)}
                   >
                     Xác nhận bị thay thế
+                  </Button>
+                )}
+                {!v.pending && proposal && (
+                  <Button kind="primary" loading={busy} onClick={() => accept.run(proposal.id)}>
+                    Duyệt đề xuất
                   </Button>
                 )}
               </>
@@ -168,7 +184,7 @@ function ValidityView({ v }: { v: DocumentValidity }) {
         >
           <h2 className="text-foreground da-heading-3">Agent phát hiện</h2>
           <p className="text-foreground da-body-small">{v.finding.text}</p>
-          {!v.pending && <StatusDot tone="success">Đã xác nhận</StatusDot>}
+          {!v.pending && !proposal && <StatusDot tone="success">Đã xác nhận</StatusDot>}
           <p className="text-muted-foreground da-caption">{v.finding.footnote}</p>
         </SidePanel>
       )}
@@ -178,7 +194,13 @@ function ValidityView({ v }: { v: DocumentValidity }) {
           onClose={() => setEditing(false)}
           onSaved={() => {
             setEditing(false);
-            toast({ tone: 'success', message: 'Đã lưu quan hệ hiệu lực.' });
+            // A validity change is a document_validity proposal until someone accepts it.
+            toast({
+              tone: 'success',
+              message: proposal
+                ? 'Đã gửi quan hệ hiệu lực; thay đổi áp dụng khi đề xuất được duyệt.'
+                : 'Đã lưu quan hệ hiệu lực.',
+            });
           }}
         />
       )}

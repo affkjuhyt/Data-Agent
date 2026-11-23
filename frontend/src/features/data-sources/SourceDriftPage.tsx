@@ -8,7 +8,6 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
-import { Tooltip } from '../../design-system/Tooltip';
 import { formatNumber, formatTime } from '../../lib/formatVN';
 import {
   getSourceDrift,
@@ -24,7 +23,8 @@ import { useV1, useV1Mutation } from '../../lib/v1/useV1';
  * structure, the job behind it paused and holds records back. Column changes, what they touch
  * (assessed by the Data Quality agent), the agent's proposal, who approves and what rejecting
  * does. /data/drift/<id> opens one; from the rail (no id) the first open one.
- * "Sửa ánh xạ" has no mapping editor yet. Crawled sources have their own screen (P14, features/crawl).
+ * The api sends no mapping editor, impact assessment, proposal or reviewer list for a connected
+ * source's drift: those parts show only when a reader fills them. Crawled sources have their own screen (P14, features/crawl).
  */
 export default function SourceDriftPage() {
   const { routeId } = useAppState();
@@ -162,6 +162,10 @@ function DriftView({ drift }: { drift: SourceDrift }) {
   // A failed rejection shows in its dialog; a failed acceptance toasts.
   const rejectError = resolve.variables === 'reject' ? resolve.error?.message : undefined;
 
+  // What :resolve with "reverted" does for any drift (the api's own rule), when the reader has
+  // no sentence specific to this one.
+  const ifRejected =
+    drift.if_rejected_text || 'Thay đổi được đóng là hoàn tác: nguồn giữ cấu trúc cũ và chạy tiếp.';
   const facts = [
     `Phát hiện ${drift.detected_text}`,
     drift.job_paused ? `job ${drift.table_name} đang tạm dừng` : null,
@@ -195,9 +199,6 @@ function DriftView({ drift }: { drift: SourceDrift }) {
               >
                 Từ chối, giữ cấu trúc cũ
               </Button>
-              <Tooltip content="Màn sửa ánh xạ đang được làm.">
-                <Button disabled>Sửa ánh xạ</Button>
-              </Tooltip>
               <Button
                 kind="primary"
                 loading={busy === 'accept'}
@@ -336,18 +337,24 @@ function DriftView({ drift }: { drift: SourceDrift }) {
               <p className="text-foreground da-body-small">{drift.proposal}</p>
             </>
           )}
-          <h2 className="text-foreground da-heading-3">Người duyệt</h2>
-          <p className="text-foreground da-body-small">{drift.reviewers_text}</p>
+          {(drift.reviewers_text || drift.approvals.length > 0) && (
+            <h2 className="text-foreground da-heading-3">Người duyệt</h2>
+          )}
+          {drift.reviewers_text && (
+            <p className="text-foreground da-body-small">{drift.reviewers_text}</p>
+          )}
           {drift.approvals.length > 0 && (
             <p className="text-muted-foreground da-caption">
               Đã duyệt: {drift.approvals.map((a) => `${a.name} lúc ${formatTime(a.at)}`).join(', ')}
             </p>
           )}
           <h2 className="text-foreground da-heading-3">Nếu từ chối</h2>
-          <p className="text-foreground da-body-small">{drift.if_rejected_text}</p>
-          <p className="text-muted-foreground da-caption">
-            UC-04-03 · thay đổi làm hỏng chỉ số cần duyệt hai người
-          </p>
+          <p className="text-foreground da-body-small">{ifRejected}</p>
+          {drift.approvals_required > 1 && (
+            <p className="text-muted-foreground da-caption">
+              UC-04-03 · thay đổi làm hỏng chỉ số cần duyệt hai người
+            </p>
+          )}
         </aside>
       </div>
       <ConfirmDialog
@@ -359,7 +366,7 @@ function DriftView({ drift }: { drift: SourceDrift }) {
         onConfirm={() => resolve.run('reject')}
         onCancel={() => setConfirmReject(false)}
       >
-        {drift.if_rejected_text}
+        {ifRejected}
       </ConfirmDialog>
     </div>
   );

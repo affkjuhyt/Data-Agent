@@ -8,6 +8,7 @@ import { Notice } from '../../design-system/Notice';
 import { Segmented } from '../../design-system/Segmented';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Tabs } from '../../design-system/Tabs';
+import { Unavailable } from '../../design-system/Unavailable';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -211,7 +212,11 @@ function FileViewer({ doc }: { doc: DocumentView }) {
           value={tab}
           onChange={setTab}
           items={[
-            { value: 'fields', label: `Trường · ${formatNumber(doc.fields.length)}` },
+            {
+              value: 'fields',
+              // No fields read is not "0 fields": the count shows only when there are some.
+              label: doc.fields.length ? `Trường · ${formatNumber(doc.fields.length)}` : 'Trường',
+            },
             { value: 'chunks', label: 'Đoạn văn' },
             { value: 'history', label: 'Lịch sử' },
           ]}
@@ -391,10 +396,16 @@ function PageText({ page }: { page: DocumentPage }) {
 }
 
 function FieldsTab({ doc, onJump }: { doc: DocumentView; onJump: (page: number) => void }) {
+  // The api serves no read of a document's extracted values: an empty list says nothing about
+  // whether the collection extracts, so only its schema (or its absence) is stated.
   if (doc.fields.length === 0)
     return (
       <p className="text-muted-foreground da-body-small">
-        Tài liệu này chưa có lược đồ trích xuất; agent chỉ chia đoạn để tìm kiếm.
+        {doc.collection?.has_extraction_schema === false
+          ? 'Bộ sưu tập của tài liệu này chưa có lược đồ trích xuất; agent chỉ chia đoạn để tìm kiếm.'
+          : doc.collection?.has_extraction_schema
+            ? 'Bộ sưu tập có lược đồ trích xuất, nhưng giá trị trích của tài liệu chưa xem được ở đây.'
+            : 'Chưa xem được các trường trích của tài liệu này ở đây.'}
       </p>
     );
   return (
@@ -437,47 +448,36 @@ function FieldRow({ field, onJump }: { field: ExtractedField; onJump: (page: num
 function IssueBox({ issue }: { issue: FieldIssue }) {
   const toast = useToast();
   const resolve = useV1Mutation(
-    (action: 'correct' | 'keep') =>
-      resolveQualityIssue(
-        issue.quality_issue_id,
-        action === 'correct'
-          ? { action: 'correct', value: issue.suggested_value }
-          : { action: 'keep_and_conflict' },
-      ),
+    () =>
+      resolveQualityIssue(issue.quality_issue_id, {
+        action: 'correct',
+        value: issue.suggested_value,
+      }),
     {
       invalidates: [['getDocumentView']],
-      onSuccess: (_, action) =>
+      onSuccess: () =>
         toast({
           tone: 'success',
-          message:
-            action === 'correct'
-              ? `Đã sửa ${issue.field} thành ${issue.suggested_value}.`
-              : 'Đã giữ giá trị đọc được và mở yêu cầu xung đột.',
+          message: `Đã sửa ${issue.field} thành ${issue.suggested_value}.`,
         }),
       onError: (e) => toast({ tone: 'error', message: `Không lưu được. ${e.message}` }),
     },
   );
-  const busy = resolve.pending ? resolve.variables : null;
+  const busy = resolve.pending;
   return (
     <div className="flex flex-col gap-da-sm rounded-md border border-warning px-da-lg py-da-md">
       <p className="text-foreground da-body-strong">{issue.title}</p>
       <p className="text-muted-foreground da-caption">{issue.detail}</p>
       <div className="flex flex-wrap gap-x-da-sm gap-y-da-md">
-        <Button
-          loading={busy === 'correct'}
-          disabled={busy !== null && busy !== 'correct'}
-          onClick={() => resolve.run('correct')}
-        >
+        <Button loading={busy} onClick={() => resolve.run(undefined)}>
           Sửa thành {issue.suggested_value}
         </Button>
-        <Button
-          kind="ghost"
-          loading={busy === 'keep'}
-          disabled={busy !== null && busy !== 'keep'}
-          onClick={() => resolve.run('keep')}
-        >
-          Giữ {issue.current_value} · báo xung đột
-        </Button>
+        {/* ResolveIssue has no resolution that keeps the read value and opens a conflict. */}
+        <Unavailable reason="Giữ giá trị đọc được và báo xung đột chưa có trên api.">
+          <Button kind="ghost" disabled>
+            Giữ {issue.current_value} · báo xung đột
+          </Button>
+        </Unavailable>
       </div>
     </div>
   );

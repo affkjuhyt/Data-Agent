@@ -47,9 +47,11 @@ export interface DataMart {
     version: string;
     version_text: string;
     contract_text: string;
-    freshness_text: string;
+    /** null when the mart does not say how fresh it is (MartView has no freshness). */
+    freshness_text: string | null;
     quality_text: string;
-    consumers_text: string;
+    /** null when who reads it is not known (MartView names no consumer). */
+    consumers_text: string | null;
     /** Set when the new version breaks the current one (old version runs alongside 30 days). */
     breaking_note: string | null;
   };
@@ -122,9 +124,10 @@ export function readDataMart(raw: DataMartWire, datasets: Map<string, string>): 
       version: '1',
       version_text: 'v1',
       contract_text: `${measures.length} độ đo · ${accepted.length} chiều`,
-      freshness_text: 'Cập nhật theo pipeline',
+      // MartView says neither how fresh the mart is nor who reads it: nothing is stated.
+      freshness_text: null,
       quality_text: raw.relation_check_passed ? 'Đã kiểm tra liên kết' : 'Chưa kiểm tra liên kết',
-      consumers_text: 'Chưa có người dùng',
+      consumers_text: null,
       breaking_note: null,
     },
     suggestion: proposed.length

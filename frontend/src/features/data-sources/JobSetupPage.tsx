@@ -240,9 +240,12 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
                     }))}
                   />
                 </Field>
-                <Field labelTone="muted" label="Giá trị hiện tại">
-                  <Input mono className="w-full" readOnly value={candidate.cursor_value ?? '—'} />
-                </Field>
+                {/* A table no job reads has no cursor yet: its first run reads every row. */}
+                {candidate.cursor_value && (
+                  <Field labelTone="muted" label="Giá trị hiện tại">
+                    <Input mono className="w-full" readOnly value={candidate.cursor_value} />
+                  </Field>
+                )}
               </Row>
             )}
           </Section>

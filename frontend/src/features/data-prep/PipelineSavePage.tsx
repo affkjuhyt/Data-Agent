@@ -23,16 +23,18 @@ import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 
 /*
  * "P06 · Lưu thành bảng & lịch chạy" (2288:17996, UC-06-02, UC-06-03): the pipeline's output
- * becomes a derived table — name, Data Space, write mode (30 versions kept) — and gets its
- * schedule: after the input job, by the clock, or by hand, with retries and who to tell. The
- * right column shows the table's structure (which step makes each column) and who reads it,
- * since changing the structure of a table in use notifies their owners.
+ * becomes a derived table and gets its schedule: after the input job, by the clock, or by hand,
+ * retrying or not. The right column shows the table's structure (which step makes each column)
+ * and who reads it, since changing the structure of a table in use notifies their owners.
+ * :materialize takes only the table's name: the table lands in the pipeline's own Data Space
+ * and the worker replaces it on every run, and a failure tells the pipeline's owner. Those are
+ * stated, not offered as choices the api would drop.
  */
-const WRITE_MODES: { value: WriteMode; label: string }[] = [
-  { value: 'replace', label: 'Thay toàn bộ mỗi lần chạy · giữ 30 phiên bản' },
-  { value: 'append', label: 'Thêm vào cuối mỗi lần chạy · giữ 30 phiên bản' },
-  { value: 'merge', label: 'Gộp theo khoá · giữ 30 phiên bản' },
-];
+const WRITE_MODE_TEXT: Record<WriteMode, string> = {
+  replace: 'Thay toàn bộ mỗi lần chạy',
+  append: 'Thêm vào cuối mỗi lần chạy',
+  merge: 'Gộp theo khoá',
+};
 
 const MODES: { value: ScheduleMode; label: string }[] = [
   { value: 'after_source', label: 'Sau khi nguồn cập nhật' },
@@ -46,10 +48,10 @@ const CRONS = [
   { value: '30 6 * * *', label: 'Hằng ngày 06:30' },
 ];
 
+// ScheduleRequest.on_failure: retry_then_notify or notify; it carries no count or interval.
 const RETRIES = [
-  { value: '2', label: '2 lần · cách 10 phút' },
-  { value: '3', label: '3 lần · cách 10 phút' },
-  { value: '0', label: 'Không thử lại' },
+  { value: '1', label: 'Thử lại rồi báo' },
+  { value: '0', label: 'Không thử lại, chỉ báo' },
 ];
 
 export default function PipelineSavePage() {
@@ -60,13 +62,10 @@ export default function PipelineSavePage() {
   const toast = useToast();
 
   const [table, setTable] = useState('');
-  const [space, setSpace] = useState<string | null>(null);
-  const [writeMode, setWriteMode] = useState<WriteMode>('replace');
   const [mode, setMode] = useState<ScheduleMode>('after_source');
   const [afterJob, setAfterJob] = useState<string | null>(null);
   const [cron, setCron] = useState(CRONS[0].value);
-  const [retries, setRetries] = useState('2');
-  const [notify, setNotify] = useState<string | null>(null);
+  const [retries, setRetries] = useState('1');
   // An empty table name is caught here; the server's answer lands in the mutation.
   const [invalid, setInvalid] = useState<string>();
 
@@ -74,26 +73,22 @@ export default function PipelineSavePage() {
     const d: OutputDraft | undefined = draft.data;
     if (!d) return;
     setTable(d.table_name);
-    setSpace(d.data_space_id);
-    setWriteMode(d.write_mode);
     setAfterJob(d.input_jobs[0]?.value ?? null);
-    setNotify(d.notify_options[0]?.value ?? null);
   }, [draft.data]);
+  const spaceName = (id: string) =>
+    spaces.data?.items.find((s) => s.id === id)?.name ?? 'Data Space của pipeline';
 
   const name = pipeline.data?.name ?? '…';
 
   const publish = useV1Mutation(
-    ({ id, spaceId }: { id: string; spaceId: string }) =>
+    ({ id }: { id: string }) =>
       publishPipeline(id, {
         table_name: table.trim(),
-        data_space_id: spaceId,
-        write_mode: writeMode,
         schedule: {
           mode,
           after_job_id: mode === 'after_source' ? afterJob : null,
           cron: mode === 'cron' ? cron : null,
           retries: Number(retries),
-          notify,
         },
       }),
     {
@@ -116,13 +111,13 @@ export default function PipelineSavePage() {
   const error = invalid ?? publish.error?.message;
 
   const save = () => {
-    if (!routeId || !space) return;
+    if (!routeId) return;
     if (!table.trim()) {
       setInvalid('Đặt tên bảng trước khi lưu.');
       return;
     }
     setInvalid(undefined);
-    publish.run({ id: routeId, spaceId: space });
+    publish.run({ id: routeId });
   };
 
   return (
@@ -170,25 +165,12 @@ export default function PipelineSavePage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <Field label="Data Space">
-                      <Select
-                        label="Data Space"
-                        options={(spaces.data?.items ?? []).map((s) => ({
-                          value: s.id,
-                          label: s.name,
-                        }))}
-                        value={space}
-                        onChange={setSpace}
-                      />
+                      <Input readOnly value={spaceName(d.data_space_id)} className="w-full" />
                     </Field>
                   </div>
                 </div>
                 <Field label="Cách ghi">
-                  <Select
-                    label="Cách ghi"
-                    options={WRITE_MODES}
-                    value={writeMode}
-                    onChange={(v) => setWriteMode(v)}
-                  />
+                  <Input readOnly value={WRITE_MODE_TEXT[d.write_mode]} className="w-full" />
                 </Field>
               </section>
               <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
@@ -232,16 +214,13 @@ export default function PipelineSavePage() {
                         />
                       </Field>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <Field label="Báo khi lỗi">
-                        <Select
-                          label="Báo khi lỗi"
-                          options={d.notify_options}
-                          value={notify}
-                          onChange={setNotify}
-                        />
-                      </Field>
-                    </div>
+                    {d.notify_options[0] && (
+                      <div className="min-w-0 flex-1">
+                        <Field label="Báo khi lỗi">
+                          <Input readOnly value={d.notify_options[0].label} className="w-full" />
+                        </Field>
+                      </div>
+                    )}
                   </div>
                 )}
               </section>

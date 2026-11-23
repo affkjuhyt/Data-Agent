@@ -127,12 +127,16 @@ function IssueView({ issue, total }: { issue: QualityIssue; total: number }) {
               alt={`Trang ${issue.page} của ${issue.document.title}`}
               className="w-full rounded-[4px] border border-border bg-card"
             />
-          ) : (
+          ) : issue.original_lines.length > 0 ? (
             <div className="flex flex-col gap-[10px] rounded-[4px] border border-border bg-card px-[28px] py-da-2xl text-muted-foreground da-body">
               {issue.original_lines.map((line, i) => (
                 <p key={i}>{line}</p>
               ))}
             </div>
+          ) : (
+            <p className="text-muted-foreground da-body-small">
+              Trang này không có ảnh gốc để so; mở trong trình xem tài liệu để xem trang.
+            </p>
           )}
           <button
             type="button"
@@ -175,12 +179,17 @@ function IssueView({ issue, total }: { issue: QualityIssue; total: number }) {
               </p>
             ))}
           </div>
-          <h3 className="text-foreground da-heading-3">Agent đã làm</h3>
-          <ul className="flex flex-col gap-[10px] text-foreground da-body-small">
-            {issue.agent_actions.map((a) => (
-              <li key={a}>· {a}</li>
-            ))}
-          </ul>
+          {/* The api does not say what the agent did on the page: no heading without it. */}
+          {issue.agent_actions.length > 0 && (
+            <>
+              <h3 className="text-foreground da-heading-3">Agent đã làm</h3>
+              <ul className="flex flex-col gap-[10px] text-foreground da-body-small">
+                {issue.agent_actions.map((a) => (
+                  <li key={a}>· {a}</li>
+                ))}
+              </ul>
+            </>
+          )}
           <p className="text-muted-foreground da-caption">
             UC-05-03 · trang chưa xác nhận không dùng để trả lời
           </p>

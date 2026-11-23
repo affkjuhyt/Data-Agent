@@ -191,6 +191,8 @@ describe('readWriteback', () => {
     } as WritebackWire);
 
     expect(writeback).toMatchObject({ proposal_id: 'proposal-1', can_decide: true });
+    // WritebackView names no approver: none is made up.
+    expect(writeback.approvers).toEqual([]);
   });
 });
 
@@ -237,6 +239,66 @@ describe('sendPrepMessage', () => {
       title: 'Bỏ khoản vay đã tất toán',
       sql: 'WHERE 1=1',
     });
+  });
+});
+
+describe('listPipelines', () => {
+  const server = setupServer();
+  beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+  afterEach(() => server.resetHandlers());
+  afterAll(() => server.close());
+
+  it('reads each pipeline’s last run from its detail, the owner left unnamed', async () => {
+    const view = {
+      id: 'pipeline-1',
+      data_space_id: 'space-1',
+      name: 'Chuẩn hoá dư nợ',
+      owner_id: 'user-1',
+      input_dataset_ids: ['dataset-1'],
+      target_dataset_id: null,
+      steps: [],
+      scope: 'data_space',
+      status: 'active',
+      cron: null,
+      work_calendar_id: null,
+      trigger_on_job_id: null,
+      depends_on_pipeline_ids: [],
+      no_overlap: true,
+      on_failure: 'notify',
+      created_at: '2026-10-13T00:00:00Z',
+      updated_at: '2026-10-13T00:00:00Z',
+    };
+    server.use(
+      http.get('*/v1/pipelines', () =>
+        HttpResponse.json({
+          items: [view, { ...view, id: 'pipeline-2' }],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/pipelines/:id', ({ params }) =>
+        HttpResponse.json({
+          ...view,
+          id: params.id,
+          last_run:
+            params.id === 'pipeline-1'
+              ? {
+                  id: 'run-1',
+                  status: 'succeeded',
+                  started_at: '2026-10-13T00:01:00Z',
+                  finished_at: '2026-10-13T00:03:00Z',
+                }
+              : null,
+        }),
+      ),
+      http.get('*/v1/datasets', () => HttpResponse.json({ items: [], next_page_token: '' })),
+    );
+    const { listPipelines } = await import('./dataPrep');
+    const { items } = await listPipelines();
+    expect(items.map((p) => p.last_run)).toEqual([
+      { started_at: '2026-10-13T00:01:00Z', duration_s: 120 },
+      null,
+    ]);
+    expect(items[0].owner_name).toBe('');
   });
 });
 

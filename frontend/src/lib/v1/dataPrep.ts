@@ -28,10 +28,12 @@ export interface SqlResult {
   /** The statement returned its whole limit: there may be more rows than row_count. */
   capped: boolean;
   duration_ms: number;
-  /** PROPOSAL: "Rủi ro tín dụng" — the Data Space whose permissions applied. */
-  permission_scope: string;
-  /** Columns the policy masked for this caller (BR: "cột customer_id đã che"). */
+  /** PROPOSAL: "Rủi ro tín dụng" — the Data Space whose permissions applied; null on the api. */
+  permission_scope: string | null;
+  /** PROPOSAL: columns the policy masked for this caller ("cột customer_id đã che"). */
   masked_columns: string[];
+  /** How many data policies the run applied (QueryRunView.policies_applied). */
+  policies_applied: number;
   /** The statement after the policy rewrite (GET .../sql). Null when that read fails. */
   sql_executed: string | null;
 }
@@ -120,8 +122,10 @@ export const runSql = async (sql: string, limit = 500): Promise<SqlResult> => {
     // row_count is what the run returned after the limit (query/executor.py), never more.
     capped: (finished.row_count ?? rows.rows.length) >= limit,
     duration_ms: finished.duration_ms ?? 0,
-    permission_scope: policy.permission_scope ?? 'Data Space hiện tại',
+    // QueryRunView names neither the scope nor the masked columns, only the policies' ids.
+    permission_scope: policy.permission_scope ?? null,
     masked_columns: policy.masked_columns ?? [],
+    policies_applied: finished.policies_applied?.length ?? 0,
     sql_executed: executed?.sql_executed ?? null,
   };
 };
@@ -224,7 +228,10 @@ export type PipelineStatus =
 export interface Pipeline {
   id: string;
   name: string;
-  /** PROPOSAL: the person or agent that owns it, as shown ("Agent Chuẩn bị dữ liệu"). */
+  /**
+   * PROPOSAL: the person or agent that owns it, as shown ("Agent Chuẩn bị dữ liệu"). '' on the
+   * api, which sends owner_id only and has no read of a user's name by id for every caller.
+   */
   owner_name: string;
   step_count: number;
   /** "raw.ld_loans", "crm" — the inputs as written, in order. */
@@ -262,8 +269,8 @@ const scheduleOf = (raw: components['schemas']['PipelineView']) =>
         : 'Chạy tay';
 
 /*
- * PipelineView names its inputs by dataset id and says nothing of the last run (PROPOSAL): the
- * inputs are named from the datasets, the status is the pipeline's own.
+ * PipelineView names its inputs by dataset id and says nothing of the last run: the inputs are
+ * named from the datasets, the last run is read from the detail (listPipelines).
  */
 function readPipeline(raw: PipelineWire, tables: Map<string, string>): Pipeline {
   const base: Pipeline = {
@@ -370,8 +377,34 @@ export const listPipelines = async (): Promise<Page<Pipeline>> => {
     ),
   ]);
   const tables = new Map<string, string>(datasets?.items.map((d) => [d.id, tableName(d)]) ?? []);
-  return { ...page, items: page.items.map((p) => readPipeline(p, tables)) };
+  // PipelineView says nothing of runs: the last one is on each pipeline's detail.
+  const lastRuns = new Map(
+    await Promise.all(
+      page.items
+        .filter((p) => !p.display)
+        .map(async (p) => {
+          const detail = await ok<PipelineDetailWire>(
+            api.GET('/v1/pipelines/{id}', { params: { path: { id: p.id } } }),
+          ).catch(() => null);
+          return [p.id, runOf(detail?.last_run ?? null)] as const;
+        }),
+    ),
+  );
+  return {
+    ...page,
+    items: page.items.map((p) => {
+      const row = readPipeline(p, tables);
+      return lastRuns.get(p.id) ? { ...row, last_run: lastRuns.get(p.id)! } : row;
+    }),
+  };
 };
+
+/** A run's start and length; one still going has no length yet and is not a last run. */
+function runOf(run: PipelineDetailWire['last_run'] | null): Pipeline['last_run'] {
+  if (!run?.started_at || !run.finished_at) return null;
+  const seconds = (Date.parse(run.finished_at) - Date.parse(run.started_at)) / 1000;
+  return { started_at: run.started_at, duration_s: Math.max(0, seconds) };
+}
 
 /**
  * A2: POST /v1/pipelines (PipelineCreate) — a draft on its input datasets; the conversation starts
@@ -558,16 +591,17 @@ export interface OutputDraft {
   notify_options: Option[];
 }
 
+/*
+ * What saving sends: :materialize takes the table's name only (it lands in the pipeline's Data
+ * Space, replaced on every run), the schedule what ScheduleRequest takes.
+ */
 interface PublishPipeline {
   table_name: string;
-  data_space_id: string;
-  write_mode: WriteMode;
   schedule: {
     mode: ScheduleMode;
     after_job_id: string | null;
     cron: string | null;
     retries: number;
-    notify: string | null;
   };
 }
 
@@ -658,7 +692,10 @@ export type ScheduleKind = 'daily' | 'after_source' | 'business_hours' | 'cron';
 export interface PipelineSchedule {
   kind: ScheduleKind;
   cron: string | null;
+  /** Skipping days off is running on a work calendar: the scheduler skips its days off. */
   skip_holidays: boolean;
+  /** The work calendar the pipeline runs on (ScheduleRequest.work_calendar_id). */
+  work_calendar_id?: string | null;
   no_overlap: boolean;
   retry_and_notify: boolean;
   /** "sau job nạp Core banking" — what "Khi nguồn có dữ liệu mới" waits for. */
@@ -688,7 +725,8 @@ export const getPipelineSchedule = async (id: string) =>
     return {
       kind: kind as ScheduleKind,
       cron: schedule.cron ?? null,
-      skip_holidays: false,
+      skip_holidays: !!schedule.work_calendar_id,
+      work_calendar_id: schedule.work_calendar_id ?? null,
       no_overlap: schedule.no_overlap ?? true,
       retry_and_notify:
         schedule.on_failure === 'retry_then_notify' || schedule.retry_and_notify === true,
@@ -708,7 +746,21 @@ const scheduleBody = (schedule: PipelineSchedule) => ({
     schedule.kind === 'after_source' ? (schedule.after_source_job_id ?? null) : null,
   no_overlap: schedule.no_overlap,
   on_failure: schedule.retry_and_notify ? ('retry_then_notify' as const) : ('notify' as const),
+  work_calendar_id: schedule.skip_holidays ? (schedule.work_calendar_id ?? null) : null,
 });
+
+/**
+ * The organisation's work calendar (GET /v1/calendars, the default one, else the only one):
+ * what "skip days off" runs a pipeline on. null when there is none or it cannot be read.
+ */
+export const getWorkCalendar = async (): Promise<{ id: string; name: string } | null> => {
+  const page = await ok(api.GET('/v1/calendars', { params: { query: { page_size: 50 } } })).catch(
+    () => null,
+  );
+  const items = page?.items ?? [];
+  const calendar = items.find((c) => c.is_default) ?? (items.length === 1 ? items[0] : null);
+  return calendar ? { id: calendar.id, name: calendar.name } : null;
+};
 
 /** The schedule in words, by the api: the next runs of the cron, the job it follows. */
 export const previewSchedule = async (id: string, schedule: PipelineSchedule) =>
@@ -724,7 +776,7 @@ export const savePipelineSchedule = async (id: string, schedule: PipelineSchedul
   await ok(
     api.PUT('/v1/pipelines/{id}/schedule', {
       params: { path: { id } },
-      body: { ...scheduleBody(schedule), work_calendar_id: null, depends_on_pipeline_ids: [] },
+      body: { ...scheduleBody(schedule), depends_on_pipeline_ids: [] },
     }),
   );
   const { text } = await previewSchedule(id, schedule);
@@ -836,15 +888,8 @@ export function readWriteback(raw: WritebackWire): Writeback {
     row_count: rowCount,
     changes: changesOf(summary.changes ?? summary.sample),
     checks,
-    approvers: pending
-      ? [
-          {
-            name: 'Người duyệt theo chính sách',
-            role_label: 'Phê duyệt ghi ngược trong Cần bạn',
-            state: 'pending',
-          },
-        ]
-      : [],
+    // WritebackView names no approver and no step: the screen says who decides in words.
+    approvers: [],
     // decideWriteback decides the writeback through this proposal; without it every decision fails.
     proposal_id: raw.proposal_id ?? null,
     can_decide: pending && Boolean(raw.proposal_id),
