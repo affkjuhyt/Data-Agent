@@ -86,7 +86,8 @@ class AnalyzeArgs(BaseModel):
     code: str = Field(
         description=(
             "code python/pandas; mỗi dataset là DataFrame tên theo mã (d1, d2…); "
-            "gán kết quả vào biến result (DataFrame, Series, dict hoặc số)"
+            'nối, cửa sổ, pivot, phân vị nên viết bằng SQL: sql("SELECT … FROM d1 JOIN d2 …")'
+            " trả về DataFrame; gán kết quả vào biến result (DataFrame, Series, dict hoặc số)"
         )
     )
     inputs: list[str] = Field(default_factory=list, description="các mã dataset dùng tới")

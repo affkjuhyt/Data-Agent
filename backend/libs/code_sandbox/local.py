@@ -4,6 +4,8 @@ temporary directory, CPU and memory limits and a wall-clock timeout.
 
 The code sees each dataset as a pandas DataFrame named by its id (`d1`, `d2`, …) and must leave
 its answer in `result` (a DataFrame, a Series, a dict or a number). What it prints comes back too.
+AL-05: it may also write SQL over the same datasets, `sql("SELECT … FROM d1 JOIN d2 …")`, run by
+DuckDB with its configuration locked (libs/code_sandbox/duck.py) and answered as a DataFrame.
 The numbers it computes are deterministic computations over figures already fetched, so they are
 traced like any other dataset cell (worker_agent/agentic/verify.py); the model still never
 states one itself.
@@ -18,6 +20,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import contextlib
+import functools
 import json
 import logging
 import os
@@ -27,6 +30,8 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from typing import Any
+
+from libs.code_sandbox import duck
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +151,11 @@ FORBIDDEN_ATTRS = {
 TIMEOUT_S = 20
 CPU_S = 15
 MEMORY_BYTES = 1024 * 1024 * 1024
+# AL-05: DuckDB reserves address space it does not use (duckdb 2.0.0: it aborts when opened under
+# 3 GiB, and segfaulted 7 runs in 20 under 4 GiB; none in 40 under 6 or 8). Code that calls sql()
+# runs with this much address space; the memory it uses is held by duck.MEMORY_LIMIT and the pod's
+# memory limit (3 GiB). Code that does not keeps the 1 GiB above and gets no DuckDB.
+SQL_ADDRESS_BYTES = 8 * 1024 * 1024 * 1024
 MAX_RESULT_ROWS = 2000
 MAX_STDOUT = 4000
 
@@ -201,9 +211,14 @@ def check(code: str) -> None:
 # Runs in the child: builds the DataFrames, runs the code with a narrowed builtins and import,
 # and prints one JSON line with the result.
 RUNNER = r"""
-import builtins, io, json, sys, contextlib
+import builtins, io, json, re, sys, contextlib
 import pandas as pd, numpy as np
+try:
+    import duckdb
+except ImportError:
+    duckdb = None
 ALLOWED = set(json.loads(sys.argv[1]))
+DUCK = json.loads(sys.argv[3])
 payload = json.loads(sys.stdin.read())
 def make_import(allowed, real_import):
     def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -225,6 +240,26 @@ for name, ds in payload["datasets"].items():
         if converted.notna().sum() == frame[col].notna().sum():
             frame[col] = converted
     env[name] = frame
+# AL-05: sql() over the datasets, on a DuckDB connection configured and locked before the code
+# runs (duck.SETTINGS). The code gets the function, never the connection: it lives in the
+# closure, and the static check refuses every name with "__".
+if duckdb is not None and DUCK["enabled"]:
+    def make_sql(con, bad):
+        def sql(query):
+            if not isinstance(query, str):
+                raise TypeError("sql() takes one SQL string")
+            hit = bad.search(query)
+            if hit:
+                raise PermissionError("sandbox: SQL may not use " + hit.group(0).strip())
+            return con.sql(query).df()
+        return sql
+    connection = duckdb.connect(":memory:")
+    for statement in DUCK["settings"]:
+        connection.execute(statement)
+    for name in payload["datasets"]:
+        connection.register(name, env[name])
+    env["sql"] = make_sql(connection, re.compile(DUCK["forbidden"], re.IGNORECASE))
+    del make_sql, connection
 # The boundary the static check cannot be: an audit hook (which Python code cannot remove) that
 # refuses writes, reads outside the interpreter's own libraries, processes, sockets and the
 # loading of modules that reach the system, from here on.
@@ -326,13 +361,22 @@ class Execution:
     error: str | None
 
 
-def _limits() -> None:  # pragma: no cover - runs in the child
+def uses_sql(code: str) -> bool:
+    """Whether the code calls sql(): it then gets DuckDB and the address space DuckDB needs."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    return any(isinstance(n, ast.Name) and n.id == "sql" for n in ast.walk(tree))
+
+
+def _limits(memory: int = MEMORY_BYTES) -> None:  # pragma: no cover - runs in the child
     import resource
 
     resource.setrlimit(resource.RLIMIT_CPU, (CPU_S, CPU_S))
     # macOS refuses RLIMIT_AS; the pod's memory limit still applies there.
     with contextlib.suppress(ValueError, OSError):
-        resource.setrlimit(resource.RLIMIT_AS, (MEMORY_BYTES, MEMORY_BYTES))
+        resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
     os.setsid()
 
 
@@ -369,6 +413,7 @@ async def _no_network() -> list[str]:
 
 async def run(code: str, datasets: dict[str, dict[str, Any]]) -> Execution:
     check(code)
+    with_sql = uses_sql(code)
     payload = json.dumps({"code": code, "datasets": datasets}, ensure_ascii=False, default=str)
     with tempfile.TemporaryDirectory(prefix="analysis-") as cwd:
         proc = await asyncio.create_subprocess_exec(
@@ -379,12 +424,19 @@ async def run(code: str, datasets: dict[str, dict[str, Any]]) -> Execution:
             RUNNER,
             json.dumps(sorted(ALLOWED_IMPORTS)),
             json.dumps(sorted(FORBIDDEN_NAMES - {"__import__"})),
+            json.dumps(
+                {
+                    "enabled": with_sql,
+                    "settings": list(duck.SETTINGS),
+                    "forbidden": duck.FORBIDDEN_SQL.pattern,
+                }
+            ),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
             env={"PATH": "/usr/bin:/bin", "HOME": cwd, "OPENBLAS_NUM_THREADS": "1"},
-            preexec_fn=_limits,
+            preexec_fn=functools.partial(_limits, SQL_ADDRESS_BYTES if with_sql else MEMORY_BYTES),
         )
         try:
             out, err = await asyncio.wait_for(proc.communicate(payload.encode()), TIMEOUT_S)
