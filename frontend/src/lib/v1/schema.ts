@@ -9303,6 +9303,14 @@ export interface components {
             created_at: string;
             /** Distinct Est */
             distinct_est: number | null;
+            /** Histogram */
+            histogram?: {
+                [key: string]: unknown;
+            } | null;
+            /** Length Stats */
+            length_stats?: {
+                [key: string]: unknown;
+            } | null;
             /** Max Value */
             max_value: string | null;
             /** Min Value */
@@ -9311,6 +9319,10 @@ export interface components {
             null_ratio: number | string | null;
             /** Pattern Hint */
             pattern_hint: string | null;
+            /** Quantiles */
+            quantiles?: {
+                [key: string]: unknown;
+            } | null;
             /** Sample Rows */
             sample_rows: number;
             /**
@@ -9320,6 +9332,10 @@ export interface components {
             scan_run_id: string;
             /** Top Values */
             top_values: unknown;
+            /** Value Patterns */
+            value_patterns?: {
+                [key: string]: unknown;
+            }[] | null;
         };
         /** ColumnStatsView */
         ColumnStatsView: {

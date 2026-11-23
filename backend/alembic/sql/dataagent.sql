@@ -1241,6 +1241,7 @@ CREATE TABLE catalog.dataset (
   description text,
   description_status text NOT NULL DEFAULT 'none',
   row_estimate bigint,
+  source_activity jsonb,
   history_kind text NOT NULL DEFAULT 'none',
   business_date_col text,
   knowledge_time_col text,
@@ -1272,6 +1273,7 @@ COMMENT ON COLUMN catalog.dataset.data_space_id IS 'logic → org.data_space';
 COMMENT ON COLUMN catalog.dataset.origin IS 'source, derived, upload, data_product, consolidated (dataset hợp nhất của P14, UC-14-05)';
 COMMENT ON COLUMN catalog.dataset.object_kind IS 'table, view, materialized_view';
 COMMENT ON COLUMN catalog.dataset.description_status IS 'none, suggested, approved (BR-100)';
+COMMENT ON COLUMN catalog.dataset.source_activity IS 'DF-10: độ tươi ở nguồn {n_tup_ins, n_tup_upd, n_tup_del, n_live_tup, last_analyze, last_autoanalyze, observed_at} từ pg_stat_user_tables; null với nguồn khác PostgreSQL';
 COMMENT ON COLUMN catalog.dataset.history_kind IS 'none, scd2, snapshot, temporal';
 COMMENT ON COLUMN catalog.dataset.business_date_col IS 'Cột ngày nghiệp vụ, dùng cho hỏi theo thời điểm (UC-10-01)';
 COMMENT ON COLUMN catalog.dataset.knowledge_time_col IS 'Cột thời điểm ghi nhận, dùng cho chế độ at';
@@ -1458,6 +1460,10 @@ CREATE TABLE catalog.column_profile (
   max_value text,
   top_values jsonb,
   pattern_hint text,
+  quantiles jsonb,
+  histogram jsonb,
+  length_stats jsonb,
+  value_patterns jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT column_profile_pkey PRIMARY KEY (id),
   UNIQUE (column_id, scan_run_id),
@@ -1468,6 +1474,10 @@ COMMENT ON COLUMN catalog.column_profile.column_id IS 'FK column_meta';
 COMMENT ON COLUMN catalog.column_profile.scan_run_id IS 'FK scan_run';
 COMMENT ON COLUMN catalog.column_profile.top_values IS '[{value, count}], đã che nếu có nhãn cá nhân';
 COMMENT ON COLUMN catalog.column_profile.pattern_hint IS 'Mẫu giá trị nhận ra, ví dụ số điện thoại, ngày dd/mm/yyyy';
+COMMENT ON COLUMN catalog.column_profile.quantiles IS 'DF-10: {p05, p25, p50, p75, p95} của cột số hoặc ngày trên mẫu đã quét';
+COMMENT ON COLUMN catalog.column_profile.histogram IS 'DF-10: {lo, hi, bins} — 20 khoảng đều của cột số trên mẫu';
+COMMENT ON COLUMN catalog.column_profile.length_stats IS 'DF-10: {min, max, avg} độ dài của cột chuỗi';
+COMMENT ON COLUMN catalog.column_profile.value_patterns IS 'DF-10: [{pattern, share}], tối đa 3 mẫu giá trị dạng regex sinh từ chữ số và chữ cái của mẫu';
 
 CREATE TABLE catalog.outbox (
   id uuid NOT NULL,

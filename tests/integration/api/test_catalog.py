@@ -831,6 +831,57 @@ def _column(o: Org, dataset: uuid.UUID, name: str, ordinal: int, **v: Any) -> uu
     )
 
 
+@pytest.mark.req("DF-10")
+async def test_a_number_column_shows_its_histogram_and_median_and_a_personal_one_hides_them(
+    o: Org,
+) -> None:
+    source = _source_row(o)
+    dataset = _dataset(o, source, table_name="don_hang_df10")
+    run = o.seed.row(
+        "catalog.scan_run",
+        org_id=o.org,
+        source_id=source,
+        kind="profile",
+        trigger="manual",
+        status="succeeded",
+    )
+    amount = _column(o, dataset, "so_tien", 1, data_type="numeric", normalized_type="decimal")
+    birth = _column(
+        o, dataset, "ngay_sinh", 2, data_type="date", normalized_type="date", pii_label="other"
+    )
+    quantiles = {"p05": 5.95, "p25": 25.75, "p50": 50.5, "p75": 75.25, "p95": 95.05}
+    for column in (amount, birth):
+        o.seed.row(
+            "catalog.column_profile",
+            org_id=o.org,
+            column_id=column,
+            scan_run_id=run,
+            sample_rows=100,
+            null_ratio=0,
+            top_values=Json([]),
+            quantiles=Json(quantiles),
+            histogram=Json({"lo": 1, "hi": 100, "bins": [5] * 19 + [10]}),
+            value_patterns=Json([{"pattern": r"\d{2}", "share": 0.9}]),
+        )
+    async with client(o) as api:
+        stats = await api.get(
+            f"/v1/datasets/{dataset}/columns/so_tien", headers=o.headers("analyst")
+        )
+        got = await api.get(f"/v1/datasets/{dataset}", headers=o.headers("analyst"))
+    assert stats.status_code == 200, stats.text
+    body = stats.json()
+    assert body["median"] == "50.5"
+    assert len(body["histogram"]) == 20
+    assert body["histogram"][0]["height"] == 0.5 and body["histogram"][-1]["height"] == 1.0
+    assert body["buckets_text"] == "20 khoảng đều từ 1 đến 100 (quét 100 dòng)"
+    columns = {c["name"]: c["profile"] for c in got.json()["columns"]}
+    assert columns["so_tien"]["quantiles"] == quantiles
+    # A personal column's distribution says where its values lie: it is not shown.
+    assert columns["ngay_sinh"]["quantiles"] is None
+    assert columns["ngay_sinh"]["histogram"] is None
+    assert columns["ngay_sinh"]["value_patterns"] == [{"pattern": r"\d{2}", "share": 0.9}]
+
+
 # AC-04-02-02
 @pytest.mark.req("AC-04-02-02")
 async def test_dataset_detail_masks_the_values_of_personal_columns(o: Org) -> None:

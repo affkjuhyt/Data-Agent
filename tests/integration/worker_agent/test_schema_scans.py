@@ -451,3 +451,126 @@ async def test_a_moved_structure_is_versioned_when_additive_and_proposed_when_br
         loans,
     ) == ("account_no", False)
     assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "applied"
+
+
+@pytest.mark.req("DF-10")
+async def test_a_profile_keeps_quantiles_a_histogram_lengths_patterns_and_the_source_activity(
+    seed: Seed, ddl_server: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dsn = ddl_server["dataagent"]
+    parts = urlsplit(dsn)
+    with psycopg2.connect(dsn) as conn:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("CREATE SCHEMA IF NOT EXISTS scan_df10")
+            cur.execute("DROP TABLE IF EXISTS scan_df10.sales")
+            cur.execute(
+                "CREATE TABLE scan_df10.sales (id integer PRIMARY KEY, order_no text,"
+                " amount numeric, ordered_on date, note text, ma_kh text)"
+            )
+            # 100 rows: amount 1..100, an order number SO + 5 digits, a date a day apart, a free
+            # note, and national ids under a name that says nothing (masked by their values).
+            cur.execute(
+                "INSERT INTO scan_df10.sales SELECT g, 'SO' || (43000 + g)::text, g,"
+                " date '2024-01-01' + g - 1,"
+                " CASE WHEN g % 2 = 0 THEN 'giao nhanh' ELSE 'Khách hẹn lại lần ' || g END,"
+                " lpad((79203000000 + g)::text, 12, '0')"
+                " FROM generate_series(1, 100) g"
+            )
+            cur.execute(
+                "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dw_reader') "
+                "THEN CREATE ROLE dw_reader LOGIN; END IF; END $$"
+            )
+            cur.execute("ALTER ROLE dw_reader PASSWORD 'warehouse-reader'")
+            cur.execute("GRANT USAGE ON SCHEMA scan_df10 TO dw_reader")
+            cur.execute("GRANT SELECT ON ALL TABLES IN SCHEMA scan_df10 TO dw_reader")
+
+    org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="DF-10")
+    user = seed.row(
+        "org.app_user", org_id=org, external_id="df10-user", username="df10", display_name="D"
+    )
+    space = seed.row("org.data_space", org_id=org, code="DS-DF10", name="DF10", steward_id=user)
+    source_id = seed.row(
+        "catalog.source",
+        org_id=org,
+        data_space_id=space,
+        name="DF-10 source",
+        kind="postgresql",
+        host=parts.hostname,
+        port=parts.port,
+        database_name=parts.path.lstrip("/"),
+        conn_options=Json({"sslmode": "disable"}),
+        secret_ref=f"secret/tenants/{org}/sources/df10",
+        scan_schemas=["scan_df10"],
+        status="active",
+    )
+    reader = StaticReader(
+        {
+            f"secret/tenants/{org}/sources/df10": {
+                "user": "dw_reader",
+                "password": "warehouse-reader",
+            }
+        }
+    )
+    monkeypatch.setattr(schema_scans, "secrets", lambda: reader)
+
+    async def scan(kind: str) -> uuid.UUID:
+        run = seed.row(
+            "catalog.scan_run", org_id=org, source_id=source_id, kind=kind, trigger="manual"
+        )
+        await schema_scans.scan_schema(
+            Event(
+                event_id=uuid.uuid4(),
+                org_id=org,
+                event_type="scan_run.created",
+                aggregate_type="scan_run",
+                aggregate_id=run,
+                payload={
+                    "scan_run_id": str(run),
+                    "source_id": str(source_id),
+                    "requested_by": str(user),
+                },
+            )
+        )
+        return run
+
+    await scan("schema")
+    profile_run = await scan("profile")
+
+    def profile(name: str) -> tuple[object, ...]:
+        return seed.one(  # type: ignore[return-value]
+            "SELECT p.quantiles, p.histogram, p.length_stats, p.value_patterns, p.pattern_hint"
+            " FROM catalog.column_profile p JOIN catalog.column_meta c ON c.id = p.column_id"
+            " WHERE c.name = %s AND p.scan_run_id = %s",
+            name,
+            profile_run,
+        )
+
+    quantiles, histogram, lengths, _, hint = profile("amount")
+    assert quantiles == {"p05": 5.95, "p25": 25.75, "p50": 50.5, "p75": 75.25, "p95": 95.05}
+    assert histogram["lo"] == 1 and histogram["hi"] == 100  # type: ignore[index]
+    assert len(histogram["bins"]) == 20 and sum(histogram["bins"]) == 100  # type: ignore[index]
+    assert lengths is None and hint is None
+
+    dates = profile("ordered_on")
+    assert dates[0]["p50"] == "2024-02-19" and dates[1] is None  # type: ignore[index]
+
+    order_no = profile("order_no")
+    assert order_no[0] is None and order_no[2] == {"min": 7, "max": 7, "avg": 7.0}
+    assert order_no[3] == [{"pattern": r"[A-Z]{2}\d{5}", "share": 1.0}]
+    assert order_no[4] == r"[A-Z]{2}\d{5}"
+
+    # Free text has shapes but no single one: no pattern_hint.
+    note = profile("note")
+    assert note[4] is None and len(note[3]) == 3  # type: ignore[arg-type]
+
+    # A column personal by its values keeps no distribution; its shape stays.
+    ids = profile("ma_kh")
+    assert ids[0] is None and ids[1] is None and ids[4] == r"\d{12}"
+
+    activity = seed.one(
+        "SELECT source_activity FROM catalog.dataset WHERE source_id = %s AND table_name = 'sales'",
+        source_id,
+    )
+    assert activity is not None
+    assert {"n_tup_ins", "n_live_tup", "last_autoanalyze", "observed_at"} <= set(activity)

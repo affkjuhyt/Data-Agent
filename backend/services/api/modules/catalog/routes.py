@@ -1136,6 +1136,8 @@ async def _detail(session: AsyncSession, row: catalog.Dataset) -> DatasetDetail:
                         "top_values": rules.mask_profile_values(pv.top_values),
                         "min_value": None,
                         "max_value": None,
+                        "quantiles": None,
+                        "histogram": None,
                     }
                 )
             view.profile = pv
@@ -1193,8 +1195,28 @@ async def get_dataset_column_stats(
         )
     if profile is None:
         raise Problem(404, "not_found", "Column profile not found.")
-    # The scan keeps the most frequent values with their counts ([{value, count}]): the bars are
-    # those counts, tallest first as the scan ranked them. The scan does not compute a median.
+    # DF-10: a number's histogram (20 equal bins over [lo, hi]) and its quantiles, when the scan
+    # read them; otherwise the bars are the most frequent values' counts, tallest first.
+    quantiles = profile.quantiles if isinstance(profile.quantiles, dict) else {}
+    median = quantiles.get("p50")
+    hist = profile.histogram if isinstance(profile.histogram, dict) else {}
+    bins = [float(b) for b in hist.get("bins") or [] if isinstance(b, int | float)]
+    if bins and max(bins) > 0:
+        tallest_bin = max(bins)
+        return ColumnStatsView(
+            name=meta.name,
+            type_label=meta.normalized_type or meta.data_type,
+            null_ratio=float(profile.null_ratio or 0),
+            distinct=int(profile.distinct_est or 0),
+            min=profile.min_value or "—",
+            max=profile.max_value or "—",
+            median="—" if median is None else str(median),
+            histogram=[{"height": b / tallest_bin, "flagged": False} for b in bins],
+            buckets_text=(
+                f"{len(bins)} khoảng đều từ {hist.get('lo')} đến {hist.get('hi')} "
+                f"(quét {profile.sample_rows} dòng)"
+            ),
+        )
     top = [
         t
         for t in (profile.top_values if isinstance(profile.top_values, list) else [])
@@ -1208,7 +1230,7 @@ async def get_dataset_column_stats(
         distinct=int(profile.distinct_est or 0),
         min=profile.min_value or "—",
         max=profile.max_value or "—",
-        median="chưa tính",
+        median="chưa tính" if median is None else str(median),
         histogram=(
             [{"height": float(t["count"]) / tallest, "flagged": False} for t in top]
             if tallest > 0

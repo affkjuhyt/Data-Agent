@@ -297,6 +297,12 @@ class ColumnProfileView(BaseModel):
     max_value: str | None
     top_values: Any
     pattern_hint: str | None
+    # DF-10: {p05..p95}; {lo, hi, bins}; {min, max, avg}; [{pattern, share}]. Null on a profile
+    # written before them, on a source other than PostgreSQL, and on a personal column.
+    quantiles: dict[str, Any] | None = None
+    histogram: dict[str, Any] | None = None
+    length_stats: dict[str, Any] | None = None
+    value_patterns: list[dict[str, Any]] | None = None
     created_at: datetime.datetime
 
 

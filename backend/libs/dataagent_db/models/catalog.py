@@ -212,6 +212,11 @@ class Dataset(Base):
         Text, server_default=sql_text("'none'"), comment="none, suggested, approved (BR-100)"
     )
     row_estimate: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_activity: Mapped[Any | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="DF-10: độ tươi ở nguồn {n_tup_ins, n_tup_upd, n_tup_del, n_live_tup, last_analyze, last_autoanalyze, observed_at} từ pg_stat_user_tables; null với nguồn khác PostgreSQL",
+    )
     history_kind: Mapped[str] = mapped_column(
         Text, server_default=sql_text("'none'"), comment="none, scd2, snapshot, temporal"
     )
@@ -508,6 +513,22 @@ class ColumnProfile(Base):
     )
     pattern_hint: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Mẫu giá trị nhận ra, ví dụ số điện thoại, ngày dd/mm/yyyy"
+    )
+    quantiles: Mapped[Any | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="DF-10: {p05, p25, p50, p75, p95} của cột số hoặc ngày trên mẫu đã quét",
+    )
+    histogram: Mapped[Any | None] = mapped_column(
+        JSONB, nullable=True, comment="DF-10: {lo, hi, bins} — 20 khoảng đều của cột số trên mẫu"
+    )
+    length_stats: Mapped[Any | None] = mapped_column(
+        JSONB, nullable=True, comment="DF-10: {min, max, avg} độ dài của cột chuỗi"
+    )
+    value_patterns: Mapped[Any | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="DF-10: [{pattern, share}], tối đa 3 mẫu giá trị dạng regex sinh từ chữ số và chữ cái của mẫu",
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")

@@ -599,6 +599,7 @@ Bảng hoặc view ở nguồn, hoặc bảng dẫn xuất và bảng tải tay 
 | description | text |  |
 | description\_status | text, bắt buộc, mặc định 'none' | none, suggested, approved (BR-100) |
 | row\_estimate | bigint |  |
+| source\_activity | jsonb | DF-10: độ tươi ở nguồn {n\_tup\_ins, n\_tup\_upd, n\_tup\_del, n\_live\_tup, last\_analyze, last\_autoanalyze, observed\_at} từ pg\_stat\_user\_tables; null với nguồn khác PostgreSQL |
 | history\_kind | text, bắt buộc, mặc định 'none' | none, scd2, snapshot, temporal |
 | business\_date\_col | text | Cột ngày nghiệp vụ, dùng cho hỏi theo thời điểm (UC-10-01) |
 | knowledge\_time\_col | text | Cột thời điểm ghi nhận, dùng cho chế độ at |
@@ -723,6 +724,10 @@ Thống kê giá trị của một cột ở một lần quét; giá trị phổ
 | max\_value | text |  |
 | top\_values | jsonb | \[{value, count}\], đã che nếu có nhãn cá nhân |
 | pattern\_hint | text | Mẫu giá trị nhận ra, ví dụ số điện thoại, ngày dd/mm/yyyy |
+| quantiles | jsonb | DF-10: {p05, p25, p50, p75, p95} của cột số hoặc ngày trên mẫu đã quét |
+| histogram | jsonb | DF-10: {lo, hi, bins} — 20 khoảng đều của cột số trên mẫu |
+| length\_stats | jsonb | DF-10: {min, max, avg} độ dài của cột chuỗi |
+| value\_patterns | jsonb | DF-10: \[{pattern, share}\], tối đa 3 mẫu giá trị dạng regex sinh từ chữ số và chữ cái của mẫu |
 
 Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (column\_id, scan\_run\_id); CHECK (null\_ratio IS NULL OR null\_ratio BETWEEN 0 AND 1); FOREIGN KEY (column\_id) REFERENCES catalog.column\_meta(id); FOREIGN KEY (scan\_run\_id) REFERENCES catalog.scan\_run(id).
 

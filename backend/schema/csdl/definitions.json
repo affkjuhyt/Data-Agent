@@ -5200,6 +5200,17 @@
      "pii": false
     },
     {
+     "name": "source_activity",
+     "type": "jsonb",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "DF-10: độ tươi ở nguồn {n_tup_ins, n_tup_upd, n_tup_del, n_live_tup, last_analyze, last_autoanalyze, observed_at} từ pg_stat_user_tables; null với nguồn khác PostgreSQL",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "history_kind",
      "type": "text",
      "not_null": true,
@@ -6328,6 +6339,50 @@
      "default": null,
      "unique": false,
      "comment": "Mẫu giá trị nhận ra, ví dụ số điện thoại, ngày dd/mm/yyyy",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "quantiles",
+     "type": "jsonb",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "DF-10: {p05, p25, p50, p75, p95} của cột số hoặc ngày trên mẫu đã quét",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "histogram",
+     "type": "jsonb",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "DF-10: {lo, hi, bins} — 20 khoảng đều của cột số trên mẫu",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "length_stats",
+     "type": "jsonb",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "DF-10: {min, max, avg} độ dài của cột chuỗi",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "value_patterns",
+     "type": "jsonb",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "DF-10: [{pattern, share}], tối đa 3 mẫu giá trị dạng regex sinh từ chữ số và chữ cái của mẫu",
      "fk": null,
      "logic_ref": null,
      "pii": false

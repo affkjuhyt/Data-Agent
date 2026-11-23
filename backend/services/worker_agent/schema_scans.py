@@ -197,6 +197,9 @@ def _redact_personal(
             ]
             column["category_values"] = []
             column["min_value"] = column["max_value"] = None
+            # DF-10: a personal column's distribution says where its values lie; its patterns
+            # (a shape, no value) stay, they are what a steward confirms the label by.
+            column["quantiles"] = column["histogram"] = None
 
 
 async def _refresh_value_index(
@@ -531,6 +534,69 @@ PROFILE_SAMPLE_ROWS = int(os.environ.get("PROFILE_SAMPLE_ROWS", "100000"))
 COLUMNS_PER_SCAN = 100
 
 
+# DF-10: how many sampled values a string column's patterns are read from, the quantiles kept, the
+# bins of a number's histogram, and the share a pattern needs to be the column's pattern_hint.
+PATTERN_SAMPLE = 200
+QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
+HISTOGRAM_BINS = 20
+PATTERN_HINT_SHARE = 0.8
+_NUMERIC = frozenset({"integer", "decimal"})
+_TEMPORAL = frozenset({"date", "timestamp"})
+_PATTERN_RUN = re.compile(r"[0-9]+|[A-Z]+|[a-z]+|.", re.DOTALL)
+# A value longer than this is prose, not a code: it has no pattern worth naming.
+_PATTERN_MAX_LENGTH = 64
+
+
+def value_pattern(value: str) -> str | None:
+    """A value's shape as a regular expression: a run of digits becomes \\d{n}, of capitals
+    [A-Z]{n}, of small letters [a-z]{n}; anything else stands for itself. Deterministic, so two
+    scans of the same values name the same patterns."""
+    if not value or len(value) > _PATTERN_MAX_LENGTH:
+        return None
+    parts: list[str] = []
+    for run in _PATTERN_RUN.findall(value):
+        if run[0].isdigit() and run.isascii():
+            cls = r"\d"
+        elif run[0].isascii() and run[0].isupper():
+            cls = "[A-Z]"
+        elif run[0].isascii() and run[0].islower():
+            cls = "[a-z]"
+        else:
+            parts.append(re.escape(run))
+            continue
+        parts.append(cls if len(run) == 1 else f"{cls}{{{len(run)}}}")
+    return "".join(parts)
+
+
+def value_patterns(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The three most common shapes of sampled values ([{value, count}]), with the share of the
+    sampled rows each covers; a value with no pattern (too long) counts against every share."""
+    total = 0
+    counts: dict[str, int] = {}
+    for item in values:
+        n = int(item.get("count") or 0)
+        total += n
+        pattern = value_pattern(str(item.get("value", "")))
+        if pattern is not None:
+            counts[pattern] = counts.get(pattern, 0) + n
+    if total <= 0:
+        return []
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+    return [{"pattern": pattern, "share": round(n / total, 4)} for pattern, n in ranked]
+
+
+def pattern_hint(patterns: list[dict[str, Any]]) -> str | None:
+    """The column's pattern when one shape covers most of it (a code: SO43659, 2024-03); free
+    text has none."""
+    if patterns and float(patterns[0]["share"]) >= PATTERN_HINT_SHARE:
+        return str(patterns[0]["pattern"])
+    return None
+
+
+def _number(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
 async def _profile_pg_table(
     conn: Any, table: dict[str, Any]
 ) -> dict[tuple[str, str, str], dict[str, Any]]:
@@ -545,6 +611,7 @@ async def _profile_pg_table(
     )
     columns = list(cast(list[dict[str, Any]], table["columns"]))
     exprs: list[tuple[str, str, bool]] = []  # name, SQL, binary
+    kinds: dict[str, str] = {}  # name -> normalized type, of the columns DF-10 profiles deeper
     for column in columns:
         name = str(column["name"])
         data_type = str(column.get("data_type", "")).lower()
@@ -552,32 +619,115 @@ async def _profile_pg_table(
         if data_type in _PROFILED_AS_TEXT:
             column_sql = f"{column_sql}::text"
         exprs.append((name, column_sql, data_type in _BINARY))
+        normalized = str(column.get("normalized_type") or _normalized_type(data_type))
+        # A personal column by its name is not read past its counts; nor are its quantiles.
+        if not _is_sensitive_column(name) and data_type not in _BINARY:
+            kinds[name] = normalized
     stats: dict[str, Any] = {}
     sample_rows = 0
     for start in range(0, len(exprs), COLUMNS_PER_SCAN):
         group = exprs[start : start + COLUMNS_PER_SCAN]
         parts = ["count(*)::bigint AS n"]
-        for i, (_, column_sql, binary) in enumerate(group):
+        fractions = "ARRAY[" + ", ".join(str(q) for q in QUANTILES) + "]"
+        for i, (name, column_sql, binary) in enumerate(group):
             parts.append(f"count(*) FILTER (WHERE {column_sql} IS NULL)::bigint AS z{i}")
             parts.append(f"count(DISTINCT {column_sql})::bigint AS d{i}")
             if binary:
                 parts.append(f"NULL::text AS lo{i}, NULL::text AS hi{i}")
             else:
                 parts.append(f"min({column_sql})::text AS lo{i}, max({column_sql})::text AS hi{i}")
+            # DF-10, on the same sample: a number's quantiles interpolated, a date's taken from
+            # the values (percentile_cont has no dates), a string's lengths.
+            kind = kinds.get(name)
+            if kind in _NUMERIC:
+                parts.append(
+                    f"percentile_cont({fractions}) WITHIN GROUP "
+                    f"(ORDER BY {column_sql}::double precision) AS q{i}"
+                )
+                parts.append(
+                    f"min({column_sql})::double precision AS nlo{i}, "
+                    f"max({column_sql})::double precision AS nhi{i}"
+                )
+            elif kind in _TEMPORAL:
+                parts.append(
+                    f"(percentile_disc({fractions}) WITHIN GROUP (ORDER BY {column_sql}))::text[] AS q{i}"
+                )
+            elif kind == "string":
+                parts.append(
+                    f"min(length({column_sql}::text)) AS lmin{i}, "
+                    f"max(length({column_sql}::text)) AS lmax{i}, "
+                    f"avg(length({column_sql}::text))::double precision AS lavg{i}"
+                )
         row = await conn.fetchrow(f"SELECT {', '.join(parts)} FROM {source_sql}")
         sample_rows = int(row["n"] or 0)
         for i, (name, _, _) in enumerate(group):
+            kind = kinds.get(name)
+            quantiles = row[f"q{i}"] if kind in _NUMERIC or kind in _TEMPORAL else None
             stats[name] = {
                 "nulls": int(row[f"z{i}"] or 0),
                 "distinct": int(row[f"d{i}"] or 0),
                 "lo": row[f"lo{i}"],
                 "hi": row[f"hi{i}"],
+                "quantiles": (
+                    {
+                        f"p{round(q * 100):02d}": (
+                            _number(v) if kind in _NUMERIC else (None if v is None else str(v))
+                        )
+                        for q, v in zip(QUANTILES, quantiles, strict=True)
+                    }
+                    if quantiles is not None and any(v is not None for v in quantiles)
+                    else None
+                ),
+                "range": (
+                    (_number(row[f"nlo{i}"]), _number(row[f"nhi{i}"])) if kind in _NUMERIC else None
+                ),
+                "length_stats": (
+                    {
+                        "min": int(row[f"lmin{i}"]),
+                        "max": int(row[f"lmax{i}"]),
+                        "avg": round(float(row[f"lavg{i}"]), 2),
+                    }
+                    if kind == "string" and row[f"lmin{i}"] is not None
+                    else None
+                ),
             }
     profiles: dict[tuple[str, str, str], dict[str, Any]] = {}
     for name, column_sql, binary in exprs:
         s = stats[name]
         category = s["distinct"] <= MAX_CATEGORY_CARDINALITY and not binary
         values: list[dict[str, Any]] = []
+        # A string column's patterns read from PATTERN_SAMPLE values, most frequent first.
+        limit = (
+            MAX_CATEGORY_CARDINALITY
+            if category
+            else (PATTERN_SAMPLE if kinds.get(name) == "string" else TOP_VALUES)
+        )
+        histogram: dict[str, Any] | None = None
+        bounds = s["range"]
+        if bounds is not None and bounds[0] is not None and bounds[1] is not None:
+            lo, hi = bounds
+            if hi > lo:
+                # width_bucket puts the maximum in bin n+1: it belongs to the last bin.
+                bins = await conn.fetch(
+                    f"""
+                    SELECT least(width_bucket({column_sql}::double precision, $1, $2, $3), $3)
+                               AS bin,
+                           count(*)::bigint AS n
+                    FROM {source_sql}
+                    WHERE {column_sql} IS NOT NULL
+                    GROUP BY 1
+                    """,
+                    lo,
+                    hi,
+                    HISTOGRAM_BINS,
+                )
+                counts = [0] * HISTOGRAM_BINS
+                for b in bins:
+                    counts[int(b["bin"]) - 1] += int(b["n"])
+                histogram = {"lo": lo, "hi": hi, "bins": counts}
+            else:
+                # One value only: a single bin holds every row that has it.
+                histogram = {"lo": lo, "hi": hi, "bins": [sample_rows - s["nulls"]]}
         if not _is_sensitive_column(name) and not binary:
             top = await conn.fetch(
                 f"""
@@ -586,13 +736,14 @@ async def _profile_pg_table(
                 WHERE {column_sql} IS NOT NULL
                 GROUP BY {column_sql}
                 ORDER BY value_count DESC, value
-                LIMIT {MAX_CATEGORY_CARDINALITY if category else TOP_VALUES}
+                LIMIT {limit}
                 """
             )
             values = [
                 {"value": _profile_value(name, r["value"]), "count": int(r["value_count"])}
                 for r in top
             ]
+        patterns = value_patterns(values) if kinds.get(name) == "string" else []
         profiles[(schema_name, table_name, name)] = {
             "sample_rows": sample_rows,
             "null_ratio": decimal.Decimal(str(s["nulls"] / sample_rows))
@@ -605,8 +756,51 @@ async def _profile_pg_table(
             "top_values": values[:TOP_VALUES],
             # Every value of a category column, for the value index (GEN-23).
             "category_values": values if category else [],
+            "quantiles": s["quantiles"],
+            "histogram": histogram,
+            "length_stats": s["length_stats"],
+            "value_patterns": patterns or None,
+            "pattern_hint": pattern_hint(patterns),
         }
     return profiles
+
+
+async def _read_activity(conn: Any, tables: list[dict[str, Any]]) -> None:
+    """DF-10: a PostgreSQL table's writes and last analyze, from pg_stat_user_tables, onto each
+    table found (`activity`). The counters are the server's since its statistics were last reset:
+    a change between two scans says the table moved, the totals alone say little."""
+    if not tables:
+        return
+    try:
+        rows = await conn.fetch(
+            """
+            SELECT schemaname, relname, n_tup_ins, n_tup_upd, n_tup_del, n_live_tup,
+                   last_analyze, last_autoanalyze, now() AS observed_at
+            FROM pg_stat_user_tables
+            WHERE schemaname || '.' || relname = ANY($1::text[])
+            """,
+            [f"{t['schema_name']}.{t['table_name']}" for t in tables],
+        )
+    except asyncpg.PostgresError as exc:
+        # Freshness is a hint: a server that hides its statistics costs the profile nothing.
+        logger.warning("pg_stat_user_tables not read (%s)", type(exc).__name__)
+        return
+    by_name = {(str(r["schemaname"]), str(r["relname"])): r for r in rows}
+    for table in tables:
+        r = by_name.get((str(table["schema_name"]), str(table["table_name"])))
+        if r is None:
+            continue
+        table["activity"] = {
+            "n_tup_ins": int(r["n_tup_ins"] or 0),
+            "n_tup_upd": int(r["n_tup_upd"] or 0),
+            "n_tup_del": int(r["n_tup_del"] or 0),
+            "n_live_tup": int(r["n_live_tup"] or 0),
+            "last_analyze": r["last_analyze"].isoformat() if r["last_analyze"] else None,
+            "last_autoanalyze": (
+                r["last_autoanalyze"].isoformat() if r["last_autoanalyze"] else None
+            ),
+            "observed_at": r["observed_at"].isoformat(),
+        }
 
 
 async def _profile_source(
@@ -645,6 +839,7 @@ async def _profile_source(
     timeout_ms = min(int(source.query_timeout_s or 120), 300) * 1000
     try:
         await conn.execute(f"SET statement_timeout = {timeout_ms}")
+        await _read_activity(conn, tables)
         for table in tables:
             try:
                 profiles.update(await _profile_pg_table(conn, table))
@@ -730,6 +925,9 @@ async def scan_schema(event: Event) -> None:
                             row_estimate=int(item["row_estimate"]),
                             created_by=event.payload.get("requested_by"),
                         )
+                        if item.get("activity") is not None:
+                            # DF-10: what the source says of the table's writes, on a profile run.
+                            dataset.source_activity = item["activity"]
                         session.add(dataset)
                         await session.flush()
                         datasets_by_name[(str(item["schema_name"]), str(item["table_name"]))] = (
@@ -882,6 +1080,11 @@ async def scan_schema(event: Event) -> None:
                                 min_value=profile["min_value"],
                                 max_value=profile["max_value"],
                                 top_values=profile["top_values"],
+                                pattern_hint=profile.get("pattern_hint"),
+                                quantiles=profile.get("quantiles"),
+                                histogram=profile.get("histogram"),
+                                length_stats=profile.get("length_stats"),
+                                value_patterns=profile.get("value_patterns"),
                             )
                         )
                         if profile.get("pii_label"):

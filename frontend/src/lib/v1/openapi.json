@@ -6454,6 +6454,30 @@
       ],
       "title": "Distinct Est"
      },
+     "histogram": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Histogram"
+     },
+     "length_stats": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Length Stats"
+     },
      "max_value": {
       "anyOf": [
        {
@@ -6502,6 +6526,18 @@
       ],
       "title": "Pattern Hint"
      },
+     "quantiles": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Quantiles"
+     },
      "sample_rows": {
       "title": "Sample Rows",
       "type": "integer"
@@ -6513,6 +6549,21 @@
      },
      "top_values": {
       "title": "Top Values"
+     },
+     "value_patterns": {
+      "anyOf": [
+       {
+        "items": {
+         "additionalProperties": true,
+         "type": "object"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Value Patterns"
      }
     },
     "required": [
