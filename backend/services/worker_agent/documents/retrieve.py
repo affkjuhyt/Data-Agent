@@ -87,6 +87,8 @@ class Passage:
     # Title and number of the document that replaced this one, when one did (BR-20).
     superseded_by: str | None
     score: float
+    # The table a table-summary chunk names (DI-12): its numbers are read from its cells.
+    table_id: uuid.UUID | None = None
 
 
 def _typed_without_marks(text: str) -> bool:
@@ -350,6 +352,7 @@ async def retrieve(
                 effective_to=effective_to,
                 superseded_by=replacements.get(chunk.document_id),
                 score=round(score, 6),
+                table_id=chunk.table_id,
             )
         )
     return passages

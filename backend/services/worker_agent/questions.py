@@ -75,6 +75,7 @@ from services.worker_agent.answer.thresholds import load as load_threshold
 from services.worker_agent.answer.verification import verify
 from services.worker_agent.data_scope import DataScope
 from services.worker_agent.documents import answer as document_answer
+from services.worker_agent.documents import table_query
 from services.worker_agent.documents.retrieve import retrieve
 from services.worker_agent.documents.search import SearchServices, services_from_env
 from services.worker_agent.events import Event, Handler
@@ -2077,6 +2078,16 @@ def _document_plan(question: qa.Question, as_of: datetime.date) -> dict[str, Any
     }
 
 
+async def _from_tables(
+    session: Any, question: str, passages: list[Any]
+) -> table_query.Found | table_query.Ambiguous | None:
+    """The cell a question asks of the tables retrieval found (table summary chunks), if any."""
+    table_ids = [p.table_id for p in passages if getattr(p, "table_id", None) is not None]
+    if not table_ids:
+        return None
+    return table_query.answer_from_grids(question, await table_query.load_grids(session, table_ids))
+
+
 async def _answer_from_documents(
     event: Event,
     question_id: uuid.UUID,
@@ -2134,13 +2145,62 @@ async def _answer_from_documents(
             # refused with its code rather than answered without evidence.
             return False
         text, plan = question.text, _document_plan(question, as_of)
-        async with turn_trace.stepping("write_answer") as written:
-            told = await document_answer.compose(gateway(), text, passages, as_of)
-            written.detail = {
-                "by": "documents",
-                "citations": len(told.citations),
-                "claims_dropped": len(told.dropped),
-            }
+        # DI-12: a number of a table is read from its cell, cited to it, before any model writes.
+        found = await _from_tables(session, text, passages)
+        if isinstance(found, table_query.Ambiguous):
+            ambiguous = found
+        else:
+            ambiguous = None
+            async with turn_trace.stepping("write_answer") as written:
+                if found is not None:
+                    by_table = {p.table_id: p for p in passages if p.table_id is not None}
+                    told = document_answer.from_table(
+                        found, by_table.get(found.table_id, passages[0])
+                    )
+                    written.detail = {"by": "table_cell", "table_id": str(found.table_id)}
+                else:
+                    told = await document_answer.compose(gateway(), text, passages, as_of)
+                    written.detail = {
+                        "by": "documents",
+                        "citations": len(told.citations),
+                        "claims_dropped": len(told.dropped),
+                    }
+    if ambiguous is not None:
+        # Two cells nearly as good with different numbers: asked back, not guessed (§7).
+        options = [
+            f"{o.row_label} - {o.column_label}: {table_query.spoken(o.value, o.unit)}"
+            for o in ambiguous.options
+        ]
+        asked = (
+            "Bảng có hai số cùng khớp câu hỏi. Bạn hỏi số nào: "
+            + "; ".join(f"{i + 1}. {o}" for i, o in enumerate(options))
+            + "?"
+        )
+        await turn_trace.record_step(
+            "ask_user", target=asked, detail={"question": asked, "options": options}
+        )
+        answer_id = await _finish(
+            question_id,
+            event.org_id,
+            user_id,
+            plan_id,
+            kind="clarification",
+            status="clarifying",
+            text=asked,
+        )
+        await publish(
+            str(question_id),
+            "clarification",
+            {
+                "question_id": str(question_id),
+                "answer_id": str(answer_id),
+                "options": [{"value": o, "label": o} for o in options],
+            },
+        )
+        await publish(
+            str(question_id), "done", {"question_id": str(question_id), "status": "clarifying"}
+        )
+        return True
     await publish(
         str(question_id), "progress", {"question_id": str(question_id), "status": "running"}
     )

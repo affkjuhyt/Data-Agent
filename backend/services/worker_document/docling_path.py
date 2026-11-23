@@ -74,7 +74,12 @@ def extract(
     # Personal data is masked before anything is stored or chunked; a cell whose text the mask
     # changed is no figure any more (an ID number is not a quantity).
     elements = [replace(e, text=mask(e.text)) if e.text else e for e in elements]
+    # Boxes are stored top-left, as the viewer draws a page (DI-12: a cited cell is outlined
+    # where it stands): Docling gives a PDF's in PDF space, origin bottom left.
+    elements = [replace(e, bbox=_top_left(e.bbox, heights.get(e.page_no or 0))) for e in elements]
     for table in found:
+        for cell in table.cells:
+            cell.bbox = _top_left(cell.bbox, heights.get(cell.page_no or 0))
         table.caption = mask(table.caption) if table.caption else table.caption
         for cell in table.cells:
             masked = mask(cell.text) if cell.text else cell.text
@@ -88,6 +93,19 @@ def extract(
         chunks=chunks,
         dropped={**read.skipped, **dropped},
     )
+
+
+def _top_left(bbox: dict[str, Any] | None, height: float | None) -> dict[str, Any] | None:
+    if bbox is None or not height or str(bbox.get("coord_origin", "")).upper() != "BOTTOMLEFT":
+        return bbox
+    top, bottom = height - float(bbox["t"]), height - float(bbox["b"])
+    return {
+        "l": float(bbox["l"]),
+        "t": min(top, bottom),
+        "r": float(bbox["r"]),
+        "b": max(top, bottom),
+        "coord_origin": "TOPLEFT",
+    }
 
 
 def _ocr_confidence(result: Any) -> dict[int, float]:

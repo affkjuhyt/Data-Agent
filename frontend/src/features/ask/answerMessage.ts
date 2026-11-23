@@ -3,13 +3,7 @@
  * Shared by Ask hydrate and Notebook tiles saved from an answer.
  */
 import { getAnswer, type Answer } from '../../lib/v1/questions';
-import {
-  figureChart,
-  figureDrill,
-  figureRun,
-  readChartSpec,
-  readFigures,
-} from './dataAnswer';
+import { figureChart, figureDrill, figureRun, readChartSpec, readFigures } from './dataAnswer';
 import { interpretationChips } from './interpretation';
 import { trustOfCode } from './trust';
 import type { AskMessage, Citation, Refusal, VerificationFrame } from './types';
@@ -25,6 +19,11 @@ interface AnswerCitationWire {
   superseded_by: string | null;
   quote: string;
   score?: number | null;
+  /** DI-12: the table cell a number was read from; its box is top-left, in page points. */
+  cell?: {
+    page: number | null;
+    bbox: { l: number; t: number; r: number; b: number } | null;
+  } | null;
 }
 
 export function citationsOf(answer: Pick<Answer, 'citations'>): Citation[] {
@@ -42,7 +41,18 @@ export function citationsOf(answer: Pick<Answer, 'citations'>): Citation[] {
     type: 'document',
     snippet: c.quote,
     doc_id: c.document_id,
-    page: c.page_from,
+    page: c.cell?.page ?? c.page_from,
+    // Only a cell citation carries a box: a passage citation keeps its shape.
+    ...(c.cell?.bbox
+      ? {
+          box: {
+            x: c.cell.bbox.l,
+            y: c.cell.bbox.t,
+            w: c.cell.bbox.r - c.cell.bbox.l,
+            h: c.cell.bbox.b - c.cell.bbox.t,
+          },
+        }
+      : {}),
     score: c.score ?? null,
   }));
 }
@@ -55,7 +65,8 @@ export function readVerification(numberCheck: unknown): VerificationFrame | unde
   if (!raw || typeof raw !== 'object') return undefined;
   const { checks, verdict, iteration, confidence, consensus } = raw as Record<string, unknown>;
   if ((verdict !== 'PASS' && verdict !== 'FAIL') || !Array.isArray(checks)) return undefined;
-  const vote = consensus && typeof consensus === 'object' ? (consensus as Record<string, unknown>) : {};
+  const vote =
+    consensus && typeof consensus === 'object' ? (consensus as Record<string, unknown>) : {};
   return {
     verdict,
     iteration: typeof iteration === 'number' ? iteration : 1,
@@ -81,12 +92,17 @@ const NEXT_ACTIONS = new Set(['retry', 'rephrase', 'contact_steward']);
  *  from before that, or anything not of that shape, is the server's message alone. */
 export function readRefusal(answer: Pick<Answer, 'text' | 'number_check'>): Refusal {
   const check = answer.number_check;
-  const kept = check && typeof check === 'object' ? (check as { refusal?: unknown }).refusal : undefined;
-  const { code, next_action } = (kept && typeof kept === 'object' ? kept : {}) as Record<string, unknown>;
+  const kept =
+    check && typeof check === 'object' ? (check as { refusal?: unknown }).refusal : undefined;
+  const { code, next_action } = (kept && typeof kept === 'object' ? kept : {}) as Record<
+    string,
+    unknown
+  >;
   return {
     code: typeof code === 'string' && code ? code : 'REFUSED',
     message: answer.text,
-    next_action: typeof next_action === 'string' && NEXT_ACTIONS.has(next_action) ? next_action : '',
+    next_action:
+      typeof next_action === 'string' && NEXT_ACTIONS.has(next_action) ? next_action : '',
   };
 }
 

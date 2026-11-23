@@ -47,12 +47,17 @@ export default function AskDataPage() {
   const firstDocuments = useV1(
     ['starterDocuments', ...shelfIds],
     shelfIds.length
-      ? () => Promise.all(shelfIds.map((id) => listDocuments(id).then((page) => page.items[0]?.title ?? '')))
+      ? () =>
+          Promise.all(
+            shelfIds.map((id) => listDocuments(id).then((page) => page.items[0]?.title ?? '')),
+          )
       : null,
   );
   const starters = useMemo(() => {
     const metric = starterQuestions(model.data, 3);
-    const docs = documentStarterQuestions(Array.isArray(firstDocuments.data) ? firstDocuments.data : []);
+    const docs = documentStarterQuestions(
+      Array.isArray(firstDocuments.data) ? firstDocuments.data : [],
+    );
     return [...metric, ...docs];
   }, [model.data, firstDocuments.data]);
 
@@ -112,7 +117,9 @@ export default function AskDataPage() {
         addNotice(`Dùng ${parsed.command.label} kèm nội dung cần phân tích.`);
         return;
       }
-      const q = parsed.command ? commandPrompt(parsed.command.name, parsed.argument) : parsed.argument;
+      const q = parsed.command
+        ? commandPrompt(parsed.command.name, parsed.argument)
+        : parsed.argument;
       const layout = parsed.command ? layoutForCommand(parsed.command.name) : undefined;
       void (layout ? send(q, layout) : send(q));
     },
@@ -140,12 +147,12 @@ export default function AskDataPage() {
       return;
     }
     if (!c.doc_id) return;
-    requestPage(c.doc_id, c.page);
+    requestPage(c.doc_id, c.page, c.box);
     navigate('data', 'DOCUMENT', c.doc_id);
   };
   const openCitationViewer = (c: Citation) => {
     if (!c.doc_id) return;
-    requestPage(c.doc_id, c.page);
+    requestPage(c.doc_id, c.page, c.box);
     navigate('data', 'DOCUMENT', c.doc_id);
   };
   const newConversation = () => {
@@ -165,7 +172,12 @@ export default function AskDataPage() {
 
   return (
     <AnswerTheme mode="light" className="flex h-full min-h-0">
-      <ConversationPanel recent={recent} activeId={conversationId} onNew={newConversation} onOpen={(id) => navigate('analysis', 'ASK', id)} />
+      <ConversationPanel
+        recent={recent}
+        activeId={conversationId}
+        onNew={newConversation}
+        onOpen={(id) => navigate('analysis', 'ASK', id)}
+      />
       <section aria-label="Hỏi đáp" className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-da-md border-b border-border px-da-xl py-da-md">
           <h1 className="m-0 min-w-0 flex-1 truncate text-foreground da-heading-3">{title}</h1>
@@ -247,7 +259,10 @@ export default function AskDataPage() {
             toast({
               tone: 'success',
               message: `Đã thêm vào ${sessionTitle}`,
-              action: { label: 'Mở phiên', onClick: () => navigate('analysis', 'SESSIONS', workspaceId) },
+              action: {
+                label: 'Mở phiên',
+                onClick: () => navigate('analysis', 'SESSIONS', workspaceId),
+              },
             });
           }}
         />
@@ -256,11 +271,17 @@ export default function AskDataPage() {
         open={!!reportFor}
         target={
           reportFor?.answerId
-            ? { answerId: reportFor.answerId, question: reportFor.questionText ?? '', answer: reportFor.content }
+            ? {
+                answerId: reportFor.answerId,
+                question: reportFor.questionText ?? '',
+                answer: reportFor.content,
+              }
             : null
         }
         onClose={() => setReportFor(null)}
-        onReported={(feedback) => setReported((prev) => ({ ...prev, [feedback.answer_id]: feedback }))}
+        onReported={(feedback) =>
+          setReported((prev) => ({ ...prev, [feedback.answer_id]: feedback }))
+        }
       />
     </AnswerTheme>
   );

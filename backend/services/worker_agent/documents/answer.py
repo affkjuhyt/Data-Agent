@@ -59,10 +59,14 @@ class Citation:
     n: int
     passage: Passage
     quote: str
+    # The table cell a number was read from (DI-12): table, row, column, page and box, so the
+    # citation opens the page with the cell outlined.
+    cell: dict[str, Any] | None = None
 
     def as_json(self) -> dict[str, Any]:
         p = self.passage
         return {
+            **({"kind": "table_cell", "cell": self.cell} if self.cell is not None else {}),
             "n": self.n,
             "chunk_id": str(p.chunk_id),
             "document_id": str(p.document_id),
@@ -168,6 +172,51 @@ def extractive(passages: list[Passage]) -> DocumentAnswer:
         {
             "numbers_total": 0,
             "traced": 0,
+            "untraceable_draft": 0,
+            "regenerated": 0,
+            "sentences_dropped": 0,
+            "untraceable_final": 0,
+        },
+    )
+
+
+def from_table(found: Any, passage: Passage) -> DocumentAnswer:
+    """The answer of a number read from a table cell (documents/table_query): the figure as the
+    sentence says it, cited to its cell. The number is the cell's, checked by construction."""
+    from services.worker_agent.documents.table_query import spoken
+
+    cell = found.cell
+    where = ", ".join(x for x in (found.caption, f"trang {cell.page}" if cell.page else None) if x)
+    label = " - ".join(x for x in (found.row_label, found.column_label) if x)
+    quote = f"{label}: {cell.text}"
+    citation = Citation(
+        1,
+        passage,
+        quote,
+        cell={
+            "table_id": str(found.table_id),
+            "row": cell.row,
+            "col": cell.col,
+            "page": cell.page,
+            "bbox": cell.bbox,
+            "text": cell.text,
+            "value": str(found.value),
+            "unit": found.unit,
+        },
+    )
+    text = " ".join(
+        [
+            f"Theo {passage.title}" + (f" ({where})" if where else "") + f": {label} là "
+            f"{spoken(found.value, found.unit)} [1].",
+            *_supersession_notes([citation]),
+        ]
+    )
+    return DocumentAnswer(
+        text,
+        [citation],
+        {
+            "numbers_total": 1,
+            "traced": 1,
             "untraceable_draft": 0,
             "regenerated": 0,
             "sentences_dropped": 0,

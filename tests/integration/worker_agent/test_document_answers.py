@@ -225,3 +225,128 @@ async def test_a_data_space_without_documents_keeps_the_metric_refusal(seed: See
     await drain()
     text = seed.one("SELECT text FROM qa.answer WHERE question_id = %s", question)
     assert "Chưa nhận ra chỉ số" in text
+
+
+def add_table(seed: Seed, lib: Library) -> tuple[uuid.UUID, uuid.UUID]:
+    """A document whose page 2 holds a table of debt (DI-12): rows of branches, columns of 2024's
+    plan and actual, in millions of đồng, found by its summary chunk."""
+    document = seed.row(
+        "document.document",
+        org_id=lib.org,
+        collection_id=lib.collection,
+        sha256=uuid.uuid4().hex,
+        media="pdf",
+        file_name="bao-cao.pdf",
+        object_key="k",
+        size_bytes=10,
+        title="Báo cáo dư nợ",
+        status="ready",
+        page_count=2,
+        effective_from="2026-01-01",
+    )
+    seed.row(
+        "document.document_page",
+        org_id=lib.org,
+        document_id=document,
+        page_no=2,
+        page_hash=uuid.uuid4().hex,
+        usable=True,
+        text="Dư nợ theo chi nhánh",
+    )
+    element = seed.row(
+        "document.element",
+        org_id=lib.org,
+        document_id=document,
+        page_no=2,
+        order_idx=0,
+        kind="table",
+        extractor="docling",
+        extractor_version="docling-2.150.0+adapter-1",
+    )
+    table = seed.row(
+        "document.doc_table",
+        org_id=lib.org,
+        document_id=document,
+        element_id=element,
+        page_from=2,
+        page_to=2,
+        n_rows=4,
+        n_cols=3,
+        header_rows=2,
+        caption="Bảng 3. Dư nợ theo chi nhánh (triệu đồng)",
+    )
+    cells = [
+        (0, 0, 1, "Chi nhánh", None),
+        (0, 1, 2, "Năm 2024", None),
+        (1, 1, 1, "Kế hoạch", None),
+        (1, 2, 1, "Thực hiện", None),
+        (2, 0, 1, "Hà Nội", None),
+        (2, 1, 1, "1.200", 1_200_000_000),
+        (2, 2, 1, "1.300", 1_300_000_000),
+        (3, 0, 1, "Đà Nẵng", None),
+        (3, 1, 1, "400", 400_000_000),
+        (3, 2, 1, "420", 420_000_000),
+    ]
+    for row, col, span, text, value in cells:
+        seed.row(
+            "document.table_cell",
+            org_id=lib.org,
+            table_id=table,
+            row_idx=row,
+            col_idx=col,
+            col_span=span,
+            text=text,
+            numeric_value=value,
+            unit="VND" if value else None,
+            is_header=row < 2,
+            page_no=2,
+            bbox=json.dumps({"l": 100 + 80 * col, "t": 200 + 20 * row,
+                             "r": 180 + 80 * col, "b": 220 + 20 * row, "coord_origin": "TOPLEFT"}),
+        )  # fmt: skip
+    seed.row(
+        "document.chunk",
+        org_id=lib.org,
+        document_id=document,
+        collection_id=lib.collection,
+        page_from=2,
+        page_to=2,
+        section_path="Chương II. Kết quả",
+        text="Bảng 3. Dư nợ theo chi nhánh (triệu đồng)\nChi nhánh | Năm 2024 | Kế hoạch | Thực hiện\n"
+        "Hà Nội; Đà Nẵng\nbảng 4x3, trang 2",
+        tokens=20,
+        kind="table",
+        table_id=table,
+        element_ids=[element],
+    )
+    return document, table
+
+
+async def test_di_12_a_number_of_a_table_is_read_from_its_cell_and_cited_to_it(seed: Seed) -> None:
+    lib = library(seed)
+    document, table = add_table(seed, lib)
+    question = ask(seed, lib, "Dư nợ thực hiện năm 2024 của chi nhánh Hà Nội theo báo cáo")
+    await drain()
+    kind, text, citations = seed.one(
+        "SELECT kind, text, citations FROM qa.answer WHERE question_id = %s", question
+    )
+    assert kind == "document", text
+    assert "1.300.000.000 đồng" in text and "[1]" in text
+    (cited,) = citations
+    assert cited["kind"] == "table_cell" and cited["document_id"] == str(document)
+    cell = cited["cell"]
+    assert (cell["table_id"], cell["row"], cell["col"], cell["page"]) == (str(table), 2, 2, 2)
+    assert cell["bbox"]["l"] == 260 and cell["text"] == "1.300"
+
+
+async def test_di_12_two_cells_that_fit_as_well_are_asked_back(seed: Seed) -> None:
+    lib = library(seed)
+    add_table(seed, lib)
+    question = ask(seed, lib, "Dư nợ năm 2024 của chi nhánh Đà Nẵng theo báo cáo")
+    await drain()
+    status, kind, text = seed.one(
+        "SELECT q.status, a.kind, a.text FROM qa.question q JOIN qa.answer a ON a.question_id = q.id"
+        " WHERE q.id = %s",
+        question,
+    )
+    assert (status, kind) == ("clarifying", "clarification"), text
+    assert "400.000.000" in text and "420.000.000" in text

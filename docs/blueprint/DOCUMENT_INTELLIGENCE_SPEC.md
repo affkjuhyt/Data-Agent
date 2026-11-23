@@ -461,6 +461,11 @@ Kiểm tất định trước khi trả: (1) `numeric_value` đã nhân scale, `
 (khác → chuyển đổi nếu bảng tỷ giá/scale rõ, không thì `SOURCE_CONFLICT`); (2) kỳ của cột khớp kỳ hỏi (FY vs CY ghi
 rõ trong citation); (3) trích dẫn mở đúng trang + bbox ô (`DocumentViewerPage` highlight bbox, không chỉ trang).
 
+**Đã làm (DI-12, 23/11/2026):** như trên, không gọi mô hình. Khớp bằng `rapidfuzz.token_set_ratio` trên chữ bỏ dấu (≥ 80) thay
+trigram; cột chấm trung bình theo tầng tiêu đề (câu chỉ nêu "năm 2024" khớp đều "Năm 2024 > Kế hoạch" và "> Thực hiện" → hỏi
+lại); bảng một cột số không cần nêu cột. Chưa: đổi đơn vị theo metric / `SOURCE_CONFLICT` (kiểm 1), so FY/CY (kiểm 2).
+Ô bị che PII không còn số (DI-09) nên không bao giờ được trả.
+
 ## 8. Stage 8: Trích có cấu trúc, claim, xung đột, phiên bản
 
 ### 8.1 Hiện tại

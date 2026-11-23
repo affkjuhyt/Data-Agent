@@ -29,7 +29,7 @@ import { useV1, useV1Mutation } from '../../lib/v1/useV1';
 import { CallViewer } from './CallViewer';
 import { EmailViewer } from './EmailViewer';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
-import { takePage } from './focusPage';
+import { takeFocus } from './focusPage';
 
 /*
  * "v3.1 · Phi cấu trúc · Trình xem tài liệu" (2069:3041, UC-05-04, UC-05-05) at /data/document/<id>:
@@ -94,21 +94,40 @@ type Mode = 'original' | 'ocr';
 function FileViewer({ doc }: { doc: DocumentView }) {
   const { navigate } = useAppState();
   const hasPages = doc.page_count > 0;
-  // A citation opens the page it cites (focusPage.ts); otherwise the document's focus page.
+  // A citation opens the page it cites (focusPage.ts), with the cited cell's box when it names
+  // one (DI-12); otherwise the document's focus page.
+  const [focus] = useState(() => takeFocus(doc.id));
   const [pageNo, setPageNo] = useState(() =>
-    Math.min(Math.max(takePage(doc.id) ?? doc.focus_page, 1), Math.max(doc.page_count, 1)),
+    Math.min(Math.max(focus?.page ?? doc.focus_page, 1), Math.max(doc.page_count, 1)),
   );
+  /** The page with the cited cell outlined, when the citation named one on this page. */
+  const cited = (p: DocumentPage): DocumentPage =>
+    focus?.box && focus.page === p.number
+      ? {
+          ...p,
+          highlights: [
+            ...p.highlights,
+            { field: 'cited-cell', label: 'Ô được trích', review: false, box: focus.box },
+          ],
+        }
+      : p;
   const [mode, setMode] = useState<Mode>('original');
   const [tab, setTab] = useState<Tab>('fields');
   // Newly uploaded documents have no pages until the ingest worker finishes. Do not send page 0
   // to the API: its schema correctly rejects it, but the viewer should show the designed waiting
   // state instead of leaking a 422 to the user.
-  const page = useV1(['getDocumentPage', doc.id, pageNo], hasPages ? () => getDocumentPage(doc.id, pageNo) : null);
+  const page = useV1(
+    ['getDocumentPage', doc.id, pageNo],
+    hasPages ? () => getDocumentPage(doc.id, pageNo) : null,
+  );
   // Only a PDF is embedded as itself. Any other original (an uploaded HTML page above all) would
   // run in the app's origin from a blob: URL and lose the styles it links to; it is shown as the
   // text the worker extracted, in the document's own structure.
   const pdf = doc.media === 'pdf';
-  const original = useV1(['getDocumentOriginal', doc.id, pdf], pdf ? () => getDocumentOriginal(doc.id) : null);
+  const original = useV1(
+    ['getDocumentOriginal', doc.id, pdf],
+    pdf ? () => getDocumentOriginal(doc.id) : null,
+  );
   const paged = pdf || doc.media === 'image';
   const collection = doc.collection;
 
@@ -172,10 +191,11 @@ function FileViewer({ doc }: { doc: DocumentView }) {
             {(p) =>
               !paged ? (
                 <PageText page={p} />
-              ) : mode === 'original' && original.data ? (
+              ) : mode === 'original' && original.data && cited(p) === p ? (
                 <OriginalPdf url={original.data} fileName={doc.file_name} />
-              ) : mode === 'original' && hasGeometry(p) ? (
-                <PageImage page={p} />
+              ) : mode === 'original' && hasGeometry(cited(p)) ? (
+                // A cited cell is outlined on the page image: an embedded PDF cannot be drawn on.
+                <PageImage page={cited(p)} />
               ) : (
                 <PageText page={p} />
               )
@@ -353,17 +373,33 @@ function tableRows(text: string): string[][] | null {
 
 function PageText({ page }: { page: DocumentPage }) {
   if (page.blocks.length > 0) {
-    const structuredText = page.blocks.map((block) => block.text).join("\n");
+    const structuredText = page.blocks.map((block) => block.text).join('\n');
     return (
       <div className="flex w-[560px] max-w-full shrink-0 flex-col gap-da-md border border-border bg-card p-da-3xl text-foreground">
         {page.blocks.map((block, index) =>
           block.kind === 'picture' && block.image_url ? (
             <figure key={index} className="flex flex-col gap-da-xs">
-              <img src={block.image_url} alt="Hình trong tài liệu" className="max-h-[520px] max-w-full object-contain" />
-              {block.text && <figcaption className="text-muted-foreground da-caption">{block.text}</figcaption>}
+              <img
+                src={block.image_url}
+                alt="Hình trong tài liệu"
+                className="max-h-[520px] max-w-full object-contain"
+              />
+              {block.text && (
+                <figcaption className="text-muted-foreground da-caption">{block.text}</figcaption>
+              )}
             </figure>
           ) : block.kind === 'heading' || block.kind === 'title' ? (
-            <h3 key={index} className={cn('text-foreground', block.level === 1 ? 'da-heading-2' : block.level === 2 ? 'da-heading-3' : 'da-body-strong')}>
+            <h3
+              key={index}
+              className={cn(
+                'text-foreground',
+                block.level === 1
+                  ? 'da-heading-2'
+                  : block.level === 2
+                    ? 'da-heading-3'
+                    : 'da-body-strong',
+              )}
+            >
               {block.text}
             </h3>
           ) : tableRows(block.text) ? (
@@ -372,14 +408,18 @@ function PageText({ page }: { page: DocumentPage }) {
                 {tableRows(block.text)!.map((row, r) => (
                   <tr key={r} className="border-b border-border">
                     {row.map((cell, c) => (
-                      <td key={c} className="px-da-sm py-da-xs align-top">{cell}</td>
+                      <td key={c} className="px-da-sm py-da-xs align-top">
+                        {cell}
+                      </td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
-            <p key={index} className="whitespace-pre-line da-body">{block.text}</p>
+            <p key={index} className="whitespace-pre-line da-body">
+              {block.text}
+            </p>
           ),
         )}
         {page.text && !structuredText.includes(page.text) && (

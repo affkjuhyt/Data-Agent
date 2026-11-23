@@ -37,6 +37,8 @@ export interface Citation {
   doc_id?: string | null;
   /** first page of the cited passage, for a V3 document citation (type 'document'). */
   page?: number | null;
+  /** the cited table cell's box on that page, top-left in page points (DI-12). */
+  box?: { x: number; y: number; w: number; h: number } | null;
   provenance?: DataProvenance | null;
   truncation?: Truncation | null;
   aggregation?: AggregationReport | null;
@@ -267,9 +269,20 @@ export interface PendingReviewInfo {
  */
 export interface AgentProgress {
   agent: string;
-  steps: { title: string; detail?: string; state: 'done' | 'running' | 'waiting'; duration?: string }[];
+  steps: {
+    title: string;
+    detail?: string;
+    state: 'done' | 'running' | 'waiting';
+    duration?: string;
+  }[];
   /** A result card still filling in: its title, meta line, the step behind it and how far it got. */
-  partial?: { title: string; meta: string; step_title: string; step_detail: string; received: string };
+  partial?: {
+    title: string;
+    meta: string;
+    step_title: string;
+    step_detail: string;
+    received: string;
+  };
 }
 
 /**
@@ -282,7 +295,13 @@ export interface Understanding {
   session_id: string;
   agent: string;
   parts: { text: string; kind?: 'metric' | 'filter' | 'ambiguous' | 'period' }[];
-  slots: { slot: string; value: string; source: string; confidence: number | null; divider?: boolean }[];
+  slots: {
+    slot: string;
+    value: string;
+    source: string;
+    confidence: number | null;
+    divider?: boolean;
+  }[];
   ambiguity: { term: string; options: { key: string; label: string }[]; selected: string } | null;
   plan: string;
   check_required: boolean;
