@@ -59,6 +59,22 @@ def additive_measures(layer: Layer) -> dict[str, str]:
     return {code: m.expression for code, m in layer.measures.items() if m.additivity != "none"}
 
 
+def additivity_of(metric: MetricVersion, layer: Layer) -> dict[str, str | None]:
+    """AL-03: how the metric adds up, for the chart validator: `additivity` full, semi (not over
+    time) or none as the values behave, and the measure and its declaration, so a measure declared
+    additive whose SQL is not can be named (answer/chart_check._proposal)."""
+    try:
+        tree = parse_one(metric.expression)
+    except ParseError:
+        tree = None
+    while isinstance(tree, exp.Paren):
+        tree = tree.this
+    code = tree.name if isinstance(tree, exp.Column) else None
+    declared = layer.measures[code].additivity if code in layer.measures else None
+    additivity = (declared or "full") if is_additive(metric, layer) else "none"
+    return {"additivity": additivity, "measure_code": code, "declared": declared}
+
+
 def is_additive(metric: MetricVersion, layer: Layer) -> bool:
     """Whether the metric's values add up across members: one measure that is a SUM or a COUNT
     (not DISTINCT), the measure itself and not an expression over it, and not declared `none`."""

@@ -50,6 +50,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
 from services.worker_agent import (
+    chart_proposals,
     clarify_policy,
     compute_runs,
     explore,
@@ -59,7 +60,7 @@ from services.worker_agent import (
     turn_trace,
 )
 from services.worker_agent.analyst_plan import build_analysis_plan
-from services.worker_agent.answer import narrator
+from services.worker_agent.answer import chart_check, narrator
 from services.worker_agent.answer.comparison import (
     PERIOD_CODE,
     PERIOD_NAME,
@@ -228,6 +229,9 @@ class Prepared:
     time_dimensions: set[str] = field(default_factory=set)
     # One summed or counted measure: its members add up to a total (answer/insights.py).
     additive: bool = False
+    # AL-03: how the metric's values add up and the measure's declaration, for the chart
+    # validator (semantic/analysis.additivity_of).
+    additivity: dict[str, str | None] = field(default_factory=dict)
     # The cuts the metric allows besides time, (code, name): the chart's "Đi sâu theo" (UC-01-04).
     cuts: list[tuple[str, str]] = field(default_factory=list)
     # R1-06: the base period's label when the question compares ("so với tháng trước").
@@ -1891,6 +1895,10 @@ async def _understand_and_plan(
                     layer.versions[u.metric.metric_id].expression,
                     analysis.additive_measures(layer.layer),
                 ),
+                additivity={
+                    **analysis.additivity_of(layer.versions[u.metric.metric_id], layer.layer),
+                    "metric_id": str(u.metric.metric_id),
+                },
                 base_label=period_label(compare.base_period(compile_request.period, compare_to))
                 if compare_to is not None
                 and compile_request is not None
@@ -2510,6 +2518,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             if all(c.get("passed") for c in checks)
             else "; ".join(str(c.get("detail")) for c in checks if not c.get("passed")),
         )
+        chart_issues: list[dict[str, Any]] = []
         chart_spec = chart_spec_of(
             figures,
             group_by=shown_by,
@@ -2519,7 +2528,32 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             unit=unit,
             drill=[cut for cut in p.cuts if cut[0] not in u.group_by],
             value_column=value_column,
+            additivity=p.additivity.get("additivity"),
+            measure=p.additivity if p.additivity.get("measure_code") else None,
+            issues=chart_issues,
         )
+        if chart_issues:
+            # AL-03: what the chart validator found; a blocked chart is not drawn and the
+            # figures stay in the text and the table. Counted once, here, where it is placed.
+            chart_check.record(chart_issues)
+            await turn_trace.record_step(
+                "chart_check",
+                detail={"issues": chart_issues},
+                status="failed" if chart_spec is None else "done",
+                summary=chart_check.described(chart_issues),
+            )
+            for issue in chart_issues:
+                if issue.get("proposal"):
+                    try:
+                        await chart_proposals.file(
+                            org_id=p.org_id,
+                            data_space_id=p.space_id,
+                            user_id=p.user_id,
+                            proposal=issue["proposal"],
+                            reason=issue["detail"],
+                        )
+                    except Exception:
+                        logger.exception("chart_check proposal not filed")
         if chart_spec is not None:
             await turn_trace.record_step(
                 "visualize",

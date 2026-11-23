@@ -888,6 +888,8 @@ class QueryMetric(Tool):
                     if code in group_by
                 },
                 "time_cuts": sorted(times & set(group_by)),
+                # AL-03: how the values add up, for the chart validator (answer/chart_check).
+                **analysis.additivity_of(version, ctx.layer.layer),
             },
         )
         detail["dataset"] = ds.id

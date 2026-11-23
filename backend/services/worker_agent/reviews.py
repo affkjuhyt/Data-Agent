@@ -37,7 +37,13 @@ logger = logging.getLogger(__name__)
 PRODUCT = "data_product.submitted"
 AUTHORITY = "source_authority.drafted"
 VALIDITY = "document.validity_proposed"
-KINDS = ("data_product", "source_authority", "document_validity", "pipeline_steps")
+KINDS = (
+    "data_product",
+    "source_authority",
+    "document_validity",
+    "pipeline_steps",
+    "measure_additivity",
+)
 
 
 def _now() -> datetime.datetime:
@@ -293,6 +299,30 @@ async def _still_at_the_bar(
     return not held.blocked
 
 
+async def _apply_additivity(
+    event: Event,
+    accepted: bool,
+    reviewer: uuid.UUID,
+    ref: Any,
+    requested: dict[str, Any],
+) -> bool:
+    """AL-03: a measure the chart validator found declared additive while its SQL is not is
+    declared as the steward accepts. The declaration it was proposed against must still hold:
+    one the steward changed meanwhile is not overwritten (OCC)."""
+    if not accepted:
+        return True
+    async with scoped_session("svc_context", event.org_id, reviewer) as session:
+        measure = await session.get(
+            context.SemanticMeasure, uuid.UUID(str(ref)), with_for_update=True
+        )
+        if measure is None or measure.additivity != requested.get("from"):
+            return False
+        if requested.get("to") not in ("full", "semi", "none"):
+            return False
+        measure.additivity = str(requested["to"])
+    return True
+
+
 async def _apply(event: Event, proposal: dict[str, Any]) -> bool:
     accepted = event.payload.get("status") == "accepted"
     reviewer = uuid.UUID(str(event.payload["reviewer_id"]))
@@ -325,6 +355,8 @@ async def _apply(event: Event, proposal: dict[str, Any]) -> bool:
             return True
     if proposal["kind"] == "pipeline_steps":
         return await _apply_steps(event, accepted, reviewer, ref, requested)
+    if proposal["kind"] == "measure_additivity":
+        return await _apply_additivity(event, accepted, reviewer, ref, requested)
     if proposal["kind"] == "source_authority":
         async with scoped_session("svc_conflict", event.org_id, reviewer) as session:
             authority = await session.get(conflict.SourceAuthority, ref, with_for_update=True)

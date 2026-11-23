@@ -65,6 +65,11 @@ ASK_ROUTES = Counter(
     "Questions the router sent to an engine (AE-01), by path (governed, agentic) and reason.",
     ["path", "reason"],
 )
+CHART_CHECK_ISSUES = Counter(
+    "dataagent_chart_check_issues_total",
+    "Problems the chart validator found in a chart before drawing it (AL-03), by code and severity.",
+    ["code", "severity"],
+)
 INGEST_ROWS = Counter(
     "dataagent_ingest_rows_total",
     "Rows an ingest run wrote to the workspace or set aside in the DLQ (DF-14), by outcome.",

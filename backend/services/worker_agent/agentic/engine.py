@@ -36,7 +36,7 @@ from libs import clock, language
 from libs.contracts.v1 import trust as answer_trust
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
-from services.worker_agent import clarify_policy, receipts, turn_trace
+from services.worker_agent import chart_proposals, clarify_policy, receipts, turn_trace
 from services.worker_agent.agentic import blocks as b
 from services.worker_agent.agentic import budget as agent_budget
 from services.worker_agent.agentic import (
@@ -59,6 +59,7 @@ from services.worker_agent.agentic.tools import TOOLS, Clarify, Tool, ToolContex
 from services.worker_agent.agentic.tools.coverage import for_planning
 from services.worker_agent.agentic.tools.query import asked_top, asks_change, two_periods
 from services.worker_agent.agentic.workspace import TRUST_LABEL, Dataset, Workspace, number
+from services.worker_agent.answer import chart_check
 from services.worker_agent.answer.verification import verify as verify_answer
 from services.worker_agent.events import Event
 from services.worker_agent.llm import Gateway, ModelUnavailable
@@ -1240,6 +1241,11 @@ async def compose(s: State) -> None:
             await publish(
                 str(s.question_id), "block", {"question_id": str(s.question_id), "block": block}
             )
+            noted = await _chart_said(s, block)
+            if noted is not None:
+                await publish(
+                    str(s.question_id), "block", {"question_id": str(s.question_id), "block": noted}
+                )
         # OP-5: figure drafts that all miss the column contract must not fall through to a
         # silent full-table PRESENT — replan once, then hand over.
         contract_hit = present_gate.after_drafts(mode=s.plan.mode, drafts=drafts, made=made, ws=ws)
@@ -1724,6 +1730,39 @@ def _checked(
         return None
     s.composition.append(block)
     return block
+
+
+async def _chart_said(s: State, block: dict[str, Any]) -> dict[str, Any] | None:
+    """AL-03: what the chart validator found, said beside the block: a chart it blocked was
+    drawn as its table, and the callout says why; a chart it warned about is drawn with the
+    note. A block caused by a declaration (a measure declared additive whose SQL is not) is filed
+    for the steward in the Review Inbox."""
+    found = block.get("chart_blocked") or block.get("chart_notes")
+    if not found:
+        return None
+    assert s.ctx is not None
+    chart_check.record(found["issues"])
+    for issue in found["issues"]:
+        if issue.get("proposal"):
+            try:
+                await chart_proposals.file(
+                    org_id=s.ctx.org_id,
+                    data_space_id=s.ctx.space_id,
+                    user_id=s.ctx.user_id,
+                    proposal=issue["proposal"],
+                    reason=issue["detail"],
+                )
+            except Exception:
+                logger.exception("chart_check proposal not filed")
+    said = {
+        "type": "callout",
+        "id": f"b{len(s.composition) + 1}",
+        "composed": True,
+        "tone": "warning" if block.get("chart_blocked") else "info",
+        "content": found["reason"],
+    }
+    s.composition.append(said)
+    return said
 
 
 FETCHING = frozenset({"query_metric", "explore_sql", "search_documents", "forecast_metric"})

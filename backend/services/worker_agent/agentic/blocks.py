@@ -22,6 +22,7 @@ from services.worker_agent.agentic.workspace import (
     number,
     plain,
 )
+from services.worker_agent.answer import chart_check
 
 BlockType = Literal[
     "markdown", "kpi", "chart", "table", "insights", "callout", "code", "follow_ups"
@@ -342,6 +343,48 @@ def _source(ds: Dataset) -> dict[str, Any]:
     }
 
 
+def _chart_issues(
+    ds: Dataset,
+    chart_type: str,
+    x: str,
+    x_kind: str,
+    x_values: list[Any],
+    y: list[str],
+    measures: list[list[float | None]],
+) -> list[chart_check.ChartIssue]:
+    """The validator's findings on a chart about to be drawn; none when it is turned off. A
+    certified metric's reading says how its values add up; a dataset the model computed does not,
+    so its additivity is unknown and only the data is checked."""
+    if not chart_check.enabled():
+        return []
+    reading = ds.reading or {}
+    additivity = reading.get("additivity")
+    measure = (
+        {
+            "metric_id": reading.get("metric_id"),
+            "measure_code": reading.get("measure_code"),
+            "declared": reading.get("declared"),
+        }
+        if reading.get("measure_code")
+        else None
+    )
+    chart = chart_check.Chart(
+        chart_type=chart_type,
+        x_key=x,
+        x_label=x,
+        x_kind=x_kind,
+        x_values=x_values,
+        series=[
+            chart_check.Series(
+                key=c, label=c, values=v, additivity=additivity, unit=ds.unit, measure=measure
+            )
+            for c, v in zip(y, measures, strict=True)
+        ],
+        requested_grain=reading.get("grain"),
+    )
+    return chart_check.check(chart, time_order=time_order)
+
+
 def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, Any]:
     """The block the client draws, with its data from the workspace; BlockError when the draft
     names a dataset, a column or a row that does not exist (the reporter may then fix it)."""
@@ -483,6 +526,20 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
             # Two periods of one quantity side by side; other pairs (revenue beside a margin)
             # have no change between them to read, and get no line rather than a wrong one.
             insight = comparison_insight(x_values, measures[0], measures[1], (y[0], y[1]))
+        # AL-03: the chart is checked against its rows and what the metric's values do before it
+        # is drawn; one that would mislead is shown as its table, with the reason beside it.
+        issues = _chart_issues(ds, chart_type, x, x_kind, x_values, y, measures)
+        if chart_check.blocking(issues):
+            table = materialize(
+                draft.model_copy(update={"type": "table", "columns": [x, *y]}), ws, block_id
+            )
+            return {
+                **table,
+                "chart_blocked": {
+                    "reason": chart_check.reason(issues),
+                    "issues": [i.as_dict() for i in issues],
+                },
+            }
         # The other types the same rows fit: the chart's switcher offers them (chart adjustment).
         return {
             **base,
@@ -490,6 +547,16 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
             "alternatives": fits,
             "unit": ds.unit,
             **({"insight": insight} if insight else {}),
+            **(
+                {
+                    "chart_notes": {
+                        "reason": chart_check.reason(issues),
+                        "issues": [i.as_dict() for i in issues],
+                    }
+                }
+                if issues
+                else {}
+            ),
             **_source(ds),
         }
     raise BlockError(f"không biết block {t}")

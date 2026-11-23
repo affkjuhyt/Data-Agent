@@ -3551,7 +3551,7 @@ CREATE TABLE inbox.proposal (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT proposal_pkey PRIMARY KEY (id),
-  CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product','forecast_model','pipeline_steps')),
+  CHECK (kind IN ('metric_change','synonym','relationship','example','glossary','schema_change','skill_publish','source_authority','writeback','document_validity','feedback_fix','knowledge_page','data_product','forecast_model','pipeline_steps','measure_additivity')),
   CHECK (impact_level IN ('low','medium','high')),
   CHECK (status IN ('open','evaluating','pending_review','accepted','applied','apply_failed','rejected','expired','withdrawn'))
 );

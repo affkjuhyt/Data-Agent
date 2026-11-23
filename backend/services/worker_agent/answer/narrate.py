@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from libs import language
+from services.worker_agent.answer import chart_check
 from services.worker_agent.answer.chart_intent import classify, recommend_type
 
 MAX_LISTED = 12  # beyond this the text names the top values and the table holds the rest
@@ -143,6 +144,10 @@ def chart_spec_of(
     unit: str | None,
     drill: list[tuple[str, str]] | None = None,
     value_column: str = "value",
+    additivity: str | None = None,
+    requested_grain: str | None = None,
+    measure: dict[str, Any] | None = None,
+    issues: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """How the figures are drawn (AC-01-01-01): intent → chart type (chart_intent.py).
 
@@ -151,6 +156,11 @@ def chart_spec_of(
     nothing to compare, so no chart. `drill` lists the other cuts the metric allows: a bar picked
     on the chart is asked again filtered to its member and cut by one of them (UC-01-04). Drill
     stays on bars only — pie/area are not drill targets.
+
+    AL-03: the chart is checked against the figures (answer/chart_check) and is not drawn when
+    it would mislead: the figures stay in the text and the table. What was found is appended to
+    `issues` for the caller's trace. `additivity` and `measure` say how the metric's values add
+    up (semantic/analysis.additivity_of).
     """
     if not group_by or len(figures) < 2:
         return None
@@ -177,7 +187,80 @@ def chart_spec_of(
     if has_series:
         spec["series"] = group_by[1]
         spec["series_label"] = dimension_names.get(group_by[1], group_by[1])
+    found = _chart_issues(
+        figures,
+        chart_type=chart_type,
+        x=x,
+        x_label=spec["x_label"],
+        x_kind="time" if x in time_dimensions else "category",
+        series_by=group_by[1] if has_series else None,
+        value_column=value_column,
+        metric_name=metric_name,
+        unit=unit,
+        additivity=additivity,
+        requested_grain=requested_grain,
+        measure=measure,
+    )
+    if issues is not None:
+        issues.extend(i.as_dict() for i in found)
+    if chart_check.blocking(found):
+        return None
+    if found:
+        spec["notes"] = chart_check.reason(found)
     return spec
+
+
+def _chart_issues(
+    figures: list[Figure],
+    *,
+    chart_type: str,
+    x: str,
+    x_label: str,
+    x_kind: str,
+    series_by: str | None,
+    value_column: str,
+    metric_name: str,
+    unit: str | None,
+    additivity: str | None,
+    requested_grain: str | None,
+    measure: dict[str, Any] | None,
+) -> list[chart_check.ChartIssue]:
+    if not chart_check.enabled():
+        return []
+    drawn = [f for f in figures if f.column == value_column and not f.comparison_only]
+    members = list(dict.fromkeys(f.dimensions.get(x) for f in drawn))
+    groups = (
+        list(dict.fromkeys(f.dimensions.get(series_by) for f in drawn)) if series_by else [None]
+    )
+    series = []
+    for group in groups:
+        by_member = {
+            f.dimensions.get(x): (float(f.value) if f.value is not None else None)
+            for f in drawn
+            if series_by is None or f.dimensions.get(series_by) == group
+        }
+        series.append(
+            chart_check.Series(
+                key=str(group) if group is not None else value_column,
+                label=f"{metric_name} {group}" if group is not None else metric_name,
+                values=[by_member.get(m) for m in members],
+                additivity=additivity,
+                unit=unit,
+                measure=measure,
+            )
+        )
+    chart = chart_check.Chart(
+        chart_type=chart_type,
+        x_key=x,
+        x_label=x_label,
+        x_kind=x_kind,
+        x_values=members,
+        series=series,
+        requested_grain=requested_grain,
+    )
+    # The client orders a time axis itself: the order of the figures (ranked by value) is not
+    # the chart's, so it is not checked here.
+    return chart_check.check(chart)
 
 
 def _shown(f: Figure) -> str:
