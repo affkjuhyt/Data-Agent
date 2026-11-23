@@ -457,9 +457,7 @@ async def process_document(event: Any, *, again: bool = False) -> None:
             await _fail(org_id, document_id, str(exc))
             log.exception("document processing failed id=%s", document_id)
             return
-        if meta.pii_policy == "reject" and any(
-            pii.scan(p.text, packs=meta.pii_packs)["total"] for p in pages
-        ):
+        if meta.pii_policy == "reject" and _holds_personal_data(meta, pages, extraction):
             await _fail(
                 org_id, document_id, "The collection rejects documents holding personal data."
             )
@@ -551,13 +549,15 @@ async def process_document(event: Any, *, again: bool = False) -> None:
 
 
 def _docling(meta: Meta, content: bytes) -> docling_path.Extraction:
-    """Docling's reading, in a worker thread. A collection that rejects personal data is not
-    masked here: the reject check below reads the text as written."""
+    """Docling's reading, in a worker thread. Elements, cells and captions carry no pii_masked
+    flag of their own and table_query reads cells for agents (BR-46), so they are masked under
+    every policy but `reject`, keep_for_authorized included; a `reject` collection is not masked
+    here, so `_holds_personal_data` reads all of it as written."""
 
     def mask(text: str) -> str:
         if meta.pii_policy == "reject":
             return text
-        return mask_for(meta.pii_policy, text, meta.pii_packs)[0]
+        return pii.mask(text, packs=meta.pii_packs)[0]
 
     return docling_path.extract(
         content,
@@ -570,6 +570,19 @@ def _docling(meta: Meta, content: bytes) -> docling_path.Extraction:
         title=meta.title,
         doc_no=meta.doc_no,
     )
+
+
+def _holds_personal_data(
+    meta: Meta, pages: list[ExtractedPage], extraction: docling_path.Extraction | None
+) -> bool:
+    """Whether any text read holds personal data: the pages, and with Docling every element,
+    table caption and cell as well (a page's text leaves the tables out, security review)."""
+    texts = [p.text for p in pages]
+    if extraction is not None:
+        texts += [e.text for e in extraction.elements]
+        for table in extraction.tables:
+            texts += [table.caption or "", *(c.text for c in table.cells)]
+    return any(t and pii.scan(t, packs=meta.pii_packs)["total"] for t in texts)
 
 
 @dataclass

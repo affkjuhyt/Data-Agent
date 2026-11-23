@@ -47,7 +47,7 @@ def docling(monkeypatch: pytest.MonkeyPatch) -> None:
     Files.uploads = []
 
 
-def upload(seed: Seed, media: str, file_name: str) -> Uploaded:
+def upload(seed: Seed, media: str, file_name: str, policy: str = "mask") -> Uploaded:
     org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Ngân hàng thử")
     user = seed.row("org.app_user", org_id=org, external_id="kc", username="u", display_name="U")
     space = seed.row("org.data_space", org_id=org, code="DS", name="DS", steward_id=user)
@@ -60,7 +60,7 @@ def upload(seed: Seed, media: str, file_name: str) -> Uploaded:
         purpose="tra cứu",
         qdrant_collection="doc_x",
         embed_model="bge-m3",
-        pii_policy="mask",
+        pii_policy=policy,
     )
     document = seed.row(
         "document.document",
@@ -76,7 +76,7 @@ def upload(seed: Seed, media: str, file_name: str) -> Uploaded:
     return Uploaded(org, document)
 
 
-def rules_docx() -> bytes:
+def rules_docx(contact: str | None = None) -> bytes:
     docx = pytest.importorskip("docx")
     d = docx.Document()
     d.add_heading("Chương I. Quy định chung", level=1)
@@ -89,6 +89,9 @@ def rules_docx() -> bytes:
                              ["Nợ xấu", "12", "15"]]):  # fmt: skip
         for c, text in enumerate(row):
             t.cell(r, c).text = text
+    if contact is not None:
+        # Personal data only inside a table: the page text leaves tables out.
+        t.add_row().cells[0].text = contact
     buffer = io.BytesIO()
     d.save(buffer)
     return buffer.getvalue()
@@ -262,3 +265,29 @@ def test_the_extractor_stays_legacy_by_default(monkeypatch: pytest.MonkeyPatch) 
     from services.worker_document import docling_adapter
 
     assert docling_adapter.extractor() == "legacy"
+
+
+async def test_a_collection_that_rejects_personal_data_reads_the_tables_too(seed: Seed) -> None:
+    u = upload(seed, "docx", "quy-che.docx", policy="reject")
+    Files.content = rules_docx(contact="Liên hệ: nguyen.van.a@example.com")
+    await handler.process_document(event(u))
+    assert seed.one("SELECT status FROM document.document WHERE id = %s", u.document) == "failed"
+    assert seed.one("SELECT count(*) FROM document.table_cell c JOIN document.doc_table t"
+                    " ON t.id = c.table_id WHERE t.document_id = %s", u.document) == 0  # fmt: skip
+
+
+async def test_a_cell_holding_personal_data_is_stored_masked(seed: Seed) -> None:
+    # keep_for_authorized keeps a page's text for authorized readers; a cell has no such flag
+    # and table_query reads cells for agents (BR-46): it is masked.
+    u = upload(seed, "docx", "quy-che.docx", policy="keep_for_authorized")
+    Files.content = rules_docx(contact="Liên hệ: nguyen.van.a@example.com")
+    await handler.process_document(event(u))
+    texts = [
+        t
+        for (t,) in seed.all(
+            "SELECT c.text FROM document.table_cell c JOIN document.doc_table d ON d.id = c.table_id"
+            " WHERE d.document_id = %s",
+            u.document,
+        )
+    ]
+    assert texts and not any("nguyen.van.a@example.com" in t for t in texts)
