@@ -400,3 +400,16 @@ async def test_di_13_a_document_with_most_pages_unusable_waits_and_is_not_gated_
         )
         == 1
     )
+
+
+async def test_di_13_an_issue_excerpt_never_holds_personal_data(seed: Seed, pages: list) -> None:
+    # keep_for_authorized keeps the passage; the quality queue (admin_data) reads the excerpt.
+    u = upload(seed, policy="keep_for_authorized")
+    pages.append(page("\ufffd" * 60 + " liên hệ nguyen.van.a@example.com " * 3))
+    await handler.process_document(event(u))
+    starts = seed.all(
+        "SELECT detail->>'start' FROM document.quality_issue"
+        " WHERE document_id = %s AND kind = 'garbled_text'",
+        u.document,
+    )
+    assert starts and not any("nguyen.van.a@example.com" in (s or "") for (s,) in starts)

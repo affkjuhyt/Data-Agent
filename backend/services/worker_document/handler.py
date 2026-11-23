@@ -901,15 +901,20 @@ async def _quality_issues(
             )
         )
 
+    def excerpt(text: str, size: int) -> str:
+        # The quality queue is read with admin_data, not AC06: an excerpt is always masked,
+        # whatever the collection keeps (security review).
+        return pii.mask(text, packs=meta.pii_packs)[0].strip()[:size]
+
     if extraction is not None:
         for page, start in extraction.garbled:
-            issue("garbled_text", page, {"reason": "garbled", "start": start})
+            issue("garbled_text", page, {"reason": "garbled", "start": excerpt(start, 120)})
     else:
         for n, p in enumerate(pages, start=1):
             if quality.garbled(p.text):
-                issue("garbled_text", n, {"reason": "garbled", "start": p.text.strip()[:120]})
+                issue("garbled_text", n, {"reason": "garbled", "start": excerpt(p.text, 120)})
     for page, start in plan.empty:
-        issue("empty_chunk", page, {"reason": "empty_chunk", "text": start})
+        issue("empty_chunk", page, {"reason": "empty_chunk", "text": excerpt(start, 60)})
     for c in plan.new:
         if not c.pii_masked:
             issue(
