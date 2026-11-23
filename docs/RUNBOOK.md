@@ -260,6 +260,9 @@ http://localhost:8400:
 | `rate(dataagent_ingest_rows_total{outcome="dlq"}[1h])` vs `…{outcome="written"}` | DF-14: rows ingest runs set aside in the DLQ against those they wrote (`job_run.rows_written` is read minus DLQ) |
 | `histogram_quantile(0.95, sum by (le, mode) (rate(dataagent_ingest_run_seconds_bucket[1h])))` | how long ingest runs take, per mode; `status="failed"` counts the failed ones |
 | `sum by (code, severity) (increase(dataagent_chart_check_issues_total[1d]))` | AL-03: what the chart validator found in placed charts; `severity="block"` charts were shown as tables (`CHART_CHECK=off` on worker-agent turns it off) |
+| `sum by (tool, outcome) (increase(dataagent_agent_tool_runs_total[1d]))`, `histogram_quantile(0.95, sum by (le, tool) (rate(dataagent_agent_tool_seconds_bucket[1h])))` | AL-15: runs of each agent tool in a turn (`insights`, `analyze`, `query_metric`, …) by outcome, `ok` or the failure (`arguments`, `transient`, `unavailable`, `forbidden`, `logic`), and their p95; a step's trace detail names its `tool` too |
+| `sum by (mode, outcome) (increase(dataagent_compute_runs_total[1d]))` | AL-15: the analyze tool's Python by sandbox mode (`off`, `local`, `service`): `ok`, `refused` (CONTRACT_MISMATCH before the run), `rejected`, `error`, `contract_mismatch` (after the run), `off`; `dataagent_compute_seconds` times the sandbox |
+| `increase(dataagent_causal_sentences_dropped_total[1d])` | AL-08/AL-15: sentences that worded a cause, dropped from answers before they were stored |
 
 Labels are route templates, event types and outcomes, never an id (`libs/metrics`).
 

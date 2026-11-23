@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import os
 import re
+import time
 
 from pydantic import BaseModel, Field
 
+from libs import metrics
 from libs.code_sandbox import client, local
 from services.worker_agent.agentic.tools import output_check
 from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResult
@@ -126,22 +128,27 @@ class Analyze(Tool):
         }
         # AL-06: what the code would compute wrong, refused before it runs: a sum or a share of a
         # metric that does not add up, an addition across units.
+        chosen = mode()
+        # AL-15: every outcome of the code is counted by sandbox mode (dataagent_compute_runs_total).
+        counted = metrics.COMPUTE_RUNS
         wrong = output_check.before_run(args.code, {i: ctx.ws.datasets[i] for i in inputs})
         if wrong:
+            counted.labels(chosen, "refused").inc()
             return ToolResult(
                 False,
                 "CONTRACT_MISMATCH: " + "; ".join(m.text() for m in wrong),
                 detail={"error": "contract_mismatch", "checks": [m.code for m in wrong]},
                 failure="arguments",
             )
-        chosen = mode()
         if chosen == "off":
+            counted.labels(chosen, "off").inc()
             return ToolResult(
                 False,
                 "phân tích bằng Python đang tắt",
                 detail={"error": "off"},
                 failure="unavailable",
             )
+        started = time.perf_counter()
         try:
             done = (
                 await client.run(os.environ["AGENT_SANDBOX_URL"], args.code, frames)
@@ -149,13 +156,17 @@ class Analyze(Tool):
                 else await local.run(args.code, frames)
             )
         except local.CodeRejected as exc:
+            counted.labels(chosen, "rejected").inc()
             return ToolResult(
                 False,
                 f"code bị từ chối: {exc}",
                 detail={"error": str(exc)},
                 failure="arguments",
             )
+        finally:
+            metrics.COMPUTE_SECONDS.labels(chosen).observe(time.perf_counter() - started)
         if not done.ok:
+            counted.labels(chosen, "error").inc()
             return ToolResult(
                 False,
                 f"code lỗi: {done.error}" + (f"\nstdout: {done.stdout}" if done.stdout else ""),
@@ -166,12 +177,14 @@ class Analyze(Tool):
             args.outputs, done.columns, done.rows, {i: ctx.ws.datasets[i] for i in inputs}
         )
         if wrong:
+            counted.labels(chosen, "contract_mismatch").inc()
             return ToolResult(
                 False,
                 "CONTRACT_MISMATCH: " + "; ".join(m.text() for m in wrong),
                 detail={"error": "contract_mismatch", "checks": [m.code for m in wrong]},
                 failure="arguments",
             )
+        counted.labels(chosen, "ok").inc()
         # "Doanh thu_x"/"Doanh thu_y" reached the chart's legend (16/11).
         renamed = merged_names(list(done.columns), args.code, ctx.ws.datasets) or {}
         sources = [ctx.ws.datasets[i] for i in inputs]

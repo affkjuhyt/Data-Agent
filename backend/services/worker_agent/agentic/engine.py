@@ -25,6 +25,7 @@ import datetime
 import json
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -32,7 +33,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 
-from libs import clock, language
+from libs import clock, language, metrics
 from libs.contracts.v1 import trust as answer_trust
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
@@ -806,6 +807,9 @@ async def _run_step(s: State, step: p.PlanStep) -> ToolResult:
         assert result is not None
         handle.detail = {
             **result.detail,
+            # AL-15: which tool the step ran, also when its action is another name (analyze is
+            # run_python on the timeline).
+            "tool": tool.name,
             "args": _shown_args(step),
             # What the step found, said from its result for the live timeline (narrate.py).
             "said": narrate.said(tool.name, result, s.ctx.ws, _vocab(s)),
@@ -818,15 +822,21 @@ async def _run_step(s: State, step: p.PlanStep) -> ToolResult:
 async def _run_tool(s: State, tool: Tool, ctx: ToolContext, args: Any) -> ToolResult:
     """One run of `tool`, stopped at its timeout. A timeout is transient; a crash goes back to the
     planner as it is, since running the same code again would crash the same way."""
+    started = time.perf_counter()
     try:
-        return await asyncio.wait_for(tool.run(ctx, args), tool.timeout_seconds)
+        result = await asyncio.wait_for(tool.run(ctx, args), tool.timeout_seconds)
     except TimeoutError:
-        return ToolResult(
+        result = ToolResult(
             False, f"công cụ chạy quá {tool.timeout_seconds:.0f} giây", failure="transient"
         )
     except Exception as exc:  # a tool's failure is feedback for the planner
         logger.exception("question %s: tool %s failed", s.question_id, tool.name)
-        return ToolResult(False, f"công cụ lỗi: {type(exc).__name__}")
+        result = ToolResult(False, f"công cụ lỗi: {type(exc).__name__}")
+    # AL-15: tool names are the TOOLS registry's, a bounded label.
+    metrics.AGENT_TOOL_SECONDS.labels(tool.name).observe(time.perf_counter() - started)
+    outcome = "ok" if result.ok else result.failure
+    metrics.AGENT_TOOL_RUNS.labels(tool.name, outcome).inc()
+    return result
 
 
 def _vocab(s: State) -> Any:
@@ -1769,6 +1779,7 @@ def _no_cause(s: State, text: str) -> str:
     its own block where the reader can check it."""
     kept, dropped = causal.without_causes(text)
     s.dropped_causes += dropped
+    metrics.CAUSAL_DROPPED.inc(dropped)
     return kept
 
 

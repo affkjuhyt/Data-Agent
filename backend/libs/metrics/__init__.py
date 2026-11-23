@@ -70,6 +70,34 @@ CHART_CHECK_ISSUES = Counter(
     "Problems the chart validator found in a chart before drawing it (AL-03), by code and severity.",
     ["code", "severity"],
 )
+AGENT_TOOL_RUNS = Counter(
+    "dataagent_agent_tool_runs_total",
+    "Runs of an agent tool in a turn (AL-15), by tool and outcome (ok, or the failure: arguments,"
+    " transient, unavailable, forbidden, logic).",
+    ["tool", "outcome"],
+)
+AGENT_TOOL_SECONDS = Histogram(
+    "dataagent_agent_tool_seconds",
+    "Time one run of an agent tool took, by tool.",
+    ["tool"],
+    buckets=BUCKETS,
+)
+COMPUTE_RUNS = Counter(
+    "dataagent_compute_runs_total",
+    "Python the analyze tool was asked to run (AL-15), by sandbox mode (off, local, service) and"
+    " outcome (ok, refused before the run, rejected, error, contract_mismatch after the run).",
+    ["mode", "outcome"],
+)
+COMPUTE_SECONDS = Histogram(
+    "dataagent_compute_seconds",
+    "Time the sandbox took to run the analyze tool's code, by mode.",
+    ["mode"],
+    buckets=BUCKETS,
+)
+CAUSAL_DROPPED = Counter(
+    "dataagent_causal_sentences_dropped_total",
+    "Sentences that worded a cause, dropped from an answer's text before it was stored (AL-08).",
+)
 INGEST_ROWS = Counter(
     "dataagent_ingest_rows_total",
     "Rows an ingest run wrote to the workspace or set aside in the DLQ (DF-14), by outcome.",
