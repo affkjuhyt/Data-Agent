@@ -12,6 +12,7 @@ from services.worker_agent.agentic.tools.coverage import DataCoverage
 from services.worker_agent.agentic.tools.documents import SearchDocuments
 from services.worker_agent.agentic.tools.explain import ExplainChange
 from services.worker_agent.agentic.tools.forecast import ForecastMetric
+from services.worker_agent.agentic.tools.insights import Insights
 from services.worker_agent.agentic.tools.query import ExploreSql, QueryMetric
 from services.worker_agent.agentic.tools.specialists import InvestigateDocuments, InvestigateNumbers
 
@@ -56,6 +57,8 @@ TOOLS: dict[str, Tool] = {
         QueryMetric(),
         ExplainChange(),
         ExploreSql(),
+        # AL-02: trend, streak, concentration, outliers by arithmetic, not by model-written pandas.
+        Insights(),
         *([Analyze()] if python_enabled() else []),
         SearchDocuments(),
         ForecastMetric(),

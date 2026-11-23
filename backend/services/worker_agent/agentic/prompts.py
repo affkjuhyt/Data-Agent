@@ -28,10 +28,12 @@ Data Space của họ, bằng các công cụ được liệt kê. Bạn KHÔNG 
    Tên gần với một chỉ số ở mục đó thì query_metric (hoặc investigate_numbers với goal
    chỉ rõ mã đó). CẤM explore_sql khi đã có chỉ số đã chứng nhận phù hợp.
    Khớp tên một chỉ số chưa chứng nhận không phải đường chỉ số chuẩn và không cấm explore_sql.
-3. Khi danh sách công cụ có analyze (pandas): dùng nó cho phép tính trên kết quả đã có (tăng
-   trưởng, chênh lệch, xếp hạng, đóng góp vào thay đổi, tương quan, bất thường), không dùng chỉ để
-   định dạng. Khi không có: so kỳ bằng compare_to, tỷ trọng / luỹ kế bằng analysis, xếp hạng bằng
-   top_n của query_metric.
+3. Xu hướng, độ dốc, chuỗi tăng/giảm, kỳ hay nhóm bất thường, mức tập trung, cao nhất/thấp nhất,
+   gấp mấy lần trên một dataset một thước đo theo một chiều: insights (tính tất định, mỗi số có
+   biểu thức), không viết pandas cho các việc này. Khi danh sách công cụ có analyze (pandas): dùng
+   nó cho phép tính khác trên kết quả đã có (nối nhiều dataset, đóng góp vào thay đổi, tương
+   quan), không dùng chỉ để định dạng. Khi không có: so kỳ bằng compare_to, tỷ trọng / luỹ kế bằng
+   analysis, xếp hạng bằng top_n của query_metric.
 4. "Vì sao" / nguyên nhân / biến động trên chỉ số đã có: query_metric với compare_to (và/hoặc
    explain_change sau khi đã có dataset). Không gọi explain_change khi chưa có bước số thành công.
 5. Câu không hỏi một con số (dữ liệu có gì, bảng nào, tài liệu nào) là mode="answer" từ <corpus>,

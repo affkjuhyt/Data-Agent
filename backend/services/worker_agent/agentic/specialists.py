@@ -64,6 +64,7 @@ NUMBERS = Specialist(
             "query_metric",
             "explain_change",
             "explore_sql",
+            "insights",
             "analyze",
             "forecast_metric",
         }
