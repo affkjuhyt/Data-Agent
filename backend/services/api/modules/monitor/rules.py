@@ -41,12 +41,29 @@ def backtest_request(periods: int, now: datetime.datetime) -> dict[str, Any]:
     return {"status": "pending", "periods": periods, "requested_at": now.isoformat()}
 
 
-def close_needs_note(value: decimal.Decimal | None, threshold: decimal.Decimal | None) -> bool:
+def close_needs_note(
+    value: decimal.Decimal | None, threshold: decimal.Decimal | None, figures: Any = ()
+) -> bool:
     """BR-124 as AC-08-02-05 reads it: a value more than twice its threshold needs a closing note
-    (4.5% against 2% does, 3.5% does not). The occurrence count side is the table's CHECK."""
-    if value is None or threshold is None or threshold == 0:
+    (4.5% against 2% does, 3.5% does not). The occurrence count side is the table's CHECK.
+
+    A split monitor's alert keeps its members' numbers in `figures` and none in `value` (the
+    worker's monitor_runs.py): any member more than twice the threshold needs the note."""
+    if threshold is None or threshold == 0:
         return False
-    return abs(value) > 2 * abs(threshold)
+    values = [value, *(_figure_value(f) for f in (figures if isinstance(figures, list) else []))]
+    return any(v is not None and abs(v) > 2 * abs(threshold) for v in values)
+
+
+def _figure_value(figure: Any) -> decimal.Decimal | None:
+    raw = figure.get("value") if isinstance(figure, dict) else None
+    if isinstance(raw, bool) or raw is None:
+        return None
+    try:
+        value = decimal.Decimal(str(raw))
+    except decimal.InvalidOperation:
+        return None
+    return value if value.is_finite() else None
 
 
 def permission_group(grants: Iterable[tuple[uuid.UUID, Any]]) -> str:

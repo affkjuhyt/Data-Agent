@@ -466,7 +466,7 @@ async def close_alert(
         row = await _alert(session, alert_id, principal, data_space)
         if row.status == "closed":
             raise Problem(409, "invalid_state", "The alert is already closed.")
-        if note is None and rules.close_needs_note(row.value, row.threshold_value):
+        if note is None and rules.close_needs_note(row.value, row.threshold_value, row.figures):
             raise Problem(
                 422,
                 "business_rule_violated",

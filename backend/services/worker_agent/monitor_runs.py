@@ -107,7 +107,7 @@ def summary(row: monitor.Monitor, metric: str, period: str, figures: list[dict[s
     sees the summary: a split monitor's summary counts the members that fired and names neither
     them nor their numbers (they stay in `figures`, which no endpoint serves yet)."""
     rule = row.rule if isinstance(row.rule, dict) else {}
-    split = any(f["member"] for f in figures)
+    split = backtests.split_of(row.scope_filter) is not None
     if row.rule_kind == "threshold":
         side = "trên" if rule.get("direction") == "above" else "dưới"
         why = f"Luật: {side} ngưỡng {rule.get('value')}."
@@ -221,7 +221,10 @@ async def _write(
             fired_at=minute,
             period_label=period,
             # A split monitor's numbers are its members' (see summary): none on the row.
-            value=None if first["member"] else decimal.Decimal(first["value"]),
+            # BR-124's closing note reads figures too (api monitor/rules.close_needs_note).
+            value=None
+            if backtests.split_of(row.scope_filter) is not None
+            else decimal.Decimal(first["value"]),
             threshold_value=_number(rule_value(row.rule)) if row.rule_kind == "threshold" else None,
             summary=summary(row, metric, period, fresh),
             dedup_key=period,

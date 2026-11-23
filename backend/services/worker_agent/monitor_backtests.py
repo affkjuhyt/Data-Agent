@@ -219,6 +219,11 @@ def _scope(scope_filter: Any) -> tuple[str | None, dict[str, list[str]]]:
     return (split if isinstance(split, str) and split and split != "none" else None), filters
 
 
+def split_of(scope_filter: Any) -> str | None:
+    """The dimension a monitor is split by, None for one series."""
+    return _scope(scope_filter)[0]
+
+
 def _today() -> datetime.date:
     return datetime.date.today()
 

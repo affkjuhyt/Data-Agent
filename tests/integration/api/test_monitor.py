@@ -8,6 +8,7 @@ lives in the first Data Space, a draft one beside it and a published one in the 
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -569,6 +570,22 @@ async def test_closing_far_above_the_threshold_needs_a_note(mon: Org) -> None:
         assert quiet.status_code == 200, quiet.text
         assert quiet.json()["close_note"] is None
     assert [e for e, _ in mon.events("monitor", far)] == ["alert.closed"]
+
+
+async def test_a_split_alert_far_above_the_threshold_needs_a_note(mon: Org) -> None:
+    # A split monitor's alert keeps its members' numbers in figures, not in value (AL-10).
+    split = seed_alert(
+        mon,
+        seed_monitor(mon),
+        threshold_value=2,
+        figures=json.dumps(
+            [{"member": "Miền Nam", "value": "3"}, {"member": "Miền Bắc", "value": "4.5"}]
+        ),
+    )
+    async with client(mon) as api:
+        refused = await api.post(f"/v1/alerts/{split}:close", json={}, headers=mon.headers("owner"))
+        assert refused.status_code == 422
+        assert refused.json()["code"] == "business_rule_violated"
 
 
 async def test_an_alert_repeated_more_than_twice_needs_a_note(mon: Org) -> None:
