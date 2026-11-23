@@ -432,9 +432,9 @@ exceptions: tools/licenses.json.
 | boto3 | 1.35.36 | Apache Software License | worker-ingest | pypi |
 | botocore | 1.40.61 | Apache-2.0 | api, crawler, worker-agent, worker-document | pypi |
 | botocore | 1.35.36 | Apache Software License | worker-ingest | pypi |
-| certifi | 2026.10.23 | Mozilla Public License 2.0 (MPL 2.0) | api, worker-agent, worker-ingest | pypi |
+| certifi | 2026.10.23 | Mozilla Public License 2.0 (MPL 2.0) | api, worker-ingest | pypi |
 | certifi | 2026.7.22 | Mozilla Public License 2.0 (MPL 2.0) | crawler | pypi |
-| certifi | 2026.11.20 | Mozilla Public License 2.0 (MPL 2.0) | worker-document | pypi |
+| certifi | 2026.11.20 | Mozilla Public License 2.0 (MPL 2.0) | worker-agent, worker-document | pypi |
 | cffi | 2.1.1 | MIT-0 | api, worker-agent, worker-document, worker-ingest | pypi |
 | charset-normalizer | 3.5.2 | MIT | api, crawler, worker-agent, worker-ingest | pypi |
 | charset-normalizer | 3.5.3 | MIT | worker-document | pypi |
@@ -463,7 +463,7 @@ exceptions: tools/licenses.json.
 | frozenlist | 1.8.0 | Apache-2.0 | api, crawler, worker-agent, worker-document, worker-ingest | pypi |
 | fsspec | 2026.9.0 | BSD-3-Clause | ml-forecast, worker-document | pypi |
 | fugue | 0.9.7 | Apache-2.0 | ml-forecast | pypi |
-| genai-prices | 0.2.4 | MIT | worker-agent | pypi |
+| genai-prices | 0.2.5 | MIT | worker-agent | pypi |
 | greenlet | 3.5.6 | MIT AND PSF-2.0 | api, crawler, worker-agent, worker-document, worker-ingest | pypi |
 | griffelib | 2.4.1 | ISC | worker-agent | pypi |
 | grpcio | 1.85.3 | Apache-2.0 | api, worker-agent, worker-document | pypi |
@@ -491,7 +491,7 @@ exceptions: tools/licenses.json.
 | jsonschema-specifications | 2025.9.1 | MIT | api, worker-agent, worker-document | pypi |
 | langcodes | 3.5.1 | MIT License | worker-document | pypi |
 | latex2mathml | 3.81.1 | MIT | worker-document | pypi |
-| logfire-api | 5.6.0 | MIT | worker-agent | pypi |
+| logfire-api | 6.0.0 | MIT | worker-agent | pypi |
 | lxml | 5.3.0 | BSD License | crawler | pypi |
 | lxml | 6.1.3 | BSD-3-Clause | worker-document | pypi |
 | mail-parser | 4.11.0 | Apache-2.0 | worker-document | pypi |
@@ -513,7 +513,7 @@ exceptions: tools/licenses.json.
 | numpy | 2.5.4 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | worker-document | pypi |
 | olefile | 0.47 | BSD License | worker-document | pypi |
 | omegaconf | 2.4.0 | BSD License | worker-document | pypi |
-| openai | 3.55.1 | Apache-2.0 | worker-agent | pypi |
+| openai | 3.57.0 | Apache-2.0 | worker-agent | pypi |
 | opencv-python-headless | 5.1.0.95 | Apache Software License | worker-document | pypi |
 | openpyxl | 3.1.5 | MIT License | api, worker-agent, worker-document | pypi |
 | opentelemetry-api | 1.45.2 | Apache-2.0 | worker-agent | pypi |
@@ -570,7 +570,7 @@ exceptions: tools/licenses.json.
 | s3transfer | 0.14.0 | Apache Software License | api, crawler, worker-agent, worker-document | pypi |
 | s3transfer | 0.10.4 | Apache Software License | worker-ingest | pypi |
 | safetensors | 0.8.0 | Apache Software License | worker-document | pypi |
-| scipy | 1.18.1 | BSD License | ml-forecast, worker-document | pypi |
+| scipy | 1.18.1 | BSD License | ml-forecast, python-sandbox, worker-agent, worker-document | pypi |
 | semchunk | 3.2.5 | MIT License | worker-document | pypi |
 | shapely | 2.2.0 | BSD-3-Clause | worker-document | pypi |
 | shellingham | 1.5.4 | ISC License (ISCL) | worker-document | pypi |
@@ -579,7 +579,7 @@ exceptions: tools/licenses.json.
 | soupsieve | 4.1.3 | MIT | worker-document | pypi |
 | SQLAlchemy | 2.0.35 | MIT License | api, crawler, worker-agent, worker-document, worker-ingest | pypi |
 | sqlglot | 30.31.0 | MIT | api, worker-agent | pypi |
-| sse-starlette | 3.7.0 | BSD-3-Clause | worker-agent | pypi |
+| sse-starlette | 3.7.1 | BSD-3-Clause | worker-agent | pypi |
 | starlette | 0.38.6 | BSD-3-Clause | api, ml-forecast | pypi |
 | starlette | 1.10.0 | BSD-3-Clause | worker-agent | pypi |
 | statsforecast | 2.1.1 | Apache Software License | ml-forecast | pypi |
@@ -602,7 +602,7 @@ exceptions: tools/licenses.json.
 | triad | 1.0.2 | Apache-2.0 | ml-forecast | pypi |
 | truststore | 0.10.5 | MIT | worker-agent | pypi |
 | typer | 0.27.3 | MIT | worker-document | pypi |
-| types-protobuf | 7.35.1.20260906 | Apache-2.0 | worker-agent | pypi |
+| types-protobuf | 7.35.1.20261122 | Apache-2.0 | worker-agent | pypi |
 | typing-inspection | 0.4.5 | MIT | api, ml-forecast, worker-agent, worker-document | pypi |
 | typing_extensions | 4.16.0 | PSF-2.0 | api, crawler, ml-forecast, worker-agent, worker-document, worker-ingest | pypi |
 | tzdata | 2026.6 | Apache-2.0 | ml-forecast, python-sandbox, worker-agent | pypi |
