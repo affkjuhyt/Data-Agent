@@ -45,11 +45,6 @@ def mapping_of(source: catalog.Source) -> tuple[dict[str, str], dict[str, str]]:
     return part("users"), part("groups")
 
 
-def mapped_roles(source: catalog.Source) -> set[str]:
-    users, groups = mapping_of(source)
-    return set(users.values()) | set(groups.values())
-
-
 async def role_for(
     session: AsyncSession, source: catalog.Source, principal_id: uuid.UUID
 ) -> str | None:

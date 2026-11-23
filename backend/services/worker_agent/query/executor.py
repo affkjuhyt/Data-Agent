@@ -254,15 +254,17 @@ async def _cached(
     executed: str,
     policies: Sequence[governance.AccessPolicy],
     as_of: datetime.date | None,
-    role: str | None = None,
-    mapped: frozenset[str] = frozenset(),
+    executed_as: str,
+    service: bool,
 ) -> tuple[q.QueryRun, q.QueryResult] | None:
     """The newest succeeded run with the same key inside the TTL, with its whole stored result.
 
     The policies are compared by id and by when they last changed: a run from before a policy was
-    edited is not reused, whatever its id (a mask method or a column list changed in place). The
-    role it ran as is part of the key (AE-17): a mapped role's rows are reused only for that role,
-    and a run as the service account never for a mapped asker, nor a mapped run for anyone else."""
+    edited is not reused, whatever its id (a mask method or a column list changed in place). Who it
+    ran as is part of the key (AE-17): `executed_as` is the identity this run will use, the mapped
+    role or the service account's login, and only a run as that very identity is reused. A run
+    from before AE-17 (executed_as null) ran as the service account, so only a `service` run
+    reuses it; nothing is excluded by what the mapping names today, which may have changed."""
     ttl = cache_ttl()
     if not ttl:
         return None
@@ -282,11 +284,9 @@ async def _cached(
                 q.QueryRun.sql_executed == executed,
                 q.QueryRun.as_of.is_(None) if as_of is None else q.QueryRun.as_of == as_of,
                 q.QueryResult.truncated.is_(False),
-                q.QueryRun.executed_as == role
-                if role is not None
-                else or_(
-                    q.QueryRun.executed_as.is_(None), q.QueryRun.executed_as.not_in(mapped or [""])
-                ),
+                or_(q.QueryRun.executed_as == executed_as, q.QueryRun.executed_as.is_(None))
+                if service
+                else q.QueryRun.executed_as == executed_as,
             )
             .order_by(q.QueryRun.started_at.desc())
             .limit(5)
@@ -615,16 +615,26 @@ async def run_query(
             and caller_kind in CACHEABLE_CALLERS
             and source.secret_ref != INTERNAL_WORKSPACE
         ):
-            hit = await _cached(
-                session,
-                data_space_id=data_space_id,
-                source_id=source.id,
-                executed=executed,
-                policies=applied_policies,
-                as_of=as_of,
-                role=role,
-                mapped=frozenset(identity.mapped_roles(source)),
-            )
+            # The identity this run will use, as the key of what it may reuse (AE-17). The service
+            # account's login is read now for that; a source whose account cannot be read reuses
+            # nothing and fails below as before.
+            who = role
+            if who is None:
+                try:
+                    who = (await secrets.read(org_id, source.secret_ref)).user
+                except SecretUnavailable:
+                    who = None
+            if who is not None:
+                hit = await _cached(
+                    session,
+                    data_space_id=data_space_id,
+                    source_id=source.id,
+                    executed=executed,
+                    policies=applied_policies,
+                    as_of=as_of,
+                    executed_as=who,
+                    service=role is None,
+                )
         recorded = {
             "source_id": source.id,
             "sql_generated": "" if private else sql,

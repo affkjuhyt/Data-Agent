@@ -134,3 +134,28 @@ async def test_groups_that_map_to_two_roles_refuse_the_query(
     assert (
         seed.one("SELECT executed_as FROM query.query_run WHERE id = %s", out.query_run_id) is None
     )
+
+
+async def test_rows_read_as_a_role_are_not_reused_once_the_mapping_drops_it(
+    seed: Seed,
+    warehouse: dict[str, object],  # noqa: F811
+    roles: None,
+) -> None:
+    org, space, user, source, secrets = _source(seed, warehouse)
+    other = _user(seed, org, space, "other")
+    source.role_mapping = {"users": {str(user): "dw_branch_reader"}}
+    first = await _run(source, secrets, org, space, user)
+    assert first.ok, first.error
+    # The admin takes the role away: the same SQL a moment later, as the service account, reads
+    # the source again rather than the role's rows.
+    source.role_mapping = {}
+    again = await _run(source, secrets, org, space, other)
+    assert again.ok, again.error
+    assert seed.one(
+        "SELECT executed_as, result_ref FROM query.query_run WHERE id = %s", again.query_run_id
+    ) == ("dw_reader", None)
+    # A second run as the service account may reuse the first's.
+    third = await _run(source, secrets, org, space, other)
+    assert seed.one(
+        "SELECT executed_as, result_ref FROM query.query_run WHERE id = %s", third.query_run_id
+    ) == ("dw_reader", f"query_run:{again.query_run_id}")
