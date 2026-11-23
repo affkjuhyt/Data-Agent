@@ -281,10 +281,34 @@ def test_gate_passes_a_report_inside_every_bound():
             "causal_claim_rate": 0.0,
             "why_method_coverage": 1.0,
             "why_decomposition_accuracy": 1.0,
+            "chart_trap_catch_rate": 1.0,
+            "chart_false_block_rate": 0.0,
         },
     }
 
     assert gate.check(report, _thresholds(), ["offline"]) == []
+
+
+def test_the_gate_reads_the_two_chart_metrics_and_the_answers_causal_rate():
+    """AL-09: a report without the chart metrics, or with a trap missed, fails the offline tier;
+    the online tier holds the real answers' causal wording at zero."""
+    from model.eval import gate
+
+    thresholds = _thresholds()
+    assert "chart_trap_catch_rate" in thresholds["offline"]
+    assert "chart_false_block_rate" in thresholds["offline"]
+    assert thresholds["online"]["answer_causal_claim_rate"]["max"] == 0.0
+    base = {
+        "policy_violation_rate": 0.0,
+        "false_refusal_rate": 0.0,
+        "sql_accuracy": 1.0,
+        "causal_claim_rate": 0.0,
+        "why_method_coverage": 1.0,
+        "why_decomposition_accuracy": 1.0,
+    }
+    assert gate.check({"tiers": ["offline"], "metrics": base}, thresholds, ["offline"])
+    missed = {**base, "chart_trap_catch_rate": 0.975, "chart_false_block_rate": 0.0}
+    assert gate.check({"tiers": ["offline"], "metrics": missed}, thresholds, ["offline"])
 
 
 def test_gate_fails_a_metric_over_its_maximum():
@@ -299,6 +323,8 @@ def test_gate_fails_a_metric_over_its_maximum():
             "causal_claim_rate": 0.0,
             "why_method_coverage": 1.0,
             "why_decomposition_accuracy": 1.0,
+            "chart_trap_catch_rate": 1.0,
+            "chart_false_block_rate": 0.0,
         },
     }
 
@@ -320,6 +346,8 @@ def test_gate_fails_a_metric_under_its_minimum():
             "causal_claim_rate": 0.0,
             "why_method_coverage": 1.0,
             "why_decomposition_accuracy": 1.0,
+            "chart_trap_catch_rate": 1.0,
+            "chart_false_block_rate": 0.0,
         },
     }
 

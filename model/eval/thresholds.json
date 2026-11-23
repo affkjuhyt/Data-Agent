@@ -20,12 +20,15 @@
     "sql_accuracy": {"min": 1.0, "why": "The semantic path is deterministic: resolution and compilation are either right or a bug."},
     "causal_claim_rate": {"max": 0.0, "why": "AC-03-01-07: a decomposition is arithmetic. One 'vì sao' answer that words a contribution as a cause tells a manager something nobody tested."},
     "why_method_coverage": {"min": 1.0, "why": "AC-03-01-07: every 'vì sao' conclusion carries its method, its confidence and a total that reconciles to the change."},
-    "why_decomposition_accuracy": {"min": 1.0, "why": "Deterministic: the direction of the change and its largest contributor are either right or a bug."}
+    "why_decomposition_accuracy": {"min": 1.0, "why": "Deterministic: the direction of the change and its largest contributor are either right or a bug."},
+    "chart_trap_catch_rate": {"min": 1.0, "why": "AL-09: every chart trap of cases/charts.jsonl (a share of a distinct count, a constant measure, a negative pie, a wrong grain…) is caught by the validator with its code; deterministic, so one miss is a bug."},
+    "chart_false_block_rate": {"max": 0.0, "why": "AL-09: a validator that blocks a right chart takes the picture away from an answer that was fine; it is broken, not careful."}
   },
   "online": {
     "intent_accuracy": {"min": 0.85, "provisional": true, "why": "Misrouting a question degrades the answer; it does not fabricate one. Held below the unsupported-recall bar deliberately."},
     "unsupported_recall": {"min": 0.95, "provisional": true, "why": "FORECAST and ANOMALY are what the platform cannot do. Missing one is what lets an invented number reach an answer, so it is graded harder than overall accuracy."},
     "hallucination_rate": {"max": 0.1, "provisional": true, "why": "RAGAS faithfulness below its floor on more than one case in ten means the answers are not made of their sources."},
-    "unsupported_number_rate": {"max": 0.05, "provisional": true, "why": "Deterministic, so it is held tighter than the judged metric: a figure that appears in no source is not a matter of opinion."}
+    "unsupported_number_rate": {"max": 0.05, "provisional": true, "why": "Deterministic, so it is held tighter than the judged metric: a figure that appears in no source is not a matter of opinion."},
+    "answer_causal_claim_rate": {"max": 0.0, "provisional": true, "why": "AL-08/AL-09: an answer of make agent-eval that words a cause outside a hypothesis claims what no query showed; the runtime drops such sentences, so one getting through is a bug. Provisional like every online bound until a first live run re-bases it."}
   }
 }

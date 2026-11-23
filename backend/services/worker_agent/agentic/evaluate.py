@@ -61,6 +61,30 @@ class Outcome:
     expected_metric: str | None = None
     understood: str | None = None
     confidence: float | None = None
+    # AL-09: everything the answer says outside a hypothesis (its text, and the markdown, callouts,
+    # insights and recommendations it is composed of), for the causal scorer on real answers.
+    said: str = ""
+
+
+# The blocks whose words are the answer's claims; a hypothesis is the one place a cause may be.
+_SAYING = ("markdown", "callout", "insights", "recommendation")
+
+
+def said_of(answer: qa.Answer | None) -> str:
+    """What an answer says, for model/eval/scorers/causal.score_answers."""
+    if answer is None:
+        return ""
+    parts = [answer.text or ""]
+    for block in answer.blocks if isinstance(answer.blocks, list) else []:
+        if not isinstance(block, dict) or block.get("type") not in _SAYING:
+            continue
+        parts.append(str(block.get("content") or ""))
+        for item in block.get("items") or []:
+            if isinstance(item, dict):
+                parts += [str(item.get(k) or "") for k in ("text", "action", "condition")]
+            else:
+                parts.append(str(item))
+    return "\n".join(p for p in parts if p.strip())
 
 
 @dataclass
@@ -223,6 +247,7 @@ async def _ask(
         confidence=float(plan.confidence)
         if plan is not None and plan.confidence is not None
         else None,
+        said=said_of(answer),
     )
 
 

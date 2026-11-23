@@ -30,6 +30,37 @@ from libs.language.causal import causal_sentences  # noqa: E402 - after _paths.e
 # stored (AL-08), and this scorer counts the same sentences.
 
 
+def score_answers(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    """AL-09: the causal wording in real answers, from `make agent-eval AGENT_EVAL_ARGS="--json"`
+    (worker_agent/agentic/evaluate.py: per engine, each outcome's `said`, what the answer says
+    outside a hypothesis). The runtime drops such sentences before an answer is stored (AL-08),
+    so this measures that it did.
+
+    answer_causal_claim_rate: answers with a sentence that words a cause, over the answers read.
+    """
+    results: list[dict[str, Any]] = []
+    for summary in summaries:
+        for outcome in summary.get("outcomes") or []:
+            said = str(outcome.get("said") or outcome.get("answer") or "")
+            if not said.strip():
+                continue
+            claims = causal_sentences(said)
+            results.append(
+                {
+                    "id": f"{summary.get('engine')}:{outcome.get('item_id')}",
+                    "tag": summary.get("engine", ""),
+                    "passed": not claims,
+                    "detail": "; ".join(claims)[:200],
+                }
+            )
+    n = len(results) or 1
+    return {
+        "answers": len(results),
+        "results": results,
+        "metrics": {"answer_causal_claim_rate": sum(not r["passed"] for r in results) / n},
+    }
+
+
 def _values(
     rows: dict[str, list[Any]],
 ) -> dict[str, tuple[decimal.Decimal, decimal.Decimal | None]]:

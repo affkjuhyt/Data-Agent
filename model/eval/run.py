@@ -27,21 +27,24 @@ from pathlib import Path
 from typing import Any
 
 from model.eval import corpus
-from model.eval.scorers import causal, grounding, intent, policy, sql
+from model.eval.scorers import causal, chart, grounding, intent, policy, sql
 
 
 def run_offline() -> dict[str, Any]:
     policy_report = policy.score(corpus.load_cases("policy"))
     sql_report = sql.score(corpus.load_cases("sql"), corpus.load_catalogs())
     why_report = causal.score(corpus.load_cases("why"))
+    chart_report = chart.score(corpus.load_cases("charts"))
     return {
         "policy": policy_report,
         "sql": sql_report,
         "why": why_report,
+        "charts": chart_report,
         "metrics": {
             **policy_report["metrics"],
             **sql_report["metrics"],
             **why_report["metrics"],
+            **chart_report["metrics"],
         },
     }
 
@@ -78,7 +81,7 @@ def _print_summary(report: dict[str, Any]) -> None:
     for name, value in sorted(report["metrics"].items()):
         bar = "#" * round(value * 20)
         print(f"  {name:<28} {value:.4f}  {bar}")
-    for section in ("policy", "sql", "intent", "grounding"):
+    for section in ("policy", "sql", "charts", "intent", "grounding", "answers"):
         failures = [
             r for r in report.get(section, {}).get("results", []) if not r.get("passed", True)
         ]
@@ -98,6 +101,11 @@ def main() -> int:
         "--agent-url", default=os.getenv("EVAL_AGENT_URL", "http://localhost:30100")
     )
     parser.add_argument("--agent-id", default=os.getenv("AGENT_ID", ""))
+    parser.add_argument(
+        "--answers",
+        default=os.getenv("EVAL_AGENT_ANSWERS", ""),
+        help="the JSON of make agent-eval AGENT_EVAL_ARGS=--json: its answers' causal wording (AL-09)",
+    )
     parser.add_argument(
         "--tenant-id",
         dest="data_space_id",
@@ -124,7 +132,17 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
+        if not args.answers:
+            print(
+                "--answers (or EVAL_AGENT_ANSWERS) is required for the online tier: the JSON of"
+                " make agent-eval, whose answers the causal scorer reads",
+                file=sys.stderr,
+            )
+            return 2
         online = asyncio.run(run_online(args.agent_url, args.agent_id, args.data_space_id))
+        answers = causal.score_answers(json.loads(Path(args.answers).read_text(encoding="utf-8")))
+        online["answers"] = answers
+        online["metrics"].update(answers["metrics"])
         report["tiers"].append("online")
         report["metrics"].update(online.pop("metrics"))
         report.update(online)

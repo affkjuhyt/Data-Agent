@@ -13,10 +13,13 @@ nothing anywhere that could stop a release.
 | `causal_claim_rate` | offline | Of the standard "vì sao" answers (`cases/why.jsonl`, run through the real decomposition skill), how many word a contribution as a cause? (AC-03-01-07) | max 0 |
 | `why_method_coverage` | offline | How many of them carry the method, the confidence and a total reconciled to the change? | min 1.0 |
 | `why_decomposition_accuracy` | offline | Is the direction of the change and its largest contributor the one the case's data implies? A case expecting `{"refused": true}` (a distinct count, whose contributions cannot add up) passes only when the skill refuses | min 1.0 |
+| `chart_trap_catch_rate` | offline | Of the chart traps of `cases/charts.jsonl` (a share of a distinct count, a constant measure, a negative pie, a wrong grain, two series that are one, a crowd of categories, months out of order, a stacked ratio; a hidden axis, a unit-less series, a crowded pie), how many does the real validator (`answer/chart_check.py`) catch with the code the case expects? (AL-09) | min 1.0 |
+| `chart_false_block_rate` | offline | Of the right charts in the same file, how many does it block? | max 0 |
 | `intent_accuracy` | online | How often does the real planner classify intent / analysis type correctly? | min 0.85 * |
 | `unsupported_recall` | online | Of the questions asking for what this platform CANNOT do (forecast, anomaly), how many were caught? | min 0.95 * |
 | `hallucination_rate` | online | RAGAS faithfulness below its floor — answers not made of their sources. | max 0.10 * |
 | `unsupported_number_rate` | online | Figures in an answer that appear in no source. Deterministic. | max 0.05 * |
+| `answer_causal_claim_rate` | online | Of the real answers of `make agent-eval AGENT_EVAL_ARGS="--json"` (`--answers`), how many word a cause outside a hypothesis block? Same rule as the runtime's (`libs/language/causal.py`, AL-08/AL-09) | max 0 * |
 
 `*` provisional — see *Re-basing* below.
 
@@ -51,7 +54,9 @@ python -m model.eval.gate --report eval-report.json --tier offline
 
 # both tiers, against a live stack
 export LITELLM_BASE_URL=http://localhost:8500 AGENT_ID=<uuid>
-python -m model.eval.run  --tier all --out eval-report.json
+# the agent's real answers, for answer_causal_claim_rate (the online tier requires them)
+make agent-eval AGENT_EVAL_ARGS="--json" > agent-eval.json
+python -m model.eval.run  --tier all --answers agent-eval.json --out eval-report.json
 python -m model.eval.gate --report eval-report.json --tier offline --tier online
 
 # or in the stack's own network. A deploy does not build the eval image (it is
