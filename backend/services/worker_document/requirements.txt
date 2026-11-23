@@ -21,3 +21,5 @@ prometheus-client==0.26.0
 # DI-03: Docling (MIT) extracts PDF/DOCX/HTML/images into a document tree with table cells;
 # torch and torchvision (CPU) are installed before this file in the Dockerfile.
 docling==2.150.0
+# DI-10: an XLSX workbook read as tables by cell type (xlsx_path.py); MIT, as the api pins it.
+openpyxl==3.1.5

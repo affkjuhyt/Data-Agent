@@ -2176,7 +2176,13 @@ export interface paths {
         get: operations["getDocument"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Xoá mềm tài liệu: status removed, tệp gốc giữ trong kho có khoá (thêm 23/11/2026, DI-10)
+         * @description DI-10: a soft delete, as a source sync removes a file gone at its source: the document is
+         *     `removed` and leaves every list and retrieval (they read deleted_at IS NULL); its file stays
+         *     in da-raw-docs, which the bucket's object lock keeps until its retention ends (DF-19).
+         */
+        delete: operations["deleteDocument"];
         options?: never;
         head?: never;
         /** Sửa số hiệu, hiệu lực, văn bản thay thế */
@@ -9231,7 +9237,7 @@ export interface components {
             code: string;
             ingest_profile?: components["schemas"]["IngestProfile"] | null;
             /** Media Kinds */
-            media_kinds?: ("pdf" | "image" | "docx" | "email" | "audio" | "html")[] | null;
+            media_kinds?: ("pdf" | "image" | "docx" | "xlsx" | "text" | "email" | "audio" | "html")[] | null;
             /** Name */
             name: string;
             /** Pii Policy */
@@ -21494,7 +21500,7 @@ export interface components {
             /** Document Ids */
             document_ids?: string[] | null;
             /** Media */
-            media?: ("pdf" | "image" | "docx" | "email" | "audio" | "html")[] | null;
+            media?: ("pdf" | "image" | "docx" | "xlsx" | "text" | "email" | "audio" | "html")[] | null;
         };
         /** SearchRequest */
         SearchRequest: {
@@ -41142,6 +41148,16 @@ export interface operations {
                     "application/problem+json": unknown;
                 };
             };
+            /** @description unsupported_media_type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
             /** @description Validation failed */
             422: {
                 headers: {
@@ -41183,6 +41199,116 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DocumentDetail"];
                 };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    deleteDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Invalid request */
             400: {

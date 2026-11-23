@@ -2491,7 +2491,7 @@ Bộ sưu tập tài liệu theo mục đích; tài liệu kế thừa quyền v
 | data\_space\_id | uuid, bắt buộc |  |
 | code | text, bắt buộc |  |
 | name | text, bắt buộc |  |
-| media\_kinds | text\[\], bắt buộc, mặc định '{}' | pdf, image, docx, email, audio, html |
+| media\_kinds | text\[\], bắt buộc, mặc định '{}' | pdf, image, docx, xlsx, text, email, audio, html |
 | purpose | text, bắt buộc | Mục đích sử dụng; lượt chạy có mục đích khác không đọc được |
 | pii\_policy | text, bắt buộc, mặc định 'mask' | mask, keep\_for\_authorized, reject |
 | retention\_days | integer |  |
@@ -2529,7 +2529,7 @@ Tài liệu đã nạp: bản gốc ở MinIO, trạng thái xử lý, số hi�
 | collection\_id | uuid, bắt buộc | FK collection |
 | document\_source\_id | uuid | FK document\_source khi đồng bộ |
 | sha256 | text, bắt buộc | Trùng mã băm trong cùng bộ sưu tập thì không nạp lại |
-| media | text, bắt buộc | pdf, image, docx, email, audio, html |
+| media | text, bắt buộc | pdf, image, docx, xlsx, text, email, audio, html; theo nội dung tệp, không theo đuôi (DI-10, 23/11/2026) |
 | file\_name | text, bắt buộc |  |
 | object\_key | text, bắt buộc | MinIO da-raw-docs |
 | size\_bytes | bigint, bắt buộc | Tối đa 200 MB |
@@ -2546,7 +2546,7 @@ Tài liệu đã nạp: bản gốc ở MinIO, trạng thái xử lý, số hi�
 | error | text |  |
 | deleted\_at | timestamptz | Xoá mềm |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (media IN ('pdf','image','docx','email','audio','html')); CHECK (status IN ('received','processing','waiting\_review','ready','failed','removed')); CHECK (effective\_to IS NULL OR effective\_from IS NULL OR effective\_to >= effective\_from); CHECK (size\_bytes <= 209715200); UNIQUE (collection\_id, sha256); FOREIGN KEY (collection\_id) REFERENCES document.collection(id); FOREIGN KEY (document\_source\_id) REFERENCES document.document\_source(id); FOREIGN KEY (supersedes\_id) REFERENCES document.document(id); FOREIGN KEY (parent\_document\_id) REFERENCES document.document(id). Chỉ mục: (collection\_id, doc\_no).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (media IN ('pdf','image','docx','xlsx','text','email','audio','html')); CHECK (status IN ('received','processing','waiting\_review','ready','failed','removed')); CHECK (effective\_to IS NULL OR effective\_from IS NULL OR effective\_to >= effective\_from); CHECK (size\_bytes <= 209715200); UNIQUE (collection\_id, sha256); FOREIGN KEY (collection\_id) REFERENCES document.collection(id); FOREIGN KEY (document\_source\_id) REFERENCES document.document\_source(id); FOREIGN KEY (supersedes\_id) REFERENCES document.document(id); FOREIGN KEY (parent\_document\_id) REFERENCES document.document(id). Chỉ mục: (collection\_id, doc\_no).
 
 #### document.document\_page
 
@@ -2581,11 +2581,11 @@ Một phần tử của tài liệu theo thứ tự đọc: đoạn, tiêu đề
 | bbox | jsonb | {l, t, r, b, coord\_origin} trên trang |
 | text | text |  |
 | parent\_element\_id | uuid | FK element: bảng hoặc hình của một chú thích, phần tử chứa dấu của chú thích cuối trang |
-| extractor | text, bắt buộc | docling, legacy |
+| extractor | text, bắt buộc | docling, legacy, openpyxl (XLSX, DI-10) |
 | extractor\_version | text, bắt buộc | Ví dụ docling-2.150.0+adapter-1; xử lý lại khi đổi |
 | confidence | numeric(5,4) | Độ tin OCR của trang khi phần tử đến từ OCR |
 
-Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (document\_id, order\_idx); CHECK (order\_idx >= 0); CHECK (kind IN ('text','heading','list','table','picture','caption','footnote','formula','header','footer','code','page\_number')); CHECK ((kind = 'heading') = (level IS NOT NULL)); CHECK (level IS NULL OR level BETWEEN 1 AND 6); CHECK (extractor IN ('docling','legacy')); CHECK (bbox IS NULL OR jsonb\_typeof(bbox) = 'object'); CHECK (confidence IS NULL OR confidence BETWEEN 0 AND 1); FOREIGN KEY (document\_id) REFERENCES document.document(id) ON DELETE CASCADE; FOREIGN KEY (parent\_element\_id) REFERENCES document.element(id) ON DELETE CASCADE. Chỉ mục: (document\_id, page\_no).
+Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (document\_id, order\_idx); CHECK (order\_idx >= 0); CHECK (kind IN ('text','heading','list','table','picture','caption','footnote','formula','header','footer','code','page\_number')); CHECK ((kind = 'heading') = (level IS NOT NULL)); CHECK (level IS NULL OR level BETWEEN 1 AND 6); CHECK (extractor IN ('docling','legacy','openpyxl')); CHECK (bbox IS NULL OR jsonb\_typeof(bbox) = 'object'); CHECK (confidence IS NULL OR confidence BETWEEN 0 AND 1); FOREIGN KEY (document\_id) REFERENCES document.document(id) ON DELETE CASCADE; FOREIGN KEY (parent\_element\_id) REFERENCES document.element(id) ON DELETE CASCADE. Chỉ mục: (document\_id, page\_no).
 
 #### document.doc\_table
 

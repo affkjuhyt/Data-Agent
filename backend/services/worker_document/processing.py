@@ -125,9 +125,30 @@ def extract_pages(
         return extractors.email_pages(content, file_name)
     if media == "image":
         return extractors.image_pages(content, ocr_languages)
+    if media == "text":
+        return text_pages(content)
     if media == "audio":
         raise ValueError("Recordings are not transcribed yet")
     raise ValueError(f"No text extractor is configured for media={media}")
+
+
+# A text file is read as pages of this many lines, so a page citation still narrows a long file.
+TEXT_PAGE_LINES = 80
+
+
+def text_pages(content: bytes) -> list[ExtractedPage]:
+    """A .txt or .md file (DI-10): its encoding found as an upload's is (libs.tabular), its
+    lines as pages; the chunker cuts them on their structure as any page text."""
+    from libs import tabular
+
+    text, _ = tabular.decode_text(content)
+    lines = text.replace("\r\n", "\n").split("\n")
+    out = []
+    for start in range(0, max(len(lines), 1), TEXT_PAGE_LINES):
+        body = "\n".join(lines[start : start + TEXT_PAGE_LINES]).strip()
+        if body:
+            out.append(ExtractedPage(body, None, True, None, [], [], 0.0, 0.0))
+    return out
 
 
 def _pdf_pages(content: bytes, ocr_languages: Sequence[str]) -> list[ExtractedPage]:

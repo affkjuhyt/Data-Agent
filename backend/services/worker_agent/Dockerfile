@@ -16,6 +16,8 @@ COPY backend/libs/quality_vocab/ ./libs/quality_vocab/
 COPY backend/libs/cron/ ./libs/cron/
 COPY backend/libs/clock/ ./libs/clock/
 COPY backend/libs/language/ ./libs/language/
+# DI-10: what a document file is, by its content (magic, zip directory), then its name.
+COPY backend/libs/document_intake/ ./libs/document_intake/
 COPY backend/libs/forecast_release/ ./libs/forecast_release/
 COPY backend/libs/tabular/ ./libs/tabular/
 COPY backend/libs/source_drivers/ ./libs/source_drivers/

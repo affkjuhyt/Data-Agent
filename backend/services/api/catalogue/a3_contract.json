@@ -2135,11 +2135,15 @@
     "effective_from": false
    },
    "query": [],
-   "returns": "202, Location tới document. multipart/form-data; trùng mã băm trong bộ sưu tập trả lại tài liệu đã có",
+   "returns": "202, Location tới document. multipart/form-data; loại tệp theo nội dung (magic, thư mục zip), đuôi khác nội dung thì đọc theo nội dung và mở vấn đề field_mismatch; trùng mã băm trong bộ sưu tập trả lại tài liệu đã có",
    "errors": [
     [
      413,
      "payload_too_large"
+    ],
+    [
+     415,
+     "unsupported_media_type"
     ]
    ],
    "request_text": "file*, collection_id*, doc_no, effective_from"
@@ -2153,6 +2157,22 @@
    "query": [],
    "returns": "Document. Kèm tiến độ từng bước tiền xử lý và số vấn đề chất lượng đang mở",
    "errors": [],
+   "request_text": "—"
+  },
+  "DELETE /v1/documents/{id}": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "—",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
    "request_text": "—"
   },
   "PATCH /v1/documents/{id}": {

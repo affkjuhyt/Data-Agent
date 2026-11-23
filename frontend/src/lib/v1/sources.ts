@@ -1122,6 +1122,8 @@ const MEDIA_LABEL: Record<string, string> = {
   pdf: 'PDF',
   image: 'ảnh',
   docx: 'Word',
+  xlsx: 'Excel',
+  text: 'văn bản',
   email: 'thư điện tử',
   audio: 'ghi âm',
   html: 'trang web',

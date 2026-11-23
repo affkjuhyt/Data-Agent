@@ -38,6 +38,8 @@ class Extraction:
     chunks: list[chunker.Chunk]
     extractor_version: str = docling_adapter.EXTRACTOR_VERSION
     dropped: dict[str, int] = field(default_factory=dict)
+    # document.element.extractor: docling, or openpyxl for a workbook (xlsx_path).
+    extractor: str = "docling"
 
 
 def handles(media: str) -> bool:

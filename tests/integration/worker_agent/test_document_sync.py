@@ -105,6 +105,17 @@ def library(seed: Seed, *, location: str = "s3://phap-che/quyet-dinh/", **source
     return Library(org, user, space, collection, source_id, ref)
 
 
+def _docx(marker: str) -> bytes:
+    """A real .docx's shape: the source sync reads a file's kind from its content (DI-10)."""
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", f"<w>{marker}</w>")
+    return buffer.getvalue()
+
+
 def synced(seed: Seed, lib: Library, name: str, data: bytes) -> uuid.UUID:
     """A document an earlier sync of the source made."""
     return seed.row(
@@ -167,10 +178,10 @@ async def test_new_and_changed_files_are_ingested_and_a_file_gone_is_removed(
     seed: Seed, raw: FakeRaw, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lib = library(seed)
-    same, old_b, new_b, new_c = b"%PDF a", b"%PDF b v1", b"%PDF b v2", b"PK docx c"
+    same, old_b, new_b, new_c = b"%PDF-a", b"%PDF-b v1", b"%PDF-b v2", _docx("c")
     kept = synced(seed, lib, "a.pdf", same)
     replaced = synced(seed, lib, "2026/b.pdf", old_b)
-    gone = synced(seed, lib, "gone.pdf", b"%PDF gone")
+    gone = synced(seed, lib, "gone.pdf", b"%PDF-gone")
     bucket = FakeBucket(
         {
             "quyet-dinh/a.pdf": (same, EARLIER),
@@ -279,9 +290,9 @@ async def test_a_sync_is_bounded_per_run_and_skips_what_an_upload_would_refuse(
     monkeypatch.setattr(sync, "MAX_FILE_BYTES", 10)
     bucket = FakeBucket(
         {
-            "1.pdf": (b"%PDF 1", LATER),
-            "2.pdf": (b"%PDF 2", LATER),
-            "huge.pdf": (b"%PDF far too large", LATER),
+            "1.pdf": (b"%PDF-1", LATER),
+            "2.pdf": (b"%PDF-2", LATER),
+            "huge.pdf": (b"%PDF-far too large", LATER),
         }
     )
     opened = given(monkeypatch, lib, bucket)
@@ -312,14 +323,14 @@ async def test_a_listing_cut_short_removes_nothing(
     seed: Seed, raw: FakeRaw, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lib = library(seed)
-    kept = synced(seed, lib, "z.pdf", b"%PDF z")
+    kept = synced(seed, lib, "z.pdf", b"%PDF-z")
     monkeypatch.setattr(sync, "MAX_LISTED", 1)
     # z.pdf is past the listing's limit, not gone: it must stay.
     given(
         monkeypatch,
         lib,
         FakeBucket(
-            {"quyet-dinh/a.pdf": (b"%PDF a", LATER), "quyet-dinh/z.pdf": (b"%PDF z", EARLIER)}
+            {"quyet-dinh/a.pdf": (b"%PDF-a", LATER), "quyet-dinh/z.pdf": (b"%PDF-z", EARLIER)}
         ),
     )
     await sync.sync_source(event(lib))
@@ -330,7 +341,7 @@ async def test_a_source_whose_secret_cannot_be_read_is_marked_in_error(
     seed: Seed, raw: FakeRaw, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lib = library(seed)
-    bucket = FakeBucket({"quyet-dinh/a.pdf": (b"%PDF a", LATER)})
+    bucket = FakeBucket({"quyet-dinh/a.pdf": (b"%PDF-a", LATER)})
     opened = given(monkeypatch, lib, bucket, secret=False)
     await sync.sync_source(event(lib))
     assert opened == [] and raw.objects == {}
@@ -354,7 +365,7 @@ async def test_a_paused_source_or_another_kind_is_left_alone(
 ) -> None:
     paused = library(seed, status="paused")
     smb = library(seed, kind="smb_folder", location="smb://fileserver/phap-che")
-    bucket = FakeBucket({"quyet-dinh/a.pdf": (b"%PDF a", LATER)})
+    bucket = FakeBucket({"quyet-dinh/a.pdf": (b"%PDF-a", LATER)})
     opened = given(monkeypatch, paused, bucket)
     await sync.sync_source(event(paused))
     await sync.sync_source(event(smb))

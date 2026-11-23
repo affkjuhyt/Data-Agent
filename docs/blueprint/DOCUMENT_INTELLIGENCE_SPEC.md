@@ -82,6 +82,12 @@ Giới hạn giữ nguyên (200 MB, 2 000 trang, 40 Mpx/trang, docx inflate 300 
 Versioning giữ `supersedes_id / effective_from / effective_to` và luồng `document.validity_proposed`; thêm diff phiên bản
 ở §8.
 
+**Đã làm (DI-10, 23/11/2026):** `libs/document_intake` (thư viện chung api + worker, chỉ thư viện chuẩn; zip đọc thư mục bằng
+seek, không nạp cả tệp). Mã lỗi mới `unsupported_media_type` (415). Cảnh báo đuôi sai ghi ở worker (api không ghi
+`quality_issue`), qua `declared_media` của `document.received`. XLSX: thêm giới hạn 1 000 000 ô cả tệp (đọc `read_only`
+trước) vì openpyxl nạp cả sổ để đọc ô gộp. Xoá mềm dùng `status=removed` + `deleted_at` như đồng bộ nguồn (CHECK `status`
+không có `deleted`).
+
 ## 3. Stage 3: Parse / OCR bằng Docling
 
 ### 3.1 Hiện tại

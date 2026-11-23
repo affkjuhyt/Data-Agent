@@ -34,6 +34,8 @@ COPY backend/libs/dataagent_db/ ./libs/dataagent_db/
 COPY backend/libs/metrics/ ./libs/metrics/
 COPY backend/libs/tabular/ ./libs/tabular/
 COPY backend/libs/language/ ./libs/language/
+# DI-10: what a document file is, by its content (magic, zip directory), then its name.
+COPY backend/libs/document_intake/ ./libs/document_intake/
 COPY backend/libs/pii/ ./libs/pii/
 COPY backend/libs/shared/ ./libs/shared/
 COPY backend/libs/vectors/ ./libs/vectors/

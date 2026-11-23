@@ -18,6 +18,8 @@ COPY backend/libs/cron/ ./libs/cron/
 COPY backend/libs/tabular/ ./libs/tabular/
 COPY backend/libs/pii/ ./libs/pii/
 COPY backend/libs/language/ ./libs/language/
+# DI-10: what a document file is, by its content (magic, zip directory), then its name.
+COPY backend/libs/document_intake/ ./libs/document_intake/
 # The shared wire shapes: TrustCode and the answer's trust rule (AE-06) the answers are served with.
 COPY backend/libs/contracts/ ./libs/contracts/
 # DF-12: the driver registry (connector cards, kinds); the drivers load lazily, none is used here.

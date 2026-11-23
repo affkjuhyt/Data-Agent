@@ -1590,6 +1590,18 @@
   },
   {
    "group": "Tài liệu",
+   "method": "DELETE",
+   "path": "/v1/documents/{id}",
+   "summary": "Xoá mềm tài liệu: status removed, tệp gốc giữ trong kho có khoá (thêm 23/11/2026, DI-10)",
+   "use_cases": [
+    "05-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Tài liệu",
    "method": "GET",
    "path": "/v1/documents/{id}/pages/{n}",
    "summary": "Trang: ảnh, văn bản, đoạn",

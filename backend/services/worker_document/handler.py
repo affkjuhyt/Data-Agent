@@ -41,7 +41,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import audit, document
 from libs.pii.injection import injection_suspected
 from libs.tabular import profile as ingest_profile
-from services.worker_document import chunker, docling_adapter, docling_path, validity
+from services.worker_document import chunker, docling_adapter, docling_path, validity, xlsx_path
 from services.worker_document.indexing import Point, VectorIndex
 from services.worker_document.processing import (
     DEFAULT_OCR_LANGUAGES,
@@ -440,7 +440,16 @@ async def process_document(event: Any, *, again: bool = False) -> None:
         docling_error: str | None = None
         try:
             content = await minio.download(RAW_BUCKET, meta.object_key)
-            if docling_adapter.extractor() == "docling" and docling_path.handles(meta.media):
+            if meta.media == "xlsx":
+                # DI-10: a workbook is its tables, read by type; no other path reads it.
+                extraction = await asyncio.to_thread(
+                    xlsx_path.extract,
+                    content,
+                    mask=_masker(meta),
+                    title=meta.title,
+                    doc_no=meta.doc_no,
+                )
+            elif docling_adapter.extractor() == "docling" and docling_path.handles(meta.media):
                 try:
                     extraction = await asyncio.to_thread(_docling, meta, content)
                 except Exception as exc:  # §3.4: the legacy pipeline reads it, and says why
@@ -514,6 +523,9 @@ async def process_document(event: Any, *, again: bool = False) -> None:
             await _write_structure_after(session, meta, extraction, plan, structure)
             if docling_error is not None:
                 await _docling_failed(session, meta, docling_error)
+            declared = (event.payload or {}).get("declared_media")
+            if declared and declared != meta.media:
+                await _extension_mismatch(session, meta, str(declared))
             status = await _finish(
                 session,
                 meta,
@@ -548,23 +560,30 @@ async def process_document(event: Any, *, again: bool = False) -> None:
         await minio.close()
 
 
-def _docling(meta: Meta, content: bytes) -> docling_path.Extraction:
-    """Docling's reading, in a worker thread. Elements, cells and captions carry no pii_masked
-    flag of their own and table_query reads cells for agents (BR-46), so they are masked under
-    every policy but `reject`, keep_for_authorized included; a `reject` collection is not masked
-    here, so `_holds_personal_data` reads all of it as written."""
+def _masker(meta: Meta) -> Callable[[str], str]:
+    """How an element, a cell or a caption is masked: always, unless the collection rejects
+    personal data, in which case nothing is masked and `_holds_personal_data` reads it all."""
 
     def mask(text: str) -> str:
         if meta.pii_policy == "reject":
             return text
         return pii.mask(text, packs=meta.pii_packs)[0]
 
+    return mask
+
+
+def _docling(meta: Meta, content: bytes) -> docling_path.Extraction:
+    """Docling's reading, in a worker thread. Elements, cells and captions carry no pii_masked
+    flag of their own and table_query reads cells for agents (BR-46), so they are masked under
+    every policy but `reject`, keep_for_authorized included; a `reject` collection is not masked
+    here, so `_holds_personal_data` reads all of it as written."""
+
     return docling_path.extract(
         content,
         meta.media,
         meta.file_name,
         docling_adapter.Options(ocr_languages=tuple(meta.ocr_languages)),
-        mask=mask,
+        mask=_masker(meta),
         locale=meta.locale,
         decimal_mark=meta.decimal_mark,
         title=meta.title,
@@ -635,7 +654,7 @@ async def _write_structure_before(
                 # SQL NULL, not a JSON null: the CHECK wants an object or nothing.
                 bbox=e.bbox if e.bbox is not None else null(),
                 text=e.text or None,
-                extractor="docling",
+                extractor=extraction.extractor,
                 extractor_version=e.extractor_version,
                 confidence=e.confidence,
             )
@@ -736,6 +755,34 @@ async def _write_structure_after(
                 ],
                 parent_chunk_id=parent,
                 table_id=structure.table_ids[chunk.table] if chunk.table is not None else None,
+            )
+        )
+
+
+async def _extension_mismatch(session: Any, meta: Meta, declared: str) -> None:
+    """DI-10: the name said one kind, the content another; it was read as its content. Once."""
+    already = await session.scalar(
+        select(document.QualityIssue.id).where(
+            document.QualityIssue.document_id == meta.document_id,
+            document.QualityIssue.kind == "field_mismatch",
+            document.QualityIssue.detail["reason"].astext == "extension_mismatch",
+        )
+    )
+    if already is None:
+        session.add(
+            document.QualityIssue(
+                id=uuid7(),
+                org_id=meta.org_id,
+                document_id=meta.document_id,
+                kind="field_mismatch",
+                severity="warning",
+                detail={
+                    "reason": "extension_mismatch",
+                    "file_name": meta.file_name,
+                    "declared": declared,
+                    "read_as": meta.media,
+                },
+                created_by=meta.created_by,
             )
         )
 

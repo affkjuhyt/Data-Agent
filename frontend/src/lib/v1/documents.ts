@@ -78,6 +78,8 @@ const MEDIA_LABEL: Record<string, string> = {
   pdf: 'PDF',
   image: 'Ảnh',
   docx: 'Word',
+  xlsx: 'Excel',
+  text: 'Văn bản',
   email: 'Thư điện tử',
   audio: 'Ghi âm',
   html: 'Trang web',
@@ -307,7 +309,7 @@ export interface CallRecording {
  */
 export interface DocumentView extends DocumentDetail {
   kind: DocumentKind;
-  /** pdf, image, docx, email, audio, html: only a PDF is shown as the original file. */
+  /** pdf, image, docx, xlsx, text, email, audio, html: only a PDF is shown as the original file. */
   media: string;
   file_name: string;
   /**
@@ -1184,7 +1186,7 @@ const codeOf = (name: string) =>
     .slice(0, 60) || 'collection';
 
 type MediaKind = NonNullable<Schemas['CollectionCreate']['media_kinds']>[number];
-const MEDIA: MediaKind[] = ['pdf', 'image', 'docx', 'email', 'audio', 'html'];
+const MEDIA: MediaKind[] = ['pdf', 'image', 'docx', 'xlsx', 'text', 'email', 'audio', 'html'];
 
 /** The kinds named in "PDF, ảnh, Word" as media kinds; none named takes every kind. */
 const mediaOf = (fileTypes: string): MediaKind[] => {
@@ -1193,6 +1195,8 @@ const mediaOf = (fileTypes: string): MediaKind[] => {
     pdf: ['pdf'],
     image: ['ảnh', 'image', 'jpg', 'png', 'scan'],
     docx: ['word', 'docx', 'doc'],
+    xlsx: ['excel', 'xlsx', 'bảng tính'],
+    text: ['txt', 'markdown', 'văn bản thuần'],
     email: ['email', 'thư', 'mail'],
     audio: ['ghi âm', 'audio', 'cuộc gọi', 'mp3', 'wav'],
     html: ['html', 'web'],

@@ -41,6 +41,7 @@ from aiohttp.resolver import DefaultResolver
 from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy import select
 
+from libs import document_intake
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import document as doc
 from services.worker_agent import questions
@@ -56,26 +57,6 @@ MAX_FILES_PER_SYNC = int(os.environ.get("DOCUMENT_SYNC_MAX_FILES", "200"))
 MAX_LISTED = int(os.environ.get("DOCUMENT_SYNC_MAX_LISTED", "5000"))
 # The upload's limit (UC-05-01 E2, the CHECK on document.size_bytes).
 MAX_FILE_BYTES = 200 * 1024 * 1024
-# The extensions an upload takes, to the same media (api document/routes.py MEDIA_BY_EXTENSION;
-# the two images share no module, so the table is repeated, not imported).
-MEDIA_BY_EXTENSION = {
-    ".pdf": "pdf",
-    ".png": "image",
-    ".jpg": "image",
-    ".jpeg": "image",
-    ".tif": "image",
-    ".tiff": "image",
-    ".webp": "image",
-    ".docx": "docx",
-    ".eml": "email",
-    ".msg": "email",
-    ".mp3": "audio",
-    ".wav": "audio",
-    ".m4a": "audio",
-    ".ogg": "audio",
-    ".html": "html",
-    ".htm": "html",
-}
 # S3 bucket naming rules: 3 to 63 lower-case letters, digits, dots and hyphens.
 _BUCKET = re.compile(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]")
 # Names that resolve inside the cluster or the host (crawler/fetch.py keeps the same list).
@@ -127,6 +108,8 @@ class _Fetched:
     sha256: str
     size: int
     media: str
+    # What the name claimed when the content is another kind (DI-10).
+    declared: str | None = None
 
 
 def _now() -> datetime.datetime:
@@ -460,8 +443,9 @@ async def _changes(org_id: uuid.UUID, source: _Source) -> tuple[list[_Fetched], 
         if not name or item.key.endswith("/"):
             continue  # the prefix itself, or a folder marker
         seen.add(name)
-        media = MEDIA_BY_EXTENSION.get(os.path.splitext(name)[1].lower())
-        if media is None or (source.media_kinds and media not in source.media_kinds):
+        # The name filters before anything is fetched; the content decides after (DI-10).
+        claimed = document_intake.BY_EXTENSION.get(document_intake.extension(name))
+        if claimed is None:
             continue
         if not 0 < item.size <= MAX_FILE_BYTES or len(name) > 1_000:
             continue
@@ -482,11 +466,17 @@ async def _changes(org_id: uuid.UUID, source: _Source) -> tuple[list[_Fetched], 
             sha256 = _sha256(data)
             if size == 0 or (old is not None and old[1] == sha256):
                 continue
+            found = document_intake.detect(data, name)  # type: ignore[arg-type]
+            if isinstance(found, document_intake.Unsupported):
+                continue
+            media = found.media
+            if source.media_kinds and media not in source.media_kinds:
+                continue
             key = f"{org_id}/{source.collection_id}/{sha256}"
             # Content-addressed like an upload's: a retry writes the same object, never another.
             if not await store.exists(RAW_BUCKET, key):
                 await store.put(RAW_BUCKET, key, data, size)
-        fresh.append(_Fetched(name, sha256, size, media))
+        fresh.append(_Fetched(name, sha256, size, media, found.declared))
     return fresh, seen if complete else None
 
 
@@ -567,6 +557,7 @@ async def _apply(
                         "media": f.media,
                         "sha256": f.sha256,
                         "status": "received",
+                        "declared_media": f.declared,
                     },
                 )
             )

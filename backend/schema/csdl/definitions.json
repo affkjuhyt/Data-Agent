@@ -21397,7 +21397,7 @@
      "not_null": true,
      "default": "'{}'",
      "unique": false,
-     "comment": "pdf, image, docx, email, audio, html",
+     "comment": "pdf, image, docx, xlsx, text, email, audio, html",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -21702,7 +21702,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "pdf, image, docx, email, audio, html",
+     "comment": "pdf, image, docx, xlsx, text, email, audio, html; theo nội dung tệp, không theo đuôi (DI-10, 23/11/2026)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -21884,7 +21884,7 @@
    "constraints": [
     {
      "kind": "check",
-     "sql": "CHECK (media IN ('pdf','image','docx','email','audio','html'))"
+     "sql": "CHECK (media IN ('pdf','image','docx','xlsx','text','email','audio','html'))"
     },
     {
      "kind": "check",
@@ -22186,7 +22186,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "docling, legacy",
+     "comment": "docling, legacy, openpyxl (XLSX, DI-10)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -22242,7 +22242,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (extractor IN ('docling','legacy'))"
+     "sql": "CHECK (extractor IN ('docling','legacy','openpyxl'))"
     },
     {
      "kind": "check",

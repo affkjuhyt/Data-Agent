@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, Path, Query, Respons
 from sqlalchemy import ColumnElement, and_, case, exists, func, literal_column, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import document_intake
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import document as doc
@@ -93,24 +94,6 @@ Purpose = Annotated[str | None, Header(alias="X-Purpose", max_length=500)]
 
 # UC-05-01 E2 and the CHECK on document.size_bytes.
 MAX_DOCUMENT_BYTES = 200 * 1024 * 1024
-MEDIA_BY_EXTENSION = {
-    ".pdf": "pdf",
-    ".png": "image",
-    ".jpg": "image",
-    ".jpeg": "image",
-    ".tif": "image",
-    ".tiff": "image",
-    ".webp": "image",
-    ".docx": "docx",
-    ".eml": "email",
-    ".msg": "email",
-    ".mp3": "audio",
-    ".wav": "audio",
-    ".m4a": "audio",
-    ".ogg": "audio",
-    ".html": "html",
-    ".htm": "html",
-}
 # The embedding model of new collections (BR-18: recorded per collection and per vector).
 EMBED_MODEL = os.environ.get("DOCUMENT_EMBED_MODEL", "bge-m3")
 IMAGE_URL_TTL_SECONDS = 300
@@ -517,13 +500,17 @@ async def upload_document(
     effective_from: Annotated[datetime.date | None, Form()] = None,
 ) -> Accepted:
     name = os.path.basename(file.filename or "").strip()
-    media = MEDIA_BY_EXTENSION.get(os.path.splitext(name)[1].lower())
-    if media is None:
-        # UC-05-01 E1: say why instead of failing later in preprocessing.
-        raise Problem(422, "validation_failed", "This file type is not supported.")
     sha256, size = await _hash(file)
     if size == 0:
         raise Problem(422, "validation_failed", "The file is empty.")
+    # DI-10: what the file is, by its content first (document_intake); a kind the platform does
+    # not read is refused now (UC-05-01 E1), not accepted and failed in preprocessing.
+    found = document_intake.detect(file.file, name)
+    if isinstance(found, document_intake.Unsupported):
+        raise Problem(
+            415, "unsupported_media_type", f"This file type is not supported: {found.reason}."
+        )
+    media = found.media
     async with transaction(ROLE, principal) as session:
         # BR-107: a document lives in a collection and inherits its rights.
         collection = await _collection(session, collection_id, principal, data_space)
@@ -578,6 +565,9 @@ async def upload_document(
                 media=media,
                 sha256=sha256,
                 status=row.status,
+                # The kind the file's name claimed when its content is another (a field_mismatch
+                # issue, written by worker-document).
+                declared_media=found.declared,
             )
         )
     response.headers["Location"] = f"/v1/documents/{row.id}"
@@ -853,6 +843,27 @@ async def list_document_chunks(
 
 
 VALIDITY_FIELDS = ("effective_from", "effective_to", "supersedes_id")
+
+
+@router.delete(
+    "/v1/documents/{id}",
+    status_code=204,
+    **endpoint("DELETE", "/v1/documents/{id}", operation_id="deleteDocument"),
+)
+async def delete_document(
+    document_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> Response:
+    """DI-10: a soft delete, as a source sync removes a file gone at its source: the document is
+    `removed` and leaves every list and retrieval (they read deleted_at IS NULL); its file stays
+    in da-raw-docs, which the bucket's object lock keeps until its retention ends (DF-19)."""
+    async with transaction(ROLE, principal) as session:
+        row, _ = await _document(session, document_id, principal, data_space, lock=True)
+        now = datetime.datetime.now(datetime.UTC)
+        row.status, row.deleted_at = "removed", now
+        row.updated_by, row.updated_at = principal.user_id, now
+    return Response(status_code=204)
 
 
 @router.patch(

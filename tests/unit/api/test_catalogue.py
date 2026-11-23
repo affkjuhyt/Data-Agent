@@ -25,8 +25,9 @@ def test_snapshot_holds_all_of_a2() -> None:
     # a forecast model and its job workbench (05/11/2026), plus an ingestion job's dry-run
     # sample and its schema-drift resolution (12/11/2026), plus a dataset version's snapshot
     # file (DF-05, 19/11/2026), plus a dataset's contract read and written (DF-09, 20/11/2026),
-    # plus editing a metric draft in place (19/11/2026).
-    assert len(data["endpoints"]) == 467
+    # plus editing a metric draft in place (19/11/2026), plus deleting a document softly (DI-10,
+    # 23/11/2026).
+    assert len(data["endpoints"]) == 468
     assert len(data["groups"]) == 21
     assert {e["group"] for e in data["endpoints"]} == set(data["groups"])
 

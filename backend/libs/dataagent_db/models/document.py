@@ -58,7 +58,9 @@ class Collection(Base):
     code: Mapped[str] = mapped_column(Text)
     name: Mapped[str] = mapped_column(Text)
     media_kinds: Mapped[list[str]] = mapped_column(
-        ARRAY(Text), server_default=sql_text("'{}'"), comment="pdf, image, docx, email, audio, html"
+        ARRAY(Text),
+        server_default=sql_text("'{}'"),
+        comment="pdf, image, docx, xlsx, text, email, audio, html",
     )
     purpose: Mapped[str] = mapped_column(
         Text, comment="Mục đích sử dụng; lượt chạy có mục đích khác không đọc được"
@@ -153,7 +155,10 @@ class Document(Base):
     sha256: Mapped[str] = mapped_column(
         Text, comment="Trùng mã băm trong cùng bộ sưu tập thì không nạp lại"
     )
-    media: Mapped[str] = mapped_column(Text, comment="pdf, image, docx, email, audio, html")
+    media: Mapped[str] = mapped_column(
+        Text,
+        comment="pdf, image, docx, xlsx, text, email, audio, html; theo nội dung tệp, không theo đuôi (DI-10, 23/11/2026)",
+    )
     file_name: Mapped[str] = mapped_column(Text)
     object_key: Mapped[str] = mapped_column(Text, comment="MinIO da-raw-docs")
     size_bytes: Mapped[int] = mapped_column(BigInteger, comment="Tối đa 200 MB")
@@ -279,7 +284,7 @@ class Element(Base):
         nullable=True,
         comment="FK element: bảng hoặc hình của một chú thích, phần tử chứa dấu của chú thích cuối trang",
     )
-    extractor: Mapped[str] = mapped_column(Text, comment="docling, legacy")
+    extractor: Mapped[str] = mapped_column(Text, comment="docling, legacy, openpyxl (XLSX, DI-10)")
     extractor_version: Mapped[str] = mapped_column(
         Text, comment="Ví dụ docling-2.150.0+adapter-1; xử lý lại khi đổi"
     )

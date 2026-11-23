@@ -1156,3 +1156,32 @@ def test_a_migrated_cluster_holds_a_documents_elements_tables_and_cells(admin):
         )
         == "'section'::text"
     )
+
+
+def test_a_migrated_cluster_takes_workbooks_and_text_files(admin):
+    # v3_0058 (23/11/2026, DI-10): document.media takes xlsx and text, element.extractor openpyxl.
+    _fresh(admin, "chain_di10", "chain_di10_audit")
+    db = _db(admin, "chain_di10")
+    _alembic(db, "upgrade", "v3_0057")
+    # The generated DDL is already at head: put back what a cluster at v3_0057 has.
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("ALTER TABLE document.document DROP CONSTRAINT document_media_check")
+        cur.execute(
+            "ALTER TABLE document.document ADD CONSTRAINT document_media_check"
+            " CHECK (media IN ('pdf','image','docx','email','audio','html'))"
+        )
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    _alembic(db, "upgrade", "head")
+    for table, name, word in (
+        ("document.document", "document_media_check", "xlsx"),
+        ("document.document", "document_media_check", "text"),
+        ("document.element", "element_extractor_check", "openpyxl"),
+    ):
+        assert word in _one(
+            db,
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+            f" WHERE conrelid = '{table}'::regclass AND conname = '{name}'",
+        )

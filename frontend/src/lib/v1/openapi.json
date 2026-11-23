@@ -6232,6 +6232,8 @@
           "pdf",
           "image",
           "docx",
+          "xlsx",
+          "text",
           "email",
           "audio",
           "html"
@@ -40932,6 +40934,8 @@
           "pdf",
           "image",
           "docx",
+          "xlsx",
+          "text",
           "email",
           "audio",
           "html"
@@ -73247,6 +73251,17 @@
       },
       "description": "payload_too_large"
      },
+     "415": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "unsupported_media_type"
+     },
      "422": {
       "content": {
        "application/json": {
@@ -73288,6 +73303,141 @@
    }
   },
   "/v1/documents/{id}": {
+   "delete": {
+    "description": "DI-10: a soft delete, as a source sync removes a file gone at its source: the document is\n`removed` and leaves every list and retrieval (they read deleted_at IS NULL); its file stays\nin da-raw-docs, which the bucket's object lock keeps until its retention ends (DF-19).",
+    "operationId": "deleteDocument",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Xoá mềm tài liệu: status removed, tệp gốc giữ trong kho có khoá (thêm 23/11/2026, DI-10)",
+    "tags": [
+     "Tài liệu"
+    ],
+    "x-capability": [
+     "admin_data"
+    ],
+    "x-use-cases": [
+     "UC-05-01"
+    ]
+   },
    "get": {
     "operationId": "getDocument",
     "parameters": [

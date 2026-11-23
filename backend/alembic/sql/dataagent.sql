@@ -4642,7 +4642,7 @@ CREATE TABLE document.collection (
   CHECK (jsonb_typeof(ingest_profile) = 'object')
 );
 COMMENT ON TABLE document.collection IS 'Bộ sưu tập tài liệu theo mục đích; tài liệu kế thừa quyền và mục đích của bộ sưu tập (BR-59, BR-107). Use case: UC-05-01, UC-05-06.';
-COMMENT ON COLUMN document.collection.media_kinds IS 'pdf, image, docx, email, audio, html';
+COMMENT ON COLUMN document.collection.media_kinds IS 'pdf, image, docx, xlsx, text, email, audio, html';
 COMMENT ON COLUMN document.collection.purpose IS 'Mục đích sử dụng; lượt chạy có mục đích khác không đọc được';
 COMMENT ON COLUMN document.collection.pii_policy IS 'mask, keep_for_authorized, reject';
 COMMENT ON COLUMN document.collection.extraction_schema_id IS 'FK extraction_schema đang dùng';
@@ -4704,7 +4704,7 @@ CREATE TABLE document.document (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT document_pkey PRIMARY KEY (id),
-  CHECK (media IN ('pdf','image','docx','email','audio','html')),
+  CHECK (media IN ('pdf','image','docx','xlsx','text','email','audio','html')),
   CHECK (status IN ('received','processing','waiting_review','ready','failed','removed')),
   CHECK (effective_to IS NULL OR effective_from IS NULL OR effective_to >= effective_from),
   CHECK (size_bytes <= 209715200),
@@ -4714,7 +4714,7 @@ COMMENT ON TABLE document.document IS 'Tài liệu đã nạp: bản gốc ở M
 COMMENT ON COLUMN document.document.collection_id IS 'FK collection';
 COMMENT ON COLUMN document.document.document_source_id IS 'FK document_source khi đồng bộ';
 COMMENT ON COLUMN document.document.sha256 IS 'Trùng mã băm trong cùng bộ sưu tập thì không nạp lại';
-COMMENT ON COLUMN document.document.media IS 'pdf, image, docx, email, audio, html';
+COMMENT ON COLUMN document.document.media IS 'pdf, image, docx, xlsx, text, email, audio, html; theo nội dung tệp, không theo đuôi (DI-10, 23/11/2026)';
 COMMENT ON COLUMN document.document.object_key IS 'MinIO da-raw-docs';
 COMMENT ON COLUMN document.document.size_bytes IS 'Tối đa 200 MB';
 COMMENT ON COLUMN document.document.doc_no IS 'Số hiệu văn bản';
@@ -4774,7 +4774,7 @@ CREATE TABLE document.element (
   CHECK (kind IN ('text','heading','list','table','picture','caption','footnote','formula','header','footer','code','page_number')),
   CHECK ((kind = 'heading') = (level IS NOT NULL)),
   CHECK (level IS NULL OR level BETWEEN 1 AND 6),
-  CHECK (extractor IN ('docling','legacy')),
+  CHECK (extractor IN ('docling','legacy','openpyxl')),
   CHECK (bbox IS NULL OR jsonb_typeof(bbox) = 'object'),
   CHECK (confidence IS NULL OR confidence BETWEEN 0 AND 1)
 );
@@ -4786,7 +4786,7 @@ COMMENT ON COLUMN document.element.kind IS 'text, heading, list, table, picture,
 COMMENT ON COLUMN document.element.level IS 'Cấp tiêu đề 1..6 khi kind = heading';
 COMMENT ON COLUMN document.element.bbox IS '{l, t, r, b, coord_origin} trên trang';
 COMMENT ON COLUMN document.element.parent_element_id IS 'FK element: bảng hoặc hình của một chú thích, phần tử chứa dấu của chú thích cuối trang';
-COMMENT ON COLUMN document.element.extractor IS 'docling, legacy';
+COMMENT ON COLUMN document.element.extractor IS 'docling, legacy, openpyxl (XLSX, DI-10)';
 COMMENT ON COLUMN document.element.extractor_version IS 'Ví dụ docling-2.150.0+adapter-1; xử lý lại khi đổi';
 COMMENT ON COLUMN document.element.confidence IS 'Độ tin OCR của trang khi phần tử đến từ OCR';
 

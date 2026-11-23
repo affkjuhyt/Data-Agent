@@ -299,6 +299,21 @@ def client(ds: Space) -> httpx.AsyncClient:
 PDF = b"%PDF-1.7 Quyet dinh 1234/QD-NHNN lai suat huy dong"
 
 
+def _zip(*names: str) -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name in names:
+            archive.writestr(name, "<x/>")
+    return buffer.getvalue()
+
+
+DOCX = _zip("[Content_Types].xml", "word/document.xml")
+PPTX = _zip("[Content_Types].xml", "ppt/presentation.xml")
+
+
 # --- collections and sources --------------------------------------------------------------------
 
 
@@ -546,6 +561,66 @@ async def test_upload_stores_the_original_once_and_answers_a_duplicate(ds: Space
         assert elsewhere.json()["id"] != document
 
 
+async def test_di_10_a_file_is_taken_for_what_its_content_is(ds: Space) -> None:
+    async with client(ds) as api:
+        # A PDF named .docx is a PDF; the name's claim travels for the worker to report.
+        lied = await api.post(
+            "/v1/documents",
+            files={"file": ("bao-cao.docx", PDF, "application/octet-stream")},
+            data={"collection_id": str(ds.laws)},
+            headers=ds.headers("uploader"),
+        )
+        assert lied.status_code == 202, lied.text
+        document = lied.json()["id"]
+        assert ds.one("SELECT media FROM document.document WHERE id = %s", document) == "pdf"
+        [(_, payload)] = ds.events(document)
+        assert (payload["media"], payload["declared_media"]) == ("pdf", "docx")
+        for name, content in (
+            ("slide.pptx", PPTX),
+            ("thu.msg", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1..."),
+            ("goi.mp3", b"ID3\x04..."),
+        ):
+            refused = await api.post(
+                "/v1/documents",
+                files={"file": (name, content, "application/octet-stream")},
+                data={"collection_id": str(ds.laws)},
+                headers=ds.headers("uploader"),
+            )
+            assert refused.status_code == 415, name
+            assert refused.json()["code"] == "unsupported_media_type"
+        assert ds.one("SELECT count(*) FROM document.document WHERE org_id = %s", ds.org) == 1
+
+
+async def test_di_10_a_document_is_deleted_softly(ds: Space) -> None:
+    async with client(ds) as api:
+        accepted = await api.post(
+            "/v1/documents",
+            files={"file": ("QD.pdf", PDF, "application/pdf")},
+            data={"collection_id": str(ds.laws)},
+            headers=ds.headers("uploader"),
+        )
+        document = accepted.json()["id"]
+        denied = await api.delete(f"/v1/documents/{document}", headers=ds.headers("uploader"))
+        assert denied.status_code == 403
+        gone = await api.delete(f"/v1/documents/{document}", headers=ds.headers("admin"))
+        assert gone.status_code == 204, gone.text
+        assert (
+            ds.one(
+                "SELECT status || ':' || (deleted_at IS NOT NULL)::text FROM document.document WHERE id = %s",
+                document,
+            )
+            == "removed:true"
+        )
+        # The original stays in the locked bucket; the document leaves reads.
+        assert ds.store.puts == 1
+        again = await api.delete(f"/v1/documents/{document}", headers=ds.headers("admin"))
+        assert again.status_code == 404
+        listed = await api.get(
+            "/v1/documents", params={"collection_id": str(ds.laws)}, headers=ds.headers("admin")
+        )
+        assert document not in {d["id"] for d in listed.json()["items"]}
+
+
 # AC-05-01-05, AC-05-01-07
 async def test_upload_refusals(ds: Space) -> None:
     async with client(ds) as api:
@@ -555,8 +630,9 @@ async def test_upload_refusals(ds: Space) -> None:
             data={"collection_id": str(ds.laws)},
             headers=ds.headers("uploader"),
         )
-        assert rar.status_code == 422
-        assert rar.json()["code"] == "validation_failed"
+        # DI-10: a kind the platform does not read is refused as such (415), not accepted.
+        assert rar.status_code == 415
+        assert rar.json()["code"] == "unsupported_media_type"
         # BR-107: a document lives in a collection.
         no_collection = await api.post(
             "/v1/documents",
@@ -567,7 +643,7 @@ async def test_upload_refusals(ds: Space) -> None:
         # The collection takes PDFs only.
         word = await api.post(
             "/v1/documents",
-            files={"file": ("hop_dong.docx", b"PK\x03\x04", "application/octet-stream")},
+            files={"file": ("hop_dong.docx", DOCX, "application/octet-stream")},
             data={"collection_id": str(ds.laws)},
             headers=ds.headers("uploader"),
         )
@@ -615,7 +691,7 @@ async def test_a_file_over_the_limit_is_refused(ds: Space, monkeypatch: pytest.M
     async with client(ds) as api:
         too_big = await api.post(
             "/v1/documents",
-            files={"file": ("lon.pdf", b"%" * 1025, "application/pdf")},
+            files={"file": ("lon.pdf", b"%PDF-" + b"%" * 1020, "application/pdf")},
             data={"collection_id": str(ds.laws)},
             headers=ds.headers("uploader"),
         )
@@ -623,7 +699,8 @@ async def test_a_file_over_the_limit_is_refused(ds: Space, monkeypatch: pytest.M
         assert too_big.json()["code"] == "payload_too_large"
         fits = await api.post(
             "/v1/documents",
-            files={"file": ("vua.pdf", b"%" * 1024, "application/pdf")},
+            # A PDF by its content (DI-10), exactly at the limit.
+            files={"file": ("vua.pdf", b"%PDF-" + b"%" * 1019, "application/pdf")},
             data={"collection_id": str(ds.laws)},
             headers=ds.headers("uploader"),
         )

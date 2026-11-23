@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from libs import cron
 from services.api.kernel.ingest_profile import IngestProfile
 
-Media = Literal["pdf", "image", "docx", "email", "audio", "html"]
+Media = Literal["pdf", "image", "docx", "xlsx", "text", "email", "audio", "html"]
 SourceKind = Literal[
     "smb_folder", "sharepoint", "imap_mailbox", "call_recording_api", "object_store"
 ]

@@ -237,7 +237,7 @@ Dịch vụ: Ingestion service (ingest). 20 endpoint.
 
 ### Tài liệu
 
-Dịch vụ: Document service (document). 15 endpoint.
+Dịch vụ: Document service (document). 16 endpoint.
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
@@ -248,6 +248,7 @@ Dịch vụ: Document service (document). 15 endpoint.
 | POST | /v1/documents | Tải tài liệu (multipart); 202 | 05-01 | upload |
 | GET | /v1/documents/{id} | Trạng thái, tiến độ tiền xử lý | 05-02 | ask |
 | PATCH | /v1/documents/{id} | Sửa số hiệu, hiệu lực, văn bản thay thế | 05-05 | admin\_data |
+| DELETE | /v1/documents/{id} | Xoá mềm tài liệu: status removed, tệp gốc giữ trong kho có khoá (thêm 23/11/2026, DI-10) | 05-01 | admin\_data |
 | GET | /v1/documents/{id}/pages/{n} | Trang: ảnh, văn bản, đoạn | 05-04 | ask |
 | GET | /v1/documents/{id}/versions | Dòng thời gian hiệu lực | 05-05 | ask |
 | POST | /v1/search/documents | Tìm lai ghép vector và từ khoá | 05-04 | ask |
@@ -851,8 +852,9 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/collections | code\*, name\*, media\_kinds, purpose\*, pii\_policy, retention\_days, ingest\_profile | Collection | — |
 | POST /v1/document-sources | collection\_id\*, kind\*, location\*, sync\_cron\*, credentials | DocumentSource | — |
 | POST /v1/document-sources/{id}:sync | — | 202, Location tới document\_source | — |
-| POST /v1/documents | file\*, collection\_id\*, doc\_no, effective\_from | 202, Location tới document. multipart/form-data; trùng mã băm trong bộ sưu tập trả lại tài liệu đã có | 413 payload\_too\_large |
+| POST /v1/documents | file\*, collection\_id\*, doc\_no, effective\_from | 202, Location tới document. multipart/form-data; loại tệp theo nội dung (magic, thư mục zip), đuôi khác nội dung thì đọc theo nội dung và mở vấn đề field\_mismatch; trùng mã băm trong bộ sưu tập trả lại tài liệu đã có | 413 payload\_too\_large; 415 unsupported\_media\_type (PPTX, .msg, ghi âm, .doc, .xls) |
 | GET /v1/documents/{id} | — | Document. Kèm tiến độ từng bước tiền xử lý và số vấn đề chất lượng đang mở | — |
+| DELETE /v1/documents/{id} | — | — | 404 not\_found |
 | PATCH /v1/documents/{id} | title, doc\_no, issued\_on, effective\_from, effective\_to, supersedes\_id | Document. Đổi hiệu lực hoặc văn bản thay thế tạo đề xuất document\_validity (UC-05-05) | — |
 | GET /v1/documents/{id}/pages/{n} | — | DocumentPage. Kèm image\_url ký có hạn và các đoạn của trang | 403 purpose\_mismatch |
 | GET /v1/documents/{id}/versions | — | Danh sách Document | — |

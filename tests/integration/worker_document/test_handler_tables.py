@@ -291,3 +291,65 @@ async def test_a_cell_holding_personal_data_is_stored_masked(seed: Seed) -> None
         )
     ]
     assert texts and not any("nguyen.van.a@example.com" in t for t in texts)
+
+
+def workbook() -> bytes:
+    openpyxl = pytest.importorskip("openpyxl")
+    book = openpyxl.Workbook()
+    sheet = book.active
+    sheet.title = "Dư nợ"
+    for row in (["Chi nhánh", "Dư nợ"], ["Hà Nội", 1200], ["TP. HCM", 900]):
+        sheet.append(row)
+    buffer = io.BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
+
+
+async def test_a_workbook_is_read_as_tables_whatever_the_extractor_flag(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DOC_EXTRACTOR", raising=False)  # XLSX does not wait for the bake-off
+    u = upload(seed, "xlsx", "du-no.xlsx")
+    Files.content = workbook()
+    await handler.process_document(event(u))
+    assert seed.one("SELECT status FROM document.document WHERE id = %s", u.document) == "ready"
+    assert seed.all(
+        "SELECT kind, page_no, extractor FROM document.element WHERE document_id = %s", u.document
+    ) == [("table", 1, "openpyxl")]
+    assert seed.all(
+        "SELECT c.text, c.numeric_value FROM document.table_cell c JOIN document.doc_table t"
+        " ON t.id = c.table_id WHERE t.document_id = %s AND NOT c.is_header ORDER BY c.row_idx, c.col_idx",
+        u.document,
+    ) == [("Hà Nội", None), ("1200", 1200), ("TP. HCM", None), ("900", 900)]
+    assert seed.all("SELECT kind FROM document.chunk WHERE document_id = %s", u.document) == [
+        ("table",)
+    ]
+
+
+async def test_a_text_file_is_read_and_a_name_that_lied_is_reported(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DOC_EXTRACTOR", raising=False)
+    u = upload(seed, "text", "ghi-chu.txt")
+    Files.content = "Điều 1. Phạm vi\n\nQuy chế áp dụng cho mọi khoản vay.\n".encode()
+    await handler.process_document(event(u, declared_media="pdf"))
+    assert seed.one("SELECT status FROM document.document WHERE id = %s", u.document) == "ready"
+    assert (
+        seed.one(
+            "SELECT count(*) FROM document.chunk WHERE document_id = %s AND text LIKE '%%khoản vay%%'",
+            u.document,
+        )
+        == 1
+    )
+    issue = seed.all(
+        "SELECT kind, severity, detail->>'declared', detail->>'read_as' FROM document.quality_issue"
+        " WHERE document_id = %s",
+        u.document,
+    )
+    assert issue == [("field_mismatch", "warning", "pdf", "text")]
+    # Once: a second run does not report it again.
+    await handler.reprocess_document(event(u, handler.DOCUMENT_REPROCESS, declared_media="pdf"))
+    assert (
+        seed.one("SELECT count(*) FROM document.quality_issue WHERE document_id = %s", u.document)
+        == 1
+    )
