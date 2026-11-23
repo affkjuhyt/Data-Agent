@@ -116,7 +116,7 @@ frontend-test:  ## vitest
 # forbidden one (tools/licenses.json). Scans the images last built (make deploy-local builds
 # them), so rerun after a requirements change and commit THIRD-PARTY-NOTICES.md with it.
 LICENSE_IMAGES = api worker-agent worker-ingest worker-document crawler ml-forecast python-sandbox
-.PHONY: licenses
+.PHONY: licenses tlc-reconcile
 
 licenses:  ## write THIRD-PARTY-NOTICES.md from the service images and the npm lock; fail on a forbidden licence
 	@out=$$(mktemp -d); trap 'rm -rf "$$out"' EXIT; \
@@ -381,6 +381,21 @@ sqlgen-ablation:  ## SQL expert ablation on ABLATION_SET (ABLATION_ORG, ABLATION
 	@kubectl -n dataagent-service exec -i deploy/worker-agent -- \
 		python -m services.worker_agent.sqlgen.ablation --org "$(ABLATION_ORG)" \
 		--space "$(ABLATION_SPACE)" --as "$(ABLATION_AS)" --set "$(ABLATION_SET)" $(ABLATION_ARGS)
+
+# EV-03: DS-TLC's metrics (deploy/docker/semantic/ds-tlc.yaml), compiled by the real compiler, against
+# the hand-written SQL of ds-tlc-reference.yaml, both run on the cluster's tlc_trips from the worker
+# pod (worker_agent/semantic/reconcile.py). Reads only. The YAML is read into JSON by dev-tools.
+RECONCILE_ORG ?=
+RECONCILE_SPACE ?= DS-TLC
+RECONCILE_MODEL ?= deploy/docker/semantic/ds-tlc.yaml
+RECONCILE_REFERENCE ?= deploy/docker/semantic/ds-tlc-reference.yaml
+
+tlc-reconcile:  ## DS-TLC metrics against hand-written SQL on the cluster's tlc_trips (RECONCILE_ORG)
+	@docker run --rm -v "$(PWD):/src" -w /src $(DEV_TOOLS_IMAGE) python -c "import json, sys, yaml; \
+		print(json.dumps({'model': yaml.safe_load(open(sys.argv[1])), 'reference': yaml.safe_load(open(sys.argv[2]))}, default=str))" \
+		"$(RECONCILE_MODEL)" "$(RECONCILE_REFERENCE)" \
+	| kubectl -n dataagent-service exec -i deploy/worker-agent -c worker-agent -- \
+		python -m services.worker_agent.semantic.reconcile --org "$(RECONCILE_ORG)" --space "$(RECONCILE_SPACE)" -
 
 agent-eval:  ## the dynamic agent on a Data Space's eval set (AGENT_EVAL_ORG, AGENT_EVAL_AS; AGENT_EVAL_ARGS)
 	@kubectl -n dataagent-service exec -i deploy/worker-agent -c worker-agent -- \

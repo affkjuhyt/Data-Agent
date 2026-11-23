@@ -1,7 +1,7 @@
 """The DS-TLC model (deploy/docker/semantic/ds-tlc.yaml) compiles: every metric, alone and cut by
 each dimension its owner allows, reaches its tables by one path. Reconciling the numbers needs the
-9.5 million trips of `make tlc`, so it was done against a load (tlc_trips, 16/11/2026: 16 checks,
-every one equal to hand-written SQL) rather than in this suite."""
+9.5 million trips of `make tlc`, so it runs on the load: `make tlc-reconcile` (EV-03), against the
+hand-written SQL of deploy/docker/semantic/ds-tlc-reference.yaml."""
 
 from __future__ import annotations
 

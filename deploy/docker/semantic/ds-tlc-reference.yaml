@@ -1,0 +1,107 @@
+# EV-03: what DS-TLC's metrics (ds-tlc.yaml) must give on TLC-2024Q1 as `make tlc` loads it, in
+# SQL written by hand against the tables, as an analyst defines each metric, not as the compiler
+# writes it. `make tlc-reconcile` compiles each metric with the real compiler and runs both on the
+# cluster's tlc_trips; a difference is the compiler's or the model's, never both the same way.
+#
+# Every check is over Q1 2024 (the pickup time in [2024-01-01, 2024-04-01)). A cut returns one row
+# per member, the member first; a code the dictionary does not know (a NULL after the left join)
+# is a member of its own, so the members add up to the total.
+period: {from: "2024-01-01", to: "2024-04-01"}
+checks:
+  - metric: SO_CHUYEN
+    sql: |
+      SELECT (SELECT count(trip_id) FROM yellow_trip
+              WHERE tpep_pickup_datetime >= '2024-01-01' AND tpep_pickup_datetime < '2024-04-01')
+           + (SELECT count(trip_id) FROM green_trip
+              WHERE lpep_pickup_datetime >= '2024-01-01' AND lpep_pickup_datetime < '2024-04-01')
+  - metric: SO_CHUYEN
+    cut: quan_don
+    sql: |
+      SELECT borough, sum(n) FROM (
+        SELECT z.borough, count(y.trip_id) AS n FROM yellow_trip y
+        LEFT JOIN taxi_zone z ON z.location_id = y.pu_location_id
+        WHERE y.tpep_pickup_datetime >= '2024-01-01' AND y.tpep_pickup_datetime < '2024-04-01'
+        GROUP BY z.borough
+        UNION ALL
+        SELECT z.borough, count(g.trip_id) FROM green_trip g
+        LEFT JOIN taxi_zone z ON z.location_id = g.pu_location_id
+        WHERE g.lpep_pickup_datetime >= '2024-01-01' AND g.lpep_pickup_datetime < '2024-04-01'
+        GROUP BY z.borough
+      ) t GROUP BY borough
+  - metric: SO_CHUYEN_VANG
+    cut: gia_cuoc
+    sql: |
+      SELECT r.name, count(y.trip_id) FROM yellow_trip y
+      LEFT JOIN rate_code r ON r.code = y.ratecode_id
+      WHERE y.tpep_pickup_datetime >= '2024-01-01' AND y.tpep_pickup_datetime < '2024-04-01'
+      GROUP BY r.name
+  - metric: DOANH_THU_VANG
+    sql: |
+      SELECT sum(total_amount) FROM yellow_trip
+      WHERE tpep_pickup_datetime >= '2024-01-01' AND tpep_pickup_datetime < '2024-04-01'
+  - metric: DOANH_THU_VANG
+    cut: thanh_toan
+    sql: |
+      SELECT p.name, sum(y.total_amount) FROM yellow_trip y
+      LEFT JOIN payment_type_code p ON p.code = y.payment_type
+      WHERE y.tpep_pickup_datetime >= '2024-01-01' AND y.tpep_pickup_datetime < '2024-04-01'
+      GROUP BY p.name
+  - metric: CUOC_TB_VANG
+    cut: hang_cong_nghe
+    sql: |
+      SELECT v.name, sum(y.total_amount) / count(y.trip_id) FROM yellow_trip y
+      LEFT JOIN vendor v ON v.code = y.vendor_id
+      WHERE y.tpep_pickup_datetime >= '2024-01-01' AND y.tpep_pickup_datetime < '2024-04-01'
+      GROUP BY v.name
+  - metric: QUANG_DUONG_TB_VANG
+    sql: |
+      SELECT sum(trip_distance) / count(trip_id) FROM yellow_trip
+      WHERE tpep_pickup_datetime >= '2024-01-01' AND tpep_pickup_datetime < '2024-04-01'
+  - metric: TY_LE_TIP_THE_VANG
+    sql: |
+      SELECT sum(y.tip_amount) / sum(y.fare_amount) * 100 FROM yellow_trip y
+      JOIN payment_type_code p ON p.code = y.payment_type AND p.name = 'Credit card'
+      WHERE y.tpep_pickup_datetime >= '2024-01-01' AND y.tpep_pickup_datetime < '2024-04-01'
+  - metric: TY_LE_TIP_THE_VANG
+    cut: quan_don
+    sql: |
+      SELECT z.borough, sum(y.tip_amount) / sum(y.fare_amount) * 100 FROM yellow_trip y
+      JOIN payment_type_code p ON p.code = y.payment_type AND p.name = 'Credit card'
+      LEFT JOIN taxi_zone z ON z.location_id = y.pu_location_id
+      WHERE y.tpep_pickup_datetime >= '2024-01-01' AND y.tpep_pickup_datetime < '2024-04-01'
+      GROUP BY z.borough
+  - metric: SO_KHACH_VANG
+    sql: |
+      SELECT sum(passenger_count) FROM yellow_trip
+      WHERE tpep_pickup_datetime >= '2024-01-01' AND tpep_pickup_datetime < '2024-04-01'
+  - metric: PHU_PHI_UN_TAC_VANG
+    cut: vung_dich_vu_don
+    sql: |
+      SELECT z.service_zone, sum(y.congestion_surcharge) FROM yellow_trip y
+      LEFT JOIN taxi_zone z ON z.location_id = y.pu_location_id
+      WHERE y.tpep_pickup_datetime >= '2024-01-01' AND y.tpep_pickup_datetime < '2024-04-01'
+      GROUP BY z.service_zone
+  - metric: PHI_SAN_BAY_VANG
+    sql: |
+      SELECT sum(airport_fee) FROM yellow_trip
+      WHERE tpep_pickup_datetime >= '2024-01-01' AND tpep_pickup_datetime < '2024-04-01'
+  - metric: SO_CHUYEN_XANH
+    cut: cach_goi_xe
+    sql: |
+      SELECT t.name, count(g.trip_id) FROM green_trip g
+      LEFT JOIN trip_type_code t ON t.code = g.trip_type
+      WHERE g.lpep_pickup_datetime >= '2024-01-01' AND g.lpep_pickup_datetime < '2024-04-01'
+      GROUP BY t.name
+  - metric: DOANH_THU_XANH
+    sql: |
+      SELECT sum(total_amount) FROM green_trip
+      WHERE lpep_pickup_datetime >= '2024-01-01' AND lpep_pickup_datetime < '2024-04-01'
+  - metric: QUANG_DUONG_TB_XANH
+    sql: |
+      SELECT sum(trip_distance) / count(trip_id) FROM green_trip
+      WHERE lpep_pickup_datetime >= '2024-01-01' AND lpep_pickup_datetime < '2024-04-01'
+  - metric: TY_LE_TIP_THE_XANH
+    sql: |
+      SELECT sum(g.tip_amount) / sum(g.fare_amount) * 100 FROM green_trip g
+      JOIN payment_type_code p ON p.code = g.payment_type AND p.name = 'Credit card'
+      WHERE g.lpep_pickup_datetime >= '2024-01-01' AND g.lpep_pickup_datetime < '2024-04-01'
