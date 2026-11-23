@@ -116,7 +116,7 @@ frontend-test:  ## vitest
 # forbidden one (tools/licenses.json). Scans the images last built (make deploy-local builds
 # them), so rerun after a requirements change and commit THIRD-PARTY-NOTICES.md with it.
 LICENSE_IMAGES = api worker-agent worker-ingest worker-document crawler ml-forecast python-sandbox
-.PHONY: licenses tlc-reconcile
+.PHONY: licenses tlc-reconcile tlc-cases
 
 licenses:  ## write THIRD-PARTY-NOTICES.md from the service images and the npm lock; fail on a forbidden licence
 	@out=$$(mktemp -d); trap 'rm -rf "$$out"' EXIT; \
@@ -396,6 +396,18 @@ tlc-reconcile:  ## DS-TLC metrics against hand-written SQL on the cluster's tlc_
 		"$(RECONCILE_MODEL)" "$(RECONCILE_REFERENCE)" \
 	| kubectl -n dataagent-service exec -i deploy/worker-agent -c worker-agent -- \
 		python -m services.worker_agent.semantic.reconcile --org "$(RECONCILE_ORG)" --space "$(RECONCILE_SPACE)" -
+
+# EV-05: the golden TLC cases' gold SQL run on the cluster's tlc_trips (reconcile --sql): their values
+# and result hashes written into model/eval/cases/golden/tlc/*.jsonl (sql_run_on_snapshot), then
+# deploy/docker/eval/ds-tlc-cases.yaml regenerated from them (tests/e2e/tlc/cases.py). Reads only.
+tlc-cases:  ## run the golden TLC cases' SQL on tlc_trips, write their values and the eval YAML (RECONCILE_ORG)
+	@docker run --rm -v "$(PWD):/src" -w /src $(DEV_TOOLS_IMAGE) python tests/e2e/tlc/cases.py export \
+	| kubectl -n dataagent-service exec -i deploy/worker-agent -c worker-agent -- \
+		python -m services.worker_agent.semantic.reconcile --org "$(RECONCILE_ORG)" --space "$(RECONCILE_SPACE)" --sql - \
+	> .tlc-cases-results.json
+	@docker run --rm -v "$(PWD):/src" -w /src $(DEV_TOOLS_IMAGE) sh -c \
+		"python tests/e2e/tlc/cases.py apply .tlc-cases-results.json && python tests/e2e/tlc/cases.py yaml"
+	@rm -f .tlc-cases-results.json
 
 agent-eval:  ## the dynamic agent on a Data Space's eval set (AGENT_EVAL_ORG, AGENT_EVAL_AS; AGENT_EVAL_ARGS)
 	@kubectl -n dataagent-service exec -i deploy/worker-agent -c worker-agent -- \

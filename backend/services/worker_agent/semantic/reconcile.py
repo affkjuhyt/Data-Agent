@@ -14,6 +14,10 @@ reconciled before its metrics are certified: a difference is the compiler's or t
 The DS-AW model is reconciled in CI (its data is small: tests/integration/worker_agent/
 test_adventureworks_reconciliation.py); TLC's 9.5 million trips are reconciled here, on the load.
 Reads only: nothing is written, not even a query run.
+
+`--sql` runs the gold SQL of the golden cases instead (EV-05, `make tlc-cases`): stdin is
+[{"id", "sql"}], stdout {id: {"columns", "rows", "sha256"}}, each value as JSON writes it
+(a decimal as its digits), the hash over that canonical JSON.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ import argparse
 import asyncio
 import datetime
 import decimal
+import hashlib
 import json
 import math
 import sys
@@ -180,7 +185,41 @@ async def reconcile(
     return results
 
 
+def _plain(value: Any) -> Any:
+    if isinstance(value, decimal.Decimal):
+        return str(value)
+    if isinstance(value, datetime.date | datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, float):
+        return repr(value)
+    return value
+
+
+async def run_sql(cases: Sequence[dict[str, Any]], conn: Any) -> dict[str, dict[str, Any]]:
+    """Each case's gold SQL, its rows as plain JSON values and the sha256 of them."""
+    out: dict[str, dict[str, Any]] = {}
+    for case in cases:
+        records = await conn.fetch(case["sql"])
+        columns = list(records[0].keys()) if records else []
+        rows = [[_plain(v) for v in r.values()] for r in records]
+        body = json.dumps({"columns": columns, "rows": rows}, ensure_ascii=False, sort_keys=True)
+        out[case["id"]] = {
+            "columns": columns,
+            "rows": rows,
+            "sha256": hashlib.sha256(body.encode()).hexdigest(),
+        }
+    return out
+
+
 async def _main(args: argparse.Namespace) -> int:
+    if args.sql:
+        cases = json.loads(sys.stdin.read())
+        conn = await _connection(uuid.UUID(args.org), args.space)
+        try:
+            print(json.dumps(await run_sql(cases, conn), ensure_ascii=False))
+        finally:
+            await conn.close()
+        return 0
     document = json.loads(sys.stdin.read())
     model, reference = document["model"], document["reference"]
     conn = await _connection(uuid.UUID(args.org), args.space)
@@ -207,6 +246,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--org", required=True)
     parser.add_argument("--space", default="DS-TLC")
+    parser.add_argument(
+        "--sql", action="store_true", help="run golden cases' gold SQL (EV-05), not the reference"
+    )
     parser.add_argument("stdin", nargs="?", default="-")
     return asyncio.run(_main(parser.parse_args(argv)))
 
