@@ -9,7 +9,9 @@ import re
 from pydantic import BaseModel, Field
 
 from libs.code_sandbox import client, local
+from services.worker_agent.agentic.tools import output_check
 from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResult
+from services.worker_agent.agentic.tools.output_check import OutputColumn
 from services.worker_agent.agentic.workspace import Dataset
 
 
@@ -92,6 +94,14 @@ class AnalyzeArgs(BaseModel):
     )
     inputs: list[str] = Field(default_factory=list, description="các mã dataset dùng tới")
     title: str = Field(default="Kết quả phân tích", description="tên ngắn của kết quả")
+    # AL-06: what the code says it returns, checked against the result (output_check.after_run).
+    outputs: list[OutputColumn] = Field(
+        default_factory=list,
+        description=(
+            "các cột kết quả: tên, phép tính (sum, share, cumulative, mean, count, ratio,"
+            " difference, rank, other), đơn vị, và cột nguồn dạng 'd1.Tên cột'"
+        ),
+    )
 
 
 class Analyze(Tool):
@@ -111,6 +121,16 @@ class Analyze(Tool):
             i: {"columns": ctx.ws.datasets[i].columns, "rows": ctx.ws.datasets[i].rows}
             for i in inputs
         }
+        # AL-06: what the code would compute wrong, refused before it runs: a sum or a share of a
+        # metric that does not add up, an addition across units.
+        wrong = output_check.before_run(args.code, {i: ctx.ws.datasets[i] for i in inputs})
+        if wrong:
+            return ToolResult(
+                False,
+                "CONTRACT_MISMATCH: " + "; ".join(m.text() for m in wrong),
+                detail={"error": "contract_mismatch", "checks": [m.code for m in wrong]},
+                failure="arguments",
+            )
         chosen = mode()
         if chosen == "off":
             return ToolResult(
@@ -137,6 +157,16 @@ class Analyze(Tool):
                 False,
                 f"code lỗi: {done.error}" + (f"\nstdout: {done.stdout}" if done.stdout else ""),
                 detail={"error": done.error},
+                failure="arguments",
+            )
+        wrong = output_check.after_run(
+            args.outputs, done.columns, done.rows, {i: ctx.ws.datasets[i] for i in inputs}
+        )
+        if wrong:
+            return ToolResult(
+                False,
+                "CONTRACT_MISMATCH: " + "; ".join(m.text() for m in wrong),
+                detail={"error": "contract_mismatch", "checks": [m.code for m in wrong]},
                 failure="arguments",
             )
         # "Doanh thu_x"/"Doanh thu_y" reached the chart's legend (16/11).
