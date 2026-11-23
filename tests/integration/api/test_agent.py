@@ -350,6 +350,17 @@ async def test_triggers_replace_the_set_and_preview(world: AgentWorld, seed: See
         assert schedule["warning"] is None
         assert event["next_runs"] == []
 
+        # The agent's page reads the set back, so a later PUT can keep what it did not change.
+        read = await api.get(f"/v1/agents/{item['id']}", headers=owner_headers(world))
+        assert read.status_code == 200, read.text
+        # One PUT writes them in one transaction: no column orders them, so compare as a set.
+        read_back = {t["kind"]: t for t in read.json()["triggers"]}
+        assert {(t["kind"], t["cron"], t["event_type"]) for t in read_back.values()} == {
+            ("schedule", "0 7 * * 1-5", None),
+            ("event", None, "period.closed"),
+        }
+        assert len(read_back["schedule"]["next_runs"]) == 5
+
         noisy = await api.put(
             url,
             headers=owner_headers(world),

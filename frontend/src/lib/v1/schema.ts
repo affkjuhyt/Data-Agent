@@ -7702,6 +7702,8 @@ export interface components {
             template_ref: string | null;
             /** Trigger Text */
             trigger_text?: string | null;
+            /** Triggers */
+            triggers?: components["schemas"]["TriggerView"][];
             /**
              * Updated At
              * Format: date-time

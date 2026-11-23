@@ -73,11 +73,16 @@ export interface AgentTrigger {
   event_type: string | null;
   condition: Record<string, unknown>;
   enabled: boolean;
-  /**
-   * PROPOSAL: the condition in words ("Thứ Hai 07:00"). On PUT a changed description without
-   * cron/condition asks the server to parse it, as draft-from-text does.
-   */
+  /** The condition in words for the table: the mock's PROPOSAL wording, else cron or event. */
   description: string;
+  /**
+   * What the trigger was saved with that the table does not show; sent back unchanged on PUT.
+   * readTrigger always sets it; a trigger made on the page (a draft) takes the api's defaults.
+   */
+  kept?: Pick<
+    Schemas['TriggerIn'],
+    'work_calendar_id' | 'min_interval' | 'no_overlap' | 'combine'
+  >;
 }
 
 /** GET /v1/agents/{id}: AgentDef with its running config and triggers. */
@@ -290,15 +295,51 @@ const readConfig = (raw: Schemas['ConfigView'] & { data_scope_text?: string }): 
   created_at: raw.created_at,
 });
 
-const readTrigger = (raw: Schemas['TriggerView'] & { description?: string }): AgentTrigger => ({
+export const readTrigger = (
+  raw: Partial<Schemas['TriggerView']> &
+    Pick<Schemas['TriggerView'], 'id' | 'kind'> & { description?: string },
+): AgentTrigger => ({
   id: raw.id,
   kind: raw.kind as TriggerKind,
-  cron: raw.cron,
-  event_type: raw.event_type,
+  cron: raw.cron ?? null,
+  event_type: raw.event_type ?? null,
   condition: isRecord(raw.condition) ? raw.condition : {},
-  enabled: raw.enabled,
+  enabled: raw.enabled ?? true,
   description: raw.description ?? raw.cron ?? raw.event_type ?? raw.kind,
+  kept: {
+    work_calendar_id: raw.work_calendar_id ?? null,
+    min_interval: raw.min_interval ?? null,
+    no_overlap: raw.no_overlap ?? true,
+    combine: (raw.combine as Schemas['TriggerIn']['combine']) ?? 'any',
+  },
 });
+
+/**
+ * PUT /v1/agents/{id}/triggers replaces the whole set, so every trigger the agent has goes
+ * back with every field it was read with (GET /v1/agents/{id} carries them); only what the
+ * page edits (cron, enabled) differs.
+ */
+export const saveTriggers = async (id: string, triggers: Omit<AgentTrigger, 'id'>[]) =>
+  (
+    await ok<Page<Schemas['TriggerView']>>(
+      api.PUT('/v1/agents/{id}/triggers', {
+        params: { path: { id } },
+        body: {
+          triggers: triggers.map((t) => ({
+            kind: t.kind,
+            cron: t.cron,
+            work_calendar_id: t.kept?.work_calendar_id ?? null,
+            event_type: t.event_type,
+            condition: t.condition,
+            min_interval: t.kept?.min_interval ?? null,
+            no_overlap: t.kept?.no_overlap ?? true,
+            combine: t.kept?.combine ?? 'any',
+            enabled: t.enabled,
+          })),
+        },
+      }),
+    )
+  ).items.map(readTrigger);
 
 /** PROPOSAL: the triggers and the owner's name come with the detail; the api has neither read. */
 type AgentDetailWire = Schemas['AgentView'] &
@@ -556,7 +597,7 @@ export const createAgent = async (draft: AgentDraft, templateRef?: string) => {
       },
     }),
   );
-  if (draft.triggers.length > 0) await putTriggers(created.id, draft.triggers);
+  if (draft.triggers.length > 0) await saveTriggers(created.id, draft.triggers);
   return readAgentDetail(created);
 };
 
@@ -589,22 +630,6 @@ export const saveConfig = async (id: string, body: ConfigInput) =>
       api.POST('/v1/agents/{id}/configs', { params: { path: { id } }, body: configBody(body) }),
     ),
   );
-
-/*
- * PUT replaces the whole set (A1.3). Only a new agent's first triggers go through it: A2 has no
- * read of an agent's triggers, so editing an existing agent's set could drop ones never read.
- */
-const putTriggers = async (id: string, triggers: Omit<AgentTrigger, 'id'>[]) => {
-  const page = await ok<Page<Schemas['TriggerView']>>(
-    api.PUT('/v1/agents/{id}/triggers', {
-      params: { path: { id } },
-      body: {
-        triggers,
-      },
-    }),
-  );
-  return page.items.map(readTrigger);
-};
 
 /** 202 with the run's id (RunAccepted); the drawer then reads the run. */
 export const startTestRun = async (id: string, configVersion: number, agentName = '') => {

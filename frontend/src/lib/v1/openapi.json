@@ -1906,6 +1906,13 @@
       ],
       "title": "Trigger Text"
      },
+     "triggers": {
+      "items": {
+       "$ref": "#/components/schemas/TriggerView"
+      },
+      "title": "Triggers",
+      "type": "array"
+     },
      "updated_at": {
       "format": "date-time",
       "title": "Updated At",

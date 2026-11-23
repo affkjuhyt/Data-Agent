@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
+import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { Segmented } from '../../design-system/Segmented';
 import { StatusDot } from '../../design-system/StatusDot';
@@ -19,6 +20,7 @@ import {
   activateAgent,
   getAgent,
   saveConfig,
+  saveTriggers,
   type AgentConfig,
   type AgentDetail,
   type AgentTrigger,
@@ -73,8 +75,7 @@ const TRIGGER_KIND: Record<TriggerKind, string> = {
 };
 
 const HISTORY_PENDING = 'Màn lịch sử phiên bản đang được làm.';
-const TRIGGERS_READ_ONLY =
-  'Trigger chưa sửa được ở đây: hệ thống chưa cho đọc lại từng trigger, mà lưu thì thay cả bộ.';
+const TRIGGERS_APPLY = 'Trigger áp dụng ngay khi lưu, không tạo phiên bản cấu hình mới.';
 
 export default function AgentConfigPage() {
   const { routeId } = useAppState();
@@ -106,6 +107,17 @@ function AgentBody({ agent }: { agent: AgentDetail & { config: AgentConfig } }) 
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>(agent.config.checkpoints);
   const [addingMemory, setAddingMemory] = useState(false);
   const test = useTestRun();
+  // GET /v1/agents/{id} carries every trigger with every field, and PUT replaces the set: the
+  // page edits schedules and on/off, and sends the whole set back (lib/v1 saveTriggers).
+  const savedTriggers = agent.triggers ?? [];
+  const [triggers, setTriggers] = useState<AgentTrigger[]>(savedTriggers);
+  const triggersDirty = triggers.some(
+    (t, i) => t.cron !== savedTriggers[i]?.cron || t.enabled !== savedTriggers[i]?.enabled,
+  );
+  const saveTriggerEdits = useV1Mutation(() => saveTriggers(agent.id, triggers), {
+    invalidates: [['getAgent']],
+    onSuccess: () => toast({ tone: 'success', message: 'Đã lưu trigger' }),
+  });
 
   const configDirty =
     autonomy !== agent.config.autonomy ||
@@ -116,12 +128,14 @@ function AgentBody({ agent }: { agent: AgentDetail & { config: AgentConfig } }) 
   // confirming drops the edits so coming back shows the saved version.
   const [leavingTo, setLeavingTo] = useState<Tab | null>(null);
   const changeTab = (next: Tab) => {
-    if (tab === 'config' && next !== 'config' && configDirty) setLeavingTo(next);
+    if (tab === 'config' && next !== 'config' && (configDirty || triggersDirty))
+      setLeavingTo(next);
     else setTab(next);
   };
   const discard = () => {
     setAutonomy(agent.config.autonomy);
     setCheckpoints(agent.config.checkpoints);
+    setTriggers(savedTriggers);
     if (leavingTo) setTab(leavingTo);
     setLeavingTo(null);
   };
@@ -147,7 +161,8 @@ function AgentBody({ agent }: { agent: AgentDetail & { config: AgentConfig } }) 
       onError: () => test.close(),
     },
   );
-  const error = activation.error?.message ?? saveEdits.error?.message;
+  const error =
+    activation.error?.message ?? saveEdits.error?.message ?? saveTriggerEdits.error?.message;
   const save = () => {
     // Saving starts over: an earlier activation failure is not this save's.
     activation.reset();
@@ -212,14 +227,28 @@ function AgentBody({ agent }: { agent: AgentDetail & { config: AgentConfig } }) 
         <div className="flex min-h-0 flex-1 max-[1023px]:flex-col">
           <div className="flex min-w-0 flex-1 flex-col pl-da-3xl pr-da-2xl">
             <Section title="Khi nào chạy">
-              {agent.triggers ? (
-                <TriggerTable triggers={agent.triggers} />
+              {triggers.length > 0 ? (
+                <>
+                  <TriggerTable triggers={triggers} onChange={setTriggers} />
+                  <div className="flex items-center gap-da-md pt-da-md">
+                    <Button
+                      disabled={!triggersDirty}
+                      loading={saveTriggerEdits.pending}
+                      onClick={() => {
+                        activation.reset();
+                        saveTriggerEdits.run();
+                      }}
+                    >
+                      Lưu trigger
+                    </Button>
+                    <p className="text-muted-foreground da-caption">{TRIGGERS_APPLY}</p>
+                  </div>
+                </>
               ) : (
                 <p className="text-foreground da-body-small">
                   {agent.trigger_text ?? 'Agent chưa có trigger nào; agent chỉ chạy khi được giao việc.'}
                 </p>
               )}
-              <p className="text-muted-foreground da-caption">{TRIGGERS_READ_ONLY}</p>
             </Section>
             <Section title="Mức tự chủ">
               <Segmented<Autonomy>
@@ -399,7 +428,15 @@ function RunsTable({ runs, onOpen }: { runs: AgentRun[]; onOpen: (id: string) =>
   );
 }
 
-function TriggerTable({ triggers }: { triggers: AgentTrigger[] }) {
+function TriggerTable({
+  triggers,
+  onChange,
+}: {
+  triggers: AgentTrigger[];
+  onChange: (next: AgentTrigger[]) => void;
+}) {
+  const edit = (id: string, change: Partial<Pick<AgentTrigger, 'cron' | 'enabled'>>) =>
+    onChange(triggers.map((t) => (t.id === id ? { ...t, ...change } : t)));
   const view = useTableView(triggers, {
     search: (trigger) => `${TRIGGER_KIND[trigger.kind]} ${trigger.description}`,
     filters: [{ id: 'kind', label: 'Loại', value: (trigger) => TRIGGER_KIND[trigger.kind] }],
@@ -422,13 +459,34 @@ function TriggerTable({ triggers }: { triggers: AgentTrigger[] }) {
           <SortableTh view={view} column="condition" className="w-[300px] px-da-lg py-da-md font-normal">
             Điều kiện
           </SortableTh>
+          <th className="w-[80px] px-da-lg py-da-md font-normal">Bật</th>
         </tr>
       </thead>
       <tbody>
         {view.rows.map((trigger) => (
           <tr key={trigger.id} className="border-b border-border align-middle da-body-small">
             <td className="px-da-lg py-[9px] text-foreground da-body-strong">{TRIGGER_KIND[trigger.kind]}</td>
-            <td className="px-da-lg py-[9px] text-foreground">{trigger.description}</td>
+            <td className="px-da-lg py-[9px] text-foreground">
+              {trigger.kind === 'schedule' ? (
+                // A five-field cron; the api checks it and names the trigger it refuses.
+                <Input
+                  mono
+                  aria-label={`Lịch của trigger ${TRIGGER_KIND[trigger.kind]}`}
+                  value={trigger.cron ?? ''}
+                  onChange={(e) => edit(trigger.id, { cron: e.target.value.trim() || null })}
+                />
+              ) : (
+                trigger.description
+              )}
+            </td>
+            <td className="px-da-lg py-[9px]">
+              <Checkbox
+                checked={trigger.enabled}
+                onChange={(enabled) => edit(trigger.id, { enabled })}
+              >
+                <span className="sr-only">{`Bật trigger ${trigger.description}`}</span>
+              </Checkbox>
+            </td>
           </tr>
         ))}
       </tbody>

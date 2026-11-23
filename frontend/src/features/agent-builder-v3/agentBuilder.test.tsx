@@ -3,6 +3,7 @@
  * the config tab (versioned save, autonomy rule), the memory tab, and the runs tab.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { http } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -115,13 +116,37 @@ describe('AgentConfigPage', () => {
     expect(screen.getByRole('checkbox', { name: 'Câu hỏi có hơn một cách hiểu hợp lệ' })).not.toBeChecked();
   });
 
-  it('shows the triggers without offering an edit that would replace the whole set', async () => {
+  it('edits a schedule and turns a trigger off, sending the whole set back', async () => {
+    let sent: { triggers: Record<string, unknown>[] } | undefined;
+    server.use(
+      // Read what the page sends, then let the mock store it.
+      http.put('*/v1/agents/:id/triggers', async ({ request }) => {
+        sent = (await request.clone().json()) as typeof sent;
+        return undefined;
+      }),
+    );
     routeId = 'agent-reconcile';
     wrap(<AgentConfigPage />);
-    expect(await screen.findByText('Thứ Hai 07:00')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Sửa trigger/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Lưu trigger' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Trigger chưa sửa được ở đây/)).toBeInTheDocument();
+    const save = await screen.findByRole('button', { name: 'Lưu trigger' });
+    expect(save).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Lịch của trigger Theo lịch' }), {
+      target: { value: '0 8 * * 1' },
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Bật trigger Kỳ chốt chuyển sang “Đang chốt”' }));
+    fireEvent.click(save);
+    await waitFor(() => expect(sent).toBeDefined());
+    expect(sent!.triggers).toHaveLength(4);
+    expect(sent!.triggers[0]).toMatchObject({ kind: 'schedule', cron: '0 8 * * 1', enabled: true });
+    expect(sent!.triggers[1]).toMatchObject({ event_type: 'period.closing', enabled: false });
+    expect(sent!.triggers[2]).toMatchObject({
+      event_type: 'job.succeeded',
+      condition: { job: 'ld_loans', drift_pct_gt: 0.1 },
+      enabled: true,
+    });
+    // Only TriggerIn's fields go out: the table's wording is not a field of the api.
+    expect(sent!.triggers.every((t) => !('description' in t))).toBe(true);
+    expect(await screen.findByText('Đã lưu trigger')).toBeInTheDocument();
   });
 
   it('lists, forgets and adds memories', async () => {

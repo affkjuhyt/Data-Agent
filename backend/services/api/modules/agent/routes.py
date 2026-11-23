@@ -393,6 +393,13 @@ async def _agent_view(session: AsyncSession, row: agent.AgentDef) -> AgentView:
         view.current_config = await _config_view(session, current) if current else None
     deployment = await _active_deployment(session, row.id)
     view.active_deployment = DeploymentView.model_validate(deployment) if deployment else None
+    triggers = await session.scalars(
+        select(agent.AgentTrigger)
+        .where(agent.AgentTrigger.agent_id == row.id)
+        .order_by(agent.AgentTrigger.created_at, agent.AgentTrigger.id)
+    )
+    now = _now()
+    view.triggers = [_trigger_view(t, now) for t in triggers]
     await _screen_agents(session, [view])
     return view
 

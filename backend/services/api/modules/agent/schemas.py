@@ -167,6 +167,9 @@ class AgentSummary(_Row):
 class AgentView(AgentSummary):
     current_config: ConfigView | None = None
     active_deployment: DeploymentView | None = None
+    # The agent's triggers as PUT /v1/agents/{id}/triggers last set them (A2 has no GET of the
+    # set): PUT replaces the whole set, so an editor must read what it would otherwise drop.
+    triggers: list[TriggerView] = Field(default_factory=list)
 
 
 class TriggerIn(BaseModel):

@@ -5,7 +5,7 @@
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { getTestRun } from './agentBuilder';
+import { getTestRun, readTrigger, saveTriggers } from './agentBuilder';
 
 const at = '2026-11-19T08:00:00Z';
 const step = (seq: number, kind: string, name: string, status: string, summary: string) => ({
@@ -100,6 +100,75 @@ describe('the test run drawer from the api', () => {
     expect((await getTestRun('run-1', 'Agent Đối soát')).test_report).toMatchObject({
       completed: false,
       failures: ['Không kết nối được DWH.'],
+    });
+  });
+});
+
+describe('saving an agent’s triggers', () => {
+  it('sends every trigger whole, so an edit never drops what it did not show', async () => {
+    let sent: unknown;
+    server.use(
+      http.put('*/v1/agents/agent-1/triggers', async ({ request }) => {
+        sent = await request.json();
+        return HttpResponse.json({ items: [], next_page_token: '' });
+      }),
+    );
+    const schedule = readTrigger({
+      id: 't-1',
+      agent_id: 'agent-1',
+      kind: 'schedule',
+      cron: '0 7 * * 1',
+      work_calendar_id: 'cal-1',
+      event_type: null,
+      condition: {},
+      min_interval: 'PT1H',
+      no_overlap: false,
+      combine: 'all',
+      enabled: true,
+      created_at: at,
+      updated_at: at,
+    });
+    const event = readTrigger({
+      id: 't-2',
+      agent_id: 'agent-1',
+      kind: 'event',
+      cron: null,
+      work_calendar_id: null,
+      event_type: 'period.closed',
+      condition: { space: 'DS-AW' },
+      min_interval: null,
+      no_overlap: true,
+      combine: 'any',
+      enabled: true,
+      created_at: at,
+      updated_at: at,
+    });
+    await saveTriggers('agent-1', [{ ...schedule, cron: '0 8 * * 1' }, { ...event, enabled: false }]);
+    expect(sent).toEqual({
+      triggers: [
+        {
+          kind: 'schedule',
+          cron: '0 8 * * 1',
+          work_calendar_id: 'cal-1',
+          event_type: null,
+          condition: {},
+          min_interval: 'PT1H',
+          no_overlap: false,
+          combine: 'all',
+          enabled: true,
+        },
+        {
+          kind: 'event',
+          cron: null,
+          work_calendar_id: null,
+          event_type: 'period.closed',
+          condition: { space: 'DS-AW' },
+          min_interval: null,
+          no_overlap: true,
+          combine: 'any',
+          enabled: false,
+        },
+      ],
     });
   });
 });
