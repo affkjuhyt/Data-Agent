@@ -45,7 +45,9 @@ def crawl_source(
     bank: Bank, cron: str, *, review_due: datetime.datetime | None = None
 ) -> uuid.UUID:
     seed = bank.seed
-    due = review_due or AT + datetime.timedelta(days=90)
+    # The database refuses an active source whose review is not in force *now* (BR-174), so the
+    # review date follows the clock, not AT: a fixed date lapsed on 21/11/2026.
+    due = review_due or datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=90)
     source = seed.row(
         "acquire.crawl_source",
         org_id=bank.org,
@@ -146,8 +148,13 @@ async def test_a_crawl_source_whose_legal_review_lapsed_is_not_run(
     bank = build(seed, warehouse, monkeypatch)
     # Active while its review is in force (the database refuses anything else); the review then
     # lapses with time, and a firing after that day queues nothing.
-    source = crawl_source(bank, "0 8 * * *", review_due=AT + datetime.timedelta(days=30))
-    lapsed = AT + datetime.timedelta(days=31)
+    # At AT's minute of the day, the one "0 8 * * *" fires at in the organisation's zone.
+    today = datetime.datetime.now(datetime.UTC).replace(
+        hour=AT.hour, minute=0, second=0, microsecond=0
+    )
+    due = today + datetime.timedelta(days=30)
+    source = crawl_source(bank, "0 8 * * *", review_due=due)
+    lapsed = due + datetime.timedelta(days=1)
     assert await targets.fire("crawl", bank.org, source, lapsed) == "legal review not in force"
     assert seed.one("SELECT count(*) FROM acquire.crawl_run WHERE source_id = %s", source) == 0
 
