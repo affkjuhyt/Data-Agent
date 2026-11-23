@@ -18382,6 +18382,13 @@ export interface components {
              */
             next_page_token: string;
         };
+        /** ParticipantCounts */
+        ParticipantCounts: {
+            /** Agents */
+            agents: number;
+            /** People */
+            people: number;
+        };
         /** ParticipantCreate */
         ParticipantCreate: {
             /**
@@ -23630,6 +23637,7 @@ export interface components {
             owner_id: string;
             /** Params */
             params: unknown;
+            participants?: components["schemas"]["ParticipantCounts"] | null;
             /** Status */
             status: string;
             /** Template Of Skill Id */

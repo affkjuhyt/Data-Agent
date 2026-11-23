@@ -47,6 +47,7 @@ from services.api.modules.workspace.schemas import (
     HiddenReason,
     HiddenTile,
     ParticipantCreate,
+    ParticipantCounts,
     ParticipantView,
     PublishRequest,
     RecipientPreview,
@@ -290,7 +291,25 @@ async def list_workspaces(
     )
     async with transaction(ROLE, principal) as session:
         rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
-    return Page(items=[WorkspaceView.model_validate(row) for row in rows], next_page_token=token)
+        p = ws.WsParticipant
+        counts: dict[tuple[uuid.UUID, str], int] = {
+            (w_id, kind): int(n)
+            for w_id, kind, n in (
+                await session.execute(
+                    select(p.workspace_id, p.principal_type, func.count())
+                    .where(p.workspace_id.in_([r.id for r in rows]))
+                    .group_by(p.workspace_id, p.principal_type)
+                )
+            ).tuples()
+        }
+    items = []
+    for row in rows:
+        view = WorkspaceView.model_validate(row)
+        view.participants = ParticipantCounts(
+            people=counts.get((row.id, "user"), 0), agents=counts.get((row.id, "agent"), 0)
+        )
+        items.append(view)
+    return Page(items=items, next_page_token=token)
 
 
 @router.post(

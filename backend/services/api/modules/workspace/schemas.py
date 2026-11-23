@@ -102,6 +102,11 @@ class TileSnapshotView(_View):
     is_latest: bool
 
 
+class ParticipantCounts(BaseModel):
+    people: int
+    agents: int
+
+
 class WorkspaceView(_View):
     id: uuid.UUID
     data_space_id: uuid.UUID
@@ -117,6 +122,9 @@ class WorkspaceView(_View):
     status: str
     created_at: datetime.datetime
     updated_at: datetime.datetime
+    # GET /v1/workspaces: who is seated in it (ws_participant), so the list needs no read per
+    # session. None where a route does not count them.
+    participants: ParticipantCounts | None = None
 
 
 class ParticipantView(_View):

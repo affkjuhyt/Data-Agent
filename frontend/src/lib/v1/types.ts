@@ -271,14 +271,18 @@ export type AgentRun = Omit<
 
 /* ─── Phân tích: workspace.workspace ──────────────────────────────────── */
 
-/** PROPOSAL: people and agents in a workspace, and whether an agent waits on the viewer. */
+/**
+ * People and agents seated in a workspace (WorkspaceView.participants, counted by the list), and
+ * PROPOSAL: whether an agent waits on the viewer.
+ */
 interface WorkspaceActivity {
   participants: { people: number; agents: number };
   agent_state: 'waiting_you' | 'running' | null;
 }
 
-/** GET /v1/workspaces as the api sends it, plus the PROPOSAL activity when present. */
-export type WorkspaceWire = components['schemas']['WorkspaceView'] & Partial<WorkspaceActivity>;
+/** GET /v1/workspaces as the api sends it, plus the PROPOSAL agent state when present. */
+export type WorkspaceWire = components['schemas']['WorkspaceView'] &
+  Partial<Pick<WorkspaceActivity, 'agent_state'>>;
 
 /** A workspace as the session lists read it; without the PROPOSAL fields they are left out. */
 export type Workspace = Omit<WorkspaceWire, 'created_from' | 'status' | keyof WorkspaceActivity> & {

@@ -32327,6 +32327,24 @@
     "title": "Page[WritebackView]",
     "type": "object"
    },
+   "ParticipantCounts": {
+    "properties": {
+     "agents": {
+      "title": "Agents",
+      "type": "integer"
+     },
+     "people": {
+      "title": "People",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "people",
+     "agents"
+    ],
+    "title": "ParticipantCounts",
+    "type": "object"
+   },
    "ParticipantCreate": {
     "additionalProperties": false,
     "properties": {
@@ -46438,8 +46456,8 @@
      "status",
      "created_at",
      "updated_at",
-     "tiles",
      "participants",
+     "tiles",
      "permission"
     ],
     "title": "WorkspaceDetail",
@@ -46567,6 +46585,16 @@
      },
      "params": {
       "title": "Params"
+     },
+     "participants": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ParticipantCounts"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "status": {
       "title": "Status",

@@ -495,6 +495,10 @@ async def test_participants(team: Team, seed: Seed) -> None:
             json={"principal_type": "user", "principal_id": str(team.peer), "role": "editor"},
         )
         assert editor.status_code == 201, editor.text
+        # The list says who works in it (the owner, the editor, the agent) without a read each.
+        listed = await api.get("/v1/workspaces", headers=owner)
+        [row] = [w for w in listed.json()["items"] if w["id"] == workspace_id]
+        assert row["participants"] == {"people": 2, "agents": 1}
         tile = await api.post(
             f"/v1/workspaces/{workspace_id}/tiles",
             headers=_as(team, "peer"),
