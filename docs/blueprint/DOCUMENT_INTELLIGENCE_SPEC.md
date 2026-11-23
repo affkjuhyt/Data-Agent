@@ -412,6 +412,11 @@ ALTER TABLE document.chunk ADD COLUMN text_folded text
 CREATE INDEX chunk_text_folded_idx ON document.chunk USING gin (to_tsvector('simple', text_folded));
 ```
 
+**Đã làm (DI-11, 23/11/2026, v3_0060):** chỉ mục GIN theo biểu thức `to_tsvector('simple', da_fold(coalesce(context_header,'') || ' ' || text))`
+thay cột generated (cùng phép khớp, không thêm cột cho ORM; `unaccent()` STABLE nên `da_fold` gọi từ điển tường minh để
+IMMUTABLE). Synonym: các cụm của cùng đích (`target_kind/target_id/target_value`) là đồng nghĩa của nhau; `glossary_term`
+chưa dùng (không có danh sách bí danh). `POST /v1/search/documents` của api chưa đổi.
+
 Truy vấn từ khoá chạy **hai nhánh** và lấy max: `to_tsquery('simple', q)` trên `text` và trên `text_folded` với
 `unaccent(lower(q))`. Mở rộng truy vấn: thêm synonym từ `context.synonym` + `glossary_term` của Data Space (OR-of-phrases,
 tối đa 5), đánh dấu `expanded=true` trong trace. Stop-word theo gói ngôn ngữ, không cứng.

@@ -12,6 +12,7 @@ BEGIN
 END $$;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA public;
 DO $$ BEGIN EXECUTE format('GRANT CREATE ON DATABASE %I TO da_owner', current_database()); END $$;
 GRANT CREATE ON SCHEMA public TO da_owner;
 

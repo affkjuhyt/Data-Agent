@@ -2652,7 +2652,7 @@ Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (table\_id, row\_idx
 | parent\_chunk\_id | uuid | FK chunk: chunk cha mức Điều của một chunk con mức Khoản (§5.3) |
 | table\_id | uuid | FK doc\_table khi kind = table |
 
-Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (page\_to >= page\_from); CHECK (effective\_to IS NULL OR effective\_from IS NULL OR effective\_to >= effective\_from); FOREIGN KEY (document\_id) REFERENCES document.document(id) ON DELETE CASCADE; CHECK (kind IN ('section','table')); CHECK ((kind = 'table') = (table\_id IS NOT NULL)); CHECK (parent\_chunk\_id IS NULL OR parent\_chunk\_id <> id); FOREIGN KEY (parent\_chunk\_id) REFERENCES document.chunk(id) ON DELETE CASCADE; FOREIGN KEY (table\_id) REFERENCES document.doc\_table(id) ON DELETE CASCADE. Chỉ mục: (document\_id, page\_from); (parent\_chunk\_id); (table\_id); GIN trên to\_tsvector('simple', text).
+Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (page\_to >= page\_from); CHECK (effective\_to IS NULL OR effective\_from IS NULL OR effective\_to >= effective\_from); FOREIGN KEY (document\_id) REFERENCES document.document(id) ON DELETE CASCADE; CHECK (kind IN ('section','table')); CHECK ((kind = 'table') = (table\_id IS NOT NULL)); CHECK (parent\_chunk\_id IS NULL OR parent\_chunk\_id <> id); FOREIGN KEY (parent\_chunk\_id) REFERENCES document.chunk(id) ON DELETE CASCADE; FOREIGN KEY (table\_id) REFERENCES document.doc\_table(id) ON DELETE CASCADE. Chỉ mục: (document\_id, page\_from); (parent\_chunk\_id); (table\_id); GIN trên to\_tsvector('simple', text); GIN trên to\_tsvector('simple', public.da\_fold(context\_header và text)) cho câu hỏi không dấu (DI-11, 23/11/2026).
 
 #### document.quality\_issue
 

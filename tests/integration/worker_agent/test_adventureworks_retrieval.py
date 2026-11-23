@@ -198,11 +198,7 @@ async def test_english_questions_find_their_passage_on_the_keyword_half(seed: Se
     assert report["overall"]["passed"] == len(cases)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="the keyword half matches words as typed: a question without diacritics shares no "
-    "word with a passage that has them (no unaccent), so only the dense half can find it",
-)
+# DI-11: the folded branch (public.da_fold, unaccent) closed this gap.
 async def test_questions_without_diacritics_find_their_passage_on_the_keyword_half(
     seed: Seed,
 ) -> None:

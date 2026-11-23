@@ -1185,3 +1185,21 @@ def test_a_migrated_cluster_takes_workbooks_and_text_files(admin):
             "SELECT pg_get_constraintdef(oid) FROM pg_constraint"
             f" WHERE conrelid = '{table}'::regclass AND conname = '{name}'",
         )
+
+
+def test_a_migrated_cluster_searches_passages_without_diacritics(admin):
+    # v3_0060 (23/11/2026, DI-11): unaccent, public.da_fold and the folded GIN index of chunks.
+    _fresh(admin, "chain_di11", "chain_di11_audit")
+    db = _db(admin, "chain_di11")
+    _alembic(db, "upgrade", "v3_0059")
+    # The generated DDL is already at head: put back what a cluster at v3_0059 has.
+    conn = psycopg2.connect(db)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("DROP INDEX document.chunk_text_folded_idx")
+        cur.execute("DROP FUNCTION public.da_fold(text)")
+    conn.close()
+    _alembic(db, "upgrade", "head")
+    _alembic(db, "upgrade", "head")
+    assert _one(db, "SELECT public.da_fold('Lãi Suất Đồng')") == "lai suat dong"
+    assert _one(db, "SELECT to_regclass('document.chunk_text_folded_idx')") is not None

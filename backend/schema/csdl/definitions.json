@@ -22902,7 +22902,7 @@
    "partition": null,
    "immutable": false,
    "notes": [
-    "Chỉ mục: GIN trên to_tsvector('simple', text)"
+    "Chỉ mục: GIN trên to_tsvector('simple', text); GIN trên to_tsvector('simple', public.da_fold(context_header và text)) cho câu hỏi không dấu (DI-11, 23/11/2026)"
    ]
   },
   {

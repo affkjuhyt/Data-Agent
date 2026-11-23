@@ -303,6 +303,9 @@ def build(d: dict, database: str) -> str:
         "",
         role_block(roles),
         "CREATE EXTENSION IF NOT EXISTS pgcrypto;",
+        # DI-11: unaccent folds a passage's diacritics for keyword search (public.da_fold,
+        # routines/document.sql); a trusted extension, in public with pgcrypto.
+        "CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA public;",
         "DO $$ BEGIN EXECUTE format('GRANT CREATE ON DATABASE %I TO da_owner', current_database()); END $$;",
         # Fresh PostgreSQL databases do not grant CREATE on public to non-owner roles.
         # The generated routine set includes SECURITY DEFINER helpers in public, so the

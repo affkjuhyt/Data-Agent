@@ -6,7 +6,11 @@
    (BR-19); masked text only, since an agent never reads unmasked personal data (BR-46).
 2. Two lists, fused by reciprocal rank (k = 60): Qdrant neighbours of the question and Postgres
    full-text matches over the passage text. Tab 5 plans bge-m3 sparse vectors for the lexical half;
-   until those are written, the full-text index of chunk.text serves it.
+   until those are written, the full-text index of chunk.text serves it, on two branches (DI-11):
+   the words as written, and the words without diacritics against the passage folded the same
+   way (public.da_fold, header included), so "lai suat cho vay" finds "lãi suất cho vay". The
+   question's words are widened with the Data Space's synonyms: a phrase it holds brings the
+   other phrases of the same target (at most five, `expanded` in the log).
 3. The TEI reranker, when configured, orders the fused pool and decides relevance; without it a
    passage is relevant when it shares most of the question's words or is a close neighbour.
 4. Passages flagged injection_suspected never reach the model (tab 5: citable only once reviewed).
@@ -18,6 +22,7 @@ What comes back is at most ``limit`` passages, each above the relevance bar: an 
 from __future__ import annotations
 
 import datetime
+import logging
 import os
 import re
 import unicodedata
@@ -28,7 +33,9 @@ from typing import Any
 from sqlalchemy import exists, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs.dataagent_db.models import context as ctx
 from libs.dataagent_db.models import document as doc
+from libs.language import fold
 from services.worker_agent.documents.search import SearchServices, Target
 
 RRF_K = 60
@@ -50,6 +57,19 @@ _STOP = frozenset(
     "đó khi thì mà hay hoặc hiện nay áp dụng quy định hỏi bạn tôi ai đâu sao vậy một".split()
 )
 _WORD = re.compile(r"\w+", re.UNICODE)
+# The function words a question typed without diacritics holds, chosen by hand: folding the list
+# above would make "vậy" a stop word as "vay", which is the "vay" of "cho vay" (and "the" is
+# "thẻ", "ban" is "bán"). Only words that fold to no subject word are here.
+_STOP_FOLDED = frozenset("la gi cua va cac nhung voi khong nao nhieu thi hoac ai sao".split())
+# The other phrases a synonym brings into the keyword query, at most.
+MAX_EXPANSION = 5
+# The expression of chunk_text_folded_idx (routines/document.sql), written out so the planner
+# matches the index: the header first, then the text, folded.
+_FOLDED = literal_column(
+    "to_tsvector('simple', da_fold(coalesce(document.chunk.context_header, '') || ' ' "
+    "|| document.chunk.text))"
+)
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -70,7 +90,14 @@ class Passage:
 
 
 def _words(text: str) -> list[str]:
-    return [w for w in _WORD.findall(unicodedata.normalize("NFC", text).lower()) if w not in _STOP]
+    """The subject words, folded: "lãi" and "lai" are one word to the relevance bars, as they
+    are to the folded keyword branch (DI-11)."""
+    out = []
+    for w in _WORD.findall(unicodedata.normalize("NFC", text).lower()):
+        folded = fold(w)
+        if w not in _STOP and folded not in _STOP_FOLDED:
+            out.append(folded)
+    return out
 
 
 def overlap(question: str, text: str) -> float:
@@ -92,10 +119,61 @@ def coverage(question: str, text: str, title: str = "", header: str = "") -> flo
     return min(weight / len(asked), 2.0) / 2.0
 
 
-def _tsquery(question: str) -> str | None:
-    # OR of the subject words: the whole question ANDed would almost never match one passage.
-    words = sorted({w for w in _words(question) if len(w) > 1})
+def _tsquery(question: str, extra: list[str] | None = None) -> str | None:
+    """The words as written, OR'd: the whole question ANDed would almost never match one
+    passage. `extra` are the phrases synonyms bring."""
+    words = sorted(
+        {
+            w
+            for text in [question, *(extra or [])]
+            for w in _WORD.findall(unicodedata.normalize("NFC", text).lower())
+            if len(w) > 1 and w not in _STOP
+        }
+    )
     return " | ".join(words) if words else None
+
+
+def _folded_tsquery(question: str, extra: list[str] | None = None) -> str | None:
+    """The same words without diacritics, for the folded branch."""
+    words = sorted({w for text in [question, *(extra or [])] for w in _words(text) if len(w) > 1})
+    return " | ".join(words) if words else None
+
+
+def expand(question: str, synonyms: list[tuple[str, tuple[str, str, str | None]]]) -> list[str]:
+    """The other phrases of each target a phrase of the question names, at most MAX_EXPANSION.
+    `synonyms` are (phrase, target) pairs; matched folded, on word boundaries."""
+    asked = f" {' '.join(_WORD.findall(fold(question)))} "
+    named = {
+        target
+        for phrase, target in synonyms
+        if (norm := " ".join(_WORD.findall(fold(phrase)))) and f" {norm} " in asked
+    }
+    out: list[str] = []
+    for phrase, target in synonyms:
+        norm = " ".join(_WORD.findall(fold(phrase)))
+        if target in named and f" {norm} " not in asked and phrase not in out:
+            out.append(phrase)
+        if len(out) >= MAX_EXPANSION:
+            break
+    return out
+
+
+async def _synonyms(
+    session: AsyncSession, data_space_id: uuid.UUID
+) -> list[tuple[str, tuple[str, str, str | None]]]:
+    rows = (
+        await session.execute(
+            select(
+                ctx.Synonym.phrase,
+                ctx.Synonym.target_kind,
+                ctx.Synonym.target_id,
+                ctx.Synonym.target_value,
+            )
+            .where(ctx.Synonym.data_space_id == data_space_id, ctx.Synonym.status == "active")
+            .order_by(ctx.Synonym.phrase)
+        )
+    ).all()
+    return [(r.phrase, (r.target_kind, str(r.target_id), r.target_value)) for r in rows]
 
 
 async def retrieve(
@@ -137,19 +215,26 @@ async def retrieve(
         )
     )
     keyword: list[Any] = []
-    if (terms := _tsquery(question)) is not None:
+    expanded = expand(question, await _synonyms(session, data_space_id))
+    terms, folded_terms = _tsquery(question, expanded), _folded_tsquery(question, expanded)
+    if terms is not None and folded_terms is not None:
         tsquery = func.to_tsquery(literal_column("'simple'"), terms)
+        folded_query = func.to_tsquery(literal_column("'simple'"), folded_terms)
         # The expression of chunk_text_idx, so the GIN index serves it.
         tsvector = func.to_tsvector(literal_column("'simple'"), c.text)
+        # Either branch matches; a passage ranks by the better of the two (DI-11).
+        rank = func.greatest(func.ts_rank(tsvector, tsquery), func.ts_rank(_FOLDED, folded_query))
         keyword = list(
             (
                 await session.execute(
-                    base.where(tsvector.op("@@")(tsquery))
-                    .order_by(func.ts_rank(tsvector, tsquery).desc(), c.id)
+                    base.where(or_(tsvector.op("@@")(tsquery), _FOLDED.op("@@")(folded_query)))
+                    .order_by(rank.desc(), c.id)
                     .limit(POOL)
                 )
             ).all()
         )
+        if expanded:
+            log.info("document search expanded=%s", expanded)
     neighbours = await services.dense(
         [Target(x.qdrant_collection, x.embed_model) for x in collections], question, POOL
     )
