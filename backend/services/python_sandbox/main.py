@@ -7,7 +7,8 @@ of libs/code_sandbox/local.py still run inside; this pod is the boundary they ar
 POST /run {"code": "...", "datasets": {"d1": {"columns": [...], "rows": [[...]]}}}
   → {"ok", "columns", "rows", "truncated", "stdout", "error"}
 POST /run (Content-Type application/x-dataagent-sandbox, AL-04): the same as a frame of Arrow
-  IPC streams (libs/code_sandbox/wire.py), answered in kind: the result table is Arrow too
+  IPC streams (libs/code_sandbox/wire.py). The answer is the JSON above either way: worker-agent
+  does not unpack a stream this pod wrote, since the code that ran here chose its bytes
 GET /healthz → 200
 """
 
@@ -42,14 +43,6 @@ class Handler(BaseHTTPRequestHandler):
         data = json.dumps(body, ensure_ascii=False, default=str).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def _send_framed(self, header: dict[str, Any], parts: list[bytes]) -> None:
-        data = wire.pack(header, parts)
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", wire.CONTENT_TYPE)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -91,25 +84,9 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 done = asyncio.run(local.run(code, datasets))
             except local.CodeRejected as exc:
-                answer: dict[str, Any] = {"ok": False, "error": f"code bị từ chối: {exc}"}
-                if framed:
-                    self._send_framed({**answer, "stdout": "", "truncated": False}, [])
-                else:
-                    self._send(HTTPStatus.OK, answer)
+                self._send(HTTPStatus.OK, {"ok": False, "error": f"code bị từ chối: {exc}"})
                 return
-        if not framed:
-            self._send(HTTPStatus.OK, asdict(done))
-            return
-        result = [ipc.encode(done.columns, done.rows)] if done.columns else []
-        self._send_framed(
-            {
-                "ok": done.ok,
-                "error": done.error,
-                "stdout": done.stdout,
-                "truncated": done.truncated,
-            },
-            result,
-        )
+        self._send(HTTPStatus.OK, asdict(done))
 
     def log_message(self, format: str, *args: Any) -> None:
         # Requests are logged without their body: the code and the datasets stay out of logs.

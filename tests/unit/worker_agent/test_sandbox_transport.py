@@ -118,18 +118,19 @@ async def test_the_sandbox_runs_the_same_over_either_transport(
     }
 
 
-async def test_a_refused_code_and_a_bad_reply_are_failures(
+async def test_a_framed_reply_is_never_unpacked(
     service: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The pod answers in JSON: a reply in a frame (compressed Arrow chosen by the code that ran
+    there, which could unpack to gigabytes) is not read as one."""
     import httpx
 
     with pytest.raises(Exception):  # noqa: B017 - the client's own static check refuses first
         await client.run(service, "import os\nresult = os.getcwd()", {})
-    # A framed reply whose part is not Arrow is not read.
-    reply = wire.pack({"ok": True, "stdout": "", "error": None, "truncated": False}, [b"junk"])
+    bomb = wire.pack({"ok": True}, [ipc.encode(["a"], [["x" * 1000]] * 1000)])
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=reply, headers={"Content-Type": wire.CONTENT_TYPE})
+        return httpx.Response(200, content=bomb, headers={"Content-Type": wire.CONTENT_TYPE})
 
     real = httpx.AsyncClient
     monkeypatch.setattr(
@@ -140,5 +141,5 @@ async def test_a_refused_code_and_a_bad_reply_are_failures(
     done = await client.run(
         "http://sandbox", "result = 1", {"d1": {"columns": ["a"], "rows": [[1]]}}
     )
-    assert not done.ok and done.error == "sandbox trả kết quả sai dạng"
+    assert not done.ok and done.error == "không đọc được kết quả của sandbox"
     assert json.dumps(done.rows) == "[]"

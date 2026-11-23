@@ -6,8 +6,10 @@ The answer is read as untrusted: code that got past the checks controls what the
 the body is capped while it is read and its shape is checked before anything in it is used.
 
 AL-04: the datasets go as Arrow IPC streams in a frame (libs/code_sandbox/wire.py,
-libs/snapshot/ipc.py), the result comes back the same way; the JSON body of before stays for one
-release behind AGENT_SANDBOX_TRANSPORT=json."""
+libs/snapshot/ipc.py); the JSON body of before stays for one release behind
+AGENT_SANDBOX_TRANSPORT=json. The result comes back as JSON whatever the request: a compressed
+stream from the pod could unpack to far more than the 8 MiB read here (a decompression bomb), and
+2 000 rows need no compression."""
 
 from __future__ import annotations
 
@@ -79,22 +81,6 @@ def request_body(code: str, datasets: dict[str, dict[str, Any]]) -> tuple[bytes,
     return wire.pack({"code": code, "datasets": names}, parts), wire.CONTENT_TYPE
 
 
-def _framed(body: bytes) -> Execution:
-    """A framed reply: its header's fields and its one Arrow part, the result table."""
-    try:
-        header, parts = wire.unpack(body)
-        if len(parts) > 1:
-            return _failed("sandbox trả kết quả sai dạng")
-        columns, rows = (
-            ipc.decode(parts[0], max_rows=MAX_RESULT_ROWS, max_columns=MAX_COLUMNS)
-            if parts
-            else ([], [])
-        )
-    except (wire.FrameInvalid, ipc.IpcInvalid):
-        return _failed("sandbox trả kết quả sai dạng")
-    return _shaped({**header, "columns": columns, "rows": rows})
-
-
 async def run(url: str, code: str, datasets: dict[str, dict[str, Any]]) -> Execution:
     check(code)
     content, content_type = request_body(code, datasets)
@@ -117,8 +103,6 @@ async def run(url: str, code: str, datasets: dict[str, dict[str, Any]]) -> Execu
                     return _failed("kết quả của sandbox quá lớn")
     except httpx.HTTPError as exc:
         return _failed(f"sandbox không trả lời ({type(exc).__name__})")
-    if response.headers.get("content-type", "").startswith(wire.CONTENT_TYPE):
-        return _framed(bytes(body))
     try:
         return _shaped(json.loads(body))
     except ValueError:

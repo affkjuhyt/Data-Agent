@@ -4,8 +4,8 @@
 
 The header says what each part is and how long it is (`parts`: byte lengths, in order); the parts
 are Arrow IPC streams (libs/snapshot/ipc.py), read only after the lengths add up to the body.
-A request's header holds the code and the datasets' names; a reply's holds ok, error, stdout and
-truncated, with the result table as its one part (none when the code left no table).
+The header holds the code and the datasets' names. Only worker-agent writes a frame: the pod
+answers in JSON (libs/code_sandbox/client.py says why).
 
 JSON stays a transport for one release (AGENT_SANDBOX_TRANSPORT=json): the pod answers either,
 told apart by the Content-Type.

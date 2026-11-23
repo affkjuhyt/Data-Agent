@@ -7,8 +7,9 @@ repeated names is dictionary-encoded, and the stream is compressed with zstd. On
 dates, regions, products, amounts and counts the payload is 0.14 times the JSON.
 
 Values whose column mixes types (an int beside a string) are sent as text, as JSON sent them; a
-None stays a null. Decoding checks the stream before using it: the bytes may come from the pod,
-where model-written code ran.
+None stays a null. A stream is decoded only where worker-agent wrote it (in the sandbox pod): a
+compressed stream states the size it unpacks to, so one from an untrusted writer could ask for any
+amount of memory before a row limit is checked. The pod answers in JSON for that reason.
 """
 
 from __future__ import annotations

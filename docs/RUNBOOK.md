@@ -744,8 +744,9 @@ pandas over the turn's datasets. That code runs in the `python-sandbox` pod
 worker-agent's `AGENT_PYTHON_SANDBOX` is `service` (with `AGENT_SANDBOX_URL`) in both manifests;
 `off` removes the tool from the planner, `local` runs the code inside worker-agent (a trusted
 install only). When the pod is down the tool's step fails and the planner works without it.
-The datasets go to the pod, and the result comes back, as zstd Arrow IPC streams in a frame
-(AL-04: `libs/code_sandbox/wire.py`, `libs/snapshot/ipc.py`; about a seventh of the JSON body).
+The datasets go to the pod as zstd Arrow IPC streams in a frame (AL-04: `libs/code_sandbox/wire.py`,
+`libs/snapshot/ipc.py`; about a seventh of the JSON body). The result comes back as JSON: worker-agent
+never unpacks a compressed stream the pod wrote (a decompression bomb from the code that ran there).
 `AGENT_SANDBOX_TRANSPORT=json` on worker-agent sends the JSON body of before, which the pod still
 answers; it goes after one release.
 Check it: `kubectl -n dataagent-service exec deploy/worker-agent -- python -c "import asyncio,os;
