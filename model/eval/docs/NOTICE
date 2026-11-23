@@ -1,0 +1,12 @@
+model/eval/docs: the Docling bake-off evaluators (DI-02)
+
+teds.py is derived from OmniDocBench src/metrics/table_metric.py, itself from IBM's PubTabNet
+TEDS (Copyright 2020 IBM, Apache License 2.0). order.py and cer.py follow OmniDocBench's
+reading-order and Edit_dist computations (src/dataset/end2end_dataset.py, src/metrics/cal_metric.py).
+
+  OmniDocBench  https://github.com/opendatalab/OmniDocBench
+  commit        7ddb8df411ad9bd2fff139acafe0ed16aa1694fe (12/11/2026)
+  licence       Apache License 2.0, LICENSE-OmniDocBench in this directory
+
+Changes are listed at the top of each file: the Levenshtein distance comes from rapidfuzz (MIT)
+instead of the `Levenshtein` package (GPL-2.0), and the batch, progress-bar and demo code is left out.

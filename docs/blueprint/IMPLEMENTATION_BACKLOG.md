@@ -168,7 +168,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | ID | Ưu tiên | Tuần | Việc | Phụ thuộc | Vai | CS | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | DI-01 | P0 | 1 | Kho bake-off 30 tài liệu + ground truth (gộp EV-15) | — | DE + 2 người gán nhãn | M | 30 doc đủ 5 loại GT | doing: công cụ xong (Label Studio 1.23.2 ghim digest, `page.xml`, sheet bảng, `make bakeoff-render/-gold/-agree`, chạy thử trên export thật 16/11); còn chọn 30 tài liệu và hai người gán |
-| DI-02 | P0 | 1 | Vendor evaluator TEDS/ED/CER (OmniDocBench code, Apache) | — | DE | S | chạy trên GT mẫu | todo |
+| DI-02 | P0 | 1 | Vendor evaluator TEDS/ED/CER (OmniDocBench code, Apache) | — | DE | S | chạy trên GT mẫu | done 23/11: `model/eval/docs/{teds,order,cer}.py` từ OmniDocBench 7ddb8df4 (Apache-2.0, `NOTICE` + `LICENSE-OmniDocBench`); khoảng cách Levenshtein lấy từ rapidfuzz (MIT) thay gói `Levenshtein` (GPL, bị cấm); `apted` trong image dev-tools; `test_docs_evaluators.py`: gold với chính nó = 1,0, sai ô/thiếu hàng/mất span, thứ tự đọc, CER/WER có dấu và bỏ dấu |
 | DI-03 | P0 | 1 | Image worker-document + Docling + model offline (PVC) | — | DevOps/DE | S | build ≤ 15 phút; pod 4 Gi | todo |
 | DI-04 | P0 | 2 → 8 | `docling_adapter.py` + ánh xạ element | DI-03 | DE | M | adapter test trên 30 doc | todo |
 | DI-05 | P0 | 2 | `make docling-bakeoff` + báo cáo (PoC-1) | DI-01, 02, 04 | DE | S | báo cáo trong `model/eval/` | todo |
