@@ -266,6 +266,59 @@ function TableBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
   );
 }
 
+/** AL-08: possible causes, the one place an answer names one. Unchecked, each has no number; its
+ *  "Kiểm tra" asks the question that would check it, as a follow-up turn. */
+function HypothesisBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
+  const items = arr<Record<string, unknown>>(block.items);
+  return (
+    <section className="flex flex-col gap-da-xs" data-testid="hypothesis-block" aria-label="Giả thuyết">
+      <span className="inline-flex items-center gap-da-xs text-muted-foreground da-caption">
+        <Icon name="sparkles" size={12} className="text-primary" />
+        Giả thuyết · chưa kiểm tra
+      </span>
+      <ul className="m-0 flex list-none flex-col gap-da-xs p-0">
+        {items.map((item, i) => (
+          <li key={i} className="flex items-start justify-between gap-da-sm rounded-md border border-border px-da-md py-da-sm">
+            <span className="text-foreground">{str(item.text)}</span>
+            {ctx.onAsk && str(item.check) && (
+              <button
+                type="button"
+                className="shrink-0 rounded-md border border-border px-da-sm py-[2px] da-caption hover:bg-subtle"
+                onClick={() => ctx.onAsk?.(str(item.check))}
+                title={str(item.check)}
+              >
+                Kiểm tra
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** AL-08: actions the numbers suggest, advisory: what, when, what to watch. */
+function RecommendationBlock({ block }: { block: Block }) {
+  const items = arr<Record<string, unknown>>(block.items);
+  return (
+    <section className="flex flex-col gap-da-xs" data-testid="recommendation-block" aria-label="Khuyến nghị">
+      <span className="inline-flex items-center gap-da-xs text-muted-foreground da-caption">
+        <Icon name="info" size={12} className="text-primary" />
+        Khuyến nghị · để tham khảo
+      </span>
+      <ul className="m-0 flex flex-col gap-da-xs pl-da-md">
+        {items.map((item, i) => (
+          <li key={i} className="text-foreground">
+            {str(item.action)}
+            {str(item.condition) && <span className="text-muted-foreground"> · khi {str(item.condition)}</span>}
+            {str(item.watch) && <span className="text-muted-foreground"> · theo dõi {str(item.watch)}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** AL-06: a statistical test's result, drawn apart from the figures: its rows, the method and
  *  the note that it is an inference (correlation is not cause), never a kpi or a chart. */
 function InferenceBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
@@ -376,6 +429,8 @@ const RENDERERS: Record<string, (block: Block, ctx: Ctx) => ReactNode> = {
   callout: (b, ctx) => (str(b.content).trim() ? <Callout block={b} ctx={ctx} /> : null),
   code: (b) => <CodeBlock block={b} />,
   inference: (b, ctx) => <InferenceBlock block={b} ctx={ctx} />,
+  hypothesis: (b, ctx) => <HypothesisBlock block={b} ctx={ctx} />,
+  recommendation: (b) => <RecommendationBlock block={b} />,
   caveats: (b) => <CaveatsBlock items={arr<unknown>(b.items).map(String)} />,
   // The next questions are drawn under the answer from the answer's follow_ups.
   follow_ups: () => null,

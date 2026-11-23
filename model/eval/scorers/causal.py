@@ -18,37 +18,16 @@ shape_of / decompose / result_of produce the answer, and three numbers come out:
 from __future__ import annotations
 
 import decimal
-import re
-import unicodedata
 from typing import Any
 
 from model.eval import _paths
 
 _paths.ensure()
 
-# Causal wording, on the accent-free text. "do tỷ lệ … thay đổi" is the rate/mix split of the
-# arithmetic, not a claim about the world, so a bare "do" is not on the list.
-_CAUSAL = re.compile(
-    r"\b(?:gay ra|dan den|dan toi|khien cho|khien|lam cho|boi vi|vi vay|vi the|"
-    r"nguyen nhan (?:la|chinh|chu yeu)|la nguyen nhan|bat nguon tu|xuat phat tu)\b"
-)
-# The method's own disclaimer names "nguyên nhân" to deny it; that sentence is allowed.
-_DISCLAIMER = re.compile(r"khong phai nguyen nhan|ket luan nguyen nhan can kiem dinh")
+from libs.language.causal import causal_sentences  # noqa: E402 - after _paths.ensure()
 
-
-def _plain(text: str) -> str:
-    text = unicodedata.normalize("NFD", text.lower().replace("đ", "d"))
-    return "".join(c for c in text if unicodedata.category(c) != "Mn")
-
-
-def causal_sentences(text: str) -> list[str]:
-    """The sentences that word a contribution as a cause."""
-    found = []
-    for sentence in re.split(r"(?<=[.!?])\s+", text):
-        plain = _plain(sentence)
-        if _CAUSAL.search(plain) and not _DISCLAIMER.search(plain):
-            found.append(sentence)
-    return found
+# The rule lives in libs/language/causal.py: the agent drops what it finds before an answer is
+# stored (AL-08), and this scorer counts the same sentences.
 
 
 def _values(

@@ -36,6 +36,7 @@ from libs import clock, language
 from libs.contracts.v1 import trust as answer_trust
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
+from libs.language import causal
 from services.worker_agent import chart_proposals, clarify_policy, receipts, turn_trace
 from services.worker_agent.agentic import blocks as b
 from services.worker_agent.agentic import budget as agent_budget
@@ -125,6 +126,9 @@ class State:
     composition: list[dict[str, Any]] = field(default_factory=list)
     headline: str = ""
     dropped_sentences: int = 0
+    # AL-08: sentences that worded a cause outside a hypothesis, dropped before the answer was
+    # stored (libs/language/causal.py).
+    dropped_causes: int = 0
     numbers: int = 0
     started: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
     # What the person said in earlier conversations that bears on this question (memory.py).
@@ -1253,6 +1257,7 @@ async def compose(s: State) -> None:
             handle.detail = {
                 "blocks": [x["type"] for x in s.composition],
                 "dropped_sentences": s.dropped_sentences,
+                "dropped_causes": s.dropped_causes,
                 "contract": contract_hit.detail,
             }
             await _gate(s, contract_hit.target, contract_hit.detail, contract_hit.feedback)
@@ -1349,6 +1354,7 @@ async def compose(s: State) -> None:
         handle.detail = {
             "blocks": [x["type"] for x in s.composition],
             "dropped_sentences": s.dropped_sentences,
+            "dropped_causes": s.dropped_causes,
         }
     _append_caveats(s)
 
@@ -1705,9 +1711,10 @@ def _checked(
         checked = verify.fill(verify.repair_citations(d.content, cited), known, allowed)
         s.numbers += checked.numbers
         s.dropped_sentences += checked.dropped
-        if not checked.text.strip() or _label_only(checked.text):
+        text = _no_cause(s, checked.text)
+        if not text.strip() or _label_only(text):
             return None
-        d = d.model_copy(update={"content": checked.text})
+        d = d.model_copy(update={"content": text})
     if d.type == "follow_ups":
         kept_questions = runnable_follow_ups(d.items, s.ctx.question, _vocab(s))
         if not kept_questions:
@@ -1719,17 +1726,50 @@ def _checked(
             checked = verify.fill(verify.repair_citations(item.text, cited), known, allowed)
             s.numbers += checked.numbers
             s.dropped_sentences += checked.dropped
-            if checked.text.strip():
-                kept.append(item.model_copy(update={"text": checked.text}))
+            text = _no_cause(s, checked.text)
+            if text.strip():
+                kept.append(item.model_copy(update={"text": text}))
         if not kept:
             return None
         d = d.model_copy(update={"insights": kept})
+    if d.type == "hypothesis":
+        # The one place a cause may be named; unchecked, it carries no number.
+        hypotheses = [h for h in d.hypotheses if not re.search(r"\d", h.text)]
+        if not hypotheses:
+            return None
+        d = d.model_copy(update={"hypotheses": hypotheses})
+    if d.type == "recommendation":
+        recommendations = []
+        for r in d.recommendations:
+            fields: dict[str, str | None] = {}
+            for name in ("action", "condition", "watch"):
+                value = getattr(r, name)
+                if not value:
+                    fields[name] = value
+                    continue
+                checked = verify.fill(value, known, allowed)
+                s.numbers += checked.numbers
+                s.dropped_sentences += checked.dropped
+                fields[name] = _no_cause(s, checked.text).strip() or None
+            if fields["action"]:
+                recommendations.append(r.model_copy(update=fields))
+        if not recommendations:
+            return None
+        d = d.model_copy(update={"recommendations": recommendations})
     try:
         block = b.materialize(d, s.ctx.ws, f"b{len(s.composition) + 1}")
     except b.BlockError:
         return None
     s.composition.append(block)
     return block
+
+
+def _no_cause(s: State, text: str) -> str:
+    """AL-08: the text without the sentences that word a cause; a cause is a hypothesis, said in
+    its own block where the reader can check it."""
+    kept, dropped = causal.without_causes(text)
+    s.dropped_causes += dropped
+    return kept
 
 
 async def _chart_said(s: State, block: dict[str, Any]) -> dict[str, Any] | None:
@@ -2071,6 +2111,7 @@ async def persist(s: State) -> None:
             "untraceable_draft": s.dropped_sentences,
             "regenerated": 0,
             "sentences_dropped": s.dropped_sentences,
+            "causes_dropped": s.dropped_causes,
             "untraceable_final": 0,
         }
         if refusal is not None:

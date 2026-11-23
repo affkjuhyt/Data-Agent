@@ -47,6 +47,29 @@ describe('ComposedBlocks', () => {
     expect(screen.getByRole('note')).toHaveTextContent('tương quan không phải nhân quả');
   });
 
+  it('lists hypotheses with a Check that asks the question, and recommendations (AL-08)', () => {
+    const ask = vi.fn();
+    const said = [
+      {
+        type: 'hypothesis',
+        id: 'h1',
+        composed: true,
+        items: [{ text: 'Khách hàng mới giảm ở miền Bắc', check: 'Số khách hàng mới theo vùng tháng 12/2013', status: 'unchecked' }],
+      },
+      {
+        type: 'recommendation',
+        id: 'r1',
+        composed: true,
+        items: [{ action: 'Rà soát kênh bán ở miền Bắc', condition: 'nếu số khách mới tiếp tục giảm', watch: 'Số khách hàng mới' }],
+      },
+    ] as unknown as AnswerBlockView[];
+    render(<ComposedBlocks blocks={said} onAsk={ask} />);
+    expect(screen.getByTestId('hypothesis-block')).toHaveTextContent('Giả thuyết · chưa kiểm tra');
+    fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra' }));
+    expect(ask).toHaveBeenCalledWith('Số khách hàng mới theo vùng tháng 12/2013');
+    expect(screen.getByTestId('recommendation-block')).toHaveTextContent('theo dõi Số khách hàng mới');
+  });
+
   it('leaves an answer of the older shape to the fixed layout', () => {
     expect(isComposed([{ type: 'markdown', id: 'a-markdown', content: 'x' }] as unknown as AnswerBlockView[])).toBe(false);
   });

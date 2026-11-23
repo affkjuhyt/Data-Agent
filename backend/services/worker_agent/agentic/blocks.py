@@ -25,14 +25,27 @@ from services.worker_agent.agentic.workspace import (
 from services.worker_agent.answer import chart_check
 
 BlockType = Literal[
-    "markdown", "kpi", "chart", "table", "insights", "callout", "code", "follow_ups", "inference"
+    "markdown",
+    "kpi",
+    "chart",
+    "table",
+    "insights",
+    "callout",
+    "code",
+    "follow_ups",
+    "inference",
+    "hypothesis",
+    "recommendation",
 ]
+# AL-08: at most this many hypotheses in one answer.
+MAX_HYPOTHESES = 3
 ChartType = Literal["bar", "line", "area", "pie", "scatter", "composed"]
 # Chart types the client draws; anything else falls back to bar.
 CHART_TYPES = {"bar", "line", "area", "pie", "scatter", "composed", "radar", "radialBar"}
 MAX_CHART_POINTS = 120
 # A KPI label that says it is a total (normalised words, both languages).
 _TOTAL = re.compile(r"\b(t[oổ]ng|total|overall)\b", re.IGNORECASE)
+_DIGIT = re.compile(r"\d")
 
 
 @dataclass(frozen=True)
@@ -261,6 +274,23 @@ class InsightDraft(BaseModel):
     tone: Literal["positive", "negative", "neutral"] = "neutral"
 
 
+class HypothesisDraft(BaseModel):
+    """A possible cause, the one place an answer may name one (AL-08): the sentence, and the
+    question that would check it, asked as the reader would."""
+
+    text: str
+    check: str
+
+
+class RecommendationDraft(BaseModel):
+    """An action the numbers suggest (AL-08): what to do, when, and what to watch. It brings no
+    number of its own."""
+
+    action: str
+    condition: str | None = None
+    watch: str | None = None
+
+
 class BlockDraft(BaseModel):
     type: BlockType
     title: str | None = None
@@ -276,6 +306,8 @@ class BlockDraft(BaseModel):
     kpis: list[KpiDraft] = Field(default_factory=list)
     insights: list[InsightDraft] = Field(default_factory=list)
     items: list[str] = Field(default_factory=list)
+    hypotheses: list[HypothesisDraft] = Field(default_factory=list)
+    recommendations: list[RecommendationDraft] = Field(default_factory=list)
 
 
 class Composition(BaseModel):
@@ -450,6 +482,35 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
         return {**base, "items": items}
     if t == "follow_ups":
         return {**base, "items": [s for s in draft.items if s.strip()][:5]}
+    if t == "hypothesis":
+        items = [
+            {"text": h.text.strip(), "check": h.check.strip(), "status": "unchecked"}
+            for h in draft.hypotheses
+            if h.text.strip() and h.check.strip()
+        ][:MAX_HYPOTHESES]
+        if not items:
+            raise BlockError("hypothesis cần câu giả thuyết và câu hỏi để kiểm tra")
+        if any(_DIGIT.search(i["text"]) for i in items):
+            # Unchecked, a hypothesis has no number: a figure would read as found.
+            raise BlockError("giả thuyết chưa kiểm tra không có số; viết lại không có con số")
+        return {**base, "label": "Giả thuyết", "items": items}
+    if t == "recommendation":
+        items = [
+            {
+                "action": r.action.strip(),
+                **(
+                    {"condition": r.condition.strip()}
+                    if r.condition and r.condition.strip()
+                    else {}
+                ),
+                **({"watch": r.watch.strip()} if r.watch and r.watch.strip() else {}),
+            }
+            for r in draft.recommendations
+            if r.action.strip()
+        ]
+        if not items:
+            raise BlockError("recommendation rỗng")
+        return {**base, "label": "Khuyến nghị", "items": items}
     if t == "code":
         ds = ws.get(draft.dataset or "")
         code = draft.content or (ds.code if ds else None)
