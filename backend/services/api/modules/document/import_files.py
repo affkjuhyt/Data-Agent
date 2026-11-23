@@ -91,7 +91,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         upload = UploadFile(
             file=io.BytesIO(data), filename=path.name, headers=Headers({"content-type": kind})
         )
-        response = Response()
+        # The route answers 202 for a new document and sets 200 for one already there.
+        response = Response(status_code=202)
         accepted = await upload_document(
             upload, collection_id, principal, principal.data_space_id, response, store
         )
