@@ -145,6 +145,13 @@ async def test_a_required_value_it_cannot_point_to_sends_the_record_to_review(se
     values, confidence, _, _ = _record(seed, doc)
     assert values["amount"] == "700.000.000 đồng" and confidence["amount"] == 0.5
     assert values["national_id"] is None and confidence["national_id"] == 0.0
+    # DI-13: each doubtful field is a low_confidence_field issue tied to the record.
+    issues = seed.all(
+        "SELECT detail->>'field', severity, extracted_record_id IS NOT NULL FROM document.quality_issue"
+        " WHERE document_id = %s AND kind = 'low_confidence_field' ORDER BY 1",
+        doc,
+    )
+    assert ("amount", "warning", True) in issues
 
 
 async def test_no_active_schema_means_no_reading(seed: Seed) -> None:

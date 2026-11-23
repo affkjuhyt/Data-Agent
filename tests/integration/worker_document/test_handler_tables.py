@@ -201,7 +201,8 @@ async def test_when_docling_fails_the_legacy_pipeline_reads_the_document_and_say
     await handler.process_document(event(u))
     assert seed.one("SELECT status FROM document.document WHERE id = %s", u.document) == "ready"
     assert seed.all(
-        "SELECT kind, severity, detail->>'docling_failed' FROM document.quality_issue WHERE document_id = %s",
+        "SELECT kind, severity, detail->>'docling_failed' FROM document.quality_issue"
+        " WHERE document_id = %s AND kind = 'garbled_text'",
         u.document,
     ) == [("garbled_text", "warning", "RuntimeError: docling: failure")]
     assert seed.one("SELECT count(*) FROM document.element WHERE document_id = %s", u.document) == 0

@@ -41,7 +41,14 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import audit, document
 from libs.pii.injection import injection_suspected
 from libs.tabular import profile as ingest_profile
-from services.worker_document import chunker, docling_adapter, docling_path, validity, xlsx_path
+from services.worker_document import (
+    chunker,
+    docling_adapter,
+    docling_path,
+    quality,
+    validity,
+    xlsx_path,
+)
 from services.worker_document.indexing import Point, VectorIndex
 from services.worker_document.processing import (
     DEFAULT_OCR_LANGUAGES,
@@ -69,6 +76,10 @@ AUDIT_ROLE = "svc_audit"
 RAW_BUCKET = os.environ.get("DOCUMENT_RAW_BUCKET", "da-raw-docs")
 DERIVED_BUCKET = "da-doc-derived"
 SKIP = {"removed", "ready", "failed", "waiting_review"}
+# §9: past this share of unusable pages a document waits for review and is not indexed.
+UNUSABLE_SHARE = 0.3
+# The issues the quality checks raise, replaced on every run (the text is read again).
+_REREAD = ("garbled", "empty_chunk")
 
 
 def _now() -> datetime.datetime:
@@ -125,6 +136,8 @@ class ChunkPlan:
     # The chunk each draft became, in the drafts' order (None: a corrected chunk stands).
     ids: list[uuid.UUID | None] = field(default_factory=list)
     unembedded: set[uuid.UUID] = field(default_factory=set)
+    # Drafts with nothing to find (quality.empty, DI-13): not written, an empty_chunk issue each.
+    empty: list[tuple[int, str]] = field(default_factory=list)
 
 
 async def _meta(session: Any, org_id: uuid.UUID, row: document.Document) -> Meta | None:
@@ -201,6 +214,10 @@ def plan_chunks(
         if (draft.page_from, draft.page_to, draft.section_path) in corrected_spans:
             plan.ids.append(None)
             continue  # the person's text for this passage stands (BR-108)
+        if (shape is None or shape.kind != "table") and quality.empty(draft.text):
+            plan.ids.append(None)
+            plan.empty.append((draft.page_from, draft.text.strip()[:60]))
+            continue
         text, pii_masked = mask_for(meta.pii_policy, draft.text, meta.pii_packs)
         # A table's summary points at this run's table row, rewritten every run: never kept.
         old = (
@@ -431,6 +448,18 @@ async def process_document(event: Any, *, again: bool = False) -> None:
                 )
             ).all()
         )
+        # A person who already let a document with many unusable pages through is not asked
+        # again for the same document (the gate below, DI-13).
+        unusable_accepted = (
+            await session.scalar(
+                select(document.QualityIssue.id).where(
+                    document.QualityIssue.document_id == document_id,
+                    document.QualityIssue.status != "open",
+                    document.QualityIssue.detail["reason"].astext == "unusable_share",
+                )
+            )
+            is not None
+        )
 
     minio = MinIOClient()
     minio.set_url(os.environ["MINIO_URL"])
@@ -491,7 +520,24 @@ async def process_document(event: Any, *, again: bool = False) -> None:
             existing_chunks,
             extraction.chunks if extraction is not None else None,
         )
-        indexed = await _index_or_keyword_only(meta, plan)
+        # §9: a document with more than 30 % of its pages unusable waits for a person, and
+        # nothing of it is indexed until then (its chunks are kept for after the review).
+        # A page that holds only a table has no page text (its cells are not page text): it is
+        # a page with content, not a blank one.
+        with_tables = {
+            n
+            for t in (extraction.tables if extraction is not None else [])
+            if t.page_from is not None
+            for n in range(t.page_from, (t.page_to or t.page_from) + 1)
+        }
+        unusable = sum(
+            1
+            for n, p in enumerate(pages, start=1)
+            if (not p.text and n not in with_tables)
+            or (p.ocr_conf is not None and p.ocr_conf < OCR_THRESHOLD)
+        )
+        gated = unusable > UNUSABLE_SHARE * len(pages) and not unusable_accepted
+        indexed = False if gated else await _index_or_keyword_only(meta, plan)
         derived = {
             n: await _upload_derived(minio, meta, n, p)
             for n, p in enumerate(pages, start=1)
@@ -523,6 +569,9 @@ async def process_document(event: Any, *, again: bool = False) -> None:
             await _write_structure_after(session, meta, extraction, plan, structure)
             if docling_error is not None:
                 await _docling_failed(session, meta, docling_error)
+            await _quality_issues(session, meta, pages, extraction, plan)
+            if gated:
+                await _unusable_gate(session, meta, unusable, len(pages))
             declared = (event.payload or {}).get("declared_media")
             if declared and declared != meta.media:
                 await _extension_mismatch(session, meta, str(declared))
@@ -785,6 +834,91 @@ async def _extension_mismatch(session: Any, meta: Meta, declared: str) -> None:
                 created_by=meta.created_by,
             )
         )
+
+
+async def _unusable_gate(session: Any, meta: Meta, unusable: int, total: int) -> None:
+    """§9: more than 30 % of the pages unusable: one blocking issue for the document, so it waits
+    for a person (waiting_review) and nothing is indexed; resolving it runs the later steps."""
+    # Already held by a blocking issue (a page's low OCR): that one is the person's to resolve;
+    # the document is not indexed either way.
+    await session.flush()
+    already = await session.scalar(
+        select(document.QualityIssue.id).where(
+            document.QualityIssue.document_id == meta.document_id,
+            document.QualityIssue.status == "open",
+            document.QualityIssue.severity == "blocking",
+        )
+    )
+    if already is None:
+        session.add(
+            document.QualityIssue(
+                id=uuid7(),
+                org_id=meta.org_id,
+                document_id=meta.document_id,
+                kind="low_ocr",
+                severity="blocking",
+                detail={
+                    "reason": "unusable_share",
+                    "unusable_pages": unusable,
+                    "pages": total,
+                    "threshold": UNUSABLE_SHARE,
+                },
+                created_by=meta.created_by,
+            )
+        )
+
+
+async def _quality_issues(
+    session: Any,
+    meta: Meta,
+    pages: list[ExtractedPage],
+    extraction: docling_path.Extraction | None,
+    plan: ChunkPlan,
+) -> None:
+    """DI-13 (§9): garbled text (Docling's elements, else the pages), chunks with nothing to find,
+    passages kept with their personal data (keep_for_authorized) for a person with AC06 to see.
+    The first two are read again each run; a pii_unmasked issue stays with its chunk."""
+    await session.execute(
+        delete(document.QualityIssue).where(
+            document.QualityIssue.document_id == meta.document_id,
+            document.QualityIssue.status == "open",
+            document.QualityIssue.detail["reason"].astext.in_(_REREAD),
+        )
+    )
+
+    def issue(kind: str, page: int | None, detail: dict[str, Any], **extra: Any) -> None:
+        session.add(
+            document.QualityIssue(
+                id=uuid7(),
+                org_id=meta.org_id,
+                document_id=meta.document_id,
+                page_no=page,
+                kind=kind,
+                severity="warning",
+                detail=detail,
+                created_by=meta.created_by,
+                **extra,
+            )
+        )
+
+    if extraction is not None:
+        for page, start in extraction.garbled:
+            issue("garbled_text", page, {"reason": "garbled", "start": start})
+    else:
+        for n, p in enumerate(pages, start=1):
+            if quality.garbled(p.text):
+                issue("garbled_text", n, {"reason": "garbled", "start": p.text.strip()[:120]})
+    for page, start in plan.empty:
+        issue("empty_chunk", page, {"reason": "empty_chunk", "text": start})
+    for c in plan.new:
+        if not c.pii_masked:
+            issue(
+                "pii_unmasked",
+                c.draft.page_from,
+                {"reason": "pii_kept", "policy": meta.pii_policy},
+                chunk_id=c.id,
+                requires_role="AC06",
+            )
 
 
 async def _docling_failed(session: Any, meta: Meta, error: str) -> None:

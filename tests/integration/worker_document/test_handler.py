@@ -318,3 +318,85 @@ async def test_a_scan_is_read_in_its_collections_ocr_languages(
     profile(japanese, '{"locale": "en-US"}', '{"ocr_languages": ["jpn", "eng"]}')
     await handler.process_document(event(japanese))
     assert asked == [("eng",), ("jpn", "eng")]
+
+
+def issues(seed: Seed, u: Uploaded) -> list[tuple]:
+    return seed.all(
+        "SELECT kind, severity, page_no, detail->>'reason', requires_role, chunk_id IS NOT NULL"
+        " FROM document.quality_issue WHERE document_id = %s ORDER BY kind, page_no",
+        u.document,
+    )
+
+
+async def test_di_13_a_garbled_page_and_an_empty_passage_are_reported(
+    seed: Seed, pages: list
+) -> None:
+    u = upload(seed)
+    # A report, not legal text: a page's passages stay on that page, so page 3 is its own.
+    pages.extend(
+        [
+            page("Báo cáo hoạt động quý 3 của chi nhánh; số liệu chưa kiểm toán."),
+            page("\ufffd" * 60 + " lai suat " * 6),
+            page("Trang 3"),
+        ]
+    )
+    await handler.process_document(event(u))
+    assert seed.one("SELECT status FROM document.document WHERE id = %s", u.document) == "ready"
+    found = issues(seed, u)
+    assert ("garbled_text", "warning", 2, "garbled", None, False) in found
+    assert ("empty_chunk", "warning", 3, "empty_chunk", None, False) in found
+    # The page with nothing to find has no chunk.
+    assert (
+        seed.one(
+            "SELECT count(*) FROM document.chunk WHERE document_id = %s AND page_from = 3",
+            u.document,
+        )
+        == 0
+    )
+    # Read again, the same issues once.
+    await handler.reprocess_document(event(u, handler.DOCUMENT_REPROCESS))
+    assert issues(seed, u) == found
+
+
+async def test_di_13_a_passage_kept_with_its_personal_data_is_reported_for_ac06(
+    seed: Seed, pages: list
+) -> None:
+    u = upload(seed, policy="keep_for_authorized")
+    pages.append(
+        page("Điều 1. Liên hệ\n\nNgười phụ trách: nguyen.van.a@example.com, phòng tín dụng.")
+    )
+    await handler.process_document(event(u))
+    assert ("pii_unmasked", "warning", 1, "pii_kept", "AC06", True) in issues(seed, u)
+
+
+async def test_di_13_a_document_with_most_pages_unusable_waits_and_is_not_gated_twice(
+    seed: Seed, pages: list
+) -> None:
+    u = upload(seed)
+    pages.extend([page(TEXT), page(""), page(""), page(TEXT.replace("12", "24"))])
+    await handler.process_document(event(u))
+    assert seed.one("SELECT status FROM document.document WHERE id = %s", u.document) == (
+        "waiting_review"
+    )
+    (gate,) = seed.all(
+        "SELECT id, kind, severity, page_no FROM document.quality_issue"
+        " WHERE document_id = %s AND detail->>'reason' = 'unusable_share'",
+        u.document,
+    )
+    assert gate[1:] == ("low_ocr", "blocking", None)
+    # A person lets it through: read again, it is not held back a second time.
+    seed.conn.cursor().execute(
+        "UPDATE document.quality_issue SET status = 'dismissed', resolved_by = gen_random_uuid(),"
+        " resolved_at = now() WHERE id = %s",
+        (str(gate[0]),),
+    )
+    await handler.reprocess_document(event(u, handler.DOCUMENT_REPROCESS))
+    assert seed.one("SELECT status FROM document.document WHERE id = %s", u.document) == "ready"
+    assert (
+        seed.one(
+            "SELECT count(*) FROM document.quality_issue WHERE document_id = %s"
+            " AND detail->>'reason' = 'unusable_share'",
+            u.document,
+        )
+        == 1
+    )

@@ -143,6 +143,24 @@ class Reading:
     confidence: dict[str, float]
     spans: list[dict[str, Any]]
     status: str
+    # The schema's required fields: a missing one is as unsure as an unchecked value (DI-13).
+    required: frozenset[str] = frozenset()
+
+
+# §9: a field read below this confidence (an unchecked quote is 0.5) is a low_confidence_field
+# issue for a person to confirm.
+LOW_CONFIDENCE = 0.8
+
+
+def doubtful(reading: Reading) -> list[str]:
+    """The fields a person should confirm: a value whose quote was not found in the document, or
+    a required field the document did not give."""
+    return [
+        name
+        for name, conf in reading.confidence.items()
+        if conf < LOW_CONFIDENCE
+        and (reading.values.get(name) is not None or name in reading.required)
+    ]
 
 
 async def read(
@@ -214,7 +232,8 @@ async def read(
         log.warning("extraction | document %s not read: %s", document_id, exc)
         return None
     values, confidence, spans, status = record(fields, reply.content, passages)
-    return Reading(doc.id, schema.id, values, confidence, spans, status)
+    required = frozenset(f["name"] for f in fields if f.get("required"))
+    return Reading(doc.id, schema.id, values, confidence, spans, status, required)
 
 
 async def extract_document(
@@ -224,10 +243,11 @@ async def extract_document(
     reading = await read(gateway, org_id, document_id)
     if reading is None:
         return None
+    record_id = uuid7()
     async with scoped_session(ROLE, org_id) as session:
         session.add(
             document.ExtractedRecord(
-                id=uuid7(),
+                id=record_id,
                 org_id=org_id,
                 document_id=reading.document_id,
                 extraction_schema_id=reading.schema_id,
@@ -237,6 +257,25 @@ async def extract_document(
                 status=reading.status,
             )
         )
+        await session.flush()
+        # DI-13: each doubtful field is a low_confidence_field issue the quality queue shows, its
+        # correction written back to the record (POST /v1/quality-issues/{id}:resolve).
+        for name in doubtful(reading):
+            session.add(
+                document.QualityIssue(
+                    id=uuid7(),
+                    org_id=org_id,
+                    document_id=reading.document_id,
+                    extracted_record_id=record_id,
+                    kind="low_confidence_field",
+                    severity="warning",
+                    detail={
+                        "field": name,
+                        "confidence": reading.confidence.get(name),
+                        "missing": reading.values.get(name) is None,
+                    },
+                )
+            )
     return reading.status
 
 

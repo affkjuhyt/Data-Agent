@@ -20,7 +20,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from services.worker_document import chunker, docling_adapter, legal_headings, tables
+from services.worker_document import chunker, docling_adapter, legal_headings, quality, tables
 from services.worker_document.docling_adapter import Element
 from services.worker_document.processing import ExtractedPage, LayoutBlock
 
@@ -40,6 +40,9 @@ class Extraction:
     dropped: dict[str, int] = field(default_factory=dict)
     # document.element.extractor: docling, or openpyxl for a workbook (xlsx_path).
     extractor: str = "docling"
+    # Elements whose text is garbled (quality.garbled, DI-13): stored, kept out of the chunks,
+    # each a garbled_text issue: (page, the start of its text).
+    garbled: list[tuple[int | None, str]] = field(default_factory=list)
 
 
 def handles(media: str) -> bool:
@@ -85,13 +88,21 @@ def extract(
             masked = mask(cell.text) if cell.text else cell.text
             if masked != cell.text:
                 cell.text, cell.numeric_value, cell.unit = masked, None, None
-    chunks = chunker.chunks_of(elements, found, title=title, doc_no=doc_no)
+    bad = {
+        e.ref
+        for e in elements
+        if e.kind in ("text", "heading", "list", "caption") and quality.garbled(e.text)
+    }
+    chunks = chunker.chunks_of(
+        [e for e in elements if e.ref not in bad], found, title=title, doc_no=doc_no
+    )
     return Extraction(
         pages=_pages(doc, elements, ocr),
         elements=elements,
         tables=found,
         chunks=chunks,
         dropped={**read.skipped, **dropped},
+        garbled=[(e.page_no, e.text[:120]) for e in elements if e.ref in bad],
     )
 
 
