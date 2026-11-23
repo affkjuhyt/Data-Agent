@@ -1013,7 +1013,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/alerts | ?status, ?monitor\_id, ?from, ?to | Danh sách Alert | — |
 | POST /v1/alerts/{id}:ack | — | Alert | — |
 | POST /v1/alerts/{id}:assign | assignee\_id\* | Alert | — |
-| POST /v1/alerts/{id}:close | close\_note | Alert | 422 business\_rule\_violated (lặp hơn 2 lần cần ghi chú, BR-124) |
+| POST /v1/alerts/{id}:close | close\_note, kind | Alert | 422 business\_rule\_violated (lặp hơn 2 lần cần ghi chú, BR-124) |
 | POST /v1/reports | kind, workspace\_id, title\*, cron\*, work\_calendar\_id, cutoff\_time, as\_of\_rule\*, formats, require\_publish\_check, recipients | ReportSchedule | 422 validation\_failed (kind = report thiếu workspace\_id) |
 | PATCH /v1/reports/{id} | title, cron, work\_calendar\_id, cutoff\_time, as\_of\_rule, formats, status, recipients | ReportSchedule | — |
 | POST /v1/reports/{id}:pause | — | ReportSchedule | — |

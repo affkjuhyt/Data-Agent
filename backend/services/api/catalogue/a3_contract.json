@@ -4425,7 +4425,8 @@
     "Theo dõi, báo cáo, thông báo"
    ],
    "body": {
-    "close_note": false
+    "close_note": false,
+    "kind": false
    },
    "query": [],
    "returns": "Alert",
@@ -4435,7 +4436,7 @@
      "business_rule_violated"
     ]
    ],
-   "request_text": "close_note"
+   "request_text": "close_note, kind"
   },
   "POST /v1/reports": {
    "group": "Theo dõi, báo cáo, thông báo",
