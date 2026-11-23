@@ -83,6 +83,9 @@ class Dataset:
     # the quality, freshness and structure signals (signals.py).
     sources: list[str] = field(default_factory=list)
     agreement_clear: bool = True
+    # AL-06: the statistical tests the analysis code ran (pearsonr, ttest_ind…): its rows are an
+    # inference, never a fact, and are shown only as an `inference` block.
+    inference: list[str] = field(default_factory=list)
 
     def records(self, limit: int | None = None) -> list[dict[str, Any]]:
         rows = self.rows if limit is None else self.rows[:limit]

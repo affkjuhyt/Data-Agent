@@ -5,3 +5,5 @@ numpy==2.1.3
 pyarrow==26.0.1
 # AL-05: SQL over the datasets, its configuration locked (libs/code_sandbox/duck.py).
 duckdb==2.0.0
+# AL-06: four tests of scipy.stats for inference (libs/code_sandbox/local.STATS_FUNCTIONS).
+scipy==1.18.1

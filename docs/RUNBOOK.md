@@ -752,6 +752,9 @@ the child, configured and locked before the code runs (`libs/code_sandbox/duck.p
 access, no local file system, no extension, 256 MB). Code that calls `sql()` runs with 8 GiB of
 address space, which DuckDB reserves and does not use (under 4 GiB it segfaults), and with
 `RLIMIT_DATA` at 1.5 GiB, which holds what the code allocates under the pod's 3 GiB.
+The code may run four statistical tests, `from scipy.stats import pearsonr` (or `spearmanr`,
+`ttest_ind`, `mannwhitneyu`; AL-06), scipy 1.18.1; `SCIPY_STATS=off` on worker-agent and the pod takes
+them away. A result of one is shown only as an `inference` block, never as a figure.
 `AGENT_SANDBOX_TRANSPORT=json` on worker-agent sends the JSON body of before, which the pod still
 answers; it goes after one release.
 Check it: `kubectl -n dataagent-service exec deploy/worker-agent -- python -c "import asyncio,os;

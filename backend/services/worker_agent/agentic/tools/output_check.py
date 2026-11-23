@@ -101,6 +101,23 @@ def _origin(
     return None
 
 
+def tests_of(code: str) -> list[str]:
+    """The statistical tests the code imports from scipy.stats (AL-06): its result is an
+    inference."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    return sorted(
+        {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == "scipy.stats"
+            for alias in node.names
+        }
+    )
+
+
 def before_run(code: str, datasets: Mapping[str, Dataset]) -> list[Mismatch]:
     """What the code would compute wrong, read from its text before it runs."""
     try:

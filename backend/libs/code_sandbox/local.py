@@ -87,6 +87,16 @@ FORBIDDEN_ATTR_PREFIXES = (
     "to_xml",
     "to_gbq",
 )
+# AL-06: statistical inference, four tests of scipy.stats and nothing else of scipy, imported by
+# name only (`from scipy.stats import pearsonr`): scipy.io reads files, scipy is never whole.
+# SCIPY_STATS=off takes them away (the spec's rollback).
+STATS_FUNCTIONS = frozenset({"pearsonr", "spearmanr", "ttest_ind", "mannwhitneyu"})
+
+
+def stats_enabled() -> bool:
+    return os.environ.get("SCIPY_STATS", "on").strip().lower() != "off"
+
+
 # pandas and numpy are imported whole (`import pandas as pd`), never a submodule or a name from
 # them, so a reader of files or the network cannot be reached by a bare name.
 WHOLE_ONLY = {"pandas", "numpy"}
@@ -190,6 +200,15 @@ def check(code: str) -> None:
                 top = alias.name.split(".")[0]
                 if top not in ALLOWED_IMPORTS or (top in WHOLE_ONLY and "." in alias.name):
                     raise CodeRejected(f"không được import {alias.name}")
+        elif isinstance(node, ast.ImportFrom) and node.module == "scipy.stats" and not node.level:
+            for alias in node.names:
+                if not stats_enabled() or alias.name not in STATS_FUNCTIONS:
+                    raise CodeRejected(
+                        f"không được import {alias.name} từ scipy.stats; chỉ "
+                        + ", ".join(sorted(STATS_FUNCTIONS))
+                    )
+                if alias.asname and _forbidden_name(alias.asname):
+                    raise CodeRejected(f"không được đặt tên {alias.asname}")
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
             top = module.split(".")[0]
@@ -222,6 +241,10 @@ except ImportError:
     duckdb = None
 ALLOWED = set(json.loads(sys.argv[1]))
 DUCK = json.loads(sys.argv[3])
+# AL-06: scipy.stats is imported here, before the audit hook: its own imports reach modules the
+# hook refuses (multiprocessing). The code may then import its four tests by name.
+if DUCK.get("stats"):
+    import scipy.stats
 payload = json.loads(sys.stdin.read())
 def make_import(allowed, real_import):
     def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -364,6 +387,15 @@ class Execution:
     error: str | None
 
 
+def uses_stats(code: str) -> bool:
+    """Whether the code imports from scipy.stats (the static check has held it to four tests)."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    return any(isinstance(n, ast.ImportFrom) and n.module == "scipy.stats" for n in ast.walk(tree))
+
+
 def uses_sql(code: str) -> bool:
     """Whether the code calls sql(): it then gets DuckDB and the address space DuckDB needs."""
     try:
@@ -427,11 +459,13 @@ async def run(code: str, datasets: dict[str, dict[str, Any]]) -> Execution:
             "-I",
             "-c",
             RUNNER,
-            json.dumps(sorted(ALLOWED_IMPORTS)),
+            # scipy only for the code the static check let import its four tests.
+            json.dumps(sorted(ALLOWED_IMPORTS | ({"scipy"} if uses_stats(code) else set()))),
             json.dumps(sorted(FORBIDDEN_NAMES - {"__import__"})),
             json.dumps(
                 {
                     "enabled": with_sql,
+                    "stats": uses_stats(code),
                     "settings": list(duck.SETTINGS),
                     "forbidden": duck.FORBIDDEN_SQL.pattern,
                 }

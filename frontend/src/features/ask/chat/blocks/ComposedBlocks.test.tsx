@@ -26,6 +26,27 @@ describe('ComposedBlocks', () => {
     expect(screen.getByText(/timeline_of_the_future/)).toBeInTheDocument();
   });
 
+  it('draws a statistical test apart from the figures, with its method and note (AL-06)', () => {
+    const inference = [
+      {
+        type: 'inference',
+        id: 'i1',
+        composed: true,
+        title: 'Tương quan giá và số đơn',
+        method: 'tương quan Pearson',
+        columns: ['r', 'p_value', 'n'],
+        rows: [{ r: -0.42, p_value: 0.03, n: 26 }],
+        row_count: 1,
+        note: 'Suy luận thống kê trên mẫu đã truy vấn, không phải số liệu: tương quan không phải nhân quả.',
+      },
+    ] as unknown as AnswerBlockView[];
+    render(<ComposedBlocks blocks={inference} />);
+    const block = screen.getByTestId('inference-block');
+    expect(block).toHaveTextContent('Suy luận thống kê · tương quan Pearson');
+    expect(block).toHaveTextContent('p_value');
+    expect(screen.getByRole('note')).toHaveTextContent('tương quan không phải nhân quả');
+  });
+
   it('leaves an answer of the older shape to the fixed layout', () => {
     expect(isComposed([{ type: 'markdown', id: 'a-markdown', content: 'x' }] as unknown as AnswerBlockView[])).toBe(false);
   });

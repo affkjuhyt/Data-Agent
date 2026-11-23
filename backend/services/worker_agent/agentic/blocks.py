@@ -25,7 +25,7 @@ from services.worker_agent.agentic.workspace import (
 from services.worker_agent.answer import chart_check
 
 BlockType = Literal[
-    "markdown", "kpi", "chart", "table", "insights", "callout", "code", "follow_ups"
+    "markdown", "kpi", "chart", "table", "insights", "callout", "code", "follow_ups", "inference"
 ]
 ChartType = Literal["bar", "line", "area", "pie", "scatter", "composed"]
 # Chart types the client draws; anything else falls back to bar.
@@ -385,10 +385,52 @@ def _chart_issues(
     return chart_check.check(chart, time_order=time_order)
 
 
+# AL-06: said under every inference, whatever the reporter writes.
+INFERENCE_NOTE = (
+    "Suy luận thống kê trên mẫu đã truy vấn, không phải số liệu: tương quan không phải nhân quả,"
+    " và p-value chỉ nói khả năng kết quả này do ngẫu nhiên của mẫu."
+)
+_METHODS = {
+    "pearsonr": "tương quan Pearson",
+    "spearmanr": "tương quan Spearman",
+    "ttest_ind": "kiểm định t hai mẫu độc lập",
+    "mannwhitneyu": "kiểm định Mann-Whitney U",
+}
+
+
+def _inference(draft: BlockDraft, ds: Dataset, block_id: str) -> dict[str, Any]:
+    """An inference drawn as itself: its rows, the method, the note; never a kpi or a chart."""
+    columns = [c for c in draft.columns if c in ds.columns] or list(ds.columns)
+    idx = [ds.columns.index(c) for c in columns]
+    return {
+        "type": "inference",
+        "id": block_id,
+        "composed": True,
+        "title": draft.title or ds.title,
+        "method": ", ".join(_METHODS.get(m, m) for m in ds.inference),
+        "columns": columns,
+        "rows": [{c: plain(r[i]) for c, i in zip(columns, idx, strict=True)} for r in ds.rows][
+            :MAX_BLOCK_ROWS
+        ],
+        "row_count": len(ds.rows),
+        "note": INFERENCE_NOTE,
+        **_source(ds),
+        "trust_label": "Suy luận thống kê",
+    }
+
+
 def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, Any]:
     """The block the client draws, with its data from the workspace; BlockError when the draft
     names a dataset, a column or a row that does not exist (the reporter may then fix it)."""
     t = draft.type
+    if t in ("inference", "kpi", "table", "chart"):
+        named = draft.dataset or next((k.dataset for k in draft.kpis), None)
+        found = ws.get(named or "")
+        if found is not None and found.inference:
+            # AL-06: a test's statistic or p-value is never shown as a figure.
+            return _inference(draft, found, block_id)
+        if t == "inference":
+            raise BlockError(f"dataset {named} không phải kết quả kiểm định thống kê")
     # `composed` tells the client the agent chose this block and its place (ComposedBlocks.tsx).
     base: dict[str, Any] = {"type": t, "id": block_id, "composed": True}
     if draft.title:

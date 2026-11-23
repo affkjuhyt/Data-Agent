@@ -182,3 +182,69 @@ async def test_the_analysis_tool_refuses_before_running_and_checks_what_it_retur
         ),
     )
     assert fine.ok, fine.observation
+
+
+# AL-06: statistical inference, four tests of scipy.stats, shown only as an inference.
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "import scipy\nresult = 1",
+        "from scipy import stats\nresult = 1",
+        "from scipy.stats import linregress\nresult = 1",
+        "from scipy.io import loadmat\nresult = 1",
+        "import scipy.stats as st\nresult = 1",
+    ],
+)
+def test_scipy_is_four_tests_imported_by_name(code: str) -> None:
+    from libs.code_sandbox import local
+
+    with pytest.raises(local.CodeRejected):
+        local.check(code)
+
+
+def test_scipy_off_takes_the_tests_away(monkeypatch: pytest.MonkeyPatch) -> None:
+    from libs.code_sandbox import local
+
+    local.check("from scipy.stats import pearsonr\nresult = 1")
+    monkeypatch.setenv("SCIPY_STATS", "off")
+    with pytest.raises(local.CodeRejected):
+        local.check("from scipy.stats import pearsonr\nresult = 1")
+
+
+CORRELATION = (
+    "from scipy.stats import pearsonr\n"
+    "m = d2.merge(d3, on='Vùng')\n"
+    "r, p = pearsonr(m['Doanh thu'], m['Số đơn'])\n"
+    "result = {'r': float(r), 'p_value': float(p), 'n': len(m)}"
+)
+
+
+async def test_a_test_runs_in_the_sandbox_and_its_result_is_an_inference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.worker_agent.agentic import blocks as b
+    from services.worker_agent.agentic.tools.analyze import Analyze, AnalyzeArgs
+
+    monkeypatch.setenv("AGENT_PYTHON_SANDBOX", "local")
+    ctx = _ctx()
+    # Three regions so the correlation has a degree of freedom.
+    for name in ("d2", "d3"):
+        ctx.ws.datasets[name].rows.append(["Trung", 15 if name == "d2" else 180])
+    done = await Analyze().run(ctx, AnalyzeArgs(code=CORRELATION, inputs=["d2", "d3"]))
+    assert done.ok, done.observation
+    ds = ctx.ws.datasets[done.datasets[0]]
+    assert ds.inference == ["pearsonr"]
+    # Drawn as a kpi or a chart, it is still an inference: never shown as a figure.
+    for draft in (
+        b.BlockDraft(type="inference", dataset=ds.id),
+        b.BlockDraft(type="table", dataset=ds.id),
+        b.BlockDraft(type="kpi", kpis=[b.KpiDraft(label="r", dataset=ds.id, column="giá trị")]),
+    ):
+        block = b.materialize(draft, ctx.ws, "b1")
+        assert block["type"] == "inference"
+        assert block["method"] == "tương quan Pearson"
+        assert "tương quan không phải nhân quả" in block["note"]
+    with pytest.raises(b.BlockError):
+        b.materialize(b.BlockDraft(type="inference", dataset="d2"), ctx.ws, "b1")

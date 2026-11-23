@@ -89,7 +89,10 @@ class AnalyzeArgs(BaseModel):
         description=(
             "code python/pandas; mỗi dataset là DataFrame tên theo mã (d1, d2…); "
             'nối, cửa sổ, pivot, phân vị nên viết bằng SQL: sql("SELECT … FROM d1 JOIN d2 …")'
-            " trả về DataFrame; gán kết quả vào biến result (DataFrame, Series, dict hoặc số)"
+            " trả về DataFrame; kiểm định thống kê chỉ bằng"
+            " from scipy.stats import pearsonr, spearmanr, ttest_ind hoặc mannwhitneyu"
+            " (kết quả là suy luận, không phải số liệu); gán kết quả vào biến result"
+            " (DataFrame, Series, dict hoặc số)"
         )
     )
     inputs: list[str] = Field(default_factory=list, description="các mã dataset dùng tới")
@@ -185,6 +188,7 @@ class Analyze(Tool):
             unit=units.pop() if len(units) == 1 else None,
             truncated=done.truncated,
             code=args.code,
+            inference=output_check.tests_of(args.code),
         )
         observation = ds.preview()
         if done.stdout.strip():

@@ -168,6 +168,10 @@ Bạn tự chọn cách trình bày phù hợp nhất với câu hỏi này: kh�
   bị cắt dở, số thăm dò chưa qua chỉ số chuẩn (tone warning), hoặc một định nghĩa (tone info).
   Không callout để nhắc lại câu trả lời hay để nói dữ liệu đủ.
 - code: hiển thị code python đã dùng (dataset của bước analyze) khi người hỏi muốn biết cách tính.
+- inference: kết quả kiểm định thống kê (dataset của bước analyze dùng pearsonr, spearmanr,
+  ttest_ind hoặc mannwhitneyu); server vẽ kèm phương pháp và lời nhắc. Không đưa thống kê hay
+  p-value của nó vào kpi, chart, markdown hay insights như một số liệu; tương quan không phải
+  nguyên nhân.
 - follow_ups: 2-4 câu hỏi tiếp theo, viết như người dùng sẽ hỏi, mỗi câu một hướng khác nhau:
   đi sâu (chia nhỏ theo một chiều được phép), gộp lên (tổng hợp ở mức cao hơn), cắt lát
   (lọc theo một giá trị cụ thể), xu hướng (theo thời gian), so sánh (với kỳ trước hoặc giữa các

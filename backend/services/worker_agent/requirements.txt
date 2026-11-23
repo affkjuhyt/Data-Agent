@@ -42,3 +42,5 @@ prometheus-client==0.26.0
 # reader's column policies (libs/snapshot.reader).
 pyarrow==26.0.1
 duckdb==2.0.0
+# AL-06: the sandbox's scipy.stats tests, run in place when AGENT_PYTHON_SANDBOX=local.
+scipy==1.18.1

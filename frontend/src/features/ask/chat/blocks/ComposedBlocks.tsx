@@ -266,6 +266,22 @@ function TableBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
   );
 }
 
+/** AL-06: a statistical test's result, drawn apart from the figures: its rows, the method and
+ *  the note that it is an inference (correlation is not cause), never a kpi or a chart. */
+function InferenceBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
+  const method = str(block.method);
+  return (
+    <div className="flex flex-col gap-da-xs" data-testid="inference-block">
+      <span className="inline-flex items-center gap-da-xs text-muted-foreground da-caption">
+        <Icon name="sparkles" size={12} className="text-primary" />
+        {method ? `Suy luận thống kê · ${method}` : 'Suy luận thống kê'}
+      </span>
+      <TableBlock block={{ ...block, trust_label: '' }} ctx={ctx} />
+      <Callout block={{ tone: 'info', content: str(block.note) }} ctx={ctx} />
+    </div>
+  );
+}
+
 const TONE_ICON: Record<string, { icon: IconName; className: string }> = {
   positive: { icon: 'trending-up', className: 'text-success' },
   negative: { icon: 'trending-down', className: 'text-error' },
@@ -359,6 +375,7 @@ const RENDERERS: Record<string, (block: Block, ctx: Ctx) => ReactNode> = {
   // A callout with a heading and nothing under it ("Lưu ý:" alone) was drawn as an empty box.
   callout: (b, ctx) => (str(b.content).trim() ? <Callout block={b} ctx={ctx} /> : null),
   code: (b) => <CodeBlock block={b} />,
+  inference: (b, ctx) => <InferenceBlock block={b} ctx={ctx} />,
   caveats: (b) => <CaveatsBlock items={arr<unknown>(b.items).map(String)} />,
   // The next questions are drawn under the answer from the answer's follow_ups.
   follow_ups: () => null,
