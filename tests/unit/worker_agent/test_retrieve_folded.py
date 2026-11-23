@@ -21,11 +21,13 @@ def test_the_two_branches_hold_the_words_as_written_and_folded() -> None:
 def test_relevance_reads_words_without_their_diacritics() -> None:
     # The bars (overlap, coverage) must not drop what the folded branch found.
     assert r.overlap("lai suat tiet kiem", "Lãi suất tiết kiệm kỳ hạn 12 tháng") == 1.0
-    assert r.overlap("Đơn vị tính", "don vi tinh") == 1.0
+    # Typed with diacritics, a question is read as written: "bảo mật" is not "báo mất".
+    assert r.overlap("bảo mật dữ liệu", "báo mất dữ liệu") == 0.5
+    assert r.overlap("bao mat du lieu", "bảo mật dữ liệu") == 1.0
     # A stop word stays a stop word typed either way; a folded form that is also a subject word
     # does not ("vay" of "cho vay" is not "vậy").
-    assert r._words("la gi") == []
-    assert r._words("vay von") == ["vay", "von"]
+    assert r._words("la gi", folded=True) == []
+    assert r._words("vay von", folded=True) == ["vay", "von"]
 
 
 SYNONYMS = [

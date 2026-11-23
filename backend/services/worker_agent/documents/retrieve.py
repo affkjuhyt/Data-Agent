@@ -89,32 +89,46 @@ class Passage:
     score: float
 
 
-def _words(text: str) -> list[str]:
-    """The subject words, folded: "lãi" and "lai" are one word to the relevance bars, as they
-    are to the folded keyword branch (DI-11)."""
+def _typed_without_marks(text: str) -> bool:
+    """Whether a question was typed without diacritics: then its words are read folded. A
+    question typed with them is read as written, since folding would make "bảo" (security) the
+    "báo" (report) of another passage (DI-11, measured on ret-155)."""
+    return fold(text) == unicodedata.normalize("NFC", text).lower()
+
+
+def _words(text: str, folded: bool = False) -> list[str]:
+    """The subject words, as written or, with `folded`, without their diacritics ("lai" and
+    "lãi" one word)."""
     out = []
     for w in _WORD.findall(unicodedata.normalize("NFC", text).lower()):
-        folded = fold(w)
-        if w not in _STOP and folded not in _STOP_FOLDED:
-            out.append(folded)
+        if w in _STOP:
+            continue
+        if not folded:
+            out.append(w)
+            continue
+        if (f := fold(w)) not in _STOP_FOLDED:
+            out.append(f)
     return out
 
 
 def overlap(question: str, text: str) -> float:
-    """Share of the question's subject words the passage contains."""
-    asked = set(_words(question))
+    """Share of the question's subject words the passage contains; a question typed without
+    diacritics is compared folded."""
+    folded = _typed_without_marks(question)
+    asked = set(_words(question, folded))
     if not asked:
         return 0.0
-    return len(asked & set(_words(text))) / len(asked)
+    return len(asked & set(_words(text, folded))) / len(asked)
 
 
 def coverage(question: str, text: str, title: str = "", header: str = "") -> float:
     """Share of the question's subject words a passage covers, a word in its title or section
     header weighing twice one in its text alone (ragflow's weighted token coverage)."""
-    asked = set(_words(question))
+    folded = _typed_without_marks(question)
+    asked = set(_words(question, folded))
     if not asked:
         return 0.0
-    in_text, in_heads = set(_words(text)), set(_words(f"{title} {header}"))
+    in_text, in_heads = set(_words(text, folded)), set(_words(f"{title} {header}", folded))
     weight = sum(2.0 if w in in_heads else 1.0 if w in in_text else 0.0 for w in asked)
     return min(weight / len(asked), 2.0) / 2.0
 
@@ -135,7 +149,9 @@ def _tsquery(question: str, extra: list[str] | None = None) -> str | None:
 
 def _folded_tsquery(question: str, extra: list[str] | None = None) -> str | None:
     """The same words without diacritics, for the folded branch."""
-    words = sorted({w for text in [question, *(extra or [])] for w in _words(text) if len(w) > 1})
+    words = sorted(
+        {w for text in [question, *(extra or [])] for w in _words(text, True) if len(w) > 1}
+    )
     return " | ".join(words) if words else None
 
 
@@ -222,13 +238,15 @@ async def retrieve(
         folded_query = func.to_tsquery(literal_column("'simple'"), folded_terms)
         # The expression of chunk_text_idx, so the GIN index serves it.
         tsvector = func.to_tsvector(literal_column("'simple'"), c.text)
-        # Either branch matches; a passage ranks by the better of the two (DI-11).
-        rank = func.greatest(func.ts_rank(tsvector, tsquery), func.ts_rank(_FOLDED, folded_query))
+        # Either branch matches. A question typed with diacritics ranks by the words as written
+        # first, the folded match breaking ties; one typed without them by the folded match.
+        exact, loose = func.ts_rank(tsvector, tsquery), func.ts_rank(_FOLDED, folded_query)
+        first, then = (loose, exact) if _typed_without_marks(question) else (exact, loose)
         keyword = list(
             (
                 await session.execute(
                     base.where(or_(tsvector.op("@@")(tsquery), _FOLDED.op("@@")(folded_query)))
-                    .order_by(rank.desc(), c.id)
+                    .order_by(first.desc(), then.desc(), c.id)
                     .limit(POOL)
                 )
             ).all()
