@@ -350,3 +350,47 @@ async def test_di_12_two_cells_that_fit_as_well_are_asked_back(seed: Seed) -> No
     )
     assert (status, kind) == ("clarifying", "clarification"), text
     assert "400.000.000" in text and "420.000.000" in text
+
+
+async def test_the_agents_document_search_reads_a_table_cell_too(seed: Seed) -> None:
+    # 24/11: the agent's search_documents gave passages only; a number of a table is now read from
+    # its cell, as the governed path does (DI-12): a document dataset cited to the cell.
+    import datetime
+    from types import SimpleNamespace
+
+    from services.worker_agent.agentic.tools.documents import SearchDocuments, SearchDocumentsArgs
+    from services.worker_agent.agentic.workspace import Workspace
+
+    lib = library(seed)
+    _, table = add_table(seed, lib)
+    ws = Workspace()
+    ctx = SimpleNamespace(
+        org_id=lib.org,
+        user_id=lib.user,
+        space_id=lib.space,
+        as_of=None,
+        today=datetime.date(2026, 11, 24),
+        purpose=None,
+        ws=ws,
+        step_id="s1",
+    )
+    out = await SearchDocuments().run(
+        ctx,  # type: ignore[arg-type]
+        SearchDocumentsArgs(query="Dư nợ thực hiện năm 2024 của chi nhánh Hà Nội"),
+    )
+    assert out.ok and out.detail["cells"] == 1
+    (ds,) = ws.datasets.values()
+    assert out.datasets == [ds.id]
+    assert ds.trust == "document" and ds.rows[0][2] == 1_300_000_000
+    cited = ws.citations[0]
+    assert cited["kind"] == "table_cell" and cited["cell"]["table_id"] == str(table)
+    assert (cited["cell"]["row"], cited["cell"]["col"]) == (2, 2)
+
+    # Two cells as good with other numbers: both handed back, nothing cited as the answer.
+    ws2 = Workspace()
+    ctx.ws = ws2
+    asked = await SearchDocuments().run(
+        ctx,  # type: ignore[arg-type]
+        SearchDocumentsArgs(query="Dư nợ năm 2024 của chi nhánh Đà Nẵng"),
+    )
+    assert asked.ok and not ws2.datasets and "ambiguous" in asked.observation
