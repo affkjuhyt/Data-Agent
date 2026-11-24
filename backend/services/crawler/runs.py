@@ -325,19 +325,26 @@ async def _record_drift(
     schema: dict[str, Any],
     found: inference.Drift,
 ) -> uuid.UUID | None:
-    """The run's schema_drift (BR-152), or None when one is already open for this version: the
-    source's next runs drift the same way and one proposal is enough."""
-    open_one = await session.scalar(
-        select(acquire.SchemaDrift.id).where(
-            acquire.SchemaDrift.source_id == src.id,
-            acquire.SchemaDrift.from_version_id == schema["id"],
-            acquire.SchemaDrift.drift_kind == "structural",
-            acquire.SchemaDrift.resolution.is_(None),
-        )
-    )
-    if open_one is not None:
-        return None
+    """The run's schema_drift (BR-152), or None when one as severe is already open for this
+    version: the source's next runs drift the same way and one proposal is enough."""
     major = found.severity == "major"
+    open_severities = set(
+        (
+            await session.scalars(
+                select(acquire.SchemaDrift.severity).where(
+                    acquire.SchemaDrift.source_id == src.id,
+                    acquire.SchemaDrift.from_version_id == schema["id"],
+                    acquire.SchemaDrift.drift_kind == "structural",
+                    acquire.SchemaDrift.resolution.is_(None),
+                )
+            )
+        ).all()
+    )
+    # An open minor drift never stands in for a major one: the page breaking further must still
+    # quarantine the run, pause the source and ask its owner (security review of 25/11), so a
+    # major drift is recorded over an open minor one, and only an open major one absorbs it.
+    if open_severities and (not major or "major" in open_severities):
+        return None
     row = acquire.SchemaDrift(
         id=uuid7(),
         org_id=org_id,

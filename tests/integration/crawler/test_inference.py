@@ -211,6 +211,40 @@ async def test_a_minor_drift_keeps_the_run_and_asks_the_owner_only_for_a_passing
     assert len(_events(seed, inference.INFERENCE_REQUESTED, source)) == 1
 
 
+async def test_a_major_drift_over_an_open_minor_one_still_pauses_the_source(
+    world: World, seed: Seed, site: Site, store: Store
+) -> None:
+    # 90% of required cells: a minor drift, left open.
+    rows = "".join(
+        f'<tr><td class="bank">NH {i}</td><td class="{"r12" if i < 8 else "r12-moi"}">4,{i}</td></tr>'
+        for i in range(10)
+    )
+    site.pages["/lai-suat"] = (
+        200,
+        "text/html; charset=utf-8",
+        f'<table class="lai-suat"><tr><th>NH</th></tr>{rows}</table>'.encode(),
+    )
+    source, _ = world.source(site)
+    world.queue(source)
+    await _work(store)
+    # The page then breaks for good: no record at all.
+    site.pages["/lai-suat"] = (
+        200,
+        "text/html; charset=utf-8",
+        _table([("NH 1", "4,1")], bank="ngan-hang", rate="ky-12"),
+    )
+    run = world.queue(source)
+    await _work(store)
+
+    drift, severity, action = seed.one(
+        "SELECT id, severity, action FROM acquire.schema_drift WHERE run_id = %s", run
+    )
+    assert (severity, action) == ("major", "paused")
+    assert seed.one("SELECT status FROM acquire.crawl_run WHERE id = %s", run) == "quarantined"
+    assert seed.one("SELECT status FROM acquire.crawl_source WHERE id = %s", source) == "paused"
+    assert len(_events(seed, "hitl.requested", drift)) == 1
+
+
 def _draft_source(world: World, site: Site) -> uuid.UUID:
     """A registered source with its legal review in force and no schema yet."""
     return world.seed.row(
