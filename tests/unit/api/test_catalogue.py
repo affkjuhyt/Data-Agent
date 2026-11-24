@@ -155,3 +155,13 @@ def test_missing_endpoint_fails_only_in_a_complete_group() -> None:
     report = compare(spec, complete_groups=frozenset({group}))
     assert not report.ok
     assert f"{method} {path} ({group})" in report.missing_in_complete_groups
+
+
+def test_allowed_reads_the_a2_gate_of_an_endpoint() -> None:
+    from services.api.catalogue import allowed
+
+    assert allowed("POST", "/v1/sources/{id}:activate", frozenset({"admin_data"}))
+    assert not allowed("POST", "/v1/sources/{id}:activate", frozenset({"ask", "steward"}))
+    assert not allowed("POST", "/v1/sources/{id}:activate", frozenset())
+    with pytest.raises(LookupError):
+        allowed("POST", "/v1/not-an-endpoint", frozenset({"admin"}))

@@ -105,6 +105,17 @@ def endpoints() -> dict[tuple[str, str], list[Endpoint]]:
     return out
 
 
+def allowed(method: str, path: str, capabilities: frozenset[str]) -> bool:
+    """Whether someone holding `capabilities` passes the A2 gate of an endpoint. For code that
+    calls a route's function without its HTTP request (an operator's CLI in the pod acting as a
+    named user): the gate is a route dependency (`endpoint` below), which a direct call skips."""
+    rows = endpoints().get((method.upper(), path))
+    if not rows:
+        raise LookupError(f"{method.upper()} {path} is not in A2")
+    needed = {c for r in rows for c in r.capability}
+    return ANY_USER in needed or bool(needed & capabilities)
+
+
 def endpoint(
     method: str,
     path: str,

@@ -32,10 +32,12 @@ from starlette.datastructures import Headers
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import document as doc
 from libs.dataagent_db.models import org as org_models
+from services.api.catalogue import allowed
 from services.api.kernel.auth import Principal
 from services.api.modules.document.ports import object_store
 from services.api.modules.document.routes import ROLE, create_collection, upload_document
 from services.api.modules.document.schemas import CollectionCreate
+from services.api.modules.org import capabilities_of
 
 
 async def _principal(org_id: uuid.UUID, space_code: str, username: str) -> Principal:
@@ -52,8 +54,18 @@ async def _principal(org_id: uuid.UUID, space_code: str, username: str) -> Princ
         )
     if space is None or user is None:
         raise SystemExit(f"no Data Space {space_code} or user {username} in organisation {org_id}")
+    held = frozenset(await capabilities_of(org_id, user.id, space.id) or ())
+    # The routes' A2 gates are dependencies of their HTTP requests, which a direct call does not
+    # make: held here, or this would be a way round them.
+    for method, path in (("POST", "/v1/collections"), ("POST", "/v1/documents")):
+        if not allowed(method, path, held):
+            raise PermissionError(f"{username} may not call {method} {path} in {space_code}")
     return Principal(
-        user_id=user.id, org_id=org_id, external_id=user.external_id or "", data_space_id=space.id
+        user_id=user.id,
+        org_id=org_id,
+        external_id=user.external_id or "",
+        capabilities=held,
+        data_space_id=space.id,
     )
 
 

@@ -116,7 +116,7 @@ frontend-test:  ## vitest
 # forbidden one (tools/licenses.json). Scans the images last built (make deploy-local builds
 # them), so rerun after a requirements change and commit THIRD-PARTY-NOTICES.md with it.
 LICENSE_IMAGES = api worker-agent worker-ingest worker-document crawler ml-forecast python-sandbox
-.PHONY: licenses tlc-reconcile tlc-cases tlc-documents golden-eval
+.PHONY: licenses tlc-reconcile tlc-cases tlc-documents tlc-tables golden-eval
 
 licenses:  ## write THIRD-PARTY-NOTICES.md from the service images and the npm lock; fail on a forbidden licence
 	@out=$$(mktemp -d); trap 'rm -rf "$$out"' EXIT; \
@@ -442,6 +442,13 @@ tlc-documents:  ## upload the cached TLC data dictionaries to DS-TLC's documents
 		--collection tlc-dictionaries --name "Từ điển dữ liệu TLC" \
 		--purpose "Định nghĩa cột, mã và quy tắc của dữ liệu chuyến taxi vàng và xanh"
 # The copies stay in the api pod's /tmp, an emptyDir that goes with the pod.
+
+# BR-102: only an enabled table enters the context and can be asked of. The seed registers DS-TLC's
+# source and the scan finds its tables, none enabled; this enables every scanned table through the
+# activate route itself, as TLC_DOCUMENTS_AS (admin_data in DS-TLC), steward the same person.
+tlc-tables:  ## enable DS-TLC's scanned tables through POST /v1/sources/{id}:activate (RECONCILE_ORG, TLC_DOCUMENTS_AS)
+	@kubectl -n dataagent-service exec deploy/api -c api -- python -m services.api.modules.catalog.activate_tables \
+		--org "$(RECONCILE_ORG)" --space DS-TLC --as "$(TLC_DOCUMENTS_AS)"
 
 # EV-09: the golden cases of a dataset (model/eval/cases/golden/<GOLDEN_SET>/) asked through the
 # real POST /v1/questions on the cluster's NodePorts, as a person: EVAL_USER/EVAL_PASS (a password

@@ -873,8 +873,9 @@ async def activate_source(
                 dataset.data_space_id = assignment.data_space_id
                 dataset.steward_id = assignment.owner_id
                 dataset.updated_by = principal.user_id
-        source.scan_cron = body.schema_scan
-        source.profile_cron = body.profiling
+        # An empty schedule is none, as PUT /v1/sources/{id}/scan-schedule stores it.
+        source.scan_cron = body.schema_scan or None
+        source.profile_cron = body.profiling or None
         source.updated_at, source.updated_by = _now(), principal.user_id
         session.add(
             _event(

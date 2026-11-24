@@ -1411,6 +1411,45 @@ async def test_activation_assigns_tables_only_where_the_caller_administers_data(
         assert denied.status_code == 403
 
 
+async def test_activate_tables_puts_a_seeded_sources_tables_in_through_the_route(o: Org) -> None:
+    """The CLI that enables a seeded Data Space's scanned tables (DS-TLC): every table, through
+    activate_source as the named user, with no schedule invented for the source."""
+    import argparse
+
+    from services.api.modules.catalog import activate_tables
+
+    source = _source_row(o)
+    trips = _dataset(o, source, table_name="yellow_trip")
+    zones = _dataset(o, source, table_name="taxi_zone")
+    args = argparse.Namespace(
+        org=str(o.org),
+        space="DS-TD",
+        username=f"admin-{o.org.hex[:6]}",
+        owner=f"steward-{o.org.hex[:6]}",
+        tables=[],
+    )
+    out = await activate_tables.run(args)
+    assert out["enabled"] == ["credit.taxi_zone", "credit.yellow_trip"]
+    for dataset in (trips, zones):
+        assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", dataset) is True
+        assert o.one("SELECT steward_id FROM catalog.dataset WHERE id = %s", dataset) == str(
+            o.users["steward"]
+        )
+    assert o.one("SELECT scan_cron FROM catalog.source WHERE id = %s", source) is None
+    assert o.one("SELECT profile_cron FROM catalog.source WHERE id = %s", source) is None
+    assert [e for e, _ in o.events(source)][-1] == "source.activated"
+    # One table named: the other goes out of the context, as on the screen.
+    await activate_tables.run(argparse.Namespace(**{**vars(args), "tables": ["credit.taxi_zone"]}))
+    assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", trips) is False
+    with pytest.raises(SystemExit):
+        await activate_tables.run(argparse.Namespace(**{**vars(args), "tables": ["credit.nope"]}))
+    # Someone who does not administer the data cannot do it from here either.
+    with pytest.raises(PermissionError):
+        await activate_tables.run(
+            argparse.Namespace(**{**vars(args), "username": f"analyst-{o.org.hex[:6]}"})
+        )
+
+
 class FakeSnapshotLinks:
     def __init__(self) -> None:
         self.signed: list[str] = []
