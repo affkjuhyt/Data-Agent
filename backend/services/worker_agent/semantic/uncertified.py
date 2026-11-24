@@ -24,6 +24,7 @@ Only what the asker may read is offered: a measure whose table is withheld from 
 from __future__ import annotations
 
 import datetime
+import re
 import uuid
 from dataclasses import dataclass, replace
 
@@ -105,7 +106,8 @@ async def load_uncertified(
             unit=row.unit,
             decimals=row.decimals,
             period_semantics=row.period_semantics,
-            allowed_dimension_ids=frozenset(row.allowed_dimensions or ()) or frozenset(readable),
+            # Never wider than what the asker may read, and a draft that allows none allows none.
+            allowed_dimension_ids=frozenset(row.allowed_dimensions or ()) & frozenset(readable),
             certified=False,
             time_grain=row.time_grain,
             time_dimension_id=row.time_dimension_id,
@@ -161,9 +163,8 @@ async def load_uncertified(
 
 
 def _readable(expression: str, layer: SpaceLayer) -> bool:
-    """Every measure the expression names is in the asker's layer, on a table they may read."""
-    import re
-
+    """Every measure the expression names is in the asker's layer, on a table they may read,
+    reading no column masked for them."""
     names = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression))
     measures = [layer.layer.measures[n] for n in names if n in layer.layer.measures]
     if not measures:
@@ -171,6 +172,11 @@ def _readable(expression: str, layer: SpaceLayer) -> bool:
     for m in measures:
         table = layer.layer.entity_tables.get(m.entity_id)
         if table is None or table.dataset_id not in layer.datasets:
+            return False
+        # A masked column is withheld from this asker, as loader.blocked_metric_ids withholds a
+        # certified metric that reads one (the security review of 24/11).
+        masked = layer.restricted_columns.get(table.dataset_id)
+        if masked and set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", m.expression.lower())) & masked:
             return False
     return True
 

@@ -14,6 +14,7 @@ or relationship counted as active. Questions never load one.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from sqlalchemy import or_, select
@@ -52,6 +53,9 @@ class SpaceLayer:
     # question naming one is the tables' to try, not out of the space (clarify_policy).
     table_names: tuple[str, ...] = ()
     column_names: tuple[str, ...] = ()
+    # The columns masked for this asker, by dataset (lower case): a quantity reading one is
+    # withheld from them (blocked_metric_ids for a metric, semantic/uncertified for a measure).
+    restricted_columns: Mapping[uuid.UUID, frozenset[str]] = field(default_factory=dict)
 
 
 async def load(
@@ -407,4 +411,5 @@ async def load(
         frozenset(blocked_metric_ids),
         table_names,
         tuple(n for n in column_names if n),
+        {k: frozenset(v) for k, v in restricted_columns.items()},
     )
