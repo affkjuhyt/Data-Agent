@@ -90,3 +90,61 @@ def test_the_run_records_the_budget_its_turn_ran_out_of() -> None:
     assert turn_trace.outcome(RuntimeError(), t, "answered") == ("failed", "error")
     t.cancelled = True
     assert turn_trace.outcome(None, t, "answered") == ("cancelled", "user_cancelled")
+
+
+# PL-12: the organisation's max_cost_per_run, priced by LLM_PRICES (GPU seconds for our models).
+
+
+@pytest.mark.req("PL-12")
+def test_a_model_served_on_our_gpus_costs_its_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    import decimal
+
+    monkeypatch.setenv(
+        "LLM_PRICES",
+        '{"responder": {"input_per_1k": 0.002, "output_per_1k": 0.006}, "*": {"per_second": 0.5}}',
+    )
+    turn_trace._prices.cache_clear()
+    try:
+        # Hosted: its tokens. Ours: the seconds the call held the GPU.
+        assert turn_trace.price("x", "responder", 1000, 1000, 2000) == decimal.Decimal("0.008")
+        assert turn_trace.price("qwen", "planner", 1000, 1000, 2000) == decimal.Decimal("1")
+    finally:
+        turn_trace._prices.cache_clear()
+
+
+@pytest.mark.req("PL-12")
+def test_the_org_cost_limit_stops_a_turn(trace: turn_trace.Trace) -> None:
+    import decimal
+
+    trace.cost = decimal.Decimal("0.40")  # spent before the agent started
+    b = budget.Budget.for_("analyst", deep=False, clock=Clock(), max_cost=decimal.Decimal("1"))
+    trace.cost = decimal.Decimal("1.39")
+    assert b.cost() == decimal.Decimal("0.99") and b.spent(0) is None
+    trace.cost = decimal.Decimal("1.40")
+    assert b.spent(0) == "budget_cost"
+    # No limit set: cost never stops a turn.
+    free = budget.Budget.for_("analyst", deep=False, clock=Clock())
+    trace.cost = decimal.Decimal("1000")
+    assert free.spent(0) is None
+
+
+@pytest.mark.req("PL-12")
+def test_the_org_setting_is_read_as_a_positive_number() -> None:
+    import decimal
+
+    class Session:
+        def __init__(self, value: object) -> None:
+            self.value = value
+
+        async def scalar(self, _: object) -> object:
+            return self.value
+
+    import asyncio
+
+    def read(value: object) -> object:
+        return asyncio.run(budget.org_max_cost(Session(value)))
+
+    assert read(2.5) == decimal.Decimal("2.5")
+    assert read("3") == decimal.Decimal("3")
+    for none in (None, 0, -1, True, {"x": 1}, "abc"):
+        assert read(none) is None, none

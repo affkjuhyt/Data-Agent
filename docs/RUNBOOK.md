@@ -861,9 +861,14 @@ one `agent.agent_run` with `trigger_ref = question:<id>`, whose `agent_step`
 rows are the analyst steps (understand → query → narrate) and every model call
 (`kind = llm_call`, `output` = model, tokens in and out, latency; never the
 prompt, the answer or an error's message, only its type and HTTP status). `agent_run.tokens` and `cost` are the turn's totals.
-Cost prices tokens by `LLM_PRICES` in `worker-agent-env`, JSON per model or role
-alias, e.g. `{"responder": {"input_per_1k": 0.002, "output_per_1k": 0.006}}`;
-unset, calls cost 0, which is what the on-prem models cost per call.
+Cost prices calls by `LLM_PRICES` in `worker-agent-env`, JSON per model, role
+alias or `"*"` for every other call: a hosted model by its tokens
+(`{"responder": {"input_per_1k": 0.002, "output_per_1k": 0.006}}`), a model served
+on our own GPUs by the seconds the call held the GPU (`{"*": {"per_second": 0.0006}}`,
+the manifests' default, PL-12); unset, calls cost 0. The organisation's
+`max_cost_per_run` (admin AI settings, `governance.ai_setting`, in the same unit)
+caps an agent turn's cost: past it the turn stops with `stop_reason = budget_cost`
+and answers from what it found (AE-02); unset or 0, there is no cost limit.
 
 ```sql
 SELECT r.trigger_ref, r.status, r.tokens, r.cost, s.seq, s.kind, s.name, s.duration_ms, s.output

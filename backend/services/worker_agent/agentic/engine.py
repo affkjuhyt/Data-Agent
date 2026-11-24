@@ -352,7 +352,9 @@ async def prepare(s: State) -> None:
         raw_audience = (event.payload or {}).get("audience")
         s.audience = "executive" if raw_audience == "executive" else clarify_policy.DEFAULT_AUDIENCE
         s.deep = deep_skill.requested(event.payload, question.purpose)
-        s.budget = agent_budget.Budget.for_(s.audience, deep=s.deep)
+        s.budget = agent_budget.Budget.for_(
+            s.audience, deep=s.deep, max_cost=await agent_budget.org_max_cost(session)
+        )
         s.conversation_id = conversation.id
         question_text = asked or question.text
         s.ctx = ToolContext(

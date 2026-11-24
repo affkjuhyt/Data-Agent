@@ -15,9 +15,11 @@ to write the trace is logged and never fails the answer.
 
 Model calls are recorded without their content (no prompt, no answer, no key): the gateway reports
 the role, the model that answered, the tokens in and out, the latency and whether it answered. The
-cost is the tokens priced by LLM_PRICES (JSON, per model or role alias: {"responder":
-{"input_per_1k": 0.0, "output_per_1k": 0.0}}); a model with no price costs 0, which is what the
-on-prem models cost per call.
+cost is priced by LLM_PRICES (JSON, per model, role alias or "*" for every other call:
+{"responder": {"input_per_1k": 0.002, "output_per_1k": 0.006}, "*": {"per_second": 0.0006}}):
+tokens for a hosted model, and for a model served on our own GPUs (PL-12) the seconds the call
+held the GPU, its latency, times the configured price of a GPU second. A model with no price costs
+0, which leaves max_cost_per_run (agentic/budget.py) nothing to stop.
 """
 
 from __future__ import annotations
@@ -168,12 +170,14 @@ def _prices() -> dict[str, dict[str, float]]:
     return prices if isinstance(prices, dict) else {}
 
 
-def price(model: str, role: str, input_tokens: int, output_tokens: int) -> decimal.Decimal:
-    rate = _prices().get(model) or _prices().get(role) or {}
+def price(
+    model: str, role: str, input_tokens: int, output_tokens: int, latency_ms: int = 0
+) -> decimal.Decimal:
+    rate = _prices().get(model) or _prices().get(role) or _prices().get("*") or {}
     cost = (
         decimal.Decimal(str(rate.get("input_per_1k", 0))) * input_tokens
         + decimal.Decimal(str(rate.get("output_per_1k", 0))) * output_tokens
-    ) / 1000
+    ) / 1000 + decimal.Decimal(str(rate.get("per_second", 0))) * latency_ms / 1000
     return cost.quantize(decimal.Decimal("0.0001"))
 
 
@@ -406,7 +410,7 @@ def model_call(
     trace = _current.get()
     if trace is None:
         return
-    cost = price(model, role, input_tokens, output_tokens)
+    cost = price(model, role, input_tokens, output_tokens, latency_ms)
     trace.tokens += input_tokens + output_tokens
     trace.calls.append({"task": role, "model_name": model, "tokens": input_tokens + output_tokens})
     trace.cost += cost
@@ -452,6 +456,12 @@ def models_called() -> list[dict[str, Any]]:
     """The turn's model calls so far, {task, model_name, tokens}; empty outside a turn."""
     trace = _current.get()
     return list(trace.calls) if trace is not None else []
+
+
+def cost_spent() -> decimal.Decimal:
+    """What the turn's model calls have cost so far; 0 outside a turn."""
+    trace = _current.get()
+    return trace.cost if trace is not None else decimal.Decimal(0)
 
 
 def tokens_used() -> int:

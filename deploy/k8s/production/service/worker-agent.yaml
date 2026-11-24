@@ -35,6 +35,10 @@ data:
   # governed path, the agent gets why / several metrics / documents / deep; agentic: the agent
   # first for every question (before AE-01, the rollback); governed: never the agent.
   ASK_ENGINE: router
+  # PL-12: what a model call costs (turn_trace.price), in the unit the organisation's
+  # max_cost_per_run is set in: a hosted model by its tokens, the models served on our GPUs ("*")
+  # by the seconds a call holds the GPU. 0.0006 a second is about 2.2 an hour of a GPU.
+  LLM_PRICES: '{"*": {"per_second": 0.0006}}'
   WORKER_AGENT_BATCH: "10"
   # The dynamic agent's analysis code runs in the python-sandbox pod (libs/code_sandbox):
   # off leaves the `analyze` tool out, local runs it in this pod (a trusted install only).
