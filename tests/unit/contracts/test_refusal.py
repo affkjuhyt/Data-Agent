@@ -52,6 +52,10 @@ SNAPSHOT = {
         "Dữ liệu cần cho câu hỏi này đang bị chặn vì chưa qua kiểm tra chất lượng.",
         "contact_steward",
     ),
+    "SOURCE_CONFLICT": (
+        "Tài liệu và dữ liệu ghi hai số khác nhau cho cùng một chỉ tiêu, chưa rõ số nào đúng.",
+        "contact_steward",
+    ),
 }
 
 

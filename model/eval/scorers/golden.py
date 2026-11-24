@@ -313,16 +313,20 @@ def action_of(asked: Asked) -> tuple[str, str | None]:
         check = answer.get("number_check") if isinstance(answer.get("number_check"), dict) else {}
         code = ((check or {}).get("refusal") or {}).get("code")
         return ("refuse_permission" if code == "ACCESS_DENIED" else "refuse_missing_source"), code
+    # AE-13: an answer whose document figure and data figure differ says so in its trust envelope
+    # (worker_agent/documents/reconcile.py): settled by authority, or a conflict refused as
+    # SOURCE_CONFLICT with both figures still shown. Either is the conflict flagged.
+    trust = answer.get("trust") if isinstance(answer.get("trust"), dict) else {}
+    note = (trust or {}).get("reconciliation")
+    if isinstance(note, dict) and note.get("verdict") in ("conflict", "authority"):
+        refusal = (trust or {}).get("refusal")
+        return "flag_conflict", (refusal or {}).get("code") if isinstance(refusal, dict) else None
     return "answer", None
 
 
 def action_ok(expected: str, action: str, path: str | None) -> bool:
     if expected == "handover":
         return action == "answer" and path in HANDOVER_PATHS
-    # No answer marks a conflict between two sources yet: a flag_conflict case cannot pass until
-    # one does, which is what the case is there to show.
-    if expected == "flag_conflict":
-        return False
     return action == expected
 
 
@@ -361,7 +365,10 @@ async def score_case(case: dict[str, Any], asked: Asked, judge: Judge | None = N
     detail = asked.error or ""
     judged: int | None = None
     found, wanted = 0, len(expected.get("expected_evidence") or [])
-    if case["expected_action"] in ("answer", "handover", "flag_conflict") and action == "answer":
+    if case["expected_action"] in ("answer", "handover", "flag_conflict") and action in (
+        "answer",
+        "flag_conflict",
+    ):
         kind, arg = rubric_of(case["rubric"])
         values = expected.get("values") or []
         if kind == "exact":

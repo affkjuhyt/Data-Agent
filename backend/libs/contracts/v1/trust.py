@@ -11,6 +11,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from enum import StrEnum
 from typing import Any, Literal
 
+from libs.contracts.v1.errors import NEXT_ACTION, ErrorCode
+
 
 class TrustCode(StrEnum):
     # A query a steward approved for this very question (sqlgen/verified.py).
@@ -118,12 +120,18 @@ def trust(
     stopped: str | None = None,
     ceiling: TrustCode | None = None,
     why: Sequence[str] = (),
+    reconciliation: Mapping[str, Any] | None = None,
 ) -> tuple[TrustCode, dict[str, Any]]:
     """(the answer's code, the envelope qa.answer keeps).
 
     `ceiling` (AE-21) is the most the data behind the answer allows, whatever its figures say:
     a table read with a quality warning (a failing lower rule, or a block a steward acknowledged)
-    caps the answer at EXPLORATORY. `why` names the tables; the envelope keeps both."""
+    caps the answer at EXPLORATORY. `why` names the tables; the envelope keeps both.
+
+    `reconciliation` (AE-13, ASK_ENGINE_SPEC §10) is the note of a figure a document states
+    checked against the data's. A `conflict` (they differ and no rule of authority settles it)
+    makes the answer INSUFFICIENT with the refusal SOURCE_CONFLICT, though both figures stay
+    shown (ARCHITECTURE §5.4): neither may be read as the answer."""
     by_figure = {str(f.get("key") or i): figure_code(f) for i, f in enumerate(figures)}
     by_block = [block_code(b) if isinstance(b, Mapping) else None for b in blocks]
     if kind in NO_ANSWER:
@@ -144,4 +152,13 @@ def trust(
         envelope["stopped"] = stopped
     if ceiling is not None:
         envelope["ceiling"] = {"trust_code": ceiling.value, "why": list(why)}
+    if reconciliation is not None:
+        envelope["reconciliation"] = dict(reconciliation)
+        if reconciliation.get("verdict") == "conflict" and kind not in NO_ANSWER:
+            code = TrustCode.INSUFFICIENT
+            envelope["trust_code"] = code.value
+            envelope["refusal"] = {
+                "code": ErrorCode.SOURCE_CONFLICT.value,
+                "next_action": NEXT_ACTION[ErrorCode.SOURCE_CONFLICT].value,
+            }
     return code, envelope

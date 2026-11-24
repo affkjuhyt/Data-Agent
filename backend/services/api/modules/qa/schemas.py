@@ -186,6 +186,11 @@ class AnswerTrust(BaseModel):
     figures: dict[str, TrustCode | None] = Field(default_factory=dict)
     blocks: list[TrustCode | None] = Field(default_factory=list)
     stopped: str | None = None
+    # AE-13: a document's figure checked against the data's (ReconciliationNote,
+    # API_AND_SCHEMA_CONTRACTS §3.10); `refusal` is SOURCE_CONFLICT when they differ and nothing
+    # settles which holds, the answer still showing both figures.
+    reconciliation: dict[str, Any] | None = None
+    refusal: dict[str, str] | None = None
 
 
 class AnswerView(_Row):

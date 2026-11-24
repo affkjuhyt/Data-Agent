@@ -151,6 +151,21 @@ def _cells(ctx: ToolContext, read: Any, passages: list[Any]) -> list[dict[str, A
         step_id=ctx.step_id,
         tool="search_documents",
         unit=found.unit,
+        # What the answer's reconciliation (documents/reconcile.py, AE-13) reads the cell's period
+        # and members from, and how far the document stands: one an amendment replaced is the
+        # original, outranked by the amendment.
+        cell={
+            "row": found.row_label,
+            "column": found.column_label,
+            "caption": found.caption,
+            "document": passage.title,
+            "document_id": str(passage.document_id),
+            "cite": index,
+            "effective_from": passage.effective_from.isoformat()
+            if passage.effective_from
+            else None,
+            "superseded_by": passage.superseded_by,
+        },
     )
     return [
         {

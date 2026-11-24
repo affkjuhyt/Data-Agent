@@ -7952,6 +7952,14 @@ export interface components {
             };
             /** Path */
             path?: ("verified" | "governed" | "agentic" | "explore" | "document") | null;
+            /** Reconciliation */
+            reconciliation?: {
+                [key: string]: unknown;
+            } | null;
+            /** Refusal */
+            refusal?: {
+                [key: string]: string;
+            } | null;
             /** Stopped */
             stopped?: string | null;
             trust_code: components["schemas"]["TrustCode"];

@@ -39,6 +39,9 @@ class ErrorCode(StrEnum):
     CANCELLED = "CANCELLED"
     # DF-08: a dataset the answer reads is held back by its quality rules or contract.
     QUALITY_BLOCKED = "QUALITY_BLOCKED"
+    # F-26 (AE-13): a document and the data state the same figure differently, outside the
+    # tolerance, and no rule of authority settles which one holds. Both are still shown.
+    SOURCE_CONFLICT = "SOURCE_CONFLICT"
 
 
 class NextAction(StrEnum):
@@ -71,6 +74,7 @@ HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.TOOL_UNAVAILABLE: 503,
     ErrorCode.CANCELLED: 409,
     ErrorCode.QUALITY_BLOCKED: 400,
+    ErrorCode.SOURCE_CONFLICT: 400,
 }
 
 # Shown to the person who asked. No stack, SQL or internal table name ever goes
@@ -91,6 +95,7 @@ USER_MESSAGE_VI: dict[ErrorCode, str] = {
     ErrorCode.TOOL_UNAVAILABLE: "Công cụ cần để trả lời đang tạm thời không dùng được.",
     ErrorCode.CANCELLED: "Đã dừng lượt phân tích theo yêu cầu của bạn.",
     ErrorCode.QUALITY_BLOCKED: "Dữ liệu cần cho câu hỏi này đang bị chặn vì chưa qua kiểm tra chất lượng.",
+    ErrorCode.SOURCE_CONFLICT: "Tài liệu và dữ liệu ghi hai số khác nhau cho cùng một chỉ tiêu, chưa rõ số nào đúng.",
 }
 
 USER_MESSAGE_EN: dict[ErrorCode, str] = {
@@ -109,6 +114,7 @@ USER_MESSAGE_EN: dict[ErrorCode, str] = {
     ErrorCode.TOOL_UNAVAILABLE: "A tool needed to answer is temporarily unavailable.",
     ErrorCode.CANCELLED: "The analysis was stopped at your request.",
     ErrorCode.QUALITY_BLOCKED: "The data this question needs is held back: it has not passed its quality checks.",
+    ErrorCode.SOURCE_CONFLICT: "A document and the data state different figures for the same measure; which one holds is not settled.",
 }
 
 # The sentences by language (GEN-41); a language without its own reads the Vietnamese.
@@ -137,6 +143,7 @@ NEXT_ACTION: dict[ErrorCode, NextAction] = {
     ErrorCode.TOOL_UNAVAILABLE: NextAction.RETRY,
     ErrorCode.CANCELLED: NextAction.RETRY,
     ErrorCode.QUALITY_BLOCKED: NextAction.CONTACT_STEWARD,
+    ErrorCode.SOURCE_CONFLICT: NextAction.CONTACT_STEWARD,
 }
 
 

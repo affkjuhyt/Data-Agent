@@ -463,7 +463,9 @@ rõ trong citation); (3) trích dẫn mở đúng trang + bbox ô (`DocumentView
 
 **Đã làm (DI-12, 23/11/2026):** như trên, không gọi mô hình. Khớp bằng `rapidfuzz.token_set_ratio` trên chữ bỏ dấu (≥ 80) thay
 trigram; cột chấm trung bình theo tầng tiêu đề (câu chỉ nêu "năm 2024" khớp đều "Năm 2024 > Kế hoạch" và "> Thực hiện" → hỏi
-lại); bảng một cột số không cần nêu cột. Chưa: đổi đơn vị theo metric / `SOURCE_CONFLICT` (kiểm 1), so FY/CY (kiểm 2).
+lại); bảng một cột số không cần nêu cột. Kiểm 1 và 2 khi câu hỏi có cả số dữ liệu: AE-13 (24/11, `documents/reconcile.py`,
+ASK_ENGINE_SPEC §10): đơn vị khác → không so được, lệch không thẩm quyền → `SOURCE_CONFLICT`, FY = CY chỉ khi năm tài chính
+kết thúc tháng 12.
 Ô bị che PII không còn số (DI-09) nên không bao giờ được trả.
 
 ## 8. Stage 8: Trích có cấu trúc, claim, xung đột, phiên bản

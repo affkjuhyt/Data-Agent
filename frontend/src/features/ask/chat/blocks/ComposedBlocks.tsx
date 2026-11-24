@@ -319,6 +319,68 @@ function RecommendationBlock({ block }: { block: Block }) {
   );
 }
 
+const VERDICT: Record<string, { label: string; icon: IconName; tone: string }> = {
+  agree: { label: 'Khớp', icon: 'check', tone: 'text-success' },
+  authority: { label: 'Lệch · theo chỉ số chuẩn', icon: 'compare', tone: 'text-warning' },
+  conflict: { label: 'Lệch · chưa rõ số nào đúng', icon: 'alert', tone: 'text-warning' },
+  not_comparable: { label: 'Chưa so được', icon: 'info', tone: 'text-muted-foreground' },
+};
+
+/** AE-13: a document's figure checked against the data's (worker_agent/documents/reconcile.py).
+ *  The server wrote the sentence and the note; this draws the verdict, the two sources and, on
+ *  request, the rules, assumptions and what is left open. */
+function ReconciliationBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
+  const [open, setOpen] = useState(false);
+  const note = (block.note ?? {}) as Record<string, unknown>;
+  const verdict = VERDICT[str(note.verdict)] ?? VERDICT.not_comparable;
+  const sources = arr<Record<string, unknown>>(note.sources);
+  const details = [
+    ...arr<unknown>(note.rules),
+    ...arr<unknown>(note.assumptions).map((a) => `Giả định: ${String(a)}`),
+    ...arr<unknown>(note.open).map((o) => `Chưa so được: ${String(o)}`),
+  ].map(String);
+  return (
+    <section className="flex flex-col gap-da-xs rounded-md border border-border px-da-md py-da-sm" data-testid="reconciliation-block" aria-label={str(block.title) || 'Đối chiếu nguồn'}>
+      <span className="inline-flex items-center gap-da-xs da-label">
+        <Icon name={verdict.icon} size={14} className={verdict.tone} />
+        {str(block.title) || 'Đối chiếu nguồn'} · {verdict.label}
+      </span>
+      <MarkdownContent text={str(block.content)} citations={ctx.citations} onOpenCitation={ctx.onOpenCitation} />
+      {sources.length > 0 && (
+        <ul className="m-0 flex flex-col gap-da-xs pl-da-md da-body-small text-muted-foreground">
+          {sources.map((s) => (
+            <li key={str(s.figure_id)}>
+              {str(s.label)}: {str(s.value)} {str(s.unit_normalized)}
+              {str(s.period_normalized) && ` · ${str(s.period_normalized)}`}
+              {s.wins === true && ' · được dùng'}
+            </li>
+          ))}
+        </ul>
+      )}
+      {details.length > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            className="inline-flex items-center gap-da-xs text-left text-muted-foreground da-caption"
+          >
+            <Icon name={open ? 'chevron-down' : 'chevron-right'} size={12} />
+            Cách đối chiếu ({details.length})
+          </button>
+          {open && (
+            <ul className="m-0 list-disc pl-da-lg da-body-small text-foreground">
+              {details.map((d) => (
+                <li key={d}>{d}</li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 /** AL-06: a statistical test's result, drawn apart from the figures: its rows, the method and
  *  the note that it is an inference (correlation is not cause), never a kpi or a chart. */
 function InferenceBlock({ block, ctx }: { block: Block; ctx: Ctx }) {
@@ -431,6 +493,7 @@ const RENDERERS: Record<string, (block: Block, ctx: Ctx) => ReactNode> = {
   inference: (b, ctx) => <InferenceBlock block={b} ctx={ctx} />,
   hypothesis: (b, ctx) => <HypothesisBlock block={b} ctx={ctx} />,
   recommendation: (b) => <RecommendationBlock block={b} />,
+  reconciliation: (b, ctx) => <ReconciliationBlock block={b} ctx={ctx} />,
   caveats: (b) => <CaveatsBlock items={arr<unknown>(b.items).map(String)} />,
   // The next questions are drawn under the answer from the answer's follow_ups.
   follow_ups: () => null,

@@ -217,6 +217,37 @@ def test_handover_is_an_answer_by_the_agent() -> None:
     assert not _score(case, golden.Asked(status="answered", answer=_answer(_figure("5")))).passed
 
 
+def test_a_conflict_is_flagged_by_the_answers_reconciliation() -> None:
+    # AE-13: flag_conflict passes when the answer's envelope says its two sources differ, the
+    # figures still scored; an answer that only states a number does not flag anything.
+    case = _case(expected_action="flag_conflict", expected={"kind": "data", "values": [411]})
+    conflict = _answer(
+        _figure("411"),
+        trust_code="INSUFFICIENT",
+        trust={
+            "path": "agentic",
+            "reconciliation": {"verdict": "conflict"},
+            "refusal": {"code": "SOURCE_CONFLICT", "next_action": "contact_steward"},
+        },
+    )
+    s = _score(case, golden.Asked(status="answered", answer=conflict))
+    assert (s.action, s.refusal_code, s.action_ok, s.passed) == (
+        "flag_conflict",
+        "SOURCE_CONFLICT",
+        True,
+        True,
+    )
+    settled = _answer(
+        _figure("411"), trust={"path": "agentic", "reconciliation": {"verdict": "authority"}}
+    )
+    assert _score(case, golden.Asked(status="answered", answer=settled)).passed
+    agreed = _answer(
+        _figure("411"), trust={"path": "agentic", "reconciliation": {"verdict": "agree"}}
+    )
+    assert _score(case, golden.Asked(status="answered", answer=agreed)).action == "answer"
+    assert not _score(case, golden.Asked(status="answered", answer=agreed)).passed
+
+
 def test_a_stronger_code_than_allowed_is_an_overclaim() -> None:
     no_metric = _case(expected={"kind": "data", "values": [9554757]})
     s = _score(no_metric, golden.Asked(status="answered", answer=_answer(_figure("9554757"))))

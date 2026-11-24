@@ -26,6 +26,34 @@ describe('ComposedBlocks', () => {
     expect(screen.getByText(/timeline_of_the_future/)).toBeInTheDocument();
   });
 
+  it('draws the reconciliation of a document with the data: verdict, sources, rules (AE-13)', () => {
+    const reconciliation = [
+      {
+        type: 'reconciliation',
+        id: 'b5',
+        composed: true,
+        title: 'Đối chiếu tài liệu và dữ liệu',
+        content: 'Tài liệu ghi 1.300.000.000 đồng, còn SQL thăm dò cho 1.250.000.000 đồng.',
+        note: {
+          verdict: 'conflict',
+          sources: [
+            { figure_id: 'd1:0', label: 'Dư nợ', value: '1250000000', unit_normalized: 'VND', period_normalized: '2024' },
+            { figure_id: 'd2', label: 'Báo cáo dư nợ: Hà Nội', value: '1300000000', unit_normalized: 'VND', period_normalized: '2024' },
+          ],
+          rules: ['kỳ: 2024 ở cả hai nguồn'],
+          assumptions: [],
+          open: [],
+        },
+      },
+    ] as unknown as AnswerBlockView[];
+    render(<ComposedBlocks blocks={reconciliation} />);
+    const block = screen.getByTestId('reconciliation-block');
+    expect(block).toHaveTextContent('Lệch · chưa rõ số nào đúng');
+    expect(block).toHaveTextContent('Báo cáo dư nợ: Hà Nội: 1300000000 VND · 2024');
+    fireEvent.click(screen.getByRole('button', { name: /Cách đối chiếu/ }));
+    expect(screen.getByText('kỳ: 2024 ở cả hai nguồn')).toBeInTheDocument();
+  });
+
   it('draws a statistical test apart from the figures, with its method and note (AL-06)', () => {
     const inference = [
       {

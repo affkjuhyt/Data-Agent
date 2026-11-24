@@ -51,6 +51,7 @@ from services.worker_agent.agentic import (
     operator_view,
     present_gate,
     prompts,
+    reconciled,
     signals,
     specialists,
     stream_contract,
@@ -163,6 +164,9 @@ class State:
     budget: agent_budget.Budget | None = None
     # AL-11: the plan of an investigation opened from an alert, run instead of the planner's.
     prepared: p.Plan | None = None
+    # AE-13: a document's table cell checked against the data's figure (VALIDATE, before the
+    # answer is written); its note goes in the answer and, on a conflict, SOURCE_CONFLICT.
+    reconciliation: Any = None
 
 
 # ---------------------------------------------------------------- prepare
@@ -1278,6 +1282,9 @@ async def compose(s: State) -> None:
         f"[{c['index']}] {c['source']}: {c['snippet'][:300]}" for c in ws.citations
     )
     premise = _false_premise(s)
+    # VALIDATE (ASK_ENGINE_SPEC §10): deterministic, so the reporter writes around a verdict it
+    # was given and never chooses between the document's number and the data's.
+    s.reconciliation = reconciled.check(s.ctx)
     user = (
         f"{_situation(s)}\n\n{_progress(s)}\n\n<facts>\n{_facts_text(known) or '(không có)'}\n</facts>"
         + (f"\n\n<citations>\n{citations}\n</citations>" if citations else "")
@@ -1288,6 +1295,7 @@ async def compose(s: State) -> None:
             if premise
             else ""
         )
+        + (f"\n\n{reconciled.prompt(s.reconciliation)}" if s.reconciliation else "")
     )
     # The period labels where the data is (data_coverage, the planning probe) may be named
     # untagged as a dataset's period cells may ("dữ liệu có từ 2010-12 đến 2013-12"); its figures
@@ -1456,10 +1464,23 @@ async def compose(s: State) -> None:
                 ),
                 "",
             )
+        if s.reconciliation is not None and s.composition:
+            # The server's blocks, filled from the sources: a conflict's warning and the two
+            # figures lead the answer (both shown, each with its own label); the note follows it.
+            made_here = reconciled.blocks(s.ctx, s.reconciliation, len(s.composition) + 1)
+            s.composition[:0] = [x for x in made_here if x["type"] != "reconciliation"]
+            s.composition += [x for x in made_here if x["type"] == "reconciliation"]
+            for block in made_here:
+                await publish(
+                    str(s.question_id), "block", {"question_id": str(s.question_id), "block": block}
+                )
         handle.detail = {
             "blocks": [x["type"] for x in s.composition],
             "dropped_sentences": s.dropped_sentences,
             "dropped_causes": s.dropped_causes,
+            **(
+                {"reconciliation": s.reconciliation.verdict} if s.reconciliation is not None else {}
+            ),
         }
     _append_caveats(s)
 
@@ -2258,6 +2279,7 @@ async def persist(s: State) -> None:
             stopped=s.budget.stopped if s.budget is not None else None,
             ceiling=answer_trust.TrustCode.EXPLORATORY if s.signals.quality_warned else None,
             why=s.signals.quality_warned,
+            reconciliation=s.reconciliation.note() if s.reconciliation is not None else None,
         )
         session.add(
             qa.Answer(

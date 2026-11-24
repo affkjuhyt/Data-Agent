@@ -88,6 +88,10 @@ class Dataset:
     # AL-06: the statistical tests the analysis code ran (pearsonr, ttest_ind…): its rows are an
     # inference, never a fact, and are shown only as an `inference` block.
     inference: list[str] = field(default_factory=list)
+    # For a number read from a document's table cell (search_documents): its row and column
+    # labels, the table's caption, the document and its citation. Kept apart from `reading`,
+    # which is a metric's, for the reconciliation with the data (documents/reconcile.py).
+    cell: dict[str, Any] | None = None
 
     def records(self, limit: int | None = None) -> list[dict[str, Any]]:
         rows = self.rows if limit is None else self.rows[:limit]

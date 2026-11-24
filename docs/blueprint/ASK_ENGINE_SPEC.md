@@ -651,6 +651,36 @@ Kết quả `CONFLICT` → envelope `refusal.code=SOURCE_CONFLICT` nhưng **vẫ
 `callout` do server điền; reporter chỉ viết câu quanh `{{F}}`. `AGREE`/`AUTHORITY` → block `ReconciliationNote` (01 §5.5) với
 STAGE/TARGET/BASIS/GRAIN/RULES/RESIDUAL điền tất định.
 
+**Đã làm (24/11/2026, AE-13):** `worker_agent/documents/reconcile.py` (thuần, không gọi model) và
+`agentic/reconciled.py` (đọc workspace, dựng block). Chạy trong `engine.compose` ngay trước reporter, khi workspace có
+cả số dữ liệu (`query_metric`, `explore_sql`) lẫn một ô bảng tài liệu (`search_documents` ghi `Dataset.cell`: hàng,
+cột, caption, tài liệu, cite, `superseded_by`). Luật:
+
+- **Đơn vị/thang**: `table_cell.numeric_value` đã nhân thang của bảng (DI-12). Hai tiền tệ khác nhau, hoặc % với số
+  tiền → `not_comparable` (không có bảng tỷ giá). Ô không ghi đơn vị → đọc theo đơn vị dữ liệu, ghi thành giả định; khi
+  đó lệch đúng 10³/10⁶/10⁹/10¹² (trong dung sai) là thang chưa ghi, `not_comparable`, không phải xung đột. Hai từ đếm
+  ("chuyến", "lượt") coi như cùng đơn vị, ghi giả định.
+- **Kỳ**: kỳ của ô đọc bằng bộ đọc kỳ của câu hỏi (`understand.text.find_period`, `iso_answer`) trên cột → hàng →
+  caption → tên tài liệu, rồi một năm viết trơn ("2024", "FY2024"). Kỳ dữ liệu: `reading.period` của chỉ số, ô thời
+  gian của hàng khi chia theo thời gian, kỳ của câu hỏi cho SQL khám phá. Phải trùng đầu và cuối; ô không ghi kỳ, hoặc
+  kỳ khác → `not_comparable`. Năm tài chính = năm dương lịch chỉ khi kết thúc tháng 12 (ghi giả định); khác thì là
+  một khoảng khác.
+- **Đối tượng**: mọi thành viên của số dữ liệu (filter, ô chia của hàng) phải có trong hàng/cột/caption/tên tài liệu;
+  nhiều hàng thì so hàng tài liệu nêu.
+- **Dung sai** `|doc − data| / |data| ≤ 0,5 %` → `agree`.
+- **Thẩm quyền** khi lệch: bản gốc đã bị thay (`superseded_by`) bị bỏ khi có bản còn hiệu lực; chỉ số đã chứng nhận
+  thắng tài liệu → `authority` (nêu cả hai số); còn lại (SQL khám phá, chỉ số chưa chứng nhận) → `conflict`.
+
+Câu trả lời: block `reconciliation` (note theo API_AND_SCHEMA_CONTRACTS §3.10, thêm verdict `not_comparable` và
+`winner`) ở cuối, câu do server viết; lệch (`authority`/`conflict`) thì thêm khối `kpi` hai số đầu câu trả lời, mỗi số
+nhãn riêng; `conflict` thêm `callout` cảnh báo. `trust(…, reconciliation=)` ghi note vào `qa.answer.envelope`;
+`conflict` → `trust_code=INSUFFICIENT`, `envelope.refusal={code: SOURCE_CONFLICT, next_action: contact_steward}`, câu
+trả lời vẫn `kind=data`, `answered`. API: `AnswerTrust.reconciliation`, `AnswerTrust.refusal` (`make api-types`); FE
+vẽ block (`ComposedBlocks` `reconciliation`). Scorer golden: `flag_conflict` = envelope có verdict
+`conflict`/`authority`. Không migration. Chưa: dung sai riêng từng metric (metric chưa có cột dung sai), đường governed
+(hybrid luôn đi agentic theo AE-01), xung đột dạng *phát biểu* ("từ điển nói tip tiền mặt không được ghi" vs 411 chuyến:
+A-TLC-HY-004) cần claim ↔ metric (DOC `conflict.claim.metric_id`), chưa có; 25 case hybrid ≥ 70 % chưa đo trên cluster.
+
 ## 11. Tiếng Việt và catalog thông điệp
 
 `libs/language` giữ (`norm`, `number`, packs vi/en). Mới `libs/language/messages/{vi,en}.yaml` + `msg(key, **kw)`; mọi

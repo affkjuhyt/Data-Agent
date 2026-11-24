@@ -2390,6 +2390,32 @@
       ],
       "title": "Path"
      },
+     "reconciliation": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reconciliation"
+     },
+     "refusal": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "string"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Refusal"
+     },
      "stopped": {
       "anyOf": [
        {
