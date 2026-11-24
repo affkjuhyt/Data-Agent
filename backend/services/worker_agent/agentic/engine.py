@@ -142,6 +142,9 @@ class State:
     cancelled: bool = False
     # Where the metrics the question most likely reads have data (AGC-10), for the planner.
     coverage: str = ""
+    # What the turn assumed instead of asking back (a cut the space does not model): said in the
+    # answer's caveats (ASK_ENGINE_SPEC §9).
+    notes: list[str] = field(default_factory=list)
     # Those metrics, best matched first (analyst.search_metrics).
     likely: list[str] = field(default_factory=list)
     # A follow-up as the person wrote it, when the turn reads it as a standalone question (F4).
@@ -600,15 +603,21 @@ def _out_of_scope(s: State) -> p.Plan | None:
 
 
 def _unknown_cut(s: State) -> p.Plan | None:
-    """A cut the space does not model is asked back before any plan (clarify_policy.unknown_cut)."""
+    """A cut the space does not model ("theo lý do mua hàng", clarify_policy.unknown_cut) is not
+    asked back: the ask had no option to pick (ASK_ENGINE_SPEC §9: no ask without a choice), and
+    the governed path drops a cut a metric does not allow and names it (BR-81). The total is
+    answered, the planner told so, and the answer says the cut is not in the data."""
     if s.ctx is None:
         return None
     ask = clarify_policy.unknown_cut(s.ctx.question, s.ctx.layer, s.ctx.today)
     if ask is None:
         return None
-    return _asking(
-        s, ask, "Làm rõ cách chia", "Câu hỏi chia theo một chiều dữ liệu chưa có; hỏi lại."
-    )
+    found = re.search(r"“(.+?)”", ask.question)
+    cut = found.group(1) if found else "được hỏi"
+    note = f"Dữ liệu chưa có chiều “{cut}” để chia: số trả lời là số tổng hợp, không chia theo chiều đó."
+    s.notes.append(note)
+    s.coverage = "\n".join(x for x in (s.coverage, note) if x)
+    return None
 
 
 def _same_named(s: State) -> p.Plan | None:
@@ -1918,6 +1927,7 @@ def _append_caveats(s: State) -> None:
         if ds.id in used and ds.truncated:
             items.append(f"{ds.title}: kết quả bị cắt bớt, chỉ hiển thị một phần.")
     items += s.signals.caveats
+    items += s.notes
     # Sentences the number check dropped are not said here: they were the draft's, the reader
     # never saw them, and the count stays in number_check and on the write_answer step.
     # A failed step is said only when it was to fetch data and nothing fetched with that tool

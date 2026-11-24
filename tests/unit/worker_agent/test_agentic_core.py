@@ -2738,3 +2738,45 @@ def test_ae_10_the_ask_user_tool_asks_within_the_clarify_budget(
     w.state.audience, w.state.prior_clarify_rounds = audience, rounds
     asyncio.run(w.engine.act(w.state))
     assert (w.state.clarify.options if w.state.clarify else None) == options
+
+
+def test_a_cut_the_space_does_not_model_is_answered_as_the_total_and_said() -> None:
+    """ASK_ENGINE_SPEC §9: "theo lý do mua hàng" had no option to pick; the total is answered,
+    the planner is told, and the caveat names the cut, as BR-81 drops a cut a metric does not
+    allow (24/11)."""
+    import datetime
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
+
+    revenue = uuid.uuid4()
+    layer = SimpleNamespace(
+        vocabulary=Vocabulary(
+            metrics=[MetricEntry(revenue, "DOANH_THU", "Doanh thu", True)],
+            dimensions=[DimensionEntry(uuid.uuid4(), "nhom_hang", "Nhóm sản phẩm")],
+        ),
+        table_names=(),
+        column_names=(),
+    )
+
+    def state(question: str) -> engine.State:
+        return engine.State(
+            event=types.SimpleNamespace(),  # type: ignore[arg-type]
+            question_id=uuid.uuid4(),
+            model=types.SimpleNamespace(),  # type: ignore[arg-type]
+            ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+                question=question, today=datetime.date(2014, 1, 15), layer=layer
+            ),
+        )
+
+    s = state("Doanh thu theo lý do mua hàng năm 2013")
+    assert engine._unknown_cut(s) is None
+    assert s.notes == [
+        "Dữ liệu chưa có chiều “lý do mua hàng” để chia: số trả lời là số tổng hợp, không chia"
+        " theo chiều đó."
+    ]
+    assert "lý do mua hàng" in s.coverage
+    known = state("Doanh thu theo nhóm sản phẩm năm 2013")
+    assert engine._unknown_cut(known) is None and known.notes == []

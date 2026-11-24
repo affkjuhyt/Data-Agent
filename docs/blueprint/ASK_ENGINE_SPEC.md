@@ -614,6 +614,16 @@ planner `mode=ask`, `ask_user`) đi qua `clarify_policy.apply(clarify, ctx, prio
 AE-03); hết vòng thì `_assume_when_spent` lấy chỉ số xếp đầu (hoặc bỏ chiều không có, trả số tổng hợp) và câu trả lời ghi
 "Đã hỏi làm rõ đủ số lần: …". Lượt `agent` theo lịch (0 vòng) chưa tách: lịch chạy không qua Ask.
 
+**Đã đổi (24/11/2026):**
+
+- Một cut mà Data Space không có ("theo lý do mua hàng") không còn bị hỏi lại ở đường agent, vì câu hỏi lại đó không có
+  phương án nào để chọn. Hệ thống trả số tổng, báo cho planner, và nêu cut trong caveat như BR-81 làm với cut không được
+  phép (`engine._unknown_cut`).
+- Giữ nguyên `to_confirm` (model đọc một metric mà chữ trong câu chỉ khớp một phần) dù chỉ có một phương án. Lý do: đó là
+  một đại lượng khác, hẹp hơn ("doanh thu phí bảo hiểm nhân thọ" bị đọc thành "Doanh thu thuần"). Trả lời luôn thì sai đề
+  bài, và SQL khám phá đã được thử trước khi hỏi.
+- Giữ nguyên `missing_period`, được thêm sau sự cố 17/11: một câu trả lời đã hiện số của kỳ khác.
+
 ## 10. Hybrid merge và đối chiếu nguồn (F-26)
 
 `investigate_numbers ∥ investigate_documents` (giữ, `engine.act:479`). Mới `documents/reconcile.py`, chạy như node
