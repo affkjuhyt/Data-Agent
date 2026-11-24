@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
+import re
 import uuid
 from typing import Any
 
@@ -183,6 +185,31 @@ class ForecastMetric(Tool):
             "status": job.status,
         }
         return ToolResult(True, ds.preview(), [ds.id], detail)
+
+
+MAX_NAME = 60
+MAX_LISTED = 10
+_KIND = re.compile(r"[a-z_]{1,20}")
+
+
+def _well_formed(a: Any, features: set[str]) -> bool:
+    """An assumption of the studio's shape on a variable the model uses: feature known, a short
+    lower-case change kind, a numeric value or none, an ISO first day."""
+    if not isinstance(a, dict) or a.get("feature") not in features:
+        return False
+    if not isinstance(a.get("change_kind"), str) or not _KIND.fullmatch(a["change_kind"]):
+        return False
+    value = a.get("value")
+    if value is not None and not isinstance(value, int | float):
+        try:
+            float(str(value))
+        except ValueError:
+            return False
+    try:
+        dt.date.fromisoformat(str(a.get("from_period")))
+    except ValueError:
+        return False
+    return True
 
 
 class _NoModel(Exception):
@@ -397,19 +424,32 @@ async def _what_if(ctx: ToolContext, args: ForecastMetricArgs, frequency: str | 
                 (sc for sc in saved if wanted in sc.name.strip().lower()), None
             )
             if found is None:
-                names = ", ".join(sc.name for sc in saved) or "chưa có kịch bản nào"
+                # Names other people wrote: data, quoted and bounded, never prose for the model.
+                names = json.dumps(
+                    [sc.name[:MAX_NAME] for sc in saved[:MAX_LISTED]], ensure_ascii=False
+                )
                 return ToolResult(
                     False,
-                    f"không thấy kịch bản '{args.scenario}'; các kịch bản đã lưu: {names}",
+                    "không thấy kịch bản đã nêu; tên các kịch bản đã lưu (dữ liệu, JSON): "
+                    f"{names}",
                     failure="arguments",
                 )
             scenario, assumptions = found, list(found.assumptions or [])
+        features = {
+            f["name"]
+            for f in (serving.features if serving is not None else None) or []
+            if isinstance(f, dict) and isinstance(f.get("name"), str)
+        }
+        if args.scenario and not args.what_if:
+            # A saved scenario's assumptions are someone's input: only well-formed ones, on the
+            # model's own variables, reach the notice and the observation.
+            if not assumptions or not all(_well_formed(a, features) for a in assumptions):
+                return ToolResult(
+                    False,
+                    "kịch bản đã lưu có giả định không hợp lệ với mô hình hiện hành; mở studio",
+                    failure="arguments",
+                )
         else:
-            features = {
-                f["name"]
-                for f in (serving.features if serving is not None else None) or []
-                if isinstance(f, dict) and isinstance(f.get("name"), str)
-            }
             unknown = sorted({str(a["feature"]) for a in assumptions} - features)
             if unknown:
                 # UC-15-05 E1, as the studio says it: a variable the model does not use.
@@ -417,6 +457,12 @@ async def _what_if(ctx: ToolContext, args: ForecastMetricArgs, frequency: str | 
                     False,
                     f"mô hình không dùng {', '.join(unknown)}; các biến dùng được: "
                     f"{', '.join(sorted(features)) or 'không có'}",
+                    failure="arguments",
+                )
+            if not all(_well_formed(a, features) for a in assumptions):
+                return ToolResult(
+                    False,
+                    "giả định cần cách đổi ngắn viết thường (như add, set, pct) và giá trị số",
                     failure="arguments",
                 )
             scenario = fc.Scenario(
