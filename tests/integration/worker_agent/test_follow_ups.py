@@ -157,3 +157,22 @@ async def test_a_why_question_is_answered_and_proposes_the_decomposition(
             "rank": True,
         },
     }
+
+
+async def test_that_region_is_the_top_region_of_the_answer_before(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # AE-11: "vùng đó" names the member the turn before put first (its answer's figures), a
+    # filter, not a cut by the region again.
+    talk = Conversation(build(seed, warehouse, monkeypatch))
+    talk.ask("Dư nợ theo vùng tháng 9/2026")
+    await drain()
+    q = talk.ask("Còn vùng đó tháng 8/2026 thì sao?")
+    await drain()
+    status, _, text, _, _, _ = answer_of(seed, q)
+    assert status == "answered", text
+    chips, _ = plan_of(seed, q)
+    read = {(c["kind"], c["value"]) for c in chips}
+    assert ("filter", "vung=Miền Bắc") in read and ("dimension", "vung") not in read
+    assert ("period", "2026-08-01/2026-09-01") in read
+    assert ("metric", "inherited") in {(c["kind"], c["source"]) for c in chips}

@@ -105,6 +105,7 @@ from services.worker_agent.understand.resolver import (
     from_chips,
     understand,
 )
+from services.worker_agent.understand.slots import previous_slots, rewrite_for_retrieval
 from services.worker_agent.understand.text import FoundPeriod, find_knowledge_hint, norm
 
 logger = logging.getLogger(__name__)
@@ -752,29 +753,6 @@ async def _conversation(session: AsyncSession, question: qa.Question) -> list[ll
     ).all()
     chips = {p.question_id: [c for c in (p.chips or []) if isinstance(c, dict)] for p in plans}
     return [(r.text, chips.get(r.id, [])) for r in rows]
-
-
-async def _previous_chips(session: AsyncSession, question: qa.Question) -> list[dict[str, object]]:
-    """The reading of the question this one follows: its parent, else the one before it in the
-    conversation; the chips of its latest plan."""
-    earlier = question.parent_question_id or await session.scalar(
-        select(qa.Question.id)
-        .where(
-            qa.Question.conversation_id == question.conversation_id,
-            qa.Question.seq < question.seq,
-        )
-        .order_by(qa.Question.seq.desc())
-        .limit(1)
-    )
-    if earlier is None:
-        return []
-    chips = await session.scalar(
-        select(qa.Plan.chips)
-        .where(qa.Plan.question_id == earlier)
-        .order_by(qa.Plan.version.desc())
-        .limit(1)
-    )
-    return [c for c in (chips or []) if isinstance(c, dict)]
 
 
 def _code(code: str) -> ErrorCode:
@@ -1437,11 +1415,19 @@ async def _understand_and_plan(
         # context; the context owner role writes it because QA is intentionally read-only there.
         if edited is None and u.unmapped:
             await _record_unmapped(event, space_id, question.text, u.unmapped)
-        if edited is None and u.decision == "unknown":
-            # UC-01-04: "còn theo vùng thì sao?" reads against the question before it.
-            u = follow_up(
-                u, await _previous_chips(session, question), layer.vocabulary, question=asked
-            )
+        if edited is None and (u.decision == "unknown" or u.period is None):
+            # UC-01-04: "còn theo vùng thì sao?" reads against the question before it; AE-11:
+            # "so với cùng kỳ", "nhóm sản phẩm đó", "còn số đơn hàng thì sao" too.
+            slots = await previous_slots(session, question, layer.vocabulary)
+            if slots is not None:
+                u = follow_up(
+                    u,
+                    slots.chips,
+                    layer.vocabulary,
+                    question=asked,
+                    slots=slots,
+                    compare_to=compare_to,
+                )
         access_problem: Refusal | None = space_access_problem
         models: list[dict[str, Any]] = []
         model = gateway()
@@ -2113,11 +2099,17 @@ async def _answer_from_documents(
             await clock.space_zone(session, conversation.data_space_id)
         )
         async with turn_trace.stepping("search_documents", target=question.text[:80]) as searched:
+            # AE-11 / RG-07: a follow-up searched as a question that stands alone.
+            slots = await previous_slots(session, question)
+            subject_names = (
+                (slots.subject.dimension_label,) if slots is not None and slots.subject else ()
+            )
+            query = rewrite_for_retrieval(question.text, slots, *subject_names)
             passages = await retrieve(
                 session,
                 search_services(),
                 data_space_id=conversation.data_space_id,
-                question=question.text,
+                question=query,
                 as_of=as_of,
                 purpose=question.purpose,
             )
@@ -2125,6 +2117,7 @@ async def _answer_from_documents(
             searched.detail = {
                 "hits": [{"title": hit.title, "page": hit.page_from} for hit in passages[:10]],
                 "found": len(passages),
+                **({"retrieval_query": query} if query != question.text else {}),
             }
         # Any passage at all in the space: then "not found in the documents" is the true answer;
         # without one the question was never a document question and is refused as before.

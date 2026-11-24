@@ -24,6 +24,7 @@ from typing import Literal
 
 from libs import clock
 from services.worker_agent.understand.packs import PACKS
+from services.worker_agent.understand.slots import ConversationSlots, continues, names_subject
 from services.worker_agent.understand.text import FoundPeriod, find_period, norm
 from services.worker_agent.understand.value_retrieval import sem_value_retrieval, value_targets
 
@@ -452,33 +453,121 @@ def _asks_quantity(text: str) -> bool:
     return any(pack.quantity.search(text) for pack in PACKS)
 
 
+def dimension_names(code: str, vocab: Vocabulary) -> tuple[str, ...]:
+    """A dimension's name and the synonyms the Data Space approved for it."""
+    dim = next((d for d in vocab.dimensions if d.code == code), None)
+    if dim is None:
+        return ()
+    synonyms = [
+        phrase
+        for phrase, target in vocab.synonyms.items()
+        if target[:2] == ("dimension", str(dim.dimension_id))
+    ]
+    return (dim.name, *synonyms)
+
+
+def _point(current: Understanding, dimension: str, value: str, label: str) -> None:
+    """ "<dimension> đó" on a question that names its metric: the member, not a cut by it."""
+    current.group_by = [g for g in current.group_by if g != dimension]
+    current.filters[dimension] = [value]
+    current.chips = [
+        c
+        for c in current.chips
+        if not (c.kind in ("dimension", "filter") and c.value.partition("=")[0] == dimension)
+    ]
+    current.chips.append(Chip("filter", f"{dimension}={value}", label, "inherited", 1.0))
+
+
+def _keep_period(
+    current: Understanding,
+    previous: list[dict[str, object]],
+    question: str,
+    *,
+    always: bool = False,
+) -> Understanding:
+    """A new metric on a turn that continues the conversation ("còn số đơn hàng thì sao?") keeps
+    the period the turn before read, when it names none (ASK_ENGINE_SPEC §8.2). A question that
+    starts over ("Số đơn hàng theo khu vực") is read as it was asked."""
+    if current.period is not None or not (always or continues(question)):
+        return current
+    earlier = next((c for c in previous if c.get("kind") == "period"), None)
+    if earlier is None:
+        return current
+    start, _, end = str(earlier.get("value", "")).partition("/")
+    try:
+        found = FoundPeriod(
+            datetime.date.fromisoformat(start),
+            datetime.date.fromisoformat(end),
+            str(earlier.get("label") or earlier.get("value")),
+            "",
+        )
+    except ValueError:
+        return current
+    current.period = found
+    current.chips.append(Chip("period", str(earlier["value"]), found.label, "inherited", 1.0))
+    return current
+
+
 def follow_up(
     current: Understanding,
     previous: list[dict[str, object]],
     vocab: Vocabulary,
     *,
     question: str = "",
+    slots: ConversationSlots | None = None,
+    compare_to: str | None = None,
 ) -> Understanding:
-    """A question that only cuts, filters or dates (UC-01-04: "còn theo vùng thì sao?", "đi sâu
-    Miền Bắc theo chi nhánh") read against the question before it.
+    """A question that only cuts, filters, dates or compares (UC-01-04: "còn theo vùng thì sao?",
+    "đi sâu Miền Bắc theo chi nhánh", "so với cùng kỳ năm trước") read against the question before
+    it (AE-11: `slots`, the conversation so far, ASK_ENGINE_SPEC §8.2).
 
     It inherits the earlier metric, and its period and filters unless it states its own; a cut
     it names replaces the earlier cut, so a drill-down is a member filter plus a new dimension.
-    Inherited chips carry source `inherited` ("từ câu trước"). A question that names a metric,
-    names nothing the Data Space knows, or asks for a quantity no metric holds ("Số khoản vay theo
-    sản phẩm" after a question on NPL) is a new question and is returned as it was read: answering
-    it with the earlier metric would answer another question.
+    "<dimension> đó" ("nhóm sản phẩm đó") is the member the turn before put first, a filter.
+    Inherited chips carry source `inherited` ("từ câu trước"). A question that names a metric
+    keeps only the period, and only when it continues the conversation; one that names nothing
+    the Data Space knows, or asks for a quantity no metric holds ("Số khoản vay theo sản phẩm"
+    after a question on NPL), is a new question and is returned as it was read: answering it with
+    the earlier metric would answer another question.
     """
+    if not previous and slots is not None:
+        previous = slots.chips
+    subject = slots.subject if slots is not None else None
+    pointed = subject is not None and names_subject(
+        question, slots, *dimension_names(subject.dimension, vocab)
+    )
+    if current.metric is not None:
+        if current.decision != "proceed":
+            return current
+        if pointed and subject is not None:
+            _point(current, subject.dimension, subject.value, subject.label)
+            return _keep_period(current, previous, question, always=True)
+        return _keep_period(current, previous, question)
     stated = [c for c in current.chips if c.kind in ("dimension", "filter", "period")]
-    if current.decision != "unknown" or current.metric is not None or not stated:
+    if current.decision != "unknown" or not (stated or compare_to or pointed):
         return current
     if _asks_quantity(norm(question)):
         return current
     earlier = {str(c.get("kind")): c for c in previous if c.get("kind") == "metric"}
     if "metric" not in earlier:
         return current
-    cut_dims = {c.value for c in current.chips if c.kind == "dimension"}
+    subject_chip: dict[str, object] | None = None
+    if pointed:
+        assert subject is not None
+        # "nhóm sản phẩm đó" names the member, not a cut by the dimension.
+        stated = [c for c in stated if not (c.kind == "dimension" and c.value == subject.dimension)]
+        subject_chip = {
+            "kind": "filter",
+            "value": f"{subject.dimension}={subject.value}",
+            "label": subject.label,
+            "source": "inherited",
+        }
+    cut_dims = {c.value for c in current.chips if c.kind == "dimension"} - (
+        {subject.dimension} if pointed and subject is not None else set()
+    )
     filtered_dims = {c.value.partition("=")[0] for c in current.chips if c.kind == "filter"}
+    if pointed and subject is not None:
+        filtered_dims.add(subject.dimension)
     has_period = any(c.kind == "period" for c in current.chips)
 
     def inherited(chip: dict[str, object]) -> dict[str, object]:
@@ -487,18 +576,25 @@ def follow_up(
     def kept(chip: dict[str, object]) -> bool:
         kind = chip.get("kind")
         if kind == "dimension":
-            return not cut_dims
+            # The subject's dimension is now a filter: cutting by it again would undo it.
+            return not cut_dims and not (
+                pointed and subject is not None and chip.get("value") == subject.dimension
+            )
         if kind == "filter":
             return str(chip.get("value", "")).partition("=")[0] not in filtered_dims
         return kind == "period" and not has_period
 
     merged: list[dict[str, object]] = [inherited(earlier["metric"])]
     merged += [inherited(chip) for chip in previous if kept(chip)]
+    if subject_chip is not None:
+        merged.append(subject_chip)
     merged += [
         {"kind": c.kind, "value": c.value, "label": c.label, "source": c.source} for c in stated
     ]
     out = from_chips(merged, vocab)
     out.unplaced_cut = current.unplaced_cut
+    # A ranking ("nhóm nào cao nhất") keeps its own top-n over the inherited reading.
+    out.top_n, out.top_desc = current.top_n, current.top_desc
     if out.decision == "proceed" and out.unplaced_cut:
         out.decision = "clarify"
     return out

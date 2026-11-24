@@ -555,6 +555,25 @@ Viết lại câu follow-up trước truy hồi (RG-07): `rewrite_for_retrieval(
 `subject.label`, thêm `metric_label` và kỳ dạng chữ; chỉ gọi LLM `rewriter` (fast) khi câu < 4 token nội dung. Lưu câu
 đã viết lại vào `qa.plan.steps.retrieval_query` để eval.
 
+**Đã làm (AE-11, 24/11/2026)**, `worker_agent/understand/slots.py`:
+
+- `ConversationSlots` được **dựng lại mỗi lượt** từ những gì lượt trước đã lưu, không giữ bản sao trên
+  `qa.conversation`. Lượt governed lấy từ `qa.plan.chips` và `qa.answer.figures`, lượt agentic từ `reading` của
+  dataset. Như vậy chỉ có một bản ghi về cách một lượt đã đọc, slots không thể lệch với nó, và không cần migration
+  `qa.conversation.slots`.
+- Lượt mới bị tách đường không còn mất ngữ cảnh. Hai đường cùng một quy tắc: governed qua
+  `resolver.follow_up(..., slots=, compare_to=)`; agentic qua `engine._readings` (một lượt governed thành `reading` như
+  của agent) và khối `<slots>` trong situation.
+- `subject` là thành viên có giá trị lớn nhất trong các figure chỉ cắt theo đúng chiều `group_by` đầu tiên của lượt trước.
+  Nó chỉ được dùng khi câu hỏi gọi "<tên chiều hoặc synonym> đó/này/ấy" hoặc "that <tên chiều>". Chữ "đó" đứng một mình
+  không đủ, vì đã bỏ dấu thì "đó" trùng "do" (vì).
+- Câu chỉ nêu so sánh kế thừa metric, kỳ và filter. Câu nêu metric mới thì chỉ kế thừa kỳ, và chỉ khi câu đó nối tiếp
+  hội thoại ("còn …", "… thì sao").
+- `rewrite_for_retrieval` là tất định. Chưa gọi LLM `rewriter` cho câu ngắn: câu ngắn được thêm metric và kỳ bằng chữ.
+  Câu đã viết lại nằm ở `detail.retrieval_query` của bước `search_documents`.
+- Chưa làm: chuyển `source=hybrid` ("theo báo cáo … có khớp DB không"), chờ AE-13.
+- Đo: 30 case nhiều lượt trên từ vựng DS-AW (`tests/unit/worker_agent/test_conversation_slots.py`): 30/30.
+
 ```mermaid
 stateDiagram-v2
   [*] --> empty

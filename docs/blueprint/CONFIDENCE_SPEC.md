@@ -181,8 +181,13 @@ examples 14/33, divide 14/33, nên cả ba `w_m` bị kẹp về 0,05 và vote m
 cả hai, không lượt nào đổi). AURC: share k/6 0,4089, margin 0,4077 (hiệu số, bootstrap ghép cặp 95 %: [−0,0135; 0,0135]).
 Ở cùng coverage, rủi ro của margin bằng của share ở 3/5 mốc và cao hơn một lượt ở 2 mốc (60 %: 42,1 % so với 38,9 %; 93,3 %:
 56,7 % so với 53,6 %): các bậc của margin rơi vào coverage khác. Kết luận: trên DS-AW, vote theo cách viết không đổi câu
-trả lời nào và margin xếp hạng ngang share. Phép thử có ý nghĩa cần một Data Space có cách viết đúng trên 50 %. DS-TLC chưa
-chạy được ablation ngày 23/11: đường SQL khám phá không thấy bảng nào của nó (26 item số đều `unlinked`).
+trả lời nào và margin xếp hạng ngang share. Phép thử có ý nghĩa cần một Data Space có cách viết đúng trên 50 %.
+
+DS-TLC (ablation 24/11, sau khi bật 7 bảng của nó; 26 item số, 11 vẫn `unlinked`, 14 lượt có nhóm thắng): một mình,
+skeleton đúng 5/15, examples 5/15, divide 5/13, nên cả ba `w_m` lại kẹp về 0,05 và không nhóm thắng nào đổi (6/14 đúng ở
+cả hai). AURC: share 0,5439, margin 0,5631 (hiệu số [−0,0103; 0,072]). Ở cùng coverage rủi ro của margin cao hơn ở 2/4
+mốc. Trên cả hai Data Space, khâu sinh SQL (dưới 40 % ứng viên đúng) mới là điểm nghẽn, không phải khâu vote; trọng số
+theo cách viết chỉ có tác dụng khi có cách viết đúng trên 50 %.
 
 ## 5. Một thước chung cho các agent (AE-24)
 

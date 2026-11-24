@@ -69,7 +69,7 @@ from services.worker_agent.llm import Gateway, ModelUnavailable
 from services.worker_agent.progress import is_cancel_requested, publish
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic.loader import load
-from services.worker_agent.understand import analyst
+from services.worker_agent.understand import analyst, slots
 from services.worker_agent.understand.packs import PACKS, search
 from services.worker_agent.understand.packs.base import iso_answer
 from services.worker_agent.understand.resolver import metric_words, names_metric, quantity_words
@@ -117,6 +117,7 @@ class State:
     ctx: ToolContext | None = None
     conversation_id: uuid.UUID | None = None
     history: str = ""
+    slots: str = ""
     plan: p.Plan | None = None
     replans: int = 0
     reviews: int = 0
@@ -206,10 +207,12 @@ async def _history(session: Any, question: qa.Question) -> str:
 
 
 async def _readings(session: Any, question: qa.Question) -> list[dict[str, Any]]:
-    """How the turns before this one read the data, latest turn first (persist's "reading")."""
+    """How the turns before this one read the data, latest turn first (persist's "reading").
+    A turn the governed path answered has no dataset reading: its plan's chips stand for one
+    (AE-11, understand/slots.py), so the agent follows a governed turn like one of its own."""
     rows = (
         await session.execute(
-            select(qa.Plan.steps)
+            select(qa.Plan.steps, qa.Plan.chips)
             .join(qa.Question, qa.Question.id == qa.Plan.question_id)
             .where(
                 qa.Question.conversation_id == question.conversation_id,
@@ -220,12 +223,18 @@ async def _readings(session: Any, question: qa.Question) -> list[dict[str, Any]]
         )
     ).all()
     out = []
-    for (steps,) in rows:
+    for steps, chips in rows:
         datasets = steps.get("datasets") if isinstance(steps, dict) else None
+        found = False
         for ds in (datasets or {}).values():
             reading = ds.get("reading") if isinstance(ds, dict) else None
             if isinstance(reading, dict) and reading.get("metric"):
                 out.append(reading)
+                found = True
+        if not found and chips:
+            governed = slots.as_reading(slots.from_chips([c for c in chips if isinstance(c, dict)]))
+            if governed is not None:
+                out.append(governed)
     return out
 
 
@@ -343,6 +352,7 @@ async def prepare(s: State) -> None:
         # Same session, space, principal and layer: load_corpus opens no second layer load.
         space_corpus = await corpus.load_corpus(session, space_id, user_id, layer)
         s.history = await _history(session, question)
+        s.slots = slots.render(await slots.previous_slots(session, question, layer.vocabulary))
         asked = _standalone(
             question.text, await _readings(session, question), layer.vocabulary, today
         )
@@ -466,6 +476,9 @@ def _situation(s: State) -> str:
     parts = [f"Hôm nay: {s.ctx.today.isoformat()}"]
     if s.history:
         parts.append(f"<conversation>\n{s.history}\n</conversation>")
+    if s.slots:
+        # AE-11: what the conversation settled, so "đó", "con số này" and a bare period resolve.
+        parts.append(f"<slots>\n{s.slots}\n</slots>")
     if s.memories:
         parts.append(memory.render(s.memories))
     parts.append(f"<question>\n{s.ctx.question}\n</question>")

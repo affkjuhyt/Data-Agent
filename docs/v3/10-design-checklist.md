@@ -641,7 +641,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-01-04-01 | Chính | Cho câu trước “Tỷ lệ nợ xấu tháng 9/2026” / Khi hỏi “còn theo vùng thì sao?” / Thì question mới cùng conversation, plan giữ chỉ số và kỳ, đổi chiều sang vùng; chip kế thừa có dấu “từ câu trước” | E2E, CSDL | todo | `frontend/src/features/ask/hooks/useQuestionStream.test.tsx`, `tests/integration/api/test_qa_query.py` +2 |
+| AC-01-04-01 | Chính | Cho câu trước “Tỷ lệ nợ xấu tháng 9/2026” / Khi hỏi “còn theo vùng thì sao?” / Thì question mới cùng conversation, plan giữ chỉ số và kỳ, đổi chiều sang vùng; chip kế thừa có dấu “từ câu trước” | E2E, CSDL | todo | `frontend/src/features/ask/hooks/useQuestionStream.test.tsx`, `tests/integration/api/test_qa_query.py` +3 |
 | AC-01-04-02 | Thay thế | Cho biểu đồ theo vùng / Khi bấm cột Duyên hải Bắc Bộ và chọn “Đi sâu theo chi nhánh” / Thì plan thêm bộ lọc vùng đó và đổi chiều sang chi nhánh | E2E | todo | `frontend/src/features/ask/components/DrillAndWhy.test.tsx`, `tests/integration/worker_agent/test_follow_ups.py` +1 |
 | AC-01-04-03 | Thay thế | Cho câu hỏi tiếp không liên quan / Khi gửi / Thì dòng “Hệ thống hiểu là” ghi “Câu hỏi mới”, không có chip kế thừa | Đánh giá agent | todo | `tests/unit/worker_agent/test_follow_up.py` |
 | AC-01-04-04 | Ngoại lệ | Cho chiều không dùng được với chỉ số / Khi hỏi tiếp theo chiều đó / Thì câu trả lời nói không chia được và gợi ý chiều gần nhất có được | Đánh giá agent | todo | `tests/integration/worker_agent/test_follow_ups.py` |
