@@ -364,6 +364,56 @@ async def test_a_schema_pointed_at_someone_elses_table_writes_nothing(seed: Seed
 
 
 @pytest.mark.req("AC-05-06-01")
+@pytest.mark.req("AC-05-06-01")
+async def test_a_schema_pointed_at_another_derived_table_neither_writes_nor_disables_it(
+    seed: Seed,
+) -> None:
+    # A pipeline's output is derived and in the workspace too; target_dataset_id is set through
+    # the api, so only a table extraction made is extraction's (security review of 25/11).
+    lib = library(seed, purpose=PURPOSE)
+    pipeline = seed.row(
+        "catalog.dataset",
+        org_id=lib.org,
+        data_space_id=lib.space,
+        origin="derived",
+        schema_name="workspace",
+        table_name=f"doanh_thu_thang_{uuid.uuid4().hex[:8]}",
+        enabled=True,
+    )
+    schema = _schema(seed, lib, target=pipeline)
+    await _extracted(seed, lib, Model(), "HD-01")
+    assert await ed.load(lib.org, lib.collection) is None
+    # The schema leaves: its target would be disabled, were it extraction's.
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE document.extraction_schema SET status = 'draft' WHERE id = %s", (str(schema),)
+        )
+        cur.execute(
+            "UPDATE document.collection SET extraction_schema_id = NULL WHERE id = %s",
+            (str(lib.collection),),
+        )
+    assert await ed.load(lib.org, lib.collection) is None
+    assert seed.one(
+        "SELECT current_version, enabled FROM catalog.dataset WHERE id = %s", pipeline
+    ) == (1, True)
+
+
+@pytest.mark.parametrize("flag", ["injection", "unusable"])
+async def test_a_passage_retrieve_would_not_show_is_not_read_into_rows(
+    seed: Seed, flag: str
+) -> None:
+    # Its words would become rows the SQL path's model reads (security review of 25/11).
+    lib = library(seed, purpose=PURPOSE)
+    _schema(seed, lib)
+    model = Model()
+    flags = {"injection": True} if flag == "injection" else {"usable": False}
+    document, _ = add_document(
+        seed, lib, TEXTS["HD-01"], title="Hợp đồng HD-01", doc_no="HD-01", **flags
+    )
+    assert await extraction.extract_document(model, lib.org, document) is None
+    assert model.calls == 0
+
+
 async def test_an_activated_schema_runs_over_every_ready_document_once(
     seed: Seed, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -323,7 +323,7 @@ async def answer_overview(event: Event, question_id: uuid.UUID) -> bool:
         if not overview and not members:
             return False
         if overview:
-            brief = await load_corpus(session, space_id, principal, layer)
+            brief = await load_corpus(session, space_id, principal, layer, purpose=question.purpose)
             disabled = await disabled_table_names(session, space_id, principal)
             space = overview_of(brief, disabled)
             text = describe_space(space)

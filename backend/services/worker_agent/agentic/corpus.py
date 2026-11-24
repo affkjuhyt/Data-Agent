@@ -145,8 +145,12 @@ async def load_corpus(
     space_id: uuid.UUID,
     principal_id: uuid.UUID,
     layer: SpaceLayer,
+    *,
+    purpose: str | None = None,
 ) -> CorpusBrief:
-    space = await load_space(session, space_id, principal_id)
+    # The question's purpose, as the SQL path's: an extracted table of a collection of another
+    # purpose is not listed to the planner either (security review of 25/11).
+    space = await load_space(session, space_id, principal_id, purpose=purpose)
     # _visible is a version in force that is not blocked. The loader can leave that version
     # uncertified, and a draft row is not in the set at all. Only entry.certified is the
     # certified shelf; both other kinds are listed chưa chứng nhận.

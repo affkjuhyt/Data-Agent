@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel
-from sqlalchemy import func, select, update
+from sqlalchemy import exists, func, select, update
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import document
@@ -251,7 +251,22 @@ async def read(
             (
                 await session.scalars(
                     select(document.Chunk)
-                    .where(document.Chunk.document_id == doc.id)
+                    .where(
+                        document.Chunk.document_id == doc.id,
+                        # The passages retrieve would show, no others (security review of
+                        # 25/11): what is read here becomes rows the SQL path and its model read
+                        # (DI-17), so a passage flagged as an injection, one left unmasked or one
+                        # on an unusable page is not read.
+                        document.Chunk.pii_masked.is_(True),
+                        document.Chunk.injection_suspected.is_(False),
+                        ~exists().where(
+                            document.DocumentPage.document_id == document.Chunk.document_id,
+                            document.DocumentPage.page_no.between(
+                                document.Chunk.page_from, document.Chunk.page_to
+                            ),
+                            document.DocumentPage.usable.is_(False),
+                        ),
+                    )
                     .order_by(document.Chunk.page_from, document.Chunk.created_at)
                     .limit(MAX_PASSAGES)
                 )

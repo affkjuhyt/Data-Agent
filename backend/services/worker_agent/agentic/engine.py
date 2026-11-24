@@ -360,7 +360,9 @@ async def prepare(s: State) -> None:
         today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         layer = await load(session, space_id)
         # Same session, space, principal and layer: load_corpus opens no second layer load.
-        space_corpus = await corpus.load_corpus(session, space_id, user_id, layer)
+        space_corpus = await corpus.load_corpus(
+            session, space_id, user_id, layer, purpose=question.purpose
+        )
         s.history = await _history(session, question)
         s.slots = slots.render(await slots.previous_slots(session, question, layer.vocabulary))
         asked = _standalone(

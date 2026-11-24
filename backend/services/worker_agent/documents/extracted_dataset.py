@@ -263,6 +263,20 @@ def table_name(collection_code: str, dataset_id: uuid.UUID) -> str:
     return f"trich_{stem}_{dataset_id.hex[-8:]}"
 
 
+def made_here(dataset: catalog.Dataset, data_space_id: uuid.UUID | None = None) -> bool:
+    """A dataset this module made: derived, in the workspace, named by table_name for its own id.
+    target_dataset_id is set through the api, so a schema pointed at another derived table (a
+    pipeline's output) is neither written nor disabled by extraction (security review of 25/11)."""
+    return (
+        dataset.origin == "derived"
+        and dataset.schema_name == "workspace"
+        and dataset.source_id is None
+        and (data_space_id is None or dataset.data_space_id == data_space_id)
+        and dataset.table_name.startswith("trich_")
+        and dataset.table_name.endswith(f"_{dataset.id.hex[-8:]}")
+    )
+
+
 # --- what the dataset should hold ----------------------------------------------------------------
 
 
@@ -450,14 +464,19 @@ async def _disable(org_id: uuid.UUID, dataset_ids: Iterable[uuid.UUID]) -> int:
     if not ids:
         return 0
     async with scoped_session(CATALOG_ROLE, org_id) as session:
+        found = (
+            await session.scalars(
+                select(catalog.Dataset).where(
+                    catalog.Dataset.id.in_(ids), catalog.Dataset.enabled.is_(True)
+                )
+            )
+        ).all()
+        mine = [d.id for d in found if made_here(d)]
+        if not mine:
+            return 0
         done = await session.execute(
             update(catalog.Dataset)
-            .where(
-                catalog.Dataset.id.in_(ids),
-                catalog.Dataset.origin == "derived",
-                catalog.Dataset.schema_name == "workspace",
-                catalog.Dataset.enabled.is_(True),
-            )
+            .where(catalog.Dataset.id.in_(mine))
             .values(enabled=False, updated_at=datetime.datetime.now(datetime.UTC))
         )
         return int(getattr(done, "rowcount", 0) or 0)
@@ -495,13 +514,9 @@ async def load(
     columns = columns_of(w.fields)
     async with scoped_session(CATALOG_ROLE, org_id) as session:
         dataset = await session.get(catalog.Dataset, w.dataset_id)
-        if dataset is not None and (
-            dataset.origin != "derived"
-            or dataset.schema_name != "workspace"
-            or dataset.data_space_id != w.data_space_id
-        ):
-            # A schema pointed at a table someone else owns (a source table, an upload): never
-            # overwritten by extraction.
+        if dataset is not None and not made_here(dataset, w.data_space_id):
+            # A schema pointed at a table someone else owns (a source table, an upload, another
+            # derived table): never overwritten by extraction.
             log.warning(
                 "extracted_dataset | schema %s targets dataset %s, not an extraction table",
                 w.schema_id,
