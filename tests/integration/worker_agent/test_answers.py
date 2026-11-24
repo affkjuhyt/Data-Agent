@@ -1914,3 +1914,38 @@ async def test_a_question_about_the_space_is_answered_from_it_not_as_a_metric(
         "SELECT steps FROM qa.plan WHERE question_id = %s ORDER BY version DESC LIMIT 1", q
     )
     assert steps == [{"tool": "list_members"}]
+
+
+async def test_a_scoped_asker_is_not_listed_the_whole_value_index(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The security review of 24/11: the value index is the whole space's, so a member held to
+    # some rows is not listed its members from it; the question goes the way that filters.
+    bank = build(seed, warehouse, monkeypatch)
+    scoped = seed.row(
+        "org.app_user",
+        org_id=bank.org,
+        external_id="kc-scoped-list",
+        username="scoped-list",
+        display_name="Scoped",
+    )
+    role = seed.row(
+        "org.role", org_id=bank.org, code="ASK-SCOPED-L", name="Scoped", capabilities=["ask"]
+    )
+    seed.row(
+        "org.data_space_member",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        principal_type="user",
+        principal_id=scoped,
+        role_id=role,
+        row_scope=json.dumps({"branch_code": ["HN1"]}),
+    )
+    bank.user = scoped
+    q = bank.ask("Có những vùng nào?")
+    await drain()
+    _, _, text, _, _, _ = answer_of(seed, q)
+    steps = seed.one(
+        "SELECT steps FROM qa.plan WHERE question_id = %s ORDER BY version DESC LIMIT 1", q
+    )
+    assert steps != [{"tool": "list_members"}], text

@@ -11,7 +11,12 @@ import pytest
 
 from services.worker_agent.llm import Reply
 from services.worker_agent.understand.llm_reader import history_of, read
-from services.worker_agent.understand.resolver import DimensionEntry, MetricEntry, Vocabulary
+from services.worker_agent.understand.resolver import (
+    DimensionEntry,
+    MetricEntry,
+    ValueEntry,
+    Vocabulary,
+)
 
 pytestmark = [pytest.mark.unit]
 
@@ -86,3 +91,34 @@ async def test_the_model_is_given_the_conversation_and_none_without_one() -> Non
     await read("nợ xấu", VOCAB, gateway, today=today)
     assert "Hội thoại trước (cũ đến mới):\n- câu số 5" in gateway.prompts[0]
     assert "Hội thoại trước" not in gateway.prompts[1]
+
+
+async def test_what_the_conversation_lends_stops_at_the_questions_own_words() -> None:
+    # 24/11: the overview and the listing questions were read as the last metric, filtered on the
+    # countries of the answer before, for the current year.
+    region = DimensionEntry(uuid.uuid4(), "vung", "vùng")
+    vocab = Vocabulary(
+        metrics=[NPL],
+        dimensions=[region],
+        values=[ValueEntry("vung", "MB", "Miền Bắc"), ValueEntry("vung", "MN", "Miền Nam")],
+    )
+
+    class Lending:
+        async def json_chat(
+            self, role: str, system: str, user: str, output: type[Any], *, max_tokens: int = 800
+        ) -> Any:
+            reading = {"metric": "NPL_RATIO", "filters": {"vung": ["MB"]}, "period": "2026"}
+            return Reply(output.model_validate(reading), model="planner", tokens=10, latency_ms=1)
+
+    today = datetime.date(2026, 11, 24)
+    history = [_turn(5)]
+    # No quantity of its own in a conversation: not read (the rules took the follow-ups).
+    assert await read("còn năm nay thì sao", vocab, Lending(), today=today, history=history) is None
+    # A quantity of its own: read, without the filter and period it does not say.
+    out = await read("nợ xấu", vocab, Lending(), today=today, history=history)
+    assert out is not None and out[0].metric == NPL
+    assert out[0].filters == {} and out[0].period is None
+    # Said, they stay.
+    said = await read("nợ xấu Miền Bắc năm nay", vocab, Lending(), today=today, history=history)
+    assert said is not None and said[0].filters == {"vung": ["MB"]}
+    assert said[0].period is not None

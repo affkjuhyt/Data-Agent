@@ -12,6 +12,13 @@ had none the parser could read, and names it in ISO form against the day it is t
 A question in a conversation is read with the conversation (AC-01-04-05): the last ten questions
 word for word with what each was understood as, older ones as a summary of the metrics and cuts
 they asked about. The summary is made from their plans, not by a model.
+
+What the conversation lends stops at the question's own words (24/11/2026): a question that names
+no quantity is not read at all (every follow-up the rules can read, resolver.follow_up took before
+the model is asked; "mặt hàng đang được bán là mặt hàng nào" was read as the last metric), and a
+filter or a period the model adds that the question does not say is dropped ("thế dữ liệu chúng ta
+đang trao đổi nói về gì" came back filtered on the six countries of the answer before, for the
+current year, on a warehouse that ends in 2014).
 """
 
 from __future__ import annotations
@@ -31,8 +38,9 @@ from services.worker_agent.understand.resolver import (
     Vocabulary,
     from_chips,
     grounding,
+    quantity_words,
 )
-from services.worker_agent.understand.text import find_period
+from services.worker_agent.understand.text import find_period, norm
 
 MODEL_CONFIDENCE = 0.8
 VALUES_PER_DIMENSION = 30
@@ -111,6 +119,43 @@ def _catalogue(vocab: Vocabulary) -> str:
     )
 
 
+# Words that say a time the period parser may not read ("quý trước", "last quarter", "hiện tại").
+_TIME_WORDS = frozenset(
+    "nam thang quy tuan ngay hom nay qua truoc toi sau hien ky dau cuoi gan "
+    "year month quarter week day today yesterday last next current ytd mtd "
+    "summer winter spring autumn season".split()
+)
+# Seasons said in two words: "mùa" alone folds to "mua" (to buy).
+_TIME_PHRASES = ("mua he", "mua dong", "mua xuan", "mua thu")
+
+
+def says_time(question: str) -> bool:
+    """The question says a time (a digit or a time word): the model may name its period."""
+    folded = norm(question)
+    return (
+        any(c.isdigit() for c in folded)
+        or any(w in _TIME_WORDS for w in folded.split())
+        or any(p in folded for p in _TIME_PHRASES)
+    )
+
+
+def named_member(question: str, dimension: str, member: str, vocab: Vocabulary) -> bool:
+    """The question names this member: its code, its label or an approved synonym of it."""
+    folded = f" {norm(question)} "
+    names = {norm(member)}
+    names |= {
+        norm(v.label)
+        for v in vocab.values
+        if v.dimension_code == dimension and v.value_code == member
+    }
+    names |= {
+        phrase
+        for phrase, target in vocab.synonyms.items()
+        if target[:3] == ("value", dimension, member)
+    }
+    return any(n and f" {n} " in folded for n in names)
+
+
 async def read(
     question: str,
     vocab: Vocabulary,
@@ -153,9 +198,10 @@ async def read(
         {"kind": "filter", "value": f"{dim}={member}"}
         for dim, members in answer.filters.items()
         for member in members
+        if named_member(question, dim, member, vocab)
     ]
     period = find_period(question, today, vocab.calendar) or (
-        iso_answer(answer.period) if answer.period else None
+        iso_answer(answer.period) if answer.period and says_time(question) else None
     )
     if period is not None:
         chips.append(
@@ -163,6 +209,12 @@ async def read(
         )
     u = from_chips(chips, vocab)
     if u.decision != "proceed" or u.metric is None:
+        return None
+    # No quantity of its own, read in a conversation: the metric is the conversation's, and the
+    # follow-ups the rules read were taken before the model was asked.
+    if history and not quantity_words(
+        question, vocab, today=today, group_by=u.group_by, filters=u.filters
+    ):
         return None
     # The model proposes, the question's own words decide (invariant 3). A reading that names the
     # metric only in part, with quantity words its name does not explain ("doanh thu phí bảo hiểm
