@@ -929,6 +929,21 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
             status="failed",
         )
         return
+    if (
+        outcome.rows
+        and _all_zero(prepared.compiled.columns, outcome.rows)
+        and prepared.request is not None
+        and prepared.request.period is not None
+    ):
+        # Every figure 0: a count over no rows is 0, not NULL (24/11: "số khách hàng theo sản
+        # phẩm năm 2026" on data ending in 2014 came back 0 and was told as an answer). The
+        # metric's periods are probed: a period with data keeps its true 0, one without is no
+        # data and is answered for the nearest period that has some, saying so.
+        explored = await _explore_period(question_id, prepared, only_if_empty=True)
+        if explored is not None:
+            prepared, outcome = explored
+        await _answer(event, question_id, prepared, outcome)
+        return
     if not outcome.rows or _no_value(prepared.compiled.columns, outcome.rows):
         await turn_trace.record_step(
             "validate",
@@ -969,9 +984,13 @@ def _probe_time_code(layer: SpaceLayer, version: c.MetricVersion) -> str | None:
     return coverage.time_code(layer, version)
 
 
-async def _explore_period(question_id: uuid.UUID, p: Prepared) -> tuple[Prepared, Any] | None:
+async def _explore_period(
+    question_id: uuid.UUID, p: Prepared, *, only_if_empty: bool = False
+) -> tuple[Prepared, Any] | None:
     """The asked period had no data: find the periods that do, answer for the nearest (explore.py).
-    None when there is nothing to look at, or nothing found; the caller then refuses as before."""
+    None when there is nothing to look at, or nothing found; the caller then refuses as before.
+    `only_if_empty`: the figures were all 0, so first whether the asked period has data at all;
+    when it has, the 0 is the answer and None says so."""
     request = p.request
     if (
         request is None
@@ -1016,6 +1035,9 @@ async def _explore_period(question_id: uuid.UUID, p: Prepared) -> tuple[Prepared
             "chosen": period_label(explore.bucket(start, grain)) if start else None,
             "query_run_id": str(probe.query_run_id),
         }
+        if only_if_empty and any(asked.start <= f < asked.end for f in found):
+            step.summary = "Kỳ được hỏi có dữ liệu: số 0 là số thật."
+            return None
         if start is None:
             step.status = "failed"
             step.summary = "Chỉ số không có dữ liệu ở kỳ nào với các điều kiện này."
@@ -1260,6 +1282,18 @@ async def _within(
         if not scope.allows(dataset, source):
             return False
     return True
+
+
+def _all_zero(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> bool:
+    """Every figure of the result is 0 (a COUNT over no rows), none NULL, at least one row."""
+    if "value" not in columns or not rows:
+        return False
+    at = list(columns).index("value")
+    values = [row[at] for row in rows if len(row) > at]
+    try:
+        return bool(values) and all(v is not None and float(v) == 0 for v in values)
+    except (TypeError, ValueError):
+        return False
 
 
 def _no_value(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> bool:

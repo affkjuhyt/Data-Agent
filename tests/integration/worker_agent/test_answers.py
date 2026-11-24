@@ -1949,3 +1949,67 @@ async def test_a_scoped_asker_is_not_listed_the_whole_value_index(
         "SELECT steps FROM qa.plan WHERE question_id = %s ORDER BY version DESC LIMIT 1", q
     )
     assert steps != [{"tool": "list_members"}], text
+
+
+async def test_a_count_of_zero_for_a_period_without_data_is_no_data(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 24/11: a COUNT over no rows is 0, not NULL, and was told as an answer. July has no loans:
+    # 0 for July is no data, answered for the nearest month that has some, saying so; a month
+    # with loans keeps its count.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    entity = seed.one(
+        "SELECT id FROM context.semantic_entity WHERE data_space_id = %s AND code = 'khoan_vay'",
+        bank.space,
+    )
+    seed.row(
+        "context.semantic_measure",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        entity_id=entity,
+        code="so_khoan",
+        name="so_khoan",
+        expression="COUNT(*)",
+        aggregation="count",
+        additivity="full",
+    )
+    owner = seed.row(
+        "org.app_user", org_id=bank.org, external_id="kc-cnt", username="cnt", display_name="C"
+    )
+    m = seed.row(
+        "context.metric",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        code="SO_KHOAN_VAY",
+        owner_id=owner,
+        current_version=1,
+        status="active",
+    )
+    seed.row(
+        "context.metric_version",
+        org_id=bank.org,
+        metric_id=m,
+        version=1,
+        display_name="Số khoản vay",
+        expression="so_khoan",
+        unit="khoản",
+        period_semantics="sum_over_period",
+        status="certified",
+        certified_by=owner,
+        certified_at="2026-06-01T00:00:00Z",
+        valid_from="2026-06-01T00:00:00Z",
+        allowed_dimensions=[],
+        filters=json.dumps([]),
+    )
+    q = bank.ask("Số khoản vay tháng 7/2026")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    assert text.startswith("Không có dữ liệu cho tháng 7/2026"), text
+    assert figures and float(figures[0]["value"]) > 0
+
+    q = bank.ask("Số khoản vay tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data") and "Không có dữ liệu" not in text, text
