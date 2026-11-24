@@ -508,6 +508,8 @@ tiếng Việt (`validity.py:24-28`); không diff phiên bản; RG-08 chưa có.
 
 Màn sức khoẻ kho tài liệu (RG-09) đọc bảng `quality_issue` theo Data Space; không cần bảng mới.
 
+**Đã làm (DI-21, 24/11/2026):** `GET /v1/document-health` (`admin_data`, theo Data Space, `?collection_id`) đếm từ `quality_issue`, `document`, `document_page` và `chunk`, không trả văn bản; màn "Sức khoẻ kho tài liệu" (`/data/doc_health`) hiện nó và mở trình xem của từng tài liệu bị ảnh hưởng.
+
 **Đã làm (DI-13, 23/11/2026):** mức "medium"/"low" của bảng trên = `warning` (CHECK của `quality_issue`). `needs_review` =
 `waiting_review` (CHECK của `document.status`); cổng là một issue `low_ocr` mức `blocking` cấp tài liệu (`detail.reason =
 unusable_share`) khi chưa có issue blocking nào, để vòng xử lý issue sẵn có (`process_resolution`) lập chỉ mục khi người

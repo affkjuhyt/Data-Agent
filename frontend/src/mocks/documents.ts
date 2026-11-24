@@ -1300,6 +1300,52 @@ export function createDocumentHandlers(approvals: ApprovalSource[] = []) {
         })),
       ),
     ),
+    // DocumentHealth (RG-09): the open issues are the queue's, counted as the api counts them.
+    http.get('*/v1/document-health', () => {
+      const affected = [...new Set(issues.map((i) => i.document.id))];
+      return HttpResponse.json({
+        documents: library.length,
+        by_status: [
+          { status: 'ready', count: library.length - affected.length },
+          { status: 'waiting_review', count: affected.length },
+        ].filter((s) => s.count > 0),
+        pages_read: 184,
+        pages_unusable: issues.length,
+        open_issues: issues.length,
+        blocking_issues: issues.length,
+        gated_documents: 0,
+        chunks: 412,
+        chunks_unindexed: 0,
+        chunks_injection_suspected: 0,
+        expired_documents: 1,
+        superseded_documents: 1,
+        issues: issues.length
+          ? [
+              {
+                kind: 'low_ocr',
+                severity: 'blocking',
+                count: issues.length,
+                documents: affected.length,
+              },
+            ]
+          : [],
+        most_affected: affected.map((id) => {
+          const own = issues.filter((i) => i.document.id === id);
+          return {
+            id,
+            collection_id: 'col-hop-dong',
+            file_name: `${id}.pdf`,
+            title: own[0].document.title,
+            status: 'waiting_review',
+            page_count: 12,
+            pages_unusable: own.length,
+            open_issues: own.length,
+            blocking_issues: own.length,
+            kinds: ['low_ocr'],
+          };
+        }),
+      });
+    }),
     http.post('*/v1/quality-issues/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       if (verb !== 'resolve') return problem(404, 'not_found', 'Không có thao tác này.');

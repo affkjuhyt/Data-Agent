@@ -2112,6 +2112,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/document-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sức khoẻ kho tài liệu: tài liệu theo trạng thái, vấn đề mở theo loại và mức, trang không dùng được, tài liệu bị ảnh hưởng nhiều nhất (thêm 24/11/2026, DI-21)
+         * @description RG-09: the corpus of the Data Space in counts, from the rows preprocessing and the quality
+         *     checks wrote; no table of its own (DOCUMENT_INTELLIGENCE_SPEC §9). The listings cannot give
+         *     this: their pages carry no totals and the queue holds open issues only one page at a time.
+         */
+        get: operations["getDocumentHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/document-sources": {
         parameters: {
             query?: never;
@@ -7506,6 +7528,35 @@ export interface components {
             /** Username */
             username: string;
         };
+        /** AffectedDocument */
+        AffectedDocument: {
+            /** Blocking Issues */
+            blocking_issues: number;
+            /**
+             * Collection Id
+             * Format: uuid
+             */
+            collection_id: string;
+            /** File Name */
+            file_name: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kinds */
+            kinds: string[];
+            /** Open Issues */
+            open_issues: number;
+            /** Page Count */
+            page_count: number | null;
+            /** Pages Unusable */
+            pages_unusable: number;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string | null;
+        };
         /** AgentCreate */
         AgentCreate: {
             /** Code */
@@ -11956,6 +12007,41 @@ export interface components {
             updated_at: string;
         };
         /**
+         * DocumentHealth
+         * @description RG-09: the health of a Data Space's document corpus, read from quality_issue and the rows
+         *     preprocessing wrote (DOCUMENT_INTELLIGENCE_SPEC §9). Counts only: no text, no personal data.
+         */
+        DocumentHealth: {
+            /** Blocking Issues */
+            blocking_issues: number;
+            /** By Status */
+            by_status: components["schemas"]["StatusCount"][];
+            /** Chunks */
+            chunks: number;
+            /** Chunks Injection Suspected */
+            chunks_injection_suspected: number;
+            /** Chunks Unindexed */
+            chunks_unindexed: number;
+            /** Documents */
+            documents: number;
+            /** Expired Documents */
+            expired_documents: number;
+            /** Gated Documents */
+            gated_documents: number;
+            /** Issues */
+            issues: components["schemas"]["IssueCount"][];
+            /** Most Affected */
+            most_affected: components["schemas"]["AffectedDocument"][];
+            /** Open Issues */
+            open_issues: number;
+            /** Pages Read */
+            pages_read: number;
+            /** Pages Unusable */
+            pages_unusable: number;
+            /** Superseded Documents */
+            superseded_documents: number;
+        };
+        /**
          * DocumentListItem
          * @description A row of GET /v1/documents: the document with its current preprocessing step.
          */
@@ -15449,6 +15535,20 @@ export interface components {
             } | null;
             /** Valid Until */
             valid_until?: string | null;
+        };
+        /**
+         * IssueCount
+         * @description Open issues of one kind and severity, and how many documents they touch.
+         */
+        IssueCount: {
+            /** Count */
+            count: number;
+            /** Documents */
+            documents: number;
+            /** Kind */
+            kind: string;
+            /** Severity */
+            severity: string;
         };
         /**
          * JobAccepted
@@ -22349,6 +22449,13 @@ export interface components {
             data_space_id: string;
             /** Roles */
             roles: components["schemas"]["RoleRef"][];
+        };
+        /** StatusCount */
+        StatusCount: {
+            /** Count */
+            count: number;
+            /** Status */
+            status: string;
         };
         /**
          * Step
@@ -40719,6 +40826,118 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["services__api__modules__ingest__schemas__Accepted"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    getDocumentHealth: {
+        parameters: {
+            query?: {
+                collection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentHealth"];
                 };
             };
             /** @description Invalid request */

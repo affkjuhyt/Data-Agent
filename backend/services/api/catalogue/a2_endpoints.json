@@ -1686,6 +1686,18 @@
   },
   {
    "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/document-health",
+   "summary": "Sức khoẻ kho tài liệu: tài liệu theo trạng thái, vấn đề mở theo loại và mức, trang không dùng được, tài liệu bị ảnh hưởng nhiều nhất (thêm 24/11/2026, DI-21)",
+   "use_cases": [
+    "05-03"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Tài liệu",
    "method": "POST",
    "path": "/v1/quality-issues/{id}:resolve",
    "summary": "Xử lý vấn đề",

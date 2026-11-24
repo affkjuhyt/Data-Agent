@@ -606,7 +606,7 @@ export type ResolveIssue =
 type IssueWire = Schemas['QualityIssueView'] & { display?: QualityIssue };
 
 /** quality_issue.kind in words. */
-const ISSUE_KIND: Record<string, string> = {
+export const ISSUE_KIND: Record<string, string> = {
   low_ocr: 'Nhận dạng chữ độ tin thấp',
   pii_unmasked: 'Có dữ liệu cá nhân chưa che',
   garbled_text: 'Chữ bị lỗi mã',
@@ -708,6 +708,18 @@ export const resolveQualityIssue = async (id: string, body: ResolveIssue) => {
   );
   return { status: 'resolved' as const };
 };
+
+/* ─── Sức khoẻ kho tài liệu (RG-09, DI-21) ────────────────────────────── */
+
+export type DocumentHealth = Schemas['DocumentHealth'];
+
+/** GET /v1/document-health: the Data Space's corpus in counts, or one collection's. */
+export const getDocumentHealth = (collectionId?: string): Promise<DocumentHealth> =>
+  ok(
+    api.GET('/v1/document-health', {
+      params: { query: collectionId ? { collection_id: collectionId } : {} },
+    }),
+  );
 
 /* ─── Hiệu lực văn bản (UC-05-05) ─────────────────────────────────────── */
 

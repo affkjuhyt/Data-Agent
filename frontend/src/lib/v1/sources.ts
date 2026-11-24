@@ -1272,7 +1272,8 @@ type DocumentApi = Pick<
   | 'created_at'
 >;
 
-const STATUS: Record<string, { tone: Tone; text: string }> = {
+/** document.status in words, with the tone of its dot. */
+export const DOCUMENT_STATUS: Record<string, { tone: Tone; text: string }> = {
   received: { tone: 'idle', text: 'Đã nhận' },
   processing: { tone: 'info', text: 'Đang xử lý' },
   waiting_review: { tone: 'warning', text: 'Chờ người xem' },
@@ -1368,7 +1369,7 @@ export function readCollectionDocument(
       : raw.effective_from
         ? { text: `Từ ${day(raw.effective_from)}`, warn: false }
         : null,
-    status: STATUS[raw.status] ?? { tone: 'idle', text: raw.status },
+    status: DOCUMENT_STATUS[raw.status] ?? { tone: 'idle', text: raw.status },
     origin_text: `Nạp ${day(raw.created_at)}`,
     processing: processingOf(raw),
     excerpt: null,

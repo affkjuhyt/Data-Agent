@@ -97,6 +97,7 @@ const RedirectToAsk = React.lazy(() => import('./features/ask/RedirectToAsk'));
 const DocumentsPage = React.lazy(() => import('./features/documents/DocumentsPage'));
 const DocumentViewerPage = React.lazy(() => import('./features/documents/DocumentViewerPage'));
 const QualityQueuePage = React.lazy(() => import('./features/documents/QualityQueuePage'));
+const CorpusHealthPage = React.lazy(() => import('./features/documents/CorpusHealthPage'));
 const ValidityPage = React.lazy(() => import('./features/documents/ValidityPage'));
 const ExtractionSchemaPage = React.lazy(() => import('./features/documents/ExtractionSchemaPage'));
 const SourceDriftPage = React.lazy(() => import('./features/data-sources/SourceDriftPage'));
@@ -245,6 +246,7 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     DOCUMENTS:          { render: () => <DocumentsPage /> },
     DOCUMENT:           { render: () => <DocumentViewerPage /> },
     DOC_QUALITY:        { render: () => <QualityQueuePage /> },
+    DOC_HEALTH:         { render: () => <CorpusHealthPage /> },
     DOC_VALIDITY:       { render: () => <ValidityPage /> },
     EXTRACTION_SCHEMAS: { render: () => <ExtractionSchemaPage /> },
     // P06 Chuẩn bị.

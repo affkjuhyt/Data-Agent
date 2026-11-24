@@ -74,6 +74,8 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
         { id: 'COLLECTIONS', label: 'Bộ sưu tập' },
         { id: 'DOCUMENTS', label: 'Tệp & tài liệu' },
         { id: 'DOC_QUALITY', label: 'Hàng chờ chất lượng' },
+        // RG-09: GET /v1/document-health is admin_data's, as the quality queue it opens.
+        { id: 'DOC_HEALTH', label: 'Sức khoẻ kho tài liệu', requires: 'admin_data' },
         { id: 'DOC_VALIDITY', label: 'Hiệu lực văn bản' },
         { id: 'EXTRACTION_SCHEMAS', label: 'Lược đồ trích xuất' },
       ],

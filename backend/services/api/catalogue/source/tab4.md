@@ -237,7 +237,7 @@ Dịch vụ: Ingestion service (ingest). 20 endpoint.
 
 ### Tài liệu
 
-Dịch vụ: Document service (document). 19 endpoint.
+Dịch vụ: Document service (document). 20 endpoint.
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
@@ -266,6 +266,7 @@ Dịch vụ: Document service (document). 19 endpoint.
 | GET | /v1/documents/{id}/elements | Phần tử của tài liệu theo thứ tự đọc: loại, cấp tiêu đề, trang, khung (thêm 23/11/2026, DI-16) | 05-04 | ask |
 | GET | /v1/documents/{id}/tables | Bảng của tài liệu: chú thích, trang, bảng nối tiếp (thêm 23/11/2026, DI-16) | 05-04 | ask |
 | GET | /v1/tables/{id}/cells | Ô của bảng: ô gộp, số và đơn vị, trang, khung; ?logical=true ghép bảng nối trang (thêm 23/11/2026, DI-16) | 05-04 | ask |
+| GET | /v1/document-health | Sức khoẻ kho tài liệu: tài liệu theo trạng thái, vấn đề mở theo loại và mức, trang không dùng được, tài liệu bị ảnh hưởng nhiều nhất (thêm 24/11/2026, DI-21) | 05-03 | admin\_data |
 
 ### Biến đổi dữ liệu
 
@@ -876,6 +877,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/documents/{id}/elements | ?page, ?kind, ?cursor | Page<ElementView> theo order\_idx | 403 purpose\_mismatch |
 | GET /v1/documents/{id}/tables | — | Danh sách DocTableView | 403 purpose\_mismatch |
 | GET /v1/tables/{id}/cells | ?logical | Danh sách TableCellView theo (row, col) | 404 not\_found; 403 purpose\_mismatch |
+| GET /v1/document-health | ?collection\_id | DocumentHealth: số tài liệu theo trạng thái, vấn đề mở theo (kind, severity), trang đọc / không dùng được, tài liệu bị cổng §9 giữ, 10 tài liệu bị ảnh hưởng nhiều nhất | — |
 
 ### A3 · Biến đổi dữ liệu
 

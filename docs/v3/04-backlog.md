@@ -175,7 +175,7 @@ R1-05, R1-09, R1-10 đang làm, việc nào trễ thì AN-04/AN-05 nhường.
 | RG-06 | R2 | Chunk có ngữ cảnh: tiền tố "tài liệu › Chương › Điều" khi nhúng, re-index qua `worker_document.reprocess` (BR-18 giữ hai model tách nhau); chọn kích thước chunk bằng RG-02 | RG-02 | DE | S | | todo: phần lớn đã có — `worker_document` gắn `context_header` (tên, số hiệu, đường dẫn Điều) vào chunk, nhúng cùng chunk và dùng khi rerank; còn: nửa từ khoá chưa đọc header, chọn kích thước chunk bằng RG-02 |
 | RG-07 | R2 | Câu follow-up được viết lại theo hội thoại trước khi truy hồi (dùng bộ giải slot); kiểm đường hiện tại trước, chỉ làm khi đang truy hồi bằng nguyên văn | RG-02 | AI (Linh) | S | Recall nhóm follow-up của RG-01 | todo: đã xác nhận `questions._answer_from_documents` truy hồi bằng `question.text` nguyên văn |
 | RG-08 | R2 | Câu đếm/tổng trên cả kho ("bao nhiêu hợp đồng có điều khoản X") đi đường trích trường (`documents/extraction.py`) → bảng → SQL, báo coverage (`sem_extract`, 01 §3.3) | RG-05 | AI, BE | M | Câu trả lời có coverage; không trả lời bằng top-k | todo |
-| RG-09 | R2 | Màn sức khoẻ kho tài liệu theo Data Space: trang dưới ngưỡng OCR, chunk chưa vào Qdrant, đoạn nghi injection, văn bản hết hiệu lực hoặc bị thay thế, tài liệu đọc lỗi | | BE, FE | S | | todo |
+| RG-09 | R2 | Màn sức khoẻ kho tài liệu theo Data Space: trang dưới ngưỡng OCR, chunk chưa vào Qdrant, đoạn nghi injection, văn bản hết hiệu lực hoặc bị thay thế, tài liệu đọc lỗi | | BE, FE | S | | done 24/11 (DI-21): `/data/doc_health` trên `GET /v1/document-health` |
 
 Thứ tự: RG-01 → RG-02 và RG-05 song song ngay trong R1, AN-13 viết case song song, AN-05 → AN-04 theo ngoại lệ; sau R1:
 AN-01 → AN-02 → AN-03 → AN-07 → AN-06 → AN-09/AN-10 → AN-11; RG-03…RG-09 theo số đo của RG-02.

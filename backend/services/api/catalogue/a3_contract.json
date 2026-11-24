@@ -2466,6 +2466,19 @@
    ],
    "request_text": "?logical"
   },
+  "GET /v1/document-health": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [
+    "collection_id"
+   ],
+   "returns": "DocumentHealth: số tài liệu theo trạng thái, vấn đề mở theo (kind, severity), trang đọc / không dùng được, tài liệu bị cổng §9 giữ, 10 tài liệu bị ảnh hưởng nhiều nhất",
+   "errors": [],
+   "request_text": "?collection_id"
+  },
   "GET /v1/pipelines": {
    "group": "Biến đổi dữ liệu",
    "groups": [

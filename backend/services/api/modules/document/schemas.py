@@ -328,6 +328,56 @@ class QualityIssueView(BaseModel):
     updated_at: datetime.datetime
 
 
+class StatusCount(BaseModel):
+    status: str
+    count: int
+
+
+class IssueCount(BaseModel):
+    """Open issues of one kind and severity, and how many documents they touch."""
+
+    kind: str
+    severity: str
+    count: int
+    documents: int
+
+
+class AffectedDocument(BaseModel):
+    id: uuid.UUID
+    collection_id: uuid.UUID
+    file_name: str
+    title: str | None
+    status: str
+    page_count: int | None
+    pages_unusable: int
+    open_issues: int
+    blocking_issues: int
+    kinds: list[str]
+
+
+class DocumentHealth(BaseModel):
+    """RG-09: the health of a Data Space's document corpus, read from quality_issue and the rows
+    preprocessing wrote (DOCUMENT_INTELLIGENCE_SPEC §9). Counts only: no text, no personal data."""
+
+    documents: int
+    by_status: list[StatusCount]
+    pages_read: int
+    pages_unusable: int
+    open_issues: int
+    blocking_issues: int
+    # Documents held by the §9 gate: more than 30 % of their pages unusable, waiting for a person.
+    gated_documents: int
+    chunks: int
+    # Passages of ready documents with no vector: indexing failed, keyword search alone finds them.
+    chunks_unindexed: int
+    chunks_injection_suspected: int
+    # BR-109: no longer in force today, or replaced by another document of the space.
+    expired_documents: int
+    superseded_documents: int
+    issues: list[IssueCount]
+    most_affected: list[AffectedDocument]
+
+
 class ResolveIssue(BaseModel):
     resolution: Resolution
     corrected_text: str | None = Field(default=None, max_length=200_000)

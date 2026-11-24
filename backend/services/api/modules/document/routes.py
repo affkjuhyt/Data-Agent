@@ -25,6 +25,7 @@ from urllib.parse import unquote, urlsplit
 from fastapi import APIRouter, Depends, File, Form, Header, Path, Query, Response, UploadFile
 from sqlalchemy import ColumnElement, and_, case, exists, func, literal_column, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from libs import document_intake
 from libs.dataagent_db import uuid7
@@ -59,6 +60,7 @@ from services.api.modules.document.ports import (
 )
 from services.api.modules.document.schemas import (
     Accepted,
+    AffectedDocument,
     ChunkHit,
     ChunkView,
     CollectionCreate,
@@ -66,6 +68,7 @@ from services.api.modules.document.schemas import (
     DocTableView,
     DocumentBlockView,
     DocumentDetail,
+    DocumentHealth,
     DocumentListItem,
     DocumentPageView,
     DocumentPatch,
@@ -77,11 +80,13 @@ from services.api.modules.document.schemas import (
     ExtractionSchemaCreate,
     ExtractionSchemaView,
     ExtractionTest,
+    IssueCount,
     PreprocessingStep,
     Progress,
     QualityIssueView,
     ResolveIssue,
     SearchRequest,
+    StatusCount,
     TableCellView,
     ValidityChange,
 )
@@ -1379,6 +1384,161 @@ async def list_quality_issues(
     return Page(
         items=[QualityIssueView.model_validate(r, from_attributes=True) for r in rows],
         next_page_token=token,
+    )
+
+
+# RG-09: how many of the most affected documents the health screen lists.
+HEALTH_MOST_AFFECTED = 10
+
+
+@router.get(
+    "/v1/document-health",
+    response_model=DocumentHealth,
+    **endpoint("GET", "/v1/document-health", operation_id="getDocumentHealth"),
+)
+async def get_document_health(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    collection_id: uuid.UUID | None = None,
+) -> DocumentHealth:
+    """RG-09: the corpus of the Data Space in counts, from the rows preprocessing and the quality
+    checks wrote; no table of its own (DOCUMENT_INTELLIGENCE_SPEC §9). The listings cannot give
+    this: their pages carry no totals and the queue holds open issues only one page at a time."""
+    d, page, issue = doc.Document, doc.DocumentPage, doc.QualityIssue
+    scope = [_in_space(principal, data_space), d.deleted_at.is_(None)]
+    if collection_id is not None:
+        scope.append(d.collection_id == collection_id)
+    # Not correlated: the queries below read document too, and the scope must stay whole.
+    in_scope = (
+        select(d.id)
+        .join(doc.Collection, doc.Collection.id == d.collection_id)
+        .where(*scope)
+        .correlate(None)
+    )
+    is_open = and_(issue.document_id.in_(in_scope), issue.status == "open")
+    blocking = issue.severity == "blocking"
+    async with transaction(ROLE, principal) as session:
+        by_status = [
+            StatusCount(status=status, count=count)
+            for status, count in await session.execute(
+                select(d.status, func.count())
+                .where(d.id.in_(in_scope))
+                .group_by(d.status)
+                .order_by(func.count().desc(), d.status)
+            )
+        ]
+        read, unusable = (
+            await session.execute(
+                select(func.count(), func.count().filter(page.usable.is_(False))).where(
+                    page.document_id.in_(in_scope)
+                )
+            )
+        ).one()
+        issues = [
+            IssueCount(kind=kind, severity=severity, count=count, documents=documents)
+            for kind, severity, count, documents in await session.execute(
+                select(
+                    issue.kind,
+                    issue.severity,
+                    func.count(),
+                    func.count(func.distinct(issue.document_id)),
+                )
+                .where(is_open)
+                .group_by(issue.kind, issue.severity)
+                .order_by(_blocking_first(), func.count().desc(), issue.kind)
+            )
+        ]
+        gated = await session.scalar(
+            select(func.count(func.distinct(issue.document_id))).where(
+                is_open, issue.detail["reason"].astext == "unusable_share"
+            )
+        )
+        chunks, unindexed, injection = (
+            await session.execute(
+                select(
+                    func.count(),
+                    func.count().filter(doc.Chunk.qdrant_point_id.is_(None), d.status == "ready"),
+                    func.count().filter(doc.Chunk.injection_suspected.is_(True)),
+                )
+                .join(d, d.id == doc.Chunk.document_id)
+                .where(doc.Chunk.document_id.in_(in_scope))
+            )
+        ).one()
+        replacing = aliased(doc.Document)
+        expired, superseded = (
+            await session.execute(
+                select(
+                    func.count().filter(d.effective_to < func.current_date()),
+                    func.count().filter(
+                        exists().where(
+                            replacing.supersedes_id == d.id,
+                            replacing.deleted_at.is_(None),
+                            replacing.id.in_(in_scope),
+                        )
+                    ),
+                ).where(d.id.in_(in_scope))
+            )
+        ).one()
+        per_issue = (
+            select(
+                issue.document_id.label("document_id"),
+                func.count().label("open_issues"),
+                func.count().filter(blocking).label("blocking_issues"),
+                func.array_agg(func.distinct(issue.kind)).label("kinds"),
+            )
+            .where(is_open)
+            .group_by(issue.document_id)
+            .subquery()
+        )
+        per_page = (
+            select(page.document_id.label("document_id"), func.count().label("unusable"))
+            .where(page.document_id.in_(in_scope), page.usable.is_(False))
+            .group_by(page.document_id)
+            .subquery()
+        )
+        open_n = func.coalesce(per_issue.c.open_issues, 0)
+        blocking_n = func.coalesce(per_issue.c.blocking_issues, 0)
+        unusable_n = func.coalesce(per_page.c.unusable, 0)
+        # Blocking first (they hold a document out of answers), then the most issues, then the
+        # most pages lost; a document with neither is healthy and not listed.
+        affected = await session.execute(
+            select(d, open_n, blocking_n, unusable_n, per_issue.c.kinds)
+            .outerjoin(per_issue, per_issue.c.document_id == d.id)
+            .outerjoin(per_page, per_page.c.document_id == d.id)
+            .where(d.id.in_(in_scope), or_(open_n > 0, unusable_n > 0))
+            .order_by(blocking_n.desc(), open_n.desc(), unusable_n.desc(), d.id)
+            .limit(HEALTH_MOST_AFFECTED)
+        )
+        most_affected = [
+            AffectedDocument(
+                id=row.id,
+                collection_id=row.collection_id,
+                file_name=row.file_name,
+                title=row.title,
+                status=row.status,
+                page_count=row.page_count,
+                pages_unusable=pages_lost,
+                open_issues=open_issues,
+                blocking_issues=blocking_issues,
+                kinds=sorted(kinds or []),
+            )
+            for row, open_issues, blocking_issues, pages_lost, kinds in affected
+        ]
+    return DocumentHealth(
+        documents=sum(s.count for s in by_status),
+        by_status=by_status,
+        pages_read=int(read or 0),
+        pages_unusable=int(unusable or 0),
+        open_issues=sum(i.count for i in issues),
+        blocking_issues=sum(i.count for i in issues if i.severity == "blocking"),
+        gated_documents=int(gated or 0),
+        chunks=int(chunks or 0),
+        chunks_unindexed=int(unindexed or 0),
+        chunks_injection_suspected=int(injection or 0),
+        expired_documents=int(expired or 0),
+        superseded_documents=int(superseded or 0),
+        issues=issues,
+        most_affected=most_affected,
     )
 
 

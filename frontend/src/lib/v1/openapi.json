@@ -1187,6 +1187,83 @@
     "title": "AdminUserDetail",
     "type": "object"
    },
+   "AffectedDocument": {
+    "properties": {
+     "blocking_issues": {
+      "title": "Blocking Issues",
+      "type": "integer"
+     },
+     "collection_id": {
+      "format": "uuid",
+      "title": "Collection Id",
+      "type": "string"
+     },
+     "file_name": {
+      "title": "File Name",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "kinds": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Kinds",
+      "type": "array"
+     },
+     "open_issues": {
+      "title": "Open Issues",
+      "type": "integer"
+     },
+     "page_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Page Count"
+     },
+     "pages_unusable": {
+      "title": "Pages Unusable",
+      "type": "integer"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "id",
+     "collection_id",
+     "file_name",
+     "title",
+     "status",
+     "page_count",
+     "pages_unusable",
+     "open_issues",
+     "blocking_issues",
+     "kinds"
+    ],
+    "title": "AffectedDocument",
+    "type": "object"
+   },
    "AgentCreate": {
     "properties": {
      "code": {
@@ -14586,6 +14663,94 @@
     "title": "DocumentDetail",
     "type": "object"
    },
+   "DocumentHealth": {
+    "description": "RG-09: the health of a Data Space's document corpus, read from quality_issue and the rows\npreprocessing wrote (DOCUMENT_INTELLIGENCE_SPEC §9). Counts only: no text, no personal data.",
+    "properties": {
+     "blocking_issues": {
+      "title": "Blocking Issues",
+      "type": "integer"
+     },
+     "by_status": {
+      "items": {
+       "$ref": "#/components/schemas/StatusCount"
+      },
+      "title": "By Status",
+      "type": "array"
+     },
+     "chunks": {
+      "title": "Chunks",
+      "type": "integer"
+     },
+     "chunks_injection_suspected": {
+      "title": "Chunks Injection Suspected",
+      "type": "integer"
+     },
+     "chunks_unindexed": {
+      "title": "Chunks Unindexed",
+      "type": "integer"
+     },
+     "documents": {
+      "title": "Documents",
+      "type": "integer"
+     },
+     "expired_documents": {
+      "title": "Expired Documents",
+      "type": "integer"
+     },
+     "gated_documents": {
+      "title": "Gated Documents",
+      "type": "integer"
+     },
+     "issues": {
+      "items": {
+       "$ref": "#/components/schemas/IssueCount"
+      },
+      "title": "Issues",
+      "type": "array"
+     },
+     "most_affected": {
+      "items": {
+       "$ref": "#/components/schemas/AffectedDocument"
+      },
+      "title": "Most Affected",
+      "type": "array"
+     },
+     "open_issues": {
+      "title": "Open Issues",
+      "type": "integer"
+     },
+     "pages_read": {
+      "title": "Pages Read",
+      "type": "integer"
+     },
+     "pages_unusable": {
+      "title": "Pages Unusable",
+      "type": "integer"
+     },
+     "superseded_documents": {
+      "title": "Superseded Documents",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "documents",
+     "by_status",
+     "pages_read",
+     "pages_unusable",
+     "open_issues",
+     "blocking_issues",
+     "gated_documents",
+     "chunks",
+     "chunks_unindexed",
+     "chunks_injection_suspected",
+     "expired_documents",
+     "superseded_documents",
+     "issues",
+     "most_affected"
+    ],
+    "title": "DocumentHealth",
+    "type": "object"
+   },
    "DocumentListItem": {
     "description": "A row of GET /v1/documents: the document with its current preprocessing step.",
     "properties": {
@@ -24212,6 +24377,35 @@
      "data_space_id"
     ],
     "title": "InvitationCreate",
+    "type": "object"
+   },
+   "IssueCount": {
+    "description": "Open issues of one kind and severity, and how many documents they touch.",
+    "properties": {
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "documents": {
+      "title": "Documents",
+      "type": "integer"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "severity": {
+      "title": "Severity",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "severity",
+     "count",
+     "documents"
+    ],
+    "title": "IssueCount",
     "type": "object"
    },
    "JobAccepted": {
@@ -43254,6 +43448,24 @@
      "roles"
     ],
     "title": "SpaceRoles",
+    "type": "object"
+   },
+   "StatusCount": {
+    "properties": {
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "count"
+    ],
+    "title": "StatusCount",
     "type": "object"
    },
    "Step": {
@@ -72902,6 +73114,157 @@
     ],
     "x-use-cases": [
      "UC-04-07"
+    ]
+   }
+  },
+  "/v1/document-health": {
+   "get": {
+    "description": "RG-09: the corpus of the Data Space in counts, from the rows preprocessing and the quality\nchecks wrote; no table of its own (DOCUMENT_INTELLIGENCE_SPEC §9). The listings cannot give\nthis: their pages carry no totals and the queue holds open issues only one page at a time.",
+    "operationId": "getDocumentHealth",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "collection_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Collection Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DocumentHealth"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Sức khoẻ kho tài liệu: tài liệu theo trạng thái, vấn đề mở theo loại và mức, trang không dùng được, tài liệu bị ảnh hưởng nhiều nhất (thêm 24/11/2026, DI-21)",
+    "tags": [
+     "Tài liệu"
+    ],
+    "x-capability": [
+     "admin_data"
+    ],
+    "x-use-cases": [
+     "UC-05-03"
     ]
    }
   },

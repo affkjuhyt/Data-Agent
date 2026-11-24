@@ -186,7 +186,7 @@ Cột: **Tuần** (bắt đầu), **Phụ thuộc** (đã hợp nhất), **Vai**
 | DI-18 | P1 | 12 | Ngưỡng truy hồi theo Data Space + follow-up rewrite | EV-10, AE-11 | AI | S | — | todo |
 | DI-19 | P1 | 14 | Diff phiên bản element/ô + gói ngôn ngữ thay thế | DI-09 | DE | M | — | todo |
 | DI-20 | P1 | 14 | `claim.metric_id` + link tài liệu ↔ metric | DI-09 | AI | S | câu "định nghĩa ở đâu" trả link | todo |
-| DI-21 | P1 | 15 | Màn sức khoẻ kho tài liệu (RG-09) | DI-13 | FE | S | — | todo |
+| DI-21 | P1 | 15 | Màn sức khoẻ kho tài liệu (RG-09) | DI-13 | FE | S | — | done 24/11: màn Dữ liệu › Tài liệu › "Sức khoẻ kho tài liệu" (`/data/doc_health`, `features/documents/CorpusHealthPage.tsx`, cần `admin_data`) đọc `GET /v1/document-health` (mới, chỉ đếm, theo Data Space, lọc `?collection_id`): tài liệu theo trạng thái, vấn đề mở theo (kind, severity) và số tài liệu, trang đã đọc / không dùng được, tài liệu bị cổng §9 giữ (`unusable_share`), đoạn chưa có vector / nghi chèn lệnh, tài liệu hết hiệu lực / bị thay thế, 10 tài liệu bị ảnh hưởng nhất mở trình xem; xử lý vấn đề ở Hàng chờ chất lượng. Không bảng mới. Test tích hợp + vitest |
 | DI-22 | P2 | — | RapidOCR v6 mặc định nếu thắng; fine-tune Tesseract | DI-05 | AI | M | — | todo |
 
 ### 3.6 Dataset & Evaluation (EV) — [DATASET_AND_EVALUATION.md](DATASET_AND_EVALUATION.md) §7
