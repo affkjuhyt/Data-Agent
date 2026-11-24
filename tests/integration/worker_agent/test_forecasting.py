@@ -833,3 +833,135 @@ async def test_a_submitted_version_opens_a_proposal_for_the_owner(
         )
     await drain()
     assert seed.one("SELECT count(*) FROM inbox.proposal WHERE target_ref = %s", version_id) == 1
+
+
+async def test_a_what_if_asked_in_ask_runs_as_the_studio_scenario_and_says_it_is_conditional(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 24/11: what-if was the studio's alone. forecast_metric now writes the studio's scenario and
+    # its event; a variable the model does not use is refused; the scenario's predictions are read
+    # with BR-173's sentence.
+    import types
+
+    from psycopg2.extras import Json
+
+    from services.worker_agent.agentic.tools import forecast as tool
+    from services.worker_agent.agentic.tools.base import ToolContext
+    from services.worker_agent.agentic.workspace import Workspace
+
+    shop = build(seed, warehouse, monkeypatch)
+    model = shop.models["DOANH_THU"]
+    version = seed.row(
+        "forecast.model_version",
+        org_id=shop.org,
+        model_id=model,
+        version=1,
+        algorithm="sarimax",
+        features=Json([{"name": "lai_suat", "future_assumption": "declared"}]),
+        training_from=dt.date(2020, 1, 1),
+        training_to=dt.date(2026, 9, 1),
+        n_points=72,
+        n_exog=1,
+        model_card=Json({"target": "doanh_thu"}),
+        created_by=shop.analyst,
+    )
+    backtest = seed.row(
+        "forecast.backtest_run",
+        org_id=shop.org,
+        model_version_id=version,
+        frequency="month",
+        cutoffs=[dt.date(2026, m, 1) for m in range(3, 9)],
+        horizon=3,
+        metrics=Json({"h1": {"mase": 0.8}}),
+        baseline_metrics=Json({"h1": {"mase": 1}}),
+        mase=decimal.Decimal("0.8"),
+        in_sample_mase=decimal.Decimal("0.7"),
+        started_at="2026-11-01T00:00:00Z",
+        finished_at="2026-11-01T01:00:00Z",
+    )
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE forecast.model_version SET status = 'pending_approval' WHERE id = %s",
+            (str(version),),
+        )
+        cur.execute(
+            "UPDATE forecast.model_version SET status = 'published', approved_by = %s,"
+            " approved_at = now(), backtest_id = %s WHERE id = %s",
+            (str(shop.owner), str(backtest), str(version)),
+        )
+        cur.execute(
+            "UPDATE forecast.forecast_model SET current_version_id = %s WHERE id = %s",
+            (str(version), str(model)),
+        )
+    monkeypatch.setattr(tool, "ETA", {k: dt.timedelta(seconds=0) for k in tool.ETA})
+    ctx = ToolContext(
+        org_id=shop.org,
+        space_id=shop.space,
+        user_id=shop.analyst,
+        question_id=uuid.uuid4(),
+        question="Nếu lãi suất tăng 0,5 điểm từ tháng 12 thì doanh thu ra sao?",
+        today=dt.date(2026, 11, 24),
+        as_of=None,
+        purpose=None,
+        layer=types.SimpleNamespace(),  # type: ignore[arg-type]
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ws=Workspace(),
+        step_id="s1",
+    )
+    what_if = [
+        tool.WhatIf(
+            feature="lai_suat", from_period=dt.date(2026, 12, 1), change_kind="add", value=0.5
+        )
+    ]
+
+    refused = await tool.ForecastMetric().run(
+        ctx,
+        tool.ForecastMetricArgs(
+            metric="DOANH_THU",
+            horizon=3,
+            what_if=[
+                tool.WhatIf(feature="ty_gia", from_period=dt.date(2026, 12, 1), change_kind="add")
+            ],
+        ),
+    )
+    assert not refused.ok and "không dùng ty_gia" in refused.observation
+
+    queued = await tool.ForecastMetric().run(
+        ctx,
+        tool.ForecastMetricArgs(
+            metric="DOANH_THU", horizon=3, scenario="Lãi suất +0,5", what_if=what_if
+        ),
+    )
+    assert not queued.ok and "chưa chạy xong" in queued.observation
+    scenario = uuid.UUID(queued.detail["scenario_id"])
+    assert (
+        seed.one(
+            "SELECT count(*) FROM forecast.outbox WHERE aggregate_id = %s"
+            " AND event_type = 'forecast.scenario.created'",
+            scenario,
+        )
+        == 1
+    )
+
+    for i, month in enumerate((dt.date(2026, 12, 1), dt.date(2027, 1, 1), dt.date(2027, 2, 1))):
+        seed.row(
+            "forecast.prediction",
+            org_id=shop.org,
+            model_version_id=version,
+            scenario_id=scenario,
+            cutoff_at="2026-11-20T00:00:00Z",
+            period=month,
+            point=100 + i,
+            lo80=90,
+            hi80=110 + i,
+            lo95=80,
+            hi95=120 + i,
+            interval_method="conformal",
+            exog_uncertainty="scenario_fixed",
+        )
+    read = await tool.ForecastMetric().run(
+        ctx, tool.ForecastMetricArgs(metric="DOANH_THU", horizon=3, scenario="lãi suất +0,5")
+    )
+    assert read.ok and "không phải ước lượng tác động nhân quả" in read.observation
+    (ds,) = (d for d in ctx.ws.datasets.values() if d.reading and d.reading.get("scenario_id"))
+    assert ds.trust == "exploratory" and len(ds.rows) == 3

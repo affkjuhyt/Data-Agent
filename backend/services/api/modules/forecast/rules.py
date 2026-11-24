@@ -14,6 +14,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from libs import forecast_release as release
 from libs.sql_guard import expression_columns
 
 TERMINAL_JOB = ("ready", "failed", "cancelled")
@@ -106,23 +107,8 @@ def labels(version_status: str | None, algorithm: str | None, experimental: bool
     return out
 
 
-def scenario_notice(assumptions: list[dict[str, Any]], metric_code: str) -> str:
-    """BR-173: the conditional-not-causal sentence, filled with the scenario's assumptions."""
-    parts = [
-        f"{a['feature']} {a['change_kind']}"
-        + (f" {a['value']}" if a.get("value") is not None else "")
-        + f" từ {a['from_period']}"
-        for a in assumptions
-    ]
-    what = ", ".join(parts)
-    features = ", ".join(sorted({str(a["feature"]) for a in assumptions}))
-    return (
-        "Kịch bản là phép tính có điều kiện, không phải ước lượng tác động nhân quả. "
-        f"Nếu {what} và các giả định khác giữ nguyên, mô hình cho kết quả dưới đây. "
-        "Mô hình học từ tương quan trong dữ liệu quá khứ, nên chênh lệch này không chứng minh "
-        f"{features} gây ra thay đổi của {metric_code}. "
-        "Khoảng của kịch bản không gồm độ bất định của giả định."
-    )
+# BR-173's sentence is shared with the agent's what-if (agentic/tools/forecast.py).
+scenario_notice = release.scenario_notice
 
 
 def feature_names(features: Any) -> set[str]:

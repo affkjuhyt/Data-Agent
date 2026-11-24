@@ -1918,10 +1918,14 @@ def _append_caveats(s: State) -> None:
             reading = ds.reading or {}
             algo = reading.get("algorithm") or "chưa rõ"
             cutoff = reading.get("cutoff_at") or "?"
-            items.append(
-                f"{ds.title}: dự báo thăm dò (mean + khoảng 80%/95%), không phải chỉ số chuẩn; "
-                f"mô hình {algo}; cắt dữ liệu tại {cutoff}."
-            )
+            if reading.get("scenario_notice"):
+                # A what-if: conditional, not causal (BR-173), in the studio's own words.
+                items.append(f"{ds.title}: {reading['scenario_notice']}")
+            else:
+                items.append(
+                    f"{ds.title}: dự báo thăm dò (mean + khoảng 80%/95%), không phải chỉ số "
+                    f"chuẩn; mô hình {algo}; cắt dữ liệu tại {cutoff}."
+                )
         elif ds.id in used and ds.trust != "certified":
             items.append(f"{ds.title}: {TRUST_LABEL[ds.trust]}.")
         if ds.id in used and ds.truncated:

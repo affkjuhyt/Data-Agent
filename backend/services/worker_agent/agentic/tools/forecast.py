@@ -1,8 +1,14 @@
 """forecast_metric: create or reuse a forecast job and land mean + intervals on the workspace.
 
 Does not HTTP-loopback to the API: same tables and outbox the forecast routes write, so ml-forecast
-picks the job up. What-if / studio stay on the Forecast screens; Ask only reads a result with
-confidence bands (exploratory trust — never certified semantic).
+picks the job up. Ask reads a result with confidence bands (exploratory trust, never certified).
+
+What-if in Ask (24/11/2026; it was the studio's alone): `scenario` names one saved on the model, or
+`what_if` states the assumptions ("nếu lãi suất tăng 0,5 điểm từ tháng 12"). A new scenario is the
+studio's own (POST /v1/forecast-models/{id}/scenarios): a forecast.scenario row and the
+forecast.scenario.created event, so ml-forecast reruns the serving version with those inputs fixed;
+only variables the model uses are accepted. Its predictions land like the base ones, with the
+conditional-not-causal sentence (BR-173, libs.forecast_release.scenario_notice) on the dataset.
 """
 
 from __future__ import annotations
@@ -46,6 +52,23 @@ class ForecastMetricArgs(BaseModel):
         default_factory=dict,
         description="phạm vi theo chiều (cùng shape với mô hình dự báo), có thể rỗng",
     )
+    scenario: str | None = Field(
+        default=None, description="tên một kịch bản what-if đã lưu của mô hình, hoặc null"
+    )
+    what_if: list[WhatIf] = Field(
+        default_factory=list,
+        description="giả định what-if mới (biến ngoại sinh mô hình dùng); rỗng là dự báo gốc",
+    )
+
+
+class WhatIf(BaseModel):
+    feature: str = Field(description="tên biến ngoại sinh của mô hình")
+    from_period: dt.date = Field(description="áp dụng từ kỳ (ngày đầu kỳ)")
+    change_kind: str = Field(description="cách đổi, như 'set', 'add', 'pct' theo studio")
+    value: float | None = None
+
+
+ForecastMetricArgs.model_rebuild()
 
 
 def _plain(value: Any) -> Any:
@@ -82,6 +105,8 @@ class ForecastMetric(Tool):
         if args.horizon < 1:
             return ToolResult(False, "horizon phải ≥ 1", failure="arguments")
 
+        if args.scenario or args.what_if:
+            return await _what_if(ctx, args, frequency)
         try:
             job, predictions, version = await _resolve(
                 ctx,
@@ -336,3 +361,151 @@ async def _base_predictions(session: Any, job_id: uuid.UUID) -> list[fc.Predicti
             )
         ).all()
     )
+
+
+async def _what_if(ctx: ToolContext, args: ForecastMetricArgs, frequency: str | None) -> ToolResult:
+    """A saved scenario by name, or a new one from the stated assumptions, on the released model."""
+    scope = dict(args.scope or {})
+    assumptions: list[dict[str, Any]] = [
+        {
+            "feature": a.feature,
+            "from_period": a.from_period.isoformat(),
+            "change_kind": a.change_kind,
+            "value": a.value,
+        }
+        for a in args.what_if
+    ]
+    async with scoped_session(ROLE, ctx.org_id, ctx.user_id) as session:
+        model = await _released_model(session, ctx, args.metric, frequency, scope)
+        if model is None and frequency is None:
+            model = await _any_released_model(session, ctx, args.metric, scope)
+        if model is None or model.current_version_id is None:
+            return ToolResult(
+                False,
+                f"không có mô hình dự báo đã phát hành cho chỉ số {args.metric}",
+                failure="unavailable",
+            )
+        serving = await session.get(fc.ModelVersion, model.current_version_id)
+        saved = list(
+            (
+                await session.scalars(select(fc.Scenario).where(fc.Scenario.model_id == model.id))
+            ).all()
+        )
+        if args.scenario and not assumptions:
+            wanted = args.scenario.strip().lower()
+            found = next((sc for sc in saved if sc.name.strip().lower() == wanted), None) or next(
+                (sc for sc in saved if wanted in sc.name.strip().lower()), None
+            )
+            if found is None:
+                names = ", ".join(sc.name for sc in saved) or "chưa có kịch bản nào"
+                return ToolResult(
+                    False,
+                    f"không thấy kịch bản '{args.scenario}'; các kịch bản đã lưu: {names}",
+                    failure="arguments",
+                )
+            scenario, assumptions = found, list(found.assumptions or [])
+        else:
+            features = {
+                f["name"]
+                for f in (serving.features if serving is not None else None) or []
+                if isinstance(f, dict) and isinstance(f.get("name"), str)
+            }
+            unknown = sorted({str(a["feature"]) for a in assumptions} - features)
+            if unknown:
+                # UC-15-05 E1, as the studio says it: a variable the model does not use.
+                return ToolResult(
+                    False,
+                    f"mô hình không dùng {', '.join(unknown)}; các biến dùng được: "
+                    f"{', '.join(sorted(features)) or 'không có'}",
+                    failure="arguments",
+                )
+            scenario = fc.Scenario(
+                id=uuid7(),
+                org_id=ctx.org_id,
+                model_id=model.id,
+                name=(args.scenario or f"Hỏi đáp: {args.metric}")[:200],
+                assumptions=assumptions,
+                created_by=ctx.user_id,
+            )
+            session.add(scenario)
+            release.emit(
+                session,
+                ctx.org_id,
+                "scenario",
+                scenario.id,
+                "forecast.scenario.created",
+                scenario_id=scenario.id,
+                model_id=model.id,
+                model_version_id=model.current_version_id,
+                data_space_id=model.data_space_id,
+            )
+            await session.flush()
+        scenario_id, version_id, freq = scenario.id, model.current_version_id, model.frequency
+    predictions = await _scenario_predictions(ctx, scenario_id, version_id, freq)
+    if not predictions:
+        return ToolResult(
+            False,
+            "kịch bản chưa chạy xong trong thời gian chờ; mở studio để theo dõi",
+            detail={"scenario_id": str(scenario_id)},
+            failure="unavailable",
+        )
+    notice = release.scenario_notice(assumptions, args.metric)
+    rows = [
+        [
+            p.period.isoformat(),
+            float(p.point),
+            float(p.lo80),
+            float(p.hi80),
+            float(p.lo95),
+            float(p.hi95),
+        ]
+        for p in predictions[: args.horizon]
+    ]
+    ds = ctx.ws.add(
+        title=f"Kịch bản {args.metric} ({freq}, {len(rows)} kỳ)",
+        columns=list(COLUMNS),
+        rows=rows,
+        trust="exploratory",
+        step_id=ctx.step_id,
+        tool="forecast_metric",
+        reading={
+            "metric": args.metric,
+            "scenario_id": str(scenario_id),
+            "assumptions": assumptions,
+            "scenario_notice": notice,
+            "frequency": freq,
+            "horizon": args.horizon,
+            "model_version_id": str(version_id),
+            "algorithm": None,
+        },
+    )
+    return ToolResult(
+        True,
+        f"{notice}\n{ds.preview()}",
+        [ds.id],
+        {"dataset": ds.id, "scenario_id": str(scenario_id), "row_count": len(rows)},
+    )
+
+
+async def _scenario_predictions(
+    ctx: ToolContext, scenario_id: uuid.UUID, version_id: uuid.UUID, frequency: str
+) -> list[fc.Prediction]:
+    """The scenario's predictions on the serving version, waited for as a job is."""
+    deadline = asyncio.get_event_loop().time() + ETA.get(frequency, ETA["month"]).total_seconds()
+    while True:
+        async with scoped_session(ROLE, ctx.org_id, ctx.user_id) as session:
+            found = list(
+                (
+                    await session.scalars(
+                        select(fc.Prediction)
+                        .where(
+                            fc.Prediction.scenario_id == scenario_id,
+                            fc.Prediction.model_version_id == version_id,
+                        )
+                        .order_by(fc.Prediction.period)
+                    )
+                ).all()
+            )
+        if found or asyncio.get_event_loop().time() >= deadline:
+            return found
+        await asyncio.sleep(POLL_SECONDS)
