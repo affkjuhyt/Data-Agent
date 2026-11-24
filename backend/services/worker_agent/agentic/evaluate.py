@@ -112,10 +112,18 @@ def _any_order(item: ev.EvalItem, answer: qa.Answer | None) -> bool | None:
         wanted = [expected["value"]]
     if wanted is None or answer is None:
         return None
-    got = sorted(eval_runs._values(answer.figures))
-    want = sorted(float(v) for v in wanted)
-    return len(got) == len(want) and all(
-        abs(a - e) <= abs(e) * eval_runs.RELATIVE_TOLERANCE for a, e in zip(got, want, strict=True)
+    return same_values(eval_runs._values(answer.figures), [float(v) for v in wanted])
+
+
+def same_values(
+    got: Sequence[float], want: Sequence[float], tolerance: float = eval_runs.RELATIVE_TOLERANCE
+) -> bool:
+    """The same numbers in any order, duplicates counted: as many, each within `tolerance` of its
+    partner once both are sorted. The golden tier's set_equality (model/eval/scorers/golden.py)
+    compares a breakdown this way too, so the two harnesses agree on what "same values" is."""
+    a, e = sorted(got), sorted(want)
+    return len(a) == len(e) and all(
+        abs(x - y) <= abs(y) * tolerance for x, y in zip(a, e, strict=True)
     )
 
 

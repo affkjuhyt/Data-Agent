@@ -8,6 +8,7 @@ edited or removed, and so a reviewer can argue with an individual line.
 Every case carries an `id` because the reports key on it — "sql-011 regressed"
 is a sentence someone can act on; "3 of 25 failed" is not.
 """
+
 from __future__ import annotations
 
 import json
@@ -54,6 +55,19 @@ def load_cases(name: str) -> list[dict[str, Any]]:
 
     if not cases:
         raise CorpusError(f"{path.name} is empty")
+    return cases
+
+
+def load_golden(dataset: str) -> list[dict[str, Any]]:
+    """Every golden case of a dataset (cases/golden/<dataset>/*.jsonl, EV-05), file by file in name
+    order; an id twice across its files is as fatal as twice in one."""
+    files = sorted((CASES_DIR / "golden" / dataset).glob("*.jsonl"))
+    if not files:
+        raise CorpusError(f"no golden cases for {dataset!r}")
+    cases = [c for f in files for c in load_cases(f"golden/{dataset}/{f.stem}")]
+    ids = [c["id"] for c in cases]
+    if len(set(ids)) != len(ids):
+        raise CorpusError(f"golden {dataset}: duplicate ids across files")
     return cases
 
 

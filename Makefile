@@ -116,7 +116,7 @@ frontend-test:  ## vitest
 # forbidden one (tools/licenses.json). Scans the images last built (make deploy-local builds
 # them), so rerun after a requirements change and commit THIRD-PARTY-NOTICES.md with it.
 LICENSE_IMAGES = api worker-agent worker-ingest worker-document crawler ml-forecast python-sandbox
-.PHONY: licenses tlc-reconcile tlc-cases tlc-documents
+.PHONY: licenses tlc-reconcile tlc-cases tlc-documents golden-eval
 
 licenses:  ## write THIRD-PARTY-NOTICES.md from the service images and the npm lock; fail on a forbidden licence
 	@out=$$(mktemp -d); trap 'rm -rf "$$out"' EXIT; \
@@ -442,6 +442,22 @@ tlc-documents:  ## upload the cached TLC data dictionaries to DS-TLC's documents
 		--collection tlc-dictionaries --name "Từ điển dữ liệu TLC" \
 		--purpose "Định nghĩa cột, mã và quy tắc của dữ liệu chuyến taxi vàng và xanh"
 # The copies stay in the api pod's /tmp, an emptyDir that goes with the pod.
+
+# EV-09: the golden cases of a dataset (model/eval/cases/golden/<GOLDEN_SET>/) asked through the
+# real POST /v1/questions on the cluster's NodePorts, as a person: EVAL_USER/EVAL_PASS (a password
+# grant on the frontend client) or EVAL_ACCESS_TOKEN, forwarded by name. Runs in the worker-agent
+# test image (the scorers import the worker's comparison and libs.language). Writes what asking
+# writes: a conversation, question and answer per case. GOLDEN_ARGS: --case ID (repeatable),
+# --limit N, --no-judge, --data-space CODE. The judge(...) cases need LITELLM_API_KEY.
+GOLDEN_SET ?= tlc
+GOLDEN_OUT ?= golden-report.json
+GOLDEN_FORWARD = $(foreach v,EVAL_USER EVAL_PASS EVAL_ACCESS_TOKEN LITELLM_API_KEY,$(if $($(v)),-e $(v)))
+golden-eval:  ## EV-09 golden tier: the golden cases through POST /v1/questions (EVAL_USER/EVAL_PASS; GOLDEN_SET, GOLDEN_ARGS)
+	@docker build -q --build-arg BASE=$(IMAGE_REGISTRY)/dataagent/worker-agent:latest --build-arg SUITE=worker_agent \
+	  -f tests/test-image.Dockerfile -t dataagent-test/worker_agent:latest . >/dev/null
+	@$(DOCKER_RUN_SUITE) --network host $(GOLDEN_FORWARD) -e LITELLM_BASE_URL=http://localhost:30500 \
+	  dataagent-test/worker_agent:latest python -m model.eval.run --tier golden --golden $(GOLDEN_SET) \
+	  --agent-url $(E2E_KONG_URL) --keycloak-url $(E2E_KEYCLOAK_URL) --out $(GOLDEN_OUT) $(GOLDEN_ARGS)
 
 agent-eval:  ## the dynamic agent on a Data Space's eval set (AGENT_EVAL_ORG, AGENT_EVAL_AS; AGENT_EVAL_ARGS)
 	@kubectl -n dataagent-service exec -i deploy/worker-agent -c worker-agent -- \

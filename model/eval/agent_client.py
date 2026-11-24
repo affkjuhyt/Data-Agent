@@ -136,3 +136,115 @@ async def ask(case: dict[str, Any], *, agent_url: str, agent_id: str, data_space
         analysis_type = "other"
 
     return await answer_with_contexts(case["question"], contexts, analysis_type)
+
+
+# ---------------------------------------------------------------- the golden tier (EV-09)
+
+_DONE = frozenset({"answered", "clarifying", "refused", "failed", "cancelled"})
+DATA_SPACE_HEADER = "X-Data-Space"
+
+
+class Login:
+    """The bearer token of the golden tier: EVAL_ACCESS_TOKEN as given, or a password grant for
+    EVAL_USER / EVAL_PASS on the realm's frontend client, taken again for every case so a run
+    longer than a token's life does not fail halfway."""
+
+    def __init__(self, keycloak_url: str) -> None:
+        self.keycloak_url = keycloak_url.rstrip("/")
+        self.token = os.environ.get("EVAL_ACCESS_TOKEN", "")
+        self.user = os.environ.get("EVAL_USER", "")
+        self._password = os.environ.get("EVAL_PASS", "")
+        if not self.token and not (self.user and self._password):
+            raise RuntimeError(
+                "the golden tier asks as a person: set EVAL_ACCESS_TOKEN, or EVAL_USER and EVAL_PASS"
+            )
+
+    async def bearer(self, client: httpx.AsyncClient) -> str:
+        if not self.user:
+            return self.token
+        r = await client.post(
+            f"{self.keycloak_url}/realms/aeroflow/protocol/openid-connect/token",
+            data={
+                "grant_type": "password",
+                "client_id": "aeroflow-frontend",
+                "username": self.user,
+                "password": self._password,
+            },
+        )
+        body = r.json()
+        if "access_token" not in body:
+            # The body names the error, never the password.
+            raise RuntimeError(f"login failed for {self.user}: {body.get('error_description')}")
+        return str(body["access_token"])
+
+
+async def _turn(
+    client: httpx.AsyncClient,
+    base: str,
+    headers: dict[str, str],
+    text: str,
+    conversation_id: str | None,
+    timeout_s: float,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {"text": text}
+    if conversation_id:
+        body["conversation_id"] = conversation_id
+    accepted = await client.post(f"{base}/v1/questions", json=body, headers=headers)
+    accepted.raise_for_status()
+    question_id = accepted.json()["question_id"]
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_s
+    while True:
+        view = await client.get(f"{base}/v1/questions/{question_id}", headers=headers)
+        view.raise_for_status()
+        state: dict[str, Any] = view.json()
+        if state["status"] in _DONE:
+            return state
+        if loop.time() >= deadline:
+            return {**state, "status": "timeout"}
+        await asyncio.sleep(1.0)
+
+
+async def ask_golden(
+    case: dict[str, Any],
+    *,
+    api_url: str,
+    data_space: str,
+    login: Login,
+    timeout_s: float = 300,
+) -> Any:
+    """One golden case through the public API, as a person asks it: each user turn of its history
+    first, in one conversation, then its question; the answer (AnswerView, AE-06's envelope) and
+    its receipt's id. The case's as_of is the snapshot's last day, not the question's: the data was
+    loaded after it, so a point-in-time ask on it would see nothing."""
+    from model.eval.scorers.golden import Asked
+
+    base = api_url.rstrip("/")
+    started = asyncio.get_running_loop().time()
+    async with httpx.AsyncClient(timeout=60) as client:
+        headers = {
+            "Authorization": f"Bearer {await login.bearer(client)}",
+            DATA_SPACE_HEADER: data_space,
+        }
+        conversation_id: str | None = None
+        for turn in case.get("history") or []:
+            if turn.get("role") != "user":
+                continue
+            state = await _turn(client, base, headers, turn["text"], conversation_id, timeout_s)
+            conversation_id = state["conversation_id"]
+        state = await _turn(client, base, headers, case["question"], conversation_id, timeout_s)
+        asked = Asked(
+            status=state["status"], question_id=state["id"], answer_id=state.get("answer_id")
+        )
+        if asked.answer_id:
+            answer = await client.get(f"{base}/v1/answers/{asked.answer_id}", headers=headers)
+            answer.raise_for_status()
+            asked.answer = answer.json()
+            receipt = await client.get(
+                f"{base}/v1/answers/{asked.answer_id}/receipt", headers=headers
+            )
+            # 404: an answer with no figure, or one outside the receipts' reach, has none.
+            if receipt.status_code == 200:
+                asked.receipt_id = str(receipt.json().get("id"))
+    asked.seconds = asyncio.get_running_loop().time() - started
+    return asked
