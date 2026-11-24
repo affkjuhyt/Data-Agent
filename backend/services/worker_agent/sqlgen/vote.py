@@ -1,7 +1,10 @@
 """The quality gate of the exploratory SQL path (01 §3.4): every candidate that passed its checks
 runs, results are grouped by what they return, and the share of the six candidates in the
-largest group is the confidence. Chốt 06/10/2026: ≥ 4/6 answers with the "Khám phá" label, 3/6
-answers asking to check it, ≤ 2/6 gives no number and asks back; all failed is a coded error.
+largest group is the confidence. 6/6 answers with the "Khám phá" label, 3/6 to 5/6 answers asking
+to check it, ≤ 2/6 gives no number and asks back; all failed is a coded error. Until 24/11 4/6
+answered without the check: measured on DS-AW (19/11, docs/v3/eval/2026-11-19-calibration-
+baseline.md) the winner was right 11 of 16 times at 6/6 and 0 of 9 at 4/6 and 5/6, so a 4/6 or 5/6
+answer now says it should be checked. No question asks back more for it: review answers too.
 
 Which group wins is counted by way of writing (AE-23, CONFIDENCE_SPEC §4): each way (skeleton,
 examples, divide) gives its weight, logit of its accuracy in the last ablation, to the groups its
@@ -24,7 +27,7 @@ from typing import Any, Literal
 from libs.calibration import method_vote
 
 CANDIDATES = 6
-ANSWER_AT = 4
+ANSWER_AT = 6
 REVIEW_AT = 3
 
 Decision = Literal["answer", "review", "ask", "failed"]

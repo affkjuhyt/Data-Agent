@@ -137,9 +137,9 @@ def test_the_report_measures_the_bars_in_the_code_today() -> None:
     )
     r = calibrate.report(turns, "sqlgen_vote")
     answer, review = r["current_bars"]
-    # 4/6 is stored as 0.6667 and still meets the 4/6 bar.
-    assert (answer["threshold"], answer["answered"], answer["errors"]) == (0.6667, 12, 1)
-    assert (review["threshold"], review["answered"], review["errors"]) == (0.5, 4, 2)
+    # The answer bar is 6/6 since 24/11; review takes 3/6 to 5/6 (4/6 stored as 0.6667).
+    assert (answer["threshold"], answer["answered"], answer["errors"]) == (1.0, 8, 0)
+    assert (review["threshold"], review["answered"], review["errors"]) == (0.5, 8, 3)
     assert r["turns"] == 20 and r["right"] == 13
     assert set(r["calibrated_out_of_fold"]) == {"ece", "ece_ci95", "brier", "aurc"}
     assert "map fitted on every turn" in calibrate._text(r)

@@ -114,7 +114,8 @@ def test_results_that_agree_up_to_order_and_rounding_have_one_signature() -> Non
 
 @pytest.mark.parametrize(
     ("agreeing", "decision"),
-    [(6, "answer"), (4, "answer"), (3, "review"), (2, "ask"), (0, "failed")],
+    # 6/6 answers; 3/6 to 5/6 answer asking to check (24/11: 0 of 9 right at 4/6 and 5/6).
+    [(6, "answer"), (5, "review"), (4, "review"), (3, "review"), (2, "ask"), (0, "failed")],
 )
 def test_the_vote_follows_the_design_thresholds(agreeing: int, decision: str) -> None:
     # Six candidates: `agreeing` give the same table, the others differ or fail.

@@ -74,10 +74,10 @@ async def test_a_variant_asks_only_for_its_own_way_twice() -> None:
 
 
 def test_a_variant_is_judged_on_its_share_of_the_vote() -> None:
-    # Two candidates that agree are as sure as six that do; the production bar is 4/6 and 3/6.
+    # Two candidates that agree are as sure as six that do; the production bar is 6/6 and 3/6.
     assert decision_of("ask", 1.0) == "answer"
     assert decision_of("ask", 0.5) == "review"
-    assert decision_of("answer", 4 / 6) == "answer" and decision_of("ask", 2 / 6) == "ask"
+    assert decision_of("answer", 4 / 6) == "review" and decision_of("ask", 2 / 6) == "ask"
     assert decision_of("failed", 0.0) == "failed"
 
 

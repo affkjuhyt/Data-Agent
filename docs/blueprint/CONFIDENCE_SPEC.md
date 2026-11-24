@@ -136,6 +136,11 @@ Rủi ro dữ liệu (đã biết): DS-AW chỉ có 61 item, và governed đúng
 đó map bị prior chi phối và `p_low` thấp. Đó là hành vi đúng: thiếu bằng chứng thì không nới ngưỡng. Fit thật cần 60 case
 TLC (EV-05) qua tier golden (EV-09).
 
+**Ngưỡng từ 24/11/2026:** `answer` khi 6/6, `review` khi 3/6 đến 5/6 (`sqlgen/vote.py` `ANSWER_AT = 6`). Trước đó
+4/6 đã là `answer`. Baseline 19/11 cho thấy nhóm thắng đúng 11/16 ở 6/6, nhưng 0/9 ở 4/6 và 5/6. `review` vẫn trả số,
+chỉ thêm câu "Nên kiểm lại trước khi dùng", nên người hỏi không bị hỏi lại thêm lần nào. Đây là bước tạm, chờ AE-24 đặt
+ngưỡng theo rủi ro chấp nhận được.
+
 ## 4. Vote theo cách viết (AE-23)
 
 Thay đếm ứng viên bằng đếm cách viết, có trọng số theo độ đúng riêng của từng cách:

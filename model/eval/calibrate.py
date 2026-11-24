@@ -10,7 +10,7 @@ Reads one report and scores one producer on it:
   code, 0.9 a synonym, 0.8 a model's reading), and it is right when the metric is the expected one.
 
 The report gives the raw score taken as a probability (is it one today?), the bars production
-uses now (4/6 and 3/6 of the vote, 0.8 of the reading) as coverage and error, and the calibrated
+uses now (6/6 and 3/6 of the vote, 0.8 of the reading) as coverage and error, and the calibrated
 map: out-of-fold ECE (with a bootstrap interval), Brier and AURC, the bars an accepted risk would
 set, and the map fitted on every turn. `--write PATH` also writes that map with its thresholds.
 
@@ -37,7 +37,7 @@ PRODUCERS = ("sqlgen_vote", "understanding")
 # The bars in the code today (sqlgen/vote.py ANSWER_AT, REVIEW_AT of CANDIDATES;
 # understand/resolver.py PROCEED_AT): what the baseline measures.
 CURRENT: dict[str, list[tuple[str, float]]] = {
-    "sqlgen_vote": [("answer", 4 / 6), ("review", 3 / 6)],
+    "sqlgen_vote": [("answer", 6 / 6), ("review", 3 / 6)],
     "understanding": [("proceed", 0.8)],
 }
 # Accepted risks, provisional (CONFIDENCE_SPEC §2.4): a misread metric is wrong in a way the

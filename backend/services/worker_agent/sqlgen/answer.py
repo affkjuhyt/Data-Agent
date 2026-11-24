@@ -3,8 +3,9 @@ text-to-SQL answer is EXPLORATORY). Hỏi đáp calls it after the rule pass and
 found no metric, before looking in the documents.
 
 The question is linked to the Data Space's tables; nothing linked, no model, or every candidate
-failing hands the question back (False). Otherwise the vote decides: ≥ 4/6 answers with the label
-"Khám phá", 3/6 answers asking to check it, ≤ 2/6 gives no number and asks a narrower question.
+failing hands the question back (False). Otherwise the vote decides (vote.py): 6/6 answers with the
+label "Khám phá", 3/6 to 5/6 answer asking to check it, ≤ 2/6 gives no number and asks a narrower
+question.
 The answer's numbers are figures of the winning query's rows, traced to its query_run like any
 other; the SQL and every candidate are in the plan.
 """
