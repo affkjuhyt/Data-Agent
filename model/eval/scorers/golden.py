@@ -44,7 +44,9 @@ from libs.language.causal import causal_sentences  # noqa: E402
 from services.worker_agent.agentic.evaluate import said_of, same_values  # noqa: E402
 
 # Only a case whose answer was checked against the snapshot is scored (§5.5); a draft is listed.
-SCORED_STATUSES = frozenset({"sql_run_on_snapshot", "human_verified"})
+# behaviour: a case that expects an action and evidence (what the answer must do and say), with
+# no figure to run against the snapshot: a question about the space, a trend, a listing.
+SCORED_STATUSES = frozenset({"sql_run_on_snapshot", "human_verified", "behaviour"})
 DEFAULT_TOLERANCE_PCT = 0.5
 _RUBRIC = re.compile(r"^(exact|set_equality|contains_all|numeric_tolerance|judge)(?:\((.*)\))?$")
 # The paths on which the agent answered rather than the governed one (AnswerTrust.path).
@@ -239,6 +241,11 @@ def evidence(expected: list[dict[str, Any]], answer: dict[str, Any]) -> tuple[in
                 for c in citations
                 for k in ("document_title", "doc_no", "file_name")
                 if c.get(k)
+            )
+        elif item.get("source") == "text":
+            # What the answer must say, folded: "Chỉ số đã chứng nhận" of an overview.
+            ok = bool(item.get("contains")) and norm(str(item["contains"])) in norm(
+                str(answer.get("text") or "")
             )
         elif item.get("source") == "query_run":
             ok = any(

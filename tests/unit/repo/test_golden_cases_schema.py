@@ -68,3 +68,24 @@ def test_the_loaded_yaml_is_the_one_the_cases_generate_and_the_loader_accepts() 
     assert len(loaded.cases) == 60
     counts = collections.Counter(c.expected_action for c in loaded.cases)
     assert counts["answer"] == 39
+
+
+def test_the_ds_aw_conversation_cases_are_well_formed_and_scored() -> None:
+    # The conversation of 24/11 (five turns) as golden cases of DS-AW, replayed with their history.
+    from model.eval import corpus
+    from model.eval.scorers import golden
+
+    aw = corpus.load_golden("aw")
+    assert [c["id"] for c in aw] == [f"AW-CV-00{n}" for n in range(1, 6)]
+    for n, case in enumerate(aw):
+        assert len(case["history"]) == 2 * n
+        assert case["verification_status"] in golden.SCORED_STATUSES
+        golden.rubric_of(case["rubric"])
+
+
+def test_a_text_evidence_is_what_the_answer_says() -> None:
+    from model.eval.scorers import golden
+
+    answer = {"text": "Chỉ số đã chứng nhận: Doanh thu.", "citations": [], "figures": []}
+    assert golden.evidence([{"source": "text", "contains": "chi so da chung nhan"}], answer)[0] == 1
+    assert golden.evidence([{"source": "text", "contains": "Lãi gộp"}], answer)[0] == 0

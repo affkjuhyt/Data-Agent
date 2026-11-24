@@ -79,7 +79,7 @@ async def run_online(agent_url: str, agent_id: str, data_space_id: str) -> dict[
 
 
 # A golden dataset's Data Space (DATASET_AND_EVALUATION §2.7, §3.5).
-GOLDEN_SPACES = {"tlc": "DS-TLC", "edgar": "DS-SEC"}
+GOLDEN_SPACES = {"tlc": "DS-TLC", "edgar": "DS-SEC", "aw": "DS-AW"}
 
 
 async def run_golden(
