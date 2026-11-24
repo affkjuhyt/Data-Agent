@@ -1165,6 +1165,11 @@ def _unnamed_quantity(s: State) -> list[str]:
     if not readings:
         return []
     by_code = {m.code: m for m in vocab.metrics}
+    # Only a metric's reading names a metric: a count over a collection's extracted rows (DI-17)
+    # or a document's cell carries none, and read as one it raised KeyError and lost the turn.
+    readings = [r for r in readings if r.get("metric")]
+    if not readings:
+        return []
     # Every reading's metric called by its name: the words left are how the question is said.
     if all(
         r["metric"] in by_code

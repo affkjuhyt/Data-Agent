@@ -1247,6 +1247,44 @@ def test_explore_sql_for_a_catalogued_quantity_is_not_an_unnamed_gate() -> None:
     assert engine._unnamed_quantity(state) == []
 
 
+def test_a_reading_without_a_metric_is_not_read_as_one() -> None:
+    # 25/11: a reading that names no metric raised KeyError in _unnamed_quantity and lost the turn.
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    revenue = MetricEntry(uuid.uuid4(), "DOANH_THU", "Doanh thu", True)
+    vocab = types.SimpleNamespace(
+        metrics=[revenue], synonyms={}, dimensions=[], values=[], calendar=clock.DEFAULT
+    )
+    ws = Workspace()
+    ws.add(
+        title="Số hợp đồng",
+        columns=["so_tai_lieu"],
+        rows=[[2]],
+        trust="document",
+        tool="count_documents",
+        reading={"collection": "hop-dong", "measure": "count"},
+    )
+    state = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+            ws=ws,
+            question="Có bao nhiêu hợp đồng phạt trên 5%",
+            today=datetime.date(2026, 11, 25),
+            layer=types.SimpleNamespace(vocabulary=vocab),
+        ),
+        plan=_plan({"id": "s1", "tool": "count_documents", "instruction": "x", "status": "done"}),
+    )
+    assert engine._unnamed_quantity(state) == []
+
+
 def test_caveats_carry_the_sql_vote_and_leave_out_a_failed_computation() -> None:
     import types
     import uuid
