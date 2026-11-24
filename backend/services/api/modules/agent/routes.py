@@ -80,6 +80,8 @@ from services.api.modules.agent.schemas import (
 from services.api.modules.org.public import open_agent_account
 
 router = APIRouter()
+# The trigger_ref of an Ask turn's run (worker_agent/turn_trace.py).
+QUESTION_TRIGGER = "question:"
 ROLE = "svc_agent"
 POLL_AFTER_MS = 1_000
 
@@ -1387,6 +1389,13 @@ async def _intervene(
     """UC-13-06 precondition (AC-13-06-07): only the agent's owner, the run's initiator or the
     Data Space steward steers a run; anyone else gets 403 and the run is untouched."""
     run = await _run(session, run_id, principal, data_space, lock=True)
+    # AE-18: an Ask turn's run is written while the turn runs; it is the question's (cancelled
+    # with POST /v1/questions/{id}:cancel), never paused, resumed or edited here, where a resume
+    # would hand the retired Ask agent to the run executor.
+    if (run.trigger_ref or "").startswith(QUESTION_TRIGGER):
+        raise Problem(
+            409, "invalid_state", "An Ask turn's run is steered from its question, not here."
+        )
     if run.initiated_by == principal.user_id:
         return run
     owner = await session.scalar(

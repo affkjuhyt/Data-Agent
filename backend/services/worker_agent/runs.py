@@ -546,7 +546,13 @@ class Run:
             if run is None:
                 return None
             owner = await session.get(agent.AgentDef, run.agent_id)
-            if owner is None:
+            # A retired agent runs nothing; an Ask turn's run (turn_trace, AE-18) is the
+            # question path's, written while it runs, never this executor's.
+            if (
+                owner is None
+                or owner.status == "retired"
+                or (run.trigger_ref or "").startswith("question:")
+            ):
                 return None
             self.principal = run.initiated_by or owner.account_user_id
             self.owner, self.agent_name = owner.owner_user_id, owner.name

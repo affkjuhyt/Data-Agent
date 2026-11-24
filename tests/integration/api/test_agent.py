@@ -534,6 +534,31 @@ async def test_deployment_lifecycle(world: AgentWorld, seed: Seed) -> None:
     ]
 
 
+@pytest.mark.req("AE-18")
+async def test_an_ask_turns_run_is_not_steered_from_the_runs_api(
+    world: AgentWorld, seed: Seed
+) -> None:
+    # AE-18 writes an Ask turn's run while it runs: its pause, resume, plan edit or retry here
+    # would hand the retired Ask agent to the run executor.
+    async with client(world) as api:
+        item = await new_agent(api, world, config={"goal": "g"})
+        run_id = await started_run(api, world, item["id"])
+        execute(
+            seed,
+            "UPDATE agent.agent_run SET status = 'running', started_at = now(),"
+            " trigger_ref = %s WHERE id = %s",
+            f"question:{uuid.uuid4()}",
+            run_id,
+        )
+        h = owner_headers(world)
+        for action in ("pause", "cancel", "retry"):
+            refused = await api.post(f"/v1/runs/{run_id}:{action}", headers=h)
+            assert refused.status_code == 409, (action, refused.text)
+            assert refused.json()["code"] == "invalid_state"
+        plan = await api.put(f"/v1/runs/{run_id}/plan", headers=h, json={"steps": [{"id": 1}]})
+        assert plan.status_code == 409, plan.text
+
+
 # Proves AC-13-06-02, AC-13-06-03, AC-13-06-07.
 async def test_run_control_state_machine(world: AgentWorld, seed: Seed) -> None:
     async with client(world) as api:
