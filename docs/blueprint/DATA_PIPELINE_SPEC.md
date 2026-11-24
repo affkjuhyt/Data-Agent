@@ -223,6 +223,16 @@ Trạng thái: `draft → active` (steward, If-Match), `active → broken` (tự
 `high` fail hai lượt liên tiếp), `broken → active` (steward xác nhận sau khi sửa). Contract là **tuỳ chọn** cho dataset
 `enabled`, **bắt buộc** cho dataset là member của data product `active` (`reviews.py:_still_at_the_bar` thêm điều kiện).
 
+**Đã làm (24/11/2026):**
+
+- `active → broken` tự động khi lần quét schema thấy một **thay đổi phá vỡ** trên bảng: mất cột, đổi kiểu, hoặc cột không
+  còn cho phép NULL (`schema_changes.break_contract`, gọi từ `schema_scans`). `broken_reason` ghi rõ cột nào và thay đổi
+  ra sao. Phiên bản hợp đồng tăng lên để mọi bản sửa dựa trên bản cũ phải đọc lại. Gate chất lượng đã chặn hợp đồng
+  `broken` sẵn.
+- Thêm cột không làm hỏng hợp đồng: thêm cột không làm hỏng ai đang đọc. Vì vậy điều kiện "`schema_hash` ≠ expected"
+  được hiểu là thay đổi phá vỡ, không phải mọi lần hash đổi.
+- Chưa làm: hỏng khi một luật `high` fail hai lượt liên tiếp.
+
 **Quality state** (`quality.py:293-331` giữ, mở rộng): `blocked` khi (luật `high` fail) **hoặc** (contract `broken`); `warning` khi
 luật `medium` fail hoặc freshness quá SLA; `ok`; `unknown`.
 

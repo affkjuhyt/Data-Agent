@@ -984,6 +984,9 @@ async def scan_schema(event: Event) -> None:
                                     }
                                 )
                             elif d.change == "breaking":
+                                await schema_changes.break_contract(
+                                    session, existing.id, d, now=now
+                                )
                                 breaking.append(
                                     schema_changes.Pending(
                                         dataset_id=existing.id,

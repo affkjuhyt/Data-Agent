@@ -373,8 +373,14 @@ async def test_a_moved_structure_is_versioned_when_additive_and_proposed_when_br
 
     await scan()
     loans = seed.one("SELECT id FROM catalog.dataset WHERE source_id = %s", source_id)
+    # An active data contract on the table (24/11): an added column keeps it, a retyped one
+    # breaks it at once.
+    contract = seed.row("catalog.dataset_contract", org_id=org, dataset_id=loans, status="active")
     sql("ALTER TABLE scan_uc0403.loans ADD COLUMN branch text")
     await scan()
+    assert (
+        seed.one("SELECT status FROM catalog.dataset_contract WHERE id = %s", contract) == "active"
+    )
     # AC-03: an added column is a new version at once, without a proposal.
     assert seed.one("SELECT current_version FROM catalog.dataset WHERE id = %s", loans) == 2
     assert (
@@ -408,6 +414,10 @@ async def test_a_moved_structure_is_versioned_when_additive_and_proposed_when_br
     await scan()
     # AC-07: a retyped column waits for a person, once, and nothing is written.
     assert seed.one("SELECT current_version FROM catalog.dataset WHERE id = %s", loans) == 2
+    status, reason = seed.one(
+        "SELECT status, broken_reason FROM catalog.dataset_contract WHERE id = %s", contract
+    )
+    assert status == "broken" and "đổi kiểu du_no" in reason
     proposal = seed.one(
         "SELECT id FROM inbox.proposal WHERE target_ref = %s AND kind = 'schema_change'"
         " AND status = 'pending_review'",

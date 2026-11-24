@@ -16,6 +16,11 @@ with the current dataset_version's. When it differs:
 
 ColumnMeta.dataset_version is the first version that has the column; the columns of a version are
 those with dataset_version <= it and removed_in_version null or above it (live_columns).
+
+A breaking change under an active data contract breaks the contract at once (break_contract,
+24/11/2026): the source no longer has what the contract promised, whatever a person later
+decides on the proposal, so the quality gate (quality_gate.py) stops answers on the table until
+the contract is fixed. An additive change keeps the contract: a column added breaks no reader.
 """
 
 from __future__ import annotations
@@ -527,4 +532,39 @@ async def apply(event: Event, proposal: dict[str, Any]) -> bool:
                 proposal["id"],
                 ",".join(broken),
             )
+    return True
+
+
+async def break_contract(
+    session: AsyncSession, dataset_id: uuid.UUID, d: Diff, *, now: datetime.datetime
+) -> bool:
+    """An active contract of the table to broken, saying what moved. True when one was."""
+    contract = await session.scalar(
+        select(catalog.DatasetContract)
+        .where(
+            catalog.DatasetContract.dataset_id == dataset_id,
+            catalog.DatasetContract.status == "active",
+        )
+        .with_for_update()
+    )
+    if contract is None:
+        return False
+    moved = [
+        *([f"mất cột {', '.join(d.removed)}"] if d.removed else []),
+        *(
+            [
+                "đổi kiểu "
+                + ", ".join(f"{r['name']} ({r['before']} → {r['after']})" for r in d.retyped)
+            ]
+            if d.retyped
+            else []
+        ),
+        *([f"cột không còn cho phép NULL: {', '.join(d.not_null_now)}"] if d.not_null_now else []),
+    ]
+    contract.status = "broken"
+    contract.broken_reason = "Schema nguồn lệch hợp đồng: " + "; ".join(moved)
+    # Optimistic lock: an edit made against the active contract must read it again.
+    contract.version = int(contract.version or 0) + 1
+    contract.updated_at = now
+    logger.info("dataset %s: contract broken by a schema change (%s)", dataset_id, moved)
     return True
