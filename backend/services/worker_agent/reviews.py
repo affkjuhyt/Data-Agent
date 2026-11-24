@@ -30,6 +30,7 @@ from libs.dataagent_db.models import catalog, conflict, context, document
 from libs.dataagent_db.models import eval as ev
 from libs.dataagent_db.models import pipeline as pl
 from services.worker_agent import evaluation, prep, quality_gate, self_approval
+from services.worker_agent.documents import extracted_dataset
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
@@ -388,6 +389,15 @@ async def _apply(event: Event, proposal: dict[str, Any]) -> bool:
                 old.effective_to = doc_row.effective_from - datetime.timedelta(days=1)
                 old.updated_by, old.updated_at = reviewer, now
         doc_row.updated_by, doc_row.updated_at = reviewer, now
+        # DI-17: a replaced or expired document's row leaves the extracted dataset.
+        session.add(
+            extracted_dataset.outbox(
+                doc_row.org_id,
+                doc_row.id,
+                doc_row.collection_id,
+                extracted_dataset.LOAD_REQUESTED,
+            )
+        )
         return True
 
 

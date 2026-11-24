@@ -1932,7 +1932,9 @@ async def _chart_said(s: State, block: dict[str, Any]) -> dict[str, Any] | None:
     return said
 
 
-FETCHING = frozenset({"query_metric", "explore_sql", "search_documents", "forecast_metric"})
+FETCHING = frozenset(
+    {"query_metric", "explore_sql", "search_documents", "forecast_metric", "count_documents"}
+)
 
 
 def _append_caveats(s: State) -> None:
@@ -1972,6 +1974,8 @@ def _append_caveats(s: State) -> None:
                 )
         elif ds.id in used and ds.trust != "certified":
             items.append(f"{ds.title}: {TRUST_LABEL[ds.trust]}.")
+        if ds.id in used and ds.coverage:
+            items.append(f"{ds.title}: {ds.coverage}")
         if ds.id in used and ds.truncated:
             items.append(f"{ds.title}: kết quả bị cắt bớt, chỉ hiển thị một phần.")
     items += s.signals.caveats

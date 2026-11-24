@@ -84,13 +84,14 @@ NUMBERS = Specialist(
 DOCUMENTS = Specialist(
     name="documents",
     title="Chuyên gia tài liệu",
-    tool_names=frozenset({"search_documents"}),
+    tool_names=frozenset({"search_documents", "count_documents"}),
     when_to_use=(
         "câu hỏi cần dẫn nguồn công văn / ghi chú / chính sách; "
         "hoặc nhánh văn bản của câu hybrid (song song với numbers)"
     ),
     system=(
-        "Bạn là chuyên gia tài liệu trong Data Space. Chỉ dùng search_documents. "
+        "Bạn là chuyên gia tài liệu trong Data Space. Chỉ dùng search_documents, và "
+        "count_documents khi câu hỏi đếm hay cộng trên toàn bộ tài liệu của một bộ sưu tập. "
         "Không truy vấn số liệu. Khi đủ đoạn trích để dẫn nguồn, done=true và summary liệt kê "
         "các cite [n] và ý chính (không bịa nội dung ngoài đoạn đã tìm)."
     ),

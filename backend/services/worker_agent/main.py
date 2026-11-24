@@ -71,7 +71,7 @@ from services.worker_agent import (
     writeback_diffs,
 )
 from services.worker_agent.channels import gateway as channels
-from services.worker_agent.documents import extraction, indexed
+from services.worker_agent.documents import extracted_dataset, extraction, indexed
 from services.worker_agent.documents import sync as document_sync
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 from services.worker_agent.providers.registry import ProviderRegistry
@@ -172,6 +172,7 @@ HANDLERS: dict[str, Handler] = {
     **forecasting.HANDLERS,
     **indexed.HANDLERS,
     **extraction.HANDLERS,
+    **extracted_dataset.HANDLERS,
     **document_sync.HANDLERS,
     **product_use.HANDLERS,
     **monitor_backtests.HANDLERS,
@@ -252,6 +253,9 @@ async def sources() -> list[EventSource]:
             types |= set(indexed.HANDLERS)
             # A schema's test on sample documents (documents/extraction.py, BR-110).
             types |= set(extraction.HANDLERS)
+            # DI-17: an activated schema run over its collection, a document that left or a fixed
+            # value reloads the collection's extracted dataset (documents/extracted_dataset.py).
+            types |= set(extracted_dataset.HANDLERS)
             # A document source's sync (documents/sync.py, UC-05-01 1a): object stores only.
             types |= set(document_sync.HANDLERS)
         if schema == "agent":

@@ -11,6 +11,12 @@ decision (AC-05-06-05), not this record's.
 One record per document and schema version: a document already extracted with that version is
 not read again (AC-05-06-02, an older version's records stay as they are).
 
+DI-17: each span is pinned to the element of its passage that holds the quote (element id, page,
+box, the reader's extractor_version), so a row of the extracted dataset cites where its value is.
+A checked value that does not read as its field's type ("05 tháng 3" for a date) is a
+field_mismatch issue, and a required one sends the record to review: the dataset holds it as NULL
+(documents/extracted_dataset.py), never a guess.
+
 A schema under test (extraction_schema.test_requested) is read the same way over sample documents,
 keeping no record: only each field's share of checked values, its sample_accuracy (BR-110).
 """
@@ -21,7 +27,7 @@ import json
 import logging
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel
@@ -29,8 +35,10 @@ from sqlalchemy import func, select, update
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import document
+from libs.tabular import profile as ingest_profile
 from services.worker_agent.documents.answer import QUOTE_MATCH, quote_match
 from services.worker_agent.documents.claims import MAX_PASSAGE_CHARS, MAX_PASSAGES
+from services.worker_agent.documents.extracted_dataset import invalid_fields
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.llm import Gateway, ModelUnavailable
 
@@ -145,6 +153,7 @@ class Reading:
     status: str
     # The schema's required fields: a missing one is as unsure as an unchecked value (DI-13).
     required: frozenset[str] = frozenset()
+    fields: list[dict[str, Any]] = field(default_factory=list)
 
 
 # §9: a field read below this confidence (an unchecked quote is 0.5) is a low_confidence_field
@@ -161,6 +170,35 @@ def doubtful(reading: Reading) -> list[str]:
         if conf < LOW_CONFIDENCE
         and (reading.values.get(name) is not None or name in reading.required)
     ]
+
+
+def pin(
+    spans: list[dict[str, Any]],
+    passages: list[document.Chunk],
+    elements: dict[uuid.UUID, document.Element],
+) -> list[dict[str, Any]]:
+    """Each span with the element of its passage that holds its quote: element_id, its page and
+    box, and the extractor_version of the reader that made it. A span whose quote no element holds
+    (or a personal-data field's, whose quote is not kept) stays on its passage."""
+    by_chunk = {str(p.id): p for p in passages}
+    out = []
+    for span in spans:
+        chunk = by_chunk.get(str(span.get("chunk_id")))
+        own = [elements[e] for e in (chunk.element_ids or []) if e in elements] if chunk else []
+        pinned = dict(span)
+        if own:
+            pinned["extractor_version"] = own[0].extractor_version
+        quote = str(span.get("quote") or "")
+        best = max(own, key=lambda e: quote_match(quote, e.text or "")) if quote and own else None
+        if best is not None and quote_match(quote, best.text or "") >= QUOTE_MATCH:
+            pinned.update(
+                element_id=str(best.id),
+                page_from=best.page_no if best.page_no is not None else span.get("page_from"),
+                bbox=best.bbox,
+                extractor_version=best.extractor_version,
+            )
+        out.append(pinned)
+    return out
 
 
 async def read(
@@ -220,6 +258,19 @@ async def read(
             ).all()
         )
         fields = list(schema.fields or [])
+        element_ids = {e for p in passages for e in (p.element_ids or [])}
+        elements = (
+            {
+                e.id: e
+                for e in (
+                    await session.scalars(
+                        select(document.Element).where(document.Element.id.in_(element_ids))
+                    )
+                ).all()
+            }
+            if element_ids
+            else {}
+        )
     if not passages or not fields:
         return None
     try:
@@ -233,7 +284,8 @@ async def read(
         return None
     values, confidence, spans, status = record(fields, reply.content, passages)
     required = frozenset(f["name"] for f in fields if f.get("required"))
-    return Reading(doc.id, schema.id, values, confidence, spans, status, required)
+    spans = pin(spans, passages, elements)
+    return Reading(doc.id, schema.id, values, confidence, spans, status, required, fields)
 
 
 async def extract_document(
@@ -245,6 +297,28 @@ async def extract_document(
         return None
     record_id = uuid7()
     async with scoped_session(ROLE, org_id) as session:
+        collection = await session.scalar(
+            select(document.Collection)
+            .join(document.Document, document.Document.collection_id == document.Collection.id)
+            .where(document.Document.id == reading.document_id)
+        )
+        profile = await ingest_profile.load(
+            session,
+            collection.data_space_id if collection is not None else None,
+            collection.ingest_profile
+            if collection is not None and isinstance(collection.ingest_profile, dict)
+            else None,
+        )
+        unsure = set(doubtful(reading))
+        # A value its quote holds that is not of its field's type: the deterministic check
+        # decides, the model's reading does not reach the dataset (DI-17).
+        mistyped = [
+            name
+            for name in invalid_fields(reading.fields, reading.values, profile)
+            if name not in unsure
+        ]
+        if any(name in reading.required for name in mistyped):
+            reading.status = "needs_review"
         session.add(
             document.ExtractedRecord(
                 id=record_id,
@@ -273,6 +347,24 @@ async def extract_document(
                         "field": name,
                         "confidence": reading.confidence.get(name),
                         "missing": reading.values.get(name) is None,
+                    },
+                )
+            )
+        types = {str(f["name"]): f.get("type") for f in reading.fields}
+        for name in mistyped:
+            session.add(
+                document.QualityIssue(
+                    id=uuid7(),
+                    org_id=org_id,
+                    document_id=reading.document_id,
+                    extracted_record_id=record_id,
+                    kind="field_mismatch",
+                    severity="warning",
+                    detail={
+                        "field": name,
+                        "expected_type": types.get(name),
+                        "value": str(reading.values.get(name))[:200],
+                        "reason": "not_of_type",
                     },
                 )
             )

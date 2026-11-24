@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs import clock
 from libs.dataagent_db.models import catalog, context, governance
+from services.worker_agent.documents import extracted_dataset
 from services.worker_agent.sqlgen.schema import Col, Definition, Fk, Schema, Tbl, readable
 from services.worker_agent.sqlgen.verified import bind
 from services.worker_agent.understand.text import find_period, norm
@@ -32,11 +33,18 @@ class Space:
     source_of: dict[uuid.UUID, uuid.UUID | None] = field(default_factory=dict)
 
 
-async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: uuid.UUID) -> Space:
+async def load_space(
+    session: AsyncSession,
+    space_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    *,
+    purpose: str | None = None,
+) -> Space:
     """Only what the asker may read is shown to the model: the rules query/scope.datasets_read
     applies when a query runs (no one else's personal table, BR-111; none an active access policy
     covers, BR-45) hold for the prompt too, so a table's names and values never reach the model
-    when its rows could not."""
+    when its rows could not. A table extracted from documents (DI-17) is read as its collection
+    is: not once the collection or its schema is gone, nor by a question of another purpose."""
     today = clock.today(await clock.space_zone(session, space_id))
     cal = await clock.space_calendar(session, space_id)
     covered = select(governance.AccessPolicy.dataset_id).where(
@@ -52,6 +60,9 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: u
                     catalog.Dataset.scope != "personal", catalog.Dataset.created_by == principal_id
                 ),
                 catalog.Dataset.id.not_in(covered),
+                catalog.Dataset.id.not_in(
+                    await extracted_dataset.hidden(session, space_id, purpose) or [uuid.UUID(int=0)]
+                ),
             )
         )
     ).all()

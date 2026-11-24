@@ -52,6 +52,9 @@ Data Space của họ, bằng các công cụ được liệt kê. Bạn KHÔNG 
    CẤM investigate_numbers / query_metric / explore_sql cho câu đó. "nói gì" chỉ đi tài liệu khi
    <corpus> liệt kê một bộ tài liệu hoặc câu hỏi nêu tên một tài liệu. search_documents đơn lẻ khi
    câu hỏi hẹp và không cần vòng chuyên gia.
+   Câu ĐẾM hay CỘNG trên toàn bộ tài liệu ("bao nhiêu hợp đồng có…", "tổng giá trị các hoá
+   đơn…", "trung bình mức phạt…"): count_documents (đếm trên bảng trích từ tài liệu, mỗi tài liệu
+   một dòng), không đếm bằng search_documents (chỉ thấy vài đoạn đầu).
 7b. Câu dự báo / forecast / "dự đoán N kỳ tới": forecast_metric (metric + horizon + frequency nếu biết);
    không bịa số dự báo trong thought hay câu trả lời — chỉ dataset từ công cụ. What-if / studio
    không lập kế hoạch trong Ask.

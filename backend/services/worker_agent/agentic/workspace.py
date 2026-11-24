@@ -92,6 +92,9 @@ class Dataset:
     # labels, the table's caption, the document and its citation. Kept apart from `reading`,
     # which is a metric's, for the reconciliation with the data (documents/reconcile.py).
     cell: dict[str, Any] | None = None
+    # DI-17: a count over a collection's extracted rows says what it stands on (documents in
+    # force, counted, waiting for review, not read); the answer's caveats always carry it.
+    coverage: str | None = None
 
     def records(self, limit: int | None = None) -> list[dict[str, Any]]:
         rows = self.rows if limit is None else self.rows[:limit]

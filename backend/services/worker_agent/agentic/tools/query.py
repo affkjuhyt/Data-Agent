@@ -960,7 +960,7 @@ class ExploreSql(Tool):
 
     async def run(self, ctx: ToolContext, args: ExploreSqlArgs) -> ToolResult:  # type: ignore[override]
         async with scoped_session(ROLE, ctx.org_id, ctx.user_id) as session:
-            space = await load_space(session, ctx.space_id, ctx.user_id)
+            space = await load_space(session, ctx.space_id, ctx.user_id, purpose=ctx.purpose)
             linked = link(args.question, space.schema)
             if not linked.tables:
                 return ToolResult(False, "không tìm thấy bảng nào liên quan tới câu hỏi")

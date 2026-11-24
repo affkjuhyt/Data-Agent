@@ -193,7 +193,7 @@ async def answer_by_sql(
         conversation = await session.get(qa.Conversation, question.conversation_id)
         assert conversation is not None
         space_id, text = conversation.data_space_id, question.text
-        space = await load_space(session, space_id, user_id)
+        space = await load_space(session, space_id, user_id, purpose=question.purpose)
         linked = link(text, space.schema)
         # The catalogue's hold on the statement (AE-07): a metric the question names, its values
         # and its period. Read here because the governed path tries SQL only after its own reading.

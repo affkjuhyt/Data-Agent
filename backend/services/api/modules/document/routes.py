@@ -994,6 +994,18 @@ async def delete_document(
         now = datetime.datetime.now(datetime.UTC)
         row.status, row.deleted_at = "removed", now
         row.updated_by, row.updated_at = principal.user_id, now
+        # DI-17: its row leaves the collection's extracted dataset (worker-agent reloads it).
+        session.add(
+            _event(
+                principal,
+                "document",
+                row.id,
+                "document.removed",
+                document_id=row.id,
+                collection_id=row.collection_id,
+                data_space_id=data_space,
+            )
+        )
     return Response(status_code=204)
 
 
@@ -1591,6 +1603,17 @@ async def _apply_resolution(
         record.values = values
         record.status = "confirmed"
         record.updated_by, record.updated_at = principal.user_id, now
+        # DI-17: the fixed value reaches the collection's extracted dataset.
+        session.add(
+            _event(
+                principal,
+                "document",
+                row.document_id,
+                "extracted_dataset.load_requested",
+                document_id=row.document_id,
+                extracted_record_id=record.id,
+            )
+        )
 
 
 async def _issue_page(session: AsyncSession, row: doc.QualityIssue) -> doc.DocumentPage:

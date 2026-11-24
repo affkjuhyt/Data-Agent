@@ -40,11 +40,13 @@ from aiohttp.abc import AbstractResolver, ResolveResult
 from aiohttp.resolver import DefaultResolver
 from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs import document_intake
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import document as doc
 from services.worker_agent import questions
+from services.worker_agent.documents import extracted_dataset
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.secrets import Credentials, SecretUnavailable
 
@@ -480,11 +482,17 @@ async def _changes(org_id: uuid.UUID, source: _Source) -> tuple[list[_Fetched], 
     return fresh, seen if complete else None
 
 
-def _remove(row: doc.Document, now: datetime.datetime, actor: uuid.UUID | None) -> None:
+def _remove(
+    session: AsyncSession, row: doc.Document, now: datetime.datetime, actor: uuid.UUID | None
+) -> None:
     row.status = "removed"
     row.deleted_at = now
     row.updated_at = now
     row.updated_by = actor
+    # DI-17: its row leaves the collection's extracted dataset, as for a delete in the api.
+    session.add(
+        extracted_dataset.outbox(row.org_id, row.id, row.collection_id, extracted_dataset.REMOVED)
+    )
 
 
 async def _apply(
@@ -564,12 +572,12 @@ async def _apply(
             added += 1
             replaced = current.pop(f.name, None)
             if replaced is not None:
-                _remove(replaced, now, actor)
+                _remove(session, replaced, now, actor)
                 removed += 1
         if seen is not None:
             for name, gone in current.items():
                 if name not in seen:
-                    _remove(gone, now, actor)
+                    _remove(session, gone, now, actor)
                     removed += 1
         row.last_synced_at = now
         row.status = "active"

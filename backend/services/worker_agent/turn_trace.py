@@ -86,6 +86,7 @@ ACTIONS: dict[str, tuple[str, str]] = {
     "search_values": ("tool_call", "Tìm giá trị"),
     "query_metric": ("query", "Truy vấn chỉ số"),
     "explore_sql": ("tool_call", "Viết SQL thăm dò"),
+    "count_documents": ("query", "Đếm trên dữ liệu trích từ tài liệu"),
     "run_python": ("tool_call", "Phân tích bằng Python"),
     "explain_change": ("tool_call", "Tìm nguyên nhân biến động"),
 }

@@ -318,7 +318,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-56 | UC-04-06, UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +4 |
 | BR-57 | UC-04-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/ingest.py` +3 |
 | BR-58 | UC-04-08 | todo | `backend/services/api/modules/ingest/routes.py` |
-| BR-59 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/libs/dataagent_db/models/qa.py` +8 |
+| BR-59 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/libs/dataagent_db/models/qa.py` +9 |
 | BR-60 | UC-06-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-61 | UC-07-07 | todo |  |
 | BR-62 | UC-07-07 | todo | `backend/services/api/modules/inbox/public.py`, `backend/services/api/modules/inbox/routes.py`, `tests/integration/api/test_inbox_eval.py` |
@@ -1064,12 +1064,12 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-05-06-01 | Chính | Cho bộ sưu tập Hợp đồng tín dụng và 20 tệp mẫu / Khi AC04 chỉnh lược đồ agent đề xuất, gán giá trị đúng, chạy thử và kích hoạt / Thì collection active, extraction_schema active, bảng đích đăng ký catalog và tệp sau có… | E2E, CSDL | todo | `tests/integration/api/test_document.py` |
+| AC-05-06-01 | Chính | Cho bộ sưu tập Hợp đồng tín dụng và 20 tệp mẫu / Khi AC04 chỉnh lược đồ agent đề xuất, gán giá trị đúng, chạy thử và kích hoạt / Thì collection active, extraction_schema active, bảng đích đăng ký catalog và tệp sau có… | E2E, CSDL | todo | `tests/integration/api/test_document.py`, `tests/integration/worker_agent/test_extracted_dataset.py` |
 | AC-05-06-02 | Thay thế | Cho lược đồ đã chạy / Khi tạo phiên bản mới / Thì bản ghi cũ giữ schema_version cũ và chỉ chạy lại tệp cũ khi có yêu cầu | CSDL | todo | `tests/integration/api/test_document.py` |
 | AC-05-06-03 | Ngoại lệ | Cho trường số tiền vay lệch 50 triệu đồng so với Core banking / Khi trích xuất / Thì bản ghi vào Hàng đợi xem lại với quality_issue open | CSDL | todo |  |
 | AC-05-06-04 | Quy tắc | Cho trường bắt buộc đạt 94% trên mẫu / Khi gọi :activate / Thì bị từ chối; mọi trường bắt buộc ≥ 95% thì kích hoạt được | API | todo | `tests/integration/api/test_document.py` |
 | AC-05-06-05 | Quy tắc | Cho trường số CCCD trong bảng đích / Khi AC01 không có quyền xem chi tiết truy vấn bảng / Thì giá trị bị che; người có quyền xem chi tiết thấy giá trị | API | todo |  |
-| AC-05-06-06 | Quy tắc | Cho bộ sưu tập mục đích “thẩm định tín dụng” / Khi một lượt agent có mục đích “marketing” truy hồi / Thì không có đoạn nào của bộ sưu tập đó trong kết quả | API | todo | `tests/integration/api/test_document.py`, `tests/integration/worker_agent/test_document_answers.py` |
+| AC-05-06-06 | Quy tắc | Cho bộ sưu tập mục đích “thẩm định tín dụng” / Khi một lượt agent có mục đích “marketing” truy hồi / Thì không có đoạn nào của bộ sưu tập đó trong kết quả | API | todo | `tests/integration/api/test_document.py`, `tests/integration/worker_agent/test_document_answers.py` +1 |
 
 </details>
 

@@ -497,6 +497,41 @@ tiếng Việt (`validity.py:24-28`); không diff phiên bản; RG-08 chưa có.
    thêm quy tắc "cùng `doc_no` gốc + kỳ trùng + không có câu thay thế" → đề xuất `validity_proposed` mức "nghi ngờ" để
    người quyết.
 
+**Đã làm (DI-17, 25/11/2026):** mục 1–3 ở trên, không migration (cột `target_dataset_id`, `loaded_at` đã có).
+
+- **Nguồn và kiểm:** mô hình vẫn đọc chunk (đã che PII, bỏ đoạn nghi chèn lệnh, đoạn cắt `MAX_PASSAGE_CHARS`) và chỉ đề
+  xuất giá trị + câu trích; mỗi span được ghim vào element của đoạn chứa câu trích (`element_id`, trang, `bbox`,
+  `extractor_version`). Kiểm kiểu tất định `extracted_dataset.typed`: số theo dấu thập phân của bộ sưu tập/Data Space
+  (`libs.tabular`, `%` và đơn vị tiền ở cuối được bỏ), ngày dmy/mdy, boolean; giá trị có câu trích nhưng sai kiểu
+  ("mồng năm tháng sáu") → issue `field_mismatch`, trường bắt buộc → `needs_review`; trong bảng là NULL, không đoán.
+- **Nạp** (`worker_agent/documents/extracted_dataset.py`): bảng `workspace.trich_<mã bộ sưu tập>_<8 hex>`, dataset
+  `origin=derived`, `scope=data_space`, tạo ở lần nạp đầu khi lược đồ chưa có `target_dataset_id` (đích là bảng loại
+  khác — nguồn, upload — thì không ghi). Một dòng mỗi tài liệu `ready`, chưa xoá, đang hiệu lực, không bị tài liệu
+  `ready` nào thay thế; lấy bản ghi mới nhất của lược đồ `active`, bỏ bản ghi `needs_review`. Giá trị chỉ vào khi đã kiểm
+  câu trích (≥ 0,8) hoặc người đã sửa (`value_fixed`). Cột nguồn gốc: `document_id`, `doc_no`, `document_title`,
+  `record_id`, `schema_version`, `extractor_version`, `confidence`, `source_spans` (trang, đoạn, element, khung, câu
+  trích), `effective_from/to`. Trường PII ở dạng đã che, cột `pii_label=other` nên đường SQL không đưa cho mô hình.
+- **Idempotent:** không đổi → không ghi; chỉ thêm/sửa → upsert vào phiên bản hiện tại theo `document_id` (không mỗi
+  tài liệu một phiên bản); có dòng rời đi (xoá, thay thế, hết hiệu lực, về review) hoặc đổi lược đồ → phiên bản mới
+  (F-01, `created_by_kind=derive`), cột lược đồ bỏ được đánh `removed_in_version`. `loaded_at` ghi cho bản ghi trong
+  bảng, về null khi rời; `status` giữ `extracted`/`confirmed` (không dùng `loaded`) để còn biết người đã xác nhận chưa.
+- **Khi nào nạp:** `extraction_schema.activated` → trích mọi tài liệu `ready` chưa đọc bằng lược đồ (≤ 500 mỗi sự kiện)
+  rồi nạp; `document.indexed` → trích rồi upsert; `document.removed` (mới, từ `DELETE /v1/documents/{id}` và đồng bộ
+  nguồn) và `extracted_dataset.load_requested` (mới, khi duyệt hiệu lực/thay thế và khi sửa giá trị) → nạp lại. Hết
+  hiệu lực theo ngày không có sự kiện: dòng rời ở lần nạp sau, trong lúc đó tool đếm lọc theo hiệu lực tại ngày hỏi.
+- **Quyền:** dòng đọc như bộ sưu tập (BR-59): cùng Data Space; câu có `purpose` khác bộ sưu tập không thấy bảng (tool
+  đếm, và `load_space(purpose=)` của `explore_sql` và đường SQL governed); bộ sưu tập xoá hoặc không còn lược đồ
+  `active` → dataset tắt. Executor vẫn kiểm scope và access policy khi chạy.
+- **Đếm (RG-08):** tool agent `count_documents` (`agentic/tools/extracted.py`): mô hình chọn bộ sưu tập, phép
+  (count/sum/avg/min/max), trường, điều kiện, chia nhóm — không viết SQL; câu SQL dựng tất định từ cột của lược đồ,
+  giá trị điều kiện đọc theo kiểu trường ("5%" = 5), chạy qua executor. Dataset trust `document` ("Theo tài liệu"),
+  khối coverage `{documents_in_scope, extracted, needs_review, not_extracted}` luôn vào caveats của câu trả lời; tổng
+  kèm số tài liệu có giá trị; tối đa 5 tài liệu được trích dẫn (trang, câu trích). Planner: câu đếm/cộng trên toàn kho
+  → `count_documents`; chuyên gia tài liệu có tool này. `explore_sql` đọc được bảng nhưng giữ nhãn exploratory.
+- **Chưa làm:** đề xuất inbox `extraction_review` (bản ghi chờ duyệt đi hàng chờ chất lượng của DI-13); ô bảng
+  (`table_cell`) làm nguồn trích; `join_key` (nối với dữ liệu có cấu trúc); quét hết hiệu lực theo lịch; một lượt
+  agent tính `as_of` quá khứ chỉ thấy tài liệu đang hiệu lực hôm nay.
+
 ## 9. Stage 6: Chất lượng và bất định
 
 | Kind | Sinh ở | Điều kiện | Hệ quả |

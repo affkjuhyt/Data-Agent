@@ -613,6 +613,12 @@ async def test_di_10_a_document_is_deleted_softly(ds: Space) -> None:
             )
             == "removed:true"
         )
+        # DI-17: worker-agent takes its row out of the collection's extracted dataset.
+        assert ds.one(
+            "SELECT payload->>'collection_id' FROM document.outbox"
+            " WHERE aggregate_id = %s AND event_type = 'document.removed'",
+            document,
+        ) == str(ds.laws)
         # The original stays in the locked bucket; the document leaves reads.
         assert ds.store.puts == 1
         again = await api.delete(f"/v1/documents/{document}", headers=ds.headers("admin"))
@@ -1327,6 +1333,12 @@ async def test_other_resolutions_write_where_they_belong(ds: Space) -> None:
             ds.one("SELECT status FROM document.extracted_record WHERE id = %s", record)
             == "confirmed"
         )
+        # DI-17: the fixed value is reloaded into the collection's extracted dataset.
+        assert ds.one(
+            "SELECT payload->>'extracted_record_id' FROM document.outbox"
+            " WHERE event_type = 'extracted_dataset.load_requested' AND aggregate_id = %s",
+            document,
+        ) == str(record)
         # Nothing to correct: refused, and the issue stays open.
         refused = await resolve(nowhere, {"resolution": "corrected", "corrected_text": "x"})
         assert refused.status_code == 422

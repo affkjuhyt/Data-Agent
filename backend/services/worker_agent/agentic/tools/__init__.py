@@ -11,6 +11,7 @@ from services.worker_agent.agentic.tools.catalog import DescribeMetric, SearchCa
 from services.worker_agent.agentic.tools.coverage import DataCoverage
 from services.worker_agent.agentic.tools.documents import SearchDocuments
 from services.worker_agent.agentic.tools.explain import ExplainChange
+from services.worker_agent.agentic.tools.extracted import CountDocuments
 from services.worker_agent.agentic.tools.forecast import ForecastMetric
 from services.worker_agent.agentic.tools.insights import Insights
 from services.worker_agent.agentic.tools.query import ExploreSql, QueryMetric
@@ -61,6 +62,8 @@ TOOLS: dict[str, Tool] = {
         Insights(),
         *([Analyze()] if python_enabled() else []),
         SearchDocuments(),
+        # DI-17: a count across a whole collection, from its extracted rows, not from passages.
+        CountDocuments(),
         ForecastMetric(),
         InvestigateNumbers(),
         InvestigateDocuments(),
