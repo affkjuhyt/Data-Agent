@@ -1892,3 +1892,25 @@ async def test_an_acknowledged_block_or_warn_mode_answers_with_a_caveat(
     await drain()
     _, kind, text, figures, _, _ = answer_of(seed, q)
     assert kind != "refusal" and figures and "kiểm tra chất lượng mức cao không đạt" in text
+
+
+async def test_a_question_about_the_space_is_answered_from_it_not_as_a_metric(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 24/11: an overview and a listing of members were read as the conversation's last metric.
+    bank = build(seed, warehouse, monkeypatch)
+    q = bank.ask("thế dữ liệu chúng ta đang trao đổi nói về gì")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "document") and not figures, text
+    assert "Dư nợ" in text or "bảng" in text
+
+    q = bank.ask("Có những vùng nào?")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "document") and not figures, text
+    assert "Miền Bắc" in text and "Miền Nam" in text
+    steps = seed.one(
+        "SELECT steps FROM qa.plan WHERE question_id = %s ORDER BY version DESC LIMIT 1", q
+    )
+    assert steps == [{"tool": "list_members"}]
