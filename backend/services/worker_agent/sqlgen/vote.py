@@ -2,6 +2,13 @@
 runs, results are grouped by what they return, and the share of the six candidates in the
 largest group is the confidence. Chốt 06/10/2026: ≥ 4/6 answers with the "Khám phá" label, 3/6
 answers asking to check it, ≤ 2/6 gives no number and asks back; all failed is a coded error.
+
+Which group wins is counted by way of writing (AE-23, CONFIDENCE_SPEC §4): each way (skeleton,
+examples, divide) gives its weight, logit of its accuracy in the last ablation, to the groups its
+two samples fell in, so two samples of one way that agree are one vote, not two. `margin` is how
+far the winner is ahead of every way's weight; the decision and `confidence` stay the share k of
+the candidates in the winning group, the meter R1-14 shows, until AE-24 calibrates them.
+SQLGEN_VOTE=count picks the largest group again (the rollback).
 """
 
 from __future__ import annotations
@@ -9,9 +16,12 @@ from __future__ import annotations
 import decimal
 import hashlib
 import json
-from collections.abc import Sequence
-from dataclasses import dataclass
+import os
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Any, Literal
+
+from libs.calibration import method_vote
 
 CANDIDATES = 6
 ANSWER_AT = 4
@@ -39,18 +49,34 @@ def signature(rows: Sequence[Sequence[Any]]) -> str:
 @dataclass(frozen=True)
 class Vote:
     decision: Decision
-    confidence: float
-    winner: int | None  # the index of the first candidate of the largest group
+    confidence: float  # k / total: the share of the candidates in the winning group
+    winner: int | None  # the index of the first candidate of the winning group
+    margin: float = 0.0  # (S1 - S2) / W of the vote by way of writing (§4)
+    support: dict[str, float] = field(default_factory=dict)  # per way: its share in the winner
 
 
-def vote(results: Sequence[Sequence[Sequence[Any]] | None], total: int = CANDIDATES) -> Vote:
+def vote(
+    results: Sequence[Sequence[Sequence[Any]] | None],
+    total: int = CANDIDATES,
+    methods: Sequence[str] | None = None,
+    weights: Mapping[str, float] | None = None,
+) -> Vote:
+    """`methods[i]` is the way candidate i was written; without them each candidate is its own
+    way of weight 1, which is the count vote."""
+    signatures = [signature(rows) if rows is not None else None for rows in results]
     groups: dict[str, list[int]] = {}
-    for i, rows in enumerate(results):
-        if rows is not None:
-            groups.setdefault(signature(rows), []).append(i)
+    for i, sig in enumerate(signatures):
+        if sig is not None:
+            groups.setdefault(sig, []).append(i)
     if not groups:
         return Vote("failed", 0.0, None)
-    best = max(groups.values(), key=lambda g: (len(g), -g[0]))
+    ways = list(methods) if methods is not None else [f"#{i}" for i in range(len(results))]
+    counted = method_vote(signatures, ways, weights if methods is not None else None)
+    if os.getenv("SQLGEN_VOTE", "method") == "count":
+        best = max(groups.values(), key=lambda g: (len(g), -g[0]))
+    else:
+        assert counted.winner is not None
+        best = groups[signatures[counted.winner] or ""]
     n = len(best)
     decision: Decision = "answer" if n >= ANSWER_AT else "review" if n >= REVIEW_AT else "ask"
-    return Vote(decision, n / total, best[0])
+    return Vote(decision, n / total, best[0], counted.margin, counted.support)

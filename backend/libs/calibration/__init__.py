@@ -21,11 +21,13 @@ one, and neither needs numpy for it.
 
 from __future__ import annotations
 
+import json
 import math
 import random
 from bisect import bisect_right
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 # One-sided 95 %: the bound a decision reads.
@@ -347,3 +349,74 @@ def bootstrap(
         values.append(statistic([ps[i] for i in idx], [ys[i] for i in idx]))
     values.sort()
     return values[int(0.025 * rounds)], values[min(rounds - 1, int(0.975 * rounds))]
+
+
+# CONFIDENCE_SPEC §4 (AE-23): the SQL vote counted by way of writing. A way of writing no better
+# than a coin (a_m ≤ 0.5, logit ≤ 0) still casts a small vote, never a negative one.
+MIN_WEIGHT = 0.05
+WEIGHTS_FILE = Path(__file__).parent / "maps" / "sqlgen_vote.json"
+
+
+def method_weight(correct: int, items: int) -> float:
+    """w_m = logit(a_m), a_m = (correct + 1) / (items + 2): the weight of an independent voter
+    right a_m of the time in an optimal majority vote (one-parameter Dawid-Skene), floored."""
+    a = (correct + 1) / (items + 2)
+    return max(math.log(a / (1 - a)), MIN_WEIGHT)
+
+
+@dataclass(frozen=True)
+class MethodVote:
+    winner: int | None  # the first candidate of the winning group
+    margin: float  # (S1 - S2) / W: how far the winner is ahead, of every way's weight
+    support: dict[str, float]  # each way of writing's share of its samples in the winner
+
+
+def method_vote(
+    groups: Sequence[str | None],
+    methods: Sequence[str],
+    weights: Mapping[str, float] | None = None,
+) -> MethodVote:
+    """The vote of §4 over candidates: `groups[i]` is candidate i's result (None when it did not
+    run), `methods[i]` its way of writing. Each way gives its weight to the groups its samples
+    fell in, split evenly between them (two samples of one way in two groups: half each), so
+    ways of writing vote, not samples; W counts every way written, the failed ones too. Ties go
+    to the group seen first, as the count vote did. No weights: each way weighs 1."""
+    samples: dict[str, int] = {}
+    for m in methods:
+        samples[m] = samples.get(m, 0) + 1
+    known = list((weights or {}).values())
+    fallback = sum(known) / len(known) if known else 1.0
+    weight = {m: (weights or {}).get(m, fallback) for m in samples}
+    total = sum(weight.values())
+    first: dict[str, int] = {}
+    score: dict[str, float] = {}
+    for i, (g, m) in enumerate(zip(groups, methods, strict=True)):
+        if g is None:
+            continue
+        first.setdefault(g, i)
+        score[g] = score.get(g, 0.0) + weight[m] / samples[m]
+    if not score:
+        return MethodVote(None, 0.0, {})
+    # Rounded so that halves adding up the same way in another order still tie.
+    ranked = sorted(score, key=lambda g: (-round(score[g], 9), first[g]))
+    best = ranked[0]
+    runner_up = score[ranked[1]] if len(ranked) > 1 else 0.0
+    support = {
+        m: sum(1 for g, mm in zip(groups, methods, strict=True) if mm == m and g == best) / n
+        for m, n in samples.items()
+    }
+    margin = (score[best] - runner_up) / total if total > 0 else 0.0
+    return MethodVote(first[best], margin, support)
+
+
+def method_weights() -> dict[str, float] | None:
+    """The weights of the ways of writing fitted on the last ablation (maps/sqlgen_vote.json),
+    or None when there are none: the vote then weighs each way 1."""
+    try:
+        data = json.loads(WEIGHTS_FILE.read_text())
+    except (OSError, ValueError):
+        return None
+    found = data.get("method_weights") if isinstance(data, dict) else None
+    if not isinstance(found, dict) or not found:
+        return None
+    return {str(k): float(v) for k, v in found.items()}

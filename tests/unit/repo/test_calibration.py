@@ -170,3 +170,70 @@ def test_the_cli_writes_the_map_only_when_asked(
     assert written["producer"] == "sqlgen_vote" and written["commit"] == "abc"
     assert set(written["thresholds"]) == {"answer", "review"} and written["metrics"]["n"] == 30
     assert cal.CalibrationMap.from_dict(written).bins
+
+
+def _cand(method: str, group: int | None, correct: bool) -> dict[str, object]:
+    return {"method": method, "status": "ran" if group is not None else "rejected",
+            "group": group, "value": None, "correct": correct}  # fmt: skip
+
+
+def _item(item_id: str, cands: list[dict[str, object]], decision: str = "answer") -> dict:
+    return {"item_id": item_id, "decision": decision, "candidates": cands,
+            "winner_correct": None, "confidence": 0.0}  # fmt: skip
+
+
+def test_the_vote_is_counted_again_by_way_of_writing_offline() -> None:
+    # Items where skeleton is right alone and the other two agree on a wrong figure: the count
+    # vote takes the wrong group (4 of 6); weighted by skeleton's accuracy alone, it does not.
+    def trap(i: int) -> dict:
+        return _item(f"t{i}", [
+            _cand("skeleton", 0, True), _cand("skeleton", 0, True),
+            _cand("examples", 1, False), _cand("examples", 1, False),
+            _cand("divide", 1, False), _cand("divide", 1, False),
+        ])  # fmt: skip
+
+    def easy(i: int) -> dict:
+        return _item(f"e{i}", [_cand(m, 0, True) for m in ("skeleton",) * 2 + ("examples",) * 2
+                               + ("divide",) * 2])  # fmt: skip
+
+    ids = [f"t{i}" for i in range(5)] + [f"e{i}" for i in range(5)]
+    # Alone, skeleton is right on every item, the other two only on the easy ones.
+    alone = {
+        m: [
+            {"item_id": i, "decision": "answer", "winner_correct": m == "skeleton" or i[0] == "e"}
+            for i in ids
+        ]
+        for m in ("skeleton", "examples", "divide")
+    }
+    report = [
+        {"variant": "all", "outcomes": [trap(i) for i in range(5)] + [easy(i) for i in range(5)]}
+    ]
+    report += [{"variant": m, "outcomes": outs} for m, outs in alone.items()]
+    accuracy = calibrate.method_accuracy(report)
+    assert accuracy == {"divide": (5, 10), "examples": (5, 10), "skeleton": (10, 10)}
+    weights = calibrate.weights_of(accuracy)
+    assert weights["examples"] == cal.MIN_WEIGHT and weights["skeleton"] > 2
+    rows = calibrate.revote(report, folds=2)
+    assert len(rows) == 10
+    assert sum(r.share_right for r in rows) == 5 and sum(r.margin_right for r in rows) == 10
+    out = calibrate.revote_report(rows, rounds=50)
+    assert out["winner_changed"] == {"fixed": 5, "broken": 0}
+    assert out["aurc"]["margin"] <= out["aurc"]["share"] and out["passes"] is True
+
+
+def test_without_variants_alone_the_ways_are_weighed_by_their_candidates() -> None:
+    report = [{"variant": "all", "outcomes": [_item("a", [
+        _cand("skeleton", 0, True), _cand("skeleton", None, False),
+        _cand("divide", 1, False), _cand("divide", 1, False),
+    ])]}]  # fmt: skip
+    assert calibrate.method_accuracy(report) == {"divide": (0, 2), "skeleton": (1, 2)}
+
+
+def test_the_weights_file_is_read_when_it_holds_weights(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "sqlgen_vote.json"
+    monkeypatch.setattr(cal, "WEIGHTS_FILE", path)
+    assert cal.method_weights() is None
+    path.write_text(json.dumps({"method_weights": {"skeleton": 0.4}}))
+    assert cal.method_weights() == {"skeleton": 0.4}

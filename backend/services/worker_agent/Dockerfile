@@ -30,6 +30,7 @@ COPY backend/libs/openbao/ ./libs/openbao/
 COPY backend/libs/vectors/ ./libs/vectors/
 COPY backend/libs/mart_model/ ./libs/mart_model/
 COPY backend/libs/snapshot/ ./libs/snapshot/
+COPY backend/libs/calibration/ ./libs/calibration/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/worker_agent/ ./services/worker_agent/
 USER app

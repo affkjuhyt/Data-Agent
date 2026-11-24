@@ -166,6 +166,24 @@ winner = argmax S_g (hoà: chỉ số ứng viên nhỏ nhất, như hiện tạ
 - Ablation và `explore` ghi cho mỗi ứng viên `method` và chỉ số nhóm. Nhờ vậy vote mới **chấm lại offline** trên đúng các
   ứng viên đã sinh, không gọi model lần nữa, và so sánh hai cách vote là tất định.
 
+**Đã làm (AE-23, 23/11/2026).** Phép vote nằm ở `libs/calibration.method_vote` (stdlib), để worker (`sqlgen/vote.py`) và
+bước chấm lại offline (`make calibrate CALIBRATE_ARGS=--revote`, `model/eval/calibrate.py`) dùng chung một mã. `a_m` là độ
+đúng của nhóm thắng ở variant m khi chạy một mình, trên mọi item đã nối bảng (mọi ứng viên hỏng tính là sai). Không có variant
+đơn thì lấy độ đúng riêng của các ứng viên m trong variant `all`. Khi chấm lại, trọng số của một item fit trên các fold khác
+(5 fold), nên item không tự cân phiếu của mình. Trọng số toàn cục nằm ở `libs/calibration/maps/sqlgen_vote.json`
+(`--write-weights`), worker đọc file đó; image worker-agent nay COPY `libs/calibration`.
+
+Một hệ quả của định nghĩa: khi mọi cách viết có hai mẫu và trọng số bằng nhau, điểm của một nhóm là k/2, nên nhóm thắng
+**trùng hẳn** với vote đếm. Chỉ trọng số khác nhau mới làm hai cách chọn khác nhau.
+
+Đo lại trên DS-AW (ablation 23/11, cluster ở `4d685b83`, 35 item số, 30 lượt có nhóm thắng): một mình, skeleton đúng 13/33,
+examples 14/33, divide 14/33, nên cả ba `w_m` bị kẹp về 0,05 và vote mới chọn đúng các nhóm thắng của vote cũ (13/30 đúng ở
+cả hai, không lượt nào đổi). AURC: share k/6 0,4089, margin 0,4077 (hiệu số, bootstrap ghép cặp 95 %: [−0,0135; 0,0135]).
+Ở cùng coverage, rủi ro của margin bằng của share ở 3/5 mốc và cao hơn một lượt ở 2 mốc (60 %: 42,1 % so với 38,9 %; 93,3 %:
+56,7 % so với 53,6 %): các bậc của margin rơi vào coverage khác. Kết luận: trên DS-AW, vote theo cách viết không đổi câu
+trả lời nào và margin xếp hạng ngang share. Phép thử có ý nghĩa cần một Data Space có cách viết đúng trên 50 %. DS-TLC chưa
+chạy được ablation ngày 23/11: đường SQL khám phá không thấy bảng nào của nó (26 item số đều `unlinked`).
+
 ## 5. Một thước chung cho các agent (AE-24)
 
 ```python

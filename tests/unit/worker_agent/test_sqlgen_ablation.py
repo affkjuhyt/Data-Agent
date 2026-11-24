@@ -15,6 +15,7 @@ from services.worker_agent.sqlgen import run as sql_run
 from services.worker_agent.sqlgen.ablation import (
     VARIANTS,
     Outcome,
+    _number,
     close,
     decision_of,
     outcome_of,
@@ -153,3 +154,15 @@ def test_an_answered_item_keeps_its_scoring_and_no_winner_is_none() -> None:
     o = outcome_of("i", "q", 100.0, _exploration("answer", 1.0, 100.2))
     assert (o.decision, o.correct, o.value, o.winner_correct) == ("answer", True, 100.2, True)
     assert outcome_of("i", "q", 100.0, _exploration("failed", 0.0, None)).winner_correct is None
+
+
+def test_the_vote_margin_is_kept_with_the_winner() -> None:
+    e = _exploration("ask", 1 / 3, 100.0)
+    e.margin = 0.25
+    assert outcome_of("i", "q", 100.0, e).margin == 0.25
+    assert outcome_of("i", "q", 100.0, _exploration("failed", 0.0, None)).margin is None
+
+
+def test_only_items_expecting_a_figure_are_number_items() -> None:
+    # DS-TLC also asks for a zone by name: one expected value, not a figure.
+    assert _number("12.5") and _number(3) and not _number("Midtown Center") and not _number(None)

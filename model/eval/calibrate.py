@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
@@ -204,6 +205,181 @@ def _text(r: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# --- AE-23: the vote by way of writing, counted again on the ablation's own candidates --------
+
+
+def _variant(report: Any, name: str) -> dict[str, Any] | None:
+    return next((s for s in report if s.get("variant") == name), None)
+
+
+def method_accuracy(report: Any, keep: set[str] | None = None) -> dict[str, tuple[int, int]]:
+    """Per way of writing m, (right, items) of m written alone (§4's a_m): variant m's items whose
+    winner was right, out of every item it was asked (all candidates failing counts against it).
+    A report without variant m falls back on m's candidates in variant all, each on its own
+    value. `keep` limits it to some items (the other folds)."""
+    whole = _variant(report, "all")
+    if whole is None:
+        raise SystemExit("no variant 'all' in the report: is it an ablation --json?")
+    methods = sorted({str(c["method"]) for o in whole["outcomes"] for c in o.get("candidates", [])})
+    out: dict[str, tuple[int, int]] = {}
+    for m in methods:
+        alone = _variant(report, m)
+        if alone is not None:
+            asked = [
+                o
+                for o in alone["outcomes"]
+                if o["decision"] != "unlinked" and (keep is None or o["item_id"] in keep)
+            ]
+            out[m] = (sum(1 for o in asked if o.get("winner_correct") is True), len(asked))
+        else:
+            own = [
+                c
+                for o in whole["outcomes"]
+                if keep is None or o["item_id"] in keep
+                for c in o.get("candidates", [])
+                if c["method"] == m
+            ]
+            out[m] = (sum(1 for c in own if c.get("correct")), len(own))
+    return out
+
+
+def weights_of(accuracy: dict[str, tuple[int, int]]) -> dict[str, float]:
+    return {m: round(cal.method_weight(r, n), 6) for m, (r, n) in accuracy.items()}
+
+
+@dataclass(frozen=True)
+class Revoted:
+    item_id: str
+    share: float  # k / candidates of the count vote's winner (today's confidence)
+    share_right: bool
+    margin: float  # the vote by way of writing's margin
+    margin_right: bool
+
+
+def revote(report: Any, *, folds: int = 5, seed: int = 0) -> list[Revoted]:
+    """Both votes over each item's candidates in variant all, items with at least one result.
+    The weights of an item come from the other folds' items, so no item weighs its own vote."""
+    whole = _variant(report, "all")
+    if whole is None:
+        raise SystemExit("no variant 'all' in the report: is it an ablation --json?")
+    items = [
+        o
+        for o in whole["outcomes"]
+        if any(c.get("group") is not None for c in o.get("candidates", []))
+    ]
+    if items and "method" not in items[0]["candidates"][0]:
+        raise SystemExit("the ablation report predates EV-19 (no candidate methods): run it again")
+    order = sorted(o["item_id"] for o in items)
+    random.Random(seed).shuffle(order)
+    k = max(2, min(folds, len(order))) if order else 1
+    fold_of = {item: rank % k for rank, item in enumerate(order)}
+    weights = {
+        f: weights_of(method_accuracy(report, {i for i in fold_of if fold_of[i] != f}))
+        for f in range(k)
+    }
+    out = []
+    for o in items:
+        cands = o["candidates"]
+        groups = [str(c["group"]) if c.get("group") is not None else None for c in cands]
+        sizes: dict[str, list[int]] = {}
+        for i, g in enumerate(groups):
+            if g is not None:
+                sizes.setdefault(g, []).append(i)
+        largest = max(sizes.values(), key=lambda g: (len(g), -g[0]))
+        counted = cal.method_vote(
+            groups, [str(c["method"]) for c in cands], weights[fold_of[o["item_id"]]]
+        )
+        assert counted.winner is not None
+        out.append(
+            Revoted(
+                str(o["item_id"]),
+                len(largest) / len(cands),
+                bool(cands[largest[0]].get("correct")),
+                counted.margin,
+                bool(cands[counted.winner].get("correct")),
+            )
+        )
+    return out
+
+
+def _risk_at(points: Sequence[cal.Operating], coverage: float) -> float:
+    """The selective risk of the smallest answered set reaching `coverage`."""
+    for p in points:
+        if p.coverage >= coverage - 1e-9:
+            return p.risk
+    return points[-1].risk if points else 0.0
+
+
+def revote_report(rows: Sequence[Revoted], *, rounds: int = 1000, seed: int = 0) -> dict[str, Any]:
+    """AE-23's acceptance: the margin ranks turns at least as well as the share (AURC no higher,
+    with a paired bootstrap interval of the difference), and at every coverage the share reaches,
+    the margin's selective risk is no higher."""
+    n = len(rows)
+    out: dict[str, Any] = {"turns": n}
+    if not n:
+        return out
+    share = ([r.share for r in rows], [r.share_right for r in rows])
+    margin = ([r.margin for r in rows], [r.margin_right for r in rows])
+    a_share, a_margin = cal.aurc(*share), cal.aurc(*margin)
+    rng = random.Random(seed)
+    diffs = []
+    for _ in range(rounds):
+        idx = [rng.randrange(n) for _ in range(n)]
+        diffs.append(
+            cal.aurc([margin[0][i] for i in idx], [margin[1][i] for i in idx])
+            - cal.aurc([share[0][i] for i in idx], [share[1][i] for i in idx])
+        )
+    diffs.sort()
+    curve_share = cal.risk_coverage(*share)
+    curve_margin = cal.risk_coverage(*margin)
+    at = [
+        {
+            "coverage": round(p.coverage, 4),
+            "share_risk": round(p.risk, 4),
+            "margin_risk": round(_risk_at(curve_margin, p.coverage), 4),
+        }
+        for p in curve_share
+    ]
+    out.update(
+        {
+            "winners_right": {"share": sum(share[1]), "margin": sum(margin[1])},
+            "winner_changed": {
+                "fixed": sum(1 for r in rows if r.margin_right and not r.share_right),
+                "broken": sum(1 for r in rows if r.share_right and not r.margin_right),
+            },
+            "aurc": {"share": round(a_share, 4), "margin": round(a_margin, 4)},
+            "aurc_difference_ci95": [
+                round(diffs[int(0.025 * rounds)], 4),
+                round(diffs[min(rounds - 1, int(0.975 * rounds))], 4),
+            ],
+            "risk_at_coverage": at,
+            "passes": a_margin <= a_share + 1e-9
+            and all(p["margin_risk"] <= p["share_risk"] + 1e-9 for p in at),
+        }
+    )
+    return out
+
+
+def _revote_text(r: dict[str, Any], weights: dict[str, float]) -> str:
+    if not r.get("turns"):
+        return "sqlgen_vote revote: no item with a result"
+    lines = [
+        f"sqlgen_vote revote: {r['turns']} turns; weights {weights}",
+        f"  winners right: count vote {r['winners_right']['share']},"
+        f" by way of writing {r['winners_right']['margin']}"
+        f" ({r['winner_changed']['fixed']} fixed, {r['winner_changed']['broken']} broken)",
+        f"  AURC: share k/n {r['aurc']['share']:.4f}, margin {r['aurc']['margin']:.4f}"
+        f" (difference 95% CI {r['aurc_difference_ci95']})",
+        "  coverage  risk(share)  risk(margin)",
+    ]
+    for p in r["risk_at_coverage"]:
+        lines.append(
+            f"  {p['coverage']:>8.1%}  {p['share_risk']:>11.1%}  {p['margin_risk']:>12.1%}"
+        )
+    lines.append(f"  passes: {r['passes']}")
+    return "\n".join(lines)
+
+
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--producer", required=True, choices=PRODUCERS)
@@ -218,12 +394,54 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument(
         "--write", default=None, help="write the fitted map and its thresholds here"
     )
+    parser.add_argument(
+        "--revote",
+        action="store_true",
+        help="sqlgen_vote: count the vote by way of writing again and compare it (AE-23)",
+    )
+    parser.add_argument(
+        "--write-weights",
+        default=None,
+        help="sqlgen_vote: write the ways' weights, fitted on every item, here",
+    )
     args = parser.parse_args(argv)
     if args.source == "-":
         raw = sys.stdin.read()
     else:
         with open(args.source, encoding="utf-8") as f:
             raw = f.read()
+    if args.revote or args.write_weights:
+        if args.producer != "sqlgen_vote":
+            parser.error("--revote and --write-weights are about sqlgen_vote")
+        data = json.loads(raw)
+        accuracy = method_accuracy(data)
+        weights = weights_of(accuracy)
+        compared = revote_report(revote(data, folds=args.folds))
+        compared.update({"weights": weights, "source": args.source, "commit": args.commit})
+        if args.write_weights:
+            with open(args.write_weights, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "producer": "sqlgen_vote",
+                        "source": args.source,
+                        "commit": args.commit,
+                        "method_accuracy": {m: list(v) for m, v in accuracy.items()},
+                        "method_weights": weights,
+                        "revote": {
+                            k: compared[k] for k in ("turns", "aurc", "passes") if k in compared
+                        },
+                    },
+                    f,
+                    ensure_ascii=False,
+                    indent=1,
+                )
+                f.write("\n")
+        print(
+            json.dumps(compared, ensure_ascii=False, indent=1)
+            if args.json
+            else _revote_text(compared, weights)
+        )
+        return 0
     turns = turns_of(json.loads(raw), args.producer, variant=args.variant, engine=args.engine)
     r = report(
         turns, args.producer, folds=args.folds, r_answer=args.r_answer, r_review=args.r_review

@@ -468,7 +468,10 @@ agent-eval:  ## the dynamic agent on a Data Space's eval set (AGENT_EVAL_ORG, AG
 # docs/blueprint/CONFIDENCE_SPEC.md), from a report of the two targets above, read on stdin:
 # sqlgen_vote from `make sqlgen-ablation ABLATION_ARGS="--variants all --json"`, understanding
 # from `make agent-eval AGENT_EVAL_ARGS="--engines governed --json"`. Standard library only, in
-# the api image like bench-gate; `--json` or `--write <path>` go in CALIBRATE_ARGS.
+# the api image like bench-gate; `--json` or `--write <path>` go in CALIBRATE_ARGS. AE-23: with an
+# ablation of all four variants, `--revote` counts the vote by way of writing again on the same
+# candidates and compares it with the count vote; `--write-weights <path>` writes the ways' weights
+# (backend/libs/calibration/maps/sqlgen_vote.json, read by the worker).
 CALIBRATE_PRODUCER ?= sqlgen_vote
 CALIBRATE_FROM ?=
 CALIBRATE_ARGS ?=

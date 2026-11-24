@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from libs.calibration import method_weights
 from services.worker_agent.llm import Gateway
 from services.worker_agent.query.executor import QueryOutcome
 from services.worker_agent.sqlgen.audit_rules import AuditContext
@@ -30,6 +31,10 @@ class Exploration:
     decision: Decision
     confidence: float
     agreeing: int
+    # The vote by way of writing (vote.py, CONFIDENCE_SPEC §4): how far the winner is ahead, and
+    # each way's share of its samples in it.
+    margin: float = 0.0
+    support: dict[str, float] = field(default_factory=dict)
     sql: str | None = None
     columns: list[str] = field(default_factory=list)
     rows: list[list[Any]] = field(default_factory=list)
@@ -122,7 +127,12 @@ async def explore(
                 "query_run_id": str(out.query_run_id),
             }
         )
-    v = vote(results, total=len(written))
+    v = vote(
+        results,
+        total=len(written),
+        methods=[str(entry["method"]) for entry in tried],
+        weights=method_weights(),
+    )
     groups: dict[str, int] = {}
     for entry, rows in zip(tried, results, strict=True):
         if rows is not None:
@@ -131,6 +141,8 @@ async def explore(
         v.decision,
         v.confidence,
         round(v.confidence * len(written)),
+        margin=v.margin,
+        support=v.support,
         tried=tried,
         tokens=sum(c.tokens for c, _ in reviewed),
         models=sorted({c.model for c, _ in reviewed if c.model}),

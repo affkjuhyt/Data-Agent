@@ -12,7 +12,9 @@ of its right and wrong answers (the vote's share, the confidence meter of R1-14)
 `--json` also gives, per item, what calibrating the vote needs (EV-19, CONFIDENCE_SPEC §3): whether
 the vote's winner was right whatever the vote decided (`winner_correct`: scoring only the answered
 items would call every low-share item wrong by construction), and each candidate's way of writing,
-result group and own value, so a vote can be counted again offline (AE-23).
+result group and own value, so a vote can be counted again offline: `make calibrate
+CALIBRATE_ARGS=--revote` weighs the ways of writing by their variants alone and compares the vote
+by way of writing with the count vote on the same candidates (AE-23).
 
 It writes nothing but the query runs (caller_kind eval) and reads as the person named, so it sees
 what they may. In the worker pod:
@@ -64,6 +66,8 @@ class Outcome:
     winner_correct: bool | None = None
     # Per candidate: method, status, group (vote.py), value, correct.
     candidates: list[dict[str, Any]] = field(default_factory=list)
+    # The vote by way of writing's margin (AE-23); None without a winner.
+    margin: float | None = None
 
 
 @dataclass
@@ -88,6 +92,15 @@ def decision_of(decision: str, confidence: float) -> str:
     if confidence >= ANSWER_AT / CANDIDATES:
         return "answer"
     return "review" if confidence >= REVIEW_AT / CANDIDATES else "ask"
+
+
+def _number(value: Any) -> bool:
+    """A number item: its one expected value is a figure (DS-TLC also asks for a zone's name)."""
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def close(value: float | None, expected: float) -> bool:
@@ -135,6 +148,7 @@ def outcome_of(item_id: str, question: str, expected: float, e: Exploration) -> 
         decided in ("answer", "review") and close(value, expected),
         winner_correct=close(winner, expected) if e.sql is not None else None,
         candidates=candidates,
+        margin=e.margin if e.sql is not None else None,
     )
 
 
@@ -218,6 +232,7 @@ async def run(
         if isinstance(i.expected, dict)
         and i.expected.get("kind") == "data"
         and len(i.expected.get("values") or []) == 1
+        and _number(i.expected["values"][0])
     ][:limit]
     reader = secrets()
     found: dict[str, list[Outcome]] = {v: [] for v in variants}

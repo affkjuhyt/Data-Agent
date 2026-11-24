@@ -1,0 +1,32 @@
+{
+ "producer": "sqlgen_vote",
+ "source": "make sqlgen-ablation, DS-AW, Câu hỏi AdventureWorks, variants all,skeleton,examples,divide, 23/11/2026 (cluster at 4d685b83)",
+ "commit": "bbb73b97",
+ "method_accuracy": {
+  "divide": [
+   14,
+   33
+  ],
+  "examples": [
+   14,
+   33
+  ],
+  "skeleton": [
+   13,
+   33
+  ]
+ },
+ "method_weights": {
+  "divide": 0.05,
+  "examples": 0.05,
+  "skeleton": 0.05
+ },
+ "revote": {
+  "turns": 30,
+  "aurc": {
+   "share": 0.4089,
+   "margin": 0.4077
+  },
+  "passes": false
+ }
+}
