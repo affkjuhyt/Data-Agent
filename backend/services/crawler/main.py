@@ -1,5 +1,6 @@
 """crawler entrypoint: claim acquire.run.queued events and work each run (KB-02, 09 §1), and
-acquire.schema.test_requested to test a schema version on its stored sample (schema_tests.py).
+acquire.schema.test_requested to test a schema version on its stored sample (schema_tests.py), and
+acquire.schema.draft_proposed to check and test the schema the model proposed (inference.py, KB-04).
 
 Every run arrives as an event: manual ones (POST /v1/crawl-sources/{id}/runs), scheduled ones
 (worker-agent's Temporal schedule for crawl_source.schedule_cron, schedules/targets.py) and
@@ -15,7 +16,7 @@ import os
 import signal
 from collections.abc import Awaitable, Callable
 
-from services.crawler import runs, schema_tests
+from services.crawler import inference, runs, schema_tests
 from services.crawler.events import Event, OutboxTableSource
 from services.crawler.storage import RawStore, S3RawStore
 
@@ -24,6 +25,7 @@ POLL_SECONDS = float(os.environ.get("CRAWLER_POLL_SECONDS", "2"))
 HANDLERS: dict[str, Callable[[Event, RawStore], Awaitable[None]]] = {
     runs.QUEUED: runs.handle,
     schema_tests.TEST_REQUESTED: schema_tests.handle,
+    inference.DRAFT_PROPOSED: inference.handle_draft,
 }
 
 

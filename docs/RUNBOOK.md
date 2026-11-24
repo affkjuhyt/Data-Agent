@@ -624,6 +624,24 @@ The run stops at `in_review`; publishing is a person's action. Its event is `acq
 - **Scheduled runs**: an active source's `schedule_cron` is a Temporal schedule `crawl:<org>:<source>`
   (§10e), read in Hà Nội time; a firing queues a run with trigger `schedule`, skipped while a run
   is still going or once the legal review has lapsed.
+- **Schema drift and proposed schemas** (KB-04, `services/crawler/inference.py`). A run whose
+  required fields come out with a value in under 95% of the cells drifted: `acquire.schema_drift`
+  (`acquire.schema.drift_detected`). Minor (80% or more, every key field still read): the run stays
+  `in_review`. Major (under 80%, a key field lost, or no record at all): the run is `quarantined`,
+  the source `paused` (reason `schema_drift`) and its owner gets a Cần bạn request (`schema_drift`).
+  One drift per source and version stays open; later runs that drift the same way add none. Either
+  way the crawler sends `acquire.schema.inference_requested` (bounded excerpts of at most three
+  pages, the rest kept back) to worker-agent (`crawl_schemas.py`, role `responder`), whose model
+  answers `acquire.schema.draft_proposed`; the crawler compiles the draft, keeps an approved
+  version's fields and takes only their locators, tests it on the pages kept back and writes it as
+  a version: `testing` at 95% of required fields (the owner approves it with `:approve`, a minor
+  drift's owner gets the Cần bạn request then), `rejected` below. What happened is on the drift's
+  `signals.proposal` and in `acquire.schema.inferred` (`outcome`: `proposed`, `below_accuracy`,
+  `invalid`, `no_draft`). Nothing is approved automatically; a source keeps extracting with its
+  active version until a person approves another. A source with no schema gets its samples from
+  `POST /v1/crawl-sources/{id}/schema-inference`: an inference run fetches the seed and sample URLs,
+  ends `failed` (no schema, no record) with its pages kept, and asks for a proposal the same way.
+  No worker-agent model configured (`LITELLM_BASE_URL`): the outcome is `no_draft`.
 
 ## 10e. Temporal (schedules, ADR-33)
 

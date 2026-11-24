@@ -402,7 +402,7 @@ export const createCrawlSource = (body: {
   trust_level: number;
 }) => ok<{ id: string }>(api.POST('/v1/crawl-sources', { body }));
 
-/** A2: POST /v1/crawl-sources/{id}/schema-inference (202) — at least five samples. */
+/** A2: POST /v1/crawl-sources/{id}/schema-inference (202) — an inference run; its proposal lands in the schemas list. */
 export const inferCrawlSchema = async (id: string) =>
   ok<{ id: string }>(
     api.POST('/v1/crawl-sources/{id}/schema-inference', { params: { path: { id } }, body: {} }),

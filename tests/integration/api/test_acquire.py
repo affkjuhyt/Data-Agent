@@ -886,23 +886,33 @@ async def test_run_detail_lists_its_pages_and_pages_are_append_only(w: World) ->
 # ================================================================ schema versions (UC-14-02, -03)
 
 
-async def test_schema_inference_is_checked_then_refused_until_the_agent_exists(w: World) -> None:
+async def test_schema_inference_queues_an_inference_run_and_approves_nothing(w: World) -> None:
     source, _ = w.source(active=False)
     async with w.client("owner") as c:
-        r = await c.post(
-            f"/v1/crawl-sources/{source}/schema-inference",
-            json={"sample_urls": ["https://bank.example.vn/lai-suat?p=2"], "hints": "cột 12 tháng"},
-        )
-        no_body = await c.post(f"/v1/crawl-sources/{source}/schema-inference")
         outside = await c.post(
             f"/v1/crawl-sources/{source}/schema-inference",
             json={"sample_urls": ["https://evil.example.com/a"]},
         )
-    for refused in (r, no_body):
-        assert refused.status_code == 501, refused.text
-        assert refused.json()["code"] == "not_available" and refused.json()["detail"]
+        r = await c.post(
+            f"/v1/crawl-sources/{source}/schema-inference",
+            json={"sample_urls": ["https://bank.example.vn/lai-suat?p=2"], "hints": "cột 12 tháng"},
+        )
+        again = await c.post(f"/v1/crawl-sources/{source}/schema-inference")
     assert outside.status_code == 422, outside.text
-    assert w.events(source) == []
+    assert r.status_code == 202, r.text
+    run = r.json()["id"]
+    assert r.headers["location"] == f"/v1/crawl-runs/{run}"
+    # KB-04: the crawler fetches the samples and asks worker-agent's model; a draft it proposes
+    # waits in testing for the owner, so the request itself writes no schema version.
+    queued = w.event(run, "acquire.run.queued")
+    assert queued["purpose"] == "schema_inference" and queued["schema_version_id"] is None
+    assert queued["sample_urls"] == ["https://bank.example.vn/lai-suat?p=2"]
+    assert queued["hints"] == "cột 12 tháng"
+    assert (
+        w.one("SELECT count(*) FROM acquire.crawl_schema_version WHERE source_id = %s", source) == 0
+    )
+    # One run at a time per source (crawl_run_source_id_key).
+    assert again.status_code == 409, again.text
 
 
 @pytest.mark.req("AC-14-01-08")

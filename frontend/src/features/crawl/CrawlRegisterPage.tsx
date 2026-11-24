@@ -159,8 +159,8 @@ export default function CrawlRegisterPage() {
         review_gate: gate,
         trust_level: TRUST_LEVEL,
       });
-      // The source is saved whatever inference answers (501 while the agent is not built): an
-      // error here must not read as "nothing saved", or a second click registers it twice.
+      // The source is saved whatever inference answers (422 until its legal review is in force):
+      // an error here must not read as "nothing saved", or a second click registers it twice.
       const inferred = await inferCrawlSchema(id).then(
         () => undefined,
         (e: unknown) => (e as Error).message,

@@ -32,6 +32,7 @@ from libs.dataagent_db.models import org
 from services.worker_agent import (
     agent_evals,
     audit_exports,
+    crawl_schemas,
     dead_letter,
     derived,
     eval_runs,
@@ -177,6 +178,7 @@ HANDLERS: dict[str, Handler] = {
     **audit_exports.HANDLERS,
     **skill_evals.HANDLERS,
     **writeback_diffs.HANDLERS,
+    **crawl_schemas.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -269,6 +271,9 @@ async def sources() -> list[EventSource]:
         if schema == "forecast":
             # A queued job is trained here; a submitted version opens the owner's proposal.
             types |= set(forecasting.HANDLERS)
+        if schema == "acquire":
+            # KB-04: the crawler asks for a proposed schema; it claims the other acquire events.
+            types |= set(crawl_schemas.HANDLERS)
         if schema == "conflict":
             types |= {reviews.AUTHORITY}
         if schema == "document":

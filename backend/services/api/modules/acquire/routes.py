@@ -1037,14 +1037,15 @@ async def infer_schema(
     source_id: PathId,
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
+    response: Response,
     # Both fields are optional, so is the body.
     body: Annotated[SchemaInferenceRequest | None, Body()] = None,
 ) -> Accepted:
     request = body or SchemaInferenceRequest()
     async with transaction(ROLE, principal) as session:
-        source = await _source(session, principal, space, source_id)
-        if source.status == "retired":
-            raise Problem(409, "invalid_state", "A retired source is not inferred.")
+        source = await _source(session, principal, space, source_id, lock=True)
+        if source.status not in ("draft", "active"):
+            raise Problem(409, "invalid_state", f"A {source.status} source is not inferred.")
         if request.sample_urls:
             rules.check_urls_in_scope("sample_urls", request.sample_urls, source.allowed_domains)
         if not rules.legal_in_force(source.legal_status, source.legal_review_due_at, _now()):
@@ -1054,10 +1055,41 @@ async def infer_schema(
                 "business_rule_violated",
                 "The source needs a legal review in force before pages are fetched (BR-174).",
             )
-    # KB-04, the agent proposing selectors from sample pages, is not built: refused, nothing asked.
-    raise not_available(
-        "Chưa có agent đề xuất lược đồ trích xuất từ trang mẫu, nên chưa suy ra được lược đồ."
-    )
+        if await _running_run(session, source.id):
+            raise Problem(409, "invalid_state", "The source already has a run in progress.")
+        # KB-04: an inference run fetches the samples (seed and sample URLs, in scope), the
+        # crawler keeps some back and shows the others to the model through worker-agent, then
+        # tests the draft on the ones kept back (services/crawler/inference.py). A draft that
+        # reaches 95% waits in `testing` for the owner's :approve; nothing is approved here.
+        # A2 says Location points at an agent_run; the work is this crawl run, which a client
+        # polls, then re-reads the source's schema versions.
+        run = acquire.CrawlRun(
+            id=uuid7(),
+            org_id=principal.org_id,
+            source_id=source.id,
+            schema_version_id=source.active_schema_version_id,
+            trigger="manual",
+        )
+        session.add(run)
+        await session.flush()
+        await session.refresh(run)
+        _emit(
+            session,
+            principal,
+            "crawl_run",
+            run.id,
+            "acquire.run.queued",
+            run_id=run.id,
+            source_id=source.id,
+            data_space_id=space,
+            trigger=run.trigger,
+            schema_version_id=run.schema_version_id,
+            status=run.status,
+            purpose="schema_inference",
+            sample_urls=request.sample_urls or [],
+            hints=request.hints,
+        )
+        return _accepted(response, f"/v1/crawl-runs/{run.id}", run.id, run.status)
 
 
 @router.get(

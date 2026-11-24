@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import acquire
 from libs.tabular import profile as ingest_profile
-from services.crawler import extract, fetch
+from services.crawler import extract, fetch, inference
 from services.crawler.events import Event
 from services.crawler.secrets import Reader, SecretUnavailable
 from services.crawler.storage import RawStore, retain_until
@@ -102,9 +102,11 @@ async def _fail(org_id: uuid.UUID, run_id: uuid.UUID, reason: str) -> None:
 
 
 async def _start(
-    org_id: uuid.UUID, run_id: uuid.UUID
-) -> tuple[dict[str, Any], dict[str, Any]] | None:
-    """The source and schema as plain values, with the run moved to fetching; None to skip."""
+    org_id: uuid.UUID, run_id: uuid.UUID, infer: bool = False
+) -> tuple[dict[str, Any], dict[str, Any] | None] | None:
+    """The source and schema as plain values, with the run moved to fetching; None to skip. An
+    inference run (`infer`) of a source without an approved schema fetches with no schema: its
+    pages are the samples a schema is proposed from (KB-04)."""
     async with scoped_session(ROLE, org_id) as session:
         run = await session.get(acquire.CrawlRun, run_id, with_for_update=True)
         if run is not None and run.status in ("fetching", "extracting"):
@@ -129,10 +131,16 @@ async def _start(
         assert source is not None
         version_id = run.schema_version_id or source.active_schema_version_id
         version = await session.get(acquire.CrawlSchemaVersion, version_id) if version_id else None
-        if source.status != "active" or not _legal(source, _now()) or version is None:
+        # A draft source has no approved schema yet: only an inference run fetches for it.
+        allowed = ("draft", "active") if infer else ("active",)
+        if (
+            source.status not in allowed
+            or not _legal(source, _now())
+            or (version is None and not infer)
+        ):
             why = (
                 f"the source is {source.status}"
-                if source.status != "active"
+                if source.status not in allowed
                 else "the legal review is not in force (BR-174)"
                 if not _legal(source, _now())
                 else "the source has no schema version"
@@ -151,11 +159,15 @@ async def _start(
                 reason=why,
             )
             return None
-        run.status, run.started_at, run.schema_version_id = "fetching", _now(), version.id
+        run.status, run.started_at = "fetching", _now()
+        run.schema_version_id = version.id if version is not None else None
         reading = await ingest_profile.load(session, source.data_space_id, source.ingest_profile)
         return (
             {
                 "id": source.id,
+                "name": source.name,
+                "goal": source.goal,
+                "owner_id": source.owner_id,
                 "kind": source.kind,
                 "seed_urls": list(source.seed_urls or []),
                 "domains": list(source.allowed_domains or []),
@@ -174,7 +186,9 @@ async def _start(
                 "id": version.id,
                 "selector": version.record_selector,
                 "fields": list(version.fields or []),
-            },
+            }
+            if version is not None
+            else None,
         )
 
 
@@ -270,6 +284,133 @@ async def stored_pages(
     return pages
 
 
+def _inference(
+    session: AsyncSession,
+    org_id: uuid.UUID,
+    run_id: uuid.UUID,
+    source: dict[str, Any],
+    pages: list[Page],
+    fields: list[dict[str, Any]],
+    *,
+    drift_id: uuid.UUID | None = None,
+    from_version_id: uuid.UUID | None = None,
+    hints: str | None = None,
+) -> bool:
+    """acquire.schema.inference_requested for worker-agent, in the run's transaction; False when
+    no page of the run can be shown to the model."""
+    payload = inference.request_payload(
+        request_id=uuid7(),
+        source=source,
+        run_id=run_id,
+        pages=[inference.Sample(p.id, p.content, p.content_type) for p in pages],
+        fields=fields,
+        drift_id=drift_id,
+        from_version_id=from_version_id,
+        hints=hints,
+    )
+    if payload is None:
+        return False
+    inference.emit(
+        session, org_id, "crawl_source", source["id"], inference.INFERENCE_REQUESTED, payload
+    )
+    return True
+
+
+async def _record_drift(
+    session: AsyncSession,
+    org_id: uuid.UUID,
+    run: acquire.CrawlRun,
+    src: acquire.CrawlSource,
+    source: dict[str, Any],
+    schema: dict[str, Any],
+    found: inference.Drift,
+) -> uuid.UUID | None:
+    """The run's schema_drift (BR-152), or None when one is already open for this version: the
+    source's next runs drift the same way and one proposal is enough."""
+    open_one = await session.scalar(
+        select(acquire.SchemaDrift.id).where(
+            acquire.SchemaDrift.source_id == src.id,
+            acquire.SchemaDrift.from_version_id == schema["id"],
+            acquire.SchemaDrift.drift_kind == "structural",
+            acquire.SchemaDrift.resolution.is_(None),
+        )
+    )
+    if open_one is not None:
+        return None
+    major = found.severity == "major"
+    row = acquire.SchemaDrift(
+        id=uuid7(),
+        org_id=org_id,
+        source_id=src.id,
+        run_id=run.id,
+        from_version_id=schema["id"],
+        drift_kind="structural",
+        severity=found.severity,
+        signals=found.signals,
+        # CHECK: minor is remapped by the agent, major pauses the source (BR-152).
+        action="paused" if major else "auto_remap",
+    )
+    session.add(row)
+    await session.flush()
+    _emit(
+        session,
+        org_id,
+        "schema_drift",
+        row.id,
+        inference.DRIFT_DETECTED,
+        drift_id=row.id,
+        source_id=src.id,
+        data_space_id=src.data_space_id,
+        run_id=run.id,
+        from_version_id=schema["id"],
+        drift_kind="structural",
+        severity=found.severity,
+        action=row.action,
+        **found.signals,
+    )
+    if major:
+        # The run's records are kept out of publishing and the source stops until a person
+        # settles the drift (the api's :resolve or :revert, then _maybe_resume).
+        run.status = "quarantined"
+        if src.status == "active":
+            src.status = "paused"
+            _emit(
+                session,
+                org_id,
+                "crawl_source",
+                src.id,
+                "acquire.source.status_changed",
+                source_id=src.id,
+                data_space_id=src.data_space_id,
+                previous_status="active",
+                status="paused",
+                reason="schema_drift",
+            )
+        inference.emit(
+            session,
+            org_id,
+            "schema_drift",
+            row.id,
+            inference.HITL_REQUESTED,
+            inference.hitl_payload(
+                request_id=inference.hitl_request_id(row.id),
+                source=source,
+                drift_id=row.id,
+                title=f"Nguồn «{source['name']}» đổi cấu trúc: đã tạm ngưng",
+                risk="high",
+                context={
+                    "source_id": src.id,
+                    "drift_id": row.id,
+                    "run_id": run.id,
+                    "from_version_id": schema["id"],
+                    "severity": found.severity,
+                    **found.signals,
+                },
+            ),
+        )
+    return row.id
+
+
 async def _write_records(
     org_id: uuid.UUID,
     run_id: uuid.UUID,
@@ -277,25 +418,33 @@ async def _write_records(
     schema: dict[str, Any],
     pages: list[Page],
     blocked: bool,
+    infer: dict[str, Any] | None = None,
 ) -> None:
     found: list[tuple[Page, extract.Record]] = []
     unreadable = 0
+    with_records = 0
     for page in pages:
         try:
-            found += [
-                (page, r)
-                for r in extract.extract(
-                    page.content,
-                    page.content_type,
-                    schema["selector"],
-                    schema["fields"],
-                    source["decimal_mark"],
-                    source["date_order"],
-                )
-            ]
+            records = extract.extract(
+                page.content,
+                page.content_type,
+                schema["selector"],
+                schema["fields"],
+                source["decimal_mark"],
+                source["date_order"],
+            )
         except extract.ExtractionError as exc:
             unreadable += 1
             log.info("page %s not extracted: %s", page.id, exc)
+            continue
+        with_records += bool(records)
+        found += [(page, r) for r in records]
+    drifted = inference.drift(
+        schema["fields"],
+        [r for _, r in found],
+        pages_read=sum(inference.content_kind(p.content_type) is not None for p in pages),
+        pages_with_records=with_records,
+    )
     extract.sample([r for _, r in found], seed=str(run_id))
     async with scoped_session(ROLE, org_id) as session:
         run = await session.get(acquire.CrawlRun, run_id, with_for_update=True)
@@ -345,6 +494,25 @@ async def _write_records(
                 status="paused",
                 reason="blocked",
             )
+        drift_id = None
+        if drifted is not None:
+            run.drift_score = 1 - drifted.completeness
+            drift_id = await _record_drift(session, org_id, run, src, source, schema, drifted)
+        asked = False
+        if drift_id is not None or infer is not None:
+            # A drift asks the model to find the version's fields again; so does an inference
+            # run of a source that already has an approved version.
+            asked = _inference(
+                session,
+                org_id,
+                run_id,
+                source,
+                pages,
+                schema["fields"],
+                drift_id=drift_id,
+                from_version_id=schema["id"],
+                hints=(infer or {}).get("hints"),
+            )
         _emit(
             session,
             org_id,
@@ -360,13 +528,64 @@ async def _write_records(
             records_extracted=run.records_extracted,
             records_flagged=flagged,
             blocked=blocked,
+            drift_id=drift_id,
+            inference_requested=asked,
+        )
+
+
+async def _sampled(
+    org_id: uuid.UUID,
+    run_id: uuid.UUID,
+    source: dict[str, Any],
+    pages: list[Page],
+    blocked: bool,
+    infer: dict[str, Any],
+) -> None:
+    """An inference run of a source with no approved schema: nothing can be extracted, so the
+    run ends failed, as a run without a schema always has, but its pages are kept as the samples
+    a schema is proposed from, asked for in the same transaction."""
+    async with scoped_session(ROLE, org_id) as session:
+        run = await session.get(acquire.CrawlRun, run_id, with_for_update=True)
+        src = await session.get(acquire.CrawlSource, source["id"], with_for_update=True)
+        assert run is not None and src is not None
+        asked = bool(pages) and _inference(
+            session, org_id, run_id, source, pages, [], hints=infer.get("hints")
+        )
+        run.status, run.finished_at = "failed", _now()
+        src.last_run_at = run.finished_at
+        src.consecutive_blocked = src.consecutive_blocked + 1 if blocked else 0
+        _emit(
+            session,
+            org_id,
+            "crawl_run",
+            run.id,
+            "acquire.run.completed",
+            run_id=run.id,
+            source_id=src.id,
+            data_space_id=src.data_space_id,
+            status="failed",
+            reason=(
+                f"no approved schema version: {len(pages)} pages kept as samples, a schema is "
+                "being proposed"
+                if asked
+                else "no approved schema version and no page that can be shown to the model"
+            ),
+            pages_fetched=run.pages_fetched,
+            blocked=blocked,
+            inference_requested=asked,
         )
 
 
 async def handle(event: Event, store: RawStore, reader: Reader | None = None) -> None:
     org_id = event.org_id
     run_id = uuid.UUID(str(event.payload.get("run_id") or event.aggregate_id))
-    started = await _start(org_id, run_id)
+    # POST /v1/crawl-sources/{id}/schema-inference queues an inference run (KB-04).
+    infer = (
+        {"hints": event.payload.get("hints")}
+        if event.payload.get("purpose") == "schema_inference"
+        else None
+    )
+    started = await _start(org_id, run_id, infer is not None)
     if started is None:
         return
     source, schema = started
@@ -379,20 +598,27 @@ async def handle(event: Event, store: RawStore, reader: Reader | None = None) ->
                 run.status = "extracting"
         else:
             headers = await _headers(org_id, source, reader or Reader())
+            # An inference run also reads the sample pages the person named; crawl() keeps to
+            # the source's domains whatever the list says (BR-149).
+            extra = [str(u) for u in event.payload.get("sample_urls") or []] if infer else []
+            seeds = list(dict.fromkeys(source["seed_urls"] + extra))
             async with fetch.client(source["accept_language"]) as http:
                 fetcher = fetch.Fetcher(
                     http, domains=source["domains"], rate_limit_rps=source["rate"]
                 )
                 fetched, _refused = await fetch.crawl(
                     fetcher,
-                    source["seed_urls"],
+                    seeds,
                     source["domains"],
                     follow=source["kind"] in FOLLOWS_LINKS,
                     max_depth=source["max_depth"],
                     headers=headers,
                 )
             pages, blocked = await _store_pages(org_id, run_id, source, fetched, store)
-        await _write_records(org_id, run_id, source, schema, pages, blocked)
+        if schema is None:
+            await _sampled(org_id, run_id, source, pages, blocked, infer or {})
+        else:
+            await _write_records(org_id, run_id, source, schema, pages, blocked, infer)
     except (SecretUnavailable, DBAPIError) as exc:
         # DBAPIError covers the legal guard on crawl_page (BR-174) firing mid-run.
         await _fail(org_id, run_id, f"{type(exc).__name__}: {str(exc)[:200]}")
