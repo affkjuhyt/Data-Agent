@@ -19,6 +19,13 @@
 # No YAML anchors on purpose: litellm may mutate litellm_params per entry, and
 # an anchor would make the entries share one object.
 
+# 24/11/2026: every chat role is served by agent-main. agent-fast (Qwen3-4B) runs with an 8 192
+# token context, and the agent's planning prompt (catalogue, corpus, conversation) reached ~6 600
+# tokens: with its 1 600 output tokens every plan from 21/11 on was refused (ContextWindowExceeded,
+# 400) and each agentic turn fell back to the governed path unseen. agent-main has 16 384. The fast
+# tier's comments below say why each role once went there; agent-fast itself is still served (the
+# bench reads it). `judge` now grades with the responder's model: eval scores of the judge (not
+# the deterministic ones) are self-graded until a third model is served.
 model_list:
   # planner is a blocking step on every request (intent + slot extraction,
   # JSON-schema output) before the responder ever starts streaming — moved to
@@ -27,8 +34,8 @@ model_list:
   # not just assumed from the agent-main baseline.
   - model_name: planner
     litellm_params:
-      model: openai/agent-fast
-      api_base: os.environ/LLM_FAST_BASE_URL
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
@@ -52,8 +59,8 @@ model_list:
       # (04-09-2026) had judge == responder and hallucination_rate came back
       # 0.60 even though the deterministic unsupported_number_rate was 0.00 —
       # consistent with self-grading bias, not real hallucination.
-      model: openai/agent-fast
-      api_base: os.environ/LLM_FAST_BASE_URL
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
@@ -91,8 +98,8 @@ model_list:
   # ── fast tier → agent-fast (Qwen3-4B-AWQ) ──────────────────────────────────
   - model_name: guardrail
     litellm_params:
-      model: openai/agent-fast
-      api_base: os.environ/LLM_FAST_BASE_URL
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
@@ -100,8 +107,8 @@ model_list:
 
   - model_name: rewriter
     litellm_params:
-      model: openai/agent-fast
-      api_base: os.environ/LLM_FAST_BASE_URL
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
@@ -109,8 +116,8 @@ model_list:
 
   - model_name: suggester
     litellm_params:
-      model: openai/agent-fast
-      api_base: os.environ/LLM_FAST_BASE_URL
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
@@ -118,8 +125,8 @@ model_list:
 
   - model_name: visualize
     litellm_params:
-      model: openai/agent-fast
-      api_base: os.environ/LLM_FAST_BASE_URL
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
@@ -127,8 +134,8 @@ model_list:
 
   - model_name: orchestrator-summary
     litellm_params:
-      model: openai/agent-fast
-      api_base: os.environ/LLM_FAST_BASE_URL
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
@@ -138,8 +145,8 @@ model_list:
   # working, now served by the GPU fast tier.
   - model_name: local-qwen
     litellm_params:
-      model: openai/agent-fast
-      api_base: os.environ/LLM_FAST_BASE_URL
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
@@ -147,8 +154,8 @@ model_list:
 
   - model_name: local
     litellm_params:
-      model: openai/agent-fast
-      api_base: os.environ/LLM_FAST_BASE_URL
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
