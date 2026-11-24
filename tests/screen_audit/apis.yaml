@@ -223,6 +223,8 @@ screens:
     primary_gets: ["/v1/documents/{id}"]
   data/DOC_QUALITY:
     primary_gets: ["/v1/quality-issues"]
+  data/DOC_HEALTH:
+    primary_gets: ["/v1/document-health"]
   data/DOC_VALIDITY:
     primary_gets: ["/v1/documents"]
   data/EXTRACTION_SCHEMAS:
