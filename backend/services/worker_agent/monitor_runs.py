@@ -16,9 +16,15 @@ not alerted again; a member firing later in the period joins the period's open a
 after the monitor's last one. The alert is written with the alert.fired event on monitor.outbox,
 in one transaction under the monitor's row lock, so two firings never write it twice.
 
-No LLM is called: the summary is written from the figures (invariant 11 allows one only after the
-rules decided there is an alert, to explain it). The queries are recorded as caller_kind `eval`
-with the monitor's id, as the backtest's are: query_run has no monitor caller.
+The rules decide; the model only explains (invariant 11). Once an alert is written or a member
+joined it, and only then, the model writes a short paragraph (`explain`) from the alert's own
+figures, as the answer's narrator does (answer/narrator.py): it may write a number only as the tag
+of one of them, every number left is checked against them, and a sentence that words a cause is
+dropped (libs/language/causal.py): the cause is the investigation's to find. It is stored apart
+from the summary (`explanation`), after the alert's transaction, and only while the alert still
+holds the figures it was written from. No model, or nothing that survives the check: no
+explanation, and the alert stands as the rules made it. The queries are recorded as caller_kind
+`eval` with the monitor's id, as the backtest's are: query_run has no monitor caller.
 """
 
 from __future__ import annotations
@@ -29,13 +35,18 @@ import logging
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs import clock, cron
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import monitor
+from libs.language import causal
 from services.worker_agent import monitor_backtests as backtests
+from services.worker_agent.answer import narrator
+from services.worker_agent.answer.narrate import Figure
+from services.worker_agent.llm import Gateway
+from services.worker_agent.questions import gateway
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +175,12 @@ async def evaluate(org_id: uuid.UUID, monitor_id: uuid.UUID, minute: datetime.da
     # The widest move first: the summary and the alert's value/threshold_value name it.
     fired = sorted(fired, key=lambda f: abs(f.change), reverse=True)
     figures = [figure_json(f, read.query_run_id) for f in fired]
-    return await _write(row, read.metric, period, figures, minute)
+    outcome, alert_id = await _write(row, read.metric, period, figures, minute)
+    if alert_id is not None:
+        # After the rules decided and the alert is committed: a slow or absent model never holds
+        # the monitor's lock nor keeps the alert from being raised.
+        await _explain(row, read.metric, period, alert_id)
+    return outcome
 
 
 async def _write(
@@ -173,7 +189,8 @@ async def _write(
     period: str,
     figures: list[dict[str, Any]],
     minute: datetime.datetime,
-) -> str:
+) -> tuple[str, uuid.UUID | None]:
+    """What the firing did, and the alert it wrote or added to (None when it wrote nothing)."""
     async with scoped_session(ROLE, row.org_id) as session:
         # The monitor's row first: two firings of it never both read "no alert yet".
         await session.scalar(
@@ -194,7 +211,7 @@ async def _write(
         }
         fresh = [f for f in figures if f["member"] not in alerted]
         if not fresh:
-            return f"already alerted {period}"
+            return f"already alerted {period}", None
         open_one = next((a for a in same_period if a.status != "closed"), None)
         if open_one is not None:
             open_one.figures = [*(open_one.figures or []), *fresh]
@@ -202,7 +219,7 @@ async def _write(
             open_one.summary = summary(row, metric, period, open_one.figures)
             open_one.updated_at = minute
             _event(session, row, open_one, "merged")
-            return f"alert {open_one.id} +{len(fresh)}"
+            return f"alert {open_one.id} +{len(fresh)}", open_one.id
         last = await session.scalar(
             select(monitor.Alert.fired_at)
             .where(monitor.Alert.monitor_id == row.id)
@@ -210,7 +227,7 @@ async def _write(
             .limit(1)
         )
         if last is not None and last > minute - cooldown_of(row.rule):
-            return f"cooldown {period}"
+            return f"cooldown {period}", None
         first = fresh[0]
         alert = monitor.Alert(
             id=uuid7(),
@@ -233,7 +250,104 @@ async def _write(
         )
         session.add(alert)
         _event(session, row, alert, "new")
-        return f"alert {alert.id} {len(fresh)}"
+        return f"alert {alert.id} {len(fresh)}", alert.id
+
+
+EXPLAIN_SYSTEM = """Bạn là chuyên viên phân tích dữ liệu, viết một đoạn ngắn tiếng Việt (2 đến 3 câu)
+giải thích một cảnh báo theo dõi chỉ số cho người không chuyên: chỉ số nào, kỳ nào, đã vượt luật nào
+và chênh bao nhiêu so với mốc so sánh, rồi nhắc người đọc mở điều tra để tìm nguyên nhân.
+Chỉ được viết số dưới dạng thẻ {{F<n>}} của số đó; không viết chữ số nào khác, không tự tính toán.
+Không nêu, không đoán nguyên nhân: luật chỉ cho biết số đã vượt, chưa cho biết vì sao.
+Trả về JSON: {"text": "<đoạn giải thích>"}"""
+
+
+def _places(text: str) -> int:
+    # The figure is shown with the decimals it was stored with, two at most (A1.1 keeps the value).
+    return min(len(text.partition(".")[2]), 2)
+
+
+def explained_figures(
+    row: monitor.Monitor, metric: str, period: str, figures: list[dict[str, Any]]
+) -> list[Figure]:
+    """The numbers the model may write, each a tag: the alert's own, as `summary` shows them. A
+    split monitor's members and their numbers stay out, as they stay out of the summary (every
+    reader of the space's alerts reads both): its paragraph has the count and the rule."""
+    rule = row.rule if isinstance(row.rule, dict) else {}
+    change_rule = row.rule_kind != "threshold"
+    percent = "%" if change_rule else None
+    out: list[Figure] = []
+
+    def add(label: str, raw: Any, unit: str | None, *, signed: bool = False) -> None:
+        value = _number(raw)
+        if value is not None:
+            key = f"F{len(out) + 1}"
+            out.append(Figure(key, label, value, unit, _places(str(raw)), 0, label, signed=signed))
+
+    add("mức của luật" if change_rule else "ngưỡng của luật", rule.get("value"), percent)
+    if backtests.split_of(row.scope_filter) is not None:
+        add("số thành viên vượt luật", len(figures), "thành viên")
+        return out
+    first = figures[0]
+    add(f"{metric} kỳ {period}", first["value"], None)
+    if change_rule:
+        add(f"{metric} kỳ trước", first["compared_to"], None)
+    add(
+        "mức thay đổi so với kỳ trước" if change_rule else "chênh lệch so với ngưỡng",
+        first["change"],
+        percent,
+        signed=True,
+    )
+    return out
+
+
+async def explain(
+    model: Gateway, row: monitor.Monitor, metric: str, period: str, figures: list[dict[str, Any]]
+) -> str | None:
+    """The model's paragraph on an alert the rules raised, checked number by number against the
+    alert's figures; None when nothing survives the check or the model is unavailable."""
+    shown = explained_figures(row, metric, period, figures)
+    if not shown:
+        return None
+    written = await narrator.narrate(
+        model,
+        shown,
+        question=f"Giải thích cảnh báo {metric} kỳ {period}",
+        metric_name=metric,
+        exempt_text=[period],
+        system=EXPLAIN_SYSTEM,
+    )
+    if written is None:
+        return None
+    text, _ = causal.without_causes(written.text)
+    return text.strip() or None
+
+
+async def _explain(row: monitor.Monitor, metric: str, period: str, alert_id: uuid.UUID) -> None:
+    model = gateway()
+    if model is None:
+        return
+    async with scoped_session(ROLE, row.org_id) as session:
+        figures = await session.scalar(
+            select(monitor.Alert.figures).where(monitor.Alert.id == alert_id)
+        )
+    if not figures:
+        return
+    try:
+        text = await explain(model, row, metric, period, figures)
+    except Exception:
+        # The alert is raised already; its explanation is a reading aid, never a reason to fail.
+        logger.exception("worker-agent | alert %s: explanation not written", alert_id)
+        return
+    if text is None:
+        return
+    async with scoped_session(ROLE, row.org_id) as session:
+        # Only over the figures it was written from: a member that joined meanwhile has its own
+        # firing, which explains the alert again.
+        await session.execute(
+            update(monitor.Alert)
+            .where(monitor.Alert.id == alert_id, monitor.Alert.figures == figures)
+            .values(explanation=text)
+        )
 
 
 def _event(session: AsyncSession, row: monitor.Monitor, alert: monitor.Alert, how: str) -> None:

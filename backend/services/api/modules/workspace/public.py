@@ -35,3 +35,22 @@ async def session_takes_results(
             return False
         permission = await _permission(session, principal, item)
     return permission is not None and rules.at_least(permission, "edit")
+
+
+async def session_readable(
+    principal: Principal, data_space: uuid.UUID, workspace_id: uuid.UUID
+) -> bool:
+    """True when the session is of this Data Space, not deleted, and the caller may view it: a
+    conversation is put in it (qa.conversation.workspace_id) only then."""
+    async with transaction(ROLE, principal) as session:
+        item = await session.scalar(
+            select(ws.Workspace).where(
+                ws.Workspace.id == workspace_id,
+                ws.Workspace.org_id == principal.org_id,
+                ws.Workspace.data_space_id == data_space,
+                ws.Workspace.deleted_at.is_(None),
+            )
+        )
+        if item is None:
+            return False
+        return await _permission(session, principal, item) is not None

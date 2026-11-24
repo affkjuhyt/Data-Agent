@@ -19710,6 +19710,17 @@
      "pii": false
     },
     {
+     "name": "explanation",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Đoạn giải thích do mô hình viết sau khi luật đã quyết có alert (bất biến 11), chỉ dùng số của figures; null khi chưa viết được hoặc không có mô hình (F-20). Thêm 24/11/2026",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "closed_at",
      "type": "timestamptz",
      "not_null": false,

@@ -7847,6 +7847,8 @@ export interface components {
             created_at: string;
             /** Dedup Key */
             dedup_key: string;
+            /** Explanation */
+            explanation?: string | null;
             /**
              * Fired At
              * Format: date-time
@@ -20041,6 +20043,8 @@ export interface components {
             stream?: boolean;
             /** Text */
             text: string;
+            /** Workspace Id */
+            workspace_id?: string | null;
         };
         /** QuestionStepsView */
         QuestionStepsView: {

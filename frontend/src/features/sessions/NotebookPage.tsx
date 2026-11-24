@@ -196,11 +196,12 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
         <InvestigationPlan
           investigation={ws.investigation}
           onRun={(question) => {
-            // As Home and Phân tích hand a question to Ask: Ask asks it on arrival.
+            // As Home and Phân tích hand a question to Ask: Ask asks it on arrival, in a
+            // conversation put in this session, so the agent runs the plan shown here.
             window.history.replaceState(
               null,
               '',
-              `/analysis/ask?q=${encodeURIComponent(question)}`,
+              `/analysis/ask?q=${encodeURIComponent(question)}&session=${encodeURIComponent(ws.id)}`,
             );
             navigate('analysis', 'ASK');
           }}
@@ -283,7 +284,8 @@ const TOOL_TITLE: Record<string, string> = {
 /*
  * AL-11: a workspace opened from an alert starts with the investigation the server planned, the
  * metric of the alert's period against the one before, then that change broken down by every
- * dimension the asker may cut by. Nothing runs until the person asks (L4).
+ * dimension the asker may cut by. Nothing runs until the person asks (L4); then Ask's agent runs
+ * these steps, not a plan of its own (worker_agent/agentic/investigation.py).
  */
 function InvestigationPlan({
   investigation,
@@ -320,7 +322,7 @@ function InvestigationPlan({
         ))}
       </ol>
       <p className="text-muted-foreground da-body-small">
-        Câu hỏi sẽ gửi: “{investigation.question}”
+        Hỏi đáp chạy đúng các bước này cho câu hỏi “{investigation.question}”
       </p>
     </section>
   );

@@ -107,6 +107,9 @@ class AlertView(BaseModel):
     value: decimal.Decimal | None
     threshold_value: decimal.Decimal | None
     summary: str
+    # The model's paragraph, written only after the rules decided the alert and with the alert's
+    # own figures (invariant 11, worker_agent/monitor_runs.explain); null until one is written.
+    explanation: str | None = None
     skill_run_id: uuid.UUID | None
     dedup_key: str
     occurrences: int

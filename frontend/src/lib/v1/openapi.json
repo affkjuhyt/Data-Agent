@@ -2141,6 +2141,17 @@
       "title": "Dedup Key",
       "type": "string"
      },
+     "explanation": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Explanation"
+     },
      "fired_at": {
       "format": "date-time",
       "title": "Fired At",
@@ -36773,6 +36784,18 @@
       "minLength": 1,
       "title": "Text",
       "type": "string"
+     },
+     "workspace_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Workspace Id"
      }
     },
     "required": [

@@ -4215,6 +4215,7 @@ CREATE TABLE monitor.alert (
   close_note text,
   close_kind text,
   figures jsonb NOT NULL DEFAULT '[]',
+  explanation text,
   closed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
@@ -4237,6 +4238,7 @@ COMMENT ON COLUMN monitor.alert.status IS 'open, ack, assigned, closed';
 COMMENT ON COLUMN monitor.alert.close_note IS 'Bắt buộc khi vượt ngưỡng hơn 2 lần (BR-124)';
 COMMENT ON COLUMN monitor.alert.close_kind IS 'Cách đóng: resolved (đã xử lý) hoặc false_positive (báo nhầm, để agent học); null khi chưa đóng. Thêm 23/11/2026';
 COMMENT ON COLUMN monitor.alert.figures IS 'Số đã quyết định alert, mỗi phần tử một thành viên: member, value, compared_to (ngưỡng hoặc số kỳ trước), change, query_run_id; ghi bởi runtime theo dõi (AL-10). Thêm 23/11/2026';
+COMMENT ON COLUMN monitor.alert.explanation IS 'Đoạn giải thích do mô hình viết sau khi luật đã quyết có alert (bất biến 11), chỉ dùng số của figures; null khi chưa viết được hoặc không có mô hình (F-20). Thêm 24/11/2026';
 
 CREATE TABLE monitor.report_schedule (
   id uuid NOT NULL,

@@ -6,8 +6,9 @@
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { investigateAlert } from './alerts';
+import { investigateAlert, listAlerts } from './alerts';
 import { listMonitors, muteMonitor } from './monitors';
+import { askQuestion } from './questions';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -54,6 +55,7 @@ const alert = (id: string, monitorId: string, status: string, firedAt: string) =
 
 let patched: unknown;
 let created: unknown;
+let asked: unknown;
 const server = setupServer(
   http.get('*/v1/monitors', () =>
     HttpResponse.json({
@@ -81,6 +83,13 @@ const server = setupServer(
     patched = await request.json();
     return HttpResponse.json(monitor('mon-1', 'paused'));
   }),
+  http.post('*/v1/questions', async ({ request }) => {
+    asked = await request.json();
+    return HttpResponse.json(
+      { id: 'q-1', status: 'received', question_id: 'q-1', conversation_id: 'c-1' },
+      { status: 202 },
+    );
+  }),
   http.post('*/v1/workspaces', async ({ request }) => {
     created = await request.json();
     return HttpResponse.json({ id: 'ws-9' }, { status: 201 });
@@ -90,6 +99,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 afterEach(() => {
   patched = undefined;
   created = undefined;
+  asked = undefined;
 });
 afterAll(() => server.close());
 
@@ -152,5 +162,41 @@ describe('investigateAlert', () => {
       created_from: 'alert',
       created_from_ref: 'a-new',
     });
+  });
+});
+
+describe('alert explanation (F-20)', () => {
+  it('reads the model’s paragraph, and null when none was written', async () => {
+    server.use(
+      http.get('*/v1/alerts', () =>
+        HttpResponse.json({
+          items: [
+            {
+              ...alert('a-1', 'mon-1', 'open', '2026-10-10T07:00:00Z'),
+              explanation: 'Nợ xấu kỳ 2026-09 là 10%.',
+            },
+            alert('a-2', 'mon-1', 'open', '2026-10-11T07:00:00Z'),
+          ],
+          next_page_token: '',
+        }),
+      ),
+    );
+    const { items } = await listAlerts();
+    expect(items.map((a) => a.explanation)).toEqual(['Nợ xấu kỳ 2026-09 là 10%.', null]);
+    server.resetHandlers();
+  });
+});
+
+describe('running an investigation (AL-11)', () => {
+  it('puts the new conversation in the investigation’s session', async () => {
+    await askQuestion('Vì sao Nợ xấu kỳ 2026-09 thay đổi so với kỳ trước?', null, {
+      sessionId: 'ws-9',
+    });
+    expect(asked).toMatchObject({ conversation_id: null, workspace_id: 'ws-9' });
+  });
+
+  it('sends no session with an ordinary question', async () => {
+    await askQuestion('Doanh thu 2013', 'c-1');
+    expect(asked).not.toHaveProperty('workspace_id');
   });
 });

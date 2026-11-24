@@ -140,6 +140,11 @@ class Alert(Base):
         server_default=sql_text("'[]'"),
         comment="Số đã quyết định alert, mỗi phần tử một thành viên: member, value, compared_to (ngưỡng hoặc số kỳ trước), change, query_run_id; ghi bởi runtime theo dõi (AL-10). Thêm 23/11/2026",
     )
+    explanation: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Đoạn giải thích do mô hình viết sau khi luật đã quyết có alert (bất biến 11), chỉ dùng số của figures; null khi chưa viết được hoặc không có mô hình (F-20). Thêm 24/11/2026",
+    )
     closed_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

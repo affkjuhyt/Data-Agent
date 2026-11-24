@@ -18,6 +18,11 @@ export interface Alert {
   title: string;
   /** "Ba dòng: điều gì đổi, vì sao, cần làm gì" (monitor.alert.summary). */
   summary: string;
+  /**
+   * The model's short paragraph on the alert (monitor.alert.explanation): written only after the
+   * rules raised it, from its own figures, every number checked against them; null when none was.
+   */
+  explanation: string | null;
   status: AlertStatus;
   /** How a closed alert ended: dealt with, or a false alarm. */
   close_kind: 'resolved' | 'false_positive' | null;
@@ -63,6 +68,7 @@ function readAlert(raw: AlertWire): Alert {
     code: raw.code ?? `#${raw.id.slice(0, 8)}`,
     title: raw.title ?? raw.summary.split('\n')[0],
     summary: raw.summary,
+    explanation: raw.explanation ?? null,
     status: raw.status as AlertStatus,
     close_kind: (raw.close_kind as Alert['close_kind']) ?? null,
     fired_at: raw.fired_at,

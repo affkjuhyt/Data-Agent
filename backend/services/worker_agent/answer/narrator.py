@@ -80,9 +80,11 @@ async def narrate(
     exempt_text: list[str],
     hints: list[str] | None = None,
     labels_per_sentence: bool = False,
+    system: str = SYSTEM,
 ) -> Narration | None:
     """`labels_per_sentence`: a label is a row's cells (the exploratory path), so its numbers
-    are allowed only in a sentence citing that figure, not anywhere in the text."""
+    are allowed only in a sentence citing that figure, not anywhere in the text. `system` is the
+    writer's brief; whatever it asks for, the tags and the number check below are the same."""
     shown = {f.key: f for f in figures if f.display_state == "shown" and f.value is not None}
     if not shown:
         return None
@@ -117,7 +119,7 @@ async def narrate(
     model = ""
     for attempt in range(2):
         try:
-            reply = await gateway.json_chat("responder", SYSTEM, prompt, Draft, max_tokens=2500)
+            reply = await gateway.json_chat("responder", system, prompt, Draft, max_tokens=2500)
         except ModelUnavailable:
             return None
         tokens += reply.tokens

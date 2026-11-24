@@ -86,3 +86,44 @@ async def test_an_alert_of_another_space_or_without_a_period_opens_nothing(
             headers=mon.headers("owner"),
         )
         assert missing.status_code == 422
+
+
+async def test_running_the_investigation_puts_its_conversation_in_the_workspace(
+    mon: Org,  # noqa: F811
+) -> None:
+    alert = seed_alert(mon, seed_monitor(mon), period_label="2026-09")
+    async with client(mon) as api:
+        made = await api.post("/v1/workspaces", json=body(alert), headers=mon.headers("colleague"))
+        ws = made.json()
+        question = ws["params"]["investigation"]["question"]
+        asked = await api.post(
+            "/v1/questions",
+            json={"text": question, "workspace_id": ws["id"]},
+            headers=mon.headers("colleague"),
+        )
+        assert asked.status_code == 202, asked.text
+        conversation = asked.json()["conversation_id"]
+        assert (
+            mon.one("SELECT workspace_id::text FROM qa.conversation WHERE id = %s", conversation)
+            == ws["id"]
+        )
+        # A follow-up stays where its conversation is; a session the asker cannot see takes none.
+        for extra, who in (({"conversation_id": conversation}, "colleague"), ({}, "owner")):
+            refused = await api.post(
+                "/v1/questions",
+                json={"text": question, "workspace_id": ws["id"], **extra},
+                headers=mon.headers(who),
+            )
+            assert refused.status_code == 422, refused.text
+            assert refused.json()["errors"][0]["field"] == "workspace_id"
+
+
+async def test_an_alert_shows_the_paragraph_the_model_wrote(mon: Org) -> None:  # noqa: F811
+    explained = seed_alert(
+        mon, seed_monitor(mon), period_label="2026-09", explanation="Nợ xấu kỳ 2026-09 là 2,3%."
+    )
+    async with client(mon) as api:
+        listed = await api.get("/v1/alerts", headers=mon.headers("colleague"))
+    assert listed.status_code == 200, listed.text
+    [item] = [a for a in listed.json()["items"] if a["id"] == str(explained)]
+    assert item["explanation"] == "Nợ xấu kỳ 2026-09 là 2,3%."

@@ -15,6 +15,7 @@ import pytest
 from psycopg2.extras import Json
 
 from services.worker_agent import monitor_runs
+from services.worker_agent.llm import Reply
 from services.worker_agent.schedules import targets
 
 from .conftest import Seed
@@ -191,3 +192,66 @@ async def test_held_back_data_and_a_seasonal_rule_raise_nothing(
     assert alerts(seed, made) == [] and alerts(seed, seasonal) == []
     # The gate is asked before the source: nothing was read.
     assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", made) == 0
+
+
+class Writer:
+    """A model that writes the explanation from the tags it is shown, and counts its calls."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.calls = 0
+
+    async def json_chat(self, role: str, system: str, user: str, output: Any, **_: Any) -> Any:
+        self.calls += 1
+        return Reply(output(text=self.text), "fake", 10, 1)
+
+
+def explanation(seed: Seed, made: uuid.UUID) -> Any:
+    return seed.one("SELECT explanation FROM monitor.alert WHERE monitor_id = %s", str(made))
+
+
+async def test_the_model_explains_only_what_the_rules_raised(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    model = Writer("Kỳ 2026-09 vượt ngưỡng {{F1}}: {{F2}}. Điều này dẫn đến rủi ro.")
+    monkeypatch.setattr(monitor_runs, "gateway", lambda: model)
+    du_no = seed.one("SELECT id FROM context.metric WHERE org_id = %s AND code = 'DU_NO'", bank.org)
+    quiet = watch(bank, "change_vs_previous", {"direction": "down", "value": 5}, metric=du_no)
+    assert await monitor_runs.evaluate(bank.org, quiet, AT) == "quiet 2026-09"
+    # Invariant 11: no alert, no model.
+    assert model.calls == 0
+
+    made = watch(bank, "threshold", {"direction": "above", "value": 5})
+    assert (await monitor_runs.evaluate(bank.org, made, AT)).startswith("alert ")
+    assert model.calls == 1
+    [(_, _, [figure], *_)] = alerts(seed, made)
+    # Its numbers are the alert's own figures; the cause it worded is dropped.
+    shown = figure["value"].replace(".", ",")
+    assert explanation(seed, made) == f"Kỳ 2026-09 vượt ngưỡng 5: {shown}."
+    # The same period again raises nothing and asks the model nothing.
+    assert await monitor_runs.evaluate(bank.org, made, AT) == "already alerted 2026-09"
+    assert model.calls == 1
+
+
+async def test_without_a_model_or_a_traceable_text_the_alert_stands_unexplained(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    monkeypatch.setattr(monitor_runs, "gateway", lambda: None)
+    made = watch(bank, "threshold", {"direction": "above", "value": 5})
+    assert (await monitor_runs.evaluate(bank.org, made, AT)).startswith("alert ")
+    assert explanation(seed, made) is None
+
+    # A number of the model's own, twice: nothing is stored, the alert stays as the rules made it.
+    model = Writer("Nợ xấu cao nhất 7 năm.")
+    monkeypatch.setattr(monitor_runs, "gateway", lambda: model)
+    other = watch(bank, "threshold", {"direction": "above", "value": 6})
+    assert (await monitor_runs.evaluate(bank.org, other, AT)).startswith("alert ")
+    assert model.calls == 2 and explanation(seed, other) is None
+    [(*_, summary)] = alerts(seed, other)
+    assert "ngưỡng 6" in summary

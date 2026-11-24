@@ -30,7 +30,7 @@ from typing import Literal
 from libs import clock, metrics
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import qa
-from services.worker_agent.agentic import deep_skill
+from services.worker_agent.agentic import deep_skill, investigation
 from services.worker_agent.events import Event
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic import uncertified
@@ -63,7 +63,8 @@ def engine() -> str:
 class Route:
     path: Path
     # Short and bounded (a metric label): RESOLVED, AMBIGUOUS, UNCATALOGUED, WHY, MULTI_METRIC,
-    # HYBRID, DOC_ONLY, DEEP, FORBIDDEN, GONE, UNCERTIFIED, or the ENGINE_* of a fixed policy.
+    # HYBRID, DOC_ONLY, DEEP, FORBIDDEN, GONE, UNCERTIFIED, INVESTIGATION, or the ENGINE_* of a
+    # fixed policy.
     reason: str
 
 
@@ -137,6 +138,9 @@ async def decide(event: Event, question_id: uuid.UUID) -> Route:
             session, data_space_id=space_id, principal_id=conversation.user_id
         ):
             return Route("governed", "FORBIDDEN")
+        # An investigation of an alert has its plan already (AL-11): the agent runs it.
+        if await investigation.prepared(event.org_id, conversation, question) is not None:
+            return Route("agentic", "INVESTIGATION")
         today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         layer = await load(session, space_id)
         text, purpose = question.text, question.purpose

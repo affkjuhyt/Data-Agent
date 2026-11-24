@@ -45,6 +45,7 @@ from services.worker_agent.agentic import budget as agent_budget
 from services.worker_agent.agentic import (
     corpus,
     deep_skill,
+    investigation,
     memory,
     narrate,
     operator_view,
@@ -160,6 +161,8 @@ class State:
     deep: bool = False
     # AE-02: what the turn may spend; set once the audience and depth are known (prepare).
     budget: agent_budget.Budget | None = None
+    # AL-11: the plan of an investigation opened from an alert, run instead of the planner's.
+    prepared: p.Plan | None = None
 
 
 # ---------------------------------------------------------------- prepare
@@ -369,6 +372,7 @@ async def prepare(s: State) -> None:
             s.audience, deep=s.deep, max_cost=await agent_budget.org_max_cost(session)
         )
         s.conversation_id = conversation.id
+        s.prepared = await investigation.prepared(event.org_id, conversation, question)
         question_text = asked or question.text
         s.ctx = ToolContext(
             org_id=event.org_id,
@@ -648,12 +652,30 @@ def _asking(s: State, ask: Clarify, goal: str, thought: str) -> p.Plan | None:
     return asked if asked.mode == "ask" else None
 
 
+def _prepared(s: State) -> p.Plan | None:
+    """The investigation's plan (AL-11), checked as a planner's is; None, and the planner plans,
+    when it no longer fits the registry or the turn's budget."""
+    if s.prepared is None:
+        return None
+    try:
+        return _validated(s, s.prepared)
+    except p.PlanInvalid as exc:
+        logger.info("question %s: prepared plan refused (%s)", s.question_id, exc)
+        return None
+
+
 async def plan(s: State) -> None:
-    system = _planner_system(s)
     async with turn_trace.stepping("plan", title="Lập kế hoạch", target="") as step:
-        early = _out_of_scope(s) or _missing_period(s) or _same_named(s) or _unknown_cut(s)
+        prepared = _prepared(s)
+        # A prepared plan was made from the alert, not from the words of the question: nothing to
+        # ask back about them.
+        early = (
+            None
+            if prepared is not None
+            else _out_of_scope(s) or _missing_period(s) or _same_named(s) or _unknown_cut(s)
+        )
         try:
-            s.plan = early or await _ask_plan(s, system, _situation(s))
+            s.plan = early or prepared or await _ask_plan(s, _planner_system(s), _situation(s))
         except (ModelUnavailable, p.PlanInvalid) as exc:
             step.status, step.summary = "failed", "Không lập được kế hoạch."
             logger.info(
@@ -671,6 +693,7 @@ async def plan(s: State) -> None:
             "thought": narrate.reader(s.plan.thought, _vocab(s)),
             "mode": s.plan.mode,
             "steps": p.view(s.plan),
+            "prepared": prepared is not None,
         }
     await publish(
         str(s.question_id),

@@ -47,7 +47,7 @@ interface ConversationListItem {
 export const askQuestion = (
   text: string,
   conversationId: string | null,
-  opts?: { purpose?: string | null },
+  opts?: { purpose?: string | null; sessionId?: string | null },
 ) =>
   ok<QuestionAccepted>(
     api.POST('/v1/questions', {
@@ -57,6 +57,8 @@ export const askQuestion = (
         knowledge_mode: 'latest',
         stream: true,
         ...(opts?.purpose ? { purpose: opts.purpose } : {}),
+        // The session the new conversation belongs to: an investigation runs its prepared plan.
+        ...(opts?.sessionId ? { workspace_id: opts.sessionId } : {}),
       } satisfies QuestionCreate,
     }),
   );

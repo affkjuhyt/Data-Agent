@@ -142,7 +142,9 @@ Logging/metrics: counter `ask_route_total{path,reason}`; histogram `ask_turn_sec
   trường mới `documents` của pack. `≥ 2 metric` = `Understanding.named_metrics` (resolver đếm metric được gọi tên).
 - Lý do: `RESOLVED` → governed; `AMBIGUOUS` → governed (cho tới khi planner hỏi lại với candidate metric đã
   certified); `UNCATALOGUED` → agentic (planner trả lời câu không phải số từ corpus); `WHY`, `MULTI_METRIC`, `HYBRID`,
-  `DOC_ONLY`, `DEEP` → agent; `FORBIDDEN`, `GONE` → governed (nó trả lời từ chối). `ASK_ENGINE=router` (mặc định) |
+  `DOC_ONLY`, `DEEP` → agent; `INVESTIGATION` → agent với kế hoạch dựng sẵn của điều tra từ alert (câu đầu của hội thoại
+  đặt trong phiên `created_from=alert`, AL-11, `agentic/investigation.py`, xét trước khi đọc chữ của câu); `FORBIDDEN`,
+  `GONE` → governed (nó trả lời từ chối). `ASK_ENGINE=router` (mặc định) |
   `agentic` (agent trước mọi câu, như trước AE-01: đường lui) | `governed`. Đếm ở `dataagent_ask_route_total{path,reason}`.
 - `MULTI_METRIC` chỉ khi hai metric hoà điểm **và** câu nối chúng (trường `joins` của pack: và, với, so sánh; and,
   vs). DS-AW aw057/aw058 "Doanh số Trade Sales theo ngân sách" gọi tên hai metric nhưng hỏi một; agent sai cả hai.

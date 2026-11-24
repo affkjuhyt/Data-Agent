@@ -49,6 +49,9 @@ class QuestionCreate(_Body):
     purpose: str | None = Field(default=None, max_length=2_000)
     parent_question_id: uuid.UUID | None = None
     conversation_id: uuid.UUID | None = None
+    # The session the new conversation belongs to (qa.conversation.workspace_id): an investigation
+    # opened from an alert runs its prepared plan on the conversation's first question (AL-11).
+    workspace_id: uuid.UUID | None = None
     stream: bool = False
 
 

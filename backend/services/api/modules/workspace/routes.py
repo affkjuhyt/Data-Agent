@@ -18,6 +18,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import ColumnElement, and_, any_, exists, func, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs.contracts.v1.investigation import investigation
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import org
 from libs.dataagent_db.models import query as query_models
@@ -371,7 +372,7 @@ async def _from_alert(
         "monitor_id": str(subject.monitor_id),
         "metric": subject.metric_code,
         "period": subject.period,
-        "investigation": rules.investigation(
+        "investigation": investigation(
             metric_code=subject.metric_code,
             metric_name=subject.metric_name,
             period=subject.period,

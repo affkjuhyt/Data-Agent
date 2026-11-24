@@ -260,6 +260,18 @@ function AlertBody({ alert }: { alert: Alert }) {
               </section>
             )
           )}
+          {/* F-20: the rules raised the alert; the model only says it in words, with its figures. */}
+          {alert.explanation && (
+            <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
+              <div className="flex items-baseline gap-da-md">
+                <h2 className="text-foreground da-heading-3">Giải thích</h2>
+                <span className="ml-auto text-muted-foreground da-caption">
+                  Mô hình viết từ số của cảnh báo · nguyên nhân cần mở điều tra
+                </span>
+              </div>
+              <p className="whitespace-pre-line text-foreground da-body">{alert.explanation}</p>
+            </section>
+          )}
           {alert.analysis && (
             <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
               <div className="flex items-baseline gap-da-md">

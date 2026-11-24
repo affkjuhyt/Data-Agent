@@ -58,9 +58,11 @@ async def insert_question(
     purpose: str | None = None,
     channel: str = "web",
     api_client_id: uuid.UUID | None = None,
+    workspace_id: uuid.UUID | None = None,
 ) -> tuple[qa.Question, qa.Conversation]:
     """Insert the question (in a new conversation when none is given, locked by the caller when
-    it is) and its `question.received` event, in the caller's transaction.
+    it is) and its `question.received` event, in the caller's transaction. `workspace_id` puts a
+    new conversation in a session the caller was checked to see.
 
     A question that tries to replace the model's instructions is refused here, before it is
     stored, so no model ever reads it (AGC-03); the web route and MCP both record questions here."""
@@ -73,6 +75,7 @@ async def insert_question(
             user_id=principal.user_id,
             channel=channel,
             api_client_id=api_client_id,
+            workspace_id=workspace_id,
             title=title_of(text),
             created_by=principal.user_id,
             updated_by=principal.user_id,

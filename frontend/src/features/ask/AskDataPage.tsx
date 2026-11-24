@@ -127,19 +127,24 @@ export default function AskDataPage() {
   );
 
   // A question handed over from elsewhere (Trang chủ's question bar, ⌘K) arrives as ?q=.
-  // It is asked once, then dropped from the URL so a reload does not ask it again.
+  // It is asked once, then dropped from the URL so a reload does not ask it again. With
+  // ?session= (an investigation's "Chạy điều tra", AL-11) the new conversation is put in that
+  // session, and the agent runs the plan the session shows instead of planning one.
   const handedOver = useRef(false);
   useEffect(() => {
     if (handedOver.current || routeId) return;
     handedOver.current = true;
     const params = new URLSearchParams(window.location.search);
     const q = params.get('q');
+    const session = params.get('session');
     if (!q) return;
     params.delete('q');
+    params.delete('session');
     const rest = params.toString();
     window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
-    ask(q);
-  }, [routeId, ask]);
+    if (session) void send(q, 'auto', session);
+    else ask(q);
+  }, [routeId, ask, send]);
 
   const openCitation = (c: Citation) => {
     if (c.type === 'document') {

@@ -74,6 +74,7 @@ from services.api.modules.qa.schemas import (
     ReplayView,
     TurnStepView,
 )
+from services.api.modules.workspace.public import session_readable
 
 router = APIRouter()
 ROLE = "svc_qa"
@@ -174,6 +175,13 @@ async def create_question(
     await within_quota(
         request, "questions", f"{principal.org_id}:{principal.user_id}", questions_per_minute()
     )
+    if body.workspace_id is not None:
+        # A session holds a conversation from its first question: a follow-up stays where its
+        # conversation is.
+        if body.conversation_id is not None or body.parent_question_id is not None:
+            raise _invalid("workspace_id", "A session takes a new conversation only.")
+        if not await session_readable(principal, data_space, body.workspace_id):
+            raise _invalid("workspace_id", "No such session in this Data Space.")
     async with transaction(ROLE, principal) as session:
         conversation_id = body.conversation_id
         if body.parent_question_id is not None:
@@ -220,6 +228,7 @@ async def create_question(
             knowledge_mode=body.knowledge_mode,
             knowledge_at=body.knowledge_at,
             purpose=body.purpose,
+            workspace_id=body.workspace_id,
         )
     response.headers["Location"] = f"/v1/questions/{question.id}"
     return QuestionAccepted(

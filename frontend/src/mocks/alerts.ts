@@ -36,6 +36,7 @@ function alert(
   const points = series(2.32);
   return {
     summary: a.title,
+    explanation: null,
     status: 'open',
     close_kind: null,
     fired_at: at(0, 7, 15),

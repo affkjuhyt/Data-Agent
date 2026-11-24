@@ -2278,6 +2278,7 @@ Cảnh báo phát sinh khi luật khớp; gộp tín hiệu lặp trong 24 giờ
 | close\_note | text | Bắt buộc khi vượt ngưỡng hơn 2 lần (BR-124) |
 | close\_kind | text | Cách đóng: resolved (đã xử lý) hoặc false\_positive (báo nhầm, để agent học); null khi chưa đóng. Thêm 23/11/2026 |
 | figures | jsonb, bắt buộc, mặc định '[]' | Số đã quyết định alert, mỗi phần tử một thành viên: member, value, compared\_to (ngưỡng hoặc số kỳ trước), change, query\_run\_id; ghi bởi runtime theo dõi (AL-10). Thêm 23/11/2026 |
+| explanation | text | Đoạn giải thích do mô hình viết sau khi luật đã quyết có alert (bất biến 11), chỉ dùng số của figures; null khi chưa viết được hoặc không có mô hình (F-20). Thêm 24/11/2026 |
 | closed\_at | timestamptz |  |
 
 Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('metric','data\_stale')); CHECK (status IN ('open','ack','assigned','closed')); CHECK (status <> 'closed' OR closed\_at IS NOT NULL); CHECK (status <> 'closed' OR occurrences <= 2 OR close\_note IS NOT NULL); CHECK (close\_kind IN ('resolved','false\_positive')); FOREIGN KEY (monitor\_id) REFERENCES monitor.monitor(id). Chỉ mục: duy nhất (monitor\_id, dedup\_key) WHERE status <> 'closed'.

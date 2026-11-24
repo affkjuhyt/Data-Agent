@@ -14,6 +14,7 @@
     "purpose": false,
     "parent_question_id": false,
     "conversation_id": false,
+    "workspace_id": false,
     "stream": false
    },
    "query": [],
@@ -32,11 +33,15 @@
      "business_rule_violated"
     ],
     [
+     422,
+     "validation_failed"
+    ],
+    [
      429,
      "rate_limited"
     ]
    ],
-   "request_text": "text*, as_of, knowledge_mode, knowledge_at, purpose, parent_question_id, conversation_id, stream"
+   "request_text": "text*, as_of, knowledge_mode, knowledge_at, purpose, parent_question_id, conversation_id, workspace_id, stream"
   },
   "GET /v1/questions/{id}": {
    "group": "Hỏi đáp",

@@ -39,7 +39,8 @@ const GIVE_UP_MS = 5 * 60_000;
 const nowIso = () => new Date().toISOString();
 let seq = 0;
 const nextId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
-type PendingTurn = { text: string; layout: AnswerLayout };
+/** `sessionId`: the session (workspace) a new conversation is put in, e.g. an investigation. */
+type PendingTurn = { text: string; layout: AnswerLayout; sessionId?: string };
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
     const timer = setTimeout(resolve, ms);
@@ -331,7 +332,7 @@ export function useQuestionStream() {
   );
 
   const runTurn = useCallback(
-    async (text: string, layout: AnswerLayout = 'auto') => {
+    async (text: string, layout: AnswerLayout = 'auto', sessionId?: string) => {
       const q = text.trim();
       if (!q) return;
       const assistantId = nextId();
@@ -358,6 +359,8 @@ export function useQuestionStream() {
         // OP-6: /report (layout report) asks for deep methodology via purpose on the question.
         const accepted = await askQuestion(q, conversationRef.current, {
           purpose: layout === 'report' ? 'deep' : null,
+          // A session takes a conversation from its first question only (POST /v1/questions).
+          sessionId: conversationRef.current ? undefined : sessionId,
         });
         conversationRef.current = accepted.conversation_id;
         currentQuestionRef.current = accepted.question_id;
@@ -391,11 +394,11 @@ export function useQuestionStream() {
     async (first: PendingTurn) => {
       runningRef.current = true;
       try {
-        await runTurn(first.text, first.layout);
+        await runTurn(first.text, first.layout, first.sessionId);
         while (queueRef.current.length > 0 && mounted.current) {
           const next = queueRef.current.shift();
           setQueued(queueRef.current.map((turn) => turn.text));
-          if (next) await runTurn(next.text, next.layout);
+          if (next) await runTurn(next.text, next.layout, next.sessionId);
         }
       } finally {
         runningRef.current = false;
@@ -406,15 +409,15 @@ export function useQuestionStream() {
   );
 
   const send = useCallback(
-    async (text: string, layout: AnswerLayout = 'auto') => {
+    async (text: string, layout: AnswerLayout = 'auto', sessionId?: string) => {
       const q = text.trim();
       if (!q) return;
       if (runningRef.current) {
-        queueRef.current.push({ text: q, layout });
+        queueRef.current.push({ text: q, layout, sessionId });
         setQueued(queueRef.current.map((turn) => turn.text));
         return;
       }
-      await drain({ text: q, layout });
+      await drain({ text: q, layout, sessionId });
     },
     [drain],
   );

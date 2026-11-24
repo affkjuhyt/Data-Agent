@@ -371,6 +371,30 @@ Monitor được đánh giá theo lịch thật; alert tạo ra có ngữ cảnh
    dims=allowed)` → `COMPUTE(decomposition)`; người dùng bấm chạy (không tự chạy: L4 giới hạn, 01 §2.3).
 5. **Bất biến 11**: LLM chỉ được gọi để viết đoạn giải thích sau khi luật đã quyết có alert; không gọi khi không alert.
 
+**Đã làm (24/11/2026)**, sau review 24/11 (lịch theo giờ, 1 alert/kỳ, cooldown 24 giờ, chặn khi dữ liệu xấu đã chạy từ
+AL-10; thiếu hai phần dưới):
+
+- *Giải thích bằng mô hình* (B.5): `worker_agent/monitor_runs.py` gọi mô hình chỉ khi `_write` vừa ghi alert hoặc thêm
+  thành viên vào alert mở, sau khi giao dịch của alert đã commit (mô hình chậm hay vắng không giữ khoá, không chặn alert).
+  Mô hình (vai `responder`, `answer/narrator.narrate` với brief riêng) chỉ được viết số dạng thẻ của figures của chính
+  alert: ngưỡng/mức của luật, số kỳ này, số kỳ trước, chênh; alert chia theo chiều chỉ có số thành viên vượt luật và luật
+  (thành viên và số của họ không ra khỏi `figures`, như `summary`). Số không truy được bị bỏ theo câu, câu nêu nguyên nhân
+  bị bỏ (`libs/language/causal.py`). Lưu ở cột mới `monitor.alert.explanation` (v3_0065), chỉ khi alert vẫn giữ đúng
+  figures đã viết từ đó; `AlertView.explanation`, trang Cảnh báo có mục "Giải thích". Quiet, `already alerted`, cooldown,
+  `QUALITY_BLOCKED` không gọi mô hình. Một lần viết hỏng không được thử lại ở lượt sau của cùng kỳ (alert vẫn đúng, chỉ
+  thiếu đoạn chữ).
+- *Kế hoạch điều tra dựng sẵn được chạy* (B.4): phần seed PlanIR đã có từ 23/11 (v3_0059), nhưng "Chạy điều tra" chỉ gửi
+  câu hỏi và agent tự lập kế hoạch. Nay: tạo PlanIR ở `libs/contracts/v1/investigation.py` (api và worker dùng chung);
+  "Chạy điều tra" mở Hỏi đáp với `?q=…&session=<workspace>`, câu hỏi gửi kèm `workspace_id` (`POST /v1/questions`, chỉ
+  cho hội thoại mới, người hỏi phải xem được phiên → `qa.conversation.workspace_id`). Câu đầu của hội thoại đó: router
+  trả `agentic/INVESTIGATION`, engine dùng kế hoạch dựng lại từ alert của phiên (`created_from_ref`, không sửa được),
+  không từ `params` (người sửa phiên đổi được), kiểm như kế hoạch của planner (AE-20) rồi chạy `query_metric` →
+  `explain_change` không gọi planner; kế hoạch không còn hợp lệ thì planner lập như cũ. Câu sau trong hội thoại lập kế hoạch
+  bình thường; `ASK_ENGINE=governed` vẫn giữ mọi câu ở governed. Không chọn phương án "mở Ask với câu vì sao điền sẵn"
+  vì đó chính là hành vi cũ: câu "vì sao" đi agent nhưng kế hoạch người dùng thấy ở notebook không phải kế hoạch chạy.
+  Test: `tests/unit/worker_agent/test_alert_explanation.py`, `tests/integration/worker_agent/test_monitor_runs.py`,
+  `tests/integration/worker_agent/test_alert_investigation.py`, `tests/integration/api/test_alert_investigation.py`.
+
 ### C/D/E
 
 Không OSS mới. Test: `tests/integration/worker_agent/test_monitor_runs.py` (threshold, change, MAD; dedup; blocked →
