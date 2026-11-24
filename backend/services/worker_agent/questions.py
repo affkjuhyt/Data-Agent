@@ -90,7 +90,7 @@ from services.worker_agent.query.scope import (
     can_ask_data_space,
 )
 from services.worker_agent.query.secrets import SecretReader, StaticReader, reader_from_env
-from services.worker_agent.semantic import analysis, compare, coverage
+from services.worker_agent.semantic import analysis, compare, coverage, uncertified
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.sqlgen.answer import answer_by_sql, answer_verified_first
@@ -1470,6 +1470,20 @@ async def _understand_and_plan(
                 )
         access_problem: Refusal | None = space_access_problem
         models: list[dict[str, Any]] = []
+        uncertified_note: str | None = None
+        if access_problem is None and edited is None and u.decision == "unknown":
+            # S1: what the layer defines but no certified metric answers (a draft metric, a
+            # measure), read by the same rules and compiled by the layer's own definition, before
+            # a model reads the question or writes SQL (semantic/uncertified.py).
+            placed = uncertified.read(
+                asked,
+                layer,
+                await uncertified.load_uncertified(session, space_id, layer),
+                today=today,
+            )
+            if placed is not None:
+                uncertified.admit(layer, placed)
+                u, uncertified_note = placed.understanding, placed.note
         model = gateway()
         if (
             access_problem is None
@@ -1945,7 +1959,10 @@ async def _understand_and_plan(
                 follow_ups=suggestions.follow_ups(
                     u, layer, today=today, grain=grain, compared=compare_to is not None
                 ),
-                best_effort_note=" ".join(n for n in (assumed_note, best_effort_note) if n) or None,
+                best_effort_note=" ".join(
+                    n for n in (uncertified_note, assumed_note, best_effort_note) if n
+                )
+                or None,
                 quality_note=quality_note,
                 quality_warned=quality_warned,
                 request=compile_request,

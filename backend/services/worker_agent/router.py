@@ -33,6 +33,7 @@ from libs.dataagent_db.models import qa
 from services.worker_agent.agentic import deep_skill
 from services.worker_agent.events import Event
 from services.worker_agent.query.scope import can_ask_data_space
+from services.worker_agent.semantic import uncertified
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand.asked import asked_of
 from services.worker_agent.understand.packs import PACKS
@@ -62,7 +63,7 @@ def engine() -> str:
 class Route:
     path: Path
     # Short and bounded (a metric label): RESOLVED, AMBIGUOUS, UNCATALOGUED, WHY, MULTI_METRIC,
-    # HYBRID, DOC_ONLY, DEEP, FORBIDDEN, GONE, or the ENGINE_* of a fixed policy.
+    # HYBRID, DOC_ONLY, DEEP, FORBIDDEN, GONE, UNCERTIFIED, or the ENGINE_* of a fixed policy.
     reason: str
 
 
@@ -140,14 +141,21 @@ async def decide(event: Event, question_id: uuid.UUID) -> Route:
         layer = await load(session, space_id)
         text, purpose = question.text, question.purpose
         slots = await previous_slots(session, question, layer.vocabulary)
-    parts = asked_of(text, layer)
-    u = reading(
-        parts.text,
-        layer.vocabulary,
-        today=today,
-        slots=slots,
-        compare_to=parts.comparison.compare_to if parts.comparison is not None else None,
-    )
+        parts = asked_of(text, layer)
+        u = reading(
+            parts.text,
+            layer.vocabulary,
+            today=today,
+            slots=slots,
+            compare_to=parts.comparison.compare_to if parts.comparison is not None else None,
+        )
+        # A quantity the layer defines without a certified metric (a draft, a measure) is the
+        # governed path's to compile by its definition (semantic/uncertified.py, S1), not the
+        # agent's to write SQL for.
+        if u.decision == "unknown" and not deep_skill.requested(event.payload, purpose):
+            found = await uncertified.load_uncertified(session, space_id, layer)
+            if uncertified.read(parts.text, layer, found, today=today) is not None:
+                return Route("governed", "UNCERTIFIED")
     return classify(text, u, deep=deep_skill.requested(event.payload, purpose))
 
 

@@ -2013,3 +2013,78 @@ async def test_a_count_of_zero_for_a_period_without_data_is_no_data(
     await drain()
     status, kind, text, figures, _, _ = answer_of(seed, q)
     assert (status, kind) == ("answered", "data") and "Không có dữ liệu" not in text, text
+
+
+def _count_measure(bank: Bank, seed: Seed, *, name: str = "Số khoản vay") -> uuid.UUID:
+    entity = seed.one(
+        "SELECT id FROM context.semantic_entity WHERE data_space_id = %s AND code = 'khoan_vay'",
+        bank.space,
+    )
+    return seed.row(
+        "context.semantic_measure",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        entity_id=entity,
+        code="so_khoan",
+        name=name,
+        expression="COUNT(*)",
+        aggregation="count",
+        additivity="full",
+    )
+
+
+async def test_s1_a_measure_no_metric_is_built_on_is_answered_by_its_definition(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # S1 (24/11): "Số khoản vay" is a measure of the layer, no certified metric: compiled by the
+    # measure's own definition, not by a model's SQL, and labelled as not certified.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    _count_measure(bank, seed)
+    q = bank.ask("Số khoản vay tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, answer = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    assert "Chưa có chỉ số chuẩn cho “Số khoản vay”" in text
+    code = seed.one("SELECT trust_code FROM qa.answer WHERE id = %s", answer)
+    assert code != "GOVERNED"
+    executed = seed.one("SELECT sql_executed FROM query.query_run WHERE caller_id = %s", q)
+    assert "COUNT(*)" in executed.upper()
+
+
+async def test_s1_a_draft_metric_is_answered_and_said_to_wait_for_certification(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    _count_measure(bank, seed, name="so_khoan")
+    owner = seed.row(
+        "org.app_user", org_id=bank.org, external_id="kc-dr", username="dr", display_name="D"
+    )
+    m = seed.row(
+        "context.metric",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        code="SO_HOP_DONG",
+        owner_id=owner,
+        current_version=1,
+        status="draft",
+    )
+    seed.row(
+        "context.metric_version",
+        org_id=bank.org,
+        metric_id=m,
+        version=1,
+        display_name="Số hợp đồng vay",
+        expression="so_khoan",
+        unit="hợp đồng",
+        period_semantics="sum_over_period",
+        status="draft",
+        allowed_dimensions=[],
+        filters=json.dumps([]),
+    )
+    q = bank.ask("Số hợp đồng vay tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    assert "chưa được chứng nhận" in text and figures
