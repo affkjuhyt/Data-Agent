@@ -432,7 +432,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-170 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +11 |
 | BR-171 | UC-01-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/forecast_fit/backtest.py` +12 |
-| BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/forecast_release/__init__.py` +13 |
 | BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +16 |
 | BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0049_receipt_without_product.py`, `backend/libs/dataagent_db/models/context.py` +20 |
 | BR-176 | UC-01-01, UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0049_receipt_without_product.py`, `backend/libs/dataagent_db/models/qa.py` +7 |
