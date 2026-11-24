@@ -18,9 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs import clock
 from libs.dataagent_db.models import catalog, context, governance
-from services.worker_agent.sqlgen.schema import Col, Fk, Schema, Tbl, readable
+from services.worker_agent.sqlgen.schema import Col, Definition, Fk, Schema, Tbl, readable
 from services.worker_agent.sqlgen.verified import bind
-from services.worker_agent.understand.text import find_period
+from services.worker_agent.understand.text import find_period, norm
 
 MAX_SAMPLES = 20
 
@@ -185,6 +185,7 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: u
             )
         )
     ).all()
+    definitions = await _definitions(session, space_id, tables)
     return Space(
         readable(
             Schema(
@@ -204,7 +205,140 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: u
                     (str(q), bind(str(s), find_period(str(q), today, cal), today))
                     for q, s in examples
                 ],
+                definitions,
             )
         ),
         {d.id: d.source_id for d in datasets},
     )
+
+
+_AGGREGATES = {"sum": "SUM({})", "count": "COUNT({})", "count_distinct": "COUNT(DISTINCT {})",
+               "avg": "AVG({})", "min": "MIN({})", "max": "MAX({})"}  # fmt: skip
+
+
+def _aggregated(expression: str, aggregation: str) -> str:
+    """A measure as SQL: its expression under its aggregation, kept whole when it aggregates."""
+    head = expression.strip().upper()
+    if any(head.startswith(f"{a}(") for a in ("SUM", "COUNT", "AVG", "MIN", "MAX")):
+        return expression.strip()
+    return _AGGREGATES.get(aggregation, "SUM({})").format(expression.strip())
+
+
+async def _definitions(
+    session: AsyncSession, space_id: uuid.UUID, tables: list[Tbl]
+) -> list[Definition]:
+    """S2: the space's metrics (certified, and drafts) and measures as the SQL writer reads them:
+    each measure's SQL on its table with the time column it is read along, a semi-additive one
+    read at the period's end, a metric's formula over its measures with its filters. Only on
+    the tables this asker may read (the caller's `tables`)."""
+    ctx = context
+    by_id = {t.dataset_id: t for t in tables}
+    entities = {
+        e.id: e
+        for e in (
+            await session.scalars(
+                select(ctx.SemanticEntity).where(ctx.SemanticEntity.data_space_id == space_id)
+            )
+        ).all()
+    }
+    dims = (
+        await session.scalars(
+            select(ctx.SemanticDimension).where(ctx.SemanticDimension.data_space_id == space_id)
+        )
+    ).all()
+    time_of = {d.entity_id: d.expression.strip('"') for d in dims if d.is_time}
+    dim_name = {d.code: (d.name, d.expression) for d in dims}
+    measures = {
+        m.code: m
+        for m in (
+            await session.scalars(
+                select(ctx.SemanticMeasure).where(ctx.SemanticMeasure.data_space_id == space_id)
+            )
+        ).all()
+    }
+    synonyms: dict[uuid.UUID, list[str]] = defaultdict(list)
+    for target, phrase in (
+        await session.execute(
+            select(ctx.Synonym.target_id, ctx.Synonym.phrase_norm).where(
+                ctx.Synonym.data_space_id == space_id,
+                ctx.Synonym.status == "active",
+                ctx.Synonym.target_kind == "metric",
+            )
+        )
+    ).all():
+        synonyms[target].append(phrase)
+
+    def measure_sql(code: str) -> tuple[str, uuid.UUID] | None:
+        m = measures.get(code)
+        e = entities.get(m.entity_id) if m is not None else None
+        if m is None or e is None or e.primary_dataset_id not in by_id:
+            return None
+        table = by_id[e.primary_dataset_id]
+        when = time_of.get(e.id)
+        text = f"{_aggregated(m.expression, m.aggregation)} FROM {table.qualified}"
+        if when:
+            text += f" (period on {when})"
+        if m.additivity == "semi":
+            text += " — a stock: read on the last date of the period, summed over that date only"
+        return text, table.dataset_id
+
+    out: list[Definition] = []
+    for code, m in measures.items():
+        found = measure_sql(code)
+        if found is not None:
+            text, dataset = found
+            out.append(
+                Definition(m.name, (norm(m.name),), frozenset({dataset}), f"{m.name} = {text}")
+            )
+    metrics = (
+        await session.scalars(
+            select(ctx.Metric).where(
+                ctx.Metric.data_space_id == space_id, ctx.Metric.status != "retired"
+            )
+        )
+    ).all()
+    for metric in metrics:
+        row = await session.scalar(
+            select(ctx.MetricVersion)
+            .where(ctx.MetricVersion.metric_id == metric.id, ctx.MetricVersion.status != "broken")
+            .order_by(
+                (ctx.MetricVersion.status == "certified").desc(), ctx.MetricVersion.version.desc()
+            )
+            .limit(1)
+        )
+        if row is None:
+            continue
+        parts: list[str] = []
+        datasets: set[uuid.UUID] = set()
+        ok = True
+        for code in sorted({w for w in _words(row.expression) if w in measures}):
+            found = measure_sql(code)
+            if found is None:
+                ok = False
+                break
+            parts.append(f"{code} = {found[0]}")
+            datasets.add(found[1])
+        if not ok or not parts:
+            continue
+        filters = [
+            f"{dim_name.get(str(f.get('dimension')), (f.get('dimension'), ''))[1] or f.get('dimension')}"
+            f" {f.get('op')} {f.get('values')}"
+            for f in (row.filters or [])
+            if isinstance(f, dict)
+        ]
+        text = f"{row.display_name} = {row.expression}, where " + "; ".join(parts)
+        if filters:
+            text += "; always filtered: " + "; ".join(filters)
+        if row.period_semantics == "end_of_period":
+            text += "; read at the period's last date"
+        if row.unit:
+            text += f"; unit {row.unit}"
+        phrases = (norm(row.display_name), *synonyms.get(metric.id, []))
+        out.append(Definition(row.display_name, phrases, frozenset(datasets), text))
+    return out
+
+
+def _words(expression: str) -> list[str]:
+    import re
+
+    return re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)

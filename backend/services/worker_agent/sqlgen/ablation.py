@@ -90,7 +90,8 @@ def decision_of(decision: str, confidence: float) -> str:
     if decision == "failed":
         return decision
     if confidence >= ANSWER_AT / CANDIDATES:
-        return "answer"
+        # The vote's own review (S3: the winner read none of the defined tables) stands.
+        return "review" if decision == "review" else "answer"
     return "review" if confidence >= REVIEW_AT / CANDIDATES else "ask"
 
 

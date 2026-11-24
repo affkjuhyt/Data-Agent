@@ -116,19 +116,28 @@ def label_of(e: Exploration) -> str:
 def _keep_one_source(
     linked: Linked, source_of: dict[uuid.UUID, uuid.UUID | None]
 ) -> tuple[Linked, uuid.UUID | None]:
-    """One query runs on one source: the tables of the best-linked table's source."""
+    """One query runs on one source: the tables of the best-linked table's source, in both views
+    (the definitions', and S3's plain one when there is one)."""
     src = source_of.get(linked.tables[0].dataset_id)
-    tables = [t for t in linked.tables if source_of.get(t.dataset_id) == src]
-    ids = {t.dataset_id for t in tables}
-    names = {t.name for t in tables}
-    return (
-        Linked(
+
+    def on_source(view: Linked) -> Linked:
+        tables = [t for t in view.tables if source_of.get(t.dataset_id) == src]
+        ids = {t.dataset_id for t in tables}
+        names = {t.name for t in tables}
+        return Linked(
             tables,
-            [fk for fk in linked.fks if fk.from_table in ids and fk.to_table in ids],
-            [v for v in linked.values if v[0] in names],
-        ),
-        src,
-    )
+            [fk for fk in view.fks if fk.from_table in ids and fk.to_table in ids],
+            [v for v in view.values if v[0] in names],
+            view.definitions,
+            None,
+            view.defined_tables,
+        )
+
+    kept = on_source(linked)
+    if linked.plain is not None:
+        plain = on_source(linked.plain)
+        kept.plain = plain if plain.tables else None
+    return kept, src
 
 
 def _plan(e: Exploration) -> dict[str, Any]:

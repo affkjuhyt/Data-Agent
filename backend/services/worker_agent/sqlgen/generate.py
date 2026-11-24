@@ -27,8 +27,10 @@ MAX_EXAMPLES = 3
 
 RULES = """You write one read-only {dialect} SELECT statement answering the question, over the tables
 below only. Qualify every table with its schema (schema.table). Name the columns you return; never
-SELECT *. Use the values exactly as listed when the question names them. Give readable column
-aliases. Answer only JSON: {{"sql": "<the query>"}}."""
+SELECT *. Use the values exactly as listed when the question names them. When a BUSINESS
+DEFINITION below is the quantity the question asks for, compute it exactly as defined (its
+tables, columns, aggregation, filters and period rule): never a similar-sounding column instead.
+Give readable column aliases. Answer only JSON: {{"sql": "<the query>"}}."""
 
 HOW = {
     "skeleton": "First decide the skeleton (SELECT … FROM … JOIN … WHERE … GROUP BY … ORDER BY), "
@@ -68,7 +70,7 @@ class Candidate:
 
 
 def schema_text(linked: Linked) -> str:
-    lines = []
+    lines = [f"BUSINESS DEFINITION {text}" for text in linked.definitions]
     for t in linked.tables:
         lines.append(f"TABLE {t.qualified} -- {t.label}")
         for c in t.columns:
@@ -124,23 +126,37 @@ async def candidates(
     examples: list[tuple[str, str]],
     methods: Sequence[str] = METHODS,
     refuse: Sequence[str] = (),
+    plain: Linked | None = None,
 ) -> list[Candidate]:
     """Six candidates, three ways twice, asked together. `methods` narrows the ways, for the
     ablation of the N-version (sqlgen/ablation.py). `refuse` are statements already audited as
-    answering the wrong quantity or scope (RES-02): the model must not write them again."""
-    user = f"{schema_text(linked)}\n\nQuestion: {question}"
-    if refuse:
-        listed = "\n".join(f"- {s}" for s in list(refuse)[:6])
-        user += (
-            "\n\nDo not write any of these refused statements again (they measured the wrong "
-            f"quantity, channel, filter or period):\n{listed}"
-        )
+    answering the wrong quantity or scope (RES-02): the model must not write them again.
+
+    S3: `plain` is the question linked by its words alone. The second sample of each way reads
+    it instead of the definitions: candidates that all see one context make one mistake six
+    times (the 23/11 ablation: each question 6/6 or 0/6 right), so a definition and a plain
+    reading that disagree now split the vote instead of agreeing on one wrong table."""
+
+    def user_of(view: Linked) -> str:
+        text = f"{schema_text(view)}\n\nQuestion: {question}"
+        if refuse:
+            listed = "\n".join(f"- {s}" for s in list(refuse)[:6])
+            text += (
+                "\n\nDo not write any of these refused statements again (they measured the wrong "
+                f"quantity, channel, filter or period):\n{listed}"
+            )
+        return text
+
+    seen = user_of(linked)
+    other = (
+        user_of(plain) if plain is not None and plain.definitions != linked.definitions else seen
+    )
     return list(
         await asyncio.gather(
             *(
-                _ask(gateway, m, _system(m, dialect, examples), user, t)
+                _ask(gateway, m, _system(m, dialect, examples), seen if n == 0 else other, t)
                 for m in methods
-                for t in TEMPERATURES
+                for n, t in enumerate(TEMPERATURES)
             )
         )
     )

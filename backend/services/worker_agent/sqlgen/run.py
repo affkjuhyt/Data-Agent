@@ -65,17 +65,26 @@ async def explore(
 ) -> Exploration:
     banned = {fingerprint(s, dialect) for s in refuse if s}
     written = await candidates(
-        gateway, question, linked, dialect, examples, methods, refuse=tuple(refuse)
+        gateway,
+        question,
+        linked,
+        dialect,
+        examples,
+        methods,
+        refuse=tuple(refuse),
+        plain=linked.plain,
     )
+    # A candidate may come from either view (S3): it is checked and repaired against both.
+    both = linked.merged()
 
     async def checked(c: Candidate) -> tuple[Candidate, list[str]]:
         if c.sql is None:
             return c, [c.error or "no SQL"]
-        found = problems(c.sql, linked, dialect, audit)
+        found = problems(c.sql, both, dialect, audit)
         if not found:
             return c, []
-        fixed = await repair(gateway, question, linked, dialect, c, found)
-        return fixed, problems(fixed.sql, linked, dialect, audit) if fixed.sql else [
+        fixed = await repair(gateway, question, both, dialect, c, found)
+        return fixed, problems(fixed.sql, both, dialect, audit) if fixed.sql else [
             fixed.error or "no SQL"
         ]
 
@@ -107,10 +116,10 @@ async def explore(
         out = await run_sql(c.sql)
         if not out.ok and out.status == "failed" and out.error:
             # The source refused it: diagnosed and rewritten once, checked again, run again.
-            fixed = await diagnose_and_repair(gateway, question, linked, dialect, c, out.error)
+            fixed = await diagnose_and_repair(gateway, question, both, dialect, c, out.error)
             if (
                 fixed.sql
-                and not problems(fixed.sql, linked, dialect, audit)
+                and not problems(fixed.sql, both, dialect, audit)
                 and fingerprint(fixed.sql, dialect) not in banned
             ):
                 retried = await run_sql(fixed.sql)
@@ -133,12 +142,23 @@ async def explore(
         methods=[str(entry["method"]) for entry in tried],
         weights=method_weights(),
     )
+    decision = v.decision
+    # S3's check: the question named a quantity the layer defines, and the winning statement
+    # reads none of its tables (23/11: "doanh thu" summed off the sales quota by all six).
+    # Agreement on another table is no evidence: answered, but to be checked.
+    if (
+        decision == "answer"
+        and v.winner is not None
+        and linked.defined_tables
+        and not _reads_any(tried[v.winner].get("sql") or "", linked.defined_tables, dialect)
+    ):
+        decision = "review"
     groups: dict[str, int] = {}
     for entry, rows in zip(tried, results, strict=True):
         if rows is not None:
             entry["group"] = groups.setdefault(signature(rows), len(groups))
     found_out = Exploration(
-        v.decision,
+        decision,
         v.confidence,
         round(v.confidence * len(written)),
         margin=v.margin,
@@ -157,3 +177,20 @@ async def explore(
         found_out.truncated = best.truncated
         found_out.query_run_id = best.query_run_id
     return found_out
+
+
+def _reads_any(sql: str, tables: Sequence[str], dialect: str) -> bool:
+    """The statement reads at least one of the tables (schema.table), by its parse."""
+    import sqlglot
+    from sqlglot import exp
+    from sqlglot.errors import ParseError
+
+    try:
+        read = {
+            f"{t.db}.{t.name}".lower() if t.db else t.name.lower()
+            for t in sqlglot.parse_one(sql, read=dialect).find_all(exp.Table)
+        }
+    except ParseError:
+        return False
+    wanted = {t.lower() for t in tables} | {t.lower().split(".")[-1] for t in tables}
+    return bool(read & wanted)
