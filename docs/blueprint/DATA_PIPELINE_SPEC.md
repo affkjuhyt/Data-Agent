@@ -241,8 +241,11 @@ Gọi ở: `router.py` sau resolve (mọi dataset của metric/verified query/ex
 truy vấn; `reviews.py` khi duyệt product; `tiles.py` refresh. Agentic: thay caveat của `signals.py` bằng gate (một chỗ). Nhãn
 `warning` → caveat + **không** hạ nhãn (giữ RES-07 "còn" để quyết sau khi đo).
 
-**Ack**: steward `POST /v1/datasets/{id}/quality/acknowledge` (có) ghi `acknowledged_by/at` → `blocked` → `warning` trong
-`ack_ttl` (24 h mặc định) rồi tự quay lại nếu luật vẫn fail.
+**Ack**: steward `POST /v1/datasets/{id}/quality/acknowledge` (có) ghi `acknowledged_by/at` → `blocked` → `warning`.
+Xác nhận giữ hiệu lực qua các lần kiểm sau, nếu luật vẫn fail và không thêm vi phạm, tối đa `QUALITY_ACK_HOURS` (7 ngày,
+24/11/2026). Một lần kiểm đạt thì xác nhận hết hiệu lực. Một lần kiểm có nhiều vi phạm hơn là vấn đề mới, bị chặn lại.
+Trước 24/11, xác nhận chỉ gắn vào dòng kết quả mới nhất, nên lần kiểm theo lịch kế tiếp đã xoá nó, và steward phải xác
+nhận lại cùng một lỗi mỗi ngày.
 
 **API**: `GET/PUT /v1/datasets/{id}/contract` (PUT yêu cầu `If-Match`, capability `catalog.write`, maker ≠ checker khi
 `status=active` theo công tắc `allow_self_approval`).

@@ -2,8 +2,11 @@
 
 document.received: the original is read from MinIO, its pages extracted (text layer, else OCR with
 its real confidence), masked under the collection's PII policy, cut into structured chunks,
-embedded into Qdrant and written. A page below the OCR threshold is not usable and opens a
-blocking low_ocr quality issue; the document is then waiting_review instead of ready (BR-19).
+embedded into Qdrant and written. A page below the OCR threshold is not usable: it is never
+searched or cited until a person corrects it (BR-19, AC-05-02-07), and it opens a low_ocr quality
+issue as a warning, so the rest of the document is ready and answers meanwhile. Until 24/11 such a
+page held the whole document in waiting_review, though retrieval already skips unusable pages. A
+document mostly unusable still waits for a person (§9, the unusable share below).
 
 quality_issue.resolved: the person's correction is already in Postgres (the api wrote it); the
 later steps run again from the stored pages, and the document becomes ready once nothing blocks.
@@ -839,8 +842,8 @@ async def _extension_mismatch(session: Any, meta: Meta, declared: str) -> None:
 async def _unusable_gate(session: Any, meta: Meta, unusable: int, total: int) -> None:
     """§9: more than 30 % of the pages unusable: one blocking issue for the document, so it waits
     for a person (waiting_review) and nothing is indexed; resolving it runs the later steps."""
-    # Already held by a blocking issue (a page's low OCR): that one is the person's to resolve;
-    # the document is not indexed either way.
+    # Already held by a blocking issue (an earlier run's gate, a page's issue from before 24/11):
+    # that one is the person's to resolve; the document is not indexed either way.
     await session.flush()
     already = await session.scalar(
         select(document.QualityIssue.id).where(
@@ -1030,8 +1033,9 @@ async def _write_page(
     refs: tuple[str | None, str],
 ) -> None:
     """The page as extracted now; a changed page loses an earlier manual correction (its source
-    is no longer what the person corrected). Low OCR opens a blocking issue unless one is open;
-    a page with no text at all opens a warning, since a blank page is often meant to be blank."""
+    is no longer what the person corrected). Low OCR or no text at all opens a warning unless one
+    is open: the page is not usable, so nothing on it is searched or cited, and it does not hold
+    the other pages back (a blank page is often meant to be blank)."""
     low_ocr = page.ocr_conf is not None and page.ocr_conf < OCR_THRESHOLD
     image_ref, layout_ref = refs
     values = {
@@ -1083,7 +1087,7 @@ async def _write_page(
                 document_id=meta.document_id,
                 page_no=page_no,
                 kind="low_ocr",
-                severity="blocking" if text else "warning",
+                severity="warning",
                 detail={"ocr_conf": page.ocr_conf, "threshold": OCR_THRESHOLD, "empty": not text},
                 created_by=meta.created_by,
             )

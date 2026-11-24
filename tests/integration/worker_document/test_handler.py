@@ -120,22 +120,31 @@ async def test_a_clean_document_becomes_ready_with_structured_chunks(
 
 
 @pytest.mark.req("AC-05-02-07")
-async def test_a_page_below_the_ocr_threshold_waits_for_review(seed: Seed, pages: list) -> None:
+async def test_a_page_below_the_ocr_threshold_is_held_back_and_the_rest_is_ready(
+    seed: Seed, pages: list
+) -> None:
+    # The 0.80 page is not usable (never searched or cited before a person corrects it); the
+    # other page answers meanwhile: the document is ready, the page's issue a warning.
     u = upload(seed)
-    pages.extend([page(TEXT), page("Kỳ hạn 24 tháng 6,1%", ocr_conf=0.80, image=b"scan-2")])
-    await handler.process_document(event(u))
-    assert (
-        seed.one("SELECT status FROM document.document WHERE id = %s", u.document)
-        == "waiting_review"
+    # One page of four: under the share that holds a whole document (§9, 30 %).
+    pages.extend(
+        [
+            page(TEXT),
+            page("Kỳ hạn 24 tháng 6,1%", ocr_conf=0.80, image=b"scan-2"),
+            page(TEXT.replace("12", "36")),
+            page(TEXT.replace("12", "48")),
+        ]
     )
+    await handler.process_document(event(u))
+    assert seed.one("SELECT status FROM document.document WHERE id = %s", u.document) == "ready"
     assert seed.all(
         "SELECT page_no, usable, ocr_conf::float FROM document.document_page WHERE document_id = %s ORDER BY page_no",
         u.document,
-    ) == [(1, True, None), (2, False, 0.8)]
+    ) == [(1, True, None), (2, False, 0.8), (3, True, None), (4, True, None)]
     assert seed.all(
         "SELECT page_no, kind, severity, status FROM document.quality_issue WHERE document_id = %s",
         u.document,
-    ) == [(2, "low_ocr", "blocking", "open")]
+    ) == [(2, "low_ocr", "warning", "open")]
 
 
 @pytest.mark.req("AC-05-03-01")
