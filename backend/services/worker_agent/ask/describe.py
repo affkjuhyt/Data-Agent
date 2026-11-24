@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, governance, qa
+from libs.dataagent_db.models import org as org_models
 from services.worker_agent.agentic.corpus import CorpusBrief
 from services.worker_agent.ask.contract import NumericIntent, Purpose, RequestContract
 from services.worker_agent.events import Event
@@ -132,6 +133,9 @@ _MAX_MEMBERS = 50
 _OVERVIEW_REASONS = frozenset({"UNCATALOGUED", "DOC_ONLY"})
 _ROLE = "svc_qa"
 _MAX_DISABLED = 30
+_MAX_DIMENSIONS = 12
+TIME_CUT = "thời gian (ngày, tháng, quý, năm)"
+_TABLE_WORDS = frozenset({"bang", "table", "tables", "catalog", "nguon", "dataset", "datasets"})
 
 
 @dataclass(frozen=True)
@@ -141,6 +145,14 @@ class SpaceOverview:
     certified: tuple[str, ...]
     drafts: tuple[str, ...]
     documents: tuple[str, ...]
+    # What the space is about, in its owner's words (org.data_space): the answer to "nói về gì".
+    name: str = ""
+    description: str = ""
+    # The cuts a figure can be read by, by name (Nhóm sản phẩm, Khu vực, …); time ones last.
+    dimensions: tuple[str, ...] = ()
+    # The question names the tables themselves ("có những bảng nào"): they are listed, else
+    # only counted, as a person asking what the data is about wants its subject, not its DDL.
+    tables_asked: bool = False
 
 
 def answers_from_context(reason: str, text: str) -> RequestContract | None:
@@ -151,36 +163,118 @@ def answers_from_context(reason: str, text: str) -> RequestContract | None:
 
 
 def describe_space(space: SpaceOverview) -> str:
-    """Prose from the assets the asker may know about. No metric is offered."""
+    """What the space is about, then what can be asked of it: its description, its metrics, the
+    cuts and documents, and how many tables hold it. The tables are named only when asked for
+    (25/11: "bộ dữ liệu này đang nói về gì" was answered with 46 table names, each twice). No
+    metric is offered as a choice."""
     if not (space.readable or space.disabled or space.certified or space.drafts or space.documents):
         return "Data Space này không có bảng, chỉ số hay tài liệu nào để đọc."
-    sentences: list[str] = []
-    if space.readable:
-        sentences.append("Có thể truy vấn các bảng: " + _join(space.readable) + ".")
-    if space.disabled:
-        sentences.append(
-            "Catalog còn các bảng đang tắt, không truy vấn được: " + _join(space.disabled) + "."
-        )
+    parts: list[str] = []
+    about = space.description.strip()
+    if space.name and about:
+        parts.append(f"**{space.name}**: {about}")
+    elif about:
+        parts.append(about)
+    elif space.name:
+        parts.append(f"**{space.name}**.")
+    asked: list[str] = []
     if space.certified:
-        sentences.append("Chỉ số đã chứng nhận: " + _join(space.certified) + ".")
+        asked.append(
+            f"- {len(space.certified)} chỉ số đã chứng nhận: " + _join(space.certified) + "."
+        )
     if space.drafts:
-        sentences.append("Chỉ số chưa chứng nhận: " + _join(space.drafts) + ".")
+        asked.append(
+            f"- {len(space.drafts)} chỉ số chưa chứng nhận (số tính theo định nghĩa đang chờ "
+            "duyệt): " + _join(space.drafts) + "."
+        )
+    if space.dimensions:
+        shown = space.dimensions[:_MAX_DIMENSIONS]
+        more = len(space.dimensions) - len(shown)
+        asked.append(
+            "- Xem theo: " + _join(shown) + (f" và {more} chiều khác" if more > 0 else "") + "."
+        )
     if space.documents:
-        sentences.append("Tài liệu: " + _join(space.documents) + ".")
-    return " ".join(sentences)
+        asked.append("- Tài liệu: " + _join(space.documents) + ".")
+    if asked:
+        parts.append("**Có thể hỏi về**\n" + "\n".join(asked))
+    if space.tables_asked:
+        tables: list[str] = []
+        if space.readable:
+            tables.append(
+                f"- {len(space.readable)} bảng truy vấn được: " + _join(space.readable) + "."
+            )
+        if space.disabled:
+            tables.append(
+                f"- {len(space.disabled)} bảng đang tắt, chưa truy vấn được: "
+                + _join(space.disabled)
+                + "."
+            )
+        if tables:
+            parts.append("**Bảng dữ liệu**\n" + "\n".join(tables))
+    elif space.readable or space.disabled:
+        counted = f"{len(space.readable)} bảng truy vấn được"
+        if space.disabled:
+            counted += f", {len(space.disabled)} bảng đang tắt"
+        parts.append(f"Dữ liệu nằm trong {counted}; hỏi “có những bảng nào” để xem danh sách.")
+    examples = _examples(space)
+    if examples:
+        parts.append("Ví dụ: " + "; ".join(f"“{e}”" for e in examples) + ".")
+    return "\n\n".join(parts)
 
 
-def overview_of(brief: CorpusBrief, disabled: tuple[str, ...]) -> SpaceOverview:
+def _examples(space: SpaceOverview) -> list[str]:
+    """Two questions the space answers as worded, from its own metrics and cuts."""
+    metrics = space.certified or space.drafts
+    if not metrics:
+        return []
+    out = [f"{metrics[0]} theo tháng"]
+    cut = next((d for d in space.dimensions if d != TIME_CUT), None)
+    if cut:
+        second = metrics[1] if len(metrics) > 1 else metrics[0]
+        out.append(f"{second} theo {cut[:1].lower()}{cut[1:]}")
+    return out
+
+
+def overview_of(
+    brief: CorpusBrief,
+    disabled: tuple[str, ...],
+    *,
+    name: str = "",
+    description: str = "",
+    dimensions: tuple[str, ...] = (),
+    tables_asked: bool = False,
+) -> SpaceOverview:
     documents = tuple(doc.name for doc in brief.documents) or tuple(
         page.title for page in brief.pages
     )
+    # One name once: two sources of the space may hold the same table (a test source that
+    # registered the warehouse again, 25/11), and a name readable through one is readable.
+    readable = tuple(dict.fromkeys(table.qualified for table in brief.tables))
     return SpaceOverview(
-        readable=tuple(table.qualified for table in brief.tables),
-        disabled=disabled,
-        certified=tuple(metric.name for metric in brief.metrics if metric.certified),
-        drafts=tuple(metric.name for metric in brief.metrics if not metric.certified),
-        documents=documents,
+        readable=readable,
+        disabled=tuple(n for n in dict.fromkeys(disabled) if n not in set(readable)),
+        certified=tuple(dict.fromkeys(m.name for m in brief.metrics if m.certified)),
+        drafts=tuple(dict.fromkeys(m.name for m in brief.metrics if not m.certified)),
+        documents=tuple(dict.fromkeys(documents)),
+        name=name,
+        description=description,
+        dimensions=tuple(dict.fromkeys(dimensions)),
+        tables_asked=tables_asked,
     )
+
+
+def _cuts(vocab: Vocabulary) -> tuple[str, ...]:
+    """The cuts by name, the time ones said once: six date columns (order date, stock date, …)
+    are one way of asking, by time."""
+    names = [d.name for d in vocab.dimensions if not d.is_time]
+    if any(d.is_time for d in vocab.dimensions):
+        # First: every figure can be read by time, and a long list must not cut it off.
+        names.insert(0, TIME_CUT)
+    return tuple(names)
+
+
+def asks_for_tables(text: str) -> bool:
+    return any(token in _TABLE_WORDS for token in norm(text).split())
 
 
 def _is_overview(text: str) -> bool:
@@ -325,7 +419,15 @@ async def answer_overview(event: Event, question_id: uuid.UUID) -> bool:
         if overview:
             brief = await load_corpus(session, space_id, principal, layer, purpose=question.purpose)
             disabled = await disabled_table_names(session, space_id, principal)
-            space = overview_of(brief, disabled)
+            data_space = await session.get(org_models.DataSpace, space_id)
+            space = overview_of(
+                brief,
+                disabled,
+                name=data_space.name if data_space else "",
+                description=(data_space.description or "") if data_space else "",
+                dimensions=_cuts(layer.vocabulary),
+                tables_asked=asks_for_tables(question.text),
+            )
             text = describe_space(space)
             citations = _citations(space)
             tool = "describe_space"

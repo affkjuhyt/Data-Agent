@@ -6,13 +6,17 @@ import uuid
 
 import pytest
 
+from services.worker_agent.agentic.corpus import CorpusBrief, CorpusDoc, CorpusMetric, CorpusTable
 from services.worker_agent.ask.contract import NumericIntent, Purpose
 from services.worker_agent.ask.describe import (
+    TIME_CUT,
     SpaceOverview,
     answers_from_context,
+    asks_for_tables,
     describe_members,
     describe_space,
     listed_dimension,
+    overview_of,
 )
 from services.worker_agent.understand.resolver import (
     DimensionEntry,
@@ -32,6 +36,7 @@ def test_disabled_tables_are_named_and_not_offered_as_a_metric_menu() -> None:
             certified=(),
             drafts=(),
             documents=(),
+            tables_asked=True,
         )
     )
     assert "tlc.yellow_trip" in text
@@ -48,12 +53,68 @@ def test_a_readable_space_names_tables_metrics_and_documents() -> None:
             certified=("Doanh thu",),
             drafts=("Lãi gộp Internet",),
             documents=("Chính sách đổi trả",),
+            tables_asked=True,
         )
     )
     assert "aw.fact_internet_sales" in text
     assert "Doanh thu" in text
     assert "Lãi gộp Internet" in text
     assert "Chính sách đổi trả" in text
+
+
+def _brief(tables: list[str]) -> CorpusBrief:
+    return CorpusBrief(
+        tables=tuple(CorpusTable(t, t, None, ()) for t in tables),
+        joins=(),
+        metrics=(
+            CorpusMetric("DOANH_THU", "Doanh thu", True),
+            CorpusMetric("SO_DON", "Số đơn Internet", True),
+            CorpusMetric("TIP", "Tiền tip", False),
+        ),
+        dimensions=(),
+        documents=(CorpusDoc("Chính sách và báo cáo kinh doanh", ("pdf",)),),
+        pages=(),
+    )
+
+
+AW = "Kho dữ liệu mẫu AdventureWorksDW của Microsoft (nhà sản xuất xe đạp): bán qua Internet."
+
+
+def test_what_the_data_is_about_is_its_description_and_what_can_be_asked_not_its_tables() -> None:
+    # 25/11: "bộ dữ liệu này đang nói về gì" was answered with 46 table names, each twice.
+    tables = ["public.fact_internet_sales", "public.dim_product", "public.fact_internet_sales"]
+    text = describe_space(
+        overview_of(
+            _brief(tables),
+            ("public.dim_currency", "public.dim_product"),
+            name="AdventureWorks",
+            description=AW,
+            dimensions=(TIME_CUT, "Nhóm sản phẩm", "Khu vực"),
+        )
+    )
+    assert text.startswith(f"**AdventureWorks**: {AW}")
+    assert "2 chỉ số đã chứng nhận: Doanh thu, Số đơn Internet." in text
+    assert "1 chỉ số chưa chứng nhận" in text and "Tiền tip" in text
+    assert "Xem theo: thời gian (ngày, tháng, quý, năm), Nhóm sản phẩm, Khu vực." in text
+    assert "Chính sách và báo cáo kinh doanh" in text
+    # Counted, not named; a table readable through one source is not also "đang tắt".
+    assert "public." not in text
+    assert "2 bảng truy vấn được, 1 bảng đang tắt" in text
+    assert "“Doanh thu theo tháng”" in text and "“Số đơn Internet theo nhóm sản phẩm”" in text
+
+
+def test_asked_for_its_tables_each_is_named_once() -> None:
+    tables = ["public.fact_internet_sales", "public.dim_product", "public.fact_internet_sales"]
+    space = overview_of(
+        _brief(tables),
+        ("public.dim_currency", "public.dim_product"),
+        tables_asked=asks_for_tables("Có những bảng nào?"),
+    )
+    text = describe_space(space)
+    assert text.count("public.fact_internet_sales") == 1
+    assert "2 bảng truy vấn được: public.fact_internet_sales, public.dim_product." in text
+    assert "1 bảng đang tắt, chưa truy vấn được: public.dim_currency." in text
+    assert not asks_for_tables("bộ dữ liệu này đang nói về gì")
 
 
 def test_an_empty_space_says_there_is_nothing_to_read() -> None:
@@ -65,6 +126,7 @@ def test_an_empty_space_says_there_is_nothing_to_read() -> None:
 @pytest.mark.parametrize(
     "text",
     [
+        "bộ dữ liệu này đang nói về gì",
         "Các dữ liệu ở đây là về gì?",
         "Có những bảng nào?",
         "Có tài liệu gì?",
