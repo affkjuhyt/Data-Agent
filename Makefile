@@ -360,6 +360,29 @@ semantic-import:  ## import SEMANTIC_FILE as SEMANTIC_AS (dry run unless SEMANTI
 	@$(SEMANTIC_YAML) import - --org "$(SEMANTIC_ORG)" --space "$(SEMANTIC_SPACE)" \
 		--as "$(SEMANTIC_AS)" $(if $(filter 1,$(SEMANTIC_APPLY)),,--dry-run) < "$(SEMANTIC_FILE)"
 
+# A Data Space's review in one pass (services/api/modules/inbox/approve_space.py), in the api pod
+# as APPROVE_AS, by the routes the screen uses: `submit` sends every draft metric version to
+# preview (the worker opens each metric_change proposal a minute later), `approve` accepts every
+# open proposal the route lets APPROVE_AS accept and lists the ones left for review (regressions,
+# a second step). A list only unless APPROVE_APPLY=1. APPROVE_KINDS narrows approve (synonym,
+# relationship, metric_change, …).
+APPROVE_ORG ?=
+APPROVE_SPACE ?=
+APPROVE_AS ?=
+APPROVE_KINDS ?=
+APPROVE_SPACE_RUN = kubectl -n dataagent-service exec -i deploy/api -- \
+	python -m services.api.modules.inbox.approve_space
+.PHONY: approve-space-submit approve-space
+
+approve-space-submit:  ## send a Data Space's draft metric versions to preview (APPROVE_ORG, APPROVE_SPACE, APPROVE_AS; APPROVE_APPLY=1)
+	@$(APPROVE_SPACE_RUN) submit --org "$(APPROVE_ORG)" --space "$(APPROVE_SPACE)" \
+		--as "$(APPROVE_AS)" $(if $(filter 1,$(APPROVE_APPLY)),--apply,)
+
+approve-space:  ## accept a Data Space's open proposals as APPROVE_AS (list only unless APPROVE_APPLY=1)
+	@$(APPROVE_SPACE_RUN) approve --org "$(APPROVE_ORG)" --space "$(APPROVE_SPACE)" \
+		--as "$(APPROVE_AS)" $(if $(filter 1,$(APPROVE_APPLY)),--apply,) \
+		$(foreach k,$(APPROVE_KINDS),--kind $(k))
+
 # EV-08: a golden eval set written as YAML (services/api/modules/eval/cases_yaml.py) loaded into
 # the Data Space's eval set, in the api pod; a dry run unless EVAL_CASES_APPLY=1. Reloading
 # updates the same items, retires the ones that left the file and reports a changed answer.

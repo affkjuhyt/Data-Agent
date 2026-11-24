@@ -1992,3 +1992,30 @@ async def test_a_forecast_model_proposal_reads_in_words(team: Team) -> None:
     ]
     assert summary["checks_note"] == "Tốt hơn cách đoán theo mùa 28%."
     assert summary["preview_note"] is None
+
+
+def _status(team: Team, proposal: uuid.UUID) -> str:
+    with team.seed.conn.cursor() as cur:
+        cur.execute("SELECT status FROM inbox.proposal WHERE id = %s", (str(proposal),))
+        return str(cur.fetchone()[0])
+
+
+async def test_a_space_s_open_proposals_are_accepted_in_one_pass_by_the_route(team: Team) -> None:
+    # approve_space (make approve-space): a dry run lists, --apply accepts through decide_proposal
+    # with its checks: the reviewer's own proposal is left for review (no self-approval here).
+    from services.api.modules.inbox import approve_space
+
+    theirs = [_proposal(team, title=f"Từ đồng nghĩa {n}") for n in range(2)]
+    own = _proposal(team, title="Của chính người duyệt", proposed_by=team.users["reviewer"])
+    listed = await approve_space.approve(team.org, "DS-API04", "reviewer", False, [])
+    assert listed["open"] == 3 and len(listed["would_accept"]) == 3
+    assert {_status(team, p) for p in theirs} == {"pending_review"}
+
+    done = await approve_space.approve(team.org, "DS-API04", "reviewer", True, [])
+    assert len(done["accepted"]) == 2
+    assert (
+        len(done["left_for_review"]) == 1 and "Của chính người duyệt" in done["left_for_review"][0]
+    )
+    assert _status(team, own) == "pending_review"
+    for p in theirs:
+        assert _status(team, p) != "pending_review"
