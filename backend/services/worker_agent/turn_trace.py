@@ -6,9 +6,12 @@ read (agent.agent_run, agent.agent_step). The run names its question in trigger_
 ("question:<id>"): qa.plan belongs to a question or to a run, never both, so the question's plan
 does not point back at it.
 
-The turn is collected in memory and written once when it ends: the stream already shows the live
-progress, and one write keeps the question path from waiting on the trace. A failure to write the
-trace is logged and never fails the answer.
+AE-18 (AGC-05): the run is written when the turn starts (`running`) and each step as soon as it
+ends, so GET /v1/questions/{id}/steps reads the steps done while the turn is still running, and a
+worker that dies mid-turn leaves the steps it had finished. The step under way is the stream's
+(agent_step has no running status); a model call is written with the next step that ends. When
+the turn ends the run gets its outcome, cost and tokens, and any step not yet written is. A failure
+to write the trace is logged and never fails the answer.
 
 Model calls are recorded without their content (no prompt, no answer, no key): the gateway reports
 the role, the model that answered, the tokens in and out, the latency and whether it answered. The
@@ -147,6 +150,9 @@ class Trace:
     cancelled: bool = False
     # Why the agent stopped before it was done (AE-02, agentic/budget.py): the run's stop_reason.
     stop_reason: str | None = None
+    # AE-18: the run written at the start of the turn, and the steps (by seq) already written.
+    run_id: uuid.UUID | None = None
+    written: set[int] = field(default_factory=set)
 
 
 _current: contextvars.ContextVar[Trace | None] = contextvars.ContextVar("turn_trace", default=None)
@@ -289,6 +295,47 @@ async def _end(trace: Trace, step: Step, action: str, handle: StepHandle) -> Non
         "activity",
         _event(trace, step, action, handle.status, step.output["detail"]),  # type: ignore[index]
     )
+    await _flush(trace)
+
+
+def _row(trace: Trace, step: Step, run_id: uuid.UUID) -> agent.AgentStep:
+    return agent.AgentStep(
+        id=uuid7(),
+        org_id=trace.org_id,
+        run_id=run_id,
+        seq=step.seq,
+        kind=step.kind,
+        name=step.name,
+        output=step.output,
+        summary=step.summary,
+        status=step.status,
+        cost=step.cost,
+        started_at=step.started,
+        duration_ms=step.duration_ms,
+    )
+
+
+async def _flush(trace: Trace) -> None:
+    """Write the steps that have ended and are not written yet (AE-18). Claimed before the write,
+    so steps ending together (the agent's parallel steps) never write one twice; a failed write
+    gives them back to the end of the turn."""
+    if trace.run_id is None:
+        return
+    done = [st for st in trace.steps if st.duration_ms is not None and st.seq not in trace.written]
+    if not done:
+        return
+    trace.written.update(st.seq for st in done)
+    try:
+        async with scoped_session(AGENT_ROLE, trace.org_id, trace.user_id) as session:
+            for st in done:
+                session.add(_row(trace, st, trace.run_id))
+            run = await session.get(agent.AgentRun, trace.run_id)
+            if run is not None:
+                run.current_step = max(trace.written)
+                run.tokens, run.cost = trace.tokens, trace.cost.quantize(decimal.Decimal("0.01"))
+    except Exception:
+        trace.written.difference_update(st.seq for st in done)
+        log.exception("worker-agent | steps of question %s not written yet", trace.question_id)
 
 
 @asynccontextmanager
@@ -343,6 +390,7 @@ async def record_step(
         "activity",
         _event(trace, step, action, status, step.output["detail"]),  # type: ignore[index]
     )
+    await _flush(trace)
 
 
 def model_call(
@@ -446,6 +494,11 @@ async def turn(
         yield trace
         return
     token = _current.set(trace)
+    try:
+        await _start(trace)
+    except Exception:
+        # Written whole at the end instead, as before AE-18.
+        log.exception("worker-agent | the run of question %s was not started", question_id)
     error: BaseException | None = None
     try:
         yield trace
@@ -460,7 +513,8 @@ async def turn(
             log.exception("worker-agent | the trace of question %s was not written", question_id)
 
 
-async def _write(trace: Trace, error: BaseException | None) -> None:
+async def _question(trace: Trace) -> tuple[str, uuid.UUID, Any, uuid.UUID | None] | None:
+    """(question status, Data Space, as_of, its steward), None for a question gone."""
     async with scoped_session(QA_ROLE, trace.org_id, trace.user_id) as session:
         row = (
             await session.execute(
@@ -470,62 +524,90 @@ async def _write(trace: Trace, error: BaseException | None) -> None:
             )
         ).first()
         if row is None:
-            return
+            return None
         question_status, space_id, as_of = row
         steward = await session.scalar(
             select(org.DataSpace.steward_id).where(org.DataSpace.id == space_id)
         )
-    status, stop_reason = outcome(error, trace, question_status)
-    finished = _now()
+    return question_status, space_id, as_of, steward
+
+
+async def _start(trace: Trace) -> None:
+    """The run, `running`, written when the turn starts (AE-18)."""
+    found = await _question(trace)
+    if found is None:
+        return
+    _, space_id, as_of, steward = found
     run_id = uuid7()
     async with scoped_session(AGENT_ROLE, trace.org_id, trace.user_id) as session:
         agent_id = await _qa_agent(session, trace.org_id, space_id, steward)
         if agent_id is None:
             return
-        session.add(
-            agent.AgentRun(
-                id=run_id,
-                org_id=trace.org_id,
-                agent_id=agent_id,
-                config_version=CONFIG_VERSION,
-                data_space_id=space_id,
-                trigger_kind="manual",
-                trigger_ref=f"question:{trace.question_id}",
-                initiated_by=trace.user_id,
-                as_of=as_of,
-                status=status,
-                current_step=len(trace.steps) or None,
-                cost=trace.cost.quantize(decimal.Decimal("0.01")),
-                tokens=trace.tokens,
-                started_at=trace.started,
-                finished_at=finished,
-                # The exception's type only: its text can carry SQL, values or a provider's body.
-                error=type(error).__name__ if error else None,
-                stop_reason=stop_reason,
-            )
-        )
-        await session.flush()
-        for seq, done in enumerate(trace.steps, start=1):
-            if done.duration_ms is None:
-                # Still open when the turn ended: the step the turn ended on, its outcome.
-                done.duration_ms = int((finished - done.started).total_seconds() * 1000)
-                done.status = "ok" if error is None else "error"
-            session.add(
-                agent.AgentStep(
-                    id=uuid7(),
-                    org_id=trace.org_id,
-                    run_id=run_id,
-                    seq=seq,
-                    kind=done.kind,
-                    name=done.name,
-                    output=done.output,
-                    summary=done.summary,
-                    status=done.status,
-                    cost=done.cost,
-                    started_at=done.started,
-                    duration_ms=done.duration_ms,
-                )
-            )
+        session.add(_run(trace, run_id, agent_id, space_id, as_of, status="running"))
+    trace.run_id = run_id
+
+
+def _run(
+    trace: Trace,
+    run_id: uuid.UUID,
+    agent_id: uuid.UUID,
+    space_id: uuid.UUID,
+    as_of: Any,
+    *,
+    status: str,
+) -> agent.AgentRun:
+    return agent.AgentRun(
+        id=run_id,
+        org_id=trace.org_id,
+        agent_id=agent_id,
+        config_version=CONFIG_VERSION,
+        data_space_id=space_id,
+        trigger_kind="manual",
+        trigger_ref=f"question:{trace.question_id}",
+        initiated_by=trace.user_id,
+        as_of=as_of,
+        status=status,
+        tokens=trace.tokens,
+        cost=trace.cost.quantize(decimal.Decimal("0.01")),
+        started_at=trace.started,
+    )
+
+
+async def _write(trace: Trace, error: BaseException | None) -> None:
+    found = await _question(trace)
+    if found is None:
+        return
+    question_status, space_id, as_of, steward = found
+    status, stop_reason = outcome(error, trace, question_status)
+    finished = _now()
+    for done in trace.steps:
+        if done.duration_ms is None:
+            # Still open when the turn ended: the step the turn ended on, its outcome.
+            done.duration_ms = int((finished - done.started).total_seconds() * 1000)
+            done.status = "ok" if error is None else "error"
+    async with scoped_session(AGENT_ROLE, trace.org_id, trace.user_id) as session:
+        run = await session.get(agent.AgentRun, trace.run_id) if trace.run_id else None
+        if run is None:
+            # Not started (its write failed, or no steward then): the whole run is written now.
+            agent_id = await _qa_agent(session, trace.org_id, space_id, steward)
+            if agent_id is None:
+                return
+            trace.run_id, trace.written = uuid7(), set()
+            run = _run(trace, trace.run_id, agent_id, space_id, as_of, status=status)
+            session.add(run)
+            await session.flush()
+        run.status = status
+        run.current_step = len(trace.steps) or None
+        run.cost = trace.cost.quantize(decimal.Decimal("0.01"))
+        run.tokens = trace.tokens
+        run.finished_at = finished
+        # The exception's type only: its text can carry SQL, values or a provider's body.
+        run.error = type(error).__name__ if error else None
+        run.stop_reason = stop_reason
+        for done in trace.steps:
+            if done.seq not in trace.written:
+                session.add(_row(trace, done, run.id))
+        trace.written.update(done.seq for done in trace.steps)
 
 
 async def _qa_agent(

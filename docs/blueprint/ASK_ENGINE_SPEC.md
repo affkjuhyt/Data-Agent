@@ -148,7 +148,7 @@ Logging/metrics: counter `ask_route_total{path,reason}`; histogram `ask_turn_sec
   vs). DS-AW aw057/aw058 "Doanh số Trade Sales theo ngân sách" gọi tên hai metric nhưng hỏi một; agent sai cả hai.
 - Đo 19/11 (DS-AW, 61 câu): 61 → governed; `agent-eval --engines router` 49/61, trùng từng câu với governed;
   853 token và 2,6 s mỗi câu.
-- Chưa có: ghi `reason` vào `qa.plan.steps.router` và timeline (AE-18 trace theo bước); `audience` (AE-03).
+- Chưa có: ghi `reason` vào `qa.plan.steps.router` và timeline; `audience` (AE-03). Trace theo bước: xong ở AE-18 (23/11/2026).
 
 #### Đã làm (AE-02, 19/11/2026)
 
