@@ -148,15 +148,24 @@ def named_definitions(question: str, definitions: list[Definition]) -> list[Defi
     """The definitions the question names, the most specific only: "doanh thu đại lý" is the
     reseller revenue's, not also the total revenue's whose name it contains."""
     q = f" {norm(question)} " if not question.startswith(" ") else question
+    words = set(q.split())
+
+    def named(p: str) -> bool:
+        # Said whole, or every word of it said in any order ("tổng phí sân bay thu từ taxi vàng"
+        # names "Phí sân bay taxi vàng"); a one-word name only whole.
+        return f" {p} " in q or (len(p.split()) > 1 and set(p.split()) <= words)
+
     said: list[tuple[str, Definition]] = []
     for d in definitions:
-        best = max((p for p in d.phrases if p and f" {p} " in q), key=len, default=None)
+        best = max((p for p in d.phrases if p and named(p)), key=len, default=None)
         if best is not None:
             said.append((best, d))
     return [
         d
         for phrase, d in said
-        if not any(other != phrase and f" {phrase} " in f" {other} " for other, _ in said)
+        if not any(
+            other != phrase and set(phrase.split()) < set(other.split()) for other, _ in said
+        )
     ]
 
 

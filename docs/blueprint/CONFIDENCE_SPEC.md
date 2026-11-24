@@ -194,6 +194,48 @@ cả hai). AURC: share 0,5439, margin 0,5631 (hiệu số [−0,0103; 0,072]). �
 mốc. Trên cả hai Data Space, khâu sinh SQL (dưới 40 % ứng viên đúng) mới là điểm nghẽn, không phải khâu vote; trọng số
 theo cách viết chỉ có tác dụng khi có cách viết đúng trên 50 %.
 
+**S1–S4 (24/11/2026), sau khi đọc SQL thật của ablation 23/11.**
+
+Mỗi câu hoặc 6/6, hoặc 0/6 ứng viên đúng. Cả 6 ứng viên chỉ thấy cùng một tập bảng do bước nối bảng theo chữ chọn, nên sai
+cùng một kiểu:
+
+- "Doanh thu năm 2013" cộng `fact_sales_quota`, tức chỉ tiêu doanh số.
+- "Doanh thu đại lý" cộng `dim_reseller.annual_revenue`, tức doanh thu năm do đại lý tự khai.
+- Biên lợi nhuận ra số tuyệt đối thay vì tỷ lệ.
+- Tồn kho cuối kỳ ra một dòng cho mỗi sản phẩm, không cộng lại.
+
+Bỏ phiếu không sửa được lỗi kiểu này. Bốn bước đã làm:
+
+- **S1** (`semantic/uncertified.py`): câu không có metric đã chứng nhận, nhưng có metric nháp hoặc measure, được biên dịch
+  bằng định nghĩa của lớp ngữ nghĩa, gắn nhãn Khám phá, trước khi model viết SQL. Router đưa loại câu này sang governed
+  với lý do `UNCERTIFIED`.
+- **S2** (`sqlgen/space.py`, `sqlgen/schema.py`): định nghĩa nghiệp vụ (SQL của từng measure trên bảng của nó, kỳ, công
+  thức, filter) dẫn bước nối bảng và đi vào prompt. Câu gọi tên một định nghĩa khi nói nguyên cụm tên, hoặc nói đủ mọi chữ
+  của tên theo bất kỳ thứ tự nào.
+- **S3**: mẫu thứ hai của mỗi cách viết dùng góc nhìn chỉ theo chữ, để định nghĩa và cách đọc theo chữ mà khác nhau thì
+  chia phiếu. Khi nhóm thắng không đọc bảng nào của định nghĩa, câu trả lời bị hạ xuống `review`.
+- **S4** (`--reachable`): ablation chỉ trên những câu mà production thật sự gửi tới SQL, tức luật không đặt được metric đã
+  chứng nhận và S1 cũng không đặt được.
+
+Đo lại 24/11, ngưỡng `answer` là 6/6:
+
+| | Trước | Sau |
+| --- | --- | --- |
+| DS-AW, ép mọi câu: nhóm thắng đúng | 13/30 (43 %) | **23/34 (68 %)** |
+| DS-AW, ép mọi câu: câu mức `answer` đúng | 13/25, sai 48 % (ngưỡng 4/6) | **11/13, sai 15 %** |
+| DS-AW, `--reachable` | — | 1/35 câu tới SQL, không nối được bảng |
+| DS-TLC, ép mọi câu: nhóm thắng đúng | 6/14, 11 câu không nối được bảng | 7/21, 4 câu không nối được bảng |
+| DS-TLC, `--reachable` | — | 16/26 câu tới SQL, nhóm thắng đúng 1/11, mức `answer` đúng 1/5 |
+
+Kết luận:
+
+- Trên DS-AW, SQL khám phá gần như không còn được dùng, và khi bị ép dùng thì đúng gấp rưỡi.
+- DS-TLC chưa khá lên. Các câu tới SQL ở đây là câu phân tích có điều kiện: ngưỡng quãng đường, mã giá cước, giờ trong
+  ngày, trung vị, tương quan. Đó là việc của agent. Có thêm vài câu follow-up mà ablation hỏi không kèm lịch sử.
+- Việc tiếp theo với DS-TLC:
+  - chứng nhận 13 metric và thêm synonym (`make approve-space`);
+  - đo các câu phân tích qua agent (golden tier), không qua SQL khám phá.
+
 ## 5. Một thước chung cho các agent (AE-24)
 
 ```python

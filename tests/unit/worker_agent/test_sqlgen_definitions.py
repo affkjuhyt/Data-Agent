@@ -114,3 +114,11 @@ def test_a_winner_reading_none_of_the_defined_tables_is_to_be_checked() -> None:
     assert not run._reads_any(
         "SELECT SUM(annual_revenue) FROM public.dim_reseller", linked.defined_tables, "postgres"
     )
+
+
+def test_a_name_said_in_other_words_order_is_named() -> None:
+    airport = Definition("Phí sân bay taxi vàng", ("phi san bay taxi vang",), frozenset(), "…")
+    assert named_definitions(" tong phi san bay thu tu taxi vang quy 1 2024 ", [airport]) == [
+        airport
+    ]
+    assert named_definitions(" phi taxi vang ", [airport]) == []

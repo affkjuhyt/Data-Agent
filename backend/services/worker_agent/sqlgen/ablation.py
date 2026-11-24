@@ -219,6 +219,7 @@ async def run(
     set_name: str,
     variants: Sequence[str],
     limit: int | None,
+    reachable: bool = False,
 ) -> list[Summary]:
     # The worker's own gateway, secrets and workspace source: the production path's.
     from services.worker_agent.questions import _internal_workspace_source, gateway, secrets
@@ -241,6 +242,10 @@ async def run(
         text = str((item.input or {}).get("question") or "")
         expected = float(item.expected["values"][0])
         async with scoped_session(QA_ROLE, org_id, user) as session:
+            if reachable and await _answered_before_sql(session, space, text):
+                # S4: production answers it before the SQL path (a certified metric, or S1's
+                # uncertified one): not what a person meets this path on.
+                continue
             schema = await load_space(session, space, user)
             linked = link(text, schema.schema)
             source: catalog.Source | None = None
@@ -297,6 +302,25 @@ def _table(summaries: Sequence[Summary]) -> str:
     return "\n".join(lines)
 
 
+async def _answered_before_sql(session: Any, space: uuid.UUID, text: str) -> bool:
+    """Whether the governed path's rules place the question before SQL is tried: a certified
+    metric, or a draft metric or measure (semantic/uncertified.py, S1)."""
+    import datetime
+
+    from services.worker_agent.semantic import uncertified
+    from services.worker_agent.semantic.loader import load as load_layer
+    from services.worker_agent.understand.asked import asked_of
+    from services.worker_agent.understand.resolver import understand
+
+    layer = await load_layer(session, space)
+    today = datetime.date.today()
+    asked = asked_of(text, layer).text
+    if understand(asked, layer.vocabulary, today=today).decision != "unknown":
+        return True
+    found = await uncertified.load_uncertified(session, space, layer)
+    return uncertified.read(asked, layer, found, today=today) is not None
+
+
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--org", required=True, type=uuid.UUID)
@@ -306,13 +330,26 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--variants", default=",".join(VARIANTS))
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--json", action="store_true", help="the full report, every item, as JSON")
+    parser.add_argument(
+        "--reachable",
+        action="store_true",
+        help="only the items production sends to SQL (no certified metric, nothing S1 places)",
+    )
     args = parser.parse_args(argv)
     variants = [v for v in args.variants.split(",") if v]
     unknown = set(variants) - set(VARIANTS)
     if unknown:
         parser.error(f"unknown variants {sorted(unknown)}; known: {', '.join(VARIANTS)}")
     summaries = asyncio.run(
-        run(args.org, args.space, args.username, args.set_name, variants, args.limit)
+        run(
+            args.org,
+            args.space,
+            args.username,
+            args.set_name,
+            variants,
+            args.limit,
+            reachable=args.reachable,
+        )
     )
     if args.json:
         json.dump([asdict(s) for s in summaries], sys.stdout, ensure_ascii=False, indent=1)
