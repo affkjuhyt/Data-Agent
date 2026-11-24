@@ -827,15 +827,20 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
         return
     # The router (router.py, AE-01) sends a question to the dynamic agent (agentic/engine.py) when
     # it is more than one certified metric can answer; the agent also runs when the rules place no
-    # certified metric. The agent hands it back untouched when there is no model or the model fails
-    # before planning. An edited plan and an eval run's narrowed data scope are this path's
-    # contracts and never go to the agent.
+    # certified metric. An overview is answered from the space before any model, so a missing
+    # model cannot hand it to the metric reader. Anything else the agent does not plan is handed
+    # back. An edited plan and an eval run's narrowed data scope never go to the agent.
     if edited_plan_id is None and not event.payload.get("data_scope"):
         from services.worker_agent import router
         from services.worker_agent.agentic import engine
+        from services.worker_agent.ask.describe import answer_overview
 
         route = await router.decide(event, question_id)
         router.count(question_id, route)
+        if route.reason in {"UNCATALOGUED", "DOC_ONLY"} and await answer_overview(
+            event, question_id
+        ):
+            return
         if route.path == "agentic" and await engine.run(event, question_id, gateway()):
             return
     await publish(str(question_id), "planning", {"question_id": str(question_id)})
