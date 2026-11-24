@@ -17,6 +17,7 @@ from __future__ import annotations
 import itertools
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -266,6 +267,30 @@ def describe_members(label: str, members: list[str]) -> str:
     return f"{label} có {len(members)} giá trị: {', '.join(shown)}{tail}."
 
 
+async def _sees_less(
+    session: AsyncSession, layer: Any, space_id: uuid.UUID, principal: uuid.UUID
+) -> bool:
+    """Whether the asker may see less than the whole space: a row scope, or an access policy on
+    any of its datasets (as questions._filed_restricted refuses a filed figure)."""
+    from services.worker_agent.query.scope import OutOfScope, active_policies, active_row_scopes
+
+    try:
+        if (
+            await active_row_scopes(session, data_space_id=space_id, principal_id=principal)
+            is not None
+        ):
+            return True
+        policies = await active_policies(
+            session,
+            principal_id=principal,
+            datasets=list(layer.datasets.values()),
+            caller_kind="question",
+        )
+    except OutOfScope:
+        return True
+    return bool(policies)
+
+
 async def answer_overview(event: Event, question_id: uuid.UUID) -> bool:
     """Store the overview and return True. False when the question is not an overview, so the
     caller keeps its route. A question already past received is left alone."""
@@ -290,6 +315,10 @@ async def answer_overview(event: Event, question_id: uuid.UUID) -> bool:
         overview = _is_overview(question.text)
         layer = await load(session, space_id)
         listed = None if overview else listed_dimension(question.text, layer.vocabulary)
+        if listed is not None and await _sees_less(session, layer, space_id, principal):
+            # The value index is the whole space's: an asker held to some rows or under an access
+            # policy is answered by the path that applies them (the security review of 24/11).
+            listed = None
         members = [v.label for v in layer.vocabulary.values if v.dimension_code == listed]
         if not overview and not members:
             return False
