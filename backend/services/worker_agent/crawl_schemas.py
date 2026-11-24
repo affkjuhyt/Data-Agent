@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from typing import Any, Literal
 
@@ -74,9 +75,16 @@ class Draft(BaseModel):
     fields: list[DraftField] = Field(min_length=1, max_length=30)
 
 
+# Any spelling of our block's tag: case, spaces and a slash in between all close it for a reader.
+_BLOCK_TAG = re.compile(r"<(\s*/?\s*)(trang)", re.IGNORECASE)
+_KINDS = frozenset({"html", "json", "xml"})
+
+
 def _quoted(text: str) -> str:
-    # The crawler escapes the page's own markup; a closing tag of ours is neutralised again here.
-    return text[:MAX_EXCERPT_CHARS].replace("</trang>", "</ trang>").replace("<trang", "< trang")
+    # The crawler escapes the page's text, but a JSON page's keys and strings reach here as written
+    # (security review of 25/11): every spelling of our block's tag is neutralised here, whatever
+    # the excerpt's kind, so a page cannot close its block and speak outside it.
+    return _BLOCK_TAG.sub(r"&lt;\1\2", text[:MAX_EXCERPT_CHARS])
 
 
 def prompt(payload: dict[str, Any]) -> str:
@@ -89,7 +97,7 @@ def prompt(payload: dict[str, Any]) -> str:
             for f in payload["fields"]
         ]
     blocks = [
-        f'<trang so="{n}" loai="{p.get("kind") or "html"}">\n{_quoted(str(p.get("excerpt") or ""))}\n</trang>'
+        f'<trang so="{n}" loai="{p.get("kind") if p.get("kind") in _KINDS else "html"}">\n{_quoted(str(p.get("excerpt") or ""))}\n</trang>'
         for n, p in enumerate((payload.get("pages") or [])[:MAX_PAGES], start=1)
     ]
     return json.dumps(asked, ensure_ascii=False) + "\n\n" + "\n\n".join(blocks)

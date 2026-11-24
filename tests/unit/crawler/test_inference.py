@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import decimal
 import json
+import time
 import uuid
 
 import pytest
@@ -250,3 +251,15 @@ def test_a_json_draft_takes_paths_not_selectors() -> None:
     assert inference.checked_draft(draft, "json", [])[0] == "$.data.rows[*]"
     with pytest.raises(inference.InvalidDraft, match="path"):
         inference.checked_draft(_draft(record_selector="$..*; drop"), "json", [])
+
+
+def test_a_long_path_that_fails_at_its_end_is_refused_at_once() -> None:
+    # The earlier pattern split a long name many ways and backtracked for seconds (25/11).
+    path = "$" + "a" * 290 + "!"
+    started = time.perf_counter()
+    with pytest.raises(inference.InvalidDraft):
+        inference.checked_draft(_draft(record_selector=path), "json", [])
+    assert time.perf_counter() - started < 0.5
+    fields = [{"name": "bank", "type": "text", "locator": "bank", "required": True}]
+    draft = _draft(record_selector="data.rows[0]", fields=fields)
+    assert inference.checked_draft(draft, "json", [])[0] == "data.rows[0]"

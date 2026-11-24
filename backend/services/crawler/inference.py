@@ -77,7 +77,12 @@ TYPES = frozenset({"text", "number", "decimal", "integer", "percent", "money", "
 # The types whose domain an active version must declare (CHECK value_constraints_ok, BR-168).
 NUMERIC_DOMAIN = frozenset({"number", "percent", "money"})
 _NAME = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
-_JSON_PATH = re.compile(r"^\$?(\.?[A-Za-z_][A-Za-z0-9_-]*|\[\*\]|\[\d+\])*$")
+# One reading per path: a leading bare name, then each step dotted or bracketed. The earlier
+# optional dot let "abc" split into names many ways, which backtracks exponentially on a long
+# path that fails at its end (security review of 25/11).
+_JSON_PATH = re.compile(
+    r"^\$?(?:[A-Za-z_][A-Za-z0-9_-]*)?(?:\.[A-Za-z_][A-Za-z0-9_-]*|\[\*\]|\[\d+\])*$"
+)
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 # One namespace for the version a proposal becomes: a redelivered draft finds its version.
 _VERSION_NS = uuid.UUID("6b1f3c1e-2f0a-4d4e-9c57-5e1d0b0a4b04")
