@@ -1427,6 +1427,7 @@ async def _understand_and_plan(
                     question=asked,
                     slots=slots,
                     compare_to=compare_to,
+                    today=today,
                 )
         access_problem: Refusal | None = space_access_problem
         models: list[dict[str, Any]] = []

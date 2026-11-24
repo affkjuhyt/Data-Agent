@@ -8,6 +8,7 @@ import uuid
 import pytest
 
 from services.worker_agent import router
+from services.worker_agent.understand import slots
 from services.worker_agent.understand.resolver import (
     DimensionEntry,
     MetricEntry,
@@ -105,3 +106,31 @@ async def test_a_fixed_policy_routes_without_reading(monkeypatch: pytest.MonkeyP
     assert await router.decide(event, uuid.uuid4()) == router.Route("governed", "ENGINE_GOVERNED")
     monkeypatch.setenv("ASK_ENGINE", "agentic")
     assert await router.decide(event, uuid.uuid4()) == router.Route("agentic", "ENGINE_AGENTIC")
+
+
+def _turn_before(text: str) -> slots.ConversationSlots:
+    return slots.from_chips([c.__dict__ for c in understand(text, VOCAB, today=TODAY).chips])
+
+
+@pytest.mark.parametrize(
+    ("before", "text", "path", "reason"),
+    [
+        # Read against the turn before, a follow-up is the governed path's (AE-11).
+        ("Doanh thu năm 2013", "Còn năm 2012 thì sao?", "governed", "RESOLVED"),
+        ("Doanh thu năm 2013", "Còn theo vùng thì sao?", "governed", "RESOLVED"),
+        # A why stays the agent's, now on the inherited metric.
+        ("Doanh thu năm 2013", "Vì sao năm 2012 lại khác?", "agentic", "WHY"),
+        # Nothing the space knows is still the planner's, conversation or not.
+        ("Doanh thu năm 2013", "Giá cổ phiếu hôm nay", "agentic", "UNCATALOGUED"),
+    ],
+)
+def test_a_follow_up_is_routed_on_what_the_conversation_settled(
+    before: str, text: str, path: str, reason: str
+) -> None:
+    u = router.reading(text, VOCAB, today=TODAY, slots=_turn_before(before))
+    assert router.classify(text, u, deep=False) == router.Route(path, reason)  # type: ignore[arg-type]
+
+
+def test_without_a_turn_before_a_follow_up_is_still_uncatalogued() -> None:
+    u = router.reading("Còn năm 2012 thì sao?", VOCAB, today=TODAY)
+    assert router.classify("Còn năm 2012 thì sao?", u, deep=False).reason == "UNCATALOGUED"

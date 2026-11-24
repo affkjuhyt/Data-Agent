@@ -84,7 +84,9 @@ def _turn(text: str, slots: sl.ConversationSlots | None) -> tuple[Understanding,
     compare_to = found.compare_to if found is not None else None
     u = understand(asked, VOCAB, today=TODAY)
     if slots is not None and (u.decision == "unknown" or u.period is None):
-        u = follow_up(u, slots.chips, VOCAB, question=asked, slots=slots, compare_to=compare_to)
+        u = follow_up(
+            u, slots.chips, VOCAB, question=asked, slots=slots, compare_to=compare_to, today=TODAY
+        )
     return u, compare_to
 
 

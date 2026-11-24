@@ -573,6 +573,11 @@ Viết lại câu follow-up trước truy hồi (RG-07): `rewrite_for_retrieval(
   Câu đã viết lại nằm ở `detail.retrieval_query` của bước `search_documents`.
 - Chưa làm: chuyển `source=hybrid` ("theo báo cáo … có khớp DB không"), chờ AE-13.
 - Đo: 30 case nhiều lượt trên từ vựng DS-AW (`tests/unit/worker_agent/test_conversation_slots.py`): 30/30.
+- Router (24/11): đọc câu hỏi cùng slots của lượt trước, như đường governed (`router.reading`). Trước đó, một
+  follow-up không nêu metric bị đọc thành `unknown`, đi UNCATALOGUED sang agent, tốn khoảng 40 lần token, và các quy
+  tắc kế thừa của governed chỉ chạy sau khi agent trả câu hỏi về. Cùng lúc thêm một chốt cho `follow_up`: câu còn từ nêu
+  một đại lượng mà metric trước không có ("Giá cổ phiếu hôm nay" sau "Doanh thu năm 2013") là câu hỏi mới, không kế
+  thừa. Đây là cùng luật mà `engine._standalone` của agent đã dùng.
 
 ```mermaid
 stateDiagram-v2

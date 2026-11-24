@@ -508,6 +508,43 @@ def _keep_period(
     return current
 
 
+# A follow-up's own words that say "continue": "còn …", "… thì sao", "đi sâu", "đó", folded.
+_CONTINUING = frozenset(
+    "con thi sao the nao ra nhi vay di sau do nay ay kia lai khac what about and how that this".split()
+)
+# What an analysis over the same metric says ("nào cao nhất", "vì sao", "tăng bao nhiêu"): words
+# of the packs that name no quantity of their own (agentic/grounded.ANALYSIS_WORDS reads the same).
+_ANALYSIS: frozenset[str] = frozenset[str]().union(*(pack.analysis_words for pack in PACKS))
+
+
+def _names_another_quantity(
+    question: str,
+    current: Understanding,
+    vocab: Vocabulary,
+    earlier: Mapping[str, dict[str, object]],
+    today: datetime.date,
+) -> bool:
+    """Words left that name a quantity the turn before did not ask for: "giá cổ phiếu hôm nay"
+    after "Doanh thu năm 2013" states a period, but asks about something else, a new question
+    (the agent's rule, agentic/engine._standalone). The cuts' names, the earlier metric's own
+    words and the words that say "continue" are no such quantity."""
+    words = quantity_words(
+        question, vocab, today=today, group_by=current.group_by, filters=current.filters
+    )
+    if not words:
+        return False
+    known = set(_CONTINUING) | _ANALYSIS
+    for d in vocab.dimensions:
+        known |= set(norm(d.name).split())
+    for phrase, target in vocab.synonyms.items():
+        if target[0] in ("dimension", "value"):
+            known |= set(norm(phrase).split())
+    metric = next((m for m in vocab.metrics if m.code == str(earlier["metric"].get("value"))), None)
+    if metric is not None:
+        known |= metric_words(metric, vocab)
+    return any(w not in known for w in words)
+
+
 def follow_up(
     current: Understanding,
     previous: list[dict[str, object]],
@@ -516,6 +553,7 @@ def follow_up(
     question: str = "",
     slots: ConversationSlots | None = None,
     compare_to: str | None = None,
+    today: datetime.date | None = None,
 ) -> Understanding:
     """A question that only cuts, filters, dates or compares (UC-01-04: "còn theo vùng thì sao?",
     "đi sâu Miền Bắc theo chi nhánh", "so với cùng kỳ năm trước") read against the question before
@@ -550,6 +588,8 @@ def follow_up(
         return current
     earlier = {str(c.get("kind")): c for c in previous if c.get("kind") == "metric"}
     if "metric" not in earlier:
+        return current
+    if today is not None and _names_another_quantity(question, current, vocab, earlier, today):
         return current
     subject_chip: dict[str, object] | None = None
     if pointed:

@@ -7,8 +7,11 @@ the agent over-answering single-metric questions. A question the rules place on 
 metric stays governed; an ambiguous reading stays governed; a question the rules do not place
 goes to the planner (agentic, UNCATALOGUED).
 
-The reading is the governed path's own (understand/asked.py, then the rule resolver), so the
-router never routes on a reading the answer does not use. No model, no write: a route is a log
+The reading is the governed path's own (understand/asked.py, the rule resolver, then follow_up
+against the turn before: understand/slots.py), so the router never routes on a reading the answer
+does not use. A follow-up ("còn năm 2012 thì sao?", "so với cùng kỳ năm trước") names no metric
+of its own; read alone it was UNCATALOGUED and went to the agent at about 40 times the governed
+path's tokens, while the governed path answers it from the conversation. No model, no write: a route is a log
 line and a count (`dataagent_ask_route_total{path,reason}`).
 
 ASK_ENGINE chooses the policy: `router` (default), `agentic` (the agent first for every question,
@@ -17,6 +20,7 @@ as before AE-01, the rollback) or `governed` (never the agent).
 
 from __future__ import annotations
 
+import datetime
 import logging
 import os
 import uuid
@@ -32,7 +36,13 @@ from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand.asked import asked_of
 from services.worker_agent.understand.packs import PACKS
-from services.worker_agent.understand.resolver import Understanding, understand
+from services.worker_agent.understand.resolver import (
+    Understanding,
+    Vocabulary,
+    follow_up,
+    understand,
+)
+from services.worker_agent.understand.slots import ConversationSlots, previous_slots
 from services.worker_agent.understand.text import norm
 
 logger = logging.getLogger(__name__)
@@ -85,6 +95,30 @@ def classify(question: str, u: Understanding, *, deep: bool) -> Route:
     return Route("agentic", "UNCATALOGUED")
 
 
+def reading(
+    asked: str,
+    vocab: Vocabulary,
+    *,
+    today: datetime.date,
+    slots: ConversationSlots | None = None,
+    compare_to: str | None = None,
+) -> Understanding:
+    """The rule reading of what was asked, against the turn before as the governed path reads it
+    (questions._understand_and_plan): follow_up when the rules placed no metric or no period."""
+    u = understand(asked, vocab, today=today)
+    if slots is not None and (u.decision == "unknown" or u.period is None):
+        u = follow_up(
+            u,
+            slots.chips,
+            vocab,
+            question=asked,
+            slots=slots,
+            compare_to=compare_to,
+            today=today,
+        )
+    return u
+
+
 async def decide(event: Event, question_id: uuid.UUID) -> Route:
     policy = engine()
     if policy != "router":
@@ -105,7 +139,15 @@ async def decide(event: Event, question_id: uuid.UUID) -> Route:
         today = question.as_of or clock.today(await clock.space_zone(session, space_id))
         layer = await load(session, space_id)
         text, purpose = question.text, question.purpose
-    u = understand(asked_of(text, layer).text, layer.vocabulary, today=today)
+        slots = await previous_slots(session, question, layer.vocabulary)
+    parts = asked_of(text, layer)
+    u = reading(
+        parts.text,
+        layer.vocabulary,
+        today=today,
+        slots=slots,
+        compare_to=parts.comparison.compare_to if parts.comparison is not None else None,
+    )
     return classify(text, u, deep=deep_skill.requested(event.payload, purpose))
 
 
