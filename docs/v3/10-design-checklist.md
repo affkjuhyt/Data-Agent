@@ -340,7 +340,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-78 | UC-01-02 | todo |  |
 | BR-79 | UC-01-02 | todo |  |
 | BR-80 | UC-01-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-81 | UC-01-04 | todo | `backend/services/api/modules/context/semantic_yaml.py`, `backend/services/api/modules/qa/query.py`, `backend/services/worker_agent/metric_changes.py` +7 |
+| BR-81 | UC-01-04 | todo | `backend/services/api/modules/context/semantic_yaml.py`, `backend/services/api/modules/qa/query.py`, `backend/services/worker_agent/agentic/engine.py` +9 |
 | BR-82 | UC-01-04 | todo |  |
 | BR-83 | UC-01-05 | todo | `backend/services/api/modules/qa/routes.py` |
 | BR-84 | UC-01-05 | todo |  |
