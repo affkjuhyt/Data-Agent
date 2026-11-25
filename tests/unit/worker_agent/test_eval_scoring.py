@@ -43,6 +43,14 @@ def test_a_wrong_value_fails_and_a_tolerance_lets_a_close_one_pass() -> None:
     assert _score(item({"values": [1.80]}, tolerance=0.05), got, QUESTION)[3] is True
 
 
+def test_the_expected_values_lead_the_answer_and_support_may_follow() -> None:
+    share = answer(figure("32.75"), figure("16351550.34"), figure("49926384.50"))
+    assert _score(item({"values": [32.75]}), share, QUESTION)[3] is True
+    # Another number first, or fewer figures than expected, fails.
+    assert _score(item({"values": [16351550.34]}), share, QUESTION)[3] is False
+    assert _score(item({"values": [32.75, 1.0]}), answer(figure("32.75")), QUESTION)[3] is False
+
+
 def test_a_masked_figure_is_not_a_value() -> None:
     assert _score(item({"values": [5]}), answer(figure(None)), QUESTION)[1] is False
 

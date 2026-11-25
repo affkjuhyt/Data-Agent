@@ -85,10 +85,14 @@ def _score(
     else:
         actual_values = _values(answer.figures)
         tolerance = item.tolerance if item.tolerance is not None else expected.get("tolerance")
-        value_ok = len(actual_values) == len(expected_values) and all(
+        # The expected values are the answer's first figures, in order; figures after them are
+        # its support ("Doanh thu Internet chiếm bao nhiêu phần trăm tổng doanh thu": the share,
+        # then the two revenues it divides, 22/11). An answer that leads with another number,
+        # or holds fewer, fails.
+        value_ok = len(actual_values) >= len(expected_values) and all(
             abs(a - float(e))
             <= (float(tolerance) if tolerance is not None else abs(float(e)) * RELATIVE_TOLERANCE)
-            for a, e in zip(actual_values, expected_values, strict=True)
+            for a, e in zip(actual_values, expected_values, strict=False)
         )
     contains = expected.get("text_contains")
     behavior_ok = contains is None or all(str(part) in answer.text for part in contains)
