@@ -2,7 +2,8 @@
 written by hand on the tables, as test_adventureworks_reconciliation.py does for DS-AW's metrics.
 
 The calendar is the compiler's input, not DS-AW's dim_date.fiscal_year: AdventureWorksDW labels
-its fiscal years one year off (the xfail there), and a customer's books are set on its calendar."""
+its fiscal years up to 2010 by the year they end in (ds-aw.yaml computes its own), and a customer's
+books are set on its calendar."""
 
 from __future__ import annotations
 

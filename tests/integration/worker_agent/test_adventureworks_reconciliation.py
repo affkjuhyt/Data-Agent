@@ -101,7 +101,10 @@ CASES: list[Any] = [
         ["nam_tai_chinh"],
         None,
         None,
-        "SELECT d.fiscal_year, SUM(f.sales_amount) FROM fact_internet_sales f"
+        # The fiscal year from 1 July, named by the year it starts in, as the model computes it:
+        # dim_date.fiscal_year names the years up to 2010 by the year they end in.
+        "SELECT CASE WHEN d.month_number_of_year >= 7 THEN d.calendar_year"
+        " ELSE d.calendar_year - 1 END, SUM(f.sales_amount) FROM fact_internet_sales f"
         " JOIN dim_date d ON d.date_key = f.order_date_key GROUP BY 1",
     ),
     (
@@ -387,12 +390,9 @@ def test_two_date_roles_are_refused_rather_than_guessed() -> None:
         )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="data: dim_date.fiscal_year of AdventureWorksDW calls July-December 2010 fiscal 2011 and"
-    " January-June 2011 fiscal 2010, and the model reads the fiscal year from it",
-)
 def test_fiscal_2011_is_july_2011_to_june_2012(adventureworks: Any) -> None:
+    """dim_date.fiscal_year calls July-December 2010 fiscal 2011 and January-June 2011 fiscal
+    2010; the model computes the fiscal year from the date instead (ds-aw.yaml, lich)."""
     layer, metrics = _layer()
     compiled = c.compile_metric(
         c.Request(metrics["DOANH_THU_INTERNET"], group_by=["nam_tai_chinh"]),

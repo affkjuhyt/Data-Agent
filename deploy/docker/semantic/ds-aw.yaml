@@ -24,6 +24,11 @@
 #     scenario, and its amounts only mean something cut by account.
 #   - fact_internet_sales_reason (many reasons per order line) is not modelled: joining it to the
 #     lines multiplies their revenue.
+#   - The metrics of one fact are cut by every dimension that fact reaches (22/11/2026: Số lượng
+#     bán Internet had 6 of Doanh thu Internet's 18, and "màu Black" was refused). Except the
+#     average order value, an order's: not cut by what varies inside one order (a product, its
+#     promotion). Counts of distinct orders or customers cut by a product count those that bought
+#     it, so their rows do not add up (additivity none).
 version: 1
 semantic_models:
   - name: ban_internet
@@ -120,7 +125,14 @@ semantic_models:
     model: public.dim_date
     primary_key: [date_key]
     dimensions:
-      - {name: nam_tai_chinh, label: Năm tài chính, type: categorical, expr: fiscal_year}
+      # The fiscal year from the date, named by the year it starts in (QĐ 07/2012/QĐ-AWC):
+      # dim_date.fiscal_year names the years up to 2010 by the year they end in, so its "2011"
+      # held July-December 2010 and July 2011-June 2012, 550 days. From 2011 on the two agree,
+      # and fiscal_quarter agrees everywhere (checked on the loaded table, 22/11/2026).
+      - name: nam_tai_chinh
+        label: Năm tài chính
+        type: categorical
+        expr: CASE WHEN month_number_of_year >= 7 THEN calendar_year ELSE calendar_year - 1 END
       - {name: quy_tai_chinh, label: Quý tài chính, type: categorical, expr: fiscal_quarter}
   - name: ton_kho
     label: Tồn kho
@@ -245,7 +257,7 @@ metrics:
     decimals: 0
     direction: higher_better
     additivity: full
-    dimensions: [ten_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, nam_tai_chinh]
+    dimensions: [ten_san_pham, mau_sac, dong_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, gioi_tinh, hoc_van, nghe_nghiep, thanh_pho, tinh_bang, quoc_gia_khach, chuong_trinh_km, loai_km, nam_tai_chinh, quy_tai_chinh]
   - name: BIEN_GOP_INTERNET
     label: Biên lợi nhuận gộp Internet
     description: Lãi gộp trên doanh thu Internet, tính trên tổng (không lấy trung bình tỷ lệ từng nhóm).
@@ -255,7 +267,7 @@ metrics:
     unit: "%"
     decimals: 1
     direction: higher_better
-    dimensions: [ten_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, nam_tai_chinh]
+    dimensions: [ten_san_pham, mau_sac, dong_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, gioi_tinh, hoc_van, nghe_nghiep, thanh_pho, tinh_bang, quoc_gia_khach, chuong_trinh_km, loai_km, nam_tai_chinh, quy_tai_chinh]
   - name: LAI_GOP_DAI_LY
     label: Lãi gộp đại lý
     description: Doanh thu đại lý trừ giá vốn sản phẩm.
@@ -266,7 +278,7 @@ metrics:
     decimals: 0
     direction: higher_better
     additivity: full
-    dimensions: [ten_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, loai_dai_ly, nam_tai_chinh]
+    dimensions: [ten_san_pham, mau_sac, dong_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, ten_dai_ly, loai_dai_ly, chuong_trinh_km, loai_km, nam_tai_chinh, quy_tai_chinh]
   - name: SO_DON_INTERNET
     label: Số đơn Internet
     description: Số đơn khác nhau; một đơn nhiều dòng đếm một lần.
@@ -276,7 +288,7 @@ metrics:
     unit: đơn
     decimals: 0
     direction: higher_better
-    dimensions: [nhom_hang, vung, quoc_gia_ban, khu_vuc, nam_tai_chinh]
+    dimensions: [ten_san_pham, mau_sac, dong_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, gioi_tinh, hoc_van, nghe_nghiep, thanh_pho, tinh_bang, quoc_gia_khach, chuong_trinh_km, loai_km, nam_tai_chinh, quy_tai_chinh]
   - name: SO_KHACH_HANG_INTERNET
     label: Số khách hàng mua qua Internet
     description: >-
@@ -288,7 +300,7 @@ metrics:
     unit: khách hàng
     decimals: 0
     direction: higher_better
-    dimensions: [nhom_hang, tieu_nhom, vung, quoc_gia_ban, khu_vuc, quoc_gia_khach, thanh_pho, gioi_tinh, hoc_van, nghe_nghiep, nam_tai_chinh]
+    dimensions: [ten_san_pham, mau_sac, dong_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, gioi_tinh, hoc_van, nghe_nghiep, thanh_pho, tinh_bang, quoc_gia_khach, chuong_trinh_km, loai_km, nam_tai_chinh, quy_tai_chinh]
   - name: GIA_TRI_DON_TB_INTERNET
     label: Giá trị đơn bình quân Internet
     expr: doanh_thu_internet / so_don_internet
@@ -297,7 +309,7 @@ metrics:
     unit: USD
     decimals: 2
     direction: higher_better
-    dimensions: [vung, quoc_gia_ban, khu_vuc, nam_tai_chinh]
+    dimensions: [vung, quoc_gia_ban, khu_vuc, gioi_tinh, hoc_van, nghe_nghiep, thanh_pho, tinh_bang, quoc_gia_khach, nam_tai_chinh, quy_tai_chinh]
   - name: SO_LUONG_BAN_INTERNET
     label: Số lượng bán Internet
     expr: so_luong_internet
@@ -307,7 +319,7 @@ metrics:
     decimals: 0
     direction: higher_better
     additivity: full
-    dimensions: [ten_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc]
+    dimensions: [ten_san_pham, mau_sac, dong_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, gioi_tinh, hoc_van, nghe_nghiep, thanh_pho, tinh_bang, quoc_gia_khach, chuong_trinh_km, loai_km, nam_tai_chinh, quy_tai_chinh]
   - name: SO_LUONG_BAN_DAI_LY
     label: Số lượng bán đại lý
     expr: so_luong_dai_ly
@@ -317,7 +329,7 @@ metrics:
     decimals: 0
     direction: higher_better
     additivity: full
-    dimensions: [ten_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, loai_dai_ly]
+    dimensions: [ten_san_pham, mau_sac, dong_san_pham, tieu_nhom, nhom_hang, vung, quoc_gia_ban, khu_vuc, ten_dai_ly, loai_dai_ly, chuong_trinh_km, loai_km, nam_tai_chinh, quy_tai_chinh]
   # Stock: a daily balance, read on the last day of the period.
   - name: TON_KHO
     label: Tồn kho
@@ -404,6 +416,8 @@ synonyms:
   - {phrase: doanh thu trực tuyến, metric: DOANH_THU_INTERNET}
   - {phrase: internet sales, metric: DOANH_THU_INTERNET}
   - {phrase: online revenue, metric: DOANH_THU_INTERNET}
+  # "Internet revenue by product category" was read as revenue of both channels (22/11).
+  - {phrase: internet revenue, metric: DOANH_THU_INTERNET}
   - {phrase: doanh thu bán sỉ, metric: DOANH_THU_DAI_LY}
   - {phrase: reseller sales, metric: DOANH_THU_DAI_LY}
   - {phrase: lợi nhuận gộp internet, metric: LAI_GOP_INTERNET}
@@ -435,10 +449,14 @@ synonyms:
   - {phrase: số thực tế, metric: TAI_CHINH_THUC_TE}
   - {phrase: actual, metric: TAI_CHINH_THUC_TE}
   - {phrase: product, dimension: ten_san_pham}
+  - {phrase: products, dimension: ten_san_pham}
   - {phrase: mặt hàng, dimension: ten_san_pham}
   - {phrase: danh mục, dimension: nhom_hang}
   - {phrase: nhóm hàng, dimension: nhom_hang}
   - {phrase: category, dimension: nhom_hang}
+  # Longer than "product" and "category" apart, so one cut (22/11: asked back as unknown).
+  - {phrase: product category, dimension: nhom_hang}
+  - {phrase: product categories, dimension: nhom_hang}
   - {phrase: subcategory, dimension: tieu_nhom}
   - {phrase: region, dimension: khu_vuc}
   - {phrase: territory, dimension: vung}

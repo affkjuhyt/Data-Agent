@@ -73,7 +73,8 @@ def _space(conn: Any) -> SpaceLayer:
             )
             if d["type"] == "categorical":
                 with conn.cursor() as cur:
-                    cur.execute(f'SELECT DISTINCT "{d["expr"]}"::text FROM {sm["model"]} LIMIT 501')
+                    # The expression as written: a column, or a computed one (the fiscal year).
+                    cur.execute(f"SELECT DISTINCT ({d['expr']})::text FROM {sm['model']} LIMIT 501")
                     found = [r[0] for r in cur.fetchall() if r[0]]
                 if len(found) <= 500:
                     values += [ValueEntry(d["name"], v, v) for v in found]
