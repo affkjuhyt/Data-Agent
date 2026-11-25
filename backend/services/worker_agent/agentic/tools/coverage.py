@@ -118,6 +118,12 @@ async def for_planning(ctx: ToolContext, codes: list[str]) -> str:
         if found is None:
             continue
         lines.append(f"{code}: {coverage.describe(found, entry.name, asked)}")
+        if found.first is not None and asked.end <= found.first:
+            # "Tồn kho cuối tháng 12/2009" was moved to 2014-06, the latest month, and answered
+            # with its figure (22/11): a period before the data began holds no figure to move to.
+            last = found.last or found.first
+            ctx.period_before[code] = (asked, c.Period(found.first, bucket(last, found.grain).end))
+            continue
         if not found.covers(asked.start, asked.end):
             suggested = coverage.suggest(found, asked)
             if suggested is not None:

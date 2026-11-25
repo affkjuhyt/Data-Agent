@@ -8,6 +8,7 @@ chooses what to show and how; it never writes a figure into a chart, a table or 
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -311,6 +312,39 @@ def _column(ds: Dataset, name: str | None) -> str:
     raise BlockError(f"dataset {ds.id} không có cột {name}; các cột: {ds.columns}")
 
 
+def _sides_of(ds: Dataset) -> list[str] | None:
+    """A comparison's two columns, the asked side first, when the dataset holds both."""
+    sides = (ds.reading or {}).get("sides")
+    if isinstance(sides, list) and len(sides) == 2 and all(s in ds.columns for s in sides):
+        return [str(s) for s in sides]
+    return None
+
+
+def _asked_first(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A comparison's KPIs, the side the question asks first: written base first ("Doanh thu
+    2012", then "Doanh thu 2013" for "2013 so với 2012"), the figures came out the wrong way
+    round (22/11, five items). A KPI of the base alone, which its asked side already shows beside
+    it, goes. The marks used to sort are dropped."""
+    shown = {
+        (it.get("dataset"), json.dumps(it.get("row_key"), default=str))
+        for it in items
+        if it.get("side") == 0 and "compare_value" in it
+    }
+    kept = [
+        it
+        for it in items
+        if not (
+            it.get("side") == 1
+            and (it.get("dataset"), json.dumps(it.get("row_key"), default=str)) in shown
+        )
+    ]
+    kept.sort(key=lambda it: 1 if it.get("side") == 1 else 0)
+    for it in kept:
+        it.pop("side", None)
+        it.pop("row_key", None)
+    return kept
+
+
 def _row(ds: Dataset, k: KpiDraft) -> list[Any]:
     if k.match_column:
         i = ds.columns.index(_column(ds, k.match_column))
@@ -400,16 +434,35 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
                         " chỉ số không chia (một dòng), hoặc bỏ kpi này"
                     )
             row = _row(ds, k)
-            value = number(row[ds.columns.index(_column(ds, k.column))])
+            column = _column(ds, k.column)
+            cell = row[ds.columns.index(column)]
+            value = number(cell)
+            if value is None and cell is not None:
+                # "Top 3 bang …" drew three KPIs labelled by state with the state column as their
+                # figure, and the answer held no number (22/11): a KPI shows a number.
+                raise BlockError(
+                    f"cột '{column}' của {ds.id} không phải số: kpi trỏ tới cột số, chọn dòng"
+                    " bằng match_column và match_value"
+                )
             item: dict[str, Any] = {
                 "label": k.label,
                 "value": value,
                 "unit": ds.unit,
                 **_source(ds),
             }
-            if k.compare_column:
-                previous = number(row[ds.columns.index(_column(ds, k.compare_column))])
-                item["compare_label"] = k.compare_column
+            sides = _sides_of(ds)
+            compare_column = k.compare_column
+            if sides and column == sides[0] and not compare_column:
+                # A comparison's asked side shows its base beside it: "Doanh thu bán sỉ năm 2012
+                # so với cùng kỳ năm trước" was answered with 2012 alone, the reading holding both
+                # (22/11). The base is the server's to show, not the reporter's to remember.
+                compare_column = sides[1]
+            if sides and column in sides:
+                item["side"] = sides.index(column)
+                item["row_key"] = [plain(v) for v in row]
+            if compare_column:
+                previous = number(row[ds.columns.index(_column(ds, compare_column))])
+                item["compare_label"] = compare_column
                 item["compare_value"] = previous
                 if previous not in (None, 0) and value is not None:
                     item["change_pct"] = round((value - previous) / abs(previous) * 100, 2)
@@ -419,7 +472,7 @@ def materialize(draft: BlockDraft, ws: Workspace, block_id: str) -> dict[str, An
                 'kpi rỗng: mỗi số là một phần tử của "kpis": [{"label", "dataset", "column",'
                 ' "row"}]'
             )
-        return {**base, "items": items}
+        return {**base, "items": _asked_first(items)}
     if t == "table":
         ds = _dataset(ws, draft.dataset)
         columns = [_column(ds, c) for c in draft.columns] or list(ds.columns)

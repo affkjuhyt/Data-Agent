@@ -154,6 +154,19 @@ def unnamed_quantity(
     if not at:
         return None
     first, last = at[0], at[-1]
+    # The quantity as the question writes it, not only its unknown words: "Tỷ lệ khách hàng rời
+    # bỏ năm 2013" was asked back as “lệ” (22/11). Leftwards over an analysis phrase it starts
+    # ("tỷ lệ"), rightwards up to its period, a number or a question word.
+    folded = [norm(_TRAILING.sub("", t)) for t in tokens]
+    if first > 0 and any(
+        p.analysis_phrase.fullmatch(f"{folded[first - 1]} {folded[first]}") for p in PACKS
+    ):
+        first -= 1
+    while last + 1 < len(tokens) and not _TRAILING.search(tokens[last]):
+        after = folded[last + 1]
+        if not after or any(ch.isdigit() for ch in after) or after in _QUANTITY_ENDS:
+            break
+        last += 1
     phrase = _TRAILING.sub("", " ".join(tokens[first : last + 1]))
     end = m.group(0) if (m := _TRAILING.search(tokens[last])) else ""
     found = _closest(question, layer)
@@ -279,6 +292,10 @@ def out_of_scope(question: str, layer: SpaceLayer, today: datetime.date) -> str 
 
 
 _CUT_ENDS = words(lambda pack: pack.cut_ends)
+# Where a quantity written in a question ends: its period, a cut, or the question's own words.
+_QUANTITY_ENDS = _CUT_ENDS | frozenset(
+    "la bao theo cua o tai trong cho voi va is are was by in for of".split()
+)
 
 
 def unknown_cut(question: str, layer: SpaceLayer, today: datetime.date) -> Clarify | None:

@@ -52,8 +52,10 @@ def validate(plan: Plan, tools: set[str]) -> Plan:
         return plan
     if not plan.steps:
         raise PlanInvalid("kế hoạch không có bước nào")
-    if len(plan.steps) > MAX_STEPS:
-        raise PlanInvalid(f"tối đa {MAX_STEPS} bước, kế hoạch có {len(plan.steps)}")
+    # A failed step kept on the record after a replan is history, not a step of the plan.
+    planned = [s for s in plan.steps if s.status != "failed"]
+    if len(planned) > MAX_STEPS:
+        raise PlanInvalid(f"tối đa {MAX_STEPS} bước, kế hoạch có {len(planned)}")
     seen: set[str] = set()
     for step in plan.steps:
         if step.id in seen:

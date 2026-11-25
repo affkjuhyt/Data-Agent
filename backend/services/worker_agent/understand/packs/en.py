@@ -88,7 +88,9 @@ def periods(t: str, folded: str, today: datetime.date, cal: clock.Calendar) -> F
     m = re.search(rf"\b(?:in|for|during) ({_MONTH})\b(?! \d)", t)
     if m and m.group(1) != "may":
         return base.month(today.year, _MONTHS[m.group(1)], m.group(0))
-    if m := re.search(rf"\b(?:q([1-4])|({_ORDINALS}) quarter)(?: of)?(?: (\d{{4}}))?\b", t):
+    # The year after a space, a slash or a dash ("Q2 2012", "Q2/2012", "Q3-2013"): written
+    # "Q2/2012", only "q2" matched and the quarter was read in this year (21/11, three items).
+    if m := re.search(rf"\b(?:q([1-4])|({_ORDINALS}) quarter)(?: of)?(?:[ /-](\d{{4}}))?\b", t):
         q = int(m.group(1)) if m.group(1) else _ORDINAL[m.group(2)]
         return base.quarter(int(m.group(3)) if m.group(3) else today.year, q, m.group(0))
     if m := re.search(r"\b(?:in|for|during|year|of) (\d{4})\b", t):
@@ -282,4 +284,9 @@ PACK = Pack(
         "thousand": 1e3,
         "k": 1e3,
     },
+    forecast=re.compile(r"\b(?:forecast(?:s|ed|ing)?|predict(?:s|ed|ion)?|projected)\b"),
+    over_periods=re.compile(
+        r"\b(?:sum|add up|total)\b(?:\s+\w+){0,4}?\s+(?:over|across|of all|for all|all)"
+        r"\s+(?:the\s+)?(?:months|quarters|years|periods|days|weeks)\b"
+    ),
 )

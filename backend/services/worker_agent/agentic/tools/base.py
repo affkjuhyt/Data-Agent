@@ -52,6 +52,9 @@ class ToolContext:
     # A metric with no data in the asked period at all and no whole period to move to (budget data
     # from 12/2010 to 11/2011 asked for 2026): the asked period and the span the data holds (F1).
     period_gaps: dict[str, tuple[Any, Any]] = field(default_factory=dict)
+    # A metric whose data starts after the asked period ends: the asked period and the span the
+    # data holds. Nothing is moved; the question is asked back (engine._before_data).
+    period_before: dict[str, tuple[Any, Any]] = field(default_factory=dict)
     # Model calls made inside tools (sqlgen), for the receipt.
     models: list[dict[str, Any]] = field(default_factory=list)
     step_id: str = ""

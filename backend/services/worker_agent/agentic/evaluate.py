@@ -28,6 +28,7 @@ import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
+from typing import Any
 
 from sqlalchemy import func, select
 
@@ -85,6 +86,18 @@ def _any_order(item: ev.EvalItem, answer: qa.Answer | None) -> bool | None:
     return len(got) == len(want) and all(
         abs(a - e) <= abs(e) * eval_runs.RELATIVE_TOLERANCE for a, e in zip(got, want, strict=True)
     )
+
+
+def _agent_understood(plan_steps: dict[str, Any]) -> str | None:
+    """The metric an agent turn read the question as: its contract's, when a reading of it was
+    made; else its first certified dataset's."""
+    read = [
+        d.get("metric")
+        for d in (plan_steps.get("datasets") or {}).values()
+        if isinstance(d, dict) and d.get("metric")
+    ]
+    asked = (plan_steps.get("contract") or {}).get("metric")
+    return asked if asked in read else next(iter(read), None)
 
 
 async def _trace(
@@ -160,17 +173,12 @@ async def _ask(
         plan = await session.get(qa.Plan, answer.plan_id) if answer is not None else None
     plan_steps = plan.steps if plan is not None else None
     agentic = isinstance(plan_steps, dict) and plan_steps.get("engine") == "agentic"
-    # The metric the answer was read as, which an item may expect: the agent's first certified
-    # dataset, or the governed plan's semantic step (eval_runs reads that one).
+    # The metric the answer was read as, which an item may expect: for the agent, the metric its
+    # contract names when a reading of it was made, else its first certified dataset's; for the
+    # governed path, its plan's semantic step (eval_runs reads that one). By the first dataset
+    # alone, a share read alongside its total was "understood" as whichever came back first.
     understood = (
-        next(
-            (
-                d.get("metric")
-                for d in (plan_steps.get("datasets") or {}).values()  # type: ignore[union-attr]
-                if isinstance(d, dict) and d.get("metric")
-            ),
-            None,
-        )
+        _agent_understood(plan_steps)  # type: ignore[arg-type]
         if agentic
         else await eval_runs._understood_metric(org_id, user, question_id)
     )

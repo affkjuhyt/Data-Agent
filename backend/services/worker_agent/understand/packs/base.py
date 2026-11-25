@@ -94,6 +94,12 @@ class Pack:
     comparators: tuple[tuple[str, str], ...] = ()
     between: tuple[str, ...] = ()
     units: dict[str, float] = field(default_factory=dict)
+    # A question that asks a forecast ("dự báo", "forecast"): answered by a released forecast
+    # model or refused, never read as a past period nor computed in Python.
+    forecast: re.Pattern[str] = re.compile(r"(?!)")
+    # Figures added up over several periods ("cộng tồn kho các tháng", "sum over the months"): a
+    # number at the end of a period is not added across periods (engine._summed_over_periods).
+    over_periods: re.Pattern[str] = re.compile(r"(?!)")
 
 
 def month_range(year: int, month: int) -> tuple[datetime.date, datetime.date]:

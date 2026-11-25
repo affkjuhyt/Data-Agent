@@ -180,9 +180,19 @@ async def _resolve(
             if frequency is None:
                 model = await _any_released_model(session, ctx, metric, scope)
             if model is None:
+                # Said whole, it is the refusal the asker reads (engine._forecast_refused): the
+                # metric by its name, and which metrics a forecast can be asked of instead.
+                names = _metric_names(ctx)
+                released = await _released_metrics(session, ctx)
                 raise _NoModel(
-                    f"không có mô hình dự báo đã phát hành cho chỉ số {metric}"
-                    + (f" / {frequency}" if frequency else "")
+                    f"Chưa có mô hình dự báo đã phát hành cho {names.get(metric, metric)}"
+                    + (f" theo {frequency}" if frequency else "")
+                    + (
+                        "; chỉ số có mô hình dự báo: "
+                        + ", ".join(sorted({names.get(m, m) for m in released}))
+                        if released
+                        else "; Data Space chưa có mô hình dự báo nào được phát hành"
+                    )
                 )
         freq = model.frequency
         current = await _current_job(session, ctx, model, horizon, scope)
@@ -274,6 +284,24 @@ async def _released_model(
     # Typed: the session is Any here, so what it returns is too.
     model: fc.ForecastModel | None = await session.scalar(query)
     return model
+
+
+def _metric_names(ctx: ToolContext) -> dict[str, str]:
+    vocab = getattr(getattr(ctx, "layer", None), "vocabulary", None)
+    return {m.code: m.name for m in getattr(vocab, "metrics", [])}
+
+
+async def _released_metrics(session: Any, ctx: ToolContext) -> list[str]:
+    """The metrics of the Data Space a released forecast model reads, any scope or frequency."""
+    codes = await session.scalars(
+        select(fc.ForecastModel.metric_code).where(
+            fc.ForecastModel.org_id == ctx.org_id,
+            fc.ForecastModel.data_space_id == ctx.space_id,
+            fc.ForecastModel.status != "retired",
+            fc.ForecastModel.current_version_id.is_not(None),
+        )
+    )
+    return [str(c) for c in codes.all()]
 
 
 async def _any_released_model(

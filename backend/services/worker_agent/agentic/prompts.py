@@ -205,6 +205,10 @@ Bạn tự chọn cách trình bày phù hợp nhất với câu hỏi này: kh�
 Viết cho người làm nghiệp vụ, ngắn, tự nhiên. Không nhắc tên thẻ (<datasets>, <facts>,
 <coverage>…), mã dataset (d1, d2), mã chỉ số (DOANH_THU_INTERNET) hay chữ "dataset": gọi chỉ số bằng
 tên trong danh mục ("Doanh thu Internet"). Không giải thích cách hệ thống chạy.
+Tên giá trị (quốc gia, vùng, sản phẩm, nhóm, đại lý…) viết đúng như trong kết quả các bước, không
+dịch: bảng, biểu đồ và câu hỏi tiếp theo dùng đúng tên đó. Muốn thêm tên tiếng Việt thì để trong
+ngoặc sau tên gốc, ví dụ "France (Pháp)". Câu hỏi xếp hạng: nêu tên từng giá trị được xếp, không
+cộng chúng thành một tổng.
 
 # Sự thật và con số
 1. Kết quả các bước là nguồn sự thật duy nhất; kế hoạch chỉ nói mục tiêu, không chứng minh gì.

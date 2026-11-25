@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 
 from libs import clock, language
+from libs.contracts.v1.errors import NEXT_ACTION, ErrorCode
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import qa
 from services.worker_agent import turn_trace
@@ -67,10 +68,11 @@ from services.worker_agent.progress import is_cancel_requested, publish
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import analyst
+from services.worker_agent.understand.analysis import find_analysis
 from services.worker_agent.understand.packs import PACKS, search
 from services.worker_agent.understand.packs.base import iso_answer
 from services.worker_agent.understand.resolver import metric_words, names_metric, quantity_words
-from services.worker_agent.understand.text import find_period, norm
+from services.worker_agent.understand.text import find_period, norm, words_of
 from services.worker_agent.understand.value_retrieval import sem_value_retrieval
 
 logger = logging.getLogger(__name__)
@@ -118,6 +120,8 @@ class State:
     failed: p.PlanStep | None = None
     clarify: Clarify | None = None
     refused: str | None = None
+    # Why the turn refused, as the answer's refusal code (libs.contracts.v1.errors.ErrorCode).
+    refusal_code: str = "NO_DATA_FOR_PERIOD"
     handed_back: bool = False
     composition: list[dict[str, Any]] = field(default_factory=list)
     headline: str = ""
@@ -375,7 +379,11 @@ async def prepare(s: State) -> None:
         # A question naming a period: where the metrics it most likely reads have data, so a
         # quarter the data never reaches is planned around, not queried and handed over (AGC-10).
         s.likely = [m["metric"] for m in analyst.search_metrics(s.ctx.layer, question_text)]
-        s.coverage = await for_planning(s.ctx, s.likely[:COVERAGE_METRICS])
+        # The metric the question calls by its name alone, when it does: shown the coverage of
+        # Số cuộc gọi (2014-05) beside another metric's ending 2013-12, the 14B planner read
+        # "tháng 5/2014" as after the data and answered nothing (22/11).
+        named = s.contract.metric if s.contract is not None else None
+        s.coverage = await for_planning(s.ctx, [named] if named else s.likely[:COVERAGE_METRICS])
     except Exception:
         logger.exception("question %s: data coverage not read", s.question_id)
 
@@ -510,9 +518,13 @@ def _missing_period(s: State) -> p.Plan | None:
     gaps = getattr(ctx, "period_gaps", None) or {} if ctx is not None else {}
     if ctx is None or ctx.period is None or not (ctx.period_moves or gaps) or not s.likely:
         return None
+    if _asks_forecast(ctx.question):
+        # A forecast's period is one the data does not hold yet: "Dự báo doanh thu năm 2015" was
+        # asked back as a past year with no data (21/11). It is the forecast model's to answer.
+        return None
     if two_periods(ctx.question) is not None:
         return None
-    top = s.likely[0]
+    top = s.contract.metric if s.contract is not None and s.contract.metric else s.likely[0]
     move = ctx.period_moves.get(top)
     gap = gaps.get(top) if move is None else None
     entry = analyst._visible(ctx.layer).get(top)
@@ -551,6 +563,82 @@ def _last_like(
     first_month = last.month - (last.month - start.month) % months
     at = _shift_months(datetime.date(last.year, 1, 1), first_month - 1)
     return at, _shift_months(at, months)
+
+
+def _summed_over_periods(s: State) -> p.Plan | None:
+    """A metric the steward declared a number at the end of a period (period_semantics
+    end_of_period: a stock, a balance, a headcount), asked added up over several periods
+    ("Cộng tồn kho các tháng"): refused before any plan, with why and what can be asked. The
+    planner read every month and failed on the period it wrote three times, then asked which
+    metric was meant (22/11)."""
+    ctx, c = s.ctx, s.contract
+    if ctx is None or c is None or c.metric is None:
+        return None
+    if search(norm(ctx.question), lambda pack: pack.over_periods) is None:
+        return None
+    entry = analyst._visible(ctx.layer).get(c.metric)
+    version = ctx.layer.versions.get(entry.metric_id) if entry is not None else None
+    if version is None or getattr(version, "period_semantics", None) != "end_of_period":
+        return None
+    name = entry.name if entry is not None else c.metric
+    s.refused = (
+        f"{name} là số cuối kỳ, tức số tại một thời điểm, nên không cộng qua các kỳ. Bạn có thể"
+        f" hỏi {name} cuối một kỳ cụ thể, hoặc {name} cuối từng tháng."
+    )
+    s.refusal_code = "CONTRACT_MISMATCH"
+    return p.Plan(goal="Chỉ số không cộng qua các kỳ", thought=s.refused, mode="answer")
+
+
+def _before_data(s: State) -> p.Plan | None:
+    """The question names one period, and the metric it asks has no data that early: asked back
+    before any plan, with where the data is and its first whole period of the same length as the
+    option, as F1 asks a period after the data (_missing_period); refused once the conversation's
+    clarify budget is spent. Moved to the latest whole period, "Tồn kho cuối tháng 12/2009" was
+    answered with June 2014's stock; refused outright, "Số cuộc gọi tổng đài 6 tháng đầu năm 2013"
+    left the person nothing to ask instead (22/11)."""
+    ctx, c = s.ctx, s.contract
+    if ctx is None or c is None or c.metric is None or c.compared or _asks_forecast(ctx.question):
+        return None
+    before = (getattr(ctx, "period_before", None) or {}).get(c.metric)
+    if before is None or ctx.period is None:
+        return None
+    name = {m.code: m.name for m in ctx.layer.vocabulary.metrics}.get(c.metric, c.metric)
+    held = (before[1].start, before[1].end)
+    nearest = _first_like(ctx.period.start, ctx.period.end, *held)
+    ask = clarify_policy.missing_period(
+        ctx.question, ctx.period.span, ctx.period.label, name, nearest, held
+    )
+    asked = _asking(
+        s,
+        ask,
+        f"Làm rõ kỳ của câu hỏi: {ctx.period.label} nằm trước dữ liệu",
+        f"{name} chỉ có dữ liệu từ {held[0].isoformat()}; hỏi lại trước khi truy vấn.",
+    )
+    if asked is not None:
+        return asked
+    first = held[0]
+    s.refused = (
+        f"Dữ liệu {name} bắt đầu từ tháng {first.month}/{first.year};"
+        f" {ctx.period.label} nằm trước đó nên không có số liệu."
+    )
+    return p.Plan(goal="Kỳ được hỏi nằm trước dữ liệu", thought=s.refused, mode="answer")
+
+
+def _first_like(
+    start: datetime.date, end: datetime.date, data_start: datetime.date, data_end: datetime.date
+) -> tuple[datetime.date, datetime.date]:
+    """The first period as long as [start, end) and aligned like it (a calendar year, quarter or
+    month) that lies whole in the data; else the data's first month."""
+    months = (end.year - start.year) * 12 + end.month - start.month
+    if start.day == 1 and end.day == 1 and months in (1, 3, 12):
+        at = datetime.date(data_start.year, 1, 1)
+        while at < data_end:
+            after = _shift_months(at, months)
+            if at >= data_start and after <= data_end:
+                return at, after
+            at = after
+    first = datetime.date(data_start.year, data_start.month, 1)
+    return first, _shift_months(first, 1)
 
 
 def _out_of_scope(s: State) -> p.Plan | None:
@@ -600,9 +688,16 @@ def _read_as_asked(s: State, plan: p.Plan) -> p.Plan:
     the 14B planner asked "Phúc lợi nhân viên Employee Benefits thực tế năm 2012" back ("no metric
     is about employee benefits"), an account of Số tài chính thực tế that the 4B planner read
     (19/11). Its steps run when it wrote some; else one reading of the metric, whose arguments
-    query_metric reads from the question."""
+    query_metric reads from the question.
+
+    So is a planner's "answer", which is for a greeting or a question about the catalogue, never
+    for one naming its metric and period: "Số cuộc gọi tổng đài ca AM tháng 5/2014" was answered
+    with no step, the 14B planner reading 2014-05 as after data that held 2014-05 (22/11). A
+    forecast is not read: it is the forecast model's (_forecast_read)."""
     c = s.contract
-    if plan.mode != "ask" or c is None or c.metric is None or not c.answerable():
+    if plan.mode not in ("ask", "answer") or c is None or c.metric is None or not c.answerable():
+        return plan
+    if s.ctx is not None and _asks_forecast(s.ctx.question):
         return plan
     steps = plan.steps or [
         p.PlanStep(
@@ -619,10 +714,139 @@ def _read_as_asked(s: State, plan: p.Plan) -> p.Plan:
             "options": [],
             "steps": steps,
             "thought": clarify_policy.join_thought(
-                plan.thought, "Câu hỏi đã nêu chỉ số và kỳ: đọc theo câu hỏi, không hỏi lại."
+                plan.thought, "Câu hỏi đã nêu chỉ số và kỳ: đọc số liệu theo câu hỏi."
             ),
         }
     )
+
+
+def _one_reading_compared(s: State, plan: p.Plan) -> p.Plan:
+    """A comparison the question asks ("năm 2013 so với năm 2012", "quý 1/2013 so với quý
+    1/2012", "so với cùng kỳ năm trước") is one reading: query_metric reads both periods in one
+    step. The 14B planner read each period apart and merged them in Python; query_metric read the
+    comparison asked in both, the Python step divided the two figures under a revenue's name
+    ("179,87 USD") and the answer kept no figure (21/11, three items for 14B and 4B). The pending
+    readings of the metric asked, cut and filtered alike, are one step that names no period of its
+    own, so the tool reads the periods from the question; a Python step that only merged them goes,
+    and a step that used either reads the one kept."""
+    c = s.contract
+    if plan.mode != "analyze" or c is None or c.metric is None or c.why:
+        return plan
+    if not (c.sides or c.compare_to):
+        return plan
+
+    def shape(st: p.PlanStep) -> str:
+        a = st.args
+        return json.dumps(
+            [sorted(a.get("group_by") or []), a.get("filters") or {}, a.get("analysis")],
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+
+    readings = [
+        st
+        for st in plan.steps
+        if st.status == "pending"
+        and st.tool == "query_metric"
+        and st.args.get("metric") in (None, c.metric)
+    ]
+    if len(readings) < 2 or len({shape(st) for st in readings}) > 1:
+        return plan
+    kept, folded = readings[0], {st.id for st in readings[1:]}
+    merged = {
+        st.id
+        for st in plan.steps
+        if st.status == "pending"
+        and st.tool == "analyze"
+        and st.depends_on
+        and set(st.depends_on) <= folded | {kept.id}
+    }
+    gone = folded | merged
+    # The periods, the comparison and a grain the question does not name are the question's.
+    unasked = {"period", "compare_to"} | (set() if c.grain else {"grain"})
+    names = {m.code: m.name for m in getattr(_vocab(s), "metrics", [])}
+    one = kept.model_copy(
+        update={
+            "args": {
+                **{k: v for k, v in kept.args.items() if k not in unasked},
+                "metric": c.metric,
+            },
+            "instruction": f"Đọc {names.get(c.metric, c.metric)} ở cả hai kỳ câu hỏi so sánh",
+        }
+    )
+    steps = []
+    for st in plan.steps:
+        if st.id in gone:
+            continue
+        if st is kept:
+            steps.append(one)
+            continue
+        after = [kept.id if d in gone else d for d in st.depends_on]
+        steps.append(st.model_copy(update={"depends_on": list(dict.fromkeys(after))}))
+    return plan.model_copy(update={"steps": steps})
+
+
+def _asks_forecast(question: str) -> bool:
+    return search(norm(question), lambda pack: pack.forecast) is not None
+
+
+def _forecast_read(s: State, plan: p.Plan) -> p.Plan:
+    """A forecast is read by forecast_metric, which answers from a released model or says there
+    is none: a plan for "Dự báo …" that has no forecast step gets one for the metric the question
+    names. Read any other way, a forecast is a past period moved or a number made up in Python."""
+    c = s.contract
+    if s.ctx is None or not _asks_forecast(s.ctx.question) or c is None or c.metric is None:
+        return plan
+    if plan.mode == "ask" or any(st.tool == "forecast_metric" for st in plan.steps):
+        return plan
+    names = {m.code: m.name for m in getattr(_vocab(s), "metrics", [])}
+    ids = {st.id for st in plan.steps}
+    sid = next(f"s{n}" for n in range(len(ids) + 1, len(ids) + 100) if f"s{n}" not in ids)
+    step = p.PlanStep(
+        id=sid,
+        tool="forecast_metric",
+        instruction=f"Dự báo {names.get(c.metric, c.metric)}",
+        args={"metric": c.metric},
+    )
+    return plan.model_copy(
+        update={
+            "mode": "analyze",
+            "clarification": None,
+            "options": [],
+            "steps": [*plan.steps, step],
+        }
+    )
+
+
+def _forecast_refused(s: State, results: list[ToolResult], steps: list[p.PlanStep]) -> None:
+    """A forecast the question asks that forecast_metric could not make is a refusal, said as the
+    tool says it (no released model, which metrics have one): replanned, the 14B planner wrote
+    "dữ liệu giả lập" [871] * 12 in Python and the answer showed it as the forecast (22/11)."""
+    assert s.ctx is not None
+    if s.refused is not None or not _asks_forecast(s.ctx.question):
+        return
+    for step, result in zip(steps, results, strict=True):
+        if step.tool == "forecast_metric" and not result.ok:
+            s.refused = result.observation.rstrip(".") + "."
+            s.refusal_code = "SERIES_NOT_APPROVED"
+            s.failed = None
+            return
+
+
+def _made_up_forecast(s: State, step: p.PlanStep) -> bool:
+    """A Python step over a question that asks a forecast, before any forecast was read: its
+    figures could only be invented."""
+    assert s.ctx is not None
+    return (
+        step.tool == "analyze"
+        and _asks_forecast(s.ctx.question)
+        and not any(d.tool == "forecast_metric" for d in s.ctx.ws.datasets.values())
+    )
+
+
+def _as_contract(s: State, plan: p.Plan) -> p.Plan:
+    """The planner's plan held to the contract by rule, the same after a plan and a replan."""
+    return _forecast_read(s, _one_reading_compared(s, _read_as_asked(s, plan)))
 
 
 def _asking(s: State, ask: Clarify, goal: str, thought: str) -> p.Plan | None:
@@ -640,7 +864,14 @@ def _asking(s: State, ask: Clarify, goal: str, thought: str) -> p.Plan | None:
 async def plan(s: State) -> None:
     system = _planner_system(s)
     async with turn_trace.stepping("plan", title="Lập kế hoạch", target="") as step:
-        early = _out_of_scope(s) or _missing_period(s) or _same_named(s) or _unknown_cut(s)
+        early = (
+            _out_of_scope(s)
+            or _summed_over_periods(s)
+            or _before_data(s)
+            or _missing_period(s)
+            or _same_named(s)
+            or _unknown_cut(s)
+        )
         try:
             s.plan = early or await _ask_plan(s, system, _situation(s))
         except (ModelUnavailable, p.PlanInvalid) as exc:
@@ -653,7 +884,7 @@ async def plan(s: State) -> None:
             s.handed_back = True
             return
         if early is None:
-            s.plan = _bind_clarify(s, _read_as_asked(s, s.plan))
+            s.plan = _bind_clarify(s, _as_contract(s, s.plan))
         step.detail = {
             "goal": s.plan.goal,
             # Shown while the turn runs: the plan's reasoning, its codes said as names.
@@ -744,6 +975,10 @@ async def act(s: State) -> None:
     for step in [st for st in steps if _beside_contract(s, st)]:
         step.status, step.observation = "skipped", "câu hỏi không hỏi chỉ số này"
         steps.remove(step)
+    for step in [st for st in steps if _made_up_forecast(s, st)]:
+        step.status = "skipped"
+        step.observation = "số dự báo chỉ đến từ mô hình dự báo đã phát hành (forecast_metric)"
+        steps.remove(step)
     if not steps:
         return
     s.step_runs += len(steps)
@@ -760,6 +995,7 @@ async def act(s: State) -> None:
         # way to the same data (invariant 13). Steps that depend on it are skipped.
         if not result.ok and s.failed is None and result.failure != "forbidden":
             s.failed = step
+    _forecast_refused(s, results, steps)
     _ask_for_unnamed(s, results)
 
 
@@ -884,7 +1120,7 @@ def after_act(s: State) -> str:
     assert s.plan is not None
     if s.cancelled:
         return "persist"
-    if s.clarify is not None:
+    if s.clarify is not None or s.refused is not None:
         return "persist"
     if s.failed is not None:
         return "replan" if s.replans < MAX_REPLANS else "act"
@@ -933,9 +1169,25 @@ async def replan(s: State) -> None:
             steps=[*steps],
         )
         if failed is not None:
-            # The failed step stays on the record, after the ones that are done.
-            rebuilt.steps.insert(len(done), failed.model_copy())
-        s.plan = _bind_clarify(s, _read_as_asked(s, rebuilt))
+            # The failed step stays on the record, after the ones that are done, under an id of
+            # its own: the planner fixes a step under the id it failed with, and two steps of one
+            # id failed validation, which turned the plan into an answer with no step, the steps
+            # done dropped with it (15 replans of 38 on 21/11).
+            record = failed.model_copy()
+            ids = {st.id for st in steps}
+            while record.id in ids:
+                record.id = f"{record.id}-lỗi"
+            rebuilt.steps.insert(len(done), record)
+        rebuilt = _as_contract(s, rebuilt)
+        if rebuilt.mode == "analyze":
+            try:
+                p.validate(rebuilt, set(TOOLS))
+            except p.PlanInvalid as exc:
+                # The plan walked so far stands rather than none: what is done stays read.
+                logger.info("question %s: replan refused (%s)", s.question_id, exc)
+                handle.status, handle.summary = "failed", "Giữ kế hoạch cũ."
+                return
+        s.plan = _bind_clarify(s, rebuilt)
         handle.detail = {
             "steps": p.view(s.plan),
             "thought": narrate.reader(new.thought, _vocab(s)),
@@ -1013,6 +1265,25 @@ def _catalogue_words(vocab: Any) -> set[str]:
     return named
 
 
+def _asked_a_quantity(s: State) -> bool:
+    """Whether the question asks a figure: it names a metric and its period, or a word of it
+    names a quantity no certified metric measures. A greeting, or a question about the catalogue
+    or a definition ("Doanh thu Internet là gì?"), asks neither."""
+    assert s.ctx is not None
+    if s.contract is not None and s.contract.answerable():
+        return True
+    vocab = getattr(s.ctx.layer, "vocabulary", None)
+    if vocab is None:
+        return False
+    words = unnamed(
+        quantity_words(s.ctx.question, vocab, today=s.ctx.today), _catalogue_words(vocab)
+    )
+    return (
+        bool(words)
+        and clarify_policy.unnamed_quantity(s.ctx.question, words, s.ctx.layer) is not None
+    )
+
+
 def _ask_for_unnamed_question(s: State) -> bool:
     """Nothing read, and the question asks a quantity no certified metric names: ask which metric
     was meant (E4) instead of writing an answer from no data. The planner of q8 ("Khách hàng rời
@@ -1021,17 +1292,21 @@ def _ask_for_unnamed_question(s: State) -> bool:
     assert s.ctx is not None and s.plan is not None
     if s.ctx.ws.datasets or s.clarify is not None or s.prior_clarify_rounds > 0:
         return False
-    # A turn that tried the data (steps ran), whatever plan a replan left: q8's replan left no
-    # step at all, in "answer" mode. A greeting runs no step and is not asked back.
-    if s.step_runs == 0:
-        return False
     vocab = getattr(s.ctx.layer, "vocabulary", None)
     if vocab is None:
         return False
     words = unnamed(
         quantity_words(s.ctx.question, vocab, today=s.ctx.today), _catalogue_words(vocab)
     )
+    # A turn that tried the data (steps ran), whatever plan a replan left: q8's replan left no
+    # step at all, in "answer" mode. A turn that ran no step is asked back only for a quantity
+    # some metric shares a word with: "Tỷ lệ khách hàng rời bỏ năm 2013" was planned as an
+    # "answer" with no step and written as data from nothing (22/11). A greeting asks neither.
+    if s.step_runs == 0 and not words:
+        return False
     ask = clarify_policy.unnamed_quantity(s.ctx.question, words, s.ctx.layer) if words else None
+    if ask is None and s.step_runs == 0:
+        return False
     if ask is None and not s.ctx.period_moves:
         # Nothing read and no period to blame (a period with no data is moved, AGC-10, not asked).
         found = s.ctx.period
@@ -1092,9 +1367,18 @@ def _named_members(s: State) -> list[tuple[str, str, str]]:
     assert s.ctx is not None
     text = f" {norm(s.ctx.question)} "
     vocab = s.ctx.layer.vocabulary
+    # A member whose name a metric's name or synonym holds is the metric, as query_metric reads it
+    # (tools.query.named_members): "units" of "Top 3 products by units sold" is the account Units
+    # too, and the turn was handed over for dropping it (22/11).
+    metric_phrases = {f" {norm(m.name)} " for m in vocab.metrics} | {
+        f" {p} " for p, t in vocab.synonyms.items() if t[0] == "metric"
+    }
     found: dict[tuple[str, str], str] = {}
     for hit in sem_value_retrieval(s.ctx.question, vocab.values):
-        if len(norm(hit.label)) < 3 or norm(hit.label).replace(" ", "").isdigit():
+        label = norm(hit.label)
+        if len(label) < 3 or label.replace(" ", "").isdigit():
+            continue
+        if any(f" {label} " in phrase for phrase in metric_phrases):
             continue
         found[(hit.dimension_code, hit.value_code)] = hit.label
     for phrase, target in vocab.synonyms.items():
@@ -1175,7 +1459,22 @@ def _answering(s: State) -> dict[str, Dataset] | None:
     readings = [d for d in certified if (d.reading or {}).get("metric") == c.metric]
     if c.compare_to or c.sides:
         readings = [d for d in readings if (d.reading or {}).get("compared")]
-    return {d.id: d for d in readings} or None
+        return {d.id: d for d in readings} or None
+    answering = {d.id: d for d in readings}
+    # A computation over the metric asked is part of the answer, with what it read: "Doanh thu
+    # Internet chiếm bao nhiêu phần trăm tổng doanh thu" read the total and computed 32,75 %, and
+    # the reporter, shown Doanh thu Internet alone, wrote "no total revenue" (22/11). Not over a
+    # comparison, which its compared reading answers (above).
+    runs = {r for d in readings for r in d.query_run_ids}
+    for d in s.ctx.ws.datasets.values():
+        used = set(d.query_run_ids)
+        if d.trust != "derived" or not _holds_figures(d) or not used & runs:
+            continue
+        answering[d.id] = d
+        for other in certified:
+            if other.query_run_ids and set(other.query_run_ids) <= used:
+                answering[other.id] = other
+    return answering or None
 
 
 async def compose(s: State) -> None:
@@ -1373,6 +1672,7 @@ async def _compose(s: State) -> None:
             )
         _drop_empty_shown(s)
         _complete_lead_ins(s)
+        _names_as_written(s)
         if said := _top_unsaid(s):
             # "Top 5 tiểu nhóm …" answered with its title and the table: the text named none of
             # the five (holdout, 18/11). The ranking is said from the rows shown.
@@ -1402,7 +1702,11 @@ async def _compose(s: State) -> None:
                     said
                     for x in s.composition
                     if x["type"] in _DATA_BLOCKS
-                    and (said := _rows_said(ws.datasets.get(_shown_dataset(x)), 5))
+                    and (
+                        said := _kpis_said(x)
+                        if x["type"] == "kpi"
+                        else _rows_said(ws.datasets.get(_shown_dataset(x)), 5)
+                    )
                 ),
                 "",
             )
@@ -1516,12 +1820,51 @@ def _drop_empty_shown(s: State) -> None:
     ]
 
 
+def _names_as_written(s: State) -> None:
+    """A member the text calls by a synonym the steward approved ("Pháp" for France) is written
+    by its name in the data, the synonym after it: "France (Pháp)". The 14B reporter wrote
+    "Canada và Pháp" over a table of France and Canada though told to keep the names (22/11);
+    the table, the chart and the next questions use the data's name."""
+    assert s.ctx is not None
+    vocab = s.ctx.layer.vocabulary
+    labels = {(v.dimension_code, v.value_code): v.label for v in vocab.values}
+    shown = {
+        str(cell)
+        for ds in s.ctx.ws.datasets.values()
+        if s.answering is None or ds.id in s.answering
+        for row in ds.rows
+        for cell in row
+        if isinstance(cell, str)
+    }
+    for phrase, target in vocab.synonyms.items():
+        if target[0] != "value" or len(target) < 3:
+            continue
+        label = labels.get((str(target[1]), str(target[2])), str(target[2]))
+        if label not in shown or norm(label) == phrase:
+            continue
+        for block in s.composition:
+            if block["type"] != "markdown":
+                continue
+            text = str(block.get("content") or "")
+            # words_of gives the phrase back when no run of words is it: then it is not written.
+            written = words_of(text, phrase).strip(".,;:!?()\"'")
+            if not written or written not in text or norm(written) != phrase or label in text:
+                continue
+            block["content"] = re.sub(
+                rf"(?<!\w){re.escape(written)}(?!\w)", f"{label} ({written})", text, count=1
+            )
+
+
 def _top_unsaid(s: State) -> str:
     """A ranking question ("3 đại lý …", "Top 5 …") whose text names not even its first member:
     the rows of the first table or chart, said by the server; empty otherwise."""
     assert s.ctx is not None
     if asked_top(s.ctx.question) is None:
-        return ""
+        text = norm(s.ctx.question)
+        # Which member rose or fell most is _most_changed's, from the change, not the value.
+        if search(text, lambda pack: pack.superlative) is None or asks_change(text):
+            return ""
+        return _extreme_unsaid(s, lowest=search(text, lambda pack: pack.ascending) is not None)
     shown = next((x for x in s.composition if x["type"] in _DATA_BLOCKS), None)
     ds = s.ctx.ws.datasets.get(_shown_dataset(shown)) if shown else None
     found = _measure(ds) if ds is not None and ds.rows else None
@@ -1534,6 +1877,35 @@ def _top_unsaid(s: State) -> str:
     if first in written or first in s.headline:
         return ""
     return _rows_said(ds, 10)
+
+
+def _extreme_unsaid(s: State, *, lowest: bool) -> str:
+    """ "Vùng bán hàng nào có … thấp nhất?" answered with a KPI, a chart and a table and no
+    sentence at all (22/11): the member the question asks, read from the rows of the reading that
+    cuts the metric, said by the server when the text names it nowhere; empty otherwise."""
+    assert s.ctx is not None
+    written = " ".join(
+        str(x.get("content") or "") for x in s.composition if x["type"] == "markdown"
+    )
+    for ds in s.ctx.ws.datasets.values():
+        if s.answering is not None and ds.id not in s.answering:
+            continue
+        if ds.tool != "query_metric" or len(ds.rows) < 2 or (found := _measure(ds)) is None:
+            continue
+        measure, names = found
+        if not names:
+            continue
+        rows = [r for r in ds.rows if number(r[measure]) is not None]
+        if not rows:
+            continue
+        pick = (min if lowest else max)(rows, key=lambda r: number(r[measure]) or 0.0)
+        member = " ".join(str(pick[i]) for i in names)
+        if member in written or member in s.headline:
+            return ""
+        value = verify.show(number(pick[measure]) or 0.0) + (f" {ds.unit}" if ds.unit else "")
+        end = "thấp nhất" if lowest else "cao nhất"
+        return f"{ds.columns[measure]} {end}: {member} ({value})."
+    return ""
 
 
 def _most_changed(s: State) -> str:
@@ -1599,6 +1971,28 @@ def _measure(ds: Dataset) -> tuple[int, list[int]] | None:
         # A comparison: this period, not the period compared, which is written last.
         measure = compared[0]
     return measure, [i for i in range(len(ds.columns)) if i not in numeric]
+
+
+def _kpis_said(block: dict[str, Any]) -> str:
+    """A KPI block said in one line by the server, each figure by the label it is shown with:
+    said from its dataset's first column instead, a share computed in Python read "0: 32,75 USD"
+    (22/11)."""
+    shown = []
+    for it in block.get("items") or []:
+        value = number(it.get("value"))
+        if value is None:
+            continue
+        unit = f" {it['unit']}" if it.get("unit") else ""
+        shown.append((it, str(it.get("label") or ""), f"{verify.show(value)}{unit}"))
+    if not shown:
+        return ""
+    lead, label, said = shown[0]
+    if lead.get("trust_label") == TRUST_LABEL["derived"] and len(shown) > 1:
+        # A figure computed from the others leads, they are what it was computed from: "Tỷ lệ
+        # phần trăm: 32,75; Doanh thu Internet: …; Tổng doanh thu: …" read as three answers.
+        inputs = " và ".join(f"{name} {value}" for _, name, value in shown[1:])
+        return f"{label}: {said} (tính từ {inputs})."
+    return "; ".join(f"{name}: {value}" for _, name, value in shown) + "."
 
 
 def _rows_said(ds: Dataset | None, most: int) -> str:
@@ -1895,10 +2289,25 @@ def _figures(s: State) -> list[dict[str, Any]]:
     eval read them): its KPIs; without one, the measure of the first table or chart it shows, row
     by row in the order shown, with the row's other cells as the figure's dimensions."""
     out = []
+    # A number shown twice is one figure: the 14B reporter wrote one KPI for the figure and one
+    # more on the same column, labelled "Tỷ lệ thay đổi" for its change, and the answer held the
+    # quarter and its base twice each (22/11).
+    seen: set[tuple[tuple[str, ...], Any, str]] = set()
+
+    def first(it: dict[str, Any], value: Any, role: str) -> bool:
+        # By role too: a period and its base may hold the same number.
+        key = (tuple(it.get("query_run_ids") or []), value, role)
+        if value is None or key not in seen:
+            seen.add(key)
+            return True
+        return False
+
     for blk in s.composition:
         if blk["type"] != "kpi":
             continue
         for i, it in enumerate(blk["items"]):
+            if not first(it, it.get("value"), "value"):
+                continue
             out.append(
                 _figure(
                     f"{blk['id']}-{i}",
@@ -1910,6 +2319,26 @@ def _figures(s: State) -> list[dict[str, Any]]:
                     {},
                 )
             )
+            if it.get("compare_value") is not None and first(it, it.get("compare_value"), "base"):
+                # The base a KPI shows beside its figure is a figure of the answer too, after it
+                # (blocks._asked_first): the asked side, then what it is compared with.
+                out.append(
+                    _figure(
+                        f"{blk['id']}-{i}-base",
+                        str(it.get("compare_label") or "kỳ so sánh"),
+                        it.get("compare_value"),
+                        it.get("unit"),
+                        it.get("trust_label"),
+                        it.get("query_run_ids") or [],
+                        {},
+                    )
+                )
+    if out and find_analysis(str(getattr(s.ctx, "question", "") or "")) is not None:
+        # A question asking a computation ("chiếm bao nhiêu phần trăm …") is answered by the
+        # figure computed, the readings it divides being its support: the 14B reporter wrote
+        # the two revenues first and the share last (22/11). Stable: each keeps its own order.
+        derived = TRUST_LABEL["derived"]
+        out.sort(key=lambda f: 0 if f.get("trust") == derived else 1)
     if out:
         return out
     for blk in s.composition:
@@ -2012,6 +2441,14 @@ async def persist(s: State) -> None:
         "thought": s.plan.thought if s.plan else "",
         "steps": p.view(s.plan) if s.plan else [],
         "datasets": datasets,
+        # What the question asks, read by rule (contract.py): the metric it names, which an eval
+        # item may expect the turn to have read whichever of its readings came back first.
+        "contract": {
+            "metric": s.contract.metric,
+            "named": list(s.contract.named),
+        }
+        if s.contract is not None
+        else None,
         # OP-8: steward/analyst view without raw rows.
         "operator": operator_view.build(
             plan=s.plan,
@@ -2047,13 +2484,19 @@ async def persist(s: State) -> None:
         )
     elif s.refused is not None and not s.composition:
         kind, status, text = "refusal", "refused", s.refused
-        refusal = {"code": "NO_DATA_FOR_PERIOD", "next_action": "rephrase"}
+        code = ErrorCode(s.refusal_code)
+        refusal = {"code": code.value, "next_action": NEXT_ACTION[code].value}
     elif _read_nothing(s):
         # Every reading came back empty and the answer holds no figure: it says there is no data
         # ("… năm 2013 không khả dụng"), which is a refusal with its reason, not a data answer
         # (the budget scenario ends in 2011; 18/11).
         kind, status, text = "refusal", "refused", _text(s) or "Không có dữ liệu cho câu hỏi này."
         refusal = {"code": "NO_DATA_FOR_PERIOD", "next_action": "rephrase"}
+    elif not ctx.ws.datasets and not ctx.ws.citations and _asked_a_quantity(s):
+        # Nothing was read for a question that asks a quantity: what is written says why there is
+        # no answer, which is a refusal, not data ("… không chứa chỉ số tỷ lệ rời bỏ", 22/11).
+        kind, status, text = "refusal", "refused", _text(s) or "Không có dữ liệu cho câu hỏi này."
+        refusal = {"code": "INSUFFICIENT_EVIDENCE", "next_action": "rephrase"}
     else:
         kind = "data" if ctx.ws.datasets else ("document" if ctx.ws.citations else "data")
         status, text = "answered", _text(s)

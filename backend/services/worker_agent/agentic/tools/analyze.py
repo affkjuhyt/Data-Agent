@@ -3,6 +3,7 @@ anomaly flags, anything pandas does. The model writes the code; the sandbox runs
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 
@@ -34,6 +35,29 @@ _MERGE = re.compile(
 )
 # "df_2011 = d1", "a = d2.copy()", "b = d1[d1['x'] > 0]": a name for a dataset's frame.
 _ALIAS = re.compile(r"^\s*(\w+)\s*=\s*(\w+)\b", re.MULTILINE)
+
+
+def _divides_inputs(code: str, inputs: list[str]) -> bool:
+    """Whether the code divides one input frame by another ("d2['Doanh thu Internet'] /
+    d1['Doanh thu'] * 100"): the result is a ratio, which has no unit of its own. Read as USD, the
+    share 32,75 % was shown as "32,75 USD" (22/11)."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    names = set(inputs)
+
+    def frames(node: ast.AST) -> set[str]:
+        return {n.id for n in ast.walk(node) if isinstance(n, ast.Name) and n.id in names}
+
+    return any(
+        isinstance(n, ast.BinOp)
+        and isinstance(n.op, ast.Div)
+        and frames(n.left)
+        and frames(n.right)
+        and frames(n.left) != frames(n.right)
+        for n in ast.walk(tree)
+    )
 
 
 def _dataset_of(name: str, aliases: dict[str, str]) -> str:
@@ -151,7 +175,9 @@ class Analyze(Tool):
             metric_version_ids=[m for s in sources for m in s.metric_version_ids],
             step_id=ctx.step_id,
             tool=self.name,
-            unit=units.pop() if len(units) == 1 else None,
+            unit=units.pop()
+            if len(units) == 1 and not _divides_inputs(args.code, inputs)
+            else None,
             truncated=done.truncated,
             code=args.code,
         )

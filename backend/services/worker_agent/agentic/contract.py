@@ -110,6 +110,13 @@ class Contract:
             compared = "tăng / giảm giữa hai kỳ"
         else:
             compared = "không"
+        if self.compare_to or self.sides:
+            # Said as the rule holds it (engine._one_reading_compared): read apart, the two
+            # periods came back as one figure twice, merged in Python into none (21/11).
+            compared += (
+                "; một bước query_metric đọc cả hai kỳ (có cột kỳ so sánh): không tách mỗi kỳ"
+                " một bước, không cần analyze để ghép"
+            )
         if self.top:
             ranked = f"{self.top[0]} {'cao' if self.top[1] else 'thấp'} nhất"
         else:

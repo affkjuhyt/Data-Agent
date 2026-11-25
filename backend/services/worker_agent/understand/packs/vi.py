@@ -214,7 +214,12 @@ PACK = Pack(
     filler=frozenset(
         "la cua cho toi ban biet xem hay va voi o tai trong nay do kia the nao bao nhieu hien "
         "hom qua tuan thang nam quy ky ngay gan nhat moi tong cong toan bo cac nhung mot hoac "
-        "duoc da dang se theo tung chia so sanh truoc sau con thi sao nhu vay roi a nhe nhi".split()
+        "duoc da dang se theo tung chia so sanh truoc sau con thi sao nhu vay roi a nhe nhi "
+        # How a question is asked ("cho mình xin", "đạt mấy", "doanh thu từ khách hàng nữ") and
+        # the channel a metric's own name says ("lãi gộp kênh đại lý"): no quantity of their own
+        # (22/11, the words a named metric used to clear without looking).
+        # "gì" asks ("là gì", "có gì"): a definition or a catalogue question asks no figure.
+        "may minh xin tu kenh gi".split()
     ),
     # "so với" and "so sánh" compare, they ask for no quantity of their own.
     quantity=re.compile(r"\b(?:so luong|bao nhieu|so(?! voi\b| sanh\b))\s+\w"),
@@ -241,12 +246,16 @@ PACK = Pack(
     two_years=re.compile(r"\bnam ((?:19|20)\d{2}) (?:va|voi|so voi) (?:nam )?((?:19|20)\d{2})\b"),
     analysis_phrase=re.compile(
         r"\b(?:so sanh|vi sao|tai sao|dong gop|bien dong|co cau|ty trong|xu huong|chenh lech"
-        r"|nguyen nhan|phan tich|cao nhat|thap nhat|luy ke)\b"
+        r"|nguyen nhan|phan tich|cao nhat|thap nhat|luy ke|ty le|dien bien)\b"
     ),
     analysis_words=frozenset(
         "co vi sao tai giam tang top cao thap nhat xu huong bien dong phan tich nguyen nhan ty "
         "trong luy ke so sanh chenh lech tong trung binh nhieu it hon bao tri dong gop anh huong "
         "cau chiem "
+        # "Chiếm bao nhiêu phần trăm tổng …": "tram" was refused as a quantity no metric measures,
+        # and the reading of the total never ran (21/11). Not "le" of "tỷ lệ": folded, it is also
+        # the "lẻ" of "bán lẻ", a quantity.
+        "tram "
         # Narrowing to a member ("…, chỉ xét nhóm Bikes", a chart point's "Lọc theo giá trị này").
         "xet rieng loc".split()
     ),
@@ -297,4 +306,9 @@ PACK = Pack(
         r"{low} (?:-|den) {high}",
     ),
     units={"ty": 1e9, "trieu": 1e6, "nghin": 1e3, "ngan": 1e3, "k": 1e3},
+    forecast=re.compile(r"\b(?:du bao|du doan)\b"),
+    over_periods=re.compile(
+        r"\b(?:cong|cong lai|cong don|tong cong|tong)\b(?:\s+\w+){0,4}?"
+        r"\s+(?:cac|nhieu|tat ca cac|qua cac|cua cac)\s+(?:thang|quy|nam|ky|ngay|tuan)\b"
+    ),
 )

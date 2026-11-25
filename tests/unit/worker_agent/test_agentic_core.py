@@ -311,6 +311,10 @@ def test_a_quantity_no_metric_measures_is_asked_back_with_the_closest_metrics() 
     )
     # Each option is the question again with a metric in place of the quantity.
     assert ask.options == ["Số khách hàng mua qua Internet là bao nhiêu?"]
+    # The quantity is quoted as the question writes it, an analysis phrase it starts with too.
+    churn = clarify_policy.unnamed_quantity("Tỷ lệ khách hàng rời bỏ năm 2013", ["le"], layer)
+    assert churn is not None and "“Tỷ lệ khách hàng rời bỏ”" in churn.question
+    assert churn.options == ["Số khách hàng mua qua Internet năm 2013"]
     # Read nothing, nothing stands out: the closest metrics, asked with the question's period.
     fallback = clarify_policy.nothing_read("Khách hàng rời bỏ năm 2013?", layer, "năm 2013")
     assert fallback is not None
@@ -664,6 +668,36 @@ def test_a_sentence_with_an_untraced_number_is_dropped_and_tags_are_filled() -> 
     # sentence that leads into a chart is kept.
     assert engine._label_only("**Lưu ý:**") and engine._label_only("Lưu ý:")
     assert not engine._label_only("Dưới đây là xu hướng doanh thu theo tháng:")
+
+
+def test_the_rows_add_up_only_when_their_sum_is_a_figure() -> None:
+    """21/11: "2 nhóm sản phẩm có lãi gộp Internet cao nhất" was answered with the two added up."""
+
+    def summed(**reading: Any) -> bool:
+        ws = Workspace()
+        ws.add(
+            title="t",
+            columns=["Nhóm", "Giá trị"],
+            rows=[["Bikes", 6217430.03], ["Accessories", 418318.09]],
+            trust="certified",
+            tool="query_metric",
+            reading={"metric": "M", "group_by": ["nhom_hang"], **reading},
+        )
+        return any("tổng các dòng" in f.label for f in verify.facts(ws).values())
+
+    assert summed(additivity="full", top_n=None)
+    assert not summed(additivity="full", top_n=2)
+    assert not summed(additivity="none")
+    assert summed(additivity="semi", time_cuts=[])
+    assert not summed(additivity="semi", time_cuts=["ngay_ton"])
+    # Not known (an older reading): summed as before.
+    assert summed()
+
+
+def test_percent_is_how_the_question_asks_not_a_quantity() -> None:
+    from services.worker_agent.agentic.grounded import unnamed
+
+    assert unnamed(["phan", "tram", "tong"], set()) == []
 
 
 def test_the_graph_routes_on_the_state_and_always_ends() -> None:
@@ -1021,6 +1055,40 @@ def test_the_answer_reads_what_answers_the_question_whatever_else_the_plan_read(
     s.plan.steps[0].datasets, s.plan.steps[1].datasets = ["d2"], ["d4"]
     assert '"s2"' in engine._progress(s)
     assert '"s2"' not in engine._progress(s, only={"d2"})
+
+    # 21/11, the 14B planner: each side of a comparison read apart and merged in Python; both
+    # readings came back as the comparison asked, and the Python step divided them. One reading.
+    def apart(question: str, cut: str | None = None) -> p.Plan:
+        s = state(question)
+        later = {"metric": "DOANH_THU_DAI_LY", "period": "2013", "grain": "year"}
+        if cut:
+            later["group_by"] = [cut]
+        plan = p.Plan(
+            goal="g",
+            steps=[
+                p.PlanStep(
+                    id="s1",
+                    tool="query_metric",
+                    instruction="2012",
+                    args={"metric": "DOANH_THU_DAI_LY", "period": "2012", "grain": "year"},
+                ),
+                p.PlanStep(id="s2", tool="query_metric", instruction="2013", args=later),
+                p.PlanStep(id="s3", tool="analyze", instruction="ghép", depends_on=["s1", "s2"]),
+            ],
+        )
+        return engine._as_contract(s, plan)
+
+    one = apart("Doanh thu đại lý năm 2013 so với năm 2012")
+    assert [(st.id, st.tool, st.args) for st in one.steps] == [
+        ("s1", "query_metric", {"metric": "DOANH_THU_DAI_LY"})
+    ]
+    assert "Doanh thu đại lý" in one.steps[0].instruction
+    assert [st.id for st in apart("Doanh thu đại lý quý 3/2013 so với quý trước").steps] == ["s1"]
+    # Read alike only: another cut is another reading; one period asked is no comparison.
+    assert len(apart("Doanh thu đại lý năm 2013 so với năm 2012", cut="vung").steps) == 3
+    assert len(apart("Doanh thu đại lý năm 2013").steps) == 3
+    # The contract the planner reads says so.
+    assert "một bước query_metric đọc cả hai kỳ" in shown
 
 
 def test_the_contract_reads_a_metric_and_its_cuts_as_query_metric_takes_them() -> None:
@@ -2355,6 +2423,41 @@ def test_the_executor_is_not_handed_the_plans_invalid_arguments(
     assert "Đã bỏ các tham số kế hoạch sai schema: n" in asked[0]
 
 
+def test_a_step_fixed_under_its_failed_id_keeps_the_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """21/11: the replanner fixed s2 under the id it failed with; the record of the failure and
+    the fix shared an id, validation refused the plan, and it became an answer with no step, the
+    reading done dropped with it (15 replans of 38)."""
+    import types
+
+    w = _step_world(monkeypatch, ["ok"])
+    s1, s2 = w.state.plan.steps
+    s1.status, s1.datasets = "done", ["d1"]
+    s2.status, s2.observation = "failed", "lỗi arguments"
+    w.state.failed = s2
+    fixed = p.Plan(
+        goal="g",
+        steps=[
+            p.PlanStep(id="s1", tool="fake", instruction="a", status="done"),
+            p.PlanStep(id="s2", tool="fake", instruction="b sửa", depends_on=["s1"]),
+        ],
+    )
+
+    async def json_chat(*_a: Any, **_k: Any) -> Any:
+        return types.SimpleNamespace(content=fixed)
+
+    w.state.model = types.SimpleNamespace(json_chat=json_chat)
+    monkeypatch.setattr(w.engine, "_planner_system", lambda _s: "")
+    asyncio.run(w.engine.replan(w.state))
+    plan = w.state.plan
+    assert plan.mode == "analyze"
+    assert [(st.id, st.status) for st in plan.steps] == [
+        ("s1", "done"),
+        ("s2-lỗi", "failed"),
+        ("s2", "pending"),
+    ]
+    assert w.engine.p.next_ready(plan) is plan.steps[2]
+
+
 def test_wrong_arguments_are_written_again_with_the_error(monkeypatch: pytest.MonkeyPatch) -> None:
     w = _step_world(monkeypatch, [_failed("arguments"), "ok"])
     result = asyncio.run(w.engine._run_step(w.state, w.state.plan.steps[0]))
@@ -2893,3 +2996,504 @@ def test_a_reading_that_holds_no_figure_is_not_shown_beside_one_that_does() -> N
         }
     ]
     assert engine._read_nothing(state)
+
+
+# ---- 22/11: the rules of the second round on DS-AW
+
+
+def _turn(
+    question: str,
+    metrics: list[Any] | None = None,
+    *,
+    ws: Workspace | None = None,
+    values: list[Any] | None = None,
+    synonyms: dict[str, Any] | None = None,
+    period_before: dict[str, Any] | None = None,
+) -> Any:
+    """A turn of `question` over a space of `metrics` (Tồn kho alone by default), its contract
+    read as prepare reads it."""
+    import datetime
+    import types
+    import uuid
+
+    from libs import clock
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.agentic.contract import read as read_contract
+    from services.worker_agent.understand.resolver import MetricEntry
+    from services.worker_agent.understand.text import find_period
+
+    metrics = metrics or [MetricEntry(uuid.uuid4(), "TON_KHO", "Tồn kho", True)]
+    vocab = types.SimpleNamespace(
+        metrics=metrics,
+        synonyms=synonyms or {},
+        dimensions=[],
+        values=values or [],
+        calendar=clock.DEFAULT,
+    )
+    layer = types.SimpleNamespace(
+        vocabulary=vocab,
+        versions={m.metric_id: types.SimpleNamespace(allowed_dimension_ids=[]) for m in metrics},
+        blocked_metric_ids=set(),
+    )
+    today = datetime.date(2026, 11, 22)
+    period = find_period(question, today, clock.DEFAULT)
+    return engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        ctx=types.SimpleNamespace(  # type: ignore[arg-type]
+            ws=ws or Workspace(),
+            question=question,
+            today=today,
+            layer=layer,
+            period=period,
+            period_moves={},
+            period_before=period_before or {},
+        ),
+        contract=read_contract(question, layer, period),
+    )
+
+
+def test_a_quarter_is_read_with_its_year_after_a_slash_or_a_dash() -> None:
+    """22/11: "Lãi gộp Internet của khu vực Europe Q2/2012" was read as the second quarter of 2026."""
+    import datetime
+
+    from libs import clock
+    from services.worker_agent.understand.text import find_period
+
+    today = datetime.date(2026, 11, 22)
+    for written in ("Q2/2012", "Q2-2012", "Q2 2012"):
+        found = find_period(f"Doanh thu {written}", today, clock.DEFAULT)
+        assert found is not None and (found.start, found.end) == (
+            datetime.date(2012, 4, 1),
+            datetime.date(2012, 7, 1),
+        )
+
+
+def test_a_forecast_is_read_by_its_model_or_refused() -> None:
+    """22/11: with no released model, the replanned turn made the forecast up in Python."""
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.agentic.tools import ToolResult
+
+    s = _turn("Dự báo tồn kho tháng 12/2015")
+    # A plan that reads no forecast gets one, for the metric the question names.
+    read = engine._as_contract(s, p.Plan(goal="g", mode="answer"))
+    assert read.mode == "analyze"
+    assert [(st.tool, st.args) for st in read.steps] == [("forecast_metric", {"metric": "TON_KHO"})]
+    # Python before any forecast was read could only invent its figures.
+    analysis = p.PlanStep(id="s2", tool="analyze", instruction="dự báo")
+    assert engine._made_up_forecast(s, analysis)
+    s.ctx.ws.add(
+        title="f",
+        columns=["period", "mean"],
+        rows=[["2015-12", 1.0]],
+        trust="exploratory",
+        tool="forecast_metric",
+    )
+    assert not engine._made_up_forecast(s, analysis)
+    # A forecast the tool could not make is the refusal, said as the tool says it.
+    s.plan = read
+    said = "Chưa có mô hình dự báo đã phát hành cho Tồn kho; chỉ số có mô hình dự báo: Doanh thu"
+    engine._forecast_refused(s, [ToolResult(False, said, failure="unavailable")], read.steps)
+    assert s.refused == said + "." and s.refusal_code == "SERIES_NOT_APPROVED"
+    assert engine.after_act(s) == "persist"
+    # Not asked back as a past period with no data (F1).
+    s = _turn("Dự báo tồn kho tháng 12/2015")
+    s.likely = ["TON_KHO"]
+    s.ctx.period_moves["TON_KHO"] = ("asked", "moved")
+    assert engine._missing_period(s) is None
+
+
+def test_a_period_before_the_data_is_asked_back_and_one_named_is_read() -> None:
+    """22/11: "Tồn kho cuối tháng 12/2009" was answered with June 2014's stock; "Số cuộc gọi tổng
+    đài 6 tháng đầu năm 2013" is asked back with the data's first month, refused once the
+    conversation has asked back already; "Số cuộc gọi tổng đài ca AM tháng 5/2014" was answered
+    with no step, the planner choosing mode "answer"."""
+    import datetime
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.semantic import compiler as c
+
+    held = c.Period(datetime.date(2014, 5, 1), datetime.date(2014, 6, 1))
+    s = _turn("Tồn kho 6 tháng đầu năm 2013", period_before={"TON_KHO": ("asked", held)})
+    asked = engine._before_data(s)
+    assert asked is not None and asked.mode == "ask" and s.clarify is not None
+    assert "tháng 5/2014" in s.clarify.question and s.refused is None
+    # A whole period of the asked length that the data holds is the one offered.
+    assert engine._first_like(
+        datetime.date(2009, 10, 1),
+        datetime.date(2010, 1, 1),
+        datetime.date(2010, 12, 29),
+        datetime.date(2014, 7, 1),
+    ) == (datetime.date(2011, 1, 1), datetime.date(2011, 4, 1))
+    # The clarify budget spent: refused, with where the data begins.
+    s = _turn("Tồn kho cuối tháng 12/2009", period_before={"TON_KHO": ("asked", held)})
+    s.prior_clarify_rounds = 3
+    refused = engine._before_data(s)
+    assert refused is not None and refused.mode == "answer"
+    assert s.refused is not None and "bắt đầu từ tháng 5/2014" in s.refused
+    assert engine._before_data(_turn("Tồn kho cuối tháng 12/2013")) is None
+    # A question naming its metric and period is read whatever mode the planner chose.
+    read = engine._read_as_asked(
+        _turn("Tồn kho cuối tháng 12/2013"), p.Plan(goal="g", mode="answer")
+    )
+    assert read.mode == "analyze"
+    assert [(st.tool, st.args) for st in read.steps] == [("query_metric", {"metric": "TON_KHO"})]
+
+
+def test_a_comparisons_kpis_show_the_asked_side_first_and_its_base_beside_it() -> None:
+    """22/11: five answers held both figures, the base first; two held the asked one alone."""
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+
+    ws = Workspace()
+    ds = ws.add(
+        title="Doanh thu Internet",
+        columns=["Doanh thu Internet 2012", "Doanh thu Internet 2013"],
+        rows=[[5842485.2, 16351550.34]],
+        trust="certified",
+        tool="query_metric",
+        query_run_ids=["r1"],
+        reading={
+            "metric": "DOANH_THU_INTERNET",
+            "compared": True,
+            "sides": ["Doanh thu Internet 2013", "Doanh thu Internet 2012"],
+        },
+    )
+
+    def figures(*columns: str) -> list[float]:
+        block = b.materialize(
+            b.BlockDraft(
+                type="kpi",
+                kpis=[b.KpiDraft(label=c, dataset=ds.id, column=c) for c in columns],
+            ),
+            ws,
+            "b1",
+        )
+        s = engine.State(
+            event=types.SimpleNamespace(),  # type: ignore[arg-type]
+            question_id=uuid.uuid4(),
+            model=types.SimpleNamespace(),  # type: ignore[arg-type]
+            composition=[block],
+        )
+        return [float(f["value"]) for f in engine._figures(s)]
+
+    # Written base first: the asked side first, its base beside it, the base not twice.
+    assert figures("Doanh thu Internet 2012", "Doanh thu Internet 2013") == [16351550.34, 5842485.2]
+    # Written asked side alone: its base is shown too.
+    assert figures("Doanh thu Internet 2013") == [16351550.34, 5842485.2]
+
+
+def test_a_computation_over_the_metric_asked_is_part_of_the_answer() -> None:
+    """22/11: "… chiếm bao nhiêu phần trăm …" computed 32,75 % that the reporter was never shown."""
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import MetricEntry
+
+    internet = MetricEntry(uuid.uuid4(), "DOANH_THU_INTERNET", "Doanh thu Internet", True)
+    units = MetricEntry(uuid.uuid4(), "SO_LUONG", "Số lượng bán", True)
+    ws = Workspace()
+
+    def reading(metric: str, run: str) -> str:
+        return ws.add(
+            title=metric,
+            columns=["v"],
+            rows=[[1.0]],
+            trust="certified",
+            tool="query_metric",
+            query_run_ids=[run],
+            reading={"metric": metric, "group_by": [], "filters": {}},
+        ).id
+
+    asked, used, other = (
+        reading("DOANH_THU_INTERNET", "r1"),
+        reading("SO_LUONG", "r2"),
+        reading("SO_LUONG", "r9"),
+    )
+    share = ws.add(
+        title="%",
+        columns=["%"],
+        rows=[[32.75]],
+        trust="derived",
+        tool="analyze",
+        query_run_ids=["r1", "r2"],
+    ).id
+    s = _turn("Doanh thu Internet chiếm bao nhiêu phần trăm năm 2013", [internet, units], ws=ws)
+    found = engine._answering(s)
+    assert found is not None and sorted(found) == sorted([asked, used, share])
+    assert other not in found
+
+
+def test_a_word_of_the_metric_asked_is_no_member() -> None:
+    """22/11: "units" of "Top 3 products by units sold" is also the account Units; the turn was
+    handed over for leaving it out."""
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import MetricEntry, ValueEntry
+
+    units = MetricEntry(uuid.uuid4(), "SO_LUONG_BAN_INTERNET", "Số lượng bán Internet", True)
+    s = _turn(
+        "Top 3 products by units sold in 2011",
+        [units],
+        values=[ValueEntry("tai_khoan", "Units", "Units")],
+        synonyms={"units sold": ("metric", str(units.metric_id))},
+    )
+    assert engine._named_members(s) == []
+
+
+def test_a_kpi_shows_a_number_once() -> None:
+    """22/11: KPIs labelled by state over the state column held no number; a second KPI on the
+    same column, labelled "Tỷ lệ thay đổi", held the quarter and its base twice."""
+    import types
+    import uuid
+
+    from services.worker_agent.agentic import engine
+
+    ws = Workspace()
+    states = ws.add(
+        title="t",
+        columns=["Bang / tỉnh", "Doanh thu"],
+        rows=[["California", 3.0], ["Oregon", 1.0]],
+        trust="certified",
+        tool="query_metric",
+        query_run_ids=["r1"],
+    )
+    with pytest.raises(b.BlockError, match="không phải số"):
+        b.materialize(
+            b.BlockDraft(
+                type="kpi",
+                kpis=[
+                    b.KpiDraft(
+                        label="California",
+                        dataset=states.id,
+                        column="Bang / tỉnh",
+                        match_column="Bang / tỉnh",
+                        match_value="California",
+                    )
+                ],
+            ),
+            ws,
+            "b1",
+        )
+    quarter = ws.add(
+        title="q",
+        columns=["Lãi gộp", "Lãi gộp (kỳ so sánh)"],
+        rows=[[543689.47, 557835.87]],
+        trust="certified",
+        tool="query_metric",
+        query_run_ids=["r2"],
+        reading={
+            "metric": "LAI_GOP",
+            "compared": True,
+            "sides": ["Lãi gộp", "Lãi gộp (kỳ so sánh)"],
+        },
+    )
+    block = b.materialize(
+        b.BlockDraft(
+            type="kpi",
+            kpis=[
+                b.KpiDraft(label="Lãi gộp Q2/2012", dataset=quarter.id, column="Lãi gộp"),
+                b.KpiDraft(
+                    label="Tỷ lệ thay đổi",
+                    dataset=quarter.id,
+                    column="Lãi gộp",
+                    compare_column="Lãi gộp (kỳ so sánh)",
+                ),
+            ],
+        ),
+        ws,
+        "b1",
+    )
+    s = engine.State(
+        event=types.SimpleNamespace(),  # type: ignore[arg-type]
+        question_id=uuid.uuid4(),
+        model=types.SimpleNamespace(),  # type: ignore[arg-type]
+        composition=[block],
+    )
+    assert [float(f["value"]) for f in engine._figures(s)] == [543689.47, 557835.87]
+
+
+def test_the_member_a_ranking_asks_is_said_and_by_its_name_in_the_data() -> None:
+    """22/11: "Vùng bán hàng nào có … thấp nhất?" got a KPI, a chart and no sentence; "Canada và
+    Pháp" was written over a table of Canada and France."""
+    import uuid
+
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.understand.resolver import MetricEntry, ValueEntry
+
+    revenue = MetricEntry(uuid.uuid4(), "DOANH_THU_INTERNET", "Doanh thu Internet", True)
+    ws = Workspace()
+    ws.add(
+        title="t",
+        columns=["Quốc gia khách hàng", "Doanh thu Internet"],
+        rows=[["France", 1578511.8], ["Canada", 1085632.65], ["Germany", 1876000.0]],
+        trust="certified",
+        tool="query_metric",
+        query_run_ids=["r1"],
+        reading={"metric": "DOANH_THU_INTERNET", "group_by": ["quoc_gia_khach"], "filters": {}},
+    )
+    s = _turn(
+        "Quốc gia nào có doanh thu Internet thấp nhất năm 2013?",
+        [revenue],
+        ws=ws,
+        values=[ValueEntry("quoc_gia_khach", "France", "France")],
+        synonyms={"phap": ("value", "quoc_gia_khach", "France")},
+    )
+    said = engine._top_unsaid(s)
+    assert said.startswith("Doanh thu Internet thấp nhất: Canada (")
+    s.composition = [
+        {"type": "markdown", "id": "b1", "content": "Canada thấp nhất, sau đó là Pháp."}
+    ]
+    assert engine._top_unsaid(s) == ""
+    engine._names_as_written(s)
+    assert s.composition[0]["content"] == "Canada thấp nhất, sau đó là France (Pháp)."
+    # Which member fell most is the change's, not the value's.
+    assert (
+        engine._top_unsaid(_turn("Quốc gia nào giảm nhiều nhất năm 2013?", [revenue], ws=ws)) == ""
+    )
+
+
+def test_words_no_cut_member_or_filler_accounts_for_are_a_quantity() -> None:
+    """22/11: "Doanh thu của đối thủ cạnh tranh năm 2013" names Doanh thu, and was answered with
+    the company's own revenue; a gloss before a member, a filler and a plural are no quantity."""
+    import types
+    import uuid
+
+    from services.worker_agent.agentic.tools.query import _unaccounted
+    from services.worker_agent.understand.resolver import DimensionEntry, ValueEntry
+
+    vocab = types.SimpleNamespace(
+        dimensions=[DimensionEntry(uuid.uuid4(), "tieu_nhom", "Tiểu nhóm sản phẩm")],
+        synonyms={"subcategory": ("dimension", "x")},
+        values=[ValueEntry("tai_khoan", "Travel Lodging", "Travel Lodging")],
+    )
+    assert _unaccounted(
+        "Doanh thu của đối thủ cạnh tranh năm 2013", vocab, ["doi", "canh", "tranh"]
+    ) == [
+        "doi",
+        "canh",
+        "tranh",
+    ]
+    gloss = "Chi phí lưu trú công tác Travel Lodging thực tế năm 2012"
+    assert _unaccounted(gloss, vocab, ["phi", "luu", "tru", "cong", "tac"]) == []
+    assert _unaccounted("Cho mình xin số đơn hàng internet quý 3", vocab, ["minh", "xin"]) == []
+    assert _unaccounted("Top 3 subcategories by gross profit", vocab, ["subcategories"]) == []
+
+
+def test_a_ratio_of_two_inputs_has_no_unit_and_a_kpi_is_said_by_its_label() -> None:
+    """22/11: the share 32,75 % was shown as "32,75 USD", and the answer's only sentence was
+    "0: 32,75 USD." from the Python result's column."""
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.agentic.tools.analyze import _divides_inputs
+    from services.worker_agent.agentic.workspace import TRUST_LABEL
+
+    assert _divides_inputs(
+        "result = (d2['Doanh thu Internet'] / d1['Doanh thu']) * 100", ["d1", "d2"]
+    )
+    assert not _divides_inputs("result = d1.merge(d2, on='Vùng')", ["d1", "d2"])
+    assert not _divides_inputs("result = d1['Doanh thu'] / 1000", ["d1"])
+    said = engine._kpis_said(
+        {
+            "type": "kpi",
+            "items": [{"label": "Tỷ lệ phần trăm", "value": 32.75}, {"label": "x", "value": None}],
+        }
+    )
+    assert said == "Tỷ lệ phần trăm: 32,75."
+    # A computed figure leading the figures it was computed from says so.
+    derived, certified = TRUST_LABEL["derived"], TRUST_LABEL["certified"]
+    said = engine._kpis_said(
+        {
+            "type": "kpi",
+            "items": [
+                {"label": "Tỷ lệ phần trăm", "value": 32.75, "trust_label": derived},
+                {
+                    "label": "Doanh thu Internet",
+                    "value": 16.5,
+                    "unit": "USD",
+                    "trust_label": certified,
+                },
+                {"label": "Tổng doanh thu", "value": 50.0, "unit": "USD", "trust_label": certified},
+            ],
+        }
+    )
+    assert said == (
+        "Tỷ lệ phần trăm: 32,75 (tính từ Doanh thu Internet 16,50 USD và Tổng doanh thu 50 USD)."
+    )
+
+
+def test_a_number_at_the_end_of_a_period_is_not_added_over_periods() -> None:
+    """22/11: "Cộng tồn kho các tháng" read every month, failed three times, and asked which
+    metric was meant; a stock is refused added over periods, a stock at a date is read."""
+    from services.worker_agent.agentic import engine
+
+    def turn(question: str, semantics: str) -> Any:
+        s = _turn(question)
+        for version in s.ctx.layer.versions.values():
+            version.period_semantics = semantics
+        return s
+
+    s = turn("Cộng tồn kho các tháng", "end_of_period")
+    refused = engine._summed_over_periods(s)
+    assert refused is not None and s.refusal_code == "CONTRACT_MISMATCH"
+    assert s.refused is not None and "không cộng qua các kỳ" in s.refused
+    assert (
+        engine._summed_over_periods(turn("Tổng tồn kho cuối tháng 12/2013", "end_of_period"))
+        is None
+    )
+    assert engine._summed_over_periods(turn("Cộng tồn kho các tháng", "sum_over_period")) is None
+
+
+def test_a_question_asking_a_figure_is_told_from_a_greeting() -> None:
+    from services.worker_agent.agentic import engine
+
+    assert engine._asked_a_quantity(_turn("Tồn kho cuối tháng 12/2013"))
+    assert not engine._asked_a_quantity(_turn("Tồn kho là gì?"))
+
+
+def test_the_agent_is_understood_by_the_metric_its_contract_names() -> None:
+    """22/11: a share read beside its total was "understood" as whichever reading came first."""
+    from services.worker_agent.agentic.evaluate import _agent_understood
+
+    read = {"d1": {"metric": "DOANH_THU"}, "d2": {"metric": "DOANH_THU_INTERNET"}}
+    asked = {"datasets": read, "contract": {"metric": "DOANH_THU_INTERNET"}}
+    assert _agent_understood(asked) == "DOANH_THU_INTERNET"
+    assert _agent_understood({"datasets": read}) == "DOANH_THU"
+    assert _agent_understood({"datasets": read, "contract": {"metric": "TON_KHO"}}) == "DOANH_THU"
+
+
+def test_a_computed_figure_leads_the_answer_to_a_computation() -> None:
+    """22/11: the share was written last, after the two revenues it divides."""
+    from services.worker_agent.agentic import engine
+    from services.worker_agent.agentic.workspace import TRUST_LABEL
+
+    def item(label: str, value: float, trust: str) -> dict[str, Any]:
+        return {
+            "label": label,
+            "value": value,
+            "trust_label": TRUST_LABEL[trust],
+            "query_run_ids": [label],
+        }
+
+    block = {
+        "type": "kpi",
+        "id": "b1",
+        "items": [
+            item("Doanh thu Internet", 16351550.34, "certified"),
+            item("Tổng doanh thu", 49926384.5, "certified"),
+            item("Tỷ lệ phần trăm", 32.75, "derived"),
+        ],
+    }
+    s = _turn("Tồn kho chiếm bao nhiêu phần trăm tổng năm 2013")
+    s.composition = [block]
+    assert [f["label"] for f in engine._figures(s)] == [
+        "Tỷ lệ phần trăm",
+        "Doanh thu Internet",
+        "Tổng doanh thu",
+    ]
+    s = _turn("Tồn kho cuối tháng 12/2013")
+    s.composition = [block]
+    assert engine._figures(s)[0]["label"] == "Doanh thu Internet"

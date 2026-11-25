@@ -18,7 +18,7 @@ from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog
 from libs.sql_guard import SqlRejected, dialect_of
 from services.worker_agent.agentic import prompts
-from services.worker_agent.agentic.grounded import unnamed
+from services.worker_agent.agentic.grounded import ANALYSIS_WORDS, unnamed
 from services.worker_agent.agentic.tools.base import Tool, ToolContext, ToolResult
 from services.worker_agent.failures import is_transient
 from services.worker_agent.llm import ModelUnavailable
@@ -35,7 +35,7 @@ from services.worker_agent.sqlgen.space import load_space
 from services.worker_agent.understand import analyst
 from services.worker_agent.understand.comparison import find_comparison
 from services.worker_agent.understand.grain import GRAIN_LABELS, find_grain
-from services.worker_agent.understand.packs import PACKS, search
+from services.worker_agent.understand.packs import PACKS, search, words
 from services.worker_agent.understand.packs.base import Pack, iso_answer
 from services.worker_agent.understand.resolver import (
     Vocabulary,
@@ -145,6 +145,44 @@ def named_members(
         for dim, codes in out.items()
         if any(len(by_name[norm(c)]) == 1 for c in codes)
     }
+
+
+# How many words before a member may gloss it ("Chi phí lưu trú công tác Travel Lodging").
+_GLOSS = 6
+_FILLERS = words(lambda pack: pack.filler)
+
+
+def _unaccounted(question: str, vocab: Vocabulary, left: list[str]) -> list[str]:
+    """The words of `left` that nothing of the space accounts for: no cut's name or synonym, no
+    member (by label or synonym) nor the gloss written just before one, no filler, no analysis.
+    Measured on DS-AW's sets (22/11), the words a named metric cleared were these but for "đối thủ
+    cạnh tranh"; a word they hold reads as the quantity it is, and the step is refused."""
+    text = norm(question)
+    for pack in PACKS:
+        text = pack.analysis_phrase.sub(" ", text)
+    tokens = text.split()
+    known = set(_FILLERS) | set(ANALYSIS_WORDS)
+    for d in vocab.dimensions:
+        known |= set(norm(d.name).replace("/", " ").split())
+    for phrase, target in vocab.synonyms.items():
+        if target[0] in ("dimension", "value"):
+            known |= set(phrase.split())
+    for v in vocab.values:
+        label = norm(v.label).split()
+        if len("".join(label)) < 2:
+            continue
+        for i in range(len(tokens) - len(label) + 1):
+            if tokens[i : i + len(label)] == label:
+                known |= set(label) | set(tokens[max(0, i - _GLOSS) : i])
+
+    def plural(w: str) -> bool:
+        # "subcategories" of "subcategory", "products" of "product".
+        return (w.endswith("ies") and w[:-3] + "y" in known) or (
+            w.endswith("s") and w[:-1] in known
+        )
+
+    present = set(tokens)
+    return [w for w in left if w in present and w not in known and not plural(w)]
 
 
 def asks_breakdown(question: str, vocab: Vocabulary, top: tuple[int, bool] | None) -> bool:
@@ -398,6 +436,34 @@ def side_by_side(
         merged.setdefault(tuple(row[i] for i in keys), [None, None])[1] = row[value]
     columns = [labels[i] for i in keys] + list(names)
     return columns, [[*key, *values] for key, values in merged.items()]
+
+
+def _sides(
+    question: str,
+    name: str,
+    codes: list[str],
+    pair: tuple[Side, Side] | None,
+    side_labels: dict[str, str],
+    years: tuple[int, int] | None,
+) -> list[str] | None:
+    """The columns of a comparison's two sides, the asked one first: the one the question writes
+    first ("Lãi gộp đại lý tháng 7/2011 so với tháng 3/2011" asks July against March), else this
+    period before its base. None when the reading compares nothing."""
+    if pair is not None:
+        sides = [f"{name} {pair[0][1]}", f"{name} {pair[1][1]}"]
+        labels = [pair[0][1], pair[1][1]]
+    elif side_labels and years:
+        sides = [side_labels["value"], side_labels["base_value"]]
+        labels = [str(years[1]), str(years[0])]
+    elif "base_value" in codes:
+        return [name, _COLUMN_LABEL["base_value"].format(metric=name)]
+    else:
+        return None
+    text = norm(question)
+    at = [text.find(norm(label)) for label in labels]
+    if -1 not in at and at[1] < at[0]:
+        sides.reverse()
+    return sides
 
 
 _COLUMN_LABEL = {
@@ -681,8 +747,11 @@ class QueryMetric(Tool):
                 failure="arguments",
             )
         if missing and names_metric(ctx.question, entry, vocab, member_named=bool(members)):
-            # The question calls this metric by its name: the words left are how it is said.
-            missing = []
+            # The question calls this metric by its name: the words left are how it is said, a
+            # cut, a member or a gloss of one, unless none of those accounts for them. "Doanh thu
+            # của đối thủ cạnh tranh năm 2013" names Doanh thu, and was answered with the
+            # company's own revenue (22/11): a competitor is no cut or member of this space.
+            missing = _unaccounted(ctx.question, vocab, missing)
         if missing:
             # RES-04: do not send the planner to invent the quantity with explore_sql.
             return ToolResult(
@@ -964,6 +1033,16 @@ class QueryMetric(Tool):
                 # Whether the rows hold two periods side by side (a comparison, two years, two
                 # periods of one kind): the reading that answers a comparison by itself.
                 "compared": args.compare_to is not None or pair is not None or bool(side_labels),
+                # The column of each side, the side the question asks first (blocks.materialize).
+                "sides": _sides(
+                    ctx.question, entry.name, list(compiled.columns), pair, side_labels, years
+                ),
+                # Whether its rows may be added up (verify.facts): not the first N of a ranking,
+                # nor a metric the steward declared non-additive (BR-117).
+                "top_n": args.top_n,
+                "additivity": getattr(
+                    getattr(ctx.layer, "version_rows", {}).get(entry.metric_id), "additivity", None
+                ),
             },
         )
         detail["dataset"] = ds.id

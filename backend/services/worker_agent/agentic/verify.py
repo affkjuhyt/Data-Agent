@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 
 from libs import language
-from services.worker_agent.agentic.workspace import Workspace, number, plain
+from services.worker_agent.agentic.workspace import Dataset, Workspace, number, plain
 
 _TAG = re.compile(r"\{\{\s*(F\d+)\s*\}\}")
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
@@ -40,6 +40,23 @@ def show(value: float, locale: str | None = None) -> str:
     return language.number(value, _decimals(value), locale)
 
 
+def _summable(ds: Dataset) -> bool:
+    """Whether the sum of a reading's rows is a figure of its own. "2 nhóm sản phẩm có lãi gộp
+    Internet cao nhất" was answered with the two groups added up and neither named (21/11): the
+    first N of a ranking add up to nothing asked. Nor do a ratio's rows, distinct customers over
+    groups, or stock at the end of each month (additivity none, or semi along time). A dataset
+    with no reading (Python, exploratory SQL) is summed as before."""
+    reading = ds.reading
+    if not isinstance(reading, dict):
+        return True
+    if reading.get("top_n"):
+        return False
+    additivity = reading.get("additivity")
+    if additivity == "none":
+        return False
+    return not (additivity == "semi" and reading.get("time_cuts"))
+
+
 def facts(ws: Workspace, locale: str | None = None) -> dict[str, Fact]:
     out: dict[str, Fact] = {}
 
@@ -64,7 +81,7 @@ def facts(ws: Workspace, locale: str | None = None) -> dict[str, Fact]:
                 value = number(row[i])
                 if value is not None:
                     add(value, f"{ds.id} · {where or 'tổng'} · {ds.columns[i]}")
-        if len(ds.rows) > 1:
+        if len(ds.rows) > 1 and _summable(ds):
             for i in numeric:
                 values = [n for n in (number(r[i]) for r in ds.rows) if n is not None]
                 add(sum(values), f"{ds.id} · tổng các dòng · {ds.columns[i]}")
